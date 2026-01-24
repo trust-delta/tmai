@@ -105,6 +105,21 @@ impl ClaudeCodeDetector {
         let mut question = String::new();
         let mut first_choice_idx = None;
         let mut last_choice_idx = None;
+        let mut is_multi_select = false;
+        let mut cursor_position: usize = 0;
+
+        // Check for multi-select indicators in the content
+        for line in check_lines.iter() {
+            let lower = line.to_lowercase();
+            if lower.contains("space to")
+                || lower.contains("toggle")
+                || lower.contains("select all")
+                || lower.contains("multi")
+            {
+                is_multi_select = true;
+                break;
+            }
+        }
 
         for (i, line) in check_lines.iter().enumerate() {
             let trimmed = line.trim();
@@ -144,10 +159,16 @@ impl ClaudeCodeDetector {
                             first_choice_idx = Some(i);
                         }
                         last_choice_idx = Some(i);
+
+                        // Check if this line has cursor marker (❯ or >)
+                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                            cursor_position = num as usize;
+                        }
                     } else if !choices.is_empty() {
                         choices.clear();
                         first_choice_idx = None;
                         last_choice_idx = None;
+                        cursor_position = 0;
                     }
                 }
             }
@@ -183,10 +204,13 @@ impl ClaudeCodeDetector {
         }
 
         if choices.len() >= 2 {
+            // Default cursor to 1 if not detected
+            let cursor = if cursor_position == 0 { 1 } else { cursor_position };
             Some((
                 ApprovalType::UserQuestion {
                     choices,
-                    multi_select: false,
+                    multi_select: is_multi_select,
+                    cursor_position: cursor,
                 },
                 question,
             ))

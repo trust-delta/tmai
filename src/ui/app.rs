@@ -113,16 +113,18 @@ impl App {
                     HelpPopup::render(frame, popup_area);
                 }
 
-                // Selection popup for AskUserQuestion
-                if let Some(agent) = state.selected_agent() {
-                    if let crate::agents::AgentStatus::AwaitingApproval {
-                        approval_type,
-                        details,
-                    } = &agent.status
-                    {
-                        if SelectionPopup::should_show(approval_type) {
-                            let popup_area = self.layout.popup_area(frame.area(), 50, 50);
-                            SelectionPopup::render(frame, popup_area, approval_type, details);
+                // Selection popup for AskUserQuestion (hide in passthrough mode)
+                if !state.is_passthrough_mode() {
+                    if let Some(agent) = state.selected_agent() {
+                        if let crate::agents::AgentStatus::AwaitingApproval {
+                            approval_type,
+                            details,
+                        } = &agent.status
+                        {
+                            if SelectionPopup::should_show(approval_type) {
+                                let popup_area = self.layout.popup_area(frame.area(), 50, 50);
+                                SelectionPopup::render(frame, popup_area, approval_type, details);
+                            }
                         }
                     }
                 }
@@ -162,9 +164,9 @@ impl App {
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
         // Check state without holding the lock for the entire function
-        let (show_help, is_input_mode) = {
+        let (show_help, is_input_mode, is_passthrough_mode) = {
             let state = self.state.read();
-            (state.show_help, state.is_input_mode())
+            (state.show_help, state.is_input_mode(), state.is_passthrough_mode())
         };
 
         // Handle help popup first
@@ -175,7 +177,9 @@ impl App {
         }
 
         // Dispatch based on input mode
-        if is_input_mode {
+        if is_passthrough_mode {
+            self.handle_passthrough_mode_key(code, modifiers)
+        } else if is_input_mode {
             self.handle_input_mode_key(code, modifiers)
         } else {
             self.handle_normal_mode_key(code, modifiers)
@@ -274,6 +278,7 @@ impl App {
                                 ApprovalType::UserQuestion {
                                     choices,
                                     multi_select,
+                                    ..
                                 },
                             ..
                         } = &agent.status
@@ -299,15 +304,15 @@ impl App {
                             if is_other {
                                 // "Other" or "Type something" - enter input mode
                                 drop(state);
-                                // Send the number to select it
-                                let _ = self.tmux_client.send_keys(&target, &num.to_string());
+                                // Send the number to select it (use literal to avoid key interpretation issues)
+                                let _ = self.tmux_client.send_keys_literal(&target, &num.to_string());
                                 // Then enter tmai input mode for user to type
                                 let mut state = self.state.write();
                                 state.enter_input_mode();
                             } else {
                                 drop(state);
-                                // Send the number key directly
-                                let _ = self.tmux_client.send_keys(&target, &num.to_string());
+                                // Send the number key as literal
+                                let _ = self.tmux_client.send_keys_literal(&target, &num.to_string());
                                 if !multi_select {
                                     // Single select: confirm with Enter
                                     let _ = self.tmux_client.send_keys(&target, "Enter");
@@ -346,21 +351,32 @@ impl App {
             KeyCode::Enter => {
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    // Check if it's a multi-select UserQuestion
-                    let is_multi_select = state.agents.get(&target).map_or(false, |agent| {
-                        matches!(
-                            &agent.status,
-                            crate::agents::AgentStatus::AwaitingApproval {
-                                approval_type: ApprovalType::UserQuestion {
+                    // Check if it's a multi-select UserQuestion and get info
+                    let multi_info = state.agents.get(&target).and_then(|agent| {
+                        if let crate::agents::AgentStatus::AwaitingApproval {
+                            approval_type:
+                                ApprovalType::UserQuestion {
+                                    choices,
                                     multi_select: true,
-                                    ..
+                                    cursor_position,
                                 },
-                                ..
-                            }
-                        )
+                            ..
+                        } = &agent.status
+                        {
+                            Some((choices.len(), *cursor_position))
+                        } else {
+                            None
+                        }
                     });
-                    if is_multi_select {
+                    if let Some((choice_count, cursor_pos)) = multi_info {
                         drop(state);
+                        // Calculate how many Down presses needed to reach Submit
+                        // Submit is right after the last choice
+                        // (choice_count - cursor_pos) moves to last choice, then Submit
+                        let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
+                        for _ in 0..downs_needed {
+                            let _ = self.tmux_client.send_keys(&target, "Down");
+                        }
                         let _ = self.tmux_client.send_keys(&target, "Enter");
                     }
                 }
@@ -379,6 +395,11 @@ impl App {
             KeyCode::Char('p') => {
                 drop(state);
                 self.layout.toggle_preview();
+            }
+
+            // Enter passthrough mode (direct key input to pane)
+            KeyCode::Char('t') => {
+                state.enter_passthrough_mode();
             }
 
             // Help
@@ -460,6 +481,55 @@ impl App {
                 self.tmux_client.send_keys(&target, "Enter")?;
             }
         }
+        Ok(())
+    }
+
+    /// Handle keys in passthrough mode - send directly to target pane
+    fn handle_passthrough_mode_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+        // Escape exits passthrough mode
+        if code == KeyCode::Esc {
+            let mut state = self.state.write();
+            state.exit_input_mode();
+            return Ok(());
+        }
+
+        // Get target pane
+        let target = {
+            let state = self.state.read();
+            state.selected_target().map(|s| s.to_string())
+        };
+
+        let Some(target) = target else {
+            return Ok(());
+        };
+
+        // Map key to tmux key name and send
+        let key_str = match code {
+            KeyCode::Char(c) => {
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    format!("C-{}", c)
+                } else {
+                    // Send character as literal
+                    self.tmux_client.send_keys_literal(&target, &c.to_string())?;
+                    return Ok(());
+                }
+            }
+            KeyCode::Enter => "Enter".to_string(),
+            KeyCode::Backspace => "BSpace".to_string(),
+            KeyCode::Delete => "DC".to_string(),
+            KeyCode::Up => "Up".to_string(),
+            KeyCode::Down => "Down".to_string(),
+            KeyCode::Left => "Left".to_string(),
+            KeyCode::Right => "Right".to_string(),
+            KeyCode::Home => "Home".to_string(),
+            KeyCode::End => "End".to_string(),
+            KeyCode::PageUp => "PPage".to_string(),
+            KeyCode::PageDown => "NPage".to_string(),
+            KeyCode::Tab => "Tab".to_string(),
+            _ => return Ok(()),
+        };
+
+        let _ = self.tmux_client.send_keys(&target, &key_str);
         Ok(())
     }
 }

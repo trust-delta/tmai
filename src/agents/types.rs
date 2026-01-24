@@ -120,6 +120,8 @@ pub enum ApprovalType {
     UserQuestion {
         choices: Vec<String>,
         multi_select: bool,
+        /// Current cursor position (1-indexed, 0 means unknown)
+        cursor_position: usize,
     },
     /// Other/unknown approval type
     Other(String),

@@ -37,7 +37,7 @@ impl SelectionPopup {
         }
 
         // Add choices
-        if let ApprovalType::UserQuestion { choices, multi_select } = approval_type {
+        if let ApprovalType::UserQuestion { choices, multi_select, .. } = approval_type {
             lines.push(Line::from(vec![Span::styled(
                 "Options:",
                 Style::default()
@@ -104,6 +104,7 @@ mod tests {
         assert!(SelectionPopup::should_show(&ApprovalType::UserQuestion {
             choices: vec!["A".to_string(), "B".to_string()],
             multi_select: false,
+            cursor_position: 1,
         }));
 
         assert!(!SelectionPopup::should_show(&ApprovalType::FileEdit));

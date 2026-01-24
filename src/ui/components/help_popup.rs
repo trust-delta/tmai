@@ -69,6 +69,7 @@ impl HelpPopup {
                     .add_modifier(Modifier::BOLD),
             )]),
             Self::help_line("p", "Toggle preview panel"),
+            Self::help_line("t", "Passthrough mode (direct keys)"),
             Self::help_line("?", "Toggle this help"),
             Self::help_line("q / Esc", "Quit"),
             Line::from(""),

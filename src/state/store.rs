@@ -15,10 +15,16 @@ pub enum InputMode {
     Normal,
     /// Text input mode
     Input,
+    /// Passthrough mode - keys are sent directly to the target pane
+    Passthrough,
 }
 
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/// How many ticks (50ms each) before advancing spinner frame
+/// 3 ticks = 150ms per frame, ~1.5 seconds per full rotation
+const SPINNER_TICK_DIVISOR: usize = 3;
 
 /// Application state
 #[derive(Debug)]
@@ -47,6 +53,8 @@ pub struct AppState {
     pub cursor_position: usize,
     /// Spinner animation frame counter
     pub spinner_frame: usize,
+    /// Spinner tick counter (for speed control)
+    spinner_tick: usize,
 }
 
 impl AppState {
@@ -65,12 +73,17 @@ impl AppState {
             input_buffer: String::new(),
             cursor_position: 0,
             spinner_frame: 0,
+            spinner_tick: 0,
         }
     }
 
-    /// Advance the spinner animation frame
+    /// Advance the spinner animation frame (called every 50ms)
     pub fn tick_spinner(&mut self) {
-        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+        self.spinner_tick += 1;
+        if self.spinner_tick >= SPINNER_TICK_DIVISOR {
+            self.spinner_tick = 0;
+            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+        }
     }
 
     /// Get the current spinner character
@@ -230,6 +243,11 @@ impl AppState {
         self.input_mode = InputMode::Input;
     }
 
+    /// Enter passthrough mode
+    pub fn enter_passthrough_mode(&mut self) {
+        self.input_mode = InputMode::Passthrough;
+    }
+
     /// Exit input mode and clear buffer
     pub fn exit_input_mode(&mut self) {
         self.input_mode = InputMode::Normal;
@@ -240,6 +258,11 @@ impl AppState {
     /// Check if in input mode
     pub fn is_input_mode(&self) -> bool {
         self.input_mode == InputMode::Input
+    }
+
+    /// Check if in passthrough mode
+    pub fn is_passthrough_mode(&self) -> bool {
+        self.input_mode == InputMode::Passthrough
     }
 
     /// Get the input buffer

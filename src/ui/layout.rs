@@ -5,8 +5,8 @@ const INPUT_HEIGHT: u16 = 3;
 
 /// Layout configuration for the UI
 pub struct Layout {
-    /// Height percentage for the preview panel
-    pub preview_height_pct: u16,
+    /// Width percentage for the session list (left panel)
+    pub session_list_width_pct: u16,
     /// Whether to show the preview panel
     pub show_preview: bool,
     /// Height for input area
@@ -17,15 +17,16 @@ impl Layout {
     /// Create a new layout with default settings
     pub fn new() -> Self {
         Self {
-            preview_height_pct: 40,
+            session_list_width_pct: 35,
             show_preview: true,
             input_height: INPUT_HEIGHT,
         }
     }
 
-    /// Create a layout with custom preview height
-    pub fn with_preview_height(mut self, height_pct: u16) -> Self {
-        self.preview_height_pct = height_pct.min(80).max(20);
+    /// Create a layout with custom preview height (now used as session list width)
+    pub fn with_preview_height(mut self, _height_pct: u16) -> Self {
+        // Keep default width for now
+        self.session_list_width_pct = 35;
         self
     }
 
@@ -40,41 +41,63 @@ impl Layout {
     }
 
     /// Calculate the main areas
+    /// Layout: [Session List (left)] [Preview + Input (right)]
+    ///                               [    Preview    ]
+    ///                               [    Input      ]
+    ///         [       Status Bar (full width)       ]
     pub fn calculate(&self, area: Rect) -> LayoutAreas {
+        // First, split off the status bar at the bottom
+        let main_and_status = ratatui::layout::Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(5),    // Main content area
+                Constraint::Length(1), // Status bar
+            ])
+            .split(area);
+
+        let main_area = main_and_status[0];
+        let status_bar = main_and_status[1];
+
         if self.show_preview {
-            // Split vertically: session list (top), preview (middle), input (bottom), status bar
-            let chunks = ratatui::layout::Layout::default()
+            // Split horizontally: session list (left), preview+input (right)
+            let horizontal = ratatui::layout::Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(self.session_list_width_pct), // Session list
+                    Constraint::Percentage(100 - self.session_list_width_pct), // Preview + Input
+                ])
+                .split(main_area);
+
+            // Split right panel vertically: preview (top), input (bottom)
+            let right_panel = ratatui::layout::Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(3),                    // Session list (flexible)
-                    Constraint::Percentage(self.preview_height_pct), // Preview
+                    Constraint::Min(3),                    // Preview (flexible)
                     Constraint::Length(self.input_height), // Input area
-                    Constraint::Length(1),                 // Status bar
                 ])
-                .split(area);
+                .split(horizontal[1]);
 
             LayoutAreas {
-                session_list: chunks[0],
-                preview: Some(chunks[1]),
-                input: chunks[2],
-                status_bar: chunks[3],
+                session_list: horizontal[0],
+                preview: Some(right_panel[0]),
+                input: right_panel[1],
+                status_bar,
             }
         } else {
-            // No preview: session list takes most space
-            let chunks = ratatui::layout::Layout::default()
-                .direction(Direction::Vertical)
+            // No preview: session list on left, input on right
+            let horizontal = ratatui::layout::Layout::default()
+                .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Min(3),                    // Session list
-                    Constraint::Length(self.input_height), // Input area
-                    Constraint::Length(1),                 // Status bar
+                    Constraint::Percentage(self.session_list_width_pct),
+                    Constraint::Percentage(100 - self.session_list_width_pct),
                 ])
-                .split(area);
+                .split(main_area);
 
             LayoutAreas {
-                session_list: chunks[0],
+                session_list: horizontal[0],
                 preview: None,
-                input: chunks[1],
-                status_bar: chunks[2],
+                input: horizontal[1],
+                status_bar,
             }
         }
     }
@@ -143,7 +166,9 @@ mod tests {
         let areas = layout.calculate(area);
 
         assert!(areas.preview.is_none());
-        assert_eq!(areas.input.height, 3);
+        // In horizontal layout without preview, input takes the right panel
+        assert!(areas.input.height > 0);
+        assert!(areas.input.width > 0);
     }
 
     #[test]

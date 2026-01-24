@@ -17,7 +17,30 @@ impl StatusBar {
         let mut spans = vec![];
 
         // Show different hints based on input mode
-        if state.is_input_mode() {
+        if state.is_passthrough_mode() {
+            // Passthrough mode hints
+            spans.push(Span::styled(
+                " -- PASSTHROUGH -- ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(" ", Style::default()));
+
+            spans.push(Span::styled(
+                "Keys sent directly to pane ",
+                Style::default().fg(Color::White),
+            ));
+
+            spans.push(Span::styled(
+                "Esc",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Exit ", Style::default().fg(Color::DarkGray)));
+        } else if state.is_input_mode() {
             // Input mode hints
             spans.push(Span::styled(
                 " -- INPUT -- ",
