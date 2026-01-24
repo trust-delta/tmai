@@ -117,6 +117,17 @@ impl StatusBar {
             ));
 
             spans.push(Span::styled(
+                "→",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Direct ",
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            spans.push(Span::styled(
                 "1-9",
                 Style::default()
                     .fg(Color::Yellow)

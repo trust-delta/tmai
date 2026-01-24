@@ -410,7 +410,7 @@ impl App {
             }
 
             // Enter passthrough mode (direct key input to pane)
-            KeyCode::Char('t') => {
+            KeyCode::Right => {
                 state.enter_passthrough_mode();
             }
 
