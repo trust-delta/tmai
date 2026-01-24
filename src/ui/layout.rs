@@ -41,11 +41,15 @@ impl Layout {
     }
 
     /// Calculate the main areas
-    /// Layout: [Session List (left)] [Preview + Input (right)]
-    ///                               [    Preview    ]
-    ///                               [    Input      ]
+    /// Layout: [Session List (left)] [Preview (right)]
     ///         [       Status Bar (full width)       ]
+    /// When show_input is true, input area appears at bottom of preview
     pub fn calculate(&self, area: Rect) -> LayoutAreas {
+        self.calculate_with_input(area, false)
+    }
+
+    /// Calculate layout with optional input area
+    pub fn calculate_with_input(&self, area: Rect, show_input: bool) -> LayoutAreas {
         // First, split off the status bar at the bottom
         let main_and_status = ratatui::layout::Layout::default()
             .direction(Direction::Vertical)
@@ -68,35 +72,36 @@ impl Layout {
                 ])
                 .split(main_area);
 
-            // Split right panel vertically: preview (top), input (bottom)
-            let right_panel = ratatui::layout::Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(3),                    // Preview (flexible)
-                    Constraint::Length(self.input_height), // Input area
-                ])
-                .split(horizontal[1]);
+            if show_input {
+                // Split right panel vertically: preview (top), input (bottom)
+                let right_panel = ratatui::layout::Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Min(3),                    // Preview (flexible)
+                        Constraint::Length(self.input_height), // Input area
+                    ])
+                    .split(horizontal[1]);
 
-            LayoutAreas {
-                session_list: horizontal[0],
-                preview: Some(right_panel[0]),
-                input: right_panel[1],
-                status_bar,
+                LayoutAreas {
+                    session_list: horizontal[0],
+                    preview: Some(right_panel[0]),
+                    input: Some(right_panel[1]),
+                    status_bar,
+                }
+            } else {
+                LayoutAreas {
+                    session_list: horizontal[0],
+                    preview: Some(horizontal[1]),
+                    input: None,
+                    status_bar,
+                }
             }
         } else {
-            // No preview: session list on left, input on right
-            let horizontal = ratatui::layout::Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(self.session_list_width_pct),
-                    Constraint::Percentage(100 - self.session_list_width_pct),
-                ])
-                .split(main_area);
-
+            // No preview: session list takes full width
             LayoutAreas {
-                session_list: horizontal[0],
+                session_list: main_area,
                 preview: None,
-                input: horizontal[1],
+                input: None,
                 status_bar,
             }
         }
@@ -136,8 +141,8 @@ pub struct LayoutAreas {
     pub session_list: Rect,
     /// Area for the preview panel (if shown)
     pub preview: Option<Rect>,
-    /// Area for the input widget
-    pub input: Rect,
+    /// Area for the input widget (if shown)
+    pub input: Option<Rect>,
     /// Area for the status bar
     pub status_bar: Rect,
 }
@@ -154,8 +159,19 @@ mod tests {
 
         assert!(areas.preview.is_some());
         assert!(areas.session_list.height > 0);
-        assert_eq!(areas.input.height, 3);
+        assert!(areas.input.is_none()); // Input hidden by default
         assert_eq!(areas.status_bar.height, 1);
+    }
+
+    #[test]
+    fn test_layout_with_input() {
+        let layout = Layout::new();
+        let area = Rect::new(0, 0, 100, 50);
+        let areas = layout.calculate_with_input(area, true);
+
+        assert!(areas.preview.is_some());
+        assert!(areas.input.is_some());
+        assert_eq!(areas.input.unwrap().height, 3);
     }
 
     #[test]
@@ -166,9 +182,7 @@ mod tests {
         let areas = layout.calculate(area);
 
         assert!(areas.preview.is_none());
-        // In horizontal layout without preview, input takes the right panel
-        assert!(areas.input.height > 0);
-        assert!(areas.input.width > 0);
+        assert!(areas.input.is_none());
     }
 
     #[test]

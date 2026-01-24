@@ -22,10 +22,6 @@ pub enum InputMode {
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-/// How many ticks (50ms each) before advancing spinner frame
-/// 3 ticks = 150ms per frame, ~1.5 seconds per full rotation
-const SPINNER_TICK_DIVISOR: usize = 3;
-
 /// Application state
 #[derive(Debug)]
 pub struct AppState {
@@ -53,8 +49,8 @@ pub struct AppState {
     pub cursor_position: usize,
     /// Spinner animation frame counter
     pub spinner_frame: usize,
-    /// Spinner tick counter (for speed control)
-    spinner_tick: usize,
+    /// Last spinner update time
+    last_spinner_update: std::time::Instant,
 }
 
 impl AppState {
@@ -73,15 +69,15 @@ impl AppState {
             input_buffer: String::new(),
             cursor_position: 0,
             spinner_frame: 0,
-            spinner_tick: 0,
+            last_spinner_update: std::time::Instant::now(),
         }
     }
 
-    /// Advance the spinner animation frame (called every 50ms)
+    /// Advance the spinner animation frame (time-based, ~150ms per frame)
     pub fn tick_spinner(&mut self) {
-        self.spinner_tick += 1;
-        if self.spinner_tick >= SPINNER_TICK_DIVISOR {
-            self.spinner_tick = 0;
+        let elapsed = self.last_spinner_update.elapsed();
+        if elapsed.as_millis() >= 150 {
+            self.last_spinner_update = std::time::Instant::now();
             self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
         }
     }

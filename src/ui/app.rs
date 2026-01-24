@@ -93,7 +93,8 @@ impl App {
             // Draw UI
             terminal.draw(|frame| {
                 let state = self.state.read();
-                let areas = self.layout.calculate(frame.area());
+                let show_input = state.is_input_mode();
+                let areas = self.layout.calculate_with_input(frame.area(), show_input);
 
                 // Render main components
                 SessionList::render(frame, areas.session_list, &state);
@@ -102,8 +103,10 @@ impl App {
                     PanePreview::render(frame, preview_area, &state);
                 }
 
-                // Render input widget
-                InputWidget::render(frame, areas.input, &state);
+                // Render input widget only when in input mode
+                if let Some(input_area) = areas.input {
+                    InputWidget::render(frame, input_area, &state);
+                }
 
                 StatusBar::render(frame, areas.status_bar, &state);
 
@@ -113,8 +116,8 @@ impl App {
                     HelpPopup::render(frame, popup_area);
                 }
 
-                // Selection popup for AskUserQuestion (hide in passthrough mode)
-                if !state.is_passthrough_mode() {
+                // Selection popup for AskUserQuestion (only show in input mode)
+                if state.is_input_mode() {
                     if let Some(agent) = state.selected_agent() {
                         if let crate::agents::AgentStatus::AwaitingApproval {
                             approval_type,
