@@ -137,7 +137,16 @@ impl App {
             }
 
             // Handle events with timeout
-            if event::poll(Duration::from_millis(50))? {
+            // Use shorter timeout in passthrough mode for better responsiveness
+            let poll_timeout = {
+                let state = self.state.read();
+                if state.is_passthrough_mode() {
+                    Duration::from_millis(1) // Fast response in passthrough
+                } else {
+                    Duration::from_millis(50)
+                }
+            };
+            if event::poll(poll_timeout)? {
                 if let Event::Key(key) = event::read()? {
                     self.handle_key(key.code, key.modifiers)?;
                 }
@@ -511,6 +520,7 @@ impl App {
                 } else {
                     // Send character as literal
                     self.tmux_client.send_keys_literal(&target, &c.to_string())?;
+                    self.refresh_preview(&target);
                     return Ok(());
                 }
             }
@@ -530,7 +540,23 @@ impl App {
         };
 
         let _ = self.tmux_client.send_keys(&target, &key_str);
+        self.refresh_preview(&target);
         Ok(())
+    }
+
+    /// Refresh preview content for the given target
+    fn refresh_preview(&self, target: &str) {
+        // Small delay to let tmux process the key
+        std::thread::sleep(Duration::from_millis(5));
+
+        if let Ok(content) = self.tmux_client.capture_pane_plain(target) {
+            let title = self.tmux_client.get_pane_title(target).unwrap_or_default();
+            let mut state = self.state.write();
+            if let Some(agent) = state.agents.get_mut(target) {
+                agent.last_content = content;
+                agent.title = title;
+            }
+        }
     }
 }
 
