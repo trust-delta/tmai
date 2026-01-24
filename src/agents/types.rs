@@ -14,46 +14,53 @@ pub enum AgentType {
 
 impl AgentType {
     /// Parse agent type from command name and detection strings
-    pub fn from_detection(command: &str, title: &str, cmdline: &str) -> Option<Self> {
+    /// Note: window_name is intentionally NOT used for detection because
+    /// all panes in a window share the same window_name, causing false positives.
+    pub fn from_detection(command: &str, title: &str, _window_name: &str) -> Option<Self> {
         let cmd_lower = command.to_lowercase();
         let title_lower = title.to_lowercase();
-        let cmdline_lower = cmdline.to_lowercase();
 
         // Claude Code detection
-        if cmd_lower.contains("claude")
-            || title_lower.contains("claude")
-            || cmdline_lower.contains("claude")
-            || title.contains('✳')
+        // Primary: command is "claude" or version-like (e.g., "2.1.11")
+        // Secondary: title contains ✳ (idle indicator) or braille spinners
+        if cmd_lower == "claude"
             || Self::is_version_like(command)
+            || title.contains('✳')
+            || Self::has_braille_spinner(title)
         {
             return Some(AgentType::ClaudeCode);
         }
 
         // OpenCode detection
-        if cmd_lower.contains("opencode")
-            || title_lower.contains("opencode")
-            || cmdline_lower.contains("opencode")
-        {
+        if cmd_lower == "opencode" || title_lower.contains("opencode") {
             return Some(AgentType::OpenCode);
         }
 
         // Codex CLI detection
-        if cmd_lower.contains("codex")
-            || title_lower.contains("codex")
-            || cmdline_lower.contains("codex")
-        {
+        if cmd_lower == "codex" || title_lower.contains("codex") {
             return Some(AgentType::CodexCli);
         }
 
         // Gemini CLI detection
-        if cmd_lower.contains("gemini")
-            || title_lower.contains("gemini")
-            || cmdline_lower.contains("gemini")
-        {
+        if cmd_lower == "gemini" || title_lower.contains("gemini") {
             return Some(AgentType::GeminiCli);
         }
 
         None
+    }
+
+    /// Check if title contains braille spinner characters (Claude Code processing indicator)
+    fn has_braille_spinner(title: &str) -> bool {
+        // Braille pattern characters used by Claude Code spinner
+        const BRAILLE_SPINNERS: &[char] = &[
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
+            '⠐', '⠠', '⠄', '⠂', '⠁', '⠈', '⠃', '⠉', '⠊', '⠑',
+            '⠒', '⠓', '⠔', '⠕', '⠖', '⠗', '⠘', '⠚', '⠛', '⠜',
+            '⠝', '⠞', '⠟', '⠡', '⠢', '⠣', '⠤', '⠥', '⠨', '⠩',
+            '⠪', '⠫', '⠬', '⠭', '⠮', '⠯', '⠰', '⠱', '⠲', '⠳',
+            '⠵', '⠶', '⠷', '⠺', '⠻', '⠽', '⠾', '⠿',
+        ];
+        title.chars().any(|c| BRAILLE_SPINNERS.contains(&c))
     }
 
     /// Check if a string looks like a version number (e.g., "2.1.11")
@@ -293,9 +300,15 @@ mod tests {
             Some(AgentType::ClaudeCode)
         );
 
-        // Claude Code via title with icon
+        // Claude Code via title with idle icon
         assert_eq!(
             AgentType::from_detection("node", "✳ Working", ""),
+            Some(AgentType::ClaudeCode)
+        );
+
+        // Claude Code via title with braille spinner
+        assert_eq!(
+            AgentType::from_detection("node", "⠐ Processing", ""),
             Some(AgentType::ClaudeCode)
         );
 
@@ -323,8 +336,20 @@ mod tests {
             Some(AgentType::GeminiCli)
         );
 
+        // Unknown - bash is not an agent even if window_name contains "claude"
+        assert_eq!(AgentType::from_detection("bash", "", "claude"), None);
+
         // Unknown
         assert_eq!(AgentType::from_detection("fish", "~", "fish"), None);
+    }
+
+    #[test]
+    fn test_has_braille_spinner() {
+        assert!(AgentType::has_braille_spinner("⠋ Working"));
+        assert!(AgentType::has_braille_spinner("⠿ Done"));
+        assert!(AgentType::has_braille_spinner("⠐ tmaiフォーカス外れ問題"));
+        assert!(!AgentType::has_braille_spinner("✳ Idle"));
+        assert!(!AgentType::has_braille_spinner("Normal title"));
     }
 
     #[test]

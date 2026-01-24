@@ -53,7 +53,8 @@ impl ClaudeCodeDetector {
                 r"(?i)\[y/n\]|\[Y/n\]|\[yes/no\]|\(Y\)es\s*/\s*\(N\)o|Yes\s*/\s*No|y/n|Allow\?|Do you want to (allow|proceed|continue|run|execute)",
             )
             .unwrap(),
-            choice_pattern: Regex::new(r"^\s*(\d+)\.\s+(.+)$").unwrap(),
+            // Choice pattern: handles "> 1. Option" or "  1. Option" or "❯ 1. Option"
+            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$").unwrap(),
             error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
         }
     }
@@ -66,15 +67,35 @@ impl ClaudeCodeDetector {
         }
 
         // Find the last prompt marker (❯) - choices should be BEFORE it
+        // Note: ❯ followed by number is a selection cursor, not a prompt
         let last_prompt_idx = lines.iter().rposition(|line| {
             let trimmed = line.trim();
-            // Only count ❯ at the start of a line (not as selection marker)
-            trimmed == "❯" || (trimmed.starts_with('❯') && trimmed.len() < 3)
+            // Only count ❯ as prompt if it's alone or followed by space (not "❯ 1." pattern)
+            if trimmed == "❯" || trimmed == "❯ " {
+                return true;
+            }
+            // Check if ❯ is followed by a number (selection cursor)
+            if trimmed.starts_with('❯') {
+                let after_marker = trimmed.trim_start_matches('❯').trim_start();
+                // If followed by digit, it's a selection cursor, not a prompt
+                if after_marker.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    return false;
+                }
+                // Very short ❯ line could be prompt
+                return trimmed.len() < 3;
+            }
+            false
         });
 
+        // If no prompt found, search entire content; otherwise search before prompt
         let search_end = last_prompt_idx.unwrap_or(lines.len());
-        let search_start = search_end.saturating_sub(25);
-        let check_lines = &lines[search_start..search_end];
+        // Also search the entire content if prompt is at the very end
+        let search_start = if search_end == lines.len() {
+            lines.len().saturating_sub(30)
+        } else {
+            search_end.saturating_sub(25)
+        };
+        let check_lines = &lines[search_start..lines.len().max(search_end)];
 
         if check_lines.is_empty() {
             return None;
@@ -88,7 +109,9 @@ impl ClaudeCodeDetector {
         for (i, line) in check_lines.iter().enumerate() {
             let trimmed = line.trim();
 
-            // Skip UI elements
+            // Skip UI elements (box drawing characters)
+            // Only clear choices if we haven't found any yet (UI before choices)
+            // After choices are found, UI elements are just decorations
             if trimmed.starts_with('│')
                 || trimmed.starts_with('├')
                 || trimmed.starts_with('└')
@@ -96,15 +119,16 @@ impl ClaudeCodeDetector {
                 || trimmed.starts_with('─')
                 || trimmed.starts_with('✻')
             {
-                if !choices.is_empty() {
-                    choices.clear();
-                    first_choice_idx = None;
-                    last_choice_idx = None;
+                // Only reset if no choices found yet
+                if choices.is_empty() {
+                    continue;
                 }
+                // After finding choices, UI elements mark the end of choices section
+                // but don't clear them
                 continue;
             }
 
-            // Check for numbered choices (e.g., "1. Option text")
+            // Check for numbered choices (e.g., "1. Option text" or "> 1. Option text")
             if let Some(cap) = self.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
                     let choice_text = cap[2].trim();
@@ -126,16 +150,14 @@ impl ClaudeCodeDetector {
                         last_choice_idx = None;
                     }
                 }
-            } else if !choices.is_empty() && !trimmed.is_empty() && trimmed.len() > 30 {
-                choices.clear();
-                first_choice_idx = None;
-                last_choice_idx = None;
             }
+            // Note: We no longer clear choices on long lines, as AskUserQuestion
+            // displays multi-line options with description lines below each choice
         }
 
-        // Choices must be near the end
+        // Choices must be near the end (allow for UI hints like "Enter to select")
         if let Some(last_idx) = last_choice_idx {
-            if check_lines.len() - last_idx > 8 {
+            if check_lines.len() - last_idx > 15 {
                 return None;
             }
         }
@@ -448,6 +470,97 @@ Which option do you prefer?
                 assert!(matches!(approval_type, ApprovalType::UserQuestion { .. }));
             }
             _ => panic!("Expected AwaitingApproval with UserQuestion"),
+        }
+    }
+
+    #[test]
+    fn test_numbered_choices_with_cursor() {
+        let detector = ClaudeCodeDetector::new();
+        // Format with > cursor marker on selected option
+        let content = r#"
+Which option do you prefer?
+
+> 1. Option A
+  2. Option B
+  3. Option C
+
+❯
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 3);
+                } else {
+                    panic!("Expected UserQuestion");
+                }
+            }
+            _ => panic!("Expected AwaitingApproval with UserQuestion"),
+        }
+    }
+
+    #[test]
+    fn test_numbered_choices_with_descriptions() {
+        let detector = ClaudeCodeDetector::new();
+        // Real AskUserQuestion format with multi-line options
+        let content = r#"
+───────────────────────────────────────────────────────────────────────────────
+ ☐ 動作確認
+
+数字キーで選択できますか？
+
+❯ 1. 1番: 動作した
+     数字キーで1を押して選択できた
+  2. 2番: まだ動かない
+     数字キーが反応しない
+  3. 3番: 別の問題
+     他の問題が発生した
+  4. Type something.
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_numbered_choices_with_ui_hints() {
+        let detector = ClaudeCodeDetector::new();
+        // Real format with UI hints at the bottom
+        let content = r#"
+───────────────────────────────────────────────────────────────────────────────
+ ☐ コンテンツ取得
+
+デバッグのため、コンテンツを貼り付けてもらえますか？
+
+❯ 1. 貼り付ける
+     「その他」でコンテンツを入力
+  2. 別のアプローチ
+     デバッグモードを追加して原因を特定
+  3. Type something.
+
+───────────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
         }
     }
 }

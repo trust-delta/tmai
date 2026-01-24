@@ -16,73 +16,110 @@ impl StatusBar {
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         let mut spans = vec![];
 
-        // Key hints
-        spans.push(Span::styled(
-            " j/k",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(":Nav ", Style::default().fg(Color::DarkGray)));
+        // Show different hints based on input mode
+        if state.is_input_mode() {
+            // Input mode hints
+            spans.push(Span::styled(
+                " -- INPUT -- ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(" ", Style::default()));
 
-        spans.push(Span::styled(
-            "y",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            "/",
-            Style::default().fg(Color::DarkGray),
-        ));
-        spans.push(Span::styled(
-            "n",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            ":Approve ",
-            Style::default().fg(Color::DarkGray),
-        ));
+            spans.push(Span::styled(
+                "Enter",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Send ", Style::default().fg(Color::DarkGray)));
 
-        spans.push(Span::styled(
-            "1-9",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            ":Select ",
-            Style::default().fg(Color::DarkGray),
-        ));
+            spans.push(Span::styled(
+                "Esc",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Cancel ", Style::default().fg(Color::DarkGray)));
 
-        spans.push(Span::styled(
-            "f",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            ":Focus ",
-            Style::default().fg(Color::DarkGray),
-        ));
+            spans.push(Span::styled(
+                "<-/->",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Move ", Style::default().fg(Color::DarkGray)));
+        } else {
+            // Normal mode hints
+            spans.push(Span::styled(
+                " j/k",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Nav ", Style::default().fg(Color::DarkGray)));
 
-        spans.push(Span::styled(
-            "?",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(":Help ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "y",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                "/",
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                "n",
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Approve ",
+                Style::default().fg(Color::DarkGray),
+            ));
 
-        spans.push(Span::styled(
-            "q",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(":Quit ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "i",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Input ",
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            spans.push(Span::styled(
+                "1-9",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Select ",
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            spans.push(Span::styled(
+                "?",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Help ", Style::default().fg(Color::DarkGray)));
+
+            spans.push(Span::styled(
+                "q",
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":Quit ", Style::default().fg(Color::DarkGray)));
+        }
 
         // Spacer
         spans.push(Span::raw(" "));

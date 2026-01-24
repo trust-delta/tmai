@@ -44,9 +44,23 @@ impl HelpPopup {
             )]),
             Self::help_line("y", "Approve/Accept (send 'y')"),
             Self::help_line("n", "Reject/Decline (send 'n')"),
-            Self::help_line("1-9", "Select numbered option"),
+            Self::help_line("1-9", "Select/toggle option"),
+            Self::help_line("Space", "Toggle (multi-select)"),
+            Self::help_line("Enter", "Confirm multi-select"),
+            Self::help_line("o", "Input 'Other' for question"),
             Self::help_line("f", "Focus pane in tmux"),
-            Self::help_line("Enter", "Toggle selection"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Input Mode",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Self::help_line("i / /", "Enter input mode"),
+            Self::help_line("Enter", "Send input"),
+            Self::help_line("Esc", "Cancel input"),
+            Self::help_line("← / →", "Move cursor"),
+            Self::help_line("Home/End", "Jump to start/end"),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "General",

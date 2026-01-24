@@ -23,6 +23,7 @@ regex = "1"
 chrono = "0.4"
 parking_lot = "0.12"
 ansi-to-tui = "8"
+unicode-width = "0.2"
 
 [dev-dependencies]
 pretty_assertions = "1"

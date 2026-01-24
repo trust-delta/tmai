@@ -12,7 +12,7 @@ use crate::monitor::{PollMessage, Poller};
 use crate::state::{AppState, SharedState};
 use crate::tmux::TmuxClient;
 
-use super::components::{HelpPopup, PanePreview, SelectionPopup, SessionList, StatusBar};
+use super::components::{HelpPopup, InputWidget, PanePreview, SelectionPopup, SessionList, StatusBar};
 use super::Layout;
 
 /// Main application
@@ -102,6 +102,9 @@ impl App {
                     PanePreview::render(frame, preview_area, &state);
                 }
 
+                // Render input widget
+                InputWidget::render(frame, areas.input, &state);
+
                 StatusBar::render(frame, areas.status_bar, &state);
 
                 // Render popups
@@ -124,6 +127,12 @@ impl App {
                     }
                 }
             })?;
+
+            // Tick spinner animation
+            {
+                let mut state = self.state.write();
+                state.tick_spinner();
+            }
 
             // Handle events with timeout
             if event::poll(Duration::from_millis(50))? {
@@ -152,18 +161,59 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
-        let mut state = self.state.write();
+        // Check state without holding the lock for the entire function
+        let (show_help, is_input_mode) = {
+            let state = self.state.read();
+            (state.show_help, state.is_input_mode())
+        };
 
-        // Handle help popup
-        if state.show_help {
+        // Handle help popup first
+        if show_help {
+            let mut state = self.state.write();
             state.show_help = false;
             return Ok(());
         }
+
+        // Dispatch based on input mode
+        if is_input_mode {
+            self.handle_input_mode_key(code, modifiers)
+        } else {
+            self.handle_normal_mode_key(code, modifiers)
+        }
+    }
+
+    /// Handle keys in normal (navigation) mode
+    fn handle_normal_mode_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+        let mut state = self.state.write();
 
         match code {
             // Quit
             KeyCode::Char('q') | KeyCode::Esc => {
                 state.quit();
+            }
+
+            // Enter input mode
+            KeyCode::Char('i') | KeyCode::Char('/') => {
+                state.enter_input_mode();
+            }
+
+            // "Other" input for AskUserQuestion
+            KeyCode::Char('o') => {
+                // Check if we're in an AskUserQuestion state
+                if let Some(target) = state.selected_target() {
+                    let is_user_question = state.agents.get(target).map_or(false, |agent| {
+                        matches!(
+                            &agent.status,
+                            crate::agents::AgentStatus::AwaitingApproval {
+                                approval_type: ApprovalType::UserQuestion { .. },
+                                ..
+                            }
+                        )
+                    });
+                    if is_user_question {
+                        state.enter_input_mode();
+                    }
+                }
             }
 
             // Navigation
@@ -217,32 +267,101 @@ impl App {
                 let num = c.to_digit(10).unwrap() as usize;
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    // Check if it's a UserQuestion and get choice count
-                    let choice_count = state.agents.get(&target).and_then(|agent| {
+                    // Check if it's a UserQuestion and get choices + multi_select
+                    let question_info = state.agents.get(&target).and_then(|agent| {
                         if let crate::agents::AgentStatus::AwaitingApproval {
-                            approval_type: ApprovalType::UserQuestion { choices, .. },
+                            approval_type:
+                                ApprovalType::UserQuestion {
+                                    choices,
+                                    multi_select,
+                                },
                             ..
                         } = &agent.status
                         {
-                            Some(choices.len())
+                            Some((choices.clone(), *multi_select))
                         } else {
                             None
                         }
                     });
 
-                    if let Some(count) = choice_count {
-                        if num <= count {
-                            drop(state);
-                            // Navigate to the option and select
-                            // First, send up arrows to go to first option, then down to desired
-                            for _ in 0..count {
-                                let _ = self.tmux_client.send_keys(&target, "Up");
+                    if let Some((choices, multi_select)) = question_info {
+                        let count = choices.len();
+                        // count+1 for "Other" option
+                        let total_options = count + 1;
+                        if num <= total_options {
+                            // Check if this is the "Other" option or "Type something" choice
+                            let is_other = num == total_options
+                                || choices
+                                    .get(num - 1)
+                                    .map(|c| c.to_lowercase().contains("type something"))
+                                    .unwrap_or(false);
+
+                            if is_other {
+                                // "Other" or "Type something" - enter input mode
+                                drop(state);
+                                // Send the number to select it
+                                let _ = self.tmux_client.send_keys(&target, &num.to_string());
+                                // Then enter tmai input mode for user to type
+                                let mut state = self.state.write();
+                                state.enter_input_mode();
+                            } else {
+                                drop(state);
+                                // Send the number key directly
+                                let _ = self.tmux_client.send_keys(&target, &num.to_string());
+                                if !multi_select {
+                                    // Single select: confirm with Enter
+                                    let _ = self.tmux_client.send_keys(&target, "Enter");
+                                }
                             }
-                            for _ in 1..num {
-                                let _ = self.tmux_client.send_keys(&target, "Down");
-                            }
-                            let _ = self.tmux_client.send_keys(&target, "Enter");
                         }
+                    }
+                }
+            }
+
+            // Space key for toggle in multi-select UserQuestion
+            KeyCode::Char(' ') => {
+                if let Some(target) = state.selected_target() {
+                    let target = target.to_string();
+                    // Check if it's a multi-select UserQuestion
+                    let is_multi_select = state.agents.get(&target).map_or(false, |agent| {
+                        matches!(
+                            &agent.status,
+                            crate::agents::AgentStatus::AwaitingApproval {
+                                approval_type: ApprovalType::UserQuestion {
+                                    multi_select: true,
+                                    ..
+                                },
+                                ..
+                            }
+                        )
+                    });
+                    if is_multi_select {
+                        drop(state);
+                        let _ = self.tmux_client.send_keys(&target, "Space");
+                    }
+                }
+            }
+
+            // Enter key for confirming multi-select
+            KeyCode::Enter => {
+                if let Some(target) = state.selected_target() {
+                    let target = target.to_string();
+                    // Check if it's a multi-select UserQuestion
+                    let is_multi_select = state.agents.get(&target).map_or(false, |agent| {
+                        matches!(
+                            &agent.status,
+                            crate::agents::AgentStatus::AwaitingApproval {
+                                approval_type: ApprovalType::UserQuestion {
+                                    multi_select: true,
+                                    ..
+                                },
+                                ..
+                            }
+                        )
+                    });
+                    if is_multi_select {
+                        drop(state);
+                        let _ = self.tmux_client.send_keys(&target, "Enter");
                     }
                 }
             }
@@ -270,6 +389,77 @@ impl App {
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle keys in input mode
+    fn handle_input_mode_key(&mut self, code: KeyCode, _modifiers: KeyModifiers) -> Result<()> {
+        match code {
+            // Exit input mode
+            KeyCode::Esc => {
+                let mut state = self.state.write();
+                state.exit_input_mode();
+            }
+
+            // Send input
+            KeyCode::Enter => {
+                self.send_input()?;
+            }
+
+            // Text editing
+            KeyCode::Char(c) => {
+                let mut state = self.state.write();
+                state.input_char(c);
+            }
+            KeyCode::Backspace => {
+                let mut state = self.state.write();
+                state.input_backspace();
+            }
+            KeyCode::Delete => {
+                let mut state = self.state.write();
+                state.input_delete();
+            }
+
+            // Cursor movement
+            KeyCode::Left => {
+                let mut state = self.state.write();
+                state.cursor_left();
+            }
+            KeyCode::Right => {
+                let mut state = self.state.write();
+                state.cursor_right();
+            }
+            KeyCode::Home => {
+                let mut state = self.state.write();
+                state.cursor_home();
+            }
+            KeyCode::End => {
+                let mut state = self.state.write();
+                state.cursor_end();
+            }
+
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Send the input buffer content to the selected pane
+    fn send_input(&mut self) -> Result<()> {
+        let mut state = self.state.write();
+        let input = state.take_input();
+        let target = state.selected_target().map(|s| s.to_string());
+        state.exit_input_mode();
+        drop(state);
+
+        if !input.is_empty() {
+            if let Some(target) = target {
+                // Send text as literal (preserves special characters)
+                self.tmux_client.send_keys_literal(&target, &input)?;
+                // Send Enter to submit
+                self.tmux_client.send_keys(&target, "Enter")?;
+            }
+        }
         Ok(())
     }
 }

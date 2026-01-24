@@ -15,11 +15,12 @@ pub struct SessionList;
 impl SessionList {
     /// Render the session list
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+        let spinner_char = state.spinner_char();
         let items: Vec<ListItem> = state
             .agent_order
             .iter()
             .filter_map(|id| state.agents.get(id))
-            .map(|agent| Self::create_list_item(agent))
+            .map(|agent| Self::create_list_item(agent, spinner_char))
             .collect();
 
         let title = format!(
@@ -53,8 +54,11 @@ impl SessionList {
         frame.render_stateful_widget(list, area, &mut list_state);
     }
 
-    fn create_list_item(agent: &MonitoredAgent) -> ListItem<'static> {
-        let status_indicator = agent.status.indicator();
+    fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {
+        let status_indicator = match &agent.status {
+            AgentStatus::Processing { .. } => spinner_char.to_string(),
+            _ => agent.status.indicator().to_string(),
+        };
         let status_color = Self::status_color(&agent.status);
 
         let mut spans = vec![

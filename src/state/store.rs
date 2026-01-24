@@ -7,6 +7,19 @@ use crate::agents::MonitoredAgent;
 /// Shared state type alias
 pub type SharedState = Arc<RwLock<AppState>>;
 
+/// Input mode for the application
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputMode {
+    /// Normal navigation mode
+    #[default]
+    Normal,
+    /// Text input mode
+    Input,
+}
+
+/// Spinner frames for processing animation
+pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 /// Application state
 #[derive(Debug)]
 pub struct AppState {
@@ -26,6 +39,14 @@ pub struct AppState {
     pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
     /// Whether the app is running
     pub running: bool,
+    /// Current input mode
+    pub input_mode: InputMode,
+    /// Input buffer for text entry
+    pub input_buffer: String,
+    /// Cursor position in input buffer (byte offset)
+    pub cursor_position: usize,
+    /// Spinner animation frame counter
+    pub spinner_frame: usize,
 }
 
 impl AppState {
@@ -40,7 +61,21 @@ impl AppState {
             error_message: None,
             last_poll: None,
             running: true,
+            input_mode: InputMode::Normal,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            spinner_frame: 0,
         }
+    }
+
+    /// Advance the spinner animation frame
+    pub fn tick_spinner(&mut self) {
+        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+    }
+
+    /// Get the current spinner character
+    pub fn spinner_char(&self) -> char {
+        SPINNER_FRAMES[self.spinner_frame]
     }
 
     /// Create a shared state
@@ -184,6 +219,103 @@ impl AppState {
     /// Stop the application
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    // =========================================
+    // Input mode methods
+    // =========================================
+
+    /// Enter input mode
+    pub fn enter_input_mode(&mut self) {
+        self.input_mode = InputMode::Input;
+    }
+
+    /// Exit input mode and clear buffer
+    pub fn exit_input_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.input_buffer.clear();
+        self.cursor_position = 0;
+    }
+
+    /// Check if in input mode
+    pub fn is_input_mode(&self) -> bool {
+        self.input_mode == InputMode::Input
+    }
+
+    /// Get the input buffer
+    pub fn get_input(&self) -> &str {
+        &self.input_buffer
+    }
+
+    /// Get cursor position
+    pub fn get_cursor_position(&self) -> usize {
+        self.cursor_position
+    }
+
+    /// Insert a character at cursor position
+    pub fn input_char(&mut self, c: char) {
+        self.input_buffer.insert(self.cursor_position, c);
+        self.cursor_position += c.len_utf8();
+    }
+
+    /// Delete character before cursor (backspace)
+    pub fn input_backspace(&mut self) {
+        if self.cursor_position > 0 {
+            // Find the previous character boundary
+            let prev_char_boundary = self.input_buffer[..self.cursor_position]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.input_buffer.remove(prev_char_boundary);
+            self.cursor_position = prev_char_boundary;
+        }
+    }
+
+    /// Delete character at cursor (delete key)
+    pub fn input_delete(&mut self) {
+        if self.cursor_position < self.input_buffer.len() {
+            self.input_buffer.remove(self.cursor_position);
+        }
+    }
+
+    /// Move cursor left
+    pub fn cursor_left(&mut self) {
+        if self.cursor_position > 0 {
+            // Find the previous character boundary
+            self.cursor_position = self.input_buffer[..self.cursor_position]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    /// Move cursor right
+    pub fn cursor_right(&mut self) {
+        if self.cursor_position < self.input_buffer.len() {
+            // Find the next character boundary
+            if let Some(c) = self.input_buffer[self.cursor_position..].chars().next() {
+                self.cursor_position += c.len_utf8();
+            }
+        }
+    }
+
+    /// Move cursor to start
+    pub fn cursor_home(&mut self) {
+        self.cursor_position = 0;
+    }
+
+    /// Move cursor to end
+    pub fn cursor_end(&mut self) {
+        self.cursor_position = self.input_buffer.len();
+    }
+
+    /// Take the input buffer content and clear it
+    pub fn take_input(&mut self) -> String {
+        let input = std::mem::take(&mut self.input_buffer);
+        self.cursor_position = 0;
+        input
     }
 }
 
