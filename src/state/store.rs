@@ -1,0 +1,279 @@
+use parking_lot::RwLock;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::agents::MonitoredAgent;
+
+/// Shared state type alias
+pub type SharedState = Arc<RwLock<AppState>>;
+
+/// Application state
+#[derive(Debug)]
+pub struct AppState {
+    /// All monitored agents by target ID
+    pub agents: HashMap<String, MonitoredAgent>,
+    /// Order of agents for display
+    pub agent_order: Vec<String>,
+    /// Currently selected agent index
+    pub selected_index: usize,
+    /// Whether help popup is shown
+    pub show_help: bool,
+    /// Preview scroll offset
+    pub preview_scroll: u16,
+    /// Error message to display
+    pub error_message: Option<String>,
+    /// Last poll timestamp
+    pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether the app is running
+    pub running: bool,
+}
+
+impl AppState {
+    /// Create a new application state
+    pub fn new() -> Self {
+        Self {
+            agents: HashMap::new(),
+            agent_order: Vec::new(),
+            selected_index: 0,
+            show_help: false,
+            preview_scroll: 0,
+            error_message: None,
+            last_poll: None,
+            running: true,
+        }
+    }
+
+    /// Create a shared state
+    pub fn shared() -> SharedState {
+        Arc::new(RwLock::new(Self::new()))
+    }
+
+    /// Get the currently selected agent
+    pub fn selected_agent(&self) -> Option<&MonitoredAgent> {
+        self.agent_order
+            .get(self.selected_index)
+            .and_then(|id| self.agents.get(id))
+    }
+
+    /// Get a mutable reference to the selected agent
+    pub fn selected_agent_mut(&mut self) -> Option<&mut MonitoredAgent> {
+        if let Some(id) = self.agent_order.get(self.selected_index).cloned() {
+            self.agents.get_mut(&id)
+        } else {
+            None
+        }
+    }
+
+    /// Get the selected agent's target ID
+    pub fn selected_target(&self) -> Option<&str> {
+        self.agent_order
+            .get(self.selected_index)
+            .map(|s| s.as_str())
+    }
+
+    /// Update agents from a new list
+    pub fn update_agents(&mut self, agents: Vec<MonitoredAgent>) {
+        let new_ids: Vec<String> = agents.iter().map(|a| a.id.clone()).collect();
+
+        // Remove agents that no longer exist
+        self.agents.retain(|id, _| new_ids.contains(id));
+
+        // Update or add new agents
+        for agent in agents {
+            let id = agent.id.clone();
+            if let Some(existing) = self.agents.get_mut(&id) {
+                existing.status = agent.status;
+                existing.last_content = agent.last_content;
+                existing.title = agent.title;
+                existing.last_update = agent.last_update;
+            } else {
+                self.agents.insert(id.clone(), agent);
+            }
+        }
+
+        // Update order, preserving selection if possible
+        let old_selected = self.selected_target().map(|s| s.to_string());
+        self.agent_order = new_ids;
+
+        // Try to preserve selection
+        if let Some(old_id) = old_selected {
+            if let Some(new_index) = self.agent_order.iter().position(|id| id == &old_id) {
+                self.selected_index = new_index;
+            }
+        }
+
+        // Ensure selection is valid
+        if self.selected_index >= self.agent_order.len() && !self.agent_order.is_empty() {
+            self.selected_index = self.agent_order.len() - 1;
+        }
+
+        self.last_poll = Some(chrono::Utc::now());
+    }
+
+    /// Move selection up
+    pub fn select_previous(&mut self) {
+        if !self.agent_order.is_empty() && self.selected_index > 0 {
+            self.selected_index -= 1;
+            self.preview_scroll = 0;
+        }
+    }
+
+    /// Move selection down
+    pub fn select_next(&mut self) {
+        if !self.agent_order.is_empty() && self.selected_index < self.agent_order.len() - 1 {
+            self.selected_index += 1;
+            self.preview_scroll = 0;
+        }
+    }
+
+    /// Select first agent
+    pub fn select_first(&mut self) {
+        if !self.agent_order.is_empty() {
+            self.selected_index = 0;
+            self.preview_scroll = 0;
+        }
+    }
+
+    /// Select last agent
+    pub fn select_last(&mut self) {
+        if !self.agent_order.is_empty() {
+            self.selected_index = self.agent_order.len() - 1;
+            self.preview_scroll = 0;
+        }
+    }
+
+    /// Toggle help popup
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+    }
+
+    /// Scroll preview down
+    pub fn scroll_preview_down(&mut self, amount: u16) {
+        self.preview_scroll = self.preview_scroll.saturating_add(amount);
+    }
+
+    /// Scroll preview up
+    pub fn scroll_preview_up(&mut self, amount: u16) {
+        self.preview_scroll = self.preview_scroll.saturating_sub(amount);
+    }
+
+    /// Get agents that need attention (awaiting approval or error)
+    pub fn agents_needing_attention(&self) -> Vec<&MonitoredAgent> {
+        self.agent_order
+            .iter()
+            .filter_map(|id| self.agents.get(id))
+            .filter(|a| a.status.needs_attention())
+            .collect()
+    }
+
+    /// Get count of agents needing attention
+    pub fn attention_count(&self) -> usize {
+        self.agents_needing_attention().len()
+    }
+
+    /// Set error message
+    pub fn set_error(&mut self, message: String) {
+        self.error_message = Some(message);
+    }
+
+    /// Clear error message
+    pub fn clear_error(&mut self) {
+        self.error_message = None;
+    }
+
+    /// Stop the application
+    pub fn quit(&mut self) {
+        self.running = false;
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::{AgentStatus, AgentType};
+
+    fn create_test_agent(id: &str) -> MonitoredAgent {
+        MonitoredAgent::new(
+            id.to_string(),
+            AgentType::ClaudeCode,
+            "Test".to_string(),
+            "/home".to_string(),
+            1234,
+            "main".to_string(),
+            0,
+            0,
+        )
+    }
+
+    #[test]
+    fn test_new_state() {
+        let state = AppState::new();
+        assert!(state.agents.is_empty());
+        assert!(state.running);
+    }
+
+    #[test]
+    fn test_update_agents() {
+        let mut state = AppState::new();
+        let agents = vec![create_test_agent("main:0.0"), create_test_agent("main:0.1")];
+
+        state.update_agents(agents);
+
+        assert_eq!(state.agents.len(), 2);
+        assert_eq!(state.agent_order.len(), 2);
+    }
+
+    #[test]
+    fn test_selection() {
+        let mut state = AppState::new();
+        let agents = vec![
+            create_test_agent("main:0.0"),
+            create_test_agent("main:0.1"),
+            create_test_agent("main:0.2"),
+        ];
+        state.update_agents(agents);
+
+        assert_eq!(state.selected_index, 0);
+
+        state.select_next();
+        assert_eq!(state.selected_index, 1);
+
+        state.select_next();
+        assert_eq!(state.selected_index, 2);
+
+        state.select_next();
+        assert_eq!(state.selected_index, 2); // Can't go past end
+
+        state.select_previous();
+        assert_eq!(state.selected_index, 1);
+
+        state.select_first();
+        assert_eq!(state.selected_index, 0);
+
+        state.select_last();
+        assert_eq!(state.selected_index, 2);
+    }
+
+    #[test]
+    fn test_attention_count() {
+        let mut state = AppState::new();
+        let mut agent1 = create_test_agent("main:0.0");
+        agent1.status = AgentStatus::Idle;
+
+        let mut agent2 = create_test_agent("main:0.1");
+        agent2.status = AgentStatus::AwaitingApproval {
+            approval_type: crate::agents::ApprovalType::FileEdit,
+            details: String::new(),
+        };
+
+        state.update_agents(vec![agent1, agent2]);
+
+        assert_eq!(state.attention_count(), 1);
+    }
+}
