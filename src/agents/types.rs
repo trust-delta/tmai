@@ -229,8 +229,10 @@ pub struct MonitoredAgent {
     pub status: AgentStatus,
     /// Pane title
     pub title: String,
-    /// Last captured content
+    /// Last captured content (plain text for detection)
     pub last_content: String,
+    /// Last captured content with ANSI codes (for preview)
+    pub last_content_ansi: String,
     /// Working directory
     pub cwd: String,
     /// Process ID
@@ -266,6 +268,7 @@ impl MonitoredAgent {
             status: AgentStatus::Unknown,
             title,
             last_content: String::new(),
+            last_content_ansi: String::new(),
             cwd,
             pid,
             session,
@@ -277,9 +280,10 @@ impl MonitoredAgent {
     }
 
     /// Update the agent's status and content
-    pub fn update(&mut self, status: AgentStatus, content: String, title: String) {
+    pub fn update(&mut self, status: AgentStatus, content: String, content_ansi: String, title: String) {
         self.status = status;
         self.last_content = content;
+        self.last_content_ansi = content_ansi;
         self.title = title;
         self.last_update = chrono::Utc::now();
     }

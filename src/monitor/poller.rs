@@ -93,8 +93,9 @@ impl Poller {
 
         for pane in panes {
             if let Some(agent_type) = pane.detect_agent_type() {
-                // Capture pane content
+                // Capture pane content (plain for detection, ANSI for preview)
                 let content = self.client.capture_pane_plain(&pane.target).unwrap_or_default();
+                let content_ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
                 let title = self.client.get_pane_title(&pane.target).unwrap_or(pane.title.clone());
 
                 // Detect status using appropriate detector
@@ -113,6 +114,7 @@ impl Poller {
                 );
                 agent.status = status;
                 agent.last_content = content;
+                agent.last_content_ansi = content_ansi;
 
                 agents.push(agent);
             }
@@ -144,6 +146,7 @@ pub fn detect_agent_from_pane(
     let agent_type = pane.detect_agent_type()?;
 
     let content = client.capture_pane_plain(&pane.target).unwrap_or_default();
+    let content_ansi = client.capture_pane(&pane.target).unwrap_or_default();
     let title = client.get_pane_title(&pane.target).unwrap_or(pane.title.clone());
 
     let detector = get_detector(&agent_type);
@@ -161,6 +164,7 @@ pub fn detect_agent_from_pane(
     );
     agent.status = status;
     agent.last_content = content;
+    agent.last_content_ansi = content_ansi;
 
     Some(agent)
 }

@@ -171,6 +171,7 @@ impl AppState {
             if let Some(existing) = self.agents.get_mut(&id) {
                 existing.status = agent.status;
                 existing.last_content = agent.last_content;
+                existing.last_content_ansi = agent.last_content_ansi;
                 existing.title = agent.title;
                 existing.last_update = agent.last_update;
             } else {

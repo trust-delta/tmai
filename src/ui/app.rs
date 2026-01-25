@@ -558,10 +558,12 @@ impl App {
         std::thread::sleep(Duration::from_millis(5));
 
         if let Ok(content) = self.tmux_client.capture_pane_plain(target) {
+            let content_ansi = self.tmux_client.capture_pane(target).unwrap_or_default();
             let title = self.tmux_client.get_pane_title(target).unwrap_or_default();
             let mut state = self.state.write();
             if let Some(agent) = state.agents.get_mut(target) {
                 agent.last_content = content;
+                agent.last_content_ansi = content_ansi;
                 agent.title = title;
             }
         }
