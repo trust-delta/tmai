@@ -8,7 +8,7 @@ repository = "https://github.com/trustdelta/tmai"
 license = "MIT"
 
 [dependencies]
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
