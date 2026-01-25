@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
+use crate::state::{AppState, SortBy};
 
 /// Status bar widget
 pub struct StatusBar;
@@ -139,6 +139,17 @@ impl StatusBar {
             ));
 
             spans.push(Span::styled(
+                "s",
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Sort ",
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            spans.push(Span::styled(
                 "?",
                 Style::default()
                     .fg(Color::Cyan)
@@ -153,6 +164,14 @@ impl StatusBar {
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(":Quit ", Style::default().fg(Color::DarkGray)));
+
+            // Show current sort method if not default (Directory)
+            if state.sort_by != SortBy::Directory {
+                spans.push(Span::styled(
+                    format!("[Sort:{}] ", state.sort_by.display_name()),
+                    Style::default().fg(Color::Blue),
+                ));
+            }
         }
 
         // Spacer

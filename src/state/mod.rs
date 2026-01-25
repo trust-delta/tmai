@@ -1,3 +1,3 @@
 mod store;
 
-pub use store::{AppState, InputMode, SharedState};
+pub use store::{AppState, InputMode, SharedState, SortBy};

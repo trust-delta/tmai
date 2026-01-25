@@ -409,6 +409,11 @@ impl App {
                 self.layout.toggle_preview();
             }
 
+            // Cycle sort method
+            KeyCode::Char('s') => {
+                state.cycle_sort();
+            }
+
             // Enter passthrough mode (direct key input to pane)
             KeyCode::Right => {
                 state.enter_passthrough_mode();

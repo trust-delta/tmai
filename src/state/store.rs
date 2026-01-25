@@ -19,6 +19,46 @@ pub enum InputMode {
     Passthrough,
 }
 
+/// Sort method for agent list
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortBy {
+    /// Sort by working directory (default)
+    #[default]
+    Directory,
+    /// Default order (session:window.pane)
+    SessionOrder,
+    /// Sort by agent type
+    AgentType,
+    /// Sort by status (attention needed first)
+    Status,
+    /// Sort by last update time
+    LastUpdate,
+}
+
+impl SortBy {
+    /// Get the next sort method in cycle
+    pub fn next(self) -> Self {
+        match self {
+            SortBy::Directory => SortBy::SessionOrder,
+            SortBy::SessionOrder => SortBy::AgentType,
+            SortBy::AgentType => SortBy::Status,
+            SortBy::Status => SortBy::LastUpdate,
+            SortBy::LastUpdate => SortBy::Directory,
+        }
+    }
+
+    /// Get display name for the sort method
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            SortBy::Directory => "Directory",
+            SortBy::SessionOrder => "Session",
+            SortBy::AgentType => "Type",
+            SortBy::Status => "Status",
+            SortBy::LastUpdate => "Updated",
+        }
+    }
+}
+
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -51,6 +91,8 @@ pub struct AppState {
     pub spinner_frame: usize,
     /// Last spinner update time
     last_spinner_update: std::time::Instant,
+    /// Current sort method
+    pub sort_by: SortBy,
 }
 
 impl AppState {
@@ -70,6 +112,7 @@ impl AppState {
             cursor_position: 0,
             spinner_frame: 0,
             last_spinner_update: std::time::Instant::now(),
+            sort_by: SortBy::Directory,
         }
     }
 
@@ -139,6 +182,9 @@ impl AppState {
         let old_selected = self.selected_target().map(|s| s.to_string());
         self.agent_order = new_ids;
 
+        // Apply current sort
+        self.sort_agents();
+
         // Try to preserve selection
         if let Some(old_id) = old_selected {
             if let Some(new_index) = self.agent_order.iter().position(|id| id == &old_id) {
@@ -152,6 +198,74 @@ impl AppState {
         }
 
         self.last_poll = Some(chrono::Utc::now());
+    }
+
+    /// Cycle through sort methods
+    pub fn cycle_sort(&mut self) {
+        self.sort_by = self.sort_by.next();
+        self.sort_agents();
+    }
+
+    /// Sort agent_order based on current sort_by setting
+    fn sort_agents(&mut self) {
+        let agents = &self.agents;
+        self.agent_order.sort_by(|a, b| {
+            let agent_a = agents.get(a);
+            let agent_b = agents.get(b);
+
+            match (agent_a, agent_b) {
+                (Some(a), Some(b)) => match self.sort_by {
+                    SortBy::Directory => {
+                        // Sort by cwd, then by id
+                        a.cwd.cmp(&b.cwd).then_with(|| a.id.cmp(&b.id))
+                    }
+                    SortBy::SessionOrder => {
+                        // session:window.pane order
+                        a.id.cmp(&b.id)
+                    }
+                    SortBy::AgentType => {
+                        // Sort by agent type name, then by id
+                        a.agent_type
+                            .short_name()
+                            .cmp(b.agent_type.short_name())
+                            .then_with(|| a.id.cmp(&b.id))
+                    }
+                    SortBy::Status => {
+                        // Sort by status priority (attention needed first)
+                        let priority_a = Self::status_priority(&a.status);
+                        let priority_b = Self::status_priority(&b.status);
+                        priority_a.cmp(&priority_b).then_with(|| a.id.cmp(&b.id))
+                    }
+                    SortBy::LastUpdate => {
+                        // Sort by last update (most recent first)
+                        b.last_update.cmp(&a.last_update).then_with(|| a.id.cmp(&b.id))
+                    }
+                },
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+    }
+
+    /// Get priority for status sorting (lower = higher priority)
+    fn status_priority(status: &crate::agents::AgentStatus) -> u8 {
+        match status {
+            crate::agents::AgentStatus::AwaitingApproval { .. } => 0, // Highest priority
+            crate::agents::AgentStatus::Error { .. } => 1,
+            crate::agents::AgentStatus::Processing { .. } => 2,
+            crate::agents::AgentStatus::Idle => 3,
+            crate::agents::AgentStatus::Unknown => 4,
+        }
+    }
+
+    /// Get the current group key for an agent (for display headers)
+    pub fn get_group_key(&self, agent: &MonitoredAgent) -> Option<String> {
+        match self.sort_by {
+            SortBy::Directory => Some(agent.cwd.clone()),
+            SortBy::AgentType => Some(agent.agent_type.short_name().to_string()),
+            _ => None,
+        }
     }
 
     /// Move selection up

@@ -9,6 +9,12 @@ use ratatui::{
 use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::state::AppState;
 
+/// Entry in the session list (can be agent or group header)
+enum ListEntry {
+    Agent(usize), // Index into agent_order
+    GroupHeader(String),
+}
+
 /// Widget for displaying the list of monitored agents
 pub struct SessionList;
 
@@ -16,11 +22,22 @@ impl SessionList {
     /// Render the session list
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         let spinner_char = state.spinner_char();
-        let items: Vec<ListItem> = state
-            .agent_order
+
+        // Build list entries with group headers
+        let (entries, selected_entry_index) = Self::build_entries(state);
+
+        let items: Vec<ListItem> = entries
             .iter()
-            .filter_map(|id| state.agents.get(id))
-            .map(|agent| Self::create_list_item(agent, spinner_char))
+            .map(|entry| match entry {
+                ListEntry::Agent(idx) => {
+                    if let Some(agent) = state.agent_order.get(*idx).and_then(|id| state.agents.get(id)) {
+                        Self::create_list_item(agent, spinner_char)
+                    } else {
+                        ListItem::new(Line::from(""))
+                    }
+                }
+                ListEntry::GroupHeader(header) => Self::create_group_header(header),
+            })
             .collect();
 
         let title = format!(
@@ -49,9 +66,59 @@ impl SessionList {
             .highlight_symbol("▶ ");
 
         let mut list_state = ListState::default();
-        list_state.select(Some(state.selected_index));
+        list_state.select(Some(selected_entry_index));
 
         frame.render_stateful_widget(list, area, &mut list_state);
+    }
+
+    /// Build list entries with group headers and return the entry index for current selection
+    fn build_entries(state: &AppState) -> (Vec<ListEntry>, usize) {
+        let mut entries = Vec::new();
+        let mut current_group: Option<String> = None;
+        let mut selected_entry_index = 0;
+
+        for (agent_idx, id) in state.agent_order.iter().enumerate() {
+            if let Some(agent) = state.agents.get(id) {
+                // Check if we need a group header
+                if let Some(group_key) = state.get_group_key(agent) {
+                    if current_group.as_ref() != Some(&group_key) {
+                        entries.push(ListEntry::GroupHeader(group_key.clone()));
+                        current_group = Some(group_key);
+                    }
+                }
+
+                // Track the entry index for the selected agent
+                if agent_idx == state.selected_index {
+                    selected_entry_index = entries.len();
+                }
+
+                entries.push(ListEntry::Agent(agent_idx));
+            }
+        }
+
+        (entries, selected_entry_index)
+    }
+
+    /// Create a group header item
+    fn create_group_header(header: &str) -> ListItem<'static> {
+        let display = if header.len() > 50 {
+            format!("...{}", &header[header.len() - 47..])
+        } else {
+            header.to_string()
+        };
+
+        ListItem::new(Line::from(vec![
+            Span::styled(
+                format!("── {} ", display),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "─".repeat(40),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]))
     }
 
     fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {

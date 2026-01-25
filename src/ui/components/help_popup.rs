@@ -68,6 +68,7 @@ impl HelpPopup {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )]),
+            Self::help_line("s", "Cycle sort method"),
             Self::help_line("p", "Toggle preview panel"),
             Self::help_line("→", "Passthrough mode (direct keys)"),
             Self::help_line("?", "Toggle this help"),
