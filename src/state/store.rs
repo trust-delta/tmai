@@ -62,6 +62,40 @@ impl SortBy {
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/// Step in the create session flow
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreateSessionStep {
+    /// Select target tmux session (when sorted by Directory)
+    SelectTarget,
+    /// Select directory (when sorted by SessionOrder)
+    SelectDirectory,
+    /// Select AI agent type
+    SelectAgent,
+}
+
+/// State for the create session flow
+#[derive(Debug, Clone)]
+pub struct CreateSessionState {
+    /// Current step in the flow
+    pub step: CreateSessionStep,
+    /// Group key that initiated the flow (directory path or session name)
+    pub group_key: String,
+    /// Selected tmux session name
+    pub selected_session: Option<String>,
+    /// Selected directory path
+    pub selected_directory: Option<String>,
+    /// Cursor position in the popup list
+    pub cursor: usize,
+    /// Input buffer for directory path entry
+    pub input_buffer: String,
+    /// Available sessions list (cached)
+    pub available_sessions: Vec<String>,
+    /// Known directories from current agents
+    pub known_directories: Vec<String>,
+    /// Whether in path input mode
+    pub is_input_mode: bool,
+}
+
 /// Application state
 #[derive(Debug)]
 pub struct AppState {
@@ -93,6 +127,14 @@ pub struct AppState {
     last_spinner_update: std::time::Instant,
     /// Current sort method
     pub sort_by: SortBy,
+    /// Create session flow state (None if not in create mode)
+    pub create_session: Option<CreateSessionState>,
+    /// Selected entry index (for UI navigation including CreateNew entries)
+    pub selected_entry_index: usize,
+    /// Total selectable entries count (cached)
+    pub selectable_count: usize,
+    /// Whether CreateNew entry is currently selected
+    pub is_on_create_new: bool,
 }
 
 impl AppState {
@@ -113,6 +155,10 @@ impl AppState {
             spinner_frame: 0,
             last_spinner_update: std::time::Instant::now(),
             sort_by: SortBy::Directory,
+            create_session: None,
+            selected_entry_index: 0,
+            selectable_count: 0,
+            is_on_create_new: false,
         }
     }
 
@@ -264,6 +310,7 @@ impl AppState {
     pub fn get_group_key(&self, agent: &MonitoredAgent) -> Option<String> {
         match self.sort_by {
             SortBy::Directory => Some(agent.cwd.clone()),
+            SortBy::SessionOrder => Some(agent.session.clone()),
             SortBy::AgentType => Some(agent.agent_type.short_name().to_string()),
             _ => None,
         }
@@ -271,34 +318,73 @@ impl AppState {
 
     /// Move selection up
     pub fn select_previous(&mut self) {
-        if !self.agent_order.is_empty() && self.selected_index > 0 {
-            self.selected_index -= 1;
+        if self.selected_entry_index > 0 {
+            self.selected_entry_index -= 1;
             self.preview_scroll = 0;
+            self.sync_selected_index_from_entry();
         }
     }
 
     /// Move selection down
     pub fn select_next(&mut self) {
-        if !self.agent_order.is_empty() && self.selected_index < self.agent_order.len() - 1 {
-            self.selected_index += 1;
+        if self.selectable_count > 0 && self.selected_entry_index < self.selectable_count - 1 {
+            self.selected_entry_index += 1;
             self.preview_scroll = 0;
+            self.sync_selected_index_from_entry();
         }
     }
 
-    /// Select first agent
+    /// Select first entry
     pub fn select_first(&mut self) {
-        if !self.agent_order.is_empty() {
-            self.selected_index = 0;
+        if self.selectable_count > 0 {
+            self.selected_entry_index = 0;
             self.preview_scroll = 0;
+            self.sync_selected_index_from_entry();
         }
     }
 
-    /// Select last agent
+    /// Select last entry
     pub fn select_last(&mut self) {
-        if !self.agent_order.is_empty() {
-            self.selected_index = self.agent_order.len() - 1;
+        if self.selectable_count > 0 {
+            self.selected_entry_index = self.selectable_count - 1;
             self.preview_scroll = 0;
+            self.sync_selected_index_from_entry();
         }
+    }
+
+    /// Sync selected_index from selected_entry_index
+    /// This maps the entry index back to agent_order index for preview display
+    fn sync_selected_index_from_entry(&mut self) {
+        // This will be properly synced when build_entries is called during render
+        // For now, just ensure selected_index stays valid
+        if !self.agent_order.is_empty() && self.selected_index >= self.agent_order.len() {
+            self.selected_index = self.agent_order.len() - 1;
+        }
+    }
+
+    /// Update selectable count and sync entry index
+    pub fn update_selectable_entries(&mut self, selectable_count: usize, agent_index: Option<usize>) {
+        self.selectable_count = selectable_count;
+        self.is_on_create_new = agent_index.is_none();
+        if let Some(idx) = agent_index {
+            self.selected_index = idx;
+        }
+        // Ensure entry index is valid
+        if self.selected_entry_index >= selectable_count && selectable_count > 0 {
+            self.selected_entry_index = selectable_count - 1;
+        }
+    }
+
+    /// Get all unique directories from current agents
+    pub fn get_known_directories(&self) -> Vec<String> {
+        let mut dirs: Vec<String> = self
+            .agents
+            .values()
+            .map(|a| a.cwd.clone())
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        dirs
     }
 
     /// Toggle help popup
@@ -451,6 +537,81 @@ impl AppState {
         self.cursor_position = 0;
         input
     }
+
+    // =========================================
+    // Create session methods
+    // =========================================
+
+    /// Start create session flow from a group
+    pub fn start_create_session(&mut self, group_key: String, sessions: Vec<String>) {
+        let step = match self.sort_by {
+            SortBy::Directory => CreateSessionStep::SelectTarget,
+            SortBy::SessionOrder => CreateSessionStep::SelectDirectory,
+            _ => CreateSessionStep::SelectAgent,
+        };
+
+        // Pre-select session if sorted by SessionOrder
+        let selected_session = if self.sort_by == SortBy::SessionOrder {
+            Some(group_key.clone())
+        } else {
+            None
+        };
+
+        // Pre-select directory if sorted by Directory
+        let selected_directory = if self.sort_by == SortBy::Directory {
+            Some(group_key.clone())
+        } else {
+            None
+        };
+
+        // Get known directories from current agents
+        let known_directories = self.get_known_directories();
+
+        self.create_session = Some(CreateSessionState {
+            step,
+            group_key,
+            selected_session,
+            selected_directory,
+            cursor: 0,
+            input_buffer: String::new(),
+            available_sessions: sessions,
+            known_directories,
+            is_input_mode: false,
+        });
+    }
+
+    /// Cancel create session flow
+    pub fn cancel_create_session(&mut self) {
+        self.create_session = None;
+    }
+
+    /// Check if in create session mode
+    pub fn is_create_session_mode(&self) -> bool {
+        self.create_session.is_some()
+    }
+
+    /// Move cursor up in create session popup
+    pub fn create_session_cursor_up(&mut self) {
+        if let Some(ref mut state) = self.create_session {
+            if state.cursor > 0 {
+                state.cursor -= 1;
+            }
+        }
+    }
+
+    /// Move cursor down in create session popup
+    pub fn create_session_cursor_down(&mut self, max: usize) {
+        if let Some(ref mut state) = self.create_session {
+            if state.cursor < max.saturating_sub(1) {
+                state.cursor += 1;
+            }
+        }
+    }
+
+    /// Get create session cursor position
+    pub fn create_session_cursor(&self) -> usize {
+        self.create_session.as_ref().map(|s| s.cursor).unwrap_or(0)
+    }
 }
 
 impl Default for AppState {
@@ -504,26 +665,31 @@ mod tests {
             create_test_agent("main:0.2"),
         ];
         state.update_agents(agents);
+        // Simulate selectable count: 3 agents + 1 CreateNew = 4
+        state.selectable_count = 4;
 
-        assert_eq!(state.selected_index, 0);
-
-        state.select_next();
-        assert_eq!(state.selected_index, 1);
-
-        state.select_next();
-        assert_eq!(state.selected_index, 2);
+        assert_eq!(state.selected_entry_index, 0);
 
         state.select_next();
-        assert_eq!(state.selected_index, 2); // Can't go past end
+        assert_eq!(state.selected_entry_index, 1);
+
+        state.select_next();
+        assert_eq!(state.selected_entry_index, 2);
+
+        state.select_next();
+        assert_eq!(state.selected_entry_index, 3); // CreateNew entry
+
+        state.select_next();
+        assert_eq!(state.selected_entry_index, 3); // Can't go past end
 
         state.select_previous();
-        assert_eq!(state.selected_index, 1);
+        assert_eq!(state.selected_entry_index, 2);
 
         state.select_first();
-        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.selected_entry_index, 0);
 
         state.select_last();
-        assert_eq!(state.selected_index, 2);
+        assert_eq!(state.selected_entry_index, 3);
     }
 
     #[test]

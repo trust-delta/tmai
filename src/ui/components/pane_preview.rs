@@ -16,6 +16,18 @@ pub struct PanePreview;
 impl PanePreview {
     /// Render the preview with ANSI color support
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+        // Show empty preview when CreateNew is selected
+        if state.is_on_create_new {
+            let block = Block::default()
+                .title(" Preview ")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Gray));
+            let paragraph = Paragraph::new(Text::from("")).block(block);
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
         let agent = state.selected_agent();
 
         let (title, text) = if let Some(agent) = agent {

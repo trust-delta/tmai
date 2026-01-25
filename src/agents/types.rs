@@ -89,6 +89,27 @@ impl AgentType {
             AgentType::Custom(name) => name,
         }
     }
+
+    /// Get the command to launch this agent type
+    pub fn command(&self) -> &str {
+        match self {
+            AgentType::ClaudeCode => "claude",
+            AgentType::OpenCode => "opencode",
+            AgentType::CodexCli => "codex",
+            AgentType::GeminiCli => "gemini",
+            AgentType::Custom(_) => "",
+        }
+    }
+
+    /// Get all standard agent type variants (excluding Custom)
+    pub fn all_variants() -> Vec<AgentType> {
+        vec![
+            AgentType::ClaudeCode,
+            AgentType::OpenCode,
+            AgentType::CodexCli,
+            AgentType::GeminiCli,
+        ]
+    }
 }
 
 impl fmt::Display for AgentType {

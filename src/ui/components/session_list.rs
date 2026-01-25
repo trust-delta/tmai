@@ -9,10 +9,12 @@ use ratatui::{
 use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::state::AppState;
 
-/// Entry in the session list (can be agent or group header)
-enum ListEntry {
+/// Entry in the session list (can be agent, group header, or create new button)
+#[derive(Debug, Clone)]
+pub enum ListEntry {
     Agent(usize), // Index into agent_order
     GroupHeader(String),
+    CreateNew { group_key: String },
 }
 
 /// Widget for displaying the list of monitored agents
@@ -24,7 +26,7 @@ impl SessionList {
         let spinner_char = state.spinner_char();
 
         // Build list entries with group headers
-        let (entries, selected_entry_index) = Self::build_entries(state);
+        let (entries, ui_entry_index, _selectable_count, _agent_index) = Self::build_entries(state);
 
         let items: Vec<ListItem> = entries
             .iter()
@@ -37,6 +39,7 @@ impl SessionList {
                     }
                 }
                 ListEntry::GroupHeader(header) => Self::create_group_header(header),
+                ListEntry::CreateNew { .. } => Self::create_new_item(),
             })
             .collect();
 
@@ -66,37 +69,65 @@ impl SessionList {
             .highlight_symbol("▶ ");
 
         let mut list_state = ListState::default();
-        list_state.select(Some(selected_entry_index));
+        list_state.select(Some(ui_entry_index));
 
         frame.render_stateful_widget(list, area, &mut list_state);
     }
 
-    /// Build list entries with group headers and return the entry index for current selection
-    fn build_entries(state: &AppState) -> (Vec<ListEntry>, usize) {
+    /// Build list entries with group headers and return the UI entry index for highlighting
+    /// Also returns selectable_count and the agent index for the current selection
+    pub fn build_entries(state: &AppState) -> (Vec<ListEntry>, usize, usize, Option<usize>) {
         let mut entries = Vec::new();
         let mut current_group: Option<String> = None;
-        let mut selected_entry_index = 0;
+        let mut selectable_index = 0; // Index among selectable items only
+        let mut ui_entry_index = 0; // Index in the full entries list for highlighting
+        let mut selected_agent_index: Option<usize> = None;
 
         for (agent_idx, id) in state.agent_order.iter().enumerate() {
             if let Some(agent) = state.agents.get(id) {
                 // Check if we need a group header
                 if let Some(group_key) = state.get_group_key(agent) {
                     if current_group.as_ref() != Some(&group_key) {
+                        // Add CreateNew for previous group (if any)
+                        if let Some(prev_group) = current_group.take() {
+                            if selectable_index == state.selected_entry_index {
+                                ui_entry_index = entries.len();
+                            }
+                            entries.push(ListEntry::CreateNew { group_key: prev_group });
+                            selectable_index += 1;
+                        }
                         entries.push(ListEntry::GroupHeader(group_key.clone()));
                         current_group = Some(group_key);
                     }
                 }
 
-                // Track the entry index for the selected agent
-                if agent_idx == state.selected_index {
-                    selected_entry_index = entries.len();
+                // Track the entry index for the selected entry
+                if selectable_index == state.selected_entry_index {
+                    ui_entry_index = entries.len();
+                    selected_agent_index = Some(agent_idx);
                 }
 
                 entries.push(ListEntry::Agent(agent_idx));
+                selectable_index += 1;
             }
         }
 
-        (entries, selected_entry_index)
+        // Add CreateNew for the last group
+        if let Some(last_group) = current_group {
+            if selectable_index == state.selected_entry_index {
+                ui_entry_index = entries.len();
+            }
+            entries.push(ListEntry::CreateNew { group_key: last_group });
+            selectable_index += 1;
+        }
+
+        (entries, ui_entry_index, selectable_index, selected_agent_index)
+    }
+
+    /// Get the currently selected entry
+    pub fn get_selected_entry(state: &AppState) -> Option<ListEntry> {
+        let (entries, ui_entry_index, _, _) = Self::build_entries(state);
+        entries.get(ui_entry_index).cloned()
     }
 
     /// Create a group header item
@@ -115,6 +146,16 @@ impl SessionList {
                     .add_modifier(Modifier::BOLD),
             ),
         ]))
+    }
+
+    /// Create a "new session" item
+    fn create_new_item() -> ListItem<'static> {
+        ListItem::new(Line::from(vec![Span::styled(
+            "+ 新規セッション",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::ITALIC),
+        )]))
     }
 
     fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {

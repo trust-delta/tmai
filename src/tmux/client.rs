@@ -232,6 +232,56 @@ impl TmuxClient {
         self.select_pane(target)?;
         Ok(())
     }
+
+    /// Create a new tmux session
+    pub fn create_session(&self, name: &str, cwd: &str) -> Result<()> {
+        let output = Command::new("tmux")
+            .args(["new-session", "-d", "-s", name, "-c", cwd])
+            .output()
+            .context("Failed to execute tmux new-session")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux new-session failed: {}", stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Split a window to create a new pane
+    /// Returns the new pane's target identifier (session:window.pane)
+    pub fn split_window(&self, session: &str, cwd: &str) -> Result<String> {
+        let output = Command::new("tmux")
+            .args([
+                "split-window",
+                "-t",
+                session,
+                "-c",
+                cwd,
+                "-P",
+                "-F",
+                "#{session_name}:#{window_index}.#{pane_index}",
+            ])
+            .output()
+            .context("Failed to execute tmux split-window")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux split-window failed: {}", stderr);
+        }
+
+        let target = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(target)
+    }
+
+    /// Run a command in a specific pane
+    pub fn run_command(&self, target: &str, command: &str) -> Result<()> {
+        // Send the command as literal text
+        self.send_keys_literal(target, command)?;
+        // Press Enter to execute
+        self.send_keys(target, "Enter")?;
+        Ok(())
+    }
 }
 
 impl Default for TmuxClient {
