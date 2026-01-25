@@ -181,7 +181,7 @@ impl AgentStatus {
     /// Get a short status indicator
     pub fn indicator(&self) -> &str {
         match self {
-            AgentStatus::Idle => "✳",
+            AgentStatus::Idle => "●",
             AgentStatus::Processing { .. } => "⠿",
             AgentStatus::AwaitingApproval { .. } => "⚠",
             AgentStatus::Error { .. } => "✗",

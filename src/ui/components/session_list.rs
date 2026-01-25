@@ -101,22 +101,18 @@ impl SessionList {
 
     /// Create a group header item
     fn create_group_header(header: &str) -> ListItem<'static> {
-        let display = if header.len() > 50 {
-            format!("...{}", &header[header.len() - 47..])
+        let display = if header.len() > 45 {
+            format!("...{}", &header[header.len() - 42..])
         } else {
             header.to_string()
         };
 
         ListItem::new(Line::from(vec![
             Span::styled(
-                format!("── {} ", display),
+                format!("▸ {} ", display),
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(Color::Blue)
                     .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "─".repeat(40),
-                Style::default().fg(Color::DarkGray),
             ),
         ]))
     }
@@ -128,58 +124,69 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        let mut spans = vec![
+        // Line 1: AgentType | pid:xxx
+        let line1 = Line::from(vec![
+            Span::styled(
+                agent.agent_type.short_name().to_string(),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("pid:{}", agent.pid),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]);
+
+        // Line 2: status indicator + status_text
+        let status_text = match &agent.status {
+            AgentStatus::Idle => "Idle".to_string(),
+            AgentStatus::Processing { activity } => {
+                if activity.is_empty() {
+                    "Processing...".to_string()
+                } else {
+                    format!("Processing: {}", truncate(activity, 20))
+                }
+            }
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                format!("Awaiting: {}", approval_type)
+            }
+            AgentStatus::Error { message } => {
+                format!("Error: {}", truncate(message, 20))
+            }
+            AgentStatus::Unknown => "Unknown".to_string(),
+        };
+
+        let line2 = Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled(
                 format!("{} ", status_indicator),
                 Style::default().fg(status_color),
             ),
+            Span::styled(status_text, Style::default().fg(status_color)),
+        ]);
+
+        // Line 3: title
+        let title_display = if agent.title.is_empty() {
+            "-".to_string()
+        } else {
+            truncate(&agent.title, 35)
+        };
+
+        let line3 = Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(title_display, Style::default().fg(Color::White)),
+        ]);
+
+        // Line 4: session | pane
+        let line4 = Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled(
-                format!("[{}] ", agent.agent_type.short_name()),
-                Style::default().fg(Color::Cyan),
-            ),
-            Span::styled(
-                agent.display_name(),
+                format!("{} | {}.{}", agent.session, agent.window_index, agent.pane_index),
                 Style::default().fg(Color::White),
             ),
-        ];
+        ]);
 
-        // Add status details
-        match &agent.status {
-            AgentStatus::Processing { activity } if !activity.is_empty() => {
-                spans.push(Span::styled(
-                    format!(" - {}", truncate(activity, 30)),
-                    Style::default().fg(Color::Yellow),
-                ));
-            }
-            AgentStatus::AwaitingApproval { approval_type, .. } => {
-                spans.push(Span::styled(
-                    format!(" - {}", approval_type),
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-            AgentStatus::Error { message } => {
-                spans.push(Span::styled(
-                    format!(" - {}", truncate(message, 30)),
-                    Style::default().fg(Color::Red),
-                ));
-            }
-            _ => {}
-        }
-
-        // Add title if different from target
-        if !agent.title.is_empty() && agent.title != agent.target {
-            let title_preview = truncate(&agent.title, 40);
-            if !title_preview.is_empty() {
-                spans.push(Span::styled(
-                    format!(" | {}", title_preview),
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
-        }
-
-        ListItem::new(Line::from(spans))
+        ListItem::new(vec![line1, line2, line3, line4])
     }
 
     fn status_color(status: &AgentStatus) -> Color {
