@@ -121,25 +121,24 @@ impl ClaudeCodeDetector {
             }
         }
 
+        // Store all found choice sets, keep the last valid one
+        let mut best_choices: Vec<String> = Vec::new();
+        let mut best_first_idx: Option<usize> = None;
+        let mut best_last_idx: Option<usize> = None;
+        let mut best_cursor_position: usize = 0;
+
         for (i, line) in check_lines.iter().enumerate() {
             let trimmed = line.trim();
 
             // Skip UI elements (box drawing characters)
-            // Only clear choices if we haven't found any yet (UI before choices)
-            // After choices are found, UI elements are just decorations
             if trimmed.starts_with('│')
                 || trimmed.starts_with('├')
                 || trimmed.starts_with('└')
                 || trimmed.starts_with('┌')
                 || trimmed.starts_with('─')
                 || trimmed.starts_with('✻')
+                || trimmed.starts_with('╌')
             {
-                // Only reset if no choices found yet
-                if choices.is_empty() {
-                    continue;
-                }
-                // After finding choices, UI elements mark the end of choices section
-                // but don't clear them
                 continue;
             }
 
@@ -164,17 +163,48 @@ impl ClaudeCodeDetector {
                         if trimmed.starts_with('❯') || trimmed.starts_with('>') {
                             cursor_position = num as usize;
                         }
-                    } else if !choices.is_empty() {
+                    } else if num == 1 {
+                        // New choice set starting - save current if valid (must have cursor marker)
+                        if choices.len() >= 2 && cursor_position > 0 {
+                            best_choices = choices.clone();
+                            best_first_idx = first_choice_idx;
+                            best_last_idx = last_choice_idx;
+                            best_cursor_position = cursor_position;
+                        }
+                        // Start new choice set
                         choices.clear();
-                        first_choice_idx = None;
-                        last_choice_idx = None;
-                        cursor_position = 0;
+                        let label = choice_text
+                            .split('（')
+                            .next()
+                            .unwrap_or(choice_text)
+                            .trim()
+                            .to_string();
+                        choices.push(label);
+                        first_choice_idx = Some(i);
+                        last_choice_idx = Some(i);
+                        cursor_position = if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                            1
+                        } else {
+                            0
+                        };
                     }
                 }
             }
-            // Note: We no longer clear choices on long lines, as AskUserQuestion
-            // displays multi-line options with description lines below each choice
         }
+
+        // Use the last valid choice set (must have cursor marker to be AskUserQuestion)
+        if choices.len() >= 2 && cursor_position > 0 {
+            best_choices = choices;
+            best_first_idx = first_choice_idx;
+            best_last_idx = last_choice_idx;
+            best_cursor_position = cursor_position;
+        }
+
+        // Restore best choices
+        choices = best_choices;
+        first_choice_idx = best_first_idx;
+        last_choice_idx = best_last_idx;
+        cursor_position = best_cursor_position;
 
         // Choices must be near the end (allow for UI hints like "Enter to select")
         if let Some(last_idx) = last_choice_idx {
@@ -479,14 +509,13 @@ Do you want to allow this action?
     #[test]
     fn test_numbered_choices() {
         let detector = ClaudeCodeDetector::new();
+        // AskUserQuestion always has ❯ cursor on the selected option line
         let content = r#"
 Which option do you prefer?
 
-1. Option A
-2. Option B
-3. Option C
-
-❯
+❯ 1. Option A
+  2. Option B
+  3. Option C
 "#;
         let status = detector.detect_status("✳ Claude Code", content);
         match status {
@@ -495,6 +524,22 @@ Which option do you prefer?
             }
             _ => panic!("Expected AwaitingApproval with UserQuestion"),
         }
+    }
+
+    #[test]
+    fn test_numbered_list_not_detected_as_question() {
+        let detector = ClaudeCodeDetector::new();
+        // Regular numbered list without ❯ cursor should NOT be detected as AskUserQuestion
+        let content = r#"
+Here are the changes:
+
+1. Fixed the bug
+2. Added tests
+3. Updated docs
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        // Should be Idle, not AwaitingApproval
+        assert!(matches!(status, AgentStatus::Idle));
     }
 
     #[test]
@@ -541,6 +586,64 @@ Which option do you prefer?
      他の問題が発生した
   4. Type something.
 "#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_would_you_like_to_proceed() {
+        let detector = ClaudeCodeDetector::new();
+        let content = r#"Would you like to proceed?
+
+ ❯ 1. Yes, clear context and auto-accept edits (shift+tab)
+   2. Yes, auto-accept edits
+   3. Yes, manually approve edits
+   4. Type here to tell Claude what to change"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_would_you_like_to_proceed_with_footer() {
+        let detector = ClaudeCodeDetector::new();
+        // Real captured content with UI footer
+        let content = r#"   - 環境変数未設定時に警告ログが出ることを確認
+
+ ---
+ 完了条件
+
+ - getInvitationLink ヘルパー関数を作成
+ - queries.ts と mutations.ts でヘルパー関数を使用
+ - 型チェック・リント・テストがパス
+ - Issue #62 の関連項目をクローズ
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+ Would you like to proceed?
+
+ ❯ 1. Yes, clear context and auto-accept edits (shift+tab)
+   2. Yes, auto-accept edits
+   3. Yes, manually approve edits
+   4. Type here to tell Claude what to change
+
+ ctrl-g to edit in Micro · .claude/plans/eventual-humming-hellman.md"#;
         let status = detector.detect_status("✳ Claude Code", content);
         match status {
             AgentStatus::AwaitingApproval { approval_type, .. } => {
