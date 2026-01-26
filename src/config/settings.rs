@@ -42,6 +42,10 @@ pub struct Settings {
     #[serde(default = "default_poll_interval")]
     pub poll_interval_ms: u64,
 
+    /// Polling interval in passthrough mode (milliseconds)
+    #[serde(default = "default_passthrough_poll_interval")]
+    pub passthrough_poll_interval_ms: u64,
+
     /// Number of lines to capture from panes
     #[serde(default = "default_capture_lines")]
     pub capture_lines: u32,
@@ -61,6 +65,10 @@ pub struct Settings {
 
 fn default_poll_interval() -> u64 {
     500
+}
+
+fn default_passthrough_poll_interval() -> u64 {
+    10
 }
 
 fn default_capture_lines() -> u32 {
@@ -122,6 +130,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             poll_interval_ms: default_poll_interval(),
+            passthrough_poll_interval_ms: default_passthrough_poll_interval(),
             capture_lines: default_capture_lines(),
             attached_only: default_attached_only(),
             agent_patterns: Vec::new(),

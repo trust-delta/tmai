@@ -2,7 +2,6 @@ use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::interval;
 
 use crate::agents::MonitoredAgent;
 use crate::config::Settings;
@@ -51,18 +50,23 @@ impl Poller {
 
     /// Run the polling loop
     async fn run(self, tx: mpsc::Sender<PollMessage>) {
-        let mut poll_interval = interval(Duration::from_millis(self.settings.poll_interval_ms));
+        let normal_interval = self.settings.poll_interval_ms;
+        let fast_interval = self.settings.passthrough_poll_interval_ms;
 
         loop {
-            poll_interval.tick().await;
-
-            // Check if we should stop
-            {
+            // Check if we should stop and get passthrough state
+            let (should_stop, is_passthrough) = {
                 let state = self.state.read();
-                if !state.running {
-                    break;
-                }
+                (!state.running, state.is_passthrough_mode())
+            };
+
+            if should_stop {
+                break;
             }
+
+            // Use faster interval in passthrough mode for responsive preview updates
+            let interval_ms = if is_passthrough { fast_interval } else { normal_interval };
+            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
 
             match self.poll_once().await {
                 Ok(agents) => {
@@ -92,7 +96,16 @@ impl Poller {
         let mut agents = Vec::new();
 
         for pane in panes {
-            if let Some(agent_type) = pane.detect_agent_type() {
+            // Get cmdline from process cache for better detection
+            // Try direct cmdline first, then child process cmdline (for shell -> agent)
+            let direct_cmdline = self.process_cache.get_cmdline(pane.pid);
+            let child_cmdline = self.process_cache.get_child_cmdline(pane.pid);
+
+            // Try detection with child cmdline first (more specific for agents under shell)
+            let agent_type = pane.detect_agent_type_with_cmdline(child_cmdline.as_deref())
+                .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
+
+            if let Some(agent_type) = agent_type {
                 // Capture pane content (plain for detection, ANSI for preview)
                 let content = self.client.capture_pane_plain(&pane.target).unwrap_or_default();
                 let content_ansi = self.client.capture_pane(&pane.target).unwrap_or_default();

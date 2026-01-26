@@ -561,9 +561,8 @@ impl App {
                 if modifiers.contains(KeyModifiers::CONTROL) {
                     format!("C-{}", c)
                 } else {
-                    // Send character as literal
+                    // Send character as literal - no preview refresh, poller handles it
                     self.tmux_client.send_keys_literal(&target, &c.to_string())?;
-                    self.refresh_preview(&target);
                     return Ok(());
                 }
             }
@@ -582,26 +581,9 @@ impl App {
             _ => return Ok(()),
         };
 
+        // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
         let _ = self.tmux_client.send_keys(&target, &key_str);
-        self.refresh_preview(&target);
         Ok(())
-    }
-
-    /// Refresh preview content for the given target
-    fn refresh_preview(&self, target: &str) {
-        // Small delay to let tmux process the key
-        std::thread::sleep(Duration::from_millis(5));
-
-        if let Ok(content) = self.tmux_client.capture_pane_plain(target) {
-            let content_ansi = self.tmux_client.capture_pane(target).unwrap_or_default();
-            let title = self.tmux_client.get_pane_title(target).unwrap_or_default();
-            let mut state = self.state.write();
-            if let Some(agent) = state.agents.get_mut(target) {
-                agent.last_content = content;
-                agent.last_content_ansi = content_ansi;
-                agent.title = title;
-            }
-        }
     }
 
     /// Handle keys in create session mode
