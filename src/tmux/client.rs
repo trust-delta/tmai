@@ -245,7 +245,74 @@ impl TmuxClient {
             anyhow::bail!("tmux new-session failed: {}", stderr);
         }
 
+        // Open in new wezterm tab if running in wezterm
+        self.open_session_in_wezterm_tab(name);
+
         Ok(())
+    }
+
+    /// Open a tmux session in a new wezterm tab (if running in wezterm)
+    fn open_session_in_wezterm_tab(&self, session_name: &str) {
+        // Check if we're running in wezterm
+        if std::env::var("WEZTERM_PANE").is_err() {
+            return; // Not in wezterm, skip
+        }
+
+        // Get current window ID from wezterm cli
+        let window_id = match Self::get_wezterm_window_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Spawn a new wezterm tab (in current window) attached to the tmux session
+        let _ = Command::new("wezterm")
+            .args([
+                "cli",
+                "spawn",
+                "--window-id",
+                &window_id,
+                "--",
+                "tmux",
+                "attach",
+                "-t",
+                session_name,
+            ])
+            .spawn();
+    }
+
+    /// Get the current wezterm window ID
+    fn get_wezterm_window_id() -> Option<String> {
+        // Use wezterm cli list to find the window_id for the active pane
+        // Note: WEZTERM_PANE env var can be stale over SSH, so we use is_active flag
+        let output = Command::new("wezterm")
+            .args(["cli", "list", "--format", "json"])
+            .output()
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse JSON to find window_id for active pane
+        // Format: [{"window_id": 0, "tab_id": 0, "pane_id": 0, "is_active": true, ...}, ...]
+        if let Ok(panes) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
+            for pane in &panes {
+                // Find the active pane
+                if let Some(is_active) = pane.get("is_active").and_then(|v| v.as_bool()) {
+                    if is_active {
+                        if let Some(window_id) = pane.get("window_id").and_then(|v| v.as_u64()) {
+                            return Some(window_id.to_string());
+                        }
+                    }
+                }
+            }
+            // Fallback: use first pane's window_id if no active pane found
+            if let Some(first) = panes.first() {
+                if let Some(window_id) = first.get("window_id").and_then(|v| v.as_u64()) {
+                    return Some(window_id.to_string());
+                }
+            }
+        }
+
+        None
     }
 
     /// Split a window to create a new pane
