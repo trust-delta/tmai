@@ -86,8 +86,26 @@ impl StatusDetector for CodexDetector {
             };
         }
 
-        // Default based on content heuristics
+        // Content-based detection for Codex CLI
         let lines: Vec<&str> = content.lines().collect();
+        let recent_lines: Vec<&str> = lines.iter().rev().take(10).copied().collect();
+
+        // Check for Codex-specific idle indicators
+        for line in &recent_lines {
+            let trimmed = line.trim();
+
+            // "› " prompt indicates idle (waiting for input)
+            if trimmed.starts_with('›') {
+                return AgentStatus::Idle;
+            }
+
+            // "XX% context left" footer indicates idle
+            if trimmed.contains("% context left") {
+                return AgentStatus::Idle;
+            }
+        }
+
+        // Default based on last line heuristics
         if let Some(last) = lines.last() {
             let trimmed = last.trim();
             // If ends with prompt, likely idle
@@ -126,6 +144,32 @@ mod tests {
     fn test_idle_detection() {
         let detector = CodexDetector::new();
         let status = detector.detect_status("Codex - Idle", "Some content\n> ");
+        assert!(matches!(status, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_idle_with_prompt() {
+        let detector = CodexDetector::new();
+        // Codex uses › as input prompt
+        let content = r#"
+Some suggestions here
+
+› Improve documentation in @filename
+
+  98% context left · ? for shortcuts"#;
+        let status = detector.detect_status("DESKTOP-LG7DUPN", content);
+        assert!(
+            matches!(status, AgentStatus::Idle),
+            "Expected Idle, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_idle_with_context_footer() {
+        let detector = CodexDetector::new();
+        let content = "Some content\n  50% context left · ? for shortcuts";
+        let status = detector.detect_status("", content);
         assert!(matches!(status, AgentStatus::Idle));
     }
 
