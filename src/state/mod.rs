@@ -1,3 +1,5 @@
 mod store;
 
-pub use store::{AppState, CreateSessionState, CreateSessionStep, InputMode, SharedState, SortBy};
+pub use store::{
+    AppState, CreateProcessState, CreateProcessStep, InputMode, PlacementType, SharedState, SortBy,
+};

@@ -62,28 +62,43 @@ impl SortBy {
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-/// Step in the create session flow
+/// Placement type for creating new AI process
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CreateSessionStep {
-    /// Select target tmux session (when sorted by Directory)
+pub enum PlacementType {
+    /// Create a new tmux session + window
+    NewSession,
+    /// Create a new window in existing session
+    NewWindow,
+    /// Split existing window to add a pane
+    SplitPane,
+}
+
+/// Step in the create process flow
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreateProcessStep {
+    /// Select placement type (new session / new window / split pane)
+    SelectPlacement,
+    /// Select target tmux session (for NewWindow / SplitPane)
     SelectTarget,
-    /// Select directory (when sorted by SessionOrder)
+    /// Select directory
     SelectDirectory,
     /// Select AI agent type
     SelectAgent,
 }
 
-/// State for the create session flow
+/// State for the create process flow
 #[derive(Debug, Clone)]
-pub struct CreateSessionState {
+pub struct CreateProcessState {
     /// Current step in the flow
-    pub step: CreateSessionStep,
+    pub step: CreateProcessStep,
+    /// Selected placement type
+    pub placement_type: Option<PlacementType>,
     /// Group key that initiated the flow (directory path or session name)
-    pub group_key: String,
+    pub origin_group_key: String,
     /// Selected tmux session name
-    pub selected_session: Option<String>,
+    pub target_session: Option<String>,
     /// Selected directory path
-    pub selected_directory: Option<String>,
+    pub directory: Option<String>,
     /// Cursor position in the popup list
     pub cursor: usize,
     /// Input buffer for directory path entry
@@ -127,8 +142,8 @@ pub struct AppState {
     last_spinner_update: std::time::Instant,
     /// Current sort method
     pub sort_by: SortBy,
-    /// Create session flow state (None if not in create mode)
-    pub create_session: Option<CreateSessionState>,
+    /// Create process flow state (None if not in create mode)
+    pub create_process: Option<CreateProcessState>,
     /// Selected entry index (for UI navigation including CreateNew entries)
     pub selected_entry_index: usize,
     /// Total selectable entries count (cached)
@@ -155,7 +170,7 @@ impl AppState {
             spinner_frame: 0,
             last_spinner_update: std::time::Instant::now(),
             sort_by: SortBy::Directory,
-            create_session: None,
+            create_process: None,
             selected_entry_index: 0,
             selectable_count: 0,
             is_on_create_new: false,
@@ -285,7 +300,9 @@ impl AppState {
                     }
                     SortBy::LastUpdate => {
                         // Sort by last update (most recent first)
-                        b.last_update.cmp(&a.last_update).then_with(|| a.id.cmp(&b.id))
+                        b.last_update
+                            .cmp(&a.last_update)
+                            .then_with(|| a.id.cmp(&b.id))
                     }
                 },
                 (Some(_), None) => std::cmp::Ordering::Less,
@@ -363,7 +380,11 @@ impl AppState {
     }
 
     /// Update selectable count and sync entry index
-    pub fn update_selectable_entries(&mut self, selectable_count: usize, agent_index: Option<usize>) {
+    pub fn update_selectable_entries(
+        &mut self,
+        selectable_count: usize,
+        agent_index: Option<usize>,
+    ) {
         self.selectable_count = selectable_count;
         self.is_on_create_new = agent_index.is_none();
         if let Some(idx) = agent_index {
@@ -377,11 +398,7 @@ impl AppState {
 
     /// Get all unique directories from current agents
     pub fn get_known_directories(&self) -> Vec<String> {
-        let mut dirs: Vec<String> = self
-            .agents
-            .values()
-            .map(|a| a.cwd.clone())
-            .collect();
+        let mut dirs: Vec<String> = self.agents.values().map(|a| a.cwd.clone()).collect();
         dirs.sort();
         dirs.dedup();
         dirs
@@ -539,39 +556,34 @@ impl AppState {
     }
 
     // =========================================
-    // Create session methods
+    // Create process methods
     // =========================================
 
-    /// Start create session flow from a group
-    pub fn start_create_session(&mut self, group_key: String, sessions: Vec<String>) {
-        let step = match self.sort_by {
-            SortBy::Directory => CreateSessionStep::SelectTarget,
-            SortBy::SessionOrder => CreateSessionStep::SelectDirectory,
-            _ => CreateSessionStep::SelectAgent,
-        };
-
-        // Pre-select session if sorted by SessionOrder
-        let selected_session = if self.sort_by == SortBy::SessionOrder {
-            Some(group_key.clone())
-        } else {
-            None
-        };
-
-        // Pre-select directory if sorted by Directory
-        let selected_directory = if self.sort_by == SortBy::Directory {
-            Some(group_key.clone())
-        } else {
-            None
-        };
-
+    /// Start create process flow from a group
+    pub fn start_create_process(&mut self, group_key: String, sessions: Vec<String>) {
         // Get known directories from current agents
         let known_directories = self.get_known_directories();
 
-        self.create_session = Some(CreateSessionState {
-            step,
-            group_key,
-            selected_session,
-            selected_directory,
+        // Pre-select directory if sorted by Directory
+        let directory = if self.sort_by == SortBy::Directory {
+            Some(group_key.clone())
+        } else {
+            None
+        };
+
+        // Pre-select session if sorted by SessionOrder
+        let target_session = if self.sort_by == SortBy::SessionOrder {
+            Some(group_key.clone())
+        } else {
+            None
+        };
+
+        self.create_process = Some(CreateProcessState {
+            step: CreateProcessStep::SelectPlacement,
+            placement_type: None,
+            origin_group_key: group_key,
+            target_session,
+            directory,
             cursor: 0,
             input_buffer: String::new(),
             available_sessions: sessions,
@@ -580,37 +592,37 @@ impl AppState {
         });
     }
 
-    /// Cancel create session flow
-    pub fn cancel_create_session(&mut self) {
-        self.create_session = None;
+    /// Cancel create process flow
+    pub fn cancel_create_process(&mut self) {
+        self.create_process = None;
     }
 
-    /// Check if in create session mode
-    pub fn is_create_session_mode(&self) -> bool {
-        self.create_session.is_some()
+    /// Check if in create process mode
+    pub fn is_create_process_mode(&self) -> bool {
+        self.create_process.is_some()
     }
 
-    /// Move cursor up in create session popup
-    pub fn create_session_cursor_up(&mut self) {
-        if let Some(ref mut state) = self.create_session {
+    /// Move cursor up in create process popup
+    pub fn create_process_cursor_up(&mut self) {
+        if let Some(ref mut state) = self.create_process {
             if state.cursor > 0 {
                 state.cursor -= 1;
             }
         }
     }
 
-    /// Move cursor down in create session popup
-    pub fn create_session_cursor_down(&mut self, max: usize) {
-        if let Some(ref mut state) = self.create_session {
+    /// Move cursor down in create process popup
+    pub fn create_process_cursor_down(&mut self, max: usize) {
+        if let Some(ref mut state) = self.create_process {
             if state.cursor < max.saturating_sub(1) {
                 state.cursor += 1;
             }
         }
     }
 
-    /// Get create session cursor position
-    pub fn create_session_cursor(&self) -> usize {
-        self.create_session.as_ref().map(|s| s.cursor).unwrap_or(0)
+    /// Get create process cursor position
+    pub fn create_process_cursor(&self) -> usize {
+        self.create_process.as_ref().map(|s| s.cursor).unwrap_or(0)
     }
 }
 

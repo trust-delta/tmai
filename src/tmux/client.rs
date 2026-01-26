@@ -315,6 +315,32 @@ impl TmuxClient {
         None
     }
 
+    /// Create a new window in an existing session
+    /// Returns the new pane's target identifier (session:window.pane)
+    pub fn new_window(&self, session: &str, cwd: &str) -> Result<String> {
+        let output = Command::new("tmux")
+            .args([
+                "new-window",
+                "-t",
+                session,
+                "-c",
+                cwd,
+                "-P",
+                "-F",
+                "#{session_name}:#{window_index}.#{pane_index}",
+            ])
+            .output()
+            .context("Failed to execute tmux new-window")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux new-window failed: {}", stderr);
+        }
+
+        let target = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(target)
+    }
+
     /// Split a window to create a new pane
     /// Returns the new pane's target identifier (session:window.pane)
     pub fn split_window(&self, session: &str, cwd: &str) -> Result<String> {

@@ -32,7 +32,11 @@ impl SessionList {
             .iter()
             .map(|entry| match entry {
                 ListEntry::Agent(idx) => {
-                    if let Some(agent) = state.agent_order.get(*idx).and_then(|id| state.agents.get(id)) {
+                    if let Some(agent) = state
+                        .agent_order
+                        .get(*idx)
+                        .and_then(|id| state.agents.get(id))
+                    {
                         Self::create_list_item(agent, spinner_char)
                     } else {
                         ListItem::new(Line::from(""))
@@ -83,19 +87,20 @@ impl SessionList {
         let mut ui_entry_index = 0; // Index in the full entries list for highlighting
         let mut selected_agent_index: Option<usize> = None;
 
+        // Add CreateNew at the top (always first selectable item)
+        if state.selected_entry_index == 0 {
+            ui_entry_index = 0;
+        }
+        entries.push(ListEntry::CreateNew {
+            group_key: String::new(),
+        });
+        selectable_index += 1;
+
         for (agent_idx, id) in state.agent_order.iter().enumerate() {
             if let Some(agent) = state.agents.get(id) {
                 // Check if we need a group header
                 if let Some(group_key) = state.get_group_key(agent) {
                     if current_group.as_ref() != Some(&group_key) {
-                        // Add CreateNew for previous group (if any)
-                        if let Some(prev_group) = current_group.take() {
-                            if selectable_index == state.selected_entry_index {
-                                ui_entry_index = entries.len();
-                            }
-                            entries.push(ListEntry::CreateNew { group_key: prev_group });
-                            selectable_index += 1;
-                        }
                         entries.push(ListEntry::GroupHeader(group_key.clone()));
                         current_group = Some(group_key);
                     }
@@ -112,16 +117,12 @@ impl SessionList {
             }
         }
 
-        // Add CreateNew for the last group
-        if let Some(last_group) = current_group {
-            if selectable_index == state.selected_entry_index {
-                ui_entry_index = entries.len();
-            }
-            entries.push(ListEntry::CreateNew { group_key: last_group });
-            selectable_index += 1;
-        }
-
-        (entries, ui_entry_index, selectable_index, selected_agent_index)
+        (
+            entries,
+            ui_entry_index,
+            selectable_index,
+            selected_agent_index,
+        )
     }
 
     /// Get the currently selected entry
@@ -138,27 +139,22 @@ impl SessionList {
             header.to_string()
         };
 
-        ListItem::new(Line::from(vec![
-            Span::styled(
-                format!("▸ {} ", display),
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]))
+        ListItem::new(Line::from(vec![Span::styled(
+            format!("▸ {} ", display),
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )]))
     }
 
     /// Create a "new session" item
     fn create_new_item() -> ListItem<'static> {
-        ListItem::new(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "+ 新規AIセッション",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]))
+        ListItem::new(Line::from(vec![Span::styled(
+            "+ 新規プロセス",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::ITALIC),
+        )]))
     }
 
     fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {
@@ -226,7 +222,10 @@ impl SessionList {
         let line4 = Line::from(vec![
             Span::styled("    ", Style::default()),
             Span::styled(
-                format!("{} | {}.{}", agent.session, agent.window_index, agent.pane_index),
+                format!(
+                    "{} | {}.{}",
+                    agent.session, agent.window_index, agent.pane_index
+                ),
                 Style::default().fg(Color::White),
             ),
         ]);

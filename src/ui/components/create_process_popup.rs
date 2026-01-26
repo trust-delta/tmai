@@ -7,15 +7,15 @@ use ratatui::{
 };
 
 use crate::agents::AgentType;
-use crate::state::{AppState, CreateSessionStep};
+use crate::state::{AppState, CreateProcessStep, PlacementType};
 
-/// Popup for creating a new AI session
-pub struct CreateSessionPopup;
+/// Popup for creating a new AI process
+pub struct CreateProcessPopup;
 
-impl CreateSessionPopup {
-    /// Render the create session popup
+impl CreateProcessPopup {
+    /// Render the create process popup
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-        let Some(create_state) = &state.create_session else {
+        let Some(create_state) = &state.create_process else {
             return;
         };
 
@@ -24,9 +24,10 @@ impl CreateSessionPopup {
 
         // Build content based on current step
         let (title, items, help_text) = match create_state.step {
-            CreateSessionStep::SelectTarget => Self::render_select_target(create_state),
-            CreateSessionStep::SelectDirectory => Self::render_select_directory(create_state),
-            CreateSessionStep::SelectAgent => Self::render_select_agent(create_state),
+            CreateProcessStep::SelectPlacement => Self::render_select_placement(create_state),
+            CreateProcessStep::SelectTarget => Self::render_select_target(create_state),
+            CreateProcessStep::SelectDirectory => Self::render_select_directory(create_state),
+            CreateProcessStep::SelectAgent => Self::render_select_agent(create_state),
         };
 
         // Layout: title, list, help
@@ -63,25 +64,24 @@ impl CreateSessionPopup {
 
         // Header text
         let header = match create_state.step {
-            CreateSessionStep::SelectTarget => "tmuxセッションを選択:",
-            CreateSessionStep::SelectDirectory => {
+            CreateProcessStep::SelectPlacement => "作成場所を選択:",
+            CreateProcessStep::SelectTarget => "tmuxセッションを選択:",
+            CreateProcessStep::SelectDirectory => {
                 if create_state.is_input_mode {
                     "ディレクトリパスを入力:"
                 } else {
                     "ディレクトリを選択:"
                 }
             }
-            CreateSessionStep::SelectAgent => "AIエージェントを選択:",
+            CreateProcessStep::SelectAgent => "AIエージェントを選択:",
         };
-        let header_widget = Paragraph::new(header)
-            .style(Style::default().fg(Color::Yellow));
+        let header_widget = Paragraph::new(header).style(Style::default().fg(Color::Yellow));
         frame.render_widget(header_widget, inner_chunks[0]);
 
         // Input mode for directory
-        if create_state.step == CreateSessionStep::SelectDirectory && create_state.is_input_mode {
+        if create_state.step == CreateProcessStep::SelectDirectory && create_state.is_input_mode {
             let input_text = format!("> {}_", &create_state.input_buffer);
-            let input_widget = Paragraph::new(input_text)
-                .style(Style::default().fg(Color::White));
+            let input_widget = Paragraph::new(input_text).style(Style::default().fg(Color::White));
             frame.render_widget(input_widget, inner_chunks[1]);
         } else {
             // List
@@ -106,13 +106,51 @@ impl CreateSessionPopup {
         frame.render_widget(help_widget, inner_chunks[2]);
     }
 
+    /// Render content for selecting placement type
+    fn render_select_placement(
+        _create_state: &crate::state::CreateProcessState,
+    ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
+        let title = "新規プロセス作成";
+
+        let items = vec![
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("新規セッション", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "  (独立したセッションを作成)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])),
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("新規ウィンドウ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "  (既存セッションにタブ追加)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])),
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("ペイン追加", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "  (既存ウィンドウを分割)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])),
+        ];
+
+        let help = "↑/↓: 選択  Enter: 決定  Esc: キャンセル";
+
+        (title, items, help)
+    }
+
     /// Render content for selecting tmux session
     fn render_select_target(
-        create_state: &crate::state::CreateSessionState,
+        create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規セッション作成";
+        let title = "新規プロセス作成";
 
-        let mut items: Vec<ListItem> = create_state
+        let items: Vec<ListItem> = create_state
             .available_sessions
             .iter()
             .map(|s| {
@@ -123,25 +161,16 @@ impl CreateSessionPopup {
             })
             .collect();
 
-        // Add "new session" option
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "+ 新しいセッション",
-                Style::default().fg(Color::Green),
-            ),
-        ])));
-
-        let help = "↑/↓: 選択  Enter: 決定  Esc: キャンセル";
+        let help = "↑/↓: 選択  Enter: 決定  Esc: 戻る";
 
         (title, items, help)
     }
 
     /// Render content for selecting directory
     fn render_select_directory(
-        create_state: &crate::state::CreateSessionState,
+        create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規セッション作成";
+        let title = "新規プロセス作成";
 
         let mut items = vec![
             ListItem::new(Line::from(vec![Span::styled(
@@ -182,9 +211,9 @@ impl CreateSessionPopup {
 
     /// Render content for selecting agent type
     fn render_select_agent(
-        _create_state: &crate::state::CreateSessionState,
+        _create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規セッション作成";
+        let title = "新規プロセス作成";
 
         let items: Vec<ListItem> = AgentType::all_variants()
             .into_iter()
@@ -211,14 +240,25 @@ impl CreateSessionPopup {
 
     /// Get the number of items in the current step
     pub fn item_count(state: &AppState) -> usize {
-        let Some(create_state) = &state.create_session else {
+        let Some(create_state) = &state.create_process else {
             return 0;
         };
 
         match create_state.step {
-            CreateSessionStep::SelectTarget => create_state.available_sessions.len() + 1, // +1 for "new session"
-            CreateSessionStep::SelectDirectory => 3 + create_state.known_directories.len(), // Input, home, current + known dirs
-            CreateSessionStep::SelectAgent => AgentType::all_variants().len(),
+            CreateProcessStep::SelectPlacement => 3, // NewSession, NewWindow, SplitPane
+            CreateProcessStep::SelectTarget => create_state.available_sessions.len(),
+            CreateProcessStep::SelectDirectory => 3 + create_state.known_directories.len(), // Input, home, current + known dirs
+            CreateProcessStep::SelectAgent => AgentType::all_variants().len(),
+        }
+    }
+
+    /// Get the placement type from cursor position
+    pub fn get_placement_type(cursor: usize) -> Option<PlacementType> {
+        match cursor {
+            0 => Some(PlacementType::NewSession),
+            1 => Some(PlacementType::NewWindow),
+            2 => Some(PlacementType::SplitPane),
+            _ => None,
         }
     }
 }
