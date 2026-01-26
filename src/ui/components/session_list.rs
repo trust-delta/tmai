@@ -150,12 +150,15 @@ impl SessionList {
 
     /// Create a "new session" item
     fn create_new_item() -> ListItem<'static> {
-        ListItem::new(Line::from(vec![Span::styled(
-            "+ 新規セッション",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::ITALIC),
-        )]))
+        ListItem::new(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "+ 新規AIセッション",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]))
     }
 
     fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {
@@ -165,8 +168,9 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Line 1: AgentType | pid:xxx
+        // Line 1: AgentType | pid:xxx (2-char indent for items under group header)
         let line1 = Line::from(vec![
+            Span::styled("  ", Style::default()),
             Span::styled(
                 agent.agent_type.short_name().to_string(),
                 Style::default().fg(Color::Cyan),
@@ -198,7 +202,7 @@ impl SessionList {
         };
 
         let line2 = Line::from(vec![
-            Span::styled("  ", Style::default()),
+            Span::styled("    ", Style::default()),
             Span::styled(
                 format!("{} ", status_indicator),
                 Style::default().fg(status_color),
@@ -214,13 +218,13 @@ impl SessionList {
         };
 
         let line3 = Line::from(vec![
-            Span::styled("  ", Style::default()),
+            Span::styled("    ", Style::default()),
             Span::styled(title_display, Style::default().fg(Color::White)),
         ]);
 
         // Line 4: session | pane
         let line4 = Line::from(vec![
-            Span::styled("  ", Style::default()),
+            Span::styled("    ", Style::default()),
             Span::styled(
                 format!("{} | {}.{}", agent.session, agent.window_index, agent.pane_index),
                 Style::default().fg(Color::White),
