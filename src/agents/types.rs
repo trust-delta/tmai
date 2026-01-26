@@ -17,32 +17,68 @@ impl AgentType {
     /// Note: window_name is intentionally NOT used for detection because
     /// all panes in a window share the same window_name, causing false positives.
     pub fn from_detection(command: &str, title: &str, _window_name: &str) -> Option<Self> {
+        Self::from_detection_with_cmdline(command, title, _window_name, None)
+    }
+
+    /// Parse agent type with optional cmdline from /proc
+    pub fn from_detection_with_cmdline(
+        command: &str,
+        title: &str,
+        _window_name: &str,
+        cmdline: Option<&str>,
+    ) -> Option<Self> {
         let cmd_lower = command.to_lowercase();
         let title_lower = title.to_lowercase();
+        let cmdline_lower = cmdline.map(|s| s.to_lowercase());
 
-        // Claude Code detection
-        // Primary: command is "claude" or version-like (e.g., "2.1.11")
-        // Secondary: title contains ✳ (idle indicator) or braille spinners
-        if cmd_lower == "claude"
-            || Self::is_version_like(command)
+        // First, check exact command matches (highest priority)
+        if cmd_lower == "claude" {
+            return Some(AgentType::ClaudeCode);
+        }
+        if cmd_lower == "opencode" {
+            return Some(AgentType::OpenCode);
+        }
+        if cmd_lower == "codex" {
+            return Some(AgentType::CodexCli);
+        }
+        if cmd_lower == "gemini" {
+            return Some(AgentType::GeminiCli);
+        }
+
+        // Check cmdline for agent keywords (e.g., "node /path/to/codex")
+        if let Some(ref cl) = cmdline_lower {
+            if cl.contains("/codex") || cl.contains("codex ") {
+                return Some(AgentType::CodexCli);
+            }
+            if cl.contains("/gemini") || cl.contains("gemini ") {
+                return Some(AgentType::GeminiCli);
+            }
+            if cl.contains("/opencode") || cl.contains("opencode ") {
+                return Some(AgentType::OpenCode);
+            }
+            // Claude check via cmdline
+            if cl.contains("/claude") || cl.contains("claude ") {
+                return Some(AgentType::ClaudeCode);
+            }
+        }
+
+        // Claude Code detection via title indicators
+        // version-like command (e.g., "2.1.11"), ✳ (idle), or braille spinners
+        if Self::is_version_like(command)
             || title.contains('✳')
             || Self::has_braille_spinner(title)
         {
             return Some(AgentType::ClaudeCode);
         }
 
-        // OpenCode detection
-        if cmd_lower == "opencode" || title_lower.contains("opencode") {
+        // Title-based detection (lower priority)
+        if title_lower.contains("opencode") {
             return Some(AgentType::OpenCode);
         }
-
-        // Codex CLI detection
-        if cmd_lower == "codex" || title_lower.contains("codex") {
+        if title_lower.contains("codex") {
             return Some(AgentType::CodexCli);
         }
-
-        // Gemini CLI detection
-        if cmd_lower == "gemini" || title_lower.contains("gemini") {
+        if title_lower.contains("gemini") {
             return Some(AgentType::GeminiCli);
         }
 
@@ -368,6 +404,53 @@ mod tests {
 
         // Unknown
         assert_eq!(AgentType::from_detection("fish", "~", "fish"), None);
+    }
+
+    #[test]
+    fn test_agent_type_detection_with_cmdline() {
+        // Codex CLI via cmdline (node running codex)
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "node",
+                "DESKTOP-LG7DUPN",
+                "",
+                Some("node /home/user/.nvm/versions/node/v24.9.0/bin/codex")
+            ),
+            Some(AgentType::CodexCli)
+        );
+
+        // Gemini CLI via cmdline
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "node",
+                "",
+                "",
+                Some("node /usr/local/bin/gemini")
+            ),
+            Some(AgentType::GeminiCli)
+        );
+
+        // Claude via cmdline
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "node",
+                "",
+                "",
+                Some("node /home/user/.local/bin/claude")
+            ),
+            Some(AgentType::ClaudeCode)
+        );
+
+        // Node without agent cmdline - should not detect
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "node",
+                "DESKTOP",
+                "",
+                Some("node /home/user/app/server.js")
+            ),
+            None
+        );
     }
 
     #[test]

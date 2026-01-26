@@ -74,6 +74,42 @@ impl ProcessCache {
             .map(|s| s.replace('\0', " ").trim().to_string())
     }
 
+    /// Get cmdline of first child process (for detecting agents running under shell)
+    pub fn get_child_cmdline(&self, pid: u32) -> Option<String> {
+        // Check cache first with child_ prefix
+        let cache_key = pid + 1_000_000_000; // Use offset to differentiate from direct pid
+        {
+            let cache = self.cache.read();
+            if let Some(info) = cache.get(&cache_key) {
+                if info.last_update.elapsed() < self.ttl {
+                    return Some(info.cmdline.clone());
+                }
+            }
+        }
+
+        // Find child processes
+        let children_path = format!("/proc/{}/task/{}/children", pid, pid);
+        let children = std::fs::read_to_string(&children_path).ok()?;
+
+        // Get first child's cmdline
+        let child_pid: u32 = children.split_whitespace().next()?.parse().ok()?;
+        let cmdline = self.read_cmdline(child_pid)?;
+
+        // Update cache
+        {
+            let mut cache = self.cache.write();
+            cache.insert(
+                cache_key,
+                ProcessInfo {
+                    cmdline: cmdline.clone(),
+                    last_update: Instant::now(),
+                },
+            );
+        }
+
+        Some(cmdline)
+    }
+
     /// Clear expired entries from the cache
     pub fn cleanup(&self) {
         let mut cache = self.cache.write();
