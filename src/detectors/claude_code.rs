@@ -391,6 +391,37 @@ impl ClaudeCodeDetector {
             .and_then(|c| c.get(1).or(c.get(2)))
             .map(|m| m.as_str().trim().to_string())
     }
+
+    /// Check if content contains Tasks list with in-progress tasks
+    /// ◼ indicates an in-progress task in Claude Code's task list
+    fn has_in_progress_tasks(content: &str) -> bool {
+        // Look for the Tasks header pattern and in-progress indicator
+        let recent = safe_tail(content, 2000);
+
+        // Check for Tasks header with in_progress count > 0
+        for line in recent.lines() {
+            let trimmed = line.trim();
+            // Match "Tasks (X done, Y in progress, Z open)"
+            if trimmed.starts_with("Tasks (") && trimmed.contains("in progress") {
+                // Check if there's at least 1 in progress
+                if let Some(start) = trimmed.find(", ") {
+                    if let Some(end) = trimmed[start + 2..].find(" in progress") {
+                        let num_str = &trimmed[start + 2..start + 2 + end];
+                        if let Ok(count) = num_str.parse::<u32>() {
+                            if count > 0 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            // Also check for ◼ #N pattern (in-progress task indicator)
+            if trimmed.starts_with("◼ #") {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl Default for ClaudeCodeDetector {
@@ -414,7 +445,15 @@ impl StatusDetector for ClaudeCodeDetector {
             return AgentStatus::Error { message };
         }
 
-        // 3. Title-based detection
+        // 3. Check for Tasks list with in-progress tasks (◼)
+        // This takes priority over title-based Idle detection
+        if Self::has_in_progress_tasks(content) {
+            return AgentStatus::Processing {
+                activity: "Tasks running".to_string(),
+            };
+        }
+
+        // 4. Title-based detection
         // ✳ in title = Idle (waiting for input)
         if title.contains(IDLE_INDICATOR) {
             return AgentStatus::Idle;
@@ -689,5 +728,44 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
             }
             _ => panic!("Expected AwaitingApproval, got {:?}", status),
         }
+    }
+
+    #[test]
+    fn test_tasks_in_progress_detected_as_processing() {
+        let detector = ClaudeCodeDetector::new();
+        // Tasks list with in_progress tasks should be Processing, not Idle
+        let content = r#"
+  Tasks (0 done, 2 in progress, 8 open) · ctrl+t to hide tasks
+  ◼ #1 T1: helpers仕様書の作成
+  ◼ #2 T2: Result型仕様書の作成
+  ◻ #3 T3: past-medication-record-edit更新
+  ◻ #4 T4: medication-history更新
+  ◻ #10 T10: OVERVIEW更新 › blocked by #9
+"#;
+        // Even with ✳ in title, should be Processing due to in-progress tasks
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_tasks_all_done_is_idle() {
+        let detector = ClaudeCodeDetector::new();
+        // Tasks list with all done (no in_progress) should be Idle
+        let content = r#"
+  Tasks (10 done, 0 in progress, 0 open) · ctrl+t to hide tasks
+  ✔ #1 T1: helpers仕様書の作成
+  ✔ #2 T2: Result型仕様書の作成
+  ✔ #3 T3: past-medication-record-edit更新
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::Idle),
+            "Expected Idle, got {:?}",
+            status
+        );
     }
 }
