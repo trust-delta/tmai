@@ -44,17 +44,12 @@ impl fmt::Display for SubagentType {
 }
 
 /// Status of a subagent
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubagentStatus {
+    #[default]
     Running,
     Completed,
     Failed,
-}
-
-impl Default for SubagentStatus {
-    fn default() -> Self {
-        SubagentStatus::Running
-    }
 }
 
 /// A subagent spawned by the main agent

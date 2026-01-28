@@ -9,8 +9,8 @@ const IDLE_INDICATOR: char = '✳';
 
 /// Processing spinner characters (Braille patterns)
 const PROCESSING_SPINNERS: &[char] = &[
-    '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷',
-    '⠳', '⠱', '⠰', '◐', '◓', '◑', '◒',
+    '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
+    '⠰', '◐', '◓', '◑', '◒',
 ];
 
 /// Detector for Claude Code CLI
@@ -34,28 +34,30 @@ impl ClaudeCodeDetector {
             file_edit_pattern: Regex::new(
                 r"(?i)(Edit|Write|Modify)\s+.*?\?|Do you want to (edit|write|modify)|Allow.*?edit",
             )
-            .unwrap(),
+            .expect("Invalid file_edit_pattern regex"),
             file_create_pattern: Regex::new(
                 r"(?i)Create\s+.*?\?|Do you want to create|Allow.*?create",
             )
-            .unwrap(),
+            .expect("Invalid file_create_pattern regex"),
             file_delete_pattern: Regex::new(
                 r"(?i)Delete\s+.*?\?|Do you want to delete|Allow.*?delete",
             )
-            .unwrap(),
+            .expect("Invalid file_delete_pattern regex"),
             bash_pattern: Regex::new(
                 r"(?i)(Run|Execute)\s+(command|bash|shell)|Do you want to run|Allow.*?(command|bash)|run this command",
             )
-            .unwrap(),
+            .expect("Invalid bash_pattern regex"),
             mcp_pattern: Regex::new(r"(?i)MCP\s+tool|Do you want to use.*?MCP|Allow.*?MCP")
-                .unwrap(),
+                .expect("Invalid mcp_pattern regex"),
             general_approval_pattern: Regex::new(
                 r"(?i)\[y/n\]|\[Y/n\]|\[yes/no\]|\(Y\)es\s*/\s*\(N\)o|Yes\s*/\s*No|y/n|Allow\?|Do you want to (allow|proceed|continue|run|execute)",
             )
-            .unwrap(),
+            .expect("Invalid general_approval_pattern regex"),
             // Choice pattern: handles "> 1. Option" or "  1. Option" or "❯ 1. Option"
-            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$").unwrap(),
-            error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
+            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$")
+                .expect("Invalid choice_pattern regex"),
+            error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)")
+                .expect("Invalid error_pattern regex"),
         }
     }
 
@@ -78,7 +80,12 @@ impl ClaudeCodeDetector {
             if trimmed.starts_with('❯') {
                 let after_marker = trimmed.trim_start_matches('❯').trim_start();
                 // If followed by digit, it's a selection cursor, not a prompt
-                if after_marker.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if after_marker
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     return false;
                 }
                 // Very short ❯ line could be prompt
@@ -182,7 +189,8 @@ impl ClaudeCodeDetector {
                         choices.push(label);
                         first_choice_idx = Some(i);
                         last_choice_idx = Some(i);
-                        cursor_position = if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        cursor_position = if trimmed.starts_with('❯') || trimmed.starts_with('>')
+                        {
                             1
                         } else {
                             0
@@ -235,7 +243,11 @@ impl ClaudeCodeDetector {
 
         if choices.len() >= 2 {
             // Default cursor to 1 if not detected
-            let cursor = if cursor_position == 0 { 1 } else { cursor_position };
+            let cursor = if cursor_position == 0 {
+                1
+            } else {
+                cursor_position
+            };
             Some((
                 ApprovalType::UserQuestion {
                     choices,
@@ -247,6 +259,36 @@ impl ClaudeCodeDetector {
         } else {
             None
         }
+    }
+
+    /// Detect "Do you want to proceed?" style approval (1. Yes / 2. Yes, don't ask / 3. No)
+    fn detect_proceed_prompt(content: &str) -> bool {
+        // Filter out empty lines and take last 15 non-empty lines
+        let check_lines: Vec<&str> = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .take(15)
+            .collect();
+
+        let mut has_yes = false;
+        let mut has_no = false;
+
+        for line in &check_lines {
+            let trimmed = line.trim();
+            // Pattern: "1. Yes" or "❯ 1. Yes" or "> 1. Yes"
+            if trimmed.contains("1.") && trimmed.contains("Yes") {
+                has_yes = true;
+            }
+            // Pattern: "2. No" or "3. No"
+            if (trimmed.contains("2. No") || trimmed.contains("3. No")) && trimmed.len() < 20 {
+                has_no = true;
+            }
+        }
+
+        has_yes && has_no
     }
 
     /// Detect Yes/No button-style approval
@@ -310,6 +352,9 @@ impl ClaudeCodeDetector {
             return Some(result);
         }
 
+        // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
+        let has_proceed_prompt = Self::detect_proceed_prompt(content);
+
         // Check for button-style approval
         let has_yes_no_buttons = self.detect_yes_no_buttons(recent_lines);
 
@@ -318,7 +363,7 @@ impl ClaudeCodeDetector {
         let last_text = last_lines.join("\n");
         let has_text_approval = self.general_approval_pattern.is_match(&last_text);
 
-        if !has_yes_no_buttons && !has_text_approval {
+        if !has_proceed_prompt && !has_yes_no_buttons && !has_text_approval {
             return None;
         }
 
@@ -453,7 +498,14 @@ impl StatusDetector for ClaudeCodeDetector {
             };
         }
 
-        // 4. Title-based detection
+        // 4. Check for Compacting (✽ Compacting conversation)
+        if title.contains('✽') && title.to_lowercase().contains("compacting") {
+            return AgentStatus::Processing {
+                activity: "Compacting...".to_string(),
+            };
+        }
+
+        // 5. Title-based detection
         // ✳ in title = Idle (waiting for input)
         if title.contains(IDLE_INDICATOR) {
             return AgentStatus::Idle;
@@ -473,6 +525,22 @@ impl StatusDetector for ClaudeCodeDetector {
         AgentStatus::Processing {
             activity: String::new(),
         }
+    }
+
+    fn detect_context_warning(&self, content: &str) -> Option<u8> {
+        // Look for "Context left until auto-compact: XX%"
+        for line in content.lines().rev().take(30) {
+            if line.contains("Context left until auto-compact:") {
+                // Extract percentage
+                if let Some(pct_str) = line.split(':').last() {
+                    let pct_str = pct_str.trim().trim_end_matches('%');
+                    if let Ok(pct) = pct_str.parse::<u8>() {
+                        return Some(pct);
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn agent_type(&self) -> AgentType {
@@ -765,6 +833,123 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
         assert!(
             matches!(status, AgentStatus::Idle),
             "Expected Idle, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_web_search_approval() {
+        let detector = ClaudeCodeDetector::new();
+        let content = r#"● Web Search("MCP Apps iframe UI Model Context Protocol 2026")
+
+● Explore(プロジェクト構造の調査)
+  ⎿  Done (11 tool uses · 85.3k tokens · 51s)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool use
+
+   Web Search("MCP Apps iframe UI Model Context Protocol 2026")
+   Claude wants to search the web for: MCP Apps iframe UI Model Context Protocol 2026
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for Web Search commands in /home/trustdelta/works/conversation-handoff-mcp
+   3. No
+
+ Esc to cancel · Tab to add additional instructions"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_proceed_prompt_detection() {
+        let detector = ClaudeCodeDetector::new();
+        let content = r#"
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for Web Search commands
+   3. No
+
+ Esc to cancel"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_actual_captured_content() {
+        let detector = ClaudeCodeDetector::new();
+        // Content with ❯ appearing both as user prompt and selection cursor
+        let content = "Line1\nLine2\nLine3\nLine4\nLine5\nLine6\n\
+❯ MCP Appsが公開された、テスト\n\
+Line8\nLine9\nLine10\n\
+Line11\nLine12\nLine13\nLine14\nLine15\n\
+ Tool use\n\
+   Web Search(\"test\")\n\
+\n\
+ Do you want to proceed?\n\
+ ❯ 1. Yes\n\
+   2. No\n\
+\n\
+ Esc to cancel";
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_web_search_with_full_capture() {
+        let detector = ClaudeCodeDetector::new();
+        // Full capture from actual tmux pane - includes welcome screen
+        let content = r#"╭─── Claude Code v2.1.17 ─────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                     │ Tips for getting started                                      │
+│             Welcome back trust.delta!               │ Run /init to create a CLAUDE.md file with instructions for Cl…│
+│                                                     │                                                               │
+│                                                     │ ───────────────────────────────────────────────────────────── │
+│                      ▐▛███▜▌                        │ Recent activity                                               │
+│                     ▝▜█████▛▘                       │ No recent activity                                            │
+│                       ▘▘ ▝▝                         │                                                               │
+│  Opus 4.5 · Claude Max · trust.delta@gmail.com's    │                                                               │
+│  Organization                                       │                                                               │
+│          ~/works/conversation-handoff-mcp           │                                                               │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+❯ MCP Appsが公開された、mcpにiframeでuiを追加できる様子。実験がてらアプデが止まってたconversation-handoff-mcpに組
+  み込んでみようと思います
+
+● MCP Appsは興味深い新機能ですね。まずMCP Appsの仕様と現在のconversation-handoff-mcpの状態を調査しましょう。
+
+● Web Search("MCP Apps iframe UI Model Context Protocol 2026")
+
+● Explore(プロジェクト構造の調査)
+  ⎿  Done (11 tool uses · 85.3k tokens · 51s)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool use
+
+   Web Search("MCP Apps iframe UI Model Context Protocol 2026")
+   Claude wants to search the web for: MCP Apps iframe UI Model Context Protocol 2026
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for Web Search commands in /home/trustdelta/works/conversation-handoff-mcp
+   3. No
+
+ Esc to cancel · Tab to add additional instructions"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
             status
         );
     }

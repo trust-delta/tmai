@@ -20,9 +20,7 @@ impl InputWidget {
         let is_focused = state.is_input_mode();
 
         // Get target agent name
-        let target_name = state
-            .selected_target()
-            .unwrap_or("None");
+        let target_name = state.selected_target().unwrap_or("None");
 
         let title = format!(" Input -> {} ", target_name);
 

@@ -59,6 +59,38 @@ impl SortBy {
     }
 }
 
+/// Monitor scope for filtering panes
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MonitorScope {
+    /// Monitor all attached sessions
+    #[default]
+    AllSessions,
+    /// Monitor current session only
+    CurrentSession,
+    /// Monitor current window only
+    CurrentWindow,
+}
+
+impl MonitorScope {
+    /// Get the next scope in cycle
+    pub fn next(self) -> Self {
+        match self {
+            MonitorScope::AllSessions => MonitorScope::CurrentSession,
+            MonitorScope::CurrentSession => MonitorScope::CurrentWindow,
+            MonitorScope::CurrentWindow => MonitorScope::AllSessions,
+        }
+    }
+
+    /// Get display name for the scope
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            MonitorScope::AllSessions => "All",
+            MonitorScope::CurrentSession => "Session",
+            MonitorScope::CurrentWindow => "Window",
+        }
+    }
+}
+
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -71,6 +103,22 @@ pub enum PlacementType {
     NewWindow,
     /// Split existing window to add a pane
     SplitPane,
+}
+
+/// Action to confirm before executing
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmAction {
+    /// Kill a tmux pane
+    KillPane { target: String },
+}
+
+/// State for confirmation dialog
+#[derive(Debug, Clone)]
+pub struct ConfirmationState {
+    /// Action to execute on confirmation
+    pub action: ConfirmAction,
+    /// Message to display
+    pub message: String,
 }
 
 /// Step in the create process flow
@@ -120,8 +168,10 @@ pub struct AppState {
     pub agent_order: Vec<String>,
     /// Currently selected agent index
     pub selected_index: usize,
-    /// Whether help popup is shown
+    /// Whether help screen is shown
     pub show_help: bool,
+    /// Help screen scroll offset
+    pub help_scroll: u16,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Error message to display
@@ -150,6 +200,14 @@ pub struct AppState {
     pub selectable_count: usize,
     /// Whether CreateNew entry is currently selected
     pub is_on_create_new: bool,
+    /// Monitor scope for filtering panes
+    pub monitor_scope: MonitorScope,
+    /// Current session name (for scope display)
+    pub current_session: Option<String>,
+    /// Current window index (for scope display)
+    pub current_window: Option<u32>,
+    /// Confirmation dialog state (None if not showing)
+    pub confirmation_state: Option<ConfirmationState>,
 }
 
 impl AppState {
@@ -160,6 +218,7 @@ impl AppState {
             agent_order: Vec::new(),
             selected_index: 0,
             show_help: false,
+            help_scroll: 0,
             preview_scroll: 0,
             error_message: None,
             last_poll: None,
@@ -174,6 +233,10 @@ impl AppState {
             selected_entry_index: 0,
             selectable_count: 0,
             is_on_create_new: false,
+            monitor_scope: MonitorScope::default(),
+            current_session: None,
+            current_window: None,
+            confirmation_state: None,
         }
     }
 
@@ -266,6 +329,11 @@ impl AppState {
     pub fn cycle_sort(&mut self) {
         self.sort_by = self.sort_by.next();
         self.sort_agents();
+    }
+
+    /// Cycle through monitor scopes
+    pub fn cycle_monitor_scope(&mut self) {
+        self.monitor_scope = self.monitor_scope.next();
     }
 
     /// Sort agent_order based on current sort_by setting
@@ -404,9 +472,22 @@ impl AppState {
         dirs
     }
 
-    /// Toggle help popup
+    /// Toggle help screen
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+        if self.show_help {
+            self.help_scroll = 0;
+        }
+    }
+
+    /// Scroll help screen down
+    pub fn scroll_help_down(&mut self, amount: u16) {
+        self.help_scroll = self.help_scroll.saturating_add(amount);
+    }
+
+    /// Scroll help screen up
+    pub fn scroll_help_up(&mut self, amount: u16) {
+        self.help_scroll = self.help_scroll.saturating_sub(amount);
     }
 
     /// Scroll preview down
@@ -600,6 +681,30 @@ impl AppState {
     /// Check if in create process mode
     pub fn is_create_process_mode(&self) -> bool {
         self.create_process.is_some()
+    }
+
+    // =========================================
+    // Confirmation dialog methods
+    // =========================================
+
+    /// Show a confirmation dialog
+    pub fn show_confirmation(&mut self, action: ConfirmAction, message: String) {
+        self.confirmation_state = Some(ConfirmationState { action, message });
+    }
+
+    /// Cancel the confirmation dialog
+    pub fn cancel_confirmation(&mut self) {
+        self.confirmation_state = None;
+    }
+
+    /// Check if confirmation dialog is showing
+    pub fn is_showing_confirmation(&self) -> bool {
+        self.confirmation_state.is_some()
+    }
+
+    /// Get the confirmation action (for execution)
+    pub fn get_confirmation_action(&self) -> Option<ConfirmAction> {
+        self.confirmation_state.as_ref().map(|s| s.action.clone())
     }
 
     /// Move cursor up in create process popup

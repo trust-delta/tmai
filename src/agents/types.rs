@@ -64,9 +64,7 @@ impl AgentType {
 
         // Claude Code detection via title indicators
         // version-like command (e.g., "2.1.11"), ✳ (idle), or braille spinners
-        if Self::is_version_like(command)
-            || title.contains('✳')
-            || Self::has_braille_spinner(title)
+        if Self::is_version_like(command) || title.contains('✳') || Self::has_braille_spinner(title)
         {
             return Some(AgentType::ClaudeCode);
         }
@@ -89,12 +87,10 @@ impl AgentType {
     fn has_braille_spinner(title: &str) -> bool {
         // Braille pattern characters used by Claude Code spinner
         const BRAILLE_SPINNERS: &[char] = &[
-            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
-            '⠐', '⠠', '⠄', '⠂', '⠁', '⠈', '⠃', '⠉', '⠊', '⠑',
-            '⠒', '⠓', '⠔', '⠕', '⠖', '⠗', '⠘', '⠚', '⠛', '⠜',
-            '⠝', '⠞', '⠟', '⠡', '⠢', '⠣', '⠤', '⠥', '⠨', '⠩',
-            '⠪', '⠫', '⠬', '⠭', '⠮', '⠯', '⠰', '⠱', '⠲', '⠳',
-            '⠵', '⠶', '⠷', '⠺', '⠻', '⠽', '⠾', '⠿',
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠐', '⠠', '⠄', '⠂', '⠁', '⠈', '⠃',
+            '⠉', '⠊', '⠑', '⠒', '⠓', '⠔', '⠕', '⠖', '⠗', '⠘', '⠚', '⠛', '⠜', '⠝', '⠞', '⠟', '⠡',
+            '⠢', '⠣', '⠤', '⠥', '⠨', '⠩', '⠪', '⠫', '⠬', '⠭', '⠮', '⠯', '⠰', '⠱', '⠲', '⠳', '⠵',
+            '⠶', '⠷', '⠺', '⠻', '⠽', '⠾', '⠿',
         ];
         title.chars().any(|c| BRAILLE_SPINNERS.contains(&c))
     }
@@ -199,7 +195,7 @@ impl fmt::Display for ApprovalType {
 }
 
 /// Current status of an agent
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
     /// Agent is idle, waiting for input
     Idle,
@@ -213,6 +209,7 @@ pub enum AgentStatus {
     /// Agent encountered an error
     Error { message: String },
     /// Status could not be determined
+    #[default]
     Unknown,
 }
 
@@ -244,12 +241,6 @@ impl AgentStatus {
             AgentStatus::Error { .. } => "✗",
             AgentStatus::Unknown => "?",
         }
-    }
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        AgentStatus::Unknown
     }
 }
 
@@ -304,10 +295,13 @@ pub struct MonitoredAgent {
     pub selected: bool,
     /// Last update timestamp
     pub last_update: chrono::DateTime<chrono::Utc>,
+    /// Context warning percentage (e.g., "11%" remaining until auto-compact)
+    pub context_warning: Option<u8>,
 }
 
 impl MonitoredAgent {
     /// Create a new monitored agent
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         target: String,
         agent_type: AgentType,
@@ -333,16 +327,25 @@ impl MonitoredAgent {
             pane_index,
             selected: false,
             last_update: chrono::Utc::now(),
+            context_warning: None,
         }
     }
 
     /// Update the agent's status and content
-    pub fn update(&mut self, status: AgentStatus, content: String, content_ansi: String, title: String) {
+    pub fn update(
+        &mut self,
+        status: AgentStatus,
+        content: String,
+        content_ansi: String,
+        title: String,
+        context_warning: Option<u8>,
+    ) {
         self.status = status;
         self.last_content = content;
         self.last_content_ansi = content_ansi;
         self.title = title;
         self.last_update = chrono::Utc::now();
+        self.context_warning = context_warning;
     }
 
     /// Get the display name for the agent

@@ -6,15 +6,38 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::{AppState, SortBy};
+use crate::state::{AppState, MonitorScope, SortBy};
+use crate::ui::{SplitDirection, ViewMode};
 
 /// Status bar widget
 pub struct StatusBar;
 
 impl StatusBar {
     /// Render the status bar
-    pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+    pub fn render(
+        frame: &mut Frame,
+        area: Rect,
+        state: &AppState,
+        view_mode: ViewMode,
+        split_direction: SplitDirection,
+    ) {
         let mut spans = vec![];
+
+        // Show view mode and split direction
+        spans.push(Span::styled(
+            format!(" {} ", view_mode.display_name()),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ));
+        if view_mode == ViewMode::Both {
+            spans.push(Span::styled(
+                format!("|{}", split_direction.display_name()),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        spans.push(Span::raw(" "));
+
+        // Show selected agent/entry info
+        Self::render_selection_info(&mut spans, state);
 
         // Show different hints based on input mode
         if state.is_passthrough_mode() {
@@ -65,7 +88,10 @@ impl StatusBar {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::styled(":Cancel ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                ":Cancel ",
+                Style::default().fg(Color::DarkGray),
+            ));
 
             spans.push(Span::styled(
                 "<-/->",
@@ -90,15 +116,10 @@ impl StatusBar {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::styled(
-                "/",
-                Style::default().fg(Color::DarkGray),
-            ));
+            spans.push(Span::styled("/", Style::default().fg(Color::DarkGray)));
             spans.push(Span::styled(
                 "n",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
                 ":Approve ",
@@ -117,7 +138,7 @@ impl StatusBar {
             ));
 
             spans.push(Span::styled(
-                "→",
+                "p",
                 Style::default()
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
@@ -144,13 +165,21 @@ impl StatusBar {
                     .fg(Color::Blue)
                     .add_modifier(Modifier::BOLD),
             ));
+            spans.push(Span::styled(":Sort ", Style::default().fg(Color::DarkGray)));
+
             spans.push(Span::styled(
-                ":Sort ",
+                "m",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                ":Scope ",
                 Style::default().fg(Color::DarkGray),
             ));
 
             spans.push(Span::styled(
-                "?",
+                "h",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -159,11 +188,31 @@ impl StatusBar {
 
             spans.push(Span::styled(
                 "q",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(":Quit ", Style::default().fg(Color::DarkGray)));
+
+            // Show current monitor scope
+            let scope_display = match state.monitor_scope {
+                MonitorScope::AllSessions => "[All]".to_string(),
+                MonitorScope::CurrentSession => {
+                    if let Some(ref session) = state.current_session {
+                        format!("[{}]", session)
+                    } else {
+                        "[Session]".to_string()
+                    }
+                }
+                MonitorScope::CurrentWindow => {
+                    match (&state.current_session, state.current_window) {
+                        (Some(session), Some(window)) => format!("[{}:{}]", session, window),
+                        _ => "[Window]".to_string(),
+                    }
+                }
+            };
+            spans.push(Span::styled(
+                format!("{} ", scope_display),
+                Style::default().fg(Color::Magenta),
+            ));
 
             // Show current sort method if not default (Directory)
             if state.sort_by != SortBy::Directory {
@@ -193,9 +242,7 @@ impl StatusBar {
         if let Some(error) = &state.error_message {
             spans.push(Span::styled(
                 format!(" Error: {} ", error),
-                Style::default()
-                    .fg(Color::White)
-                    .bg(Color::Red),
+                Style::default().fg(Color::White).bg(Color::Red),
             ));
         }
 
@@ -210,10 +257,35 @@ impl StatusBar {
             ));
         }
 
-        let paragraph = Paragraph::new(Line::from(spans))
-            .style(Style::default().bg(Color::Black));
+        let paragraph = Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Black));
 
         frame.render_widget(paragraph, area);
+    }
+
+    /// Render selection info at the start of status bar
+    fn render_selection_info(spans: &mut Vec<Span<'static>>, state: &AppState) {
+        if state.is_on_create_new {
+            // CreateNew entry selected
+            spans.push(Span::styled(
+                " [+ New] ",
+                Style::default().fg(Color::Green),
+            ));
+        } else if let Some(agent) = state.selected_agent() {
+            // Agent selected - show target and agent type
+            let short_target = if agent.id.len() > 12 {
+                format!("{}...", &agent.id[..9])
+            } else {
+                agent.id.clone()
+            };
+            spans.push(Span::styled(
+                format!(" {} ", short_target),
+                Style::default().fg(Color::Cyan),
+            ));
+            spans.push(Span::styled(
+                format!("{} ", agent.agent_type.short_name()),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
     }
 }
 

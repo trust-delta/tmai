@@ -1673,6 +1673,7 @@ dependencies = [
  "clap",
  "crossterm 0.28.1",
  "dirs",
+ "once_cell",
  "parking_lot",
  "pretty_assertions",
  "ratatui",

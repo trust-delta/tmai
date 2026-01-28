@@ -58,7 +58,12 @@ impl PaneInfo {
 
     /// Detect the agent type with cmdline from /proc
     pub fn detect_agent_type_with_cmdline(&self, cmdline: Option<&str>) -> Option<AgentType> {
-        AgentType::from_detection_with_cmdline(&self.command, &self.title, &self.window_name, cmdline)
+        AgentType::from_detection_with_cmdline(
+            &self.command,
+            &self.title,
+            &self.window_name,
+            cmdline,
+        )
     }
 
     /// Check if this pane appears to be running an AI agent

@@ -9,12 +9,12 @@ use crate::agents::{AgentType, ApprovalType};
 use crate::config::Settings;
 use crate::detectors::get_detector;
 use crate::monitor::{PollMessage, Poller};
-use crate::state::{AppState, CreateProcessStep, PlacementType, SharedState};
+use crate::state::{AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState};
 use crate::tmux::TmuxClient;
 
 use super::components::{
-    CreateProcessPopup, HelpPopup, InputWidget, ListEntry, PanePreview, SelectionPopup,
-    SessionList, StatusBar,
+    ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
+    SelectionPopup, SessionList, StatusBar,
 };
 use super::Layout;
 
@@ -46,6 +46,13 @@ impl App {
         // Check if tmux is available
         if !self.tmux_client.is_available() {
             anyhow::bail!("tmux is not running or not available");
+        }
+
+        // Capture current location for scope filtering display
+        if let Ok((session, window)) = self.tmux_client.get_current_location() {
+            let mut state = self.state.write();
+            state.current_session = Some(session);
+            state.current_window = Some(window);
         }
 
         // Setup terminal
@@ -107,11 +114,20 @@ impl App {
             // Draw UI
             terminal.draw(|frame| {
                 let state = self.state.read();
+
+                // Full-screen help mode
+                if state.show_help {
+                    HelpScreen::render(frame, frame.area(), &state);
+                    return;
+                }
+
                 let show_input = state.is_input_mode();
                 let areas = self.layout.calculate_with_input(frame.area(), show_input);
 
                 // Render main components
-                SessionList::render(frame, areas.session_list, &state);
+                if let Some(session_list_area) = areas.session_list {
+                    SessionList::render(frame, session_list_area, &state, areas.split_direction);
+                }
 
                 if let Some(preview_area) = areas.preview {
                     PanePreview::render(frame, preview_area, &state);
@@ -122,13 +138,13 @@ impl App {
                     InputWidget::render(frame, input_area, &state);
                 }
 
-                StatusBar::render(frame, areas.status_bar, &state);
-
-                // Render popups
-                if state.show_help {
-                    let popup_area = self.layout.popup_area(frame.area(), 60, 70);
-                    HelpPopup::render(frame, popup_area);
-                }
+                StatusBar::render(
+                    frame,
+                    areas.status_bar,
+                    &state,
+                    self.layout.view_mode(),
+                    self.layout.split_direction(),
+                );
 
                 // Selection popup for AskUserQuestion (only show in input mode)
                 if state.is_input_mode() {
@@ -150,6 +166,12 @@ impl App {
                 if state.is_create_process_mode() {
                     let popup_area = self.layout.popup_area(frame.area(), 50, 50);
                     CreateProcessPopup::render(frame, popup_area, &state);
+                }
+
+                // Confirmation popup
+                if let Some(ref confirmation) = state.confirmation_state {
+                    let popup_area = self.layout.popup_area(frame.area(), 35, 25);
+                    ConfirmationPopup::render(frame, popup_area, confirmation);
                 }
             })?;
 
@@ -196,21 +218,31 @@ impl App {
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
         // Check state without holding the lock for the entire function
-        let (show_help, is_input_mode, is_passthrough_mode, is_create_process_mode) = {
+        let (
+            show_help,
+            is_input_mode,
+            is_passthrough_mode,
+            is_create_process_mode,
+            is_showing_confirmation,
+        ) = {
             let state = self.state.read();
             (
                 state.show_help,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
+                state.is_showing_confirmation(),
             )
         };
 
-        // Handle help popup first
+        // Handle confirmation dialog first (highest priority)
+        if is_showing_confirmation {
+            return self.handle_confirmation_key(code);
+        }
+
+        // Handle help screen
         if show_help {
-            let mut state = self.state.write();
-            state.show_help = false;
-            return Ok(());
+            return self.handle_help_screen_key(code, modifiers);
         }
 
         // Handle create process mode
@@ -247,7 +279,7 @@ impl App {
             KeyCode::Char('o') => {
                 // Check if we're in an AskUserQuestion state
                 if let Some(target) = state.selected_target() {
-                    let is_user_question = state.agents.get(target).map_or(false, |agent| {
+                    let is_user_question = state.agents.get(target).is_some_and(|agent| {
                         matches!(
                             &agent.status,
                             crate::agents::AgentStatus::AwaitingApproval {
@@ -374,7 +406,7 @@ impl App {
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
                     // Check if it's a multi-select UserQuestion
-                    let is_multi_select = state.agents.get(&target).map_or(false, |agent| {
+                    let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
                         matches!(
                             &agent.status,
                             crate::agents::AgentStatus::AwaitingApproval {
@@ -445,10 +477,16 @@ impl App {
                 }
             }
 
-            // Toggle preview
-            KeyCode::Char('p') => {
+            // Cycle view mode (Both -> AgentsOnly -> PreviewOnly)
+            KeyCode::Tab => {
                 drop(state);
-                self.layout.toggle_preview();
+                self.layout.cycle_view_mode();
+            }
+
+            // Toggle split direction (Horizontal <-> Vertical)
+            KeyCode::Char('l') => {
+                drop(state);
+                self.layout.toggle_split_direction();
             }
 
             // Cycle sort method
@@ -456,14 +494,32 @@ impl App {
                 state.cycle_sort();
             }
 
+            // Cycle monitor scope
+            KeyCode::Char('m') => {
+                state.cycle_monitor_scope();
+            }
+
             // Enter passthrough mode (direct key input to pane)
-            KeyCode::Right => {
+            KeyCode::Char('p') | KeyCode::Right => {
                 state.enter_passthrough_mode();
             }
 
             // Help
-            KeyCode::Char('?') => {
+            KeyCode::Char('h') | KeyCode::Char('?') => {
                 state.toggle_help();
+            }
+
+            // Kill pane (with confirmation)
+            KeyCode::Char('x') => {
+                if let Some(target) = state.selected_target() {
+                    let target = target.to_string();
+                    state.show_confirmation(
+                        ConfirmAction::KillPane {
+                            target: target.clone(),
+                        },
+                        format!("Kill pane {}?", target),
+                    );
+                }
             }
 
             _ => {}
@@ -540,6 +596,87 @@ impl App {
                 self.tmux_client.send_keys(&target, "Enter")?;
             }
         }
+        Ok(())
+    }
+
+    /// Handle keys in confirmation dialog
+    fn handle_confirmation_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            // Confirm action
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let action = {
+                    let mut state = self.state.write();
+                    let action = state.get_confirmation_action();
+                    state.cancel_confirmation();
+                    action
+                };
+
+                if let Some(action) = action {
+                    match action {
+                        ConfirmAction::KillPane { target } => {
+                            if let Err(e) = self.tmux_client.kill_pane(&target) {
+                                let mut state = self.state.write();
+                                state.set_error(format!("Failed to kill pane: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Cancel
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                let mut state = self.state.write();
+                state.cancel_confirmation();
+            }
+
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Handle keys in help screen
+    fn handle_help_screen_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+        let mut state = self.state.write();
+
+        match code {
+            // Close help
+            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('h') | KeyCode::Char('?') => {
+                state.show_help = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                state.scroll_help_down(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                state.scroll_help_up(1);
+            }
+            // Page down
+            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                state.scroll_help_down(10);
+            }
+            KeyCode::PageDown => {
+                state.scroll_help_down(10);
+            }
+            // Page up
+            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                state.scroll_help_up(10);
+            }
+            KeyCode::PageUp => {
+                state.scroll_help_up(10);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                state.help_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                state.help_scroll = u16::MAX; // Will be clamped in render
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
@@ -641,21 +778,45 @@ impl App {
                             .unwrap_or_default()
                     };
                     if !path.is_empty() {
+                        // Expand ~ to home directory
+                        let expanded_path = if path.starts_with('~') {
+                            dirs::home_dir()
+                                .map(|h| path.replacen('~', &h.to_string_lossy(), 1))
+                                .unwrap_or_else(|| path.clone())
+                        } else {
+                            path.clone()
+                        };
+
+                        // Validate path: canonicalize and check if it's a directory
+                        let canonical = std::path::Path::new(&expanded_path).canonicalize().ok();
+
                         let mut state = self.state.write();
                         if let Some(ref mut cs) = state.create_process {
-                            // Expand ~ to home directory
-                            let expanded_path = if path.starts_with('~') {
-                                dirs::home_dir()
-                                    .map(|h| path.replacen('~', &h.to_string_lossy(), 1))
-                                    .unwrap_or(path)
+                            if let Some(ref p) = canonical {
+                                if p.is_dir() {
+                                    cs.directory = Some(p.to_string_lossy().to_string());
+                                    cs.is_input_mode = false;
+                                    cs.input_buffer.clear();
+                                    cs.step = CreateProcessStep::SelectAgent;
+                                    cs.cursor = 0;
+                                } else {
+                                    // Path exists but is not a directory
+                                    drop(state);
+                                    let mut state = self.state.write();
+                                    state.set_error(format!(
+                                        "Path is not a directory: {}",
+                                        expanded_path
+                                    ));
+                                }
                             } else {
-                                path
-                            };
-                            cs.directory = Some(expanded_path);
-                            cs.is_input_mode = false;
-                            cs.input_buffer.clear();
-                            cs.step = CreateProcessStep::SelectAgent;
-                            cs.cursor = 0;
+                                // Path does not exist or cannot be resolved
+                                drop(state);
+                                let mut state = self.state.write();
+                                state.set_error(format!(
+                                    "Directory does not exist: {}",
+                                    expanded_path
+                                ));
+                            }
                         }
                     }
                 }

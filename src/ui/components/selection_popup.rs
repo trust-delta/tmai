@@ -37,7 +37,12 @@ impl SelectionPopup {
         }
 
         // Add choices
-        if let ApprovalType::UserQuestion { choices, multi_select, .. } = approval_type {
+        if let ApprovalType::UserQuestion {
+            choices,
+            multi_select,
+            ..
+        } = approval_type
+        {
             lines.push(Line::from(vec![Span::styled(
                 "Options:",
                 Style::default()

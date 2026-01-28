@@ -103,7 +103,7 @@ impl PanePreview {
                 result.push(c);
                 if chars.peek() == Some(&'[') {
                     result.push(chars.next().unwrap()); // '['
-                    // Copy until we hit the terminating character (letter)
+                                                        // Copy until we hit the terminating character (letter)
                     while let Some(&next) = chars.peek() {
                         result.push(chars.next().unwrap());
                         if next.is_ascii_alphabetic() {

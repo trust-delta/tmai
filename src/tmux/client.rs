@@ -1,7 +1,22 @@
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::process::Command;
 
 use super::pane::PaneInfo;
+
+/// Regex pattern for validating tmux target format (session:window.pane)
+static TARGET_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[\w\-]+:\d+\.\d+$").expect("Invalid TARGET_PATTERN regex"));
+
+/// Validate tmux target format to prevent command injection
+/// Only allows `session:window.pane` format (e.g., "main:0.1")
+fn validate_target(target: &str) -> Result<()> {
+    if !TARGET_PATTERN.is_match(target) {
+        anyhow::bail!("Invalid tmux target format: {}", target);
+    }
+    Ok(())
+}
 
 /// Client for interacting with tmux
 pub struct TmuxClient {
@@ -108,6 +123,7 @@ impl TmuxClient {
 
     /// Captures the content of a specific pane
     pub fn capture_pane(&self, target: &str) -> Result<String> {
+        validate_target(target)?;
         let start_line = format!("-{}", self.capture_lines);
 
         let output = Command::new("tmux")
@@ -125,6 +141,7 @@ impl TmuxClient {
 
     /// Captures the content of a specific pane without ANSI codes
     pub fn capture_pane_plain(&self, target: &str) -> Result<String> {
+        validate_target(target)?;
         let start_line = format!("-{}", self.capture_lines);
 
         let output = Command::new("tmux")
@@ -142,6 +159,7 @@ impl TmuxClient {
 
     /// Get the pane title
     pub fn get_pane_title(&self, target: &str) -> Result<String> {
+        validate_target(target)?;
         let output = Command::new("tmux")
             .args(["display-message", "-p", "-t", target, "#{pane_title}"])
             .output()
@@ -157,6 +175,7 @@ impl TmuxClient {
 
     /// Sends keys to a specific pane
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
+        validate_target(target)?;
         let output = Command::new("tmux")
             .args(["send-keys", "-t", target, keys])
             .output()
@@ -172,6 +191,7 @@ impl TmuxClient {
 
     /// Sends literal keys (with -l flag) to a specific pane
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
+        validate_target(target)?;
         let output = Command::new("tmux")
             .args(["send-keys", "-t", target, "-l", keys])
             .output()
@@ -187,6 +207,7 @@ impl TmuxClient {
 
     /// Selects (focuses) a specific pane
     pub fn select_pane(&self, target: &str) -> Result<()> {
+        validate_target(target)?;
         let output = Command::new("tmux")
             .args(["select-pane", "-t", target])
             .output()
@@ -202,6 +223,7 @@ impl TmuxClient {
 
     /// Selects a specific window
     pub fn select_window(&self, target: &str) -> Result<()> {
+        validate_target(target)?;
         // Extract session:window from full target
         let window_target = if let Some(pos) = target.rfind('.') {
             &target[..pos]
@@ -369,11 +391,53 @@ impl TmuxClient {
 
     /// Run a command in a specific pane
     pub fn run_command(&self, target: &str, command: &str) -> Result<()> {
+        validate_target(target)?;
         // Send the command as literal text
         self.send_keys_literal(target, command)?;
         // Press Enter to execute
         self.send_keys(target, "Enter")?;
         Ok(())
+    }
+
+    /// Kill a specific pane
+    pub fn kill_pane(&self, target: &str) -> Result<()> {
+        validate_target(target)?;
+        let output = Command::new("tmux")
+            .args(["kill-pane", "-t", target])
+            .output()
+            .context("Failed to execute tmux kill-pane")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux kill-pane failed for {}: {}", target, stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Get the current session name and window index
+    /// Returns (session_name, window_index)
+    pub fn get_current_location(&self) -> Result<(String, u32)> {
+        let output = Command::new("tmux")
+            .args(["display-message", "-p", "#{session_name}\t#{window_index}"])
+            .output()
+            .context("Failed to execute tmux display-message")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux display-message failed: {}", stderr);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = stdout.trim();
+        let (session, window_str) = stdout
+            .split_once('\t')
+            .context("Invalid tmux display-message output")?;
+        let window_index = window_str
+            .parse()
+            .context("Invalid window index")?;
+
+        Ok((session.to_string(), window_index))
     }
 }
 
@@ -394,5 +458,28 @@ mod tests {
 
         let custom_client = TmuxClient::with_capture_lines(200);
         assert_eq!(custom_client.capture_lines, 200);
+    }
+
+    #[test]
+    fn test_validate_target_valid() {
+        // Valid targets
+        assert!(validate_target("main:0.0").is_ok());
+        assert!(validate_target("my-session:1.2").is_ok());
+        assert!(validate_target("test_session:10.5").is_ok());
+        assert!(validate_target("abc123:99.99").is_ok());
+    }
+
+    #[test]
+    fn test_validate_target_invalid() {
+        // Invalid targets - should be rejected
+        assert!(validate_target("").is_err());
+        assert!(validate_target("main").is_err());
+        assert!(validate_target("main:0").is_err());
+        assert!(validate_target("; rm -rf /").is_err());
+        assert!(validate_target("main:0.0; echo pwned").is_err());
+        assert!(validate_target("$(whoami):0.0").is_err());
+        assert!(validate_target("`whoami`:0.0").is_err());
+        assert!(validate_target("main:0.0\necho evil").is_err());
+        assert!(validate_target("../etc/passwd").is_err());
     }
 }
