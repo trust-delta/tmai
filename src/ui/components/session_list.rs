@@ -14,8 +14,15 @@ use crate::ui::SplitDirection;
 #[derive(Debug, Clone)]
 pub enum ListEntry {
     Agent(usize), // Index into agent_order
-    GroupHeader(String),
-    CreateNew { group_key: String },
+    GroupHeader {
+        key: String,
+        agent_count: usize,
+        attention_count: usize,
+        collapsed: bool,
+    },
+    CreateNew {
+        group_key: String,
+    },
 }
 
 /// Widget for displaying the list of monitored agents
@@ -56,7 +63,12 @@ impl SessionList {
                         ListItem::new(Line::from(""))
                     }
                 }
-                ListEntry::GroupHeader(header) => Self::create_group_header(header),
+                ListEntry::GroupHeader {
+                    key,
+                    agent_count,
+                    attention_count,
+                    collapsed,
+                } => Self::create_group_header(key, *agent_count, *attention_count, *collapsed),
                 ListEntry::CreateNew { .. } => Self::create_new_item(),
             })
             .collect();
@@ -119,9 +131,19 @@ impl SessionList {
                             ListItem::new(Line::from(""))
                         }
                     }
-                    ListEntry::GroupHeader(header) => {
-                        Self::create_compact_group_header(header, inner_width)
-                    }
+                    ListEntry::GroupHeader {
+                        key,
+                        agent_count,
+                        attention_count,
+                        collapsed,
+                    } => Self::create_compact_group_header(
+                        key,
+                        inner_width,
+                        *agent_count,
+                        *attention_count,
+                        *collapsed,
+                        is_selected,
+                    ),
                     ListEntry::CreateNew { .. } => {
                         Self::create_compact_new_item(inner_width, is_selected)
                     }
@@ -164,7 +186,6 @@ impl SessionList {
     /// Also returns selectable_count and the agent index for the current selection
     pub fn build_entries(state: &AppState) -> (Vec<ListEntry>, usize, usize, Option<usize>) {
         let mut entries = Vec::new();
-        let mut current_group: Option<String> = None;
         let mut selectable_index = 0; // Index among selectable items only
         let mut ui_entry_index = 0; // Index in the full entries list for highlighting
         let mut selected_agent_index: Option<usize> = None;
@@ -178,13 +199,53 @@ impl SessionList {
         });
         selectable_index += 1;
 
+        // First pass: collect group statistics
+        let mut group_stats: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
+        for id in &state.agent_order {
+            if let Some(agent) = state.agents.get(id) {
+                if let Some(group_key) = state.get_group_key(agent) {
+                    let entry = group_stats.entry(group_key).or_insert((0, 0));
+                    entry.0 += 1; // agent_count
+                    if agent.status.needs_attention() {
+                        entry.1 += 1; // attention_count
+                    }
+                }
+            }
+        }
+
+        // Second pass: build entries
+        let mut current_group: Option<String> = None;
         for (agent_idx, id) in state.agent_order.iter().enumerate() {
             if let Some(agent) = state.agents.get(id) {
                 // Check if we need a group header
                 if let Some(group_key) = state.get_group_key(agent) {
                     if current_group.as_ref() != Some(&group_key) {
-                        entries.push(ListEntry::GroupHeader(group_key.clone()));
-                        current_group = Some(group_key);
+                        let collapsed = state.is_group_collapsed(&group_key);
+                        let (agent_count, attention_count) =
+                            group_stats.get(&group_key).copied().unwrap_or((0, 0));
+
+                        // Track the entry index for the selected entry (group header is now selectable)
+                        if selectable_index == state.selected_entry_index {
+                            ui_entry_index = entries.len();
+                        }
+
+                        entries.push(ListEntry::GroupHeader {
+                            key: group_key.clone(),
+                            agent_count,
+                            attention_count,
+                            collapsed,
+                        });
+                        selectable_index += 1; // GroupHeader is now selectable
+                        current_group = Some(group_key.clone());
+
+                        // If collapsed, skip all agents in this group
+                        if collapsed {
+                            continue;
+                        }
+                    } else if state.is_group_collapsed(&group_key) {
+                        // Same group but collapsed, skip this agent
+                        continue;
                     }
                 }
 
@@ -214,19 +275,43 @@ impl SessionList {
     }
 
     /// Create a group header item
-    fn create_group_header(header: &str) -> ListItem<'static> {
-        let display = if header.len() > 45 {
-            format!("...{}", &header[header.len() - 42..])
+    fn create_group_header(
+        header: &str,
+        agent_count: usize,
+        attention_count: usize,
+        collapsed: bool,
+    ) -> ListItem<'static> {
+        let display = if header.len() > 40 {
+            format!("...{}", &header[header.len() - 37..])
         } else {
             header.to_string()
         };
 
-        ListItem::new(Line::from(vec![Span::styled(
-            format!("▸ {} ", display),
+        // Collapse icon: ▸ (collapsed) or ▾ (expanded)
+        let icon = if collapsed { "▸" } else { "▾" };
+
+        let mut spans = vec![Span::styled(
+            format!("{} {} ", icon, display),
             Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
-        )]))
+        )];
+
+        // Show agent count
+        spans.push(Span::styled(
+            format!("({})", agent_count),
+            Style::default().fg(Color::DarkGray),
+        ));
+
+        // Show attention count if any (in red)
+        if attention_count > 0 {
+            spans.push(Span::styled(
+                format!(" ⚠{}", attention_count),
+                Style::default().fg(Color::Red),
+            ));
+        }
+
+        ListItem::new(Line::from(spans))
     }
 
     /// Create a "new session" item
@@ -431,9 +516,22 @@ impl SessionList {
     }
 
     /// Create a compact group header for horizontal layout
-    fn create_compact_group_header(header: &str, max_width: u16) -> ListItem<'static> {
-        // Use full width for header display
-        let available = max_width.saturating_sub(4) as usize; // "▸ " prefix
+    fn create_compact_group_header(
+        header: &str,
+        max_width: u16,
+        agent_count: usize,
+        attention_count: usize,
+        collapsed: bool,
+        is_selected: bool,
+    ) -> ListItem<'static> {
+        // Collapse icon: ▸ (collapsed) or ▾ (expanded)
+        let icon = if collapsed { "▸" } else { "▾" };
+
+        // Calculate available space
+        // Reserve: icon(2) + space(1) + count_display(~8) + attention(~4)
+        let reserved = 15_usize;
+        let available = (max_width as usize).saturating_sub(reserved);
+
         let display = if header.chars().count() > available {
             // Show last part of path (more useful for directories)
             let chars: Vec<char> = header.chars().collect();
@@ -444,12 +542,35 @@ impl SessionList {
             header.to_string()
         };
 
-        ListItem::new(Line::from(vec![Span::styled(
-            format!("▸ {}", display),
+        let bg_color = if is_selected {
+            Color::DarkGray
+        } else {
+            Color::Reset
+        };
+
+        let mut spans = vec![Span::styled(
+            format!("{} {} ", icon, display),
             Style::default()
                 .fg(Color::Blue)
+                .bg(bg_color)
                 .add_modifier(Modifier::BOLD),
-        )]))
+        )];
+
+        // Show agent count
+        spans.push(Span::styled(
+            format!("({})", agent_count),
+            Style::default().fg(Color::DarkGray).bg(bg_color),
+        ));
+
+        // Show attention count if any (in red)
+        if attention_count > 0 {
+            spans.push(Span::styled(
+                format!(" ⚠{}", attention_count),
+                Style::default().fg(Color::Red).bg(bg_color),
+            ));
+        }
+
+        ListItem::new(Line::from(spans))
     }
 
     /// Create a compact "new session" item

@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 
 use crate::agents::{AgentType, ApprovalType};
 use crate::config::Settings;
-use crate::detectors::get_detector;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState};
 use crate::tmux::TmuxClient;
@@ -316,33 +315,15 @@ impl App {
                 state.scroll_preview_up(10);
             }
 
-            // Approval actions
-            KeyCode::Char('y') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    if let Some(agent) = state.agents.get(&target) {
-                        let detector = get_detector(&agent.agent_type);
-                        let keys = detector.approval_keys();
-                        drop(state); // Release lock before tmux command
-                        let _ = self.tmux_client.send_keys(&target, keys);
-                    }
-                }
-            }
-            KeyCode::Char('n') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    if let Some(agent) = state.agents.get(&target) {
-                        let detector = get_detector(&agent.agent_type);
-                        let keys = detector.rejection_keys();
-                        drop(state);
-                        let _ = self.tmux_client.send_keys(&target, keys);
-                    }
-                }
-            }
-
             // Number selection (for AskUserQuestion)
-            KeyCode::Char(c) if c.is_ascii_digit() && c != '0' => {
-                let num = c.to_digit(10).unwrap() as usize;
+            // Support both half-width (1-9) and full-width (１-９) digits
+            KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
+                let num = if c.is_ascii_digit() {
+                    c.to_digit(10).unwrap() as usize
+                } else {
+                    // Full-width digit: convert '１'-'９' to 1-9
+                    (c as u32 - '０' as u32) as usize
+                };
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
                     // Check if it's a UserQuestion and get choices + multi_select
@@ -425,16 +406,24 @@ impl App {
                 }
             }
 
-            // Enter key - handle CreateNew selection or multi-select confirmation
+            // Enter key - handle CreateNew selection, GroupHeader toggle, or multi-select confirmation
             KeyCode::Enter => {
-                // Check if we're on a CreateNew entry
-                if let Some(ListEntry::CreateNew { group_key }) =
-                    SessionList::get_selected_entry(&state)
-                {
-                    let group_key = group_key.clone();
-                    let sessions = self.tmux_client.list_sessions().unwrap_or_default();
-                    state.start_create_process(group_key, sessions);
-                } else if let Some(target) = state.selected_target() {
+                // Check the selected entry type
+                match SessionList::get_selected_entry(&state) {
+                    Some(ListEntry::CreateNew { group_key }) => {
+                        let group_key = group_key.clone();
+                        let sessions = self.tmux_client.list_sessions().unwrap_or_default();
+                        state.start_create_process(group_key, sessions);
+                        return Ok(());
+                    }
+                    Some(ListEntry::GroupHeader { key, .. }) => {
+                        state.toggle_group_collapse(&key);
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+
+                if let Some(target) = state.selected_target() {
                     let target = target.to_string();
                     // Check if it's a multi-select UserQuestion and get info
                     let multi_info = state.agents.get(&target).and_then(|agent| {

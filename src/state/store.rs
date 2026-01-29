@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::agents::MonitoredAgent;
@@ -208,6 +208,8 @@ pub struct AppState {
     pub current_window: Option<u32>,
     /// Confirmation dialog state (None if not showing)
     pub confirmation_state: Option<ConfirmationState>,
+    /// Collapsed group keys (for group header folding)
+    pub collapsed_groups: HashSet<String>,
 }
 
 impl AppState {
@@ -237,6 +239,7 @@ impl AppState {
             current_session: None,
             current_window: None,
             confirmation_state: None,
+            collapsed_groups: HashSet::new(),
         }
     }
 
@@ -399,6 +402,20 @@ impl AppState {
             SortBy::AgentType => Some(agent.agent_type.short_name().to_string()),
             _ => None,
         }
+    }
+
+    /// Toggle collapse state for a group
+    pub fn toggle_group_collapse(&mut self, group_key: &str) {
+        if self.collapsed_groups.contains(group_key) {
+            self.collapsed_groups.remove(group_key);
+        } else {
+            self.collapsed_groups.insert(group_key.to_string());
+        }
+    }
+
+    /// Check if a group is collapsed
+    pub fn is_group_collapsed(&self, group_key: &str) -> bool {
+        self.collapsed_groups.contains(group_key)
     }
 
     /// Move selection up
