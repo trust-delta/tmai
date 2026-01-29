@@ -11,11 +11,34 @@ pub use gemini::GeminiDetector;
 use once_cell::sync::Lazy;
 
 use crate::agents::{AgentStatus, AgentType};
+use crate::config::ClaudeSettingsCache;
+
+/// Context passed to detectors for additional information
+#[derive(Default)]
+pub struct DetectionContext<'a> {
+    /// Current working directory of the pane
+    pub cwd: Option<&'a str>,
+    /// Settings cache for Claude Code configuration
+    pub settings_cache: Option<&'a ClaudeSettingsCache>,
+}
 
 /// Trait for detecting agent status from pane content and title
 pub trait StatusDetector: Send + Sync {
     /// Detect the current status of the agent
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus;
+
+    /// Detect the current status with additional context
+    ///
+    /// Default implementation falls back to `detect_status`.
+    /// Override this for detectors that need context (e.g., ClaudeCodeDetector for spinnerVerbs).
+    fn detect_status_with_context(
+        &self,
+        title: &str,
+        content: &str,
+        _context: &DetectionContext,
+    ) -> AgentStatus {
+        self.detect_status(title, content)
+    }
 
     /// Get the agent type this detector handles
     fn agent_type(&self) -> AgentType;

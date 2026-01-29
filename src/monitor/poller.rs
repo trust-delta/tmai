@@ -4,8 +4,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::agents::MonitoredAgent;
-use crate::config::Settings;
-use crate::detectors::get_detector;
+use crate::config::{ClaudeSettingsCache, Settings};
+use crate::detectors::{get_detector, DetectionContext};
 use crate::state::{MonitorScope, SharedState};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
 
@@ -22,6 +22,8 @@ pub enum PollMessage {
 pub struct Poller {
     client: TmuxClient,
     process_cache: Arc<ProcessCache>,
+    /// Cache for Claude Code settings (spinnerVerbs)
+    claude_settings_cache: Arc<ClaudeSettingsCache>,
     settings: Settings,
     state: SharedState,
     /// Current session name (captured at startup)
@@ -44,6 +46,7 @@ impl Poller {
         Self {
             client,
             process_cache: Arc::new(ProcessCache::new()),
+            claude_settings_cache: Arc::new(ClaudeSettingsCache::new()),
             settings,
             state,
             current_session,
@@ -157,9 +160,16 @@ impl Poller {
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
+                // Build detection context for this pane
+                let detection_context = DetectionContext {
+                    cwd: Some(pane.cwd.as_str()),
+                    settings_cache: Some(&self.claude_settings_cache),
+                };
+
                 // Detect status using appropriate detector
                 let detector = get_detector(&agent_type);
-                let status = detector.detect_status(&title, &content);
+                let status =
+                    detector.detect_status_with_context(&title, &content, &detection_context);
                 let context_warning = detector.detect_context_warning(&content);
 
                 let mut agent = MonitoredAgent::new(
@@ -196,12 +206,11 @@ impl Poller {
     fn matches_scope(&self, pane: &PaneInfo, scope: MonitorScope) -> bool {
         match scope {
             MonitorScope::AllSessions => true,
-            MonitorScope::CurrentSession => {
-                self.current_session
-                    .as_ref()
-                    .map(|s| s == &pane.session)
-                    .unwrap_or(true)
-            }
+            MonitorScope::CurrentSession => self
+                .current_session
+                .as_ref()
+                .map(|s| s == &pane.session)
+                .unwrap_or(true),
             MonitorScope::CurrentWindow => {
                 let session_match = self
                     .current_session
