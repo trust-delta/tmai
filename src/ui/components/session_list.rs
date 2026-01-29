@@ -375,13 +375,19 @@ impl SessionList {
                 if activity.is_empty() {
                     "Processing".to_string()
                 } else {
-                    format!("Processing: {}", truncate(activity, status_len.saturating_sub(12).max(5)))
+                    format!(
+                        "Processing: {}",
+                        truncate(activity, status_len.saturating_sub(12).max(5))
+                    )
                 }
             }
             AgentStatus::AwaitingApproval { approval_type, .. } => {
                 truncate(&approval_type.to_string(), status_len.max(10))
             }
-            AgentStatus::Error { message } => format!("Error: {}", truncate(message, status_len.saturating_sub(7).max(5))),
+            AgentStatus::Error { message } => format!(
+                "Error: {}",
+                truncate(message, status_len.saturating_sub(7).max(5))
+            ),
             AgentStatus::Unknown => "Unknown".to_string(),
         };
 
@@ -391,7 +397,10 @@ impl SessionList {
             Color::Reset
         };
 
-        let session_info = format!("{}:{}.{}", agent.session, agent.window_index, agent.pane_index);
+        let session_info = format!(
+            "{}:{}.{}",
+            agent.session, agent.window_index, agent.pane_index
+        );
 
         let line = Line::from(vec![
             Span::styled(
@@ -408,20 +417,14 @@ impl SessionList {
                 Style::default().fg(Color::DarkGray).bg(bg_color),
             ),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
-            Span::styled(
-                session_info,
-                Style::default().fg(Color::White).bg(bg_color),
-            ),
+            Span::styled(session_info, Style::default().fg(Color::White).bg(bg_color)),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
             Span::styled(
                 title_display,
                 Style::default().fg(Color::White).bg(bg_color),
             ),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
-            Span::styled(
-                status_text,
-                Style::default().fg(status_color).bg(bg_color),
-            ),
+            Span::styled(status_text, Style::default().fg(status_color).bg(bg_color)),
         ]);
 
         ListItem::new(line)

@@ -266,10 +266,7 @@ impl StatusBar {
     fn render_selection_info(spans: &mut Vec<Span<'static>>, state: &AppState) {
         if state.is_on_create_new {
             // CreateNew entry selected
-            spans.push(Span::styled(
-                " [+ New] ",
-                Style::default().fg(Color::Green),
-            ));
+            spans.push(Span::styled(" [+ New] ", Style::default().fg(Color::Green)));
         } else if let Some(agent) = state.selected_agent() {
             // Agent selected - show target and agent type
             let short_target = if agent.id.len() > 12 {

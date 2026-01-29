@@ -26,9 +26,17 @@ impl ConfirmationPopup {
             Line::from(""),
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "y",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" Yes  ", Style::default().fg(Color::White)),
-                Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" No", Style::default().fg(Color::White)),
             ]),
             Line::from(""),

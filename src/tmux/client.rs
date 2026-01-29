@@ -433,9 +433,7 @@ impl TmuxClient {
         let (session, window_str) = stdout
             .split_once('\t')
             .context("Invalid tmux display-message output")?;
-        let window_index = window_str
-            .parse()
-            .context("Invalid window index")?;
+        let window_index = window_str.parse().context("Invalid window index")?;
 
         Ok((session.to_string(), window_index))
     }

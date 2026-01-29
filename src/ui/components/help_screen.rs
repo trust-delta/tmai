@@ -2,7 +2,9 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{
+        Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
 
@@ -59,19 +61,15 @@ impl HelpScreen {
         // Build current status
         let scope_str = match state.monitor_scope {
             MonitorScope::AllSessions => "All Sessions".to_string(),
-            MonitorScope::CurrentSession => {
-                state
-                    .current_session
-                    .as_ref()
-                    .map(|s| format!("Session: {}", s))
-                    .unwrap_or_else(|| "Current Session".to_string())
-            }
-            MonitorScope::CurrentWindow => {
-                match (&state.current_session, state.current_window) {
-                    (Some(s), Some(w)) => format!("Window: {}:{}", s, w),
-                    _ => "Current Window".to_string(),
-                }
-            }
+            MonitorScope::CurrentSession => state
+                .current_session
+                .as_ref()
+                .map(|s| format!("Session: {}", s))
+                .unwrap_or_else(|| "Current Session".to_string()),
+            MonitorScope::CurrentWindow => match (&state.current_session, state.current_window) {
+                (Some(s), Some(w)) => format!("Window: {}:{}", s, w),
+                _ => "Current Window".to_string(),
+            },
         };
 
         vec![
@@ -169,7 +167,11 @@ impl HelpScreen {
             Self::section_header("Agent Status Indicators"),
             Self::status_line("✓ Idle", "Agent is waiting for input", Color::Green),
             Self::status_line("⠋ Processing", "Agent is working on a task", Color::Yellow),
-            Self::status_line("? Approval", "Agent needs yes/no confirmation", Color::Magenta),
+            Self::status_line(
+                "? Approval",
+                "Agent needs yes/no confirmation",
+                Color::Magenta,
+            ),
             Self::status_line("⚠ Error", "Agent encountered an error", Color::Red),
             Line::from(""),
             Line::from(vec![Span::styled(

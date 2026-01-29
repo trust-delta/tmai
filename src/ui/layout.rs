@@ -8,7 +8,7 @@ const INPUT_HEIGHT: u16 = 3;
 pub enum SplitDirection {
     #[default]
     Horizontal, // 左右分割（agents | preview）
-    Vertical,   // 上下分割（agents / preview）
+    Vertical, // 上下分割（agents / preview）
 }
 
 impl SplitDirection {
@@ -233,10 +233,7 @@ impl Layout {
                 if show_input {
                     let vertical = ratatui::layout::Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Min(3),
-                            Constraint::Length(self.input_height),
-                        ])
+                        .constraints([Constraint::Min(3), Constraint::Length(self.input_height)])
                         .split(main_area);
 
                     LayoutAreas {
