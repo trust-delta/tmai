@@ -287,6 +287,8 @@ pub struct MonitoredAgent {
     pub pid: u32,
     /// Session name
     pub session: String,
+    /// Window name
+    pub window_name: String,
     /// Window index
     pub window_index: u32,
     /// Pane index
@@ -309,6 +311,7 @@ impl MonitoredAgent {
         cwd: String,
         pid: u32,
         session: String,
+        window_name: String,
         window_index: u32,
         pane_index: u32,
     ) -> Self {
@@ -323,6 +326,7 @@ impl MonitoredAgent {
             cwd,
             pid,
             session,
+            window_name,
             window_index,
             pane_index,
             selected: false,

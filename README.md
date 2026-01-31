@@ -41,9 +41,7 @@ tmai
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate agents |
-| `y` | Approve action |
-| `n` | Reject action |
-| `1-9` | Select option (AskUserQuestion) |
+| `1-9` / `１-９` | Select option (AskUserQuestion) |
 | `i` | Enter input mode |
 | `→` | Enter passthrough mode |
 | `Esc` | Exit mode / Quit |
@@ -78,7 +76,7 @@ tmai
 │   Claude Code   │                                 │
 │   ✳ Idle        │                                 │
 └─────────────────┴─────────────────────────────────┘
- j/k:Nav y/n:Approve i:Input →:Direct ?:Help q:Quit
+ j/k:Nav 1-9:Select i:Input →:Direct ?:Help q:Quit
 ```
 
 ## License

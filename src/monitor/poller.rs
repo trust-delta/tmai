@@ -179,6 +179,7 @@ impl Poller {
                     pane.cwd.clone(),
                     pane.pid,
                     pane.session.clone(),
+                    pane.window_name.clone(),
                     pane.window_index,
                     pane.pane_index,
                 );
@@ -254,6 +255,7 @@ pub fn detect_agent_from_pane(pane: &PaneInfo, client: &TmuxClient) -> Option<Mo
         pane.cwd.clone(),
         pane.pid,
         pane.session.clone(),
+        pane.window_name.clone(),
         pane.window_index,
         pane.pane_index,
     );

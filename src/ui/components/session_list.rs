@@ -402,13 +402,13 @@ impl SessionList {
             Span::styled(title_display, Style::default().fg(Color::White)),
         ]);
 
-        // Line 4: session | pane
+        // Line 4: W:index[name]  P:index
         let line4 = Line::from(vec![
             Span::styled("    ", Style::default()),
             Span::styled(
                 format!(
-                    "{} | {}.{}",
-                    agent.session, agent.window_index, agent.pane_index
+                    "W:{}[{}]  P:{}",
+                    agent.window_index, agent.window_name, agent.pane_index
                 ),
                 Style::default().fg(Color::White),
             ),
@@ -483,8 +483,8 @@ impl SessionList {
         };
 
         let session_info = format!(
-            "{}:{}.{}",
-            agent.session, agent.window_index, agent.pane_index
+            "W:{}[{}] P:{}",
+            agent.window_index, agent.window_name, agent.pane_index
         );
 
         let line = Line::from(vec![

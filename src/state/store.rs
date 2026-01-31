@@ -767,6 +767,7 @@ mod tests {
             "/home".to_string(),
             1234,
             "main".to_string(),
+            "window".to_string(),
             0,
             0,
         )
