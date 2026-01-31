@@ -5,6 +5,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::state::AppState;
@@ -428,7 +429,8 @@ impl SessionList {
     }
 
     /// Create a compact single-line item for horizontal layout
-    /// Format: ⣾ CC | pid:1234 | session:0.1 | title | status
+    /// Format: ⣾ CC | pid:1234 | W:1[name] P:0 | title | status
+    /// Each column has fixed width for alignment
     fn create_compact_item(
         agent: &MonitoredAgent,
         spinner_char: char,
@@ -441,17 +443,20 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Calculate available space for dynamic parts
-        // Fixed: indicator(2) + CC(2) + " | "(3) + "pid:"(4) + pid(~6) + " | "(3) + session(~15) + " | "(3) + " | "(3) ≈ 40
-        let fixed_len = 45_usize;
-        let remaining = (max_width as usize).saturating_sub(fixed_len);
-        let title_len = remaining / 2;
-        let status_len = remaining.saturating_sub(title_len);
+        // Fixed column widths
+        const STATUS_WIDTH: usize = 12; // "Processing" or "Awaiting..."
+        const PID_WIDTH: usize = 10; // "pid:123456"
+        const SESSION_WIDTH: usize = 18; // "W:1[windowname] P:0"
+
+        // Calculate remaining space for title
+        // Fixed parts: indicator(2) + CC(2) + separators(12) + status(12) + pid(10) + session(18) = 56
+        let fixed_len = 56_usize;
+        let title_width = (max_width as usize).saturating_sub(fixed_len).max(10);
 
         let title_display = if agent.title.is_empty() {
-            "-".to_string()
+            fixed_width("-", title_width)
         } else {
-            truncate(&agent.title, title_len.max(10))
+            fixed_width(&agent.title, title_width)
         };
 
         let status_text = match &agent.status {
@@ -460,21 +465,14 @@ impl SessionList {
                 if activity.is_empty() {
                     "Processing".to_string()
                 } else {
-                    format!(
-                        "Processing: {}",
-                        truncate(activity, status_len.saturating_sub(12).max(5))
-                    )
+                    "Processing".to_string() // Keep it short for alignment
                 }
             }
-            AgentStatus::AwaitingApproval { approval_type, .. } => {
-                truncate(&approval_type.to_string(), status_len.max(10))
-            }
-            AgentStatus::Error { message } => format!(
-                "Error: {}",
-                truncate(message, status_len.saturating_sub(7).max(5))
-            ),
+            AgentStatus::AwaitingApproval { .. } => "Awaiting".to_string(),
+            AgentStatus::Error { .. } => "Error".to_string(),
             AgentStatus::Unknown => "Unknown".to_string(),
         };
+        let status_text = fixed_width(&status_text, STATUS_WIDTH);
 
         let bg_color = if is_selected {
             Color::DarkGray
@@ -497,19 +495,22 @@ impl SessionList {
                 Style::default().fg(Color::Cyan).bg(bg_color),
             ),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
+            Span::styled(status_text, Style::default().fg(status_color).bg(bg_color)),
+            Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
             Span::styled(
-                format!("pid:{:<6}", agent.pid),
+                fixed_width(&format!("pid:{}", agent.pid), PID_WIDTH),
                 Style::default().fg(Color::DarkGray).bg(bg_color),
             ),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
-            Span::styled(session_info, Style::default().fg(Color::White).bg(bg_color)),
+            Span::styled(
+                fixed_width(&session_info, SESSION_WIDTH),
+                Style::default().fg(Color::White).bg(bg_color),
+            ),
             Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
             Span::styled(
                 title_display,
                 Style::default().fg(Color::White).bg(bg_color),
             ),
-            Span::styled(" | ", Style::default().fg(Color::DarkGray).bg(bg_color)),
-            Span::styled(status_text, Style::default().fg(status_color).bg(bg_color)),
         ]);
 
         ListItem::new(line)
@@ -600,6 +601,43 @@ fn truncate(s: &str, max_len: usize) -> String {
         let truncated: String = chars[..max_len.saturating_sub(3)].iter().collect();
         format!("{}...", truncated)
     }
+}
+
+/// Pad or truncate a string to a fixed display width (right-padded with spaces)
+/// Uses Unicode width to handle CJK characters correctly
+fn fixed_width(s: &str, width: usize) -> String {
+    let display_width = s.width();
+
+    if display_width >= width {
+        // Truncate with ellipsis, accounting for display width
+        if width <= 3 {
+            truncate_to_width(s, width)
+        } else {
+            let truncated = truncate_to_width(s, width.saturating_sub(3));
+            format!("{}...", truncated)
+        }
+    } else {
+        // Pad with spaces
+        let padding = width - display_width;
+        format!("{}{}", s, " ".repeat(padding))
+    }
+}
+
+/// Truncate a string to fit within a given display width
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let mut result = String::new();
+    let mut current_width = 0;
+
+    for c in s.chars() {
+        let char_width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if current_width + char_width > max_width {
+            break;
+        }
+        result.push(c);
+        current_width += char_width;
+    }
+
+    result
 }
 
 #[cfg(test)]
