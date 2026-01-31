@@ -1,6 +1,8 @@
 use anyhow::Result;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::agents::MonitoredAgent;
@@ -69,6 +71,9 @@ impl Poller {
     async fn run(self, tx: mpsc::Sender<PollMessage>) {
         let normal_interval = self.settings.poll_interval_ms;
         let fast_interval = self.settings.passthrough_poll_interval_ms;
+        let mut backoff_ms: u64 = 0;
+        let mut last_error: Option<String> = None;
+        let mut last_error_at: Option<Instant> = None;
 
         loop {
             // Check if we should stop and get passthrough state
@@ -82,23 +87,45 @@ impl Poller {
             }
 
             // Use faster interval in passthrough mode for responsive preview updates
-            let interval_ms = if is_passthrough {
+            let base_interval_ms = if is_passthrough {
                 fast_interval
             } else {
                 normal_interval
             };
+            let interval_ms = base_interval_ms.saturating_add(backoff_ms);
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
 
             match self.poll_once().await {
                 Ok(agents) => {
+                    backoff_ms = 0;
+                    last_error = None;
+                    last_error_at = None;
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
                         break; // Receiver dropped
                     }
                 }
                 Err(e) => {
-                    if tx.send(PollMessage::Error(e.to_string())).await.is_err() {
-                        break;
+                    let err_str = e.to_string();
+                    let should_send = match &last_error {
+                        Some(prev) if prev == &err_str => last_error_at
+                            .map(|t| t.elapsed() >= Duration::from_secs(2))
+                            .unwrap_or(true),
+                        _ => true,
+                    };
+
+                    if should_send {
+                        if tx.send(PollMessage::Error(err_str.clone())).await.is_err() {
+                            break;
+                        }
                     }
+
+                    last_error = Some(err_str);
+                    last_error_at = Some(Instant::now());
+                    backoff_ms = if backoff_ms == 0 {
+                        200
+                    } else {
+                        (backoff_ms * 2).min(2000)
+                    };
                 }
             }
         }
@@ -140,14 +167,7 @@ impl Poller {
                 .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
 
             if let Some(agent_type) = agent_type {
-                // Capture pane content (plain for detection, ANSI for preview)
-                let content = match self.client.capture_pane_plain(&pane.target) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::debug!("Failed to capture pane {}: {}", pane.target, e);
-                        String::new()
-                    }
-                };
+                // Capture pane content once (ANSI for preview, stripped for detection)
                 let content_ansi = match self.client.capture_pane(&pane.target) {
                     Ok(c) => c,
                     Err(e) => {
@@ -155,6 +175,7 @@ impl Poller {
                         String::new()
                     }
                 };
+                let content = strip_ansi(&content_ansi);
                 let title = self
                     .client
                     .get_pane_title(&pane.target)
@@ -238,8 +259,8 @@ impl Poller {
 pub fn detect_agent_from_pane(pane: &PaneInfo, client: &TmuxClient) -> Option<MonitoredAgent> {
     let agent_type = pane.detect_agent_type()?;
 
-    let content = client.capture_pane_plain(&pane.target).unwrap_or_default();
     let content_ansi = client.capture_pane(&pane.target).unwrap_or_default();
+    let content = strip_ansi(&content_ansi);
     let title = client
         .get_pane_title(&pane.target)
         .unwrap_or(pane.title.clone());
@@ -265,6 +286,17 @@ pub fn detect_agent_from_pane(pane: &PaneInfo, client: &TmuxClient) -> Option<Mo
     agent.context_warning = context_warning;
 
     Some(agent)
+}
+
+fn strip_ansi(input: &str) -> String {
+    // Remove OSC and CSI sequences for detection logic.
+    static OSC_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
+    static CSI_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
+
+    let without_osc = OSC_RE.replace_all(input, "");
+    CSI_RE.replace_all(&without_osc, "").to_string()
 }
 
 #[cfg(test)]
