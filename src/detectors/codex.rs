@@ -23,17 +23,103 @@ impl CodexDetector {
 
     fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String)> {
         let lines: Vec<&str> = content.lines().collect();
-        let check_start = lines.len().saturating_sub(15);
-        let recent = lines[check_start..].join("\n");
+        let check_start = lines.len().saturating_sub(30);
+        let recent_lines = &lines[check_start..];
 
-        if self.approval_pattern.is_match(&recent) {
-            Some((
-                ApprovalType::Other("Codex approval".to_string()),
-                String::new(),
-            ))
-        } else {
-            None
+        // First check for numbered choices (user question pattern)
+        if let Some(question) = self.detect_numbered_choices(recent_lines) {
+            return Some(question);
         }
+
+        // Then check for y/n approval patterns
+        for line in recent_lines {
+            // Skip tip/hint lines and footer
+            if line.contains("Tip:")
+                || line.contains("Tips:")
+                || line.contains("% context left")
+                || line.contains("? for shortcuts")
+            {
+                continue;
+            }
+
+            if self.approval_pattern.is_match(line) {
+                return Some((
+                    ApprovalType::Other("Codex approval".to_string()),
+                    String::new(),
+                ));
+            }
+        }
+        None
+    }
+
+    /// Detect numbered choices pattern (e.g., "1. Option", "2. Option")
+    fn detect_numbered_choices(&self, lines: &[&str]) -> Option<(ApprovalType, String)> {
+        let mut choices: Vec<String> = Vec::new();
+        let mut question_text = String::new();
+        let mut found_prompt = false;
+
+        // Scan from end to find prompt, then look for choices above it
+        for line in lines.iter().rev() {
+            let trimmed = line.trim();
+
+            // Skip footer lines
+            if trimmed.contains("% context left") || trimmed.starts_with('?') || trimmed.is_empty()
+            {
+                continue;
+            }
+
+            // Found input prompt - mark and continue looking for choices above
+            if trimmed.starts_with('›') {
+                found_prompt = true;
+                continue;
+            }
+
+            // Look for numbered choices (1. xxx, 2. xxx, etc.)
+            if let Some(choice) = self.parse_numbered_choice(trimmed) {
+                choices.push(choice);
+            } else if !choices.is_empty() {
+                // We've collected choices, now check for question text
+                if trimmed.ends_with('?') || trimmed.ends_with('？') {
+                    question_text = trimmed.to_string();
+                }
+                break;
+            }
+        }
+
+        // If we found numbered choices with a prompt, return as UserQuestion
+        if choices.len() >= 2 && found_prompt {
+            // Reverse choices since we collected them bottom-up
+            choices.reverse();
+            return Some((
+                ApprovalType::UserQuestion {
+                    choices,
+                    multi_select: false,
+                    cursor_position: 0,
+                },
+                question_text,
+            ));
+        }
+
+        None
+    }
+
+    /// Parse a numbered choice line (e.g., "1. Fix bug" -> "Fix bug")
+    fn parse_numbered_choice(&self, line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        // Match patterns like "1. text", "2. text", etc.
+        if trimmed.len() >= 3 {
+            let first_char = trimmed.chars().next()?;
+            if first_char.is_ascii_digit() {
+                let rest = &trimmed[1..];
+                if rest.starts_with(". ") || rest.starts_with("．") {
+                    let choice_text = rest.trim_start_matches(['.', '．', ' ']).trim();
+                    if !choice_text.is_empty() {
+                        return Some(choice_text.to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn detect_error(&self, content: &str) -> Option<String> {
@@ -88,38 +174,98 @@ impl StatusDetector for CodexDetector {
 
         // Content-based detection for Codex CLI
         let lines: Vec<&str> = content.lines().collect();
-        let recent_lines: Vec<&str> = lines.iter().rev().take(10).copied().collect();
+        let recent_lines: Vec<&str> = lines.iter().rev().take(15).copied().collect();
 
-        // Check for Codex-specific idle indicators
+        // Check for processing indicators first (e.g., spinners, "thinking...")
         for line in &recent_lines {
             let trimmed = line.trim();
 
-            // "› " prompt indicates idle (waiting for input)
-            if trimmed.starts_with('›') {
-                return AgentStatus::Idle;
-            }
-
-            // "XX% context left" footer indicates idle
-            if trimmed.contains("% context left") {
-                return AgentStatus::Idle;
-            }
-        }
-
-        // Default based on last line heuristics
-        if let Some(last) = lines.last() {
-            let trimmed = last.trim();
-            // If ends with prompt, likely idle
-            if trimmed.ends_with('>')
-                || trimmed.ends_with('$')
-                || trimmed.ends_with('❯')
-                || trimmed.is_empty()
+            // Spinner patterns (Codex uses various spinners during processing)
+            if trimmed.starts_with('⠋')
+                || trimmed.starts_with('⠙')
+                || trimmed.starts_with('⠹')
+                || trimmed.starts_with('⠸')
+                || trimmed.starts_with('⠼')
+                || trimmed.starts_with('⠴')
+                || trimmed.starts_with('⠦')
+                || trimmed.starts_with('⠧')
+                || trimmed.starts_with('⠇')
+                || trimmed.starts_with('⠏')
             {
+                return AgentStatus::Processing {
+                    activity: trimmed.to_string(),
+                };
+            }
+
+            // "Thinking..." or similar processing indicators
+            if trimmed.contains("Thinking") || trimmed.contains("Generating") {
+                return AgentStatus::Processing {
+                    activity: trimmed.to_string(),
+                };
+            }
+
+            // "esc to interrupt" indicates processing
+            if trimmed.contains("esc to interrupt") {
+                return AgentStatus::Processing {
+                    activity: String::new(),
+                };
+            }
+        }
+
+        // Check for idle indicators
+        // Codex shows "› " prompt when waiting for input
+        // The prompt line should be followed only by footer (? for shortcuts... % context left)
+        let mut prompt_line_idx: Option<usize> = None;
+        let mut footer_line_idx: Option<usize> = None;
+
+        for (idx, line) in recent_lines.iter().enumerate() {
+            let trimmed = line.trim();
+
+            // Footer line with "% context left"
+            if trimmed.contains("% context left") {
+                footer_line_idx = Some(idx);
+            }
+
+            // Prompt line starting with "› "
+            if trimmed.starts_with('›') {
+                prompt_line_idx = Some(idx);
+                break; // Prompt is above footer, stop searching
+            }
+        }
+
+        // Idle if: prompt exists and is right above footer (with maybe empty lines between)
+        if let (Some(prompt_idx), Some(footer_idx)) = (prompt_line_idx, footer_line_idx) {
+            // In reversed order: footer is at lower index, prompt at higher
+            // Check if there's only empty lines between them
+            if prompt_idx > footer_idx {
+                let between = &recent_lines[footer_idx + 1..prompt_idx];
+                let only_empty_or_hints = between
+                    .iter()
+                    .all(|l| l.trim().is_empty() || l.trim().starts_with('?'));
+                if only_empty_or_hints {
+                    return AgentStatus::Idle;
+                }
+            }
+        }
+
+        // Fallback: if we see the footer but no clear processing indicator,
+        // check for selection choices which indicate response completed
+        for line in &recent_lines {
+            let trimmed = line.trim();
+            // Numbered choices pattern (e.g., "1. Fix bug" or "  1  Fix bug")
+            if trimmed.starts_with("1.") || trimmed.starts_with("2.") || trimmed.starts_with("3.") {
                 return AgentStatus::Idle;
             }
         }
 
-        AgentStatus::Processing {
-            activity: String::new(),
+        // Default to unknown/processing based on context
+        if footer_line_idx.is_some() {
+            // Footer visible but unclear state - likely idle after response
+            AgentStatus::Idle
+        } else {
+            AgentStatus::Processing {
+                activity: String::new(),
+            }
         }
     }
 
@@ -141,22 +287,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_idle_detection() {
+    fn test_idle_detection_with_title() {
         let detector = CodexDetector::new();
-        let status = detector.detect_status("Codex - Idle", "Some content\n> ");
+        let status = detector.detect_status("Codex - Idle", "Some content");
         assert!(matches!(status, AgentStatus::Idle));
     }
 
     #[test]
-    fn test_idle_with_prompt() {
+    fn test_idle_with_prompt_and_footer() {
         let detector = CodexDetector::new();
-        // Codex uses › as input prompt
+        // Codex uses › as input prompt, followed by footer
         let content = r#"
 Some suggestions here
 
 › Improve documentation in @filename
 
-  98% context left · ? for shortcuts"#;
+  ? for shortcuts                                                                                   98% context left"#;
         let status = detector.detect_status("DESKTOP-LG7DUPN", content);
         assert!(
             matches!(status, AgentStatus::Idle),
@@ -166,9 +312,85 @@ Some suggestions here
     }
 
     #[test]
-    fn test_idle_with_context_footer() {
+    fn test_user_question_with_numbered_choices() {
         let detector = CodexDetector::new();
-        let content = "Some content\n  50% context left · ? for shortcuts";
+        // Codex shows numbered choices when asking user a question
+        let content = r#"
+次に進めるなら、どれから着手しますか？
+
+  1. Fix the bug
+  2. Add new feature
+  3. Refactor code
+  4. Write tests
+
+›
+
+  ? for shortcuts                                                                                   83% context left"#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(
+                status,
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::UserQuestion { .. },
+                    ..
+                }
+            ),
+            "Expected AwaitingApproval with UserQuestion, got {:?}",
+            status
+        );
+
+        // Verify choices are extracted
+        if let AgentStatus::AwaitingApproval {
+            approval_type: ApprovalType::UserQuestion { choices, .. },
+            ..
+        } = status
+        {
+            assert_eq!(choices.len(), 4);
+            assert_eq!(choices[0], "Fix the bug");
+        }
+    }
+
+    #[test]
+    fn test_processing_with_spinner() {
+        let detector = CodexDetector::new();
+        // Codex shows spinner during processing
+        let content = r#"
+› Generate a summary
+
+⠋ Thinking...
+
+  ? for shortcuts                                                                                   83% context left"#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_processing_with_esc_to_interrupt() {
+        let detector = CodexDetector::new();
+        // Codex shows "esc to interrupt" during processing
+        let content = r#"
+› Fix the bug
+
+  Reading files...
+
+  esc to interrupt                                                                                   83% context left"#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_idle_with_footer_only() {
+        let detector = CodexDetector::new();
+        // Footer visible without clear prompt - assume idle
+        let content = "Some content\n  ? for shortcuts                        50% context left";
         let status = detector.detect_status("", content);
         assert!(matches!(status, AgentStatus::Idle));
     }
