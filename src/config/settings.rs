@@ -16,16 +16,16 @@ pub struct Config {
     pub config: Option<PathBuf>,
 
     /// Polling interval in milliseconds
-    #[arg(short = 'i', long, default_value = "500")]
-    pub poll_interval: u64,
+    #[arg(short = 'i', long)]
+    pub poll_interval: Option<u64>,
 
     /// Number of lines to capture from panes
-    #[arg(short = 'l', long, default_value = "100")]
-    pub capture_lines: u32,
+    #[arg(short = 'l', long)]
+    pub capture_lines: Option<u32>,
 
     /// Only show panes from attached sessions
-    #[arg(long, default_value = "true")]
-    pub attached_only: bool,
+    #[arg(long, action = clap::ArgAction::Set)]
+    pub attached_only: Option<bool>,
 }
 
 impl Config {
@@ -174,9 +174,15 @@ impl Settings {
 
     /// Merge CLI config into settings (CLI takes precedence)
     pub fn merge_cli(&mut self, cli: &Config) {
-        self.poll_interval_ms = cli.poll_interval;
-        self.capture_lines = cli.capture_lines;
-        self.attached_only = cli.attached_only;
+        if let Some(poll_interval) = cli.poll_interval {
+            self.poll_interval_ms = poll_interval;
+        }
+        if let Some(capture_lines) = cli.capture_lines {
+            self.capture_lines = capture_lines;
+        }
+        if let Some(attached_only) = cli.attached_only {
+            self.attached_only = attached_only;
+        }
     }
 }
 

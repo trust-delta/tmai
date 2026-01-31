@@ -7,7 +7,7 @@ use super::pane::PaneInfo;
 
 /// Regex pattern for validating tmux target format (session:window.pane)
 static TARGET_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[\w\-]+:\d+\.\d+$").expect("Invalid TARGET_PATTERN regex"));
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_.-]+:\d+\.\d+$").expect("Invalid TARGET_PATTERN regex"));
 
 /// Validate tmux target format to prevent command injection
 /// Only allows `session:window.pane` format (e.g., "main:0.1")
@@ -463,6 +463,7 @@ mod tests {
         // Valid targets
         assert!(validate_target("main:0.0").is_ok());
         assert!(validate_target("my-session:1.2").is_ok());
+        assert!(validate_target("my.session:1.2").is_ok());
         assert!(validate_target("test_session:10.5").is_ok());
         assert!(validate_target("abc123:99.99").is_ok());
     }

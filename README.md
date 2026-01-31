@@ -36,6 +36,27 @@ Run `tmai` in a tmux session:
 tmai
 ```
 
+### Configuration
+
+Create a config file in one of these locations (first found wins):
+
+- `~/.config/tmai/config.toml`
+- `~/.tmai.toml`
+
+Example:
+
+```toml
+poll_interval_ms = 500
+passthrough_poll_interval_ms = 10
+capture_lines = 100
+attached_only = true
+
+[ui]
+show_preview = true
+preview_height = 40
+color = true
+```
+
 ### Keybindings
 
 | Key | Action |
