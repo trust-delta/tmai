@@ -13,8 +13,9 @@ pub struct CodexDetector {
 impl CodexDetector {
     pub fn new() -> Self {
         Self {
+            // Only match explicit approval prompts, not general text containing these words
             approval_pattern: Regex::new(
-                r"(?i)\[y/n\]|\[Y/n\]|Yes\s*/\s*No|approve|confirm|allow|proceed",
+                r"(?i)\[y/n\]|\[Y/n\]|\[yes/no\]|^\s*Yes\s*/\s*No\s*$|\[Approve\]|\[Confirm\]|\[Allow\]|\[Proceed\]",
             )
             .unwrap(),
             error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
