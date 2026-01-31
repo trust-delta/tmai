@@ -8,7 +8,9 @@ use tokio::sync::mpsc;
 use crate::agents::{AgentType, ApprovalType};
 use crate::config::Settings;
 use crate::monitor::{PollMessage, Poller};
-use crate::state::{AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState};
+use crate::state::{
+    AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState, TreeEntry,
+};
 use crate::tmux::TmuxClient;
 
 use super::components::{
@@ -412,8 +414,8 @@ impl App {
                 match SessionList::get_selected_entry(&state) {
                     Some(ListEntry::CreateNew { group_key }) => {
                         let group_key = group_key.clone();
-                        let sessions = self.tmux_client.list_sessions().unwrap_or_default();
-                        state.start_create_process(group_key, sessions);
+                        let panes = self.tmux_client.list_all_panes().unwrap_or_default();
+                        state.start_create_process(group_key, panes);
                         return Ok(());
                     }
                     Some(ListEntry::GroupHeader { key, .. }) => {
@@ -833,7 +835,7 @@ impl App {
                 let should_cancel = state
                     .create_process
                     .as_ref()
-                    .map(|cs| cs.step == CreateProcessStep::SelectPlacement)
+                    .map(|cs| cs.step == CreateProcessStep::SelectTarget)
                     .unwrap_or(true);
 
                 if should_cancel {
@@ -842,22 +844,8 @@ impl App {
                     // Go back to previous step
                     if let Some(ref mut cs) = state.create_process {
                         let prev_step = match cs.step {
-                            CreateProcessStep::SelectPlacement => {
-                                CreateProcessStep::SelectPlacement
-                            }
-                            CreateProcessStep::SelectTarget => CreateProcessStep::SelectPlacement,
-                            CreateProcessStep::SelectDirectory => {
-                                // Go back to SelectTarget or SelectPlacement depending on placement type
-                                match cs.placement_type {
-                                    Some(PlacementType::NewSession) => {
-                                        CreateProcessStep::SelectPlacement
-                                    }
-                                    Some(PlacementType::NewWindow | PlacementType::SplitPane) => {
-                                        CreateProcessStep::SelectTarget
-                                    }
-                                    None => CreateProcessStep::SelectPlacement,
-                                }
-                            }
+                            CreateProcessStep::SelectTarget => CreateProcessStep::SelectTarget,
+                            CreateProcessStep::SelectDirectory => CreateProcessStep::SelectTarget,
                             CreateProcessStep::SelectAgent => CreateProcessStep::SelectDirectory,
                         };
                         cs.step = prev_step;
@@ -892,48 +880,58 @@ impl App {
     /// Handle selection in create process mode
     fn handle_create_process_select(&mut self, step: CreateProcessStep) -> Result<()> {
         match step {
-            CreateProcessStep::SelectPlacement => {
-                let cursor = {
-                    let state = self.state.read();
-                    state.create_process.as_ref().map(|s| s.cursor).unwrap_or(0)
-                };
-
-                let placement_type = CreateProcessPopup::get_placement_type(cursor);
-                if let Some(pt) = placement_type {
-                    let mut state = self.state.write();
-                    if let Some(ref mut cs) = state.create_process {
-                        cs.placement_type = Some(pt);
-                        cs.cursor = 0;
-
-                        // Determine next step based on placement type
-                        match pt {
-                            PlacementType::NewSession => {
-                                // Go directly to directory selection
-                                cs.step = CreateProcessStep::SelectDirectory;
-                            }
-                            PlacementType::NewWindow | PlacementType::SplitPane => {
-                                // Need to select target session
-                                cs.step = CreateProcessStep::SelectTarget;
-                            }
-                        }
-                    }
-                }
-            }
-
             CreateProcessStep::SelectTarget => {
-                let (cursor, sessions) = {
+                let (cursor, tree_entries) = {
                     let state = self.state.read();
                     let cs = state.create_process.as_ref().unwrap();
-                    (cs.cursor, cs.available_sessions.clone())
+                    (cs.cursor, cs.tree_entries.clone())
                 };
 
-                if cursor < sessions.len() {
-                    let selected_session = sessions[cursor].clone();
-                    let mut state = self.state.write();
-                    if let Some(ref mut cs) = state.create_process {
-                        cs.target_session = Some(selected_session);
-                        cs.step = CreateProcessStep::SelectDirectory;
-                        cs.cursor = 0;
+                if cursor >= tree_entries.len() {
+                    return Ok(());
+                }
+
+                let entry = &tree_entries[cursor];
+                match entry {
+                    TreeEntry::NewSession => {
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.placement_type = Some(PlacementType::NewSession);
+                            cs.step = CreateProcessStep::SelectDirectory;
+                            cs.cursor = 0;
+                        }
+                    }
+                    TreeEntry::Session { name, .. } => {
+                        // Toggle session collapse
+                        let key = name.clone();
+                        let mut state = self.state.write();
+                        state.toggle_tree_node(&key);
+                    }
+                    TreeEntry::NewWindow { session } => {
+                        let session = session.clone();
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.placement_type = Some(PlacementType::NewWindow);
+                            cs.target_session = Some(session);
+                            cs.step = CreateProcessStep::SelectDirectory;
+                            cs.cursor = 0;
+                        }
+                    }
+                    TreeEntry::Window { session, index, .. } => {
+                        // Toggle window collapse
+                        let key = format!("{}:{}", session, index);
+                        let mut state = self.state.write();
+                        state.toggle_tree_node(&key);
+                    }
+                    TreeEntry::SplitPane { target } => {
+                        let target = target.clone();
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.placement_type = Some(PlacementType::SplitPane);
+                            cs.target_pane = Some(target);
+                            cs.step = CreateProcessStep::SelectDirectory;
+                            cs.cursor = 0;
+                        }
                     }
                 }
             }
@@ -1015,7 +1013,7 @@ impl App {
 
     /// Execute the process creation with the selected parameters
     fn execute_create_process(&mut self, agent_type: AgentType) -> Result<()> {
-        let (placement_type, session, directory) = {
+        let (placement_type, session, target_pane, directory) = {
             let state = self.state.read();
             let cs = state.create_process.as_ref().unwrap();
             (
@@ -1023,6 +1021,7 @@ impl App {
                 cs.target_session
                     .clone()
                     .unwrap_or_else(|| "main".to_string()),
+                cs.target_pane.clone(),
                 cs.directory.clone().unwrap_or_else(|| ".".to_string()),
             )
         };
@@ -1050,15 +1049,19 @@ impl App {
                     return Ok(());
                 }
             },
-            PlacementType::SplitPane => match self.tmux_client.split_window(&session, &directory) {
-                Ok(t) => t,
-                Err(e) => {
-                    let mut state = self.state.write();
-                    state.set_error(format!("Failed to create pane: {}", e));
-                    state.cancel_create_process();
-                    return Ok(());
+            PlacementType::SplitPane => {
+                // Use target_pane (currently selected pane) for splitting
+                let pane = target_pane.unwrap_or_else(|| session.clone());
+                match self.tmux_client.split_window(&pane, &directory) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        let mut state = self.state.write();
+                        state.set_error(format!("Failed to create pane: {}", e));
+                        state.cancel_create_process();
+                        return Ok(());
+                    }
                 }
-            },
+            }
         };
 
         // Run the agent command

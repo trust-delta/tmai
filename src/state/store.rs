@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::agents::MonitoredAgent;
+use crate::tmux::PaneInfo;
 
 /// Shared state type alias
 pub type SharedState = Arc<RwLock<AppState>>;
@@ -105,6 +106,26 @@ pub enum PlacementType {
     SplitPane,
 }
 
+/// Tree entry for the tree-style target selection UI
+#[derive(Debug, Clone)]
+pub enum TreeEntry {
+    /// Create a new session
+    NewSession,
+    /// Session node (collapsible)
+    Session { name: String, collapsed: bool },
+    /// Create a new window in a session
+    NewWindow { session: String },
+    /// Window node (collapsible)
+    Window {
+        session: String,
+        index: u32,
+        name: String,
+        collapsed: bool,
+    },
+    /// Split a pane
+    SplitPane { target: String },
+}
+
 /// Action to confirm before executing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmAction {
@@ -124,9 +145,7 @@ pub struct ConfirmationState {
 /// Step in the create process flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreateProcessStep {
-    /// Select placement type (new session / new window / split pane)
-    SelectPlacement,
-    /// Select target tmux session (for NewWindow / SplitPane)
+    /// Select target from tree (combined placement + target selection)
     SelectTarget,
     /// Select directory
     SelectDirectory,
@@ -143,16 +162,22 @@ pub struct CreateProcessState {
     pub placement_type: Option<PlacementType>,
     /// Group key that initiated the flow (directory path or session name)
     pub origin_group_key: String,
-    /// Selected tmux session name
+    /// Selected tmux session name (for NewWindow)
     pub target_session: Option<String>,
+    /// Target pane to split (for SplitPane, session:window.pane format)
+    pub target_pane: Option<String>,
     /// Selected directory path
     pub directory: Option<String>,
     /// Cursor position in the popup list
     pub cursor: usize,
     /// Input buffer for directory path entry
     pub input_buffer: String,
-    /// Available sessions list (cached)
-    pub available_sessions: Vec<String>,
+    /// Available panes list (cached)
+    pub available_panes: Vec<PaneInfo>,
+    /// Collapsed node keys (session name or "session:window_index")
+    pub collapsed_nodes: HashSet<String>,
+    /// Tree entries (cached, rebuilt when collapsed_nodes changes)
+    pub tree_entries: Vec<TreeEntry>,
     /// Known directories from current agents
     pub known_directories: Vec<String>,
     /// Whether in path input mode
@@ -301,6 +326,7 @@ impl AppState {
                 existing.last_content_ansi = agent.last_content_ansi;
                 existing.title = agent.title;
                 existing.last_update = agent.last_update;
+                existing.context_warning = agent.context_warning;
             } else {
                 self.agents.insert(id.clone(), agent);
             }
@@ -658,7 +684,7 @@ impl AppState {
     // =========================================
 
     /// Start create process flow from a group
-    pub fn start_create_process(&mut self, group_key: String, sessions: Vec<String>) {
+    pub fn start_create_process(&mut self, group_key: String, panes: Vec<PaneInfo>) {
         // Get known directories from current agents
         let known_directories = self.get_known_directories();
 
@@ -676,18 +702,113 @@ impl AppState {
             None
         };
 
+        // Get currently selected pane target for SplitPane
+        let target_pane = self.selected_target().map(|s| s.to_string());
+
+        // Initialize collapsed_nodes: sessions expanded, windows collapsed
+        let mut collapsed_nodes = HashSet::new();
+        for pane in &panes {
+            // Collapse all windows by default
+            let window_key = format!("{}:{}", pane.session, pane.window_index);
+            collapsed_nodes.insert(window_key);
+        }
+
+        // Build tree entries
+        let tree_entries = Self::build_tree_entries(&panes, &collapsed_nodes);
+
         self.create_process = Some(CreateProcessState {
-            step: CreateProcessStep::SelectPlacement,
+            step: CreateProcessStep::SelectTarget,
             placement_type: None,
             origin_group_key: group_key,
             target_session,
+            target_pane,
             directory,
             cursor: 0,
             input_buffer: String::new(),
-            available_sessions: sessions,
+            available_panes: panes,
+            collapsed_nodes,
+            tree_entries,
             known_directories,
             is_input_mode: false,
         });
+    }
+
+    /// Build tree entries from panes and collapsed state
+    fn build_tree_entries(panes: &[PaneInfo], collapsed_nodes: &HashSet<String>) -> Vec<TreeEntry> {
+        let mut entries = Vec::new();
+
+        // Add "New Session" at the top
+        entries.push(TreeEntry::NewSession);
+
+        // Group panes by session, then by window
+        let mut sessions: Vec<String> = panes.iter().map(|p| p.session.clone()).collect();
+        sessions.sort();
+        sessions.dedup();
+
+        for session in &sessions {
+            let session_collapsed = collapsed_nodes.contains(session);
+            entries.push(TreeEntry::Session {
+                name: session.clone(),
+                collapsed: session_collapsed,
+            });
+
+            if !session_collapsed {
+                // Add "New Window" under the session
+                entries.push(TreeEntry::NewWindow {
+                    session: session.clone(),
+                });
+
+                // Collect windows in this session
+                let mut windows: Vec<(u32, String)> = panes
+                    .iter()
+                    .filter(|p| &p.session == session)
+                    .map(|p| (p.window_index, p.window_name.clone()))
+                    .collect();
+                windows.sort_by_key(|(idx, _)| *idx);
+                windows.dedup_by_key(|(idx, _)| *idx);
+
+                for (window_index, window_name) in windows {
+                    let window_key = format!("{}:{}", session, window_index);
+                    let window_collapsed = collapsed_nodes.contains(&window_key);
+
+                    entries.push(TreeEntry::Window {
+                        session: session.clone(),
+                        index: window_index,
+                        name: window_name,
+                        collapsed: window_collapsed,
+                    });
+
+                    if !window_collapsed {
+                        // Add panes under this window
+                        let window_panes: Vec<&PaneInfo> = panes
+                            .iter()
+                            .filter(|p| &p.session == session && p.window_index == window_index)
+                            .collect();
+
+                        for pane in window_panes {
+                            entries.push(TreeEntry::SplitPane {
+                                target: pane.target.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        entries
+    }
+
+    /// Toggle a node's collapsed state in the create process tree
+    pub fn toggle_tree_node(&mut self, key: &str) {
+        if let Some(ref mut cs) = self.create_process {
+            if cs.collapsed_nodes.contains(key) {
+                cs.collapsed_nodes.remove(key);
+            } else {
+                cs.collapsed_nodes.insert(key.to_string());
+            }
+            // Rebuild tree entries
+            cs.tree_entries = Self::build_tree_entries(&cs.available_panes, &cs.collapsed_nodes);
+        }
     }
 
     /// Cancel create process flow

@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::agents::AgentType;
-use crate::state::{AppState, CreateProcessStep, PlacementType};
+use crate::state::{AppState, CreateProcessStep, TreeEntry};
 
 /// Popup for creating a new AI process
 pub struct CreateProcessPopup;
@@ -24,7 +24,6 @@ impl CreateProcessPopup {
 
         // Build content based on current step
         let (title, items, help_text) = match create_state.step {
-            CreateProcessStep::SelectPlacement => Self::render_select_placement(create_state),
             CreateProcessStep::SelectTarget => Self::render_select_target(create_state),
             CreateProcessStep::SelectDirectory => Self::render_select_directory(create_state),
             CreateProcessStep::SelectAgent => Self::render_select_agent(create_state),
@@ -64,8 +63,7 @@ impl CreateProcessPopup {
 
         // Header text
         let header = match create_state.step {
-            CreateProcessStep::SelectPlacement => "作成場所を選択:",
-            CreateProcessStep::SelectTarget => "tmuxセッションを選択:",
+            CreateProcessStep::SelectTarget => "追加先を選択:",
             CreateProcessStep::SelectDirectory => {
                 if create_state.is_input_mode {
                     "ディレクトリパスを入力:"
@@ -106,62 +104,67 @@ impl CreateProcessPopup {
         frame.render_widget(help_widget, inner_chunks[2]);
     }
 
-    /// Render content for selecting placement type
-    fn render_select_placement(
-        _create_state: &crate::state::CreateProcessState,
-    ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規プロセス作成";
-
-        let items = vec![
-            ListItem::new(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("新規セッション", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "  (独立したセッションを作成)",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("新規ウィンドウ", Style::default().fg(Color::Cyan)),
-                Span::styled(
-                    "  (既存セッションにタブ追加)",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("ペイン追加", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    "  (既存ウィンドウを分割)",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])),
-        ];
-
-        let help = "↑/↓: 選択  Enter: 決定  Esc: キャンセル";
-
-        (title, items, help)
-    }
-
-    /// Render content for selecting tmux session
+    /// Render content for selecting target from tree
     fn render_select_target(
         create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
         let title = "新規プロセス作成";
 
         let items: Vec<ListItem> = create_state
-            .available_sessions
+            .tree_entries
             .iter()
-            .map(|s| {
-                ListItem::new(Line::from(vec![
+            .map(|entry| match entry {
+                TreeEntry::NewSession => ListItem::new(Line::from(vec![
+                    Span::styled("[+] ", Style::default().fg(Color::Green)),
+                    Span::styled("新規セッション", Style::default().fg(Color::Green)),
+                ])),
+                TreeEntry::Session { name, collapsed } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Blue)),
+                        Span::styled(
+                            name.clone(),
+                            Style::default()
+                                .fg(Color::Blue)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]))
+                }
+                TreeEntry::NewWindow { .. } => ListItem::new(Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(s.clone(), Style::default().fg(Color::White)),
-                ]))
+                    Span::styled("[+] ", Style::default().fg(Color::Cyan)),
+                    Span::styled("新規ウィンドウ", Style::default().fg(Color::Cyan)),
+                ])),
+                TreeEntry::Window {
+                    index,
+                    name,
+                    collapsed,
+                    ..
+                } => {
+                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let display_name = if name.is_empty() || name == "bash" || name == "zsh" {
+                        format!("window-{}", index)
+                    } else {
+                        format!("{} ({})", name, index)
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(format!("{} ", arrow), Style::default().fg(Color::Yellow)),
+                        Span::styled(display_name, Style::default().fg(Color::Yellow)),
+                    ]))
+                }
+                TreeEntry::SplitPane { target } => ListItem::new(Line::from(vec![
+                    Span::styled("    ", Style::default()),
+                    Span::styled("[+] ", Style::default().fg(Color::White)),
+                    Span::styled(
+                        format!("{} を分割", target),
+                        Style::default().fg(Color::White),
+                    ),
+                ])),
             })
             .collect();
 
-        let help = "↑/↓: 選択  Enter: 決定  Esc: 戻る";
+        let help = "↑/↓: 選択  Enter: 決定/トグル  Esc: キャンセル";
 
         (title, items, help)
     }
@@ -245,20 +248,9 @@ impl CreateProcessPopup {
         };
 
         match create_state.step {
-            CreateProcessStep::SelectPlacement => 3, // NewSession, NewWindow, SplitPane
-            CreateProcessStep::SelectTarget => create_state.available_sessions.len(),
+            CreateProcessStep::SelectTarget => create_state.tree_entries.len(),
             CreateProcessStep::SelectDirectory => 3 + create_state.known_directories.len(), // Input, home, current + known dirs
             CreateProcessStep::SelectAgent => AgentType::all_variants().len(),
-        }
-    }
-
-    /// Get the placement type from cursor position
-    pub fn get_placement_type(cursor: usize) -> Option<PlacementType> {
-        match cursor {
-            0 => Some(PlacementType::NewSession),
-            1 => Some(PlacementType::NewWindow),
-            2 => Some(PlacementType::SplitPane),
-            _ => None,
         }
     }
 }
