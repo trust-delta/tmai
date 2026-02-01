@@ -13,6 +13,8 @@
 - **AskUserQuestion support** - Respond to agent questions with number selection
 - **Passthrough mode** - Send keys directly to the agent pane
 - **Status detection** - Automatic detection of idle, processing, and awaiting approval states
+- **PTY wrapping** - High-precision state detection via PTY proxy for real-time I/O monitoring
+- **Web Remote Control** - Control agents from your smartphone via QR code
 
 ## Installation
 
@@ -74,14 +76,52 @@ color = true
 - **Input mode** (`i`) - Type text to send to agent
 - **Passthrough mode** (`→`) - Keys sent directly to pane
 
+## PTY Wrapping
+
+For more accurate state detection, you can wrap AI agents with a PTY proxy:
+
+```bash
+# Start Claude Code with PTY wrapping
+tmai wrap claude
+
+# With arguments
+tmai wrap claude --dangerously-skip-permissions
+
+# Other agents
+tmai wrap codex
+tmai wrap gemini
+```
+
+Benefits:
+- **Real-time I/O monitoring** - Detects state changes immediately
+- **No polling delay** - Faster than tmux capture-pane
+- **Accurate approval detection** - Reliable Yes/No and AskUserQuestion detection
+
+When creating new AI processes from tmai UI, they are automatically wrapped.
+
+## Web Remote Control
+
+Control your AI agents from your smartphone:
+
+1. Press `r` to display QR code
+2. Scan with your phone
+3. Approve/reject or select options from the web interface
+
+```toml
+# config.toml
+[web]
+enabled = true
+port = 9876
+```
+
 ## Supported Agents
 
-| Agent | Status |
-|-------|--------|
-| Claude Code | Supported |
-| OpenCode | Supported |
-| Codex CLI | Planned |
-| Gemini CLI | Planned |
+| Agent | Detection | PTY Wrap |
+|-------|-----------|----------|
+| Claude Code | ✅ Supported | ✅ |
+| OpenCode | ✅ Supported | ✅ |
+| Codex CLI | ✅ Supported | ✅ |
+| Gemini CLI | ✅ Supported | ✅ |
 
 ## Screenshots
 

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -8,11 +8,11 @@ use std::path::PathBuf;
 #[command(author, version, about = "Tmux Multi Agent Interface")]
 pub struct Config {
     /// Enable debug mode
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub debug: bool,
 
     /// Path to config file
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub config: Option<PathBuf>,
 
     /// Polling interval in milliseconds
@@ -26,12 +26,44 @@ pub struct Config {
     /// Only show panes from attached sessions
     #[arg(long, action = clap::ArgAction::Set)]
     pub attached_only: Option<bool>,
+
+    /// Subcommand
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+/// Subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum Command {
+    /// Wrap an AI agent command with PTY monitoring
+    Wrap {
+        /// The command to wrap (e.g., "claude", "codex")
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 impl Config {
     /// Parse command line arguments
     pub fn parse_args() -> Self {
         Self::parse()
+    }
+
+    /// Check if running in wrap mode
+    pub fn is_wrap_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Wrap { .. }))
+    }
+
+    /// Get wrap command and arguments
+    pub fn get_wrap_args(&self) -> Option<(String, Vec<String>)> {
+        match &self.command {
+            Some(Command::Wrap { args }) if !args.is_empty() => {
+                let command = args[0].clone();
+                let cmd_args = args[1..].to_vec();
+                Some((command, cmd_args))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -61,6 +93,10 @@ pub struct Settings {
     /// UI settings
     #[serde(default)]
     pub ui: UiSettings,
+
+    /// Web server settings
+    #[serde(default)]
+    pub web: WebSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -104,6 +140,35 @@ pub struct UiSettings {
     pub color: bool,
 }
 
+/// Web server settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSettings {
+    /// Enable web server
+    #[serde(default = "default_web_enabled")]
+    pub enabled: bool,
+
+    /// Web server port
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+}
+
+fn default_web_enabled() -> bool {
+    true
+}
+
+fn default_web_port() -> u16 {
+    9876
+}
+
+impl Default for WebSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_web_enabled(),
+            port: default_web_port(),
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -135,6 +200,7 @@ impl Default for Settings {
             attached_only: default_attached_only(),
             agent_patterns: Vec::new(),
             ui: UiSettings::default(),
+            web: WebSettings::default(),
         }
     }
 }

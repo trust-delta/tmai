@@ -235,6 +235,12 @@ pub struct AppState {
     pub confirmation_state: Option<ConfirmationState>,
     /// Collapsed group keys (for group header folding)
     pub collapsed_groups: HashSet<String>,
+    /// Whether QR code screen is shown
+    pub show_qr: bool,
+    /// Web server authentication token
+    pub web_token: Option<String>,
+    /// Web server port
+    pub web_port: u16,
 }
 
 impl AppState {
@@ -265,6 +271,9 @@ impl AppState {
             current_window: None,
             confirmation_state: None,
             collapsed_groups: HashSet::new(),
+            show_qr: false,
+            web_token: None,
+            web_port: 9876,
         }
     }
 
@@ -531,6 +540,30 @@ impl AppState {
         self.show_help = !self.show_help;
         if self.show_help {
             self.help_scroll = 0;
+        }
+    }
+
+    /// Toggle QR code screen
+    pub fn toggle_qr(&mut self) {
+        self.show_qr = !self.show_qr;
+    }
+
+    /// Initialize web settings
+    pub fn init_web(&mut self, token: String, port: u16) {
+        self.web_token = Some(token);
+        self.web_port = port;
+    }
+
+    /// Get web URL for QR code
+    pub fn get_web_url(&self) -> Option<String> {
+        let token = self.web_token.as_ref()?;
+        if let Ok(ip) = local_ip_address::local_ip() {
+            Some(format!("http://{}:{}/?token={}", ip, self.web_port, token))
+        } else {
+            Some(format!(
+                "http://localhost:{}/?token={}",
+                self.web_port, token
+            ))
         }
     }
 

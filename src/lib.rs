@@ -5,3 +5,5 @@ pub mod monitor;
 pub mod state;
 pub mod tmux;
 pub mod ui;
+pub mod web;
+pub mod wrap;

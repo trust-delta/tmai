@@ -399,6 +399,28 @@ impl TmuxClient {
         Ok(())
     }
 
+    /// Run a command wrapped with tmai wrap for PTY monitoring
+    ///
+    /// This wraps the command with `tmai wrap` to enable real-time I/O monitoring
+    /// and more accurate state detection.
+    pub fn run_command_wrapped(&self, target: &str, command: &str) -> Result<()> {
+        validate_target(target)?;
+
+        // Get the path to tmai executable
+        let tmai_path = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "tmai".to_string());
+
+        // Wrap the command with tmai wrap
+        let wrapped_command = format!("{} wrap {}", tmai_path, command);
+
+        // Send the wrapped command
+        self.send_keys_literal(target, &wrapped_command)?;
+        // Press Enter to execute
+        self.send_keys(target, "Enter")?;
+        Ok(())
+    }
+
     /// Kill a specific pane
     pub fn kill_pane(&self, target: &str) -> Result<()> {
         validate_target(target)?;
