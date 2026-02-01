@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::agents::MonitoredAgent;
+use crate::agents::{AgentStatus, ApprovalType, MonitoredAgent};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::{get_detector, DetectionContext};
 use crate::state::{MonitorScope, SharedState};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
+use crate::wrap::state_file::{self, WrapApprovalType, WrapState, WrapStatus};
 
 /// Message sent from poller to main loop
 #[derive(Debug)]
@@ -175,6 +176,10 @@ impl Poller {
                 .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
 
             if let Some(agent_type) = agent_type {
+                // Try to read state from wrap state file first
+                let pane_id = pane.pane_index.to_string();
+                let wrap_state = state_file::read_state(&pane_id).ok();
+
                 // Capture pane content once (ANSI for preview, stripped for detection)
                 let content_ansi = match self.client.capture_pane(&pane.target) {
                     Ok(c) => c,
@@ -189,17 +194,26 @@ impl Poller {
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
-                // Build detection context for this pane
-                let detection_context = DetectionContext {
-                    cwd: Some(pane.cwd.as_str()),
-                    settings_cache: Some(&self.claude_settings_cache),
-                };
+                // Determine status: use wrap state file if available, otherwise detect from content
+                let (status, context_warning) = if let Some(ref ws) = wrap_state {
+                    // Convert WrapState to AgentStatus
+                    let status = wrap_state_to_agent_status(ws);
+                    // No context warning from wrap state for now
+                    (status, None)
+                } else {
+                    // Build detection context for this pane
+                    let detection_context = DetectionContext {
+                        cwd: Some(pane.cwd.as_str()),
+                        settings_cache: Some(&self.claude_settings_cache),
+                    };
 
-                // Detect status using appropriate detector
-                let detector = get_detector(&agent_type);
-                let status =
-                    detector.detect_status_with_context(&title, &content, &detection_context);
-                let context_warning = detector.detect_context_warning(&content);
+                    // Detect status using appropriate detector
+                    let detector = get_detector(&agent_type);
+                    let status =
+                        detector.detect_status_with_context(&title, &content, &detection_context);
+                    let context_warning = detector.detect_context_warning(&content);
+                    (status, context_warning)
+                };
 
                 let mut agent = MonitoredAgent::new(
                     pane.target.clone(),
@@ -300,11 +314,40 @@ fn strip_ansi(input: &str) -> String {
     // Remove OSC and CSI sequences for detection logic.
     static OSC_RE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
-    static CSI_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
+    static CSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
 
     let without_osc = OSC_RE.replace_all(input, "");
     CSI_RE.replace_all(&without_osc, "").to_string()
+}
+
+/// Convert WrapState from state file to AgentStatus
+fn wrap_state_to_agent_status(ws: &WrapState) -> AgentStatus {
+    match ws.status {
+        WrapStatus::Processing => AgentStatus::Processing {
+            activity: String::new(),
+        },
+        WrapStatus::Idle => AgentStatus::Idle,
+        WrapStatus::AwaitingApproval => {
+            let approval_type = match ws.approval_type {
+                Some(WrapApprovalType::UserQuestion) => ApprovalType::UserQuestion {
+                    choices: ws.choices.clone(),
+                    multi_select: ws.multi_select,
+                    cursor_position: ws.cursor_position,
+                },
+                Some(WrapApprovalType::FileEdit) => ApprovalType::FileEdit,
+                Some(WrapApprovalType::ShellCommand) => ApprovalType::ShellCommand,
+                Some(WrapApprovalType::McpTool) => ApprovalType::McpTool,
+                Some(WrapApprovalType::YesNo) => ApprovalType::Other("Yes/No".to_string()),
+                Some(WrapApprovalType::Other) => ApprovalType::Other("Approval".to_string()),
+                None => ApprovalType::Other("Approval".to_string()),
+            };
+            let details = ws.details.clone().unwrap_or_default();
+            AgentStatus::AwaitingApproval {
+                approval_type,
+                details,
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -6,8 +6,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
-use crate::detectors::get_detector;
 use crate::config::Settings;
+use crate::detectors::get_detector;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
     AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState, TreeEntry,
@@ -440,7 +440,9 @@ impl App {
                     if let Some((true, agent_type)) = agent_info {
                         drop(state);
                         let detector = get_detector(&agent_type);
-                        let _ = self.tmux_client.send_keys(&target, detector.approval_keys());
+                        let _ = self
+                            .tmux_client
+                            .send_keys(&target, detector.approval_keys());
                     }
                 }
             }
@@ -458,7 +460,9 @@ impl App {
                     if let Some((true, agent_type)) = agent_info {
                         drop(state);
                         let detector = get_detector(&agent_type);
-                        let _ = self.tmux_client.send_keys(&target, detector.rejection_keys());
+                        let _ = self
+                            .tmux_client
+                            .send_keys(&target, detector.rejection_keys());
                     }
                 }
             }
@@ -1137,10 +1141,11 @@ impl App {
             }
         };
 
-        // Run the agent command
+        // Run the agent command (wrapped with tmai wrap for PTY monitoring)
         let command = agent_type.command();
         if !command.is_empty() {
-            if let Err(e) = self.tmux_client.run_command(&target, command) {
+            // Use wrapped command for better state detection via PTY monitoring
+            if let Err(e) = self.tmux_client.run_command_wrapped(&target, command) {
                 let mut state = self.state.write();
                 state.set_error(format!("Failed to start agent: {}", e));
             }
