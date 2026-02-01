@@ -103,7 +103,7 @@ impl ClaudeCodeDetector {
         } else {
             search_end.saturating_sub(25)
         };
-        let check_lines = &lines[search_start..lines.len().max(search_end)];
+        let check_lines = &lines[search_start..search_end];
 
         if check_lines.is_empty() {
             return None;

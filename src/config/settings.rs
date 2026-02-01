@@ -184,6 +184,20 @@ impl Settings {
             self.attached_only = attached_only;
         }
     }
+
+    /// Validate and normalize settings values
+    ///
+    /// Ensures poll intervals have a minimum value to prevent CPU exhaustion.
+    pub fn validate(&mut self) {
+        const MIN_POLL_INTERVAL: u64 = 1;
+
+        if self.poll_interval_ms < MIN_POLL_INTERVAL {
+            self.poll_interval_ms = MIN_POLL_INTERVAL;
+        }
+        if self.passthrough_poll_interval_ms < MIN_POLL_INTERVAL {
+            self.passthrough_poll_interval_ms = MIN_POLL_INTERVAL;
+        }
+    }
 }
 
 #[cfg(test)]

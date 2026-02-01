@@ -312,21 +312,32 @@ impl AppState {
 
     /// Update agents from a new list
     pub fn update_agents(&mut self, agents: Vec<MonitoredAgent>) {
-        let new_ids: Vec<String> = agents.iter().map(|a| a.id.clone()).collect();
+        // Use HashSet for O(1) lookup instead of Vec::contains O(n)
+        let new_ids: HashSet<String> = agents.iter().map(|a| a.id.clone()).collect();
+        // Also collect as Vec for agent_order (preserves input order)
+        let new_order: Vec<String> = agents.iter().map(|a| a.id.clone()).collect();
 
-        // Remove agents that no longer exist
+        // Remove agents that no longer exist (O(n) instead of O(n²))
         self.agents.retain(|id, _| new_ids.contains(id));
 
         // Update or add new agents
         for agent in agents {
             let id = agent.id.clone();
             if let Some(existing) = self.agents.get_mut(&id) {
+                // Update status and content
                 existing.status = agent.status;
                 existing.last_content = agent.last_content;
                 existing.last_content_ansi = agent.last_content_ansi;
                 existing.title = agent.title;
                 existing.last_update = agent.last_update;
                 existing.context_warning = agent.context_warning;
+                // Update meta information
+                existing.cwd = agent.cwd;
+                existing.pid = agent.pid;
+                existing.session = agent.session;
+                existing.window_name = agent.window_name;
+                existing.window_index = agent.window_index;
+                existing.pane_index = agent.pane_index;
             } else {
                 self.agents.insert(id.clone(), agent);
             }
@@ -334,7 +345,7 @@ impl AppState {
 
         // Update order, preserving selection if possible
         let old_selected = self.selected_target().map(|s| s.to_string());
-        self.agent_order = new_ids;
+        self.agent_order = new_order;
 
         // Apply current sort
         self.sort_agents();

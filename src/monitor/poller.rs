@@ -74,6 +74,7 @@ impl Poller {
         let mut backoff_ms: u64 = 0;
         let mut last_error: Option<String> = None;
         let mut last_error_at: Option<Instant> = None;
+        let mut poll_count: u32 = 0;
 
         loop {
             // Check if we should stop and get passthrough state
@@ -100,6 +101,13 @@ impl Poller {
                     backoff_ms = 0;
                     last_error = None;
                     last_error_at = None;
+
+                    // Periodic cache cleanup (every 10 polls)
+                    poll_count = poll_count.wrapping_add(1);
+                    if poll_count.is_multiple_of(10) {
+                        self.process_cache.cleanup();
+                    }
+
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
                         break; // Receiver dropped
                     }

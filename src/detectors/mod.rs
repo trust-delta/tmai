@@ -9,6 +9,8 @@ pub use default::DefaultDetector;
 pub use gemini::GeminiDetector;
 
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use std::collections::HashMap;
 
 use crate::agents::{AgentStatus, AgentType};
 use crate::config::ClaudeSettingsCache;
@@ -67,6 +69,10 @@ static GEMINI_DETECTOR: Lazy<GeminiDetector> = Lazy::new(GeminiDetector::new);
 static OPENCODE_DETECTOR: Lazy<DefaultDetector> =
     Lazy::new(|| DefaultDetector::new(AgentType::OpenCode));
 
+/// Cache for custom agent detectors to avoid repeated Box::leak allocations
+static CUSTOM_DETECTORS: Lazy<Mutex<HashMap<String, &'static dyn StatusDetector>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 /// Get the appropriate detector for an agent type
 /// Returns a static reference to avoid repeated allocations
 pub fn get_detector(agent_type: &AgentType) -> &'static dyn StatusDetector {
@@ -75,13 +81,20 @@ pub fn get_detector(agent_type: &AgentType) -> &'static dyn StatusDetector {
         AgentType::CodexCli => &*CODEX_DETECTOR,
         AgentType::GeminiCli => &*GEMINI_DETECTOR,
         AgentType::OpenCode => &*OPENCODE_DETECTOR,
-        // For custom agents, we still need to return a boxed detector
-        // but since get_detector now returns &'static, we use a leaked box
         AgentType::Custom(name) => {
-            // Leak memory for custom detectors (acceptable as they're rare and long-lived)
-            Box::leak(Box::new(DefaultDetector::new(AgentType::Custom(
-                name.clone(),
-            ))))
+            // Use cached detector if available, otherwise create and cache
+            let mut cache = CUSTOM_DETECTORS.lock();
+            if let Some(&detector) = cache.get(name) {
+                detector
+            } else {
+                // Only leak once per unique custom agent name
+                let detector: &'static dyn StatusDetector =
+                    Box::leak(Box::new(DefaultDetector::new(AgentType::Custom(
+                        name.clone(),
+                    ))));
+                cache.insert(name.clone(), detector);
+                detector
+            }
         }
     }
 }

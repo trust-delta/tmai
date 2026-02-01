@@ -5,7 +5,8 @@ use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentType, ApprovalType};
+use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::detectors::get_detector;
 use crate::config::Settings;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
@@ -150,7 +151,7 @@ impl App {
                 // Selection popup for AskUserQuestion (only show in input mode)
                 if state.is_input_mode() {
                     if let Some(agent) = state.selected_agent() {
-                        if let crate::agents::AgentStatus::AwaitingApproval {
+                        if let AgentStatus::AwaitingApproval {
                             approval_type,
                             details,
                         } = &agent.status
@@ -283,7 +284,7 @@ impl App {
                     let is_user_question = state.agents.get(target).is_some_and(|agent| {
                         matches!(
                             &agent.status,
-                            crate::agents::AgentStatus::AwaitingApproval {
+                            AgentStatus::AwaitingApproval {
                                 approval_type: ApprovalType::UserQuestion { .. },
                                 ..
                             }
@@ -330,7 +331,7 @@ impl App {
                     let target = target.to_string();
                     // Check if it's a UserQuestion and get choices + multi_select
                     let question_info = state.agents.get(&target).and_then(|agent| {
-                        if let crate::agents::AgentStatus::AwaitingApproval {
+                        if let AgentStatus::AwaitingApproval {
                             approval_type:
                                 ApprovalType::UserQuestion {
                                     choices,
@@ -392,7 +393,7 @@ impl App {
                     let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
                         matches!(
                             &agent.status,
-                            crate::agents::AgentStatus::AwaitingApproval {
+                            AgentStatus::AwaitingApproval {
                                 approval_type: ApprovalType::UserQuestion {
                                     multi_select: true,
                                     ..
@@ -404,6 +405,42 @@ impl App {
                     if is_multi_select {
                         drop(state);
                         let _ = self.tmux_client.send_keys(&target, "Space");
+                    }
+                }
+            }
+
+            // Approval key (y) - send to agent when awaiting approval
+            KeyCode::Char('y') => {
+                if let Some(target) = state.selected_target() {
+                    let target = target.to_string();
+                    let agent_info = state.agents.get(&target).map(|a| {
+                        (
+                            matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
+                            a.agent_type.clone(),
+                        )
+                    });
+                    if let Some((true, agent_type)) = agent_info {
+                        drop(state);
+                        let detector = get_detector(&agent_type);
+                        let _ = self.tmux_client.send_keys(&target, detector.approval_keys());
+                    }
+                }
+            }
+
+            // Rejection key (n) - send to agent when awaiting approval
+            KeyCode::Char('n') => {
+                if let Some(target) = state.selected_target() {
+                    let target = target.to_string();
+                    let agent_info = state.agents.get(&target).map(|a| {
+                        (
+                            matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
+                            a.agent_type.clone(),
+                        )
+                    });
+                    if let Some((true, agent_type)) = agent_info {
+                        drop(state);
+                        let detector = get_detector(&agent_type);
+                        let _ = self.tmux_client.send_keys(&target, detector.rejection_keys());
                     }
                 }
             }
@@ -429,7 +466,7 @@ impl App {
                     let target = target.to_string();
                     // Check if it's a multi-select UserQuestion and get info
                     let multi_info = state.agents.get(&target).and_then(|agent| {
-                        if let crate::agents::AgentStatus::AwaitingApproval {
+                        if let AgentStatus::AwaitingApproval {
                             approval_type:
                                 ApprovalType::UserQuestion {
                                     choices,

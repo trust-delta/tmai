@@ -15,6 +15,7 @@ async fn main() -> Result<()> {
     // Load settings
     let mut settings = Settings::load(cli.config.as_ref())?;
     settings.merge_cli(&cli);
+    settings.validate();
 
     // Run the application
     let mut app = App::new(settings);
