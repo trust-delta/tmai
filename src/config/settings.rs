@@ -61,6 +61,10 @@ pub struct Settings {
     /// UI settings
     #[serde(default)]
     pub ui: UiSettings,
+
+    /// Web server settings
+    #[serde(default)]
+    pub web: WebSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -104,6 +108,35 @@ pub struct UiSettings {
     pub color: bool,
 }
 
+/// Web server settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSettings {
+    /// Enable web server
+    #[serde(default = "default_web_enabled")]
+    pub enabled: bool,
+
+    /// Web server port
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+}
+
+fn default_web_enabled() -> bool {
+    true
+}
+
+fn default_web_port() -> u16 {
+    9876
+}
+
+impl Default for WebSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_web_enabled(),
+            port: default_web_port(),
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -135,6 +168,7 @@ impl Default for Settings {
             attached_only: default_attached_only(),
             agent_patterns: Vec::new(),
             ui: UiSettings::default(),
+            web: WebSettings::default(),
         }
     }
 }

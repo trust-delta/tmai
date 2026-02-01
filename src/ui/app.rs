@@ -16,7 +16,7 @@ use crate::tmux::TmuxClient;
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    SelectionPopup, SessionList, StatusBar,
+    QrScreen, SelectionPopup, SessionList, StatusBar,
 };
 use super::Layout;
 
@@ -41,6 +41,11 @@ impl App {
             tmux_client,
             layout,
         }
+    }
+
+    /// Get a clone of the shared state
+    pub fn shared_state(&self) -> SharedState {
+        self.state.clone()
     }
 
     /// Run the application
@@ -120,6 +125,12 @@ impl App {
                 // Full-screen help mode
                 if state.show_help {
                     HelpScreen::render(frame, frame.area(), &state);
+                    return;
+                }
+
+                // QR code screen (overlay popup)
+                if state.show_qr {
+                    QrScreen::render(frame, frame.area(), &state);
                     return;
                 }
 
@@ -222,6 +233,7 @@ impl App {
         // Check state without holding the lock for the entire function
         let (
             show_help,
+            show_qr,
             is_input_mode,
             is_passthrough_mode,
             is_create_process_mode,
@@ -230,6 +242,7 @@ impl App {
             let state = self.state.read();
             (
                 state.show_help,
+                state.show_qr,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
@@ -240,6 +253,11 @@ impl App {
         // Handle confirmation dialog first (highest priority)
         if is_showing_confirmation {
             return self.handle_confirmation_key(code);
+        }
+
+        // Handle QR screen
+        if show_qr {
+            return self.handle_qr_screen_key(code);
         }
 
         // Handle help screen
@@ -537,6 +555,11 @@ impl App {
                 state.toggle_help();
             }
 
+            // QR code screen
+            KeyCode::Char('r') => {
+                state.toggle_qr();
+            }
+
             // Kill pane (with confirmation)
             KeyCode::Char('x') => {
                 if let Some(target) = state.selected_target() {
@@ -660,6 +683,19 @@ impl App {
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle keys in QR code screen
+    fn handle_qr_screen_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            // Close QR screen
+            KeyCode::Char('r') | KeyCode::Esc | KeyCode::Char('q') => {
+                let mut state = self.state.write();
+                state.show_qr = false;
+            }
+            _ => {}
+        }
         Ok(())
     }
 

@@ -3,6 +3,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use tmai::config::{Config, Settings};
 use tmai::ui::App;
+use tmai::web::WebServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,8 +18,25 @@ async fn main() -> Result<()> {
     settings.merge_cli(&cli);
     settings.validate();
 
-    // Run the application
-    let mut app = App::new(settings);
+    // Run the application with web server
+    let mut app = App::new(settings.clone());
+
+    // Start web server if enabled
+    if settings.web.enabled {
+        let token = tmai::web::auth::generate_token();
+        let state = app.shared_state();
+
+        // Initialize web settings in app state
+        {
+            let mut app_state = state.write();
+            app_state.init_web(token.clone(), settings.web.port);
+        }
+
+        // Start web server in background
+        let web_server = WebServer::new(settings.clone(), state, token);
+        web_server.start();
+    }
+
     app.run().await
 }
 
