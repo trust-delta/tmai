@@ -259,6 +259,30 @@ impl StatusDetector for CodexDetector {
             }
         }
 
+        // Check for slash command menu (shown when user types "/")
+        // Pattern: lines starting with "/" followed by command name
+        let has_slash_menu = recent_lines.iter().any(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("/model")
+                || trimmed.starts_with("/permissions")
+                || trimmed.starts_with("/experimental")
+                || trimmed.starts_with("/skills")
+                || trimmed.starts_with("/review")
+                || trimmed.starts_with("/rename")
+                || trimmed.starts_with("/new")
+                || trimmed.starts_with("/resume")
+                || trimmed.starts_with("/help")
+        });
+
+        if has_slash_menu {
+            return AgentStatus::Idle;
+        }
+
+        // If prompt is visible, likely idle (even without footer)
+        if prompt_line_idx.is_some() {
+            return AgentStatus::Idle;
+        }
+
         // Default to unknown/processing based on context
         if footer_line_idx.is_some() {
             // Footer visible but unclear state - likely idle after response
@@ -402,5 +426,44 @@ Some suggestions here
         let content = "Do you want to proceed? [y/n]";
         let status = detector.detect_status("Codex", content);
         assert!(matches!(status, AgentStatus::AwaitingApproval { .. }));
+    }
+
+    #[test]
+    fn test_idle_with_slash_command_menu() {
+        let detector = CodexDetector::new();
+        // When user types "/" the slash command menu appears
+        let content = r#"
+› /
+
+  /model         choose what model and reasoning effort to use
+  /permissions   choose what Codex is allowed to do
+  /experimental  toggle experimental features
+  /skills        use skills to improve how Codex performs specific tasks
+  /review        review my current changes and find issues
+  /rename        rename the current thread
+  /new           start a new chat during a conversation
+  /resume        resume a saved chat"#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(status, AgentStatus::Idle),
+            "Expected Idle when slash menu is shown, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_idle_with_prompt_only() {
+        let detector = CodexDetector::new();
+        // Prompt visible but footer scrolled out
+        let content = r#"
+Some long response text...
+
+› "#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(status, AgentStatus::Idle),
+            "Expected Idle when prompt is visible, got {:?}",
+            status
+        );
     }
 }
