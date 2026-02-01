@@ -45,6 +45,12 @@ impl AgentType {
             return Some(AgentType::GeminiCli);
         }
 
+        // Early exit for known non-agent commands
+        // These should never be detected as agents even if title contains agent keywords
+        if Self::is_known_non_agent_command(&cmd_lower) {
+            return None;
+        }
+
         // Check cmdline for agent keywords (e.g., "node /path/to/codex")
         if let Some(ref cl) = cmdline_lower {
             if cl.contains("/codex") || cl.contains("codex ") {
@@ -70,17 +76,110 @@ impl AgentType {
         }
 
         // Title-based detection (lower priority)
-        if title_lower.contains("opencode") {
+        // Only match if title appears to be a CLI tool title, not just containing the keyword
+        // (e.g., "Codex CLI" or "codex>" but not "editing codex.rs")
+        if Self::is_likely_agent_title(&title_lower, "opencode") {
             return Some(AgentType::OpenCode);
         }
-        if title_lower.contains("codex") {
+        if Self::is_likely_agent_title(&title_lower, "codex") {
             return Some(AgentType::CodexCli);
         }
-        if title_lower.contains("gemini") {
+        if Self::is_likely_agent_title(&title_lower, "gemini") {
             return Some(AgentType::GeminiCli);
         }
 
         None
+    }
+
+    /// Check if command is a known non-agent application
+    fn is_known_non_agent_command(cmd_lower: &str) -> bool {
+        const NON_AGENT_COMMANDS: &[&str] = &[
+            // File managers
+            "yazi",
+            "ranger",
+            "lf",
+            "nnn",
+            "mc",
+            "vifm",
+            // Editors
+            "vim",
+            "nvim",
+            "nano",
+            "emacs",
+            "helix",
+            "hx",
+            "micro",
+            "code",
+            // Shells
+            "bash",
+            "zsh",
+            "fish",
+            "sh",
+            "dash",
+            "tcsh",
+            "ksh",
+            // Common utilities
+            "less",
+            "more",
+            "man",
+            "htop",
+            "btop",
+            "top",
+            "tmux",
+            "screen",
+            "git",
+            "tig",
+            "lazygit",
+            "docker",
+            "kubectl",
+            // Pagers and viewers
+            "bat",
+            "cat",
+            "head",
+            "tail",
+        ];
+        NON_AGENT_COMMANDS.contains(&cmd_lower)
+    }
+
+    /// Check if title looks like an agent CLI title rather than incidental keyword match
+    fn is_likely_agent_title(title_lower: &str, agent_name: &str) -> bool {
+        // Exact match or starts with agent name
+        if title_lower == agent_name || title_lower.starts_with(&format!("{} ", agent_name)) {
+            return true;
+        }
+
+        // Patterns that suggest this is actually the agent CLI
+        // e.g., "Codex CLI", "codex>", "codex:", "Gemini CLI"
+        let patterns = [
+            format!("{} cli", agent_name),
+            format!("{}>", agent_name),
+            format!("{}:", agent_name),
+            format!("{} -", agent_name), // e.g., "codex - working"
+        ];
+
+        for pattern in &patterns {
+            if title_lower.contains(pattern) {
+                return true;
+            }
+        }
+
+        // Avoid false positives: if the keyword is part of a file path or filename
+        // e.g., "codex.rs", "/path/to/codex/", "editing codex"
+        if title_lower.contains(&format!("{}.rs", agent_name))
+            || title_lower.contains(&format!("{}.py", agent_name))
+            || title_lower.contains(&format!("{}.js", agent_name))
+            || title_lower.contains(&format!("{}.ts", agent_name))
+            || title_lower.contains(&format!("/{}/", agent_name))
+        {
+            return false;
+        }
+
+        // If title is just the agent name or very short with agent name at start, likely agent
+        if title_lower.len() <= agent_name.len() + 20 && title_lower.starts_with(agent_name) {
+            return true;
+        }
+
+        false
     }
 
     /// Check if title contains braille spinner characters (Claude Code processing indicator)
@@ -495,5 +594,73 @@ mod tests {
             activity: String::new()
         }
         .needs_attention());
+    }
+
+    #[test]
+    fn test_known_non_agent_commands() {
+        // File managers should never be detected as agents
+        assert_eq!(
+            AgentType::from_detection("yazi", "codex.rs", ""),
+            None,
+            "yazi showing codex.rs should not be detected as Codex"
+        );
+        assert_eq!(
+            AgentType::from_detection("ranger", "gemini", ""),
+            None,
+            "ranger with gemini in title should not be detected"
+        );
+
+        // Editors should never be detected as agents
+        assert_eq!(
+            AgentType::from_detection("nvim", "codex.rs", ""),
+            None,
+            "nvim editing codex.rs should not be detected as Codex"
+        );
+        assert_eq!(
+            AgentType::from_detection("vim", "opencode.py", ""),
+            None,
+            "vim editing opencode.py should not be detected"
+        );
+
+        // Shells should not be detected
+        assert_eq!(AgentType::from_detection("bash", "codex", ""), None);
+        assert_eq!(AgentType::from_detection("fish", "gemini", ""), None);
+    }
+
+    #[test]
+    fn test_is_likely_agent_title() {
+        // Should match: exact agent name or agent CLI patterns
+        assert!(AgentType::is_likely_agent_title("codex", "codex"));
+        assert!(AgentType::is_likely_agent_title("codex cli", "codex"));
+        assert!(AgentType::is_likely_agent_title("codex>", "codex"));
+        assert!(AgentType::is_likely_agent_title("codex:", "codex"));
+        assert!(AgentType::is_likely_agent_title("codex - working", "codex"));
+
+        // Should NOT match: file paths or filenames containing agent name
+        assert!(!AgentType::is_likely_agent_title("codex.rs", "codex"));
+        assert!(!AgentType::is_likely_agent_title("/path/to/codex/file", "codex"));
+        assert!(!AgentType::is_likely_agent_title("editing codex.py", "codex"));
+
+        // Gemini tests
+        assert!(AgentType::is_likely_agent_title("gemini", "gemini"));
+        assert!(AgentType::is_likely_agent_title("gemini cli", "gemini"));
+        assert!(!AgentType::is_likely_agent_title("gemini.js", "gemini"));
+    }
+
+    #[test]
+    fn test_title_based_detection_stricter() {
+        // Title containing "codex" as a file should not match when command is node
+        assert_eq!(
+            AgentType::from_detection("node", "codex.rs", ""),
+            None,
+            "node with codex.rs title should not be detected as Codex"
+        );
+
+        // But actual Codex CLI title patterns should still work
+        assert_eq!(
+            AgentType::from_detection("node", "codex cli", ""),
+            Some(AgentType::CodexCli),
+            "node with 'codex cli' title should be detected as Codex"
+        );
     }
 }
