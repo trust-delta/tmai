@@ -117,11 +117,16 @@ impl Analyzer {
     }
 
     /// Process input data
+    ///
+    /// Clears pending approval and output buffer to prevent re-triggering
+    /// approval detection from stale output after user input.
     pub fn process_input(&mut self, _data: &str) {
         self.last_input = Instant::now();
         // Clear pending approval on input (user responded)
         self.pending_approval = None;
         self.pending_approval_at = None;
+        // Clear output buffer to prevent re-detecting approval from old output
+        self.output_buffer.clear();
     }
 
     /// Get current state
@@ -304,10 +309,21 @@ impl Analyzer {
     }
 
     /// Determine the type of approval being requested
+    ///
+    /// Note: File create and delete operations are intentionally classified as `FileEdit`
+    /// for UI simplicity. The distinction between edit/create/delete is not significant
+    /// for user interaction - all require the same y/n approval flow.
     fn determine_approval_type(&self, content: &str) -> WrapApprovalType {
-        // Get recent content for matching
+        // Get recent content for matching (respecting UTF-8 boundaries)
         let recent = if content.len() > 2000 {
-            &content[content.len() - 2000..]
+            let start = content.len() - 2000;
+            // Find UTF-8 character boundary
+            let start = content
+                .char_indices()
+                .map(|(i, _)| i)
+                .find(|&i| i >= start)
+                .unwrap_or(start);
+            &content[start..]
         } else {
             content
         };
@@ -315,6 +331,7 @@ impl Analyzer {
         if self.patterns.file_edit.is_match(recent) {
             return WrapApprovalType::FileEdit;
         }
+        // File create/delete are intentionally grouped with FileEdit for UI consistency
         if self.patterns.file_create.is_match(recent) {
             return WrapApprovalType::FileEdit;
         }
@@ -451,6 +468,15 @@ mod tests {
         analyzer.pending_approval_at = Some(Instant::now());
         analyzer.process_input("y");
         assert!(analyzer.pending_approval.is_none());
+    }
+
+    #[test]
+    fn test_process_input_clears_output_buffer() {
+        let mut analyzer = Analyzer::new(1234);
+        analyzer.process_output("some output data");
+        assert!(!analyzer.output_buffer.is_empty());
+        analyzer.process_input("y");
+        assert!(analyzer.output_buffer.is_empty());
     }
 
     #[test]

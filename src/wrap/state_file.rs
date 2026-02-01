@@ -2,9 +2,11 @@
 //!
 //! Writes agent state to `/tmp/tmai/{pane_id}.state` for the main tmai process to read.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 /// Base directory for state files
@@ -172,12 +174,39 @@ impl StateFile {
     ///
     /// The `id` should be unique per wrapper instance. Typically this is
     /// the tmux pane ID or a UUID if pane ID is not yet known.
+    ///
+    /// # Security
+    /// The `id` is sanitized to prevent path traversal attacks.
+    /// Only alphanumeric characters, `-`, and `_` are allowed.
     pub fn new(id: &str) -> Result<Self> {
-        // Ensure state directory exists
-        fs::create_dir_all(STATE_DIR)
-            .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
+        // Sanitize id to prevent path traversal attacks
+        // Only allow alphanumeric, '-', '_' characters
+        if !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            bail!(
+                "Invalid state file ID: '{}'. Only alphanumeric, '-', and '_' characters are allowed.",
+                id
+            );
+        }
 
-        let path = PathBuf::from(STATE_DIR).join(format!("{}.state", id));
+        // Reject empty id
+        if id.is_empty() {
+            bail!("State file ID cannot be empty");
+        }
+
+        // Ensure state directory exists with secure permissions (0700)
+        let state_dir = PathBuf::from(STATE_DIR);
+        if !state_dir.exists() {
+            fs::create_dir_all(&state_dir)
+                .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
+            // Set directory permissions to 0700 (owner only)
+            fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("Failed to set permissions on state directory: {}", STATE_DIR))?;
+        }
+
+        let path = state_dir.join(format!("{}.state", id));
 
         Ok(Self {
             id: id.to_string(),
@@ -196,13 +225,30 @@ impl StateFile {
     }
 
     /// Write state to file
+    ///
+    /// Uses atomic write with temp file to prevent partial reads.
+    /// The temp file is created with O_CREAT|O_EXCL to prevent symlink attacks.
     pub fn write(&self, state: &WrapState) -> Result<()> {
         let json = serde_json::to_string_pretty(state).context("Failed to serialize state")?;
 
         // Write atomically using temp file
         let temp_path = self.path.with_extension("tmp");
-        fs::write(&temp_path, &json)
+
+        // Remove existing temp file if it exists (from a previous failed write)
+        let _ = fs::remove_file(&temp_path);
+
+        // Create temp file with O_CREAT|O_EXCL to prevent symlink attacks
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .with_context(|| format!("Failed to create temp state file: {:?}", temp_path))?;
+
+        file.write_all(json.as_bytes())
             .with_context(|| format!("Failed to write temp state file: {:?}", temp_path))?;
+
+        file.sync_all()
+            .with_context(|| format!("Failed to sync temp state file: {:?}", temp_path))?;
 
         fs::rename(&temp_path, &self.path)
             .with_context(|| format!("Failed to rename state file: {:?}", self.path))?;
@@ -329,5 +375,46 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
         let t2 = current_time_millis();
         assert!(t2 > t1);
+    }
+
+    #[test]
+    fn test_state_file_rejects_path_traversal() {
+        // Path traversal with ../
+        assert!(StateFile::new("../etc/passwd").is_err());
+        assert!(StateFile::new("foo/../bar").is_err());
+
+        // Path traversal with /
+        assert!(StateFile::new("/etc/passwd").is_err());
+        assert!(StateFile::new("foo/bar").is_err());
+
+        // Path traversal with backslash
+        assert!(StateFile::new("foo\\bar").is_err());
+
+        // Other invalid characters
+        assert!(StateFile::new("foo.bar").is_err());
+        assert!(StateFile::new("foo bar").is_err());
+        assert!(StateFile::new("foo:bar").is_err());
+
+        // Empty id
+        assert!(StateFile::new("").is_err());
+    }
+
+    #[test]
+    fn test_state_file_accepts_valid_ids() {
+        // Valid alphanumeric
+        assert!(StateFile::new("test123").is_ok());
+
+        // Valid with hyphen
+        assert!(StateFile::new("test-123").is_ok());
+
+        // Valid with underscore
+        assert!(StateFile::new("test_123").is_ok());
+
+        // UUID-like (common use case)
+        assert!(StateFile::new("550e8400-e29b-41d4-a716-446655440000").is_ok());
+
+        // Tmux pane ID (number only)
+        assert!(StateFile::new("0").is_ok());
+        assert!(StateFile::new("123").is_ok());
     }
 }

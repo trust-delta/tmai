@@ -555,8 +555,18 @@ impl AppState {
     }
 
     /// Get web URL for QR code
+    ///
+    /// In WSL environments, returns Windows host IP instead of WSL internal IP,
+    /// since external devices (phones) cannot access WSL's internal network directly.
     pub fn get_web_url(&self) -> Option<String> {
         let token = self.web_token.as_ref()?;
+
+        // Try to get Windows host IP if running in WSL
+        if let Some(host_ip) = get_wsl_host_ip() {
+            return Some(format!("http://{}:{}/?token={}", host_ip, self.web_port, token));
+        }
+
+        // Fall back to local IP detection
         if let Ok(ip) = local_ip_address::local_ip() {
             Some(format!("http://{}:{}/?token={}", ip, self.web_port, token))
         } else {
@@ -917,6 +927,37 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Detect if running in WSL and return the Windows host IP if so
+///
+/// WSL2 uses a virtual network, so external devices cannot directly access
+/// WSL's IP. This function returns the Windows host IP that external devices
+/// can connect to (requires port forwarding on Windows).
+fn get_wsl_host_ip() -> Option<String> {
+    // Check if running in WSL by reading /proc/version
+    let proc_version = std::fs::read_to_string("/proc/version").ok()?;
+    if !proc_version.to_lowercase().contains("microsoft")
+        && !proc_version.to_lowercase().contains("wsl")
+    {
+        return None;
+    }
+
+    // In WSL2, the Windows host IP is typically the nameserver in /etc/resolv.conf
+    let resolv_conf = std::fs::read_to_string("/etc/resolv.conf").ok()?;
+    for line in resolv_conf.lines() {
+        let line = line.trim();
+        if line.starts_with("nameserver") {
+            if let Some(ip) = line.split_whitespace().nth(1) {
+                // Validate it looks like an IP address
+                if ip.parse::<std::net::Ipv4Addr>().is_ok() {
+                    return Some(ip.to_string());
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

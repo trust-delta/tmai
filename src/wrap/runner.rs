@@ -9,11 +9,11 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use crate::wrap::analyzer::Analyzer;
-use crate::wrap::state_file::StateFile;
+use crate::wrap::state_file::{StateFile, WrapState};
 
 /// PTY runner configuration
 pub struct PtyRunnerConfig {
@@ -87,7 +87,8 @@ impl PtyRunner {
         tracing::debug!("Spawned {} with PID {}", self.config.command, child_pid);
 
         // Create state file
-        let state_file = StateFile::new(&self.config.id).context("Failed to create state file")?;
+        let state_file =
+            Arc::new(StateFile::new(&self.config.id).context("Failed to create state file")?);
 
         // Create analyzer
         let analyzer = Arc::new(parking_lot::Mutex::new(Analyzer::new(child_pid)));
@@ -104,11 +105,6 @@ impl PtyRunner {
             .master
             .take_writer()
             .context("Failed to take PTY writer")?;
-
-        // Set up signal handler for SIGWINCH (window resize)
-        let resize_flag = Arc::new(AtomicBool::new(false));
-        let resize_flag_clone = resize_flag.clone();
-        setup_sigwinch_handler(resize_flag_clone)?;
 
         // Thread: Read from PTY master -> write to stdout
         let analyzer_out = analyzer.clone();
@@ -175,30 +171,47 @@ impl PtyRunner {
             }
         });
 
-        // Thread: Periodic state file update
+        // Thread: Periodic state file update with change detection
         let analyzer_state = analyzer.clone();
         let running_state = running.clone();
+        let state_file_state = state_file.clone();
         let state_thread = thread::spawn(move || {
+            let mut last_state: Option<WrapState> = None;
+
             while running_state.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
 
                 let state = analyzer_state.lock().get_state();
-                if let Err(e) = state_file.write(&state) {
-                    tracing::debug!("Failed to write state file: {}", e);
+
+                // Only write if state has changed
+                let should_write = match &last_state {
+                    None => true,
+                    Some(prev) => !states_equal(prev, &state),
+                };
+
+                if should_write {
+                    if let Err(e) = state_file_state.write(&state) {
+                        tracing::debug!("Failed to write state file: {}", e);
+                    }
+                    last_state = Some(state);
                 }
             }
         });
 
-        // Thread: Handle SIGWINCH for window resize
-        let resize_flag_main = resize_flag.clone();
+        // Thread: Periodic terminal size check for resize
+        // Instead of using SIGWINCH signal handler (which requires unsafe TLS access),
+        // we poll for terminal size changes. This is simpler and avoids undefined behavior.
         let running_resize = running.clone();
         let pty_master = pair.master;
         let resize_thread = thread::spawn(move || {
+            let mut last_size: Option<(u16, u16)> = get_terminal_size();
+
             while running_resize.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
 
-                if resize_flag_main.swap(false, Ordering::Relaxed) {
-                    if let Some((rows, cols)) = get_terminal_size() {
+                let current_size = get_terminal_size();
+                if current_size != last_size {
+                    if let Some((rows, cols)) = current_size {
                         let _ = pty_master.resize(PtySize {
                             rows,
                             cols,
@@ -206,6 +219,7 @@ impl PtyRunner {
                             pixel_height: 0,
                         });
                     }
+                    last_size = current_size;
                 }
             }
         });
@@ -213,17 +227,54 @@ impl PtyRunner {
         // Wait for child to exit
         let exit_status = child.wait().context("Failed to wait for child")?;
 
+        // Write final state before signaling threads to stop
+        {
+            let final_state = analyzer.lock().get_state();
+            if let Err(e) = state_file.write(&final_state) {
+                tracing::debug!("Failed to write final state: {}", e);
+            }
+        }
+
         // Signal threads to stop
         running.store(false, Ordering::Relaxed);
 
-        // Wait for threads (with timeout)
-        let _ = output_thread.join();
-        let _ = input_thread.join();
-        let _ = state_thread.join();
-        let _ = resize_thread.join();
+        // Wait for threads with timeout to avoid hanging on blocked stdin
+        join_thread_with_timeout(output_thread, Duration::from_secs(1));
+        join_thread_with_timeout(input_thread, Duration::from_secs(1));
+        join_thread_with_timeout(state_thread, Duration::from_secs(1));
+        join_thread_with_timeout(resize_thread, Duration::from_secs(1));
 
         // Return exit code
         Ok(exit_status.exit_code() as i32)
+    }
+}
+
+/// Compare two WrapState instances for equality (ignoring timestamps)
+fn states_equal(a: &WrapState, b: &WrapState) -> bool {
+    a.status == b.status
+        && a.approval_type == b.approval_type
+        && a.details == b.details
+        && a.choices == b.choices
+        && a.multi_select == b.multi_select
+        && a.cursor_position == b.cursor_position
+        && a.pid == b.pid
+        && a.pane_id == b.pane_id
+}
+
+/// Join a thread with a timeout, abandoning it if it doesn't finish in time
+fn join_thread_with_timeout<T>(handle: JoinHandle<T>, timeout: Duration) {
+    let start = Instant::now();
+    loop {
+        if handle.is_finished() {
+            let _ = handle.join();
+            return;
+        }
+        if start.elapsed() >= timeout {
+            tracing::debug!("Thread join timed out, abandoning thread");
+            // Thread will be leaked but we can't block forever
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -244,50 +295,6 @@ fn get_terminal_size() -> Option<(u16, u16)> {
     }
 }
 
-/// Set up SIGWINCH handler for window resize
-fn setup_sigwinch_handler(flag: Arc<AtomicBool>) -> Result<()> {
-    // Use a thread to poll for SIGWINCH since signal handlers are tricky
-    thread::spawn(move || {
-        loop {
-            // Check every 100ms
-            thread::sleep(Duration::from_millis(100));
-            // The actual resize check is done in the main loop
-            // by checking terminal size changes
-        }
-    });
-
-    // Actually, we'll just set up a simple signal handler
-    // that sets a flag when SIGWINCH is received
-    unsafe {
-        signal::signal(
-            Signal::SIGWINCH,
-            signal::SigHandler::Handler(handle_sigwinch),
-        )
-        .context("Failed to set up SIGWINCH handler")?;
-    }
-
-    // Store the flag in a static for the signal handler
-    RESIZE_FLAG.with(|f| {
-        *f.borrow_mut() = Some(flag);
-    });
-
-    Ok(())
-}
-
-// Thread-local storage for resize flag
-thread_local! {
-    static RESIZE_FLAG: std::cell::RefCell<Option<Arc<AtomicBool>>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Signal handler for SIGWINCH
-extern "C" fn handle_sigwinch(_: i32) {
-    RESIZE_FLAG.with(|f| {
-        if let Some(ref flag) = *f.borrow() {
-            flag.store(true, Ordering::Relaxed);
-        }
-    });
-}
-
 /// Forward a signal to the child process
 pub fn forward_signal_to_child(child_pid: u32, sig: Signal) -> Result<()> {
     if child_pid > 0 {
@@ -298,7 +305,8 @@ pub fn forward_signal_to_child(child_pid: u32, sig: Signal) -> Result<()> {
 
 /// Parse command string into command and arguments
 ///
-/// Handles quoted strings and shell-like parsing.
+/// Splits the input string by whitespace. Does not handle quoted strings
+/// or shell escaping - for complex commands, pass them as pre-parsed arguments.
 pub fn parse_command(cmd_str: &str) -> (String, Vec<String>) {
     let parts: Vec<&str> = cmd_str.split_whitespace().collect();
     if parts.is_empty() {
