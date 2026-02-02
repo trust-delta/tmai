@@ -46,31 +46,43 @@ impl SessionList {
     /// Render vertical list (traditional, multi-line per agent)
     fn render_vertical_list(frame: &mut Frame, area: Rect, state: &AppState) {
         let spinner_char = state.spinner_char();
+        let marquee_offset = state.marquee_offset();
 
         // Build list entries with group headers
         let (entries, ui_entry_index, _selectable_count, _agent_index) = Self::build_entries(state);
 
         let items: Vec<ListItem> = entries
             .iter()
-            .map(|entry| match entry {
-                ListEntry::Agent(idx) => {
-                    if let Some(agent) = state
-                        .agent_order
-                        .get(*idx)
-                        .and_then(|id| state.agents.get(id))
-                    {
-                        Self::create_list_item(agent, spinner_char)
-                    } else {
-                        ListItem::new(Line::from(""))
+            .enumerate()
+            .map(|(idx, entry)| {
+                let is_selected = idx == ui_entry_index;
+                match entry {
+                    ListEntry::Agent(agent_idx) => {
+                        if let Some(agent) = state
+                            .agent_order
+                            .get(*agent_idx)
+                            .and_then(|id| state.agents.get(id))
+                        {
+                            Self::create_list_item(agent, spinner_char, is_selected, marquee_offset)
+                        } else {
+                            ListItem::new(Line::from(""))
+                        }
                     }
+                    ListEntry::GroupHeader {
+                        key,
+                        agent_count,
+                        attention_count,
+                        collapsed,
+                    } => Self::create_group_header(
+                        key,
+                        *agent_count,
+                        *attention_count,
+                        *collapsed,
+                        is_selected,
+                        marquee_offset,
+                    ),
+                    ListEntry::CreateNew { .. } => Self::create_new_item(),
                 }
-                ListEntry::GroupHeader {
-                    key,
-                    agent_count,
-                    attention_count,
-                    collapsed,
-                } => Self::create_group_header(key, *agent_count, *attention_count, *collapsed),
-                ListEntry::CreateNew { .. } => Self::create_new_item(),
             })
             .collect();
 
@@ -108,6 +120,7 @@ impl SessionList {
     /// Render horizontal list (compact, single-line per agent, laid out horizontally)
     fn render_horizontal_list(frame: &mut Frame, area: Rect, state: &AppState) {
         let spinner_char = state.spinner_char();
+        let marquee_offset = state.marquee_offset();
 
         // Build list entries
         let (entries, ui_entry_index, _selectable_count, _agent_index) = Self::build_entries(state);
@@ -127,7 +140,13 @@ impl SessionList {
                             .get(*agent_idx)
                             .and_then(|id| state.agents.get(id))
                         {
-                            Self::create_compact_item(agent, spinner_char, inner_width, is_selected)
+                            Self::create_compact_item(
+                                agent,
+                                spinner_char,
+                                inner_width,
+                                is_selected,
+                                marquee_offset,
+                            )
                         } else {
                             ListItem::new(Line::from(""))
                         }
@@ -144,6 +163,7 @@ impl SessionList {
                         *attention_count,
                         *collapsed,
                         is_selected,
+                        marquee_offset,
                     ),
                     ListEntry::CreateNew { .. } => {
                         Self::create_compact_new_item(inner_width, is_selected)
@@ -281,18 +301,18 @@ impl SessionList {
         agent_count: usize,
         attention_count: usize,
         collapsed: bool,
+        is_selected: bool,
+        marquee_offset: usize,
     ) -> ListItem<'static> {
-        let display = if header.len() > 40 {
-            format!("...{}", &header[header.len() - 37..])
-        } else {
-            header.to_string()
-        };
-
         // Collapse icon: ▸ (collapsed) or ▾ (expanded)
         let icon = if collapsed { "▸" } else { "▾" };
 
+        // Max width for header text (reserve space for icon, count, attention)
+        const HEADER_MAX_WIDTH: usize = 40;
+        let display = get_marquee_text(header, HEADER_MAX_WIDTH, marquee_offset, is_selected);
+
         let mut spans = vec![Span::styled(
-            format!("{} {} ", icon, display),
+            format!("{} {} ", icon, display.trim_end()),
             Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
@@ -325,16 +345,31 @@ impl SessionList {
         )]))
     }
 
-    fn create_list_item(agent: &MonitoredAgent, spinner_char: char) -> ListItem<'static> {
+    fn create_list_item(
+        agent: &MonitoredAgent,
+        spinner_char: char,
+        is_selected: bool,
+        marquee_offset: usize,
+    ) -> ListItem<'static> {
         let status_indicator = match &agent.status {
             AgentStatus::Processing { .. } => spinner_char.to_string(),
             _ => agent.status.indicator().to_string(),
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Line 1: AgentType | pid:xxx [context warning] (2-char indent for items under group header)
+        // Line 1: [detection icon] AgentType | pid:xxx [context warning]
+        // ● = PTY state file, ○ = capture-pane
+        let detection_icon = agent.detection_source.icon();
+        let detection_color = match agent.detection_source {
+            crate::agents::DetectionSource::PtyStateFile => Color::Green,
+            crate::agents::DetectionSource::CapturePane => Color::DarkGray,
+        };
+
         let mut line1_spans = vec![
-            Span::styled("  ", Style::default()),
+            Span::styled(
+                format!("{} ", detection_icon),
+                Style::default().fg(detection_color),
+            ),
             Span::styled(
                 agent.agent_type.short_name().to_string(),
                 Style::default().fg(Color::Cyan),
@@ -363,21 +398,24 @@ impl SessionList {
 
         let line1 = Line::from(line1_spans);
 
-        // Line 2: status indicator + status_text
+        // Line 2: status indicator + status_text (with marquee for activity)
         let status_text = match &agent.status {
             AgentStatus::Idle => "Idle".to_string(),
             AgentStatus::Processing { activity } => {
                 if activity.is_empty() {
                     "Processing...".to_string()
                 } else {
-                    format!("Processing: {}", truncate(activity, 20))
+                    let activity_text =
+                        get_marquee_text(activity, 20, marquee_offset, is_selected);
+                    format!("Processing: {}", activity_text.trim_end())
                 }
             }
             AgentStatus::AwaitingApproval { approval_type, .. } => {
                 format!("Awaiting: {}", approval_type)
             }
             AgentStatus::Error { message } => {
-                format!("Error: {}", truncate(message, 20))
+                let error_text = get_marquee_text(message, 20, marquee_offset, is_selected);
+                format!("Error: {}", error_text.trim_end())
             }
             AgentStatus::Unknown => "Unknown".to_string(),
         };
@@ -391,11 +429,12 @@ impl SessionList {
             Span::styled(status_text, Style::default().fg(status_color)),
         ]);
 
-        // Line 3: title
+        // Line 3: title (with marquee)
+        const TITLE_MAX_WIDTH: usize = 35;
         let title_display = if agent.title.is_empty() {
             "-".to_string()
         } else {
-            truncate(&agent.title, 35)
+            get_marquee_text(&agent.title, TITLE_MAX_WIDTH, marquee_offset, is_selected)
         };
 
         let line3 = Line::from(vec![
@@ -436,6 +475,7 @@ impl SessionList {
         spinner_char: char,
         max_width: u16,
         is_selected: bool,
+        marquee_offset: usize,
     ) -> ListItem<'static> {
         let status_indicator = match &agent.status {
             AgentStatus::Processing { .. } => spinner_char.to_string(),
@@ -453,10 +493,11 @@ impl SessionList {
         let fixed_len = 56_usize;
         let title_width = (max_width as usize).saturating_sub(fixed_len).max(10);
 
+        // Apply marquee to title for selected item
         let title_display = if agent.title.is_empty() {
             fixed_width("-", title_width)
         } else {
-            fixed_width(&agent.title, title_width)
+            get_marquee_text(&agent.title, title_width, marquee_offset, is_selected)
         };
 
         let status_text = match &agent.status {
@@ -524,6 +565,7 @@ impl SessionList {
         attention_count: usize,
         collapsed: bool,
         is_selected: bool,
+        marquee_offset: usize,
     ) -> ListItem<'static> {
         // Collapse icon: ▸ (collapsed) or ▾ (expanded)
         let icon = if collapsed { "▸" } else { "▾" };
@@ -533,15 +575,8 @@ impl SessionList {
         let reserved = 15_usize;
         let available = (max_width as usize).saturating_sub(reserved);
 
-        let display = if header.chars().count() > available {
-            // Show last part of path (more useful for directories)
-            let chars: Vec<char> = header.chars().collect();
-            let start = chars.len().saturating_sub(available.saturating_sub(3));
-            let short: String = chars[start..].iter().collect();
-            format!("...{}", short)
-        } else {
-            header.to_string()
-        };
+        // Apply marquee for selected item
+        let display = get_marquee_text(header, available, marquee_offset, is_selected);
 
         let bg_color = if is_selected {
             Color::DarkGray
@@ -550,7 +585,7 @@ impl SessionList {
         };
 
         let mut spans = vec![Span::styled(
-            format!("{} {} ", icon, display),
+            format!("{} {} ", icon, display.trim_end()),
             Style::default()
                 .fg(Color::Blue)
                 .bg(bg_color)
@@ -592,15 +627,82 @@ impl SessionList {
     }
 }
 
-/// Truncate a string to a maximum length
-fn truncate(s: &str, max_len: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max_len {
-        s.to_string()
-    } else {
-        let truncated: String = chars[..max_len.saturating_sub(3)].iter().collect();
-        format!("{}...", truncated)
+/// Get marquee-scrolled text for the selected item, or truncated text for non-selected items
+fn get_marquee_text(text: &str, max_width: usize, offset: usize, is_selected: bool) -> String {
+    let text_width = text.width();
+
+    // If text fits within max_width, pad with spaces
+    if text_width <= max_width {
+        let padding = max_width.saturating_sub(text_width);
+        return format!("{}{}", text, " ".repeat(padding));
     }
+
+    // Non-selected items: truncate with ellipsis
+    if !is_selected {
+        return truncate_to_width_with_ellipsis(text, max_width);
+    }
+
+    // Selected item: marquee scroll
+    let padding = "   "; // 3 spaces between loops
+    let looped_text = format!("{}{}{}", text, padding, text);
+    let loop_length = text_width + padding.width();
+    let effective_offset = offset % loop_length;
+
+    extract_substring_by_width(&looped_text, effective_offset, max_width)
+}
+
+/// Truncate a string to fit within max_width, adding ellipsis
+fn truncate_to_width_with_ellipsis(s: &str, max_width: usize) -> String {
+    if max_width <= 3 {
+        return truncate_to_width(s, max_width);
+    }
+
+    let truncated = truncate_to_width(s, max_width.saturating_sub(3));
+    let truncated_width = truncated.width();
+
+    if truncated_width < s.width() {
+        format!("{}...", truncated)
+    } else {
+        // No truncation needed, pad with spaces
+        let padding = max_width.saturating_sub(truncated_width);
+        format!("{}{}", truncated, " ".repeat(padding))
+    }
+}
+
+/// Extract a substring starting at a given display width offset with a given max width
+fn extract_substring_by_width(s: &str, start_offset: usize, max_width: usize) -> String {
+    let mut result = String::new();
+    let mut current_width = 0;
+    let mut skip_width = 0;
+    let mut started = false;
+
+    for c in s.chars() {
+        let char_width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+
+        if !started {
+            if skip_width + char_width > start_offset {
+                // This char straddles the start offset, skip it
+                started = true;
+            } else {
+                skip_width += char_width;
+                if skip_width >= start_offset {
+                    started = true;
+                }
+                continue;
+            }
+        }
+
+        if current_width + char_width > max_width {
+            break;
+        }
+
+        result.push(c);
+        current_width += char_width;
+    }
+
+    // Pad to max_width if needed
+    let padding = max_width.saturating_sub(current_width);
+    format!("{}{}", result, " ".repeat(padding))
 }
 
 /// Pad or truncate a string to a fixed display width (right-padded with spaces)
@@ -645,8 +747,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_truncate() {
-        assert_eq!(truncate("short", 10), "short");
-        assert_eq!(truncate("this is a long string", 10), "this is...");
+    fn test_get_marquee_text_short() {
+        // Text that fits - should be padded
+        let result = get_marquee_text("short", 10, 0, false);
+        assert_eq!(result.len(), 10);
+        assert!(result.starts_with("short"));
+    }
+
+    #[test]
+    fn test_get_marquee_text_non_selected() {
+        // Long text, non-selected - should be truncated with ellipsis
+        let result = get_marquee_text("this is a long string", 10, 0, false);
+        assert!(result.ends_with("..."));
+        assert_eq!(result.width(), 10);
+    }
+
+    #[test]
+    fn test_get_marquee_text_selected() {
+        // Long text, selected - should scroll
+        let text = "this is a long string";
+        let result_0 = get_marquee_text(text, 10, 0, true);
+        let result_1 = get_marquee_text(text, 10, 1, true);
+        // Different offsets should produce different results
+        assert_ne!(result_0, result_1);
     }
 }

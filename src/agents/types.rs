@@ -2,6 +2,34 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+/// Source of agent state detection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DetectionSource {
+    /// State detected via PTY state file (/tmp/tmai/*.state)
+    PtyStateFile,
+    /// State detected via tmux capture-pane
+    #[default]
+    CapturePane,
+}
+
+impl DetectionSource {
+    /// Get icon for this detection source
+    pub fn icon(&self) -> char {
+        match self {
+            DetectionSource::PtyStateFile => '●',
+            DetectionSource::CapturePane => '○',
+        }
+    }
+
+    /// Get short label for this detection source
+    pub fn label(&self) -> &'static str {
+        match self {
+            DetectionSource::PtyStateFile => "PTY",
+            DetectionSource::CapturePane => "capture",
+        }
+    }
+}
+
 /// Type of AI agent being monitored
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentType {
@@ -398,6 +426,8 @@ pub struct MonitoredAgent {
     pub last_update: chrono::DateTime<chrono::Utc>,
     /// Context warning percentage (e.g., "11%" remaining until auto-compact)
     pub context_warning: Option<u8>,
+    /// How the agent state was detected
+    pub detection_source: DetectionSource,
 }
 
 impl MonitoredAgent {
@@ -431,7 +461,14 @@ impl MonitoredAgent {
             selected: false,
             last_update: chrono::Utc::now(),
             context_warning: None,
+            detection_source: DetectionSource::default(),
         }
+    }
+
+    /// Set the detection source
+    pub fn with_detection_source(mut self, source: DetectionSource) -> Self {
+        self.detection_source = source;
+        self
     }
 
     /// Update the agent's status and content

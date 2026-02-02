@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentStatus, ApprovalType, MonitoredAgent};
+use crate::agents::{AgentStatus, ApprovalType, DetectionSource, MonitoredAgent};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::{get_detector, DetectionContext};
 use crate::state::{MonitorScope, SharedState};
@@ -230,6 +230,11 @@ impl Poller {
                 agent.last_content = content;
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
+                agent.detection_source = if wrap_state.is_some() {
+                    DetectionSource::PtyStateFile
+                } else {
+                    DetectionSource::CapturePane
+                };
 
                 agents.push(agent);
             }

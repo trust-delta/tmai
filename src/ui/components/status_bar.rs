@@ -5,6 +5,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::state::{AppState, MonitorScope, SortBy};
 use crate::ui::{SplitDirection, ViewMode};
@@ -269,8 +270,10 @@ impl StatusBar {
             spans.push(Span::styled(" [+ New] ", Style::default().fg(Color::Green)));
         } else if let Some(agent) = state.selected_agent() {
             // Agent selected - show target and agent type
-            let short_target = if agent.id.len() > 12 {
-                format!("{}...", &agent.id[..9])
+            let short_target = if agent.id.width() > 12 {
+                // Truncate with ellipsis
+                let truncated = truncate_to_width(&agent.id, 9);
+                format!("{}...", truncated)
             } else {
                 agent.id.clone()
             };
@@ -282,8 +285,36 @@ impl StatusBar {
                 format!("{} ", agent.agent_type.short_name()),
                 Style::default().fg(Color::Yellow),
             ));
+
+            // Show detection source
+            let detection_label = agent.detection_source.label();
+            let detection_color = match agent.detection_source {
+                crate::agents::DetectionSource::PtyStateFile => Color::Green,
+                crate::agents::DetectionSource::CapturePane => Color::DarkGray,
+            };
+            spans.push(Span::styled(
+                format!("[{}] ", detection_label),
+                Style::default().fg(detection_color),
+            ));
         }
     }
+}
+
+/// Truncate a string to fit within a given display width
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let mut result = String::new();
+    let mut current_width = 0;
+
+    for c in s.chars() {
+        let char_width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if current_width + char_width > max_width {
+            break;
+        }
+        result.push(c);
+        current_width += char_width;
+    }
+
+    result
 }
 
 #[cfg(test)]

@@ -188,10 +188,11 @@ impl App {
                 }
             })?;
 
-            // Tick spinner animation
+            // Tick spinner and marquee animations
             {
                 let mut state = self.state.write();
                 state.tick_spinner();
+                state.tick_marquee();
             }
 
             // Handle events with timeout

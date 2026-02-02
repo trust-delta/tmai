@@ -95,6 +95,30 @@ impl MonitorScope {
 /// Spinner frames for processing animation
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/// Marquee scroll interval in milliseconds
+const MARQUEE_INTERVAL_MS: u64 = 280;
+
+/// State for marquee text scrolling animation
+#[derive(Debug, Clone)]
+pub struct MarqueeState {
+    /// Current scroll offset (in characters)
+    pub offset: usize,
+    /// Last update timestamp
+    pub last_update: std::time::Instant,
+    /// ID of the selected item (to detect selection change)
+    pub selected_id: Option<String>,
+}
+
+impl Default for MarqueeState {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            last_update: std::time::Instant::now(),
+            selected_id: None,
+        }
+    }
+}
+
 /// Placement type for creating new AI process
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementType {
@@ -241,6 +265,8 @@ pub struct AppState {
     pub web_token: Option<String>,
     /// Web server port
     pub web_port: u16,
+    /// Marquee animation state for selected item
+    pub marquee_state: MarqueeState,
 }
 
 impl AppState {
@@ -274,6 +300,7 @@ impl AppState {
             show_qr: false,
             web_token: None,
             web_port: 9876,
+            marquee_state: MarqueeState::default(),
         }
     }
 
@@ -289,6 +316,29 @@ impl AppState {
     /// Get the current spinner character
     pub fn spinner_char(&self) -> char {
         SPINNER_FRAMES[self.spinner_frame]
+    }
+
+    /// Advance the marquee scroll offset (time-based)
+    pub fn tick_marquee(&mut self) {
+        let elapsed = self.marquee_state.last_update.elapsed();
+        if elapsed.as_millis() >= MARQUEE_INTERVAL_MS as u128 {
+            self.marquee_state.last_update = std::time::Instant::now();
+            self.marquee_state.offset += 1;
+        }
+    }
+
+    /// Reset marquee state when selection changes
+    pub fn reset_marquee(&mut self, new_id: Option<String>) {
+        if self.marquee_state.selected_id != new_id {
+            self.marquee_state.offset = 0;
+            self.marquee_state.selected_id = new_id;
+            self.marquee_state.last_update = std::time::Instant::now();
+        }
+    }
+
+    /// Get the current marquee scroll offset
+    pub fn marquee_offset(&self) -> usize {
+        self.marquee_state.offset
     }
 
     /// Create a shared state
@@ -470,6 +520,7 @@ impl AppState {
             self.selected_entry_index -= 1;
             self.preview_scroll = 0;
             self.sync_selected_index_from_entry();
+            self.reset_marquee_for_selection();
         }
     }
 
@@ -479,6 +530,7 @@ impl AppState {
             self.selected_entry_index += 1;
             self.preview_scroll = 0;
             self.sync_selected_index_from_entry();
+            self.reset_marquee_for_selection();
         }
     }
 
@@ -488,6 +540,7 @@ impl AppState {
             self.selected_entry_index = 0;
             self.preview_scroll = 0;
             self.sync_selected_index_from_entry();
+            self.reset_marquee_for_selection();
         }
     }
 
@@ -497,7 +550,14 @@ impl AppState {
             self.selected_entry_index = self.selectable_count - 1;
             self.preview_scroll = 0;
             self.sync_selected_index_from_entry();
+            self.reset_marquee_for_selection();
         }
+    }
+
+    /// Reset marquee state based on current selection
+    fn reset_marquee_for_selection(&mut self) {
+        let new_id = self.selected_target().map(|s| s.to_string());
+        self.reset_marquee(new_id);
     }
 
     /// Sync selected_index from selected_entry_index
