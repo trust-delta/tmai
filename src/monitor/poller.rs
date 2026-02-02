@@ -149,10 +149,14 @@ impl Poller {
             self.client.list_all_panes()?
         };
 
-        // Get current monitor scope from state
-        let monitor_scope = {
+        // Get current monitor scope and selected agent ID from state
+        let (monitor_scope, selected_agent_id) = {
             let state = self.state.read();
-            state.monitor_scope
+            let selected_id = state
+                .agent_order
+                .get(state.selected_index)
+                .cloned();
+            (state.monitor_scope, selected_id)
         };
 
         // Filter panes based on scope
@@ -179,16 +183,29 @@ impl Poller {
                 // Try to read state from wrap state file first
                 // Use pane_id (global unique ID like "5" from "%5") not pane_index (local window index)
                 let wrap_state = state_file::read_state(&pane.pane_id).ok();
+                let is_selected = selected_agent_id.as_ref() == Some(&pane.target);
 
-                // Capture pane content once (ANSI for preview, stripped for detection)
-                let content_ansi = match self.client.capture_pane(&pane.target) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::debug!("Failed to capture pane ANSI {}: {}", pane.target, e);
-                        String::new()
-                    }
+                // Optimize capture-pane based on selection and PTY state:
+                // - Selected: ANSI capture for preview
+                // - Non-selected + PTY: skip capture-pane entirely (state from file)
+                // - Non-selected + capture-pane mode: plain capture for detection only
+                let (content_ansi, content) = if is_selected {
+                    // Selected agent: full ANSI capture for preview
+                    let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
+                    let plain = strip_ansi(&ansi);
+                    (ansi, plain)
+                } else if wrap_state.is_some() {
+                    // Non-selected + PTY mode: skip capture-pane entirely
+                    (String::new(), String::new())
+                } else {
+                    // Non-selected + capture-pane mode: plain capture for detection
+                    let plain = self
+                        .client
+                        .capture_pane_plain(&pane.target)
+                        .unwrap_or_default();
+                    (String::new(), plain)
                 };
-                let content = strip_ansi(&content_ansi);
+
                 let title = self
                     .client
                     .get_pane_title(&pane.target)
