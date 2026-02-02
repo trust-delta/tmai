@@ -177,8 +177,8 @@ impl Poller {
 
             if let Some(agent_type) = agent_type {
                 // Try to read state from wrap state file first
-                let pane_id = pane.pane_index.to_string();
-                let wrap_state = state_file::read_state(&pane_id).ok();
+                // Use pane_id (global unique ID like "5" from "%5") not pane_index (local window index)
+                let wrap_state = state_file::read_state(&pane.pane_id).ok();
 
                 // Capture pane content once (ANSI for preview, stripped for detection)
                 let content_ansi = match self.client.capture_pane(&pane.target) {

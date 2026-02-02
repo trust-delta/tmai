@@ -64,12 +64,13 @@ impl TmuxClient {
     pub fn list_panes(&self) -> Result<Vec<PaneInfo>> {
         // Use tab separator to handle spaces in titles/paths
         // Include session_attached to filter out detached sessions
+        // Include pane_id for state file matching with PTY wrapper
         let output = Command::new("tmux")
             .args([
                 "list-panes",
                 "-a",
                 "-F",
-                "#{session_attached}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}\t#{pane_pid}\t#{pane_title}\t#{pane_current_path}",
+                "#{session_attached}\t#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}\t#{pane_pid}\t#{pane_title}\t#{pane_current_path}",
             ])
             .output()
             .context("Failed to execute tmux list-panes")?;
@@ -100,12 +101,13 @@ impl TmuxClient {
 
     /// Lists all panes including detached sessions
     pub fn list_all_panes(&self) -> Result<Vec<PaneInfo>> {
+        // Include pane_id for state file matching with PTY wrapper
         let output = Command::new("tmux")
             .args([
                 "list-panes",
                 "-a",
                 "-F",
-                "#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}\t#{pane_pid}\t#{pane_title}\t#{pane_current_path}",
+                "#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}\t#{pane_pid}\t#{pane_title}\t#{pane_current_path}",
             ])
             .output()
             .context("Failed to execute tmux list-panes")?;

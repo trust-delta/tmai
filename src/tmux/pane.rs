@@ -9,8 +9,10 @@ pub struct PaneInfo {
     pub session: String,
     /// Window index
     pub window_index: u32,
-    /// Pane index
+    /// Pane index (within window)
     pub pane_index: u32,
+    /// Global pane ID (e.g., "5" from "%5")
+    pub pane_id: String,
     /// Window name
     pub window_name: String,
     /// Current command running in the pane
@@ -25,14 +27,17 @@ pub struct PaneInfo {
 
 impl PaneInfo {
     /// Parse a pane info line from tmux list-panes output
-    /// Format: session:window.pane\twindow_name\tcommand\tpid\ttitle\tcwd
+    /// Format: pane_id\tsession:window.pane\twindow_name\tcommand\tpid\ttitle\tcwd
     pub fn parse(line: &str) -> Option<Self> {
         let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 6 {
+        if parts.len() < 7 {
             return None;
         }
 
-        let target = parts[0];
+        // pane_id is like "%5", extract the number
+        let pane_id = parts[0].trim_start_matches('%').to_string();
+
+        let target = parts[1];
         let (session, window_pane) = target.split_once(':')?;
         let (window_str, pane_str) = window_pane.split_once('.')?;
         let window_index = window_str.parse().ok()?;
@@ -43,11 +48,12 @@ impl PaneInfo {
             session: session.to_string(),
             window_index,
             pane_index,
-            window_name: parts[1].to_string(),
-            command: parts[2].to_string(),
-            pid: parts[3].parse().unwrap_or(0),
-            title: parts[4].to_string(),
-            cwd: parts[5].to_string(),
+            pane_id,
+            window_name: parts[2].to_string(),
+            command: parts[3].to_string(),
+            pid: parts[4].parse().unwrap_or(0),
+            title: parts[5].to_string(),
+            cwd: parts[6].to_string(),
         })
     }
 
@@ -83,9 +89,10 @@ mod tests {
 
     #[test]
     fn test_parse_pane_info() {
-        let line = "main:0.1\tbash\tclaude\t12345\t✳ Working\t/home/user";
+        let line = "%5\tmain:0.1\tbash\tclaude\t12345\t✳ Working\t/home/user";
         let pane = PaneInfo::parse(line).expect("Should parse pane info");
 
+        assert_eq!(pane.pane_id, "5");
         assert_eq!(pane.target, "main:0.1");
         assert_eq!(pane.session, "main");
         assert_eq!(pane.window_index, 0);
@@ -104,6 +111,7 @@ mod tests {
             session: "main".to_string(),
             window_index: 0,
             pane_index: 1,
+            pane_id: "5".to_string(),
             window_name: "bash".to_string(),
             command: "claude".to_string(),
             pid: 12345,
@@ -121,6 +129,7 @@ mod tests {
             session: "dev".to_string(),
             window_index: 2,
             pane_index: 3,
+            pane_id: "10".to_string(),
             window_name: "work".to_string(),
             command: "claude".to_string(),
             pid: 12345,
