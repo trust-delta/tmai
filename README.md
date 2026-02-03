@@ -114,6 +114,17 @@ enabled = true
 port = 9876
 ```
 
+### WSL2 Setup
+
+For WSL2 with mirrored networking mode, allow the port through Windows Firewall:
+
+```powershell
+# Run as Administrator
+New-NetFirewallRule -DisplayName "tmai Web Remote" -Direction Inbound -Protocol TCP -LocalPort 9876 -Action Allow
+```
+
+For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for port forwarding setup.
+
 ## Supported Agents
 
 | Agent | Detection | PTY Wrap |

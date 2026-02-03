@@ -989,11 +989,13 @@ impl Default for AppState {
     }
 }
 
-/// Detect if running in WSL and return the Windows host IP if so
+/// Detect if running in WSL and return the appropriate external IP
 ///
-/// WSL2 uses a virtual network, so external devices cannot directly access
-/// WSL's IP. This function returns the Windows host IP that external devices
-/// can connect to (requires port forwarding on Windows).
+/// WSL2 has two networking modes:
+/// - NAT mode (default): External devices cannot access WSL directly, need Windows host IP
+/// - Mirrored mode: WSL shares Windows network, WSL IP is directly accessible
+///
+/// This function detects the mode and returns the appropriate IP.
 fn get_wsl_host_ip() -> Option<String> {
     // Check if running in WSL by reading /proc/version
     let proc_version = std::fs::read_to_string("/proc/version").ok()?;
@@ -1003,12 +1005,23 @@ fn get_wsl_host_ip() -> Option<String> {
         return None;
     }
 
-    // In WSL2, the Windows host IP is typically the nameserver in /etc/resolv.conf
+    // Check if mirrored networking mode is enabled
+    // In mirrored mode, WSL's own IP is directly accessible from external devices
+    if is_wsl_mirrored_mode() {
+        // Use local_ip_address to get WSL's IP (which is the same as Windows in mirrored mode)
+        return None; // Let the caller use local_ip_address
+    }
+
+    // NAT mode: Windows host IP is typically the nameserver in /etc/resolv.conf
     let resolv_conf = std::fs::read_to_string("/etc/resolv.conf").ok()?;
     for line in resolv_conf.lines() {
         let line = line.trim();
         if line.starts_with("nameserver") {
             if let Some(ip) = line.split_whitespace().nth(1) {
+                // Skip internal IPs (systemd-resolved, localhost, etc.)
+                if ip.starts_with("10.255.") || ip.starts_with("127.") {
+                    continue;
+                }
                 // Validate it looks like an IP address
                 if ip.parse::<std::net::Ipv4Addr>().is_ok() {
                     return Some(ip.to_string());
@@ -1018,6 +1031,31 @@ fn get_wsl_host_ip() -> Option<String> {
     }
 
     None
+}
+
+/// Check if WSL is running in mirrored networking mode
+fn is_wsl_mirrored_mode() -> bool {
+    // Check .wslconfig in common locations
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        let wslconfig_path = format!("{}\\.wslconfig", home);
+        if let Ok(content) = std::fs::read_to_string(&wslconfig_path) {
+            return content.to_lowercase().contains("networkingmode=mirrored");
+        }
+    }
+
+    // Try Windows user directories via /mnt/c
+    if let Ok(entries) = std::fs::read_dir("/mnt/c/Users") {
+        for entry in entries.flatten() {
+            let path = entry.path().join(".wslconfig");
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if content.to_lowercase().contains("networkingmode=mirrored") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
