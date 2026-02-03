@@ -151,6 +151,10 @@ For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for po
  j/k:Nav 1-9:Select i:Input →:Direct ?:Help q:Quit
 ```
 
+## Acknowledgments
+
+Inspired by [tmuxcc](https://github.com/mchiquier/tmuxcc).
+
 ## License
 
 MIT
