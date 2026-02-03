@@ -1,13 +1,13 @@
 [package]
 name = "tmai"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 authors = ["TrustDelta"]
 description = "Tmux Multi Agent Interface - Monitor and control AI agents in tmux"
-repository = "https://github.com/trustdelta/tmai"
+repository = "https://github.com/trust-delta/tmai"
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/trustdelta/tmai"
+documentation = "https://docs.rs/tmai"
 keywords = ["tmux", "ai", "claude", "terminal", "tui"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = [

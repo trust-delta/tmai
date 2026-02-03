@@ -338,7 +338,7 @@ impl SessionList {
     /// Create a "new session" item
     fn create_new_item() -> ListItem<'static> {
         ListItem::new(Line::from(vec![Span::styled(
-            "+ 新規プロセス",
+            "+ New Process",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::ITALIC),

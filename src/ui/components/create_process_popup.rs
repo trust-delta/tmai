@@ -63,15 +63,15 @@ impl CreateProcessPopup {
 
         // Header text
         let header = match create_state.step {
-            CreateProcessStep::SelectTarget => "追加先を選択:",
+            CreateProcessStep::SelectTarget => "Select target:",
             CreateProcessStep::SelectDirectory => {
                 if create_state.is_input_mode {
-                    "ディレクトリパスを入力:"
+                    "Enter directory path:"
                 } else {
-                    "ディレクトリを選択:"
+                    "Select directory:"
                 }
             }
-            CreateProcessStep::SelectAgent => "AIエージェントを選択:",
+            CreateProcessStep::SelectAgent => "Select AI agent:",
         };
         let header_widget = Paragraph::new(header).style(Style::default().fg(Color::Yellow));
         frame.render_widget(header_widget, inner_chunks[0]);
@@ -108,7 +108,7 @@ impl CreateProcessPopup {
     fn render_select_target(
         create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規プロセス作成";
+        let title = "Create New Process";
 
         let items: Vec<ListItem> = create_state
             .tree_entries
@@ -116,7 +116,7 @@ impl CreateProcessPopup {
             .map(|entry| match entry {
                 TreeEntry::NewSession => ListItem::new(Line::from(vec![
                     Span::styled("[+] ", Style::default().fg(Color::Green)),
-                    Span::styled("新規セッション", Style::default().fg(Color::Green)),
+                    Span::styled("New Session", Style::default().fg(Color::Green)),
                 ])),
                 TreeEntry::Session { name, collapsed } => {
                     let arrow = if *collapsed { "▸" } else { "▾" };
@@ -133,7 +133,7 @@ impl CreateProcessPopup {
                 TreeEntry::NewWindow { .. } => ListItem::new(Line::from(vec![
                     Span::styled("  ", Style::default()),
                     Span::styled("[+] ", Style::default().fg(Color::Cyan)),
-                    Span::styled("新規ウィンドウ", Style::default().fg(Color::Cyan)),
+                    Span::styled("New Window", Style::default().fg(Color::Cyan)),
                 ])),
                 TreeEntry::Window {
                     index,
@@ -157,14 +157,14 @@ impl CreateProcessPopup {
                     Span::styled("    ", Style::default()),
                     Span::styled("[+] ", Style::default().fg(Color::White)),
                     Span::styled(
-                        format!("{} を分割", target),
+                        format!("Split {}", target),
                         Style::default().fg(Color::White),
                     ),
                 ])),
             })
             .collect();
 
-        let help = "↑/↓: 選択  Enter: 決定/トグル  Esc: キャンセル";
+        let help = "↑/↓: Select  Enter: Confirm/Toggle  Esc: Cancel";
 
         (title, items, help)
     }
@@ -173,19 +173,19 @@ impl CreateProcessPopup {
     fn render_select_directory(
         create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規プロセス作成";
+        let title = "Create New Process";
 
         let mut items = vec![
             ListItem::new(Line::from(vec![Span::styled(
-                "パスを入力...",
+                "Enter path...",
                 Style::default().fg(Color::Yellow),
             )])),
             ListItem::new(Line::from(vec![Span::styled(
-                "~ (ホームディレクトリ)",
+                "~ (Home directory)",
                 Style::default().fg(Color::White),
             )])),
             ListItem::new(Line::from(vec![Span::styled(
-                ". (現在のディレクトリ)",
+                ". (Current directory)",
                 Style::default().fg(Color::White),
             )])),
         ];
@@ -204,9 +204,9 @@ impl CreateProcessPopup {
         }
 
         let help = if create_state.is_input_mode {
-            "Enter: 決定  Esc: 戻る"
+            "Enter: Confirm  Esc: Back"
         } else {
-            "↑/↓: 選択  Enter: 決定  Esc: 戻る"
+            "↑/↓: Select  Enter: Confirm  Esc: Back"
         };
 
         (title, items, help)
@@ -216,7 +216,7 @@ impl CreateProcessPopup {
     fn render_select_agent(
         _create_state: &crate::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
-        let title = "新規プロセス作成";
+        let title = "Create New Process";
 
         let items: Vec<ListItem> = AgentType::all_variants()
             .into_iter()
@@ -236,7 +236,7 @@ impl CreateProcessPopup {
             })
             .collect();
 
-        let help = "↑/↓: 選択  Enter: 起動  Esc: 戻る";
+        let help = "↑/↓: Select  Enter: Launch  Esc: Back";
 
         (title, items, help)
     }
