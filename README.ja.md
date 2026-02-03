@@ -183,7 +183,7 @@ cargo fmt              # フォーマット
 
 ## 謝辞
 
-[tmuxcc](https://github.com/mchiquier/tmuxcc) にインスピレーションを受けました。
+[tmuxcc](https://github.com/nyanko3141592/tmuxcc) にインスピレーションを受けました。
 
 ## ライセンス
 

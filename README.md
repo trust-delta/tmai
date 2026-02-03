@@ -19,7 +19,7 @@
 ## Installation
 
 ```bash
-cargo install --git https://github.com/trust-delta/tmai
+cargo install tmai
 ```
 
 Or build from source:
@@ -153,7 +153,7 @@ For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for po
 
 ## Acknowledgments
 
-Inspired by [tmuxcc](https://github.com/mchiquier/tmuxcc).
+Inspired by [tmuxcc](https://github.com/nyanko3141592/tmuxcc).
 
 ## License
 
