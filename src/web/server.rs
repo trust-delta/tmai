@@ -73,6 +73,8 @@ impl WebServer {
             .route("/agents/{id}/reject", post(api::reject_agent))
             .route("/agents/{id}/select", post(api::select_choice))
             .route("/agents/{id}/submit", post(api::submit_selection))
+            .route("/agents/{id}/input", post(api::send_text))
+            .route("/agents/{id}/preview", get(api::get_preview))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

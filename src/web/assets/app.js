@@ -8,11 +8,17 @@ class TmaiRemote {
         this.agents = [];
         this.eventSource = null;
         this.selectedChoices = new Map();
+        this.previousStates = new Map();
+        this.expandedPreviews = new Set();
+        this.previewCache = new Map();
+        this.previewIntervals = new Map();
+        this.pendingRender = false;
 
         this.elements = {
             agentList: document.getElementById('agent-list'),
             connectionStatus: document.getElementById('connection-status'),
-            toast: document.getElementById('toast')
+            toast: document.getElementById('toast'),
+            themeBtn: document.getElementById('theme-btn')
         };
 
         if (!this.token) {
@@ -35,8 +41,114 @@ class TmaiRemote {
      * Initialize the app
      */
     async init() {
+        this.loadTheme();
+        this.setupHeaderButtons();
         await this.loadAgents();
         this.connectSSE();
+    }
+
+    /**
+     * Load theme from localStorage or system preference
+     */
+    loadTheme() {
+        const saved = localStorage.getItem('tmai_theme');
+        if (saved) {
+            document.documentElement.setAttribute('data-theme', saved);
+        } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+        this.updateThemeButton();
+    }
+
+    /**
+     * Toggle between dark and light theme
+     */
+    toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const newTheme = current === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('tmai_theme', newTheme);
+        this.updateThemeButton();
+    }
+
+    /**
+     * Update theme button icon
+     */
+    updateThemeButton() {
+        const theme = document.documentElement.getAttribute('data-theme');
+        const icon = document.getElementById('theme-icon');
+        if (theme === 'light') {
+            // Sun icon for light mode
+            icon.innerHTML = '<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>';
+        } else {
+            // Moon icon for dark mode
+            icon.innerHTML = '<path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>';
+        }
+    }
+
+    /**
+     * Setup header button event listeners
+     */
+    setupHeaderButtons() {
+        this.elements.themeBtn.addEventListener('click', () => this.toggleTheme());
+    }
+
+    /**
+     * Check for state changes and show toast notifications
+     * @param {Array} agents
+     */
+    checkForStateChanges(agents) {
+        for (const agent of agents) {
+            const prev = this.previousStates.get(agent.id);
+            if (prev && prev !== agent.status.type) {
+                if (agent.status.type === 'awaiting_approval') {
+                    this.showToast(`${agent.agent_type}: Approval needed`, 'warning');
+                } else if (agent.status.type === 'error') {
+                    this.showToast(`${agent.agent_type}: Error`, 'error');
+                }
+            }
+            this.previousStates.set(agent.id, agent.status.type);
+        }
+
+        // Cleanup stale data for removed agents
+        this.cleanupStaleData(agents);
+    }
+
+    /**
+     * Cleanup data for agents that no longer exist
+     * @param {Array} agents
+     */
+    cleanupStaleData(agents) {
+        const currentIds = new Set(agents.map(a => a.id));
+
+        // Cleanup previousStates
+        for (const id of this.previousStates.keys()) {
+            if (!currentIds.has(id)) {
+                this.previousStates.delete(id);
+            }
+        }
+
+        // Cleanup previewCache
+        for (const id of this.previewCache.keys()) {
+            if (!currentIds.has(id)) {
+                this.previewCache.delete(id);
+            }
+        }
+
+        // Cleanup expandedPreviews and stop intervals
+        for (const id of this.expandedPreviews) {
+            if (!currentIds.has(id)) {
+                this.expandedPreviews.delete(id);
+                this.stopPreviewAutoRefresh(id);
+            }
+        }
+
+        // Cleanup selectedChoices
+        for (const id of this.selectedChoices.keys()) {
+            if (!currentIds.has(id)) {
+                this.selectedChoices.delete(id);
+            }
+        }
     }
 
     /**
@@ -68,7 +180,9 @@ class TmaiRemote {
 
         this.eventSource.addEventListener('agents', (event) => {
             try {
-                this.agents = JSON.parse(event.data);
+                const newAgents = JSON.parse(event.data);
+                this.checkForStateChanges(newAgents);
+                this.agents = newAgents;
                 this.render();
                 this.setConnected(true);
             } catch (error) {
@@ -103,9 +217,42 @@ class TmaiRemote {
     }
 
     /**
+     * Check if an input field is focused
+     */
+    isInputFocused() {
+        const active = document.activeElement;
+        return active && active.classList.contains('text-input');
+    }
+
+    /**
      * Render the agent list
      */
     render() {
+        // Skip render if input is focused, mark as pending
+        if (this.isInputFocused()) {
+            this.pendingRender = true;
+            return;
+        }
+
+        // Save state before re-rendering
+        const scrollPositions = new Map();
+        const inputValues = new Map();
+
+        // Save scroll positions and input values
+        this.elements.agentList.querySelectorAll('[data-agent-id]').forEach(card => {
+            const agentId = card.dataset.agentId;
+
+            const previewEl = card.querySelector('.preview-content');
+            if (previewEl) {
+                scrollPositions.set(agentId, previewEl.scrollTop);
+            }
+
+            const inputEl = card.querySelector('.text-input');
+            if (inputEl && inputEl.value) {
+                inputValues.set(agentId, inputEl.value);
+            }
+        });
+
         if (this.agents.length === 0) {
             this.elements.agentList.innerHTML = `
                 <div class="empty-state">
@@ -125,6 +272,31 @@ class TmaiRemote {
 
         this.elements.agentList.innerHTML = sorted.map(agent => this.renderAgent(agent)).join('');
         this.attachEventListeners();
+
+        // Restore state after re-rendering
+        this.elements.agentList.querySelectorAll('[data-agent-id]').forEach(card => {
+            const agentId = card.dataset.agentId;
+
+            // Restore scroll position
+            const scrollTop = scrollPositions.get(agentId);
+            if (scrollTop !== undefined) {
+                const previewEl = card.querySelector('.preview-content');
+                if (previewEl) {
+                    previewEl.scrollTop = scrollTop;
+                }
+            }
+
+            // Restore input value
+            const inputValue = inputValues.get(agentId);
+            if (inputValue) {
+                const inputEl = card.querySelector('.text-input');
+                if (inputEl) {
+                    inputEl.value = inputValue;
+                }
+            }
+        });
+
+        this.pendingRender = false;
     }
 
     /**
@@ -163,6 +335,30 @@ class TmaiRemote {
             }
         }
 
+        // Text input section
+        const textInputHtml = `
+            <div class="text-input-container">
+                <input type="text" class="text-input"
+                       placeholder="Type message..."
+                       data-agent-id="${agent.id}"
+                       onkeydown="if(event.key==='Enter')this.nextElementSibling.click()">
+                <button class="btn btn-send" data-action="send-text" data-id="${agent.id}">Send</button>
+            </div>
+        `;
+
+        // Preview toggle section
+        const isExpanded = this.expandedPreviews.has(agent.id);
+        const previewContent = this.previewCache.get(agent.id);
+        const previewHtml = `
+            <div class="preview-toggle ${isExpanded ? 'expanded' : ''}" data-action="toggle-preview" data-id="${agent.id}">
+                <svg viewBox="0 0 24 24">
+                    <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                </svg>
+                <span>Show Output</span>
+            </div>
+            ${isExpanded ? `<div class="preview-content">${previewContent ? this.escapeHtml(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
+        `;
+
         return `
             <div class="agent-card ${needsAttention}" data-agent-id="${agent.id}">
                 <div class="agent-header">
@@ -175,6 +371,8 @@ class TmaiRemote {
                 <div class="agent-cwd">${this.escapeHtml(agent.cwd)}</div>
                 ${detailsHtml}
                 ${actionsHtml}
+                ${textInputHtml}
+                ${previewHtml}
             </div>
         `;
     }
@@ -237,6 +435,15 @@ class TmaiRemote {
         this.elements.agentList.querySelectorAll('[data-action]').forEach(btn => {
             btn.addEventListener('click', (e) => this.handleAction(e));
         });
+
+        // Handle blur on text inputs to trigger pending render
+        this.elements.agentList.querySelectorAll('.text-input').forEach(input => {
+            input.addEventListener('blur', () => {
+                if (this.pendingRender) {
+                    this.render();
+                }
+            });
+        });
     }
 
     /**
@@ -247,7 +454,10 @@ class TmaiRemote {
         const action = btn.dataset.action;
         const id = btn.dataset.id;
 
-        btn.disabled = true;
+        // Don't disable for toggle-preview
+        if (action !== 'toggle-preview') {
+            btn.disabled = true;
+        }
 
         try {
             switch (action) {
@@ -275,12 +485,133 @@ class TmaiRemote {
                     this.selectedChoices.delete(id);
                     this.showToast('Selection submitted', 'success');
                     break;
+                case 'send-text':
+                    await this.handleSendText(id);
+                    break;
+                case 'toggle-preview':
+                    await this.handleTogglePreview(id);
+                    break;
             }
         } catch (error) {
             console.error('Action failed:', error);
             this.showToast('Action failed', 'error');
         } finally {
-            btn.disabled = false;
+            if (action !== 'toggle-preview') {
+                btn.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * Handle send text action
+     * @param {string} agentId
+     */
+    async handleSendText(agentId) {
+        const input = this.elements.agentList.querySelector(`input[data-agent-id="${agentId}"]`);
+        const text = input?.value?.trim();
+
+        if (!text) {
+            this.showToast('Please enter text', 'error');
+            return;
+        }
+
+        await this.sendText(agentId, text);
+        input.value = '';
+        this.showToast('Text sent', 'success');
+    }
+
+    /**
+     * Handle toggle preview action
+     * @param {string} agentId
+     */
+    async handleTogglePreview(agentId) {
+        if (this.expandedPreviews.has(agentId)) {
+            // Close preview - stop auto-refresh
+            this.expandedPreviews.delete(agentId);
+            this.stopPreviewAutoRefresh(agentId);
+        } else {
+            // Open preview - start auto-refresh
+            this.expandedPreviews.add(agentId);
+            this.previewCache.delete(agentId);
+            this.render();
+            await this.refreshPreview(agentId, true); // scroll to bottom on initial load
+            this.startPreviewAutoRefresh(agentId);
+        }
+        this.render();
+    }
+
+    /**
+     * Refresh preview content for an agent
+     * @param {string} agentId
+     * @param {boolean} scrollToBottom - Whether to scroll to bottom after update
+     */
+    async refreshPreview(agentId, scrollToBottom = false) {
+        try {
+            const content = await this.getPreview(agentId);
+            this.previewCache.set(agentId, content);
+            // Only update if preview is still expanded
+            if (this.expandedPreviews.has(agentId)) {
+                this.updatePreviewContent(agentId, content, scrollToBottom);
+            }
+        } catch (error) {
+            this.previewCache.set(agentId, 'Failed to load preview');
+            if (this.expandedPreviews.has(agentId)) {
+                this.updatePreviewContent(agentId, 'Failed to load preview', scrollToBottom);
+            }
+        }
+    }
+
+    /**
+     * Update preview content without re-rendering (preserves scroll position)
+     * @param {string} agentId
+     * @param {string} content
+     * @param {boolean} scrollToBottom - Whether to scroll to bottom after update
+     */
+    updatePreviewContent(agentId, content, scrollToBottom = false) {
+        const card = this.elements.agentList.querySelector(`[data-agent-id="${agentId}"]`);
+        if (!card) return;
+
+        const previewEl = card.querySelector('.preview-content');
+        if (previewEl) {
+            // Preserve scroll position unless scrollToBottom is requested
+            const scrollTop = previewEl.scrollTop;
+            previewEl.textContent = content;
+            if (scrollToBottom) {
+                previewEl.scrollTop = previewEl.scrollHeight;
+            } else {
+                previewEl.scrollTop = scrollTop;
+            }
+        }
+    }
+
+    /**
+     * Start auto-refresh for preview (every 5 seconds)
+     * @param {string} agentId
+     */
+    startPreviewAutoRefresh(agentId) {
+        // Clear existing interval if any
+        this.stopPreviewAutoRefresh(agentId);
+
+        const intervalId = setInterval(() => {
+            if (this.expandedPreviews.has(agentId)) {
+                this.refreshPreview(agentId);
+            } else {
+                this.stopPreviewAutoRefresh(agentId);
+            }
+        }, 5000);
+
+        this.previewIntervals.set(agentId, intervalId);
+    }
+
+    /**
+     * Stop auto-refresh for preview
+     * @param {string} agentId
+     */
+    stopPreviewAutoRefresh(agentId) {
+        const intervalId = this.previewIntervals.get(agentId);
+        if (intervalId) {
+            clearInterval(intervalId);
+            this.previewIntervals.delete(agentId);
         }
     }
 
@@ -347,6 +678,32 @@ class TmaiRemote {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Submit failed');
+    }
+
+    /**
+     * API: Send text to agent
+     * @param {string} id
+     * @param {string} text
+     */
+    async sendText(id, text) {
+        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/input?token=${this.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        if (!response.ok) throw new Error('Send text failed');
+    }
+
+    /**
+     * API: Get preview content
+     * @param {string} id
+     * @returns {Promise<string>}
+     */
+    async getPreview(id) {
+        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/preview?token=${this.token}`);
+        if (!response.ok) throw new Error('Get preview failed');
+        const data = await response.json();
+        return data.content;
     }
 
     /**

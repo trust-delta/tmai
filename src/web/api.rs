@@ -13,6 +13,19 @@ use crate::detectors::get_detector;
 use crate::state::SharedState;
 use crate::tmux::TmuxClient;
 
+/// Text input request body
+#[derive(Debug, Deserialize)]
+pub struct TextInputRequest {
+    pub text: String,
+}
+
+/// Preview response
+#[derive(Debug, Serialize)]
+pub struct PreviewResponse {
+    pub content: String,
+    pub lines: usize,
+}
+
 /// Shared application state for API handlers
 pub struct ApiState {
     pub app_state: SharedState,
@@ -267,5 +280,54 @@ pub async fn submit_selection(
             StatusCode::OK
         }
         None => StatusCode::NOT_FOUND,
+    }
+}
+
+/// Send text input to an agent
+pub async fn send_text(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<TextInputRequest>,
+) -> StatusCode {
+    // Check if agent exists
+    let agent_exists = {
+        let app_state = state.app_state.read();
+        app_state.agents.contains_key(&id)
+    };
+
+    if !agent_exists {
+        return StatusCode::NOT_FOUND;
+    }
+
+    // Send the text literally followed by Enter in a single command
+    if state.tmux_client.send_text_and_enter(&id, &req.text).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    StatusCode::OK
+}
+
+/// Get preview content (pane capture) for an agent
+pub async fn get_preview(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<PreviewResponse>, StatusCode> {
+    // Check if agent exists
+    let agent_exists = {
+        let app_state = state.app_state.read();
+        app_state.agents.contains_key(&id)
+    };
+
+    if !agent_exists {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Capture pane content
+    match state.tmux_client.capture_pane_plain(&id) {
+        Ok(content) => {
+            let lines = content.lines().count();
+            Ok(Json(PreviewResponse { content, lines }))
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }

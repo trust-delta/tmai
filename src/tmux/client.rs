@@ -207,6 +207,35 @@ impl TmuxClient {
         Ok(())
     }
 
+    /// Sends literal text followed by Enter key
+    pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
+        validate_target(target)?;
+
+        // First send the text literally
+        let output = Command::new("tmux")
+            .args(["send-keys", "-t", target, "-l", "--", text])
+            .output()
+            .context("Failed to execute tmux send-keys (text)")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux send-keys (text) failed for {}: {}", target, stderr);
+        }
+
+        // Then send Enter key separately
+        let output = Command::new("tmux")
+            .args(["send-keys", "-t", target, "Enter"])
+            .output()
+            .context("Failed to execute tmux send-keys (Enter)")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux send-keys (Enter) failed for {}: {}", target, stderr);
+        }
+
+        Ok(())
+    }
+
     /// Selects (focuses) a specific pane
     pub fn select_pane(&self, target: &str) -> Result<()> {
         validate_target(target)?;
