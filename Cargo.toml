@@ -6,6 +6,17 @@ authors = ["TrustDelta"]
 description = "Tmux Multi Agent Interface - Monitor and control AI agents in tmux"
 repository = "https://github.com/trustdelta/tmai"
 license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/trustdelta/tmai"
+keywords = ["tmux", "ai", "claude", "terminal", "tui"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [
+    ".github/",
+    ".claude/",
+    "scripts/",
+    "*.md",
+    "!README.md",
+]
 
 [dependencies]
 ratatui = "0.30"
