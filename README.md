@@ -8,7 +8,7 @@
 ## Features
 
 - **Multi-agent monitoring** - Track multiple AI coding agents (Claude Code, OpenCode, etc.) across tmux panes
-- **Real-time preview** - See agent output without switching panes
+- **Real-time preview** - See agent output without switching panes (with ANSI color support)
 - **Quick approval** - Approve/reject tool calls with single keystrokes
 - **AskUserQuestion support** - Respond to agent questions with number selection
 - **Passthrough mode** - Send keys directly to the agent pane
