@@ -12,7 +12,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::config::ExfilDetectionSettings;
 use crate::wrap::analyzer::Analyzer;
+use crate::wrap::exfil_detector::ExfilDetector;
 use crate::wrap::state_file::{StateFile, WrapState};
 
 /// PTY runner configuration
@@ -27,6 +29,8 @@ pub struct PtyRunnerConfig {
     pub rows: u16,
     /// Initial PTY columns
     pub cols: u16,
+    /// External transmission detection settings
+    pub exfil_detection: ExfilDetectionSettings,
 }
 
 impl Default for PtyRunnerConfig {
@@ -37,6 +41,7 @@ impl Default for PtyRunnerConfig {
             id: uuid::Uuid::new_v4().to_string(),
             rows: 24,
             cols: 80,
+            exfil_detection: ExfilDetectionSettings::default(),
         }
     }
 }
@@ -93,6 +98,9 @@ impl PtyRunner {
         // Create analyzer
         let analyzer = Arc::new(parking_lot::Mutex::new(Analyzer::new(child_pid)));
 
+        // Create exfil detector
+        let exfil_detector = Arc::new(ExfilDetector::new(&self.config.exfil_detection, child_pid));
+
         // Flag for shutdown
         let running = Arc::new(AtomicBool::new(true));
 
@@ -108,6 +116,7 @@ impl PtyRunner {
 
         // Thread: Read from PTY master -> write to stdout
         let analyzer_out = analyzer.clone();
+        let exfil_detector_out = exfil_detector.clone();
         let running_out = running.clone();
         let output_thread = thread::spawn(move || {
             let mut stdout = std::io::stdout();
@@ -126,6 +135,9 @@ impl PtyRunner {
                         // Process for state detection (convert to string, ignoring invalid UTF-8)
                         if let Ok(s) = std::str::from_utf8(&buf[..n]) {
                             analyzer_out.lock().process_output(s);
+
+                            // Check for external transmission commands
+                            exfil_detector_out.check_output(s);
                         }
                     }
                     Err(e) => {

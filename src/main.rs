@@ -57,6 +57,9 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
 
     tracing::info!("Wrapping command: {} {:?}", command, args);
 
+    // Load settings for exfil detection config
+    let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+
     // Set up raw terminal mode
     let _raw_guard = setup_raw_mode()?;
 
@@ -65,6 +68,7 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
         command,
         args,
         id: get_pane_id(),
+        exfil_detection: settings.exfil_detection,
         ..Default::default()
     };
 

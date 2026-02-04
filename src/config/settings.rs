@@ -97,6 +97,10 @@ pub struct Settings {
     /// Web server settings
     #[serde(default)]
     pub web: WebSettings,
+
+    /// External transmission detection settings
+    #[serde(default)]
+    pub exfil_detection: ExfilDetectionSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -169,6 +173,31 @@ impl Default for WebSettings {
     }
 }
 
+/// External transmission detection settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExfilDetectionSettings {
+    /// Enable detection
+    #[serde(default = "default_exfil_enabled")]
+    pub enabled: bool,
+
+    /// Additional commands to detect (beyond built-in list)
+    #[serde(default)]
+    pub additional_commands: Vec<String>,
+}
+
+fn default_exfil_enabled() -> bool {
+    true
+}
+
+impl Default for ExfilDetectionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_exfil_enabled(),
+            additional_commands: Vec::new(),
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -201,6 +230,7 @@ impl Default for Settings {
             agent_patterns: Vec::new(),
             ui: UiSettings::default(),
             web: WebSettings::default(),
+            exfil_detection: ExfilDetectionSettings::default(),
         }
     }
 }

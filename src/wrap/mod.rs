@@ -4,8 +4,10 @@
 //! enabling more accurate state detection than traditional tmux capture-pane approach.
 
 pub mod analyzer;
+pub mod exfil_detector;
 pub mod runner;
 pub mod state_file;
 
+pub use exfil_detector::ExfilDetector;
 pub use runner::PtyRunner;
 pub use state_file::{StateFile, WrapState, WrapStatus};
