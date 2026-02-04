@@ -461,7 +461,7 @@ impl SessionList {
         match status {
             AgentStatus::Idle => Color::Green,
             AgentStatus::Processing { .. } => Color::Yellow,
-            AgentStatus::AwaitingApproval { .. } => Color::Red,
+            AgentStatus::AwaitingApproval { .. } => Color::Magenta,
             AgentStatus::Error { .. } => Color::Red,
             AgentStatus::Unknown => Color::Gray,
         }

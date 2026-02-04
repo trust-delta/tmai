@@ -69,7 +69,7 @@ impl PanePreview {
 
         let border_color = if let Some(agent) = agent {
             match &agent.status {
-                AgentStatus::AwaitingApproval { .. } => Color::Red,
+                AgentStatus::AwaitingApproval { .. } => Color::Magenta,
                 AgentStatus::Error { .. } => Color::Red,
                 AgentStatus::Processing { .. } => Color::Yellow,
                 _ => Color::Gray,
