@@ -77,6 +77,7 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
 
 /// Set up raw terminal mode and return a guard that restores on drop
 fn setup_raw_mode() -> Result<RawModeGuard> {
+    use nix::sys::termios::OutputFlags;
     use std::os::fd::AsFd;
 
     let stdin = std::io::stdin();
@@ -85,6 +86,14 @@ fn setup_raw_mode() -> Result<RawModeGuard> {
 
     let mut raw = original.clone();
     nix::sys::termios::cfmakeraw(&mut raw);
+
+    // Re-enable output post-processing for proper newline handling.
+    // cfmakeraw disables OPOST, which causes LF-only output from the child PTY
+    // to not move the cursor to the beginning of the line (staircase effect).
+    // OPOST + ONLCR ensures LF is converted to CR+LF for correct display.
+    raw.output_flags.insert(OutputFlags::OPOST);
+    raw.output_flags.insert(OutputFlags::ONLCR);
+
     nix::sys::termios::tcsetattr(stdin_fd, nix::sys::termios::SetArg::TCSANOW, &raw)?;
 
     Ok(RawModeGuard { original })
