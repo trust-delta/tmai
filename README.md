@@ -8,9 +8,9 @@
 ## Features
 
 - **Multi-agent monitoring** - Track multiple AI coding agents (Claude Code, OpenCode, etc.) across tmux panes
-- **Single-pane operation** - Approve/reject without attaching to agent panes
+- **Single-pane operation** - Approve without attaching to agent panes
 - **Real-time preview** - See agent output without switching panes (with ANSI color support)
-- **Quick approval** - Approve/reject tool calls with single keystrokes
+- **Quick approval** - Approve tool calls with single keystroke (`y`)
 - **AskUserQuestion support** - Respond to agent questions with number selection
 - **Passthrough mode** - Send keys directly to the agent pane
 - **Status detection** - Automatic detection of idle, processing, and awaiting approval states
@@ -116,7 +116,7 @@ Control your AI agents from your smartphone:
 
 1. Press `r` to display QR code
 2. Scan with your phone
-3. Approve/reject or select options from the web interface
+3. Approve or select options from the web interface
 
 ```toml
 # config.toml
