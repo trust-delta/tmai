@@ -117,11 +117,6 @@ impl StatusBar {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::styled("/", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(
-                "n",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ));
             spans.push(Span::styled(
                 ":Approve ",
                 Style::default().fg(Color::DarkGray),

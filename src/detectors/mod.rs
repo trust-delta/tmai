@@ -51,14 +51,9 @@ pub trait StatusDetector: Send + Sync {
         None
     }
 
-    /// Keys to send for approval
+    /// Keys to send for approval (Enter for cursor-based UI)
     fn approval_keys(&self) -> &str {
-        "y"
-    }
-
-    /// Keys to send for rejection
-    fn rejection_keys(&self) -> &str {
-        "n"
+        "Enter"
     }
 }
 

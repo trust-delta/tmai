@@ -67,10 +67,10 @@ impl WebServer {
             .allow_headers(Any);
 
         // API routes (require authentication)
+        // Note: reject endpoint removed - use select with option number instead
         let api_routes = Router::new()
             .route("/agents", get(api::get_agents))
             .route("/agents/{id}/approve", post(api::approve_agent))
-            .route("/agents/{id}/reject", post(api::reject_agent))
             .route("/agents/{id}/select", post(api::select_choice))
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))

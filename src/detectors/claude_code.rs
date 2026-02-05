@@ -614,12 +614,11 @@ impl StatusDetector for ClaudeCodeDetector {
     }
 
     fn approval_keys(&self) -> &str {
-        "y"
+        // Claude Code uses cursor-based selection UI
+        // Cursor is already on "Yes", just press Enter to confirm
+        "Enter"
     }
-
-    fn rejection_keys(&self) -> &str {
-        "n"
-    }
+    // Note: Rejection removed - use number keys, input mode, or passthrough mode
 }
 
 /// Get the last n bytes of a string safely
@@ -1060,6 +1059,21 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
             }
             _ => panic!("Expected Processing, got {:?}", status),
         }
+    }
+
+    #[test]
+    fn test_simple_yes_no_proceed() {
+        let detector = ClaudeCodeDetector::new();
+        // Exact format reported by user as being detected as Idle
+        let content = r#" Do you want to proceed?
+ ❯ 1. Yes
+   2. No"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            status
+        );
     }
 
     #[test]

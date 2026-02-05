@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4]
+
+### Changed
+- Approval key now sends Enter instead of 'y' (matches Claude Code's cursor-based UI)
+- Removed rejection key 'n' (use number keys, input mode, or passthrough mode instead)
+
+### Added
+- Comprehensive documentation in `doc/` (English) and `doc/ja/` (Japanese)
+  - Feature guides: PTY wrapping, AskUserQuestion, Exfil detection, Web Remote
+  - Workflow guides: Single/Multi-agent monitoring, Worktree parallel dev, Remote approval
+  - Reference: Keybindings, Configuration, Web API
+
 ## [0.1.3]
 
 ### Added

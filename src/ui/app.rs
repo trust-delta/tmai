@@ -448,26 +448,6 @@ impl App {
                 }
             }
 
-            // Rejection key (n) - send to agent when awaiting approval
-            KeyCode::Char('n') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    let agent_info = state.agents.get(&target).map(|a| {
-                        (
-                            matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                            a.agent_type.clone(),
-                        )
-                    });
-                    if let Some((true, agent_type)) = agent_info {
-                        drop(state);
-                        let detector = get_detector(&agent_type);
-                        let _ = self
-                            .tmux_client
-                            .send_keys(&target, detector.rejection_keys());
-                    }
-                }
-            }
-
             // Enter key - handle CreateNew selection, GroupHeader toggle, or multi-select confirmation
             KeyCode::Enter => {
                 // Check the selected entry type

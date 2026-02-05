@@ -322,13 +322,11 @@ class TmaiRemote {
                 const multiSelect = agent.status.multi_select || false;
                 actionsHtml = this.renderChoices(agent.id, agent.status.choices, multiSelect);
             } else {
+                // Only approve button - for other options use number keys or input mode
                 actionsHtml = `
                     <div class="agent-actions">
                         <button class="btn btn-approve" data-action="approve" data-id="${agent.id}">
                             Approve (y)
-                        </button>
-                        <button class="btn btn-reject" data-action="reject" data-id="${agent.id}">
-                            Reject (n)
                         </button>
                     </div>
                 `;
@@ -464,10 +462,6 @@ class TmaiRemote {
                 case 'approve':
                     await this.approve(id);
                     this.showToast('Approved', 'success');
-                    break;
-                case 'reject':
-                    await this.reject(id);
-                    this.showToast('Rejected', 'success');
                     break;
                 case 'select':
                     const choice = parseInt(btn.dataset.choice);
@@ -640,15 +634,7 @@ class TmaiRemote {
         if (!response.ok) throw new Error('Approve failed');
     }
 
-    /**
-     * API: Reject agent
-     */
-    async reject(id) {
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/reject?token=${this.token}`, {
-            method: 'POST'
-        });
-        if (!response.ok) throw new Error('Reject failed');
-    }
+    // Note: reject removed - use select with option number instead
 
     /**
      * API: Select choice

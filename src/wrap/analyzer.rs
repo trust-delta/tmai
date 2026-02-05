@@ -522,4 +522,24 @@ Which option?
         assert!(!multi_select);
         assert_eq!(cursor, 1);
     }
+
+    #[test]
+    fn test_simple_yes_no_user_question() {
+        let mut analyzer = Analyzer::new(1234);
+        // Exact format reported by user
+        let content = r#" Do you want to proceed?
+ ❯ 1. Yes
+   2. No"#;
+        analyzer.process_output(content);
+
+        // Debug: print choice pattern match
+        let lines: Vec<&str> = content.lines().collect();
+        for line in &lines {
+            let matched = analyzer.patterns.choice_pattern.captures(line);
+            eprintln!("Line: {:?} -> Match: {:?}", line, matched.map(|c| c[0].to_string()));
+        }
+
+        let detected = analyzer.detect_user_question(&analyzer.output_buffer);
+        assert!(detected, "Should detect as UserQuestion");
+    }
 }

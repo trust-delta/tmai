@@ -112,11 +112,7 @@ impl StatusDetector for GeminiDetector {
     }
 
     fn approval_keys(&self) -> &str {
-        "y"
-    }
-
-    fn rejection_keys(&self) -> &str {
-        "n"
+        "Enter"
     }
 }
 

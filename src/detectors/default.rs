@@ -113,11 +113,7 @@ impl StatusDetector for DefaultDetector {
     }
 
     fn approval_keys(&self) -> &str {
-        "y"
-    }
-
-    fn rejection_keys(&self) -> &str {
-        "n"
+        "Enter"
     }
 }
 

@@ -163,33 +163,7 @@ pub async fn approve_agent(
     }
 }
 
-/// Reject an agent action (send 'n')
-pub async fn reject_agent(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-) -> StatusCode {
-    let agent_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).map(|a| {
-            (
-                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                a.agent_type.clone(),
-            )
-        })
-    };
-
-    match agent_info {
-        Some((true, agent_type)) => {
-            let detector = get_detector(&agent_type);
-            match state.tmux_client.send_keys(&id, detector.rejection_keys()) {
-                Ok(_) => StatusCode::OK,
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            }
-        }
-        Some((false, _)) => StatusCode::BAD_REQUEST,
-        None => StatusCode::NOT_FOUND,
-    }
-}
+// Note: reject_agent removed - use select_choice with option number instead
 
 /// Select a choice for UserQuestion
 pub async fn select_choice(

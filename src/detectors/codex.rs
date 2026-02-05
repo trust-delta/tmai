@@ -299,11 +299,7 @@ impl StatusDetector for CodexDetector {
     }
 
     fn approval_keys(&self) -> &str {
-        "y"
-    }
-
-    fn rejection_keys(&self) -> &str {
-        "n"
+        "Enter"
     }
 }
 

@@ -109,6 +109,10 @@ impl HelpScreen {
             Self::key_line("x", "Kill the selected pane (with confirmation)"),
             Self::description_line("  Terminates the agent process and closes the pane"),
             Line::from(""),
+            Self::section_header("Approval"),
+            Self::key_line("y", "Approve (send Enter to confirm selection)"),
+            Self::description_line("  For other options, use number keys or input mode"),
+            Line::from(""),
             Self::section_header("AskUserQuestion (Selection Dialogs)"),
             Self::key_line(
                 "1-9 / １-９",
