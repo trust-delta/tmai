@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::agents::{
-    AgentStatus, AgentTeamInfo, ApprovalType, DetectionSource, MonitoredAgent, TeamTaskSummaryItem,
+    AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
+    TeamTaskSummaryItem,
 };
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::{get_detector, DetectionContext};
@@ -33,9 +34,11 @@ pub struct Poller {
     claude_settings_cache: Arc<ClaudeSettingsCache>,
     settings: Settings,
     state: SharedState,
-    /// Current session name (captured at startup)
+    /// Current session name (captured at startup, unused while scope is disabled)
+    #[allow(dead_code)]
     current_session: Option<String>,
-    /// Current window index (captured at startup)
+    /// Current window index (captured at startup, unused while scope is disabled)
+    #[allow(dead_code)]
     current_window: Option<u32>,
 }
 
@@ -102,7 +105,7 @@ impl Poller {
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
 
             match self.poll_once().await {
-                Ok(mut agents) => {
+                Ok((mut agents, all_panes)) => {
                     backoff_ms = 0;
                     last_error = None;
                     last_error_at = None;
@@ -113,11 +116,13 @@ impl Poller {
                         self.process_cache.cleanup();
                     }
 
-                    // Team scanning at configured interval
-                    if self.settings.teams.enabled
-                        && poll_count.is_multiple_of(self.settings.teams.scan_interval)
-                    {
-                        self.scan_and_apply_teams(&mut agents);
+                    // Team scanning at configured interval, or re-apply cached info
+                    if self.settings.teams.enabled {
+                        if poll_count.is_multiple_of(self.settings.teams.scan_interval) {
+                            self.scan_and_apply_teams(&mut agents, &all_panes);
+                        } else {
+                            self.apply_cached_team_info(&mut agents);
+                        }
                     }
 
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
@@ -133,10 +138,8 @@ impl Poller {
                         _ => true,
                     };
 
-                    if should_send {
-                        if tx.send(PollMessage::Error(err_str.clone())).await.is_err() {
-                            break;
-                        }
+                    if should_send && tx.send(PollMessage::Error(err_str.clone())).await.is_err() {
+                        break;
                     }
 
                     last_error = Some(err_str);
@@ -152,26 +155,20 @@ impl Poller {
     }
 
     /// Perform a single poll
-    async fn poll_once(&self) -> Result<Vec<MonitoredAgent>> {
-        // List all panes
-        let panes = if self.settings.attached_only {
-            self.client.list_panes()?
-        } else {
-            self.client.list_all_panes()?
-        };
+    ///
+    /// Returns `(agents, all_panes)` where `all_panes` includes detached sessions
+    /// for use in team scanning.
+    async fn poll_once(&self) -> Result<(Vec<MonitoredAgent>, Vec<PaneInfo>)> {
+        // Always get all panes (needed for team scanning)
+        let all_panes = self.client.list_all_panes()?;
 
-        // Get current monitor scope and selected agent ID from state
-        let (monitor_scope, selected_agent_id) = {
+        // Use all panes (scope filtering temporarily disabled — always AllSessions)
+        let panes = all_panes.clone();
+
+        let selected_agent_id = {
             let state = self.state.read();
-            let selected_id = state.agent_order.get(state.selected_index).cloned();
-            (state.monitor_scope, selected_id)
+            state.agent_order.get(state.selected_index).cloned()
         };
-
-        // Filter panes based on scope
-        let panes: Vec<PaneInfo> = panes
-            .into_iter()
-            .filter(|pane| self.matches_scope(pane, monitor_scope))
-            .collect();
 
         // Filter and convert to monitored agents
         let mut agents = Vec::new();
@@ -273,11 +270,14 @@ impl Poller {
                 .then(a.pane_index.cmp(&b.pane_index))
         });
 
-        Ok(agents)
+        Ok((agents, all_panes))
     }
 
     /// Scan for teams and apply team info to agents
-    fn scan_and_apply_teams(&self, agents: &mut [MonitoredAgent]) {
+    ///
+    /// Also performs cross-session scanning and creates virtual agents
+    /// for team members whose panes are not found.
+    fn scan_and_apply_teams(&self, agents: &mut Vec<MonitoredAgent>, all_panes: &[PaneInfo]) {
         let team_configs = match teams::scan_teams() {
             Ok(configs) => configs,
             Err(_) => return,
@@ -290,9 +290,15 @@ impl Poller {
             return;
         }
 
-        // Collect agent pids for mapping
+        // Collect agent pids for mapping (from already-detected agents)
         let agent_pids: Vec<(String, u32)> =
             agents.iter().map(|a| (a.target.clone(), a.pid)).collect();
+
+        // Also collect pids from all panes for broader matching
+        let all_pane_pids: Vec<(String, u32)> = all_panes
+            .iter()
+            .map(|p| (p.target.clone(), p.pid))
+            .collect();
 
         let mut snapshots: HashMap<String, TeamSnapshot> = HashMap::new();
 
@@ -300,66 +306,115 @@ impl Poller {
             // Scan tasks for this team
             let tasks = teams::scan_tasks(&team_config.team_name).unwrap_or_default();
 
-            // Map members to panes
-            let member_panes = teams::map_members_to_panes(team_config, &agent_pids);
+            // Map members to panes using all pane pids (broader scope)
+            let member_panes = teams::map_members_to_panes(team_config, &all_pane_pids);
 
-            // Also try env var based matching via process cache
-            let mut env_mapping: HashMap<String, String> = HashMap::new();
-            for (target, pid) in &agent_pids {
-                if let Some(task_list_id) = self
+            // Try cmdline-based matching: child process cmdline contains --agent-id
+            let mut cmdline_mapping: HashMap<String, String> = HashMap::new();
+            for (target, pid) in agent_pids.iter().chain(all_pane_pids.iter()) {
+                // Check child cmdline (pane pid is usually bash, child is claude)
+                let cmdline = self
                     .process_cache
-                    .get_env_var(*pid, "CLAUDE_CODE_TASK_LIST_ID")
-                {
-                    if task_list_id == team_config.team_name {
-                        // Found a match - try to identify which member
-                        for member in &team_config.members {
-                            if let Some(agent_id) =
-                                self.process_cache.get_env_var(*pid, "CLAUDE_AGENT_ID")
-                            {
-                                if agent_id == member.agent_id {
-                                    env_mapping.insert(member.name.clone(), target.clone());
-                                    break;
-                                }
-                            }
+                    .get_child_cmdline(*pid)
+                    .or_else(|| self.process_cache.get_cmdline(*pid));
+                if let Some(cl) = cmdline {
+                    for member in &team_config.members {
+                        // Match --agent-id member_agent_id in cmdline
+                        let marker = format!("--agent-id {}", member.agent_id);
+                        if cl.contains(&marker) {
+                            cmdline_mapping.insert(member.name.clone(), target.clone());
+                            break;
                         }
                     }
                 }
             }
 
-            // Merge mappings (env-based takes priority)
+            // Merge mappings (cmdline-based takes priority over heuristic)
             let mut final_mapping = member_panes;
-            for (name, target) in env_mapping {
+            for (name, target) in cmdline_mapping {
                 final_mapping.insert(name, target);
             }
 
-            // Apply team info to matching agents
+            // Fallback: match unmapped leader by cwd (leader has no --agent-id flag)
+            if let Some(leader) = team_config.members.first() {
+                if !final_mapping.contains_key(&leader.name) {
+                    if let Some(leader_cwd) = &leader.cwd {
+                        let mapped_targets: std::collections::HashSet<&str> =
+                            final_mapping.values().map(|s| s.as_str()).collect();
+                        // Find an agent with matching cwd that isn't already mapped
+                        if let Some(agent) = agents.iter().find(|a| {
+                            a.cwd == *leader_cwd
+                                && !a.is_virtual
+                                && !mapped_targets.contains(a.target.as_str())
+                                && a.team_info.is_none()
+                        }) {
+                            final_mapping.insert(leader.name.clone(), agent.target.clone());
+                        }
+                    }
+                }
+            }
+
+            // Apply team info to matching agents and detect out-of-scope panes
             for (member_name, pane_target) in &final_mapping {
+                let is_lead = team_config
+                    .members
+                    .first()
+                    .map(|m| &m.name == member_name)
+                    .unwrap_or(false);
+
+                let team_info =
+                    build_member_team_info(&team_config.team_name, member_name, is_lead, &tasks);
+
                 if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
+                    // Agent already in list — apply team info
+                    agent.team_info = Some(team_info);
+                } else if let Some(pane) = all_panes.iter().find(|p| &p.target == pane_target) {
+                    // Pane found but not in agents list (out of scope) — add as new agent
+                    let agent_type = pane.detect_agent_type().unwrap_or(AgentType::ClaudeCode);
+                    let mut new_agent = MonitoredAgent::new(
+                        pane.target.clone(),
+                        agent_type,
+                        pane.title.clone(),
+                        pane.cwd.clone(),
+                        pane.pid,
+                        pane.session.clone(),
+                        pane.window_name.clone(),
+                        pane.window_index,
+                        pane.pane_index,
+                    );
+                    new_agent.team_info = Some(team_info);
+                    agents.push(new_agent);
+                }
+            }
+
+            // Determine cwd for virtual agents from any matched teammate
+            let team_cwd: String = final_mapping
+                .values()
+                .find_map(|target| agents.iter().find(|a| &a.target == target))
+                .map(|a| a.cwd.clone())
+                .unwrap_or_default();
+
+            // Create virtual agents for members without detected panes
+            for member in &team_config.members {
+                if !final_mapping.contains_key(&member.name) {
                     let is_lead = team_config
                         .members
                         .first()
-                        .map(|m| &m.name == member_name)
+                        .map(|m| m.name == member.name)
                         .unwrap_or(false);
 
-                    // Find current task for this member
-                    let current_task = tasks
-                        .iter()
-                        .find(|t| {
-                            t.owner.as_deref() == Some(member_name)
-                                && t.status == TaskStatus::InProgress
-                        })
-                        .map(|t| TeamTaskSummaryItem {
-                            id: t.id.clone(),
-                            subject: t.subject.clone(),
-                            status: t.status,
-                        });
-
-                    agent.team_info = Some(AgentTeamInfo {
-                        team_name: team_config.team_name.clone(),
-                        member_name: member_name.clone(),
+                    let team_info = build_member_team_info(
+                        &team_config.team_name,
+                        &member.name,
                         is_lead,
-                        current_task,
-                    });
+                        &tasks,
+                    );
+                    agents.push(create_virtual_agent(
+                        &team_config.team_name,
+                        &member.name,
+                        team_info,
+                        &team_cwd,
+                    ));
                 }
             }
 
@@ -379,7 +434,75 @@ impl Poller {
         state.teams = snapshots;
     }
 
-    /// Check if a pane matches the current monitor scope
+    /// Re-apply cached team info from stored snapshots on non-scan polls
+    ///
+    /// Since `poll_once()` creates fresh `MonitoredAgent` instances every poll,
+    /// team info would be lost on polls where `scan_and_apply_teams` doesn't run.
+    /// This method uses the persisted `TeamSnapshot` data to re-apply team info.
+    fn apply_cached_team_info(&self, agents: &mut Vec<MonitoredAgent>) {
+        let state = self.state.read();
+        if state.teams.is_empty() {
+            return;
+        }
+
+        for snapshot in state.teams.values() {
+            for (member_name, pane_target) in &snapshot.member_panes {
+                let is_lead = snapshot
+                    .config
+                    .members
+                    .first()
+                    .map(|m| &m.name == member_name)
+                    .unwrap_or(false);
+
+                let team_info = build_member_team_info(
+                    &snapshot.config.team_name,
+                    member_name,
+                    is_lead,
+                    &snapshot.tasks,
+                );
+
+                if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
+                    agent.team_info = Some(team_info);
+                }
+            }
+
+            // Determine cwd for virtual agents from any matched teammate
+            let team_cwd: String = snapshot
+                .member_panes
+                .values()
+                .find_map(|target| agents.iter().find(|a| &a.target == target))
+                .map(|a| a.cwd.clone())
+                .unwrap_or_default();
+
+            // Re-create virtual agents for unmapped members
+            for member in &snapshot.config.members {
+                if !snapshot.member_panes.contains_key(&member.name) {
+                    let is_lead = snapshot
+                        .config
+                        .members
+                        .first()
+                        .map(|m| m.name == member.name)
+                        .unwrap_or(false);
+
+                    let team_info = build_member_team_info(
+                        &snapshot.config.team_name,
+                        &member.name,
+                        is_lead,
+                        &snapshot.tasks,
+                    );
+                    agents.push(create_virtual_agent(
+                        &snapshot.config.team_name,
+                        &member.name,
+                        team_info,
+                        &team_cwd,
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Check if a pane matches the current monitor scope (temporarily unused)
+    #[allow(dead_code)]
     fn matches_scope(&self, pane: &PaneInfo, scope: MonitorScope) -> bool {
         match scope {
             MonitorScope::AllSessions => true,
@@ -451,6 +574,57 @@ fn strip_ansi(input: &str) -> String {
 
     let without_osc = OSC_RE.replace_all(input, "");
     CSI_RE.replace_all(&without_osc, "").to_string()
+}
+
+/// Build `AgentTeamInfo` for a team member, finding their current in-progress task.
+fn build_member_team_info(
+    team_name: &str,
+    member_name: &str,
+    is_lead: bool,
+    tasks: &[teams::TeamTask],
+) -> AgentTeamInfo {
+    let current_task = tasks
+        .iter()
+        .find(|t| t.owner.as_deref() == Some(member_name) && t.status == TaskStatus::InProgress)
+        .map(|t| TeamTaskSummaryItem {
+            id: t.id.clone(),
+            subject: t.subject.clone(),
+            status: t.status,
+        });
+
+    AgentTeamInfo {
+        team_name: team_name.to_string(),
+        member_name: member_name.to_string(),
+        is_lead,
+        current_task,
+    }
+}
+
+/// Create a virtual `MonitoredAgent` for a team member whose pane was not found.
+///
+/// `cwd` is inherited from a matched teammate so virtual agents group correctly.
+fn create_virtual_agent(
+    team_name: &str,
+    member_name: &str,
+    team_info: AgentTeamInfo,
+    cwd: &str,
+) -> MonitoredAgent {
+    let virtual_target = format!("~team:{}:{}", team_name, member_name);
+    let mut agent = MonitoredAgent::new(
+        virtual_target,
+        AgentType::ClaudeCode,
+        String::new(),
+        cwd.to_string(),
+        0,
+        String::new(),
+        String::new(),
+        0,
+        0,
+    );
+    agent.status = AgentStatus::Offline;
+    agent.is_virtual = true;
+    agent.team_info = Some(team_info);
+    agent
 }
 
 /// Convert WrapState from state file to AgentStatus

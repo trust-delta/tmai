@@ -27,7 +27,7 @@ impl QrScreen {
                 .map(|code| {
                     let width = code.width();
                     // Height in terminal lines (2 pixels per line with half-blocks)
-                    let height = (width + 1) / 2;
+                    let height = width.div_ceil(2);
                     (code, width, height)
                 })
         });
@@ -39,7 +39,9 @@ impl QrScreen {
             .unwrap_or((21, 11));
 
         // Popup size: QR + padding + title/url/instructions
-        let popup_width = (qr_width as u16 + 4).max(35).min(area.width.saturating_sub(2));
+        let popup_width = (qr_width as u16 + 4)
+            .max(35)
+            .min(area.width.saturating_sub(2));
         let popup_height = (qr_height as u16 + 6).min(area.height.saturating_sub(2));
 
         let popup_x = (area.width.saturating_sub(popup_width)) / 2;
@@ -82,11 +84,11 @@ impl QrScreen {
 
         // Layout
         let chunks = Layout::vertical([
-            Constraint::Length(1),          // Title
-            Constraint::Length(qr_height),  // QR code
-            Constraint::Length(1),          // Spacer
-            Constraint::Length(1),          // URL
-            Constraint::Min(1),             // Instructions
+            Constraint::Length(1),         // Title
+            Constraint::Length(qr_height), // QR code
+            Constraint::Length(1),         // Spacer
+            Constraint::Length(1),         // URL
+            Constraint::Min(1),            // Instructions
         ])
         .split(area);
 
@@ -104,10 +106,11 @@ impl QrScreen {
         let qr_widget = Paragraph::new(qr_text).alignment(Alignment::Center);
         frame.render_widget(qr_widget, chunks[1]);
 
-        // URL (truncated if needed)
-        let max_len = area.width as usize - 2;
-        let display_url = if url.len() > max_len {
-            format!("{}...", &url[..max_len.saturating_sub(3)])
+        // URL (truncated if needed, Unicode-safe)
+        let max_chars = area.width.saturating_sub(2) as usize;
+        let display_url = if url.chars().count() > max_chars {
+            let truncated: String = url.chars().take(max_chars.saturating_sub(3)).collect();
+            format!("{}...", truncated)
         } else {
             url.to_string()
         };
@@ -176,9 +179,9 @@ impl QrScreen {
                 };
 
                 let ch = match (top, bottom) {
-                    (true, true) => '\u{2588}',   // Full block █
-                    (true, false) => '\u{2580}',  // Upper half ▀
-                    (false, true) => '\u{2584}',  // Lower half ▄
+                    (true, true) => '\u{2588}',  // Full block █
+                    (true, false) => '\u{2580}', // Upper half ▀
+                    (false, true) => '\u{2584}', // Lower half ▄
                     (false, false) => ' ',
                 };
                 result.push(ch);

@@ -92,7 +92,7 @@ impl Analyzer {
         let team_member_name = std::env::var("CLAUDE_AGENT_NAME").ok();
         let is_team_lead = team_member_name
             .as_deref()
-            .map(|n| n.contains("lead"))
+            .map(|n| n == "team-lead" || n == "lead" || n.ends_with("-lead"))
             .unwrap_or(false);
 
         let now = Instant::now();

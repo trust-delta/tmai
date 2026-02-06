@@ -194,6 +194,7 @@ main {
 .agent-status.awaiting_approval { background: var(--warning); color: #000; }
 .agent-status.error { background: var(--error); }
 .agent-status.unknown { background: var(--text-secondary); }
+.agent-status.offline { color: var(--text-secondary); }
 
 .agent-info {
     font-size: 0.85rem;

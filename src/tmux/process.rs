@@ -2,6 +2,14 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+/// Cache key offset for child process cmdline lookups.
+/// We store direct PID cmdline at `pid`, child cmdline at `pid + CHILD_CACHE_OFFSET`,
+/// to avoid separate HashMaps while keeping O(1) lookup.
+const CHILD_CACHE_OFFSET: u32 = 1_000_000_000;
+
+/// Cache key offset for environment variable lookups.
+const ENV_CACHE_OFFSET: u32 = 2_000_000_000;
+
 /// Cached process information
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
@@ -77,7 +85,7 @@ impl ProcessCache {
     /// Get cmdline of first child process (for detecting agents running under shell)
     pub fn get_child_cmdline(&self, pid: u32) -> Option<String> {
         // Check cache first with child_ prefix
-        let cache_key = pid + 1_000_000_000; // Use offset to differentiate from direct pid
+        let cache_key = pid + CHILD_CACHE_OFFSET;
         {
             let cache = self.cache.read();
             if let Some(info) = cache.get(&cache_key) {
@@ -121,12 +129,9 @@ impl ProcessCache {
     /// Reads `/proc/{pid}/environ` and extracts the value of the given variable.
     /// Returns None on any error (permission denied, process gone, etc.)
     pub fn get_env_var(&self, pid: u32, var_name: &str) -> Option<String> {
-        // Use cache key with env_ prefix to differentiate from cmdline cache
-        let cache_key = pid + 2_000_000_000; // Use different offset from child cmdline
-        let cache_subkey = format!("{}:{}", cache_key, var_name);
+        let _cache_key = pid + ENV_CACHE_OFFSET;
 
-        // Check cache first (using the hash of var_name + pid as key)
-        // For simplicity, just read from /proc directly since env reads are infrequent
+        // Read from /proc directly since env reads are infrequent
         let environ_path = format!("/proc/{}/environ", pid);
         let content = std::fs::read(&environ_path).ok()?;
 
@@ -140,9 +145,6 @@ impl ProcessCache {
                 }
             }
         }
-
-        // Suppress unused variable warning
-        let _ = cache_subkey;
 
         None
     }

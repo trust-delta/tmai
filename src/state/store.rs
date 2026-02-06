@@ -291,6 +291,8 @@ pub struct AppState {
     pub show_team_overview: bool,
     /// Whether the task overlay is shown
     pub show_task_overlay: bool,
+    /// Task overlay scroll offset
+    pub task_overlay_scroll: u16,
     /// Team overview scroll offset
     pub team_overview_scroll: u16,
 }
@@ -330,6 +332,7 @@ impl AppState {
             teams: HashMap::new(),
             show_team_overview: false,
             show_task_overlay: false,
+            task_overlay_scroll: 0,
             team_overview_scroll: 0,
         }
     }
@@ -428,6 +431,8 @@ impl AppState {
                 existing.window_index = agent.window_index;
                 existing.pane_index = agent.pane_index;
                 existing.team_info = agent.team_info;
+                existing.is_virtual = agent.is_virtual;
+                existing.detection_source = agent.detection_source;
             } else {
                 self.agents.insert(id.clone(), agent);
             }
@@ -522,6 +527,94 @@ impl AppState {
                 (None, None) => std::cmp::Ordering::Equal,
             }
         });
+
+        // Post-sort: nest team members under their leader
+        self.nest_team_members();
+    }
+
+    /// Reorder agent_order so team members appear directly after their leader
+    fn nest_team_members(&mut self) {
+        let agents = &self.agents;
+
+        // Collect team info: team_name → (leader_id, [(member_name, member_id)])
+        let mut team_leaders: HashMap<String, String> = HashMap::new();
+        let mut team_members: HashMap<String, Vec<(String, String)>> = HashMap::new();
+
+        for id in &self.agent_order {
+            if let Some(agent) = agents.get(id) {
+                if let Some(ref ti) = agent.team_info {
+                    if ti.is_lead {
+                        team_leaders.insert(ti.team_name.clone(), id.clone());
+                    } else {
+                        team_members
+                            .entry(ti.team_name.clone())
+                            .or_default()
+                            .push((ti.member_name.clone(), id.clone()));
+                    }
+                }
+            }
+        }
+
+        // If no teams found, skip
+        if team_leaders.is_empty() && team_members.is_empty() {
+            return;
+        }
+
+        // For teams without a detected leader, use the first member as implicit leader
+        for (team_name, members) in &team_members {
+            if !team_leaders.contains_key(team_name) {
+                if let Some((_, first_member_id)) = members.first() {
+                    team_leaders.insert(team_name.clone(), first_member_id.clone());
+                }
+            }
+        }
+
+        // Remove implicit leaders from team_members so they don't get skipped
+        for (team_name, leader_id) in &team_leaders {
+            if let Some(members) = team_members.get_mut(team_name) {
+                members.retain(|(_, id)| id != leader_id);
+            }
+        }
+
+        // Sort members by name for stable ordering
+        for members in team_members.values_mut() {
+            members.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+
+        // Build new order: for each item, if it's a leader, insert its members right after
+        let member_ids: std::collections::HashSet<String> = team_members
+            .values()
+            .flatten()
+            .map(|(_, id)| id.clone())
+            .collect();
+
+        let mut new_order = Vec::with_capacity(self.agent_order.len());
+        for id in &self.agent_order {
+            // Skip members here (they'll be inserted after their leader)
+            if member_ids.contains(id) {
+                continue;
+            }
+
+            new_order.push(id.clone());
+
+            // If this is a leader, insert members after it
+            if let Some(agent) = agents.get(id) {
+                if let Some(ref ti) = agent.team_info {
+                    if let Some(members) = team_members.get(&ti.team_name) {
+                        if team_leaders.get(&ti.team_name) == Some(id) {
+                            for (_, member_id) in members {
+                                // Don't add the leader again if it happens to be in members list
+                                if member_id != id {
+                                    new_order.push(member_id.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.agent_order = new_order;
     }
 
     /// Get priority for status sorting (lower = higher priority)
@@ -531,7 +624,8 @@ impl AppState {
             crate::agents::AgentStatus::Error { .. } => 1,
             crate::agents::AgentStatus::Processing { .. } => 2,
             crate::agents::AgentStatus::Idle => 3,
-            crate::agents::AgentStatus::Unknown => 4,
+            crate::agents::AgentStatus::Offline => 4,
+            crate::agents::AgentStatus::Unknown => 5,
         }
     }
 

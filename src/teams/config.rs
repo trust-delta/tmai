@@ -30,6 +30,9 @@ pub struct TeamMember {
     /// Role/type of the agent
     #[serde(default, rename = "agentType")]
     pub agent_type: Option<String>,
+    /// Working directory of the member
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 /// Read a team config from a config.json file

@@ -142,7 +142,9 @@ impl TaskOverlay {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Cyan));
 
-        let paragraph = Paragraph::new(lines).block(block);
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .scroll((state.task_overlay_scroll, 0));
 
         frame.render_widget(paragraph, popup_area);
     }

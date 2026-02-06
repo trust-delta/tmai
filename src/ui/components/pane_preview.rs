@@ -31,6 +31,38 @@ impl PanePreview {
         let agent = state.selected_agent();
 
         let (title, text) = if let Some(agent) = agent {
+            // Virtual agent (offline team member) - show placeholder
+            if agent.is_virtual {
+                let member_label = agent
+                    .team_info
+                    .as_ref()
+                    .map(|ti| format!("{}/{}", ti.team_name, ti.member_name))
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let title = format!(" {} (Offline) ", member_label);
+                let text = Text::from(vec![
+                    Line::from(""),
+                    Line::from(vec![Span::styled(
+                        "  Team member not connected",
+                        Style::default().fg(Color::DarkGray),
+                    )]),
+                    Line::from(""),
+                    Line::from(vec![Span::styled(
+                        "  Pane not found — member may not have started yet or has exited.",
+                        Style::default().fg(Color::DarkGray),
+                    )]),
+                ]);
+
+                let block = Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Color::DarkGray));
+
+                let paragraph = Paragraph::new(text).block(block);
+                frame.render_widget(paragraph, area);
+                return;
+            }
+
             let title = format!(" {} ({}) ", agent.target, agent.agent_type.short_name());
 
             let available_height = area.height.saturating_sub(2) as usize;
@@ -72,6 +104,7 @@ impl PanePreview {
                 AgentStatus::AwaitingApproval { .. } => Color::Magenta,
                 AgentStatus::Error { .. } => Color::Red,
                 AgentStatus::Processing { .. } => Color::Yellow,
+                AgentStatus::Offline => Color::DarkGray,
                 _ => Color::Gray,
             }
         } else {

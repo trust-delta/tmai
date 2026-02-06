@@ -1,7 +1,7 @@
 //! Team scanning and pane-to-teammate mapping
 
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use super::config::{read_team_config, TeamConfig};
@@ -97,8 +97,8 @@ fn heuristic_mapping(
     agent_pids: &[(String, u32)],
     mapping: &mut HashMap<String, String>,
 ) {
-    // Group panes by session
-    let mut session_panes: HashMap<String, Vec<&str>> = HashMap::new();
+    // Group panes by session (BTreeMap for deterministic iteration order)
+    let mut session_panes: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for (target, _) in agent_pids {
         if let Some(session) = target.split(':').next() {
             session_panes
@@ -106,6 +106,11 @@ fn heuristic_mapping(
                 .or_default()
                 .push(target);
         }
+    }
+
+    // Sort panes within each session for stable ordering
+    for panes in session_panes.values_mut() {
+        panes.sort();
     }
 
     // Find a session where pane count matches member count
@@ -187,11 +192,13 @@ mod tests {
                     name: "lead".to_string(),
                     agent_id: "id1".to_string(),
                     agent_type: None,
+                    cwd: None,
                 },
                 super::super::config::TeamMember {
                     name: "dev".to_string(),
                     agent_id: "id2".to_string(),
                     agent_type: None,
+                    cwd: None,
                 },
             ],
         };
@@ -213,11 +220,13 @@ mod tests {
                     name: "lead".to_string(),
                     agent_id: "id1".to_string(),
                     agent_type: None,
+                    cwd: None,
                 },
                 super::super::config::TeamMember {
                     name: "dev".to_string(),
                     agent_id: "id2".to_string(),
                     agent_type: None,
+                    cwd: None,
                 },
             ],
         };

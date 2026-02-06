@@ -14,6 +14,11 @@ use crate::state::SharedState;
 use crate::teams::TaskStatus;
 use crate::tmux::TmuxClient;
 
+/// Helper to create JSON error responses
+fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
+    (status, Json(serde_json::json!({"error": message})))
+}
+
 /// Text input request body
 #[derive(Debug, Deserialize)]
 pub struct TextInputRequest {
@@ -43,6 +48,7 @@ pub struct AgentInfo {
     pub session: String,
     pub window_name: String,
     pub needs_attention: bool,
+    pub is_virtual: bool,
     pub team: Option<AgentTeamInfoResponse>,
 }
 
@@ -121,6 +127,8 @@ pub enum StatusInfo {
     },
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "offline")]
+    Offline,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -163,6 +171,7 @@ impl From<&AgentStatus> for StatusInfo {
             AgentStatus::Error { message } => StatusInfo::Error {
                 message: message.clone(),
             },
+            AgentStatus::Offline => StatusInfo::Offline,
             AgentStatus::Unknown => StatusInfo::Unknown,
         }
     }
@@ -185,6 +194,23 @@ fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoR
     }
 }
 
+/// Build AgentInfo from a MonitoredAgent
+///
+/// Shared helper used by both the REST API and SSE events.
+pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentInfo {
+    AgentInfo {
+        id: agent.id.clone(),
+        agent_type: agent.agent_type.short_name().to_string(),
+        status: StatusInfo::from(&agent.status),
+        cwd: agent.cwd.clone(),
+        session: agent.session.clone(),
+        window_name: agent.window_name.clone(),
+        needs_attention: agent.status.needs_attention(),
+        is_virtual: agent.is_virtual,
+        team: agent.team_info.as_ref().map(convert_team_info),
+    }
+}
+
 /// Get all agents
 pub async fn get_agents(State(state): State<Arc<ApiState>>) -> Json<Vec<AgentInfo>> {
     let app_state = state.app_state.read();
@@ -192,16 +218,7 @@ pub async fn get_agents(State(state): State<Arc<ApiState>>) -> Json<Vec<AgentInf
         .agent_order
         .iter()
         .filter_map(|id| app_state.agents.get(id))
-        .map(|agent| AgentInfo {
-            id: agent.id.clone(),
-            agent_type: agent.agent_type.short_name().to_string(),
-            status: StatusInfo::from(&agent.status),
-            cwd: agent.cwd.clone(),
-            session: agent.session.clone(),
-            window_name: agent.window_name.clone(),
-            needs_attention: agent.status.needs_attention(),
-            team: agent.team_info.as_ref().map(convert_team_info),
-        })
+        .map(build_agent_info)
         .collect();
 
     Json(agents)
@@ -217,27 +234,38 @@ pub struct SelectRequest {
 pub async fn approve_agent(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
-) -> StatusCode {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let agent_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).map(|a| {
             (
                 matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
                 a.agent_type.clone(),
+                a.is_virtual,
             )
         })
     };
 
     match agent_info {
-        Some((true, agent_type)) => {
+        Some((_, _, true)) => Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Cannot approve virtual agent",
+        )),
+        Some((true, agent_type, false)) => {
             let detector = get_detector(&agent_type);
             match state.tmux_client.send_keys(&id, detector.approval_keys()) {
-                Ok(_) => StatusCode::OK,
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
+                Err(_) => Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send approval",
+                )),
             }
         }
-        Some((false, _)) => StatusCode::BAD_REQUEST,
-        None => StatusCode::NOT_FOUND,
+        Some((false, _, false)) => Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Agent is not awaiting approval",
+        )),
+        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
     }
 }
 
@@ -248,7 +276,7 @@ pub async fn select_choice(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
     Json(req): Json<SelectRequest>,
-) -> StatusCode {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let question_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).and_then(|agent| {
@@ -277,18 +305,27 @@ pub async fn select_choice(
                 .send_keys_literal(&id, &req.choice.to_string())
                 .is_err()
             {
-                return StatusCode::INTERNAL_SERVER_ERROR;
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send selection",
+                ));
             }
 
             // For single select, confirm with Enter
             if !multi_select && state.tmux_client.send_keys(&id, "Enter").is_err() {
-                return StatusCode::INTERNAL_SERVER_ERROR;
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to confirm selection",
+                ));
             }
 
-            StatusCode::OK
+            Ok(Json(serde_json::json!({"status": "ok"})))
         }
-        Some(_) => StatusCode::BAD_REQUEST,
-        None => StatusCode::NOT_FOUND,
+        Some(_) => Err(json_error(StatusCode::BAD_REQUEST, "Invalid choice number")),
+        None => Err(json_error(
+            StatusCode::NOT_FOUND,
+            "Agent not found or not in question state",
+        )),
     }
 }
 
@@ -296,7 +333,7 @@ pub async fn select_choice(
 pub async fn submit_selection(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
-) -> StatusCode {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let multi_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).and_then(|agent| {
@@ -323,15 +360,24 @@ pub async fn submit_selection(
             let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
             for _ in 0..downs_needed {
                 if state.tmux_client.send_keys(&id, "Down").is_err() {
-                    return StatusCode::INTERNAL_SERVER_ERROR;
+                    return Err(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to navigate",
+                    ));
                 }
             }
             if state.tmux_client.send_keys(&id, "Enter").is_err() {
-                return StatusCode::INTERNAL_SERVER_ERROR;
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to submit",
+                ));
             }
-            StatusCode::OK
+            Ok(Json(serde_json::json!({"status": "ok"})))
         }
-        None => StatusCode::NOT_FOUND,
+        None => Err(json_error(
+            StatusCode::NOT_FOUND,
+            "Agent not found or not in multi-select state",
+        )),
     }
 }
 
@@ -340,27 +386,38 @@ pub async fn send_text(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
     Json(req): Json<TextInputRequest>,
-) -> StatusCode {
-    // Check if agent exists
-    let agent_exists = {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Text length limit
+    if req.text.len() > 1024 {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Text exceeds maximum length of 1024 characters",
+        ));
+    }
+
+    // Check if agent exists and is not virtual
+    let agent_info = {
         let app_state = state.app_state.read();
-        app_state.agents.contains_key(&id)
+        app_state.agents.get(&id).map(|a| a.is_virtual)
     };
 
-    if !agent_exists {
-        return StatusCode::NOT_FOUND;
+    match agent_info {
+        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
+        Some(true) => Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Cannot send text to virtual agent",
+        )),
+        Some(false) => {
+            // Send the text literally followed by Enter
+            match state.tmux_client.send_text_and_enter(&id, &req.text) {
+                Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
+                Err(_) => Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send text",
+                )),
+            }
+        }
     }
-
-    // Send the text literally followed by Enter in a single command
-    if state
-        .tmux_client
-        .send_text_and_enter(&id, &req.text)
-        .is_err()
-    {
-        return StatusCode::INTERNAL_SERVER_ERROR;
-    }
-
-    StatusCode::OK
 }
 
 /// Get preview content (pane capture) for an agent
@@ -388,6 +445,80 @@ pub async fn get_preview(
     }
 }
 
+/// Build a TeamInfoResponse from a TeamSnapshot
+///
+/// Shared helper used by both the REST API and SSE events.
+pub(super) fn build_team_info(
+    snapshot: &crate::state::TeamSnapshot,
+    app_state: &crate::state::AppState,
+) -> TeamInfoResponse {
+    let total = snapshot.tasks.len();
+    let completed = snapshot
+        .tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Completed)
+        .count();
+    let in_progress = snapshot
+        .tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::InProgress)
+        .count();
+    let pending = snapshot
+        .tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Pending)
+        .count();
+
+    let members: Vec<TeamMemberResponse> = snapshot
+        .config
+        .members
+        .iter()
+        .map(|member| {
+            let pane_target = snapshot.member_panes.get(&member.name).cloned();
+
+            // Find this member's current task from agent info
+            let current_task = pane_target
+                .as_ref()
+                .and_then(|target| app_state.agents.get(target))
+                .and_then(|agent| agent.team_info.as_ref())
+                .and_then(|ti| ti.current_task.as_ref())
+                .map(|t| TaskSummaryResponse {
+                    id: t.id.clone(),
+                    subject: t.subject.clone(),
+                    status: t.status.to_string(),
+                });
+
+            // Check if this member is the lead (first member is typically lead)
+            let is_lead = snapshot
+                .config
+                .members
+                .first()
+                .map(|first| first.name == member.name)
+                .unwrap_or(false);
+
+            TeamMemberResponse {
+                name: member.name.clone(),
+                agent_type: member.agent_type.clone(),
+                is_lead,
+                pane_target,
+                current_task,
+            }
+        })
+        .collect();
+
+    TeamInfoResponse {
+        name: snapshot.config.team_name.clone(),
+        description: snapshot.config.description.clone(),
+        task_summary: TaskSummaryOverview {
+            total,
+            completed,
+            in_progress,
+            pending,
+        },
+        members,
+    }
+}
+
 /// Get all teams with their task summaries and member info
 pub async fn get_teams(State(state): State<Arc<ApiState>>) -> Json<Vec<TeamInfoResponse>> {
     let app_state = state.app_state.read();
@@ -395,73 +526,7 @@ pub async fn get_teams(State(state): State<Arc<ApiState>>) -> Json<Vec<TeamInfoR
     let teams: Vec<TeamInfoResponse> = app_state
         .teams
         .values()
-        .map(|snapshot| {
-            let total = snapshot.tasks.len();
-            let completed = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::Completed)
-                .count();
-            let in_progress = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::InProgress)
-                .count();
-            let pending = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::Pending)
-                .count();
-
-            let members: Vec<TeamMemberResponse> = snapshot
-                .config
-                .members
-                .iter()
-                .map(|member| {
-                    let pane_target = snapshot.member_panes.get(&member.name).cloned();
-
-                    // Find this member's current task from agent info
-                    let current_task = pane_target
-                        .as_ref()
-                        .and_then(|target| app_state.agents.get(target))
-                        .and_then(|agent| agent.team_info.as_ref())
-                        .and_then(|ti| ti.current_task.as_ref())
-                        .map(|t| TaskSummaryResponse {
-                            id: t.id.clone(),
-                            subject: t.subject.clone(),
-                            status: t.status.to_string(),
-                        });
-
-                    // Check if this member is the lead (first member is typically lead)
-                    let is_lead = snapshot
-                        .config
-                        .members
-                        .first()
-                        .map(|first| first.name == member.name)
-                        .unwrap_or(false);
-
-                    TeamMemberResponse {
-                        name: member.name.clone(),
-                        agent_type: member.agent_type.clone(),
-                        is_lead,
-                        pane_target,
-                        current_task,
-                    }
-                })
-                .collect();
-
-            TeamInfoResponse {
-                name: snapshot.config.team_name.clone(),
-                description: snapshot.config.description.clone(),
-                task_summary: TaskSummaryOverview {
-                    total,
-                    completed,
-                    in_progress,
-                    pending,
-                },
-                members,
-            }
-        })
+        .map(|snapshot| build_team_info(snapshot, &app_state))
         .collect();
 
     Json(teams)
@@ -481,15 +546,18 @@ fn is_valid_team_name(name: &str) -> bool {
 pub async fn get_team_tasks(
     State(state): State<Arc<ApiState>>,
     Path(name): Path<String>,
-) -> Result<Json<Vec<TeamTaskResponse>>, StatusCode> {
+) -> Result<Json<Vec<TeamTaskResponse>>, (StatusCode, Json<serde_json::Value>)> {
     // Validate team name to prevent path traversal
     if !is_valid_team_name(&name) {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid team name"));
     }
 
     let app_state = state.app_state.read();
 
-    let snapshot = app_state.teams.get(&name).ok_or(StatusCode::NOT_FOUND)?;
+    let snapshot = app_state
+        .teams
+        .get(&name)
+        .ok_or_else(|| json_error(StatusCode::NOT_FOUND, "Team not found"))?;
 
     let tasks: Vec<TeamTaskResponse> = snapshot
         .tasks

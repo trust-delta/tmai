@@ -301,6 +301,8 @@ pub enum AgentStatus {
     },
     /// Agent encountered an error
     Error { message: String },
+    /// Team member whose pane is not found (not yet started or already exited)
+    Offline,
     /// Status could not be determined
     #[default]
     Unknown,
@@ -332,6 +334,7 @@ impl AgentStatus {
             AgentStatus::Processing { .. } => "⠿",
             AgentStatus::AwaitingApproval { .. } => "⚠",
             AgentStatus::Error { .. } => "✗",
+            AgentStatus::Offline => "○",
             AgentStatus::Unknown => "?",
         }
     }
@@ -352,6 +355,7 @@ impl fmt::Display for AgentStatus {
                 write!(f, "Awaiting: {}", approval_type)
             }
             AgentStatus::Error { message } => write!(f, "Error: {}", message),
+            AgentStatus::Offline => write!(f, "Offline"),
             AgentStatus::Unknown => write!(f, "Unknown"),
         }
     }
@@ -420,6 +424,8 @@ pub struct MonitoredAgent {
     pub detection_source: DetectionSource,
     /// Team information (if this agent is part of a team)
     pub team_info: Option<AgentTeamInfo>,
+    /// Whether this is a virtual agent (team member without detected pane)
+    pub is_virtual: bool,
 }
 
 impl MonitoredAgent {
@@ -455,6 +461,7 @@ impl MonitoredAgent {
             context_warning: None,
             detection_source: DetectionSource::default(),
             team_info: None,
+            is_virtual: false,
         }
     }
 

@@ -7,152 +7,40 @@ use axum::{
         IntoResponse,
     },
 };
-use serde::Serialize;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::state::SharedState;
-use crate::teams::TaskStatus;
 
-use super::api::{AgentInfo, AgentTeamInfoResponse, StatusInfo, TaskSummaryResponse};
+use super::api::{build_agent_info, build_team_info, AgentInfo, TeamInfoResponse};
 
 /// State for SSE handler
 pub struct SseState {
     pub app_state: SharedState,
 }
 
-/// Team summary for SSE event
-#[derive(Debug, Serialize)]
-struct TeamSseEntry {
-    name: String,
-    description: Option<String>,
-    task_summary: TaskSseSummary,
-    members: Vec<TeamSseMember>,
-}
-
-/// Task summary counts for SSE event
-#[derive(Debug, Serialize)]
-struct TaskSseSummary {
-    total: usize,
-    completed: usize,
-    in_progress: usize,
-    pending: usize,
-}
-
-/// Team member info for SSE event
-#[derive(Debug, Serialize)]
-struct TeamSseMember {
-    name: String,
-    is_lead: bool,
-    pane_target: Option<String>,
-    current_task: Option<TaskSummaryResponse>,
-}
-
-/// Build agents SSE event from current application state
-fn build_agents_event(app_state: &crate::state::AppState) -> Event {
+/// Build agents JSON string for SSE
+fn build_agents_json_str(app_state: &crate::state::AppState) -> String {
     let agents: Vec<AgentInfo> = app_state
         .agent_order
         .iter()
         .filter_map(|id| app_state.agents.get(id))
-        .map(|agent| AgentInfo {
-            id: agent.id.clone(),
-            agent_type: agent.agent_type.short_name().to_string(),
-            status: StatusInfo::from(&agent.status),
-            cwd: agent.cwd.clone(),
-            session: agent.session.clone(),
-            window_name: agent.window_name.clone(),
-            needs_attention: agent.status.needs_attention(),
-            team: agent.team_info.as_ref().map(|ti| AgentTeamInfoResponse {
-                team_name: ti.team_name.clone(),
-                member_name: ti.member_name.clone(),
-                is_lead: ti.is_lead,
-                current_task: ti.current_task.as_ref().map(|t| TaskSummaryResponse {
-                    id: t.id.clone(),
-                    subject: t.subject.clone(),
-                    status: t.status.to_string(),
-                }),
-            }),
-        })
+        .map(build_agent_info)
         .collect();
 
-    let data = serde_json::to_string(&agents).unwrap_or_else(|_| "[]".to_string());
-    Event::default().event("agents").data(data)
+    serde_json::to_string(&agents).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Build teams SSE event from current application state
-fn build_teams_event(app_state: &crate::state::AppState) -> Event {
-    let teams: Vec<TeamSseEntry> = app_state
+/// Build teams JSON string for SSE
+fn build_teams_json_str(app_state: &crate::state::AppState) -> String {
+    let teams: Vec<TeamInfoResponse> = app_state
         .teams
         .values()
-        .map(|snapshot| {
-            let total = snapshot.tasks.len();
-            let completed = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::Completed)
-                .count();
-            let in_progress = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::InProgress)
-                .count();
-            let pending = snapshot
-                .tasks
-                .iter()
-                .filter(|t| t.status == TaskStatus::Pending)
-                .count();
-
-            let members: Vec<TeamSseMember> = snapshot
-                .config
-                .members
-                .iter()
-                .map(|member| {
-                    let pane_target = snapshot.member_panes.get(&member.name).cloned();
-
-                    let current_task = pane_target
-                        .as_ref()
-                        .and_then(|target| app_state.agents.get(target))
-                        .and_then(|agent| agent.team_info.as_ref())
-                        .and_then(|ti| ti.current_task.as_ref())
-                        .map(|t| TaskSummaryResponse {
-                            id: t.id.clone(),
-                            subject: t.subject.clone(),
-                            status: t.status.to_string(),
-                        });
-
-                    let is_lead = snapshot
-                        .config
-                        .members
-                        .first()
-                        .map(|first| first.name == member.name)
-                        .unwrap_or(false);
-
-                    TeamSseMember {
-                        name: member.name.clone(),
-                        is_lead,
-                        pane_target,
-                        current_task,
-                    }
-                })
-                .collect();
-
-            TeamSseEntry {
-                name: snapshot.config.team_name.clone(),
-                description: snapshot.config.description.clone(),
-                task_summary: TaskSseSummary {
-                    total,
-                    completed,
-                    in_progress,
-                    pending,
-                },
-                members,
-            }
-        })
+        .map(|snapshot| build_team_info(snapshot, app_state))
         .collect();
 
-    let data = serde_json::to_string(&teams).unwrap_or_else(|_| "[]".to_string());
-    Event::default().event("teams").data(data)
+    serde_json::to_string(&teams).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// SSE stream for agent and team updates
@@ -165,20 +53,32 @@ pub async fn events(State(state): State<Arc<SseState>>) -> impl IntoResponse {
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let mut last_agents_json = String::new();
+        let mut last_teams_json = String::new();
+
         loop {
             interval.tick().await;
-            let (agents_event, teams_event) = {
+            let (agents_json, teams_json) = {
                 let app_state = state.app_state.read();
                 (
-                    build_agents_event(&app_state),
-                    build_teams_event(&app_state),
+                    build_agents_json_str(&app_state),
+                    build_teams_json_str(&app_state),
                 )
             };
-            if tx.send(Ok(agents_event)).await.is_err() {
-                return;
+
+            if agents_json != last_agents_json {
+                let event = Event::default().event("agents").data(&agents_json);
+                if tx.send(Ok(event)).await.is_err() {
+                    return;
+                }
+                last_agents_json = agents_json;
             }
-            if tx.send(Ok(teams_event)).await.is_err() {
-                return;
+            if teams_json != last_teams_json {
+                let event = Event::default().event("teams").data(&teams_json);
+                if tx.send(Ok(event)).await.is_err() {
+                    return;
+                }
+                last_teams_json = teams_json;
             }
         }
     });

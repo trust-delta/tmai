@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::{AppState, MonitorScope};
+use crate::state::AppState;
 
 /// Full-screen help widget
 pub struct HelpScreen;
@@ -58,19 +58,8 @@ impl HelpScreen {
     }
 
     fn build_help_content(state: &AppState) -> Vec<Line<'static>> {
-        // Build current status
-        let scope_str = match state.monitor_scope {
-            MonitorScope::AllSessions => "All Sessions".to_string(),
-            MonitorScope::CurrentSession => state
-                .current_session
-                .as_ref()
-                .map(|s| format!("Session: {}", s))
-                .unwrap_or_else(|| "Current Session".to_string()),
-            MonitorScope::CurrentWindow => match (&state.current_session, state.current_window) {
-                (Some(s), Some(w)) => format!("Window: {}:{}", s, w),
-                _ => "Current Window".to_string(),
-            },
-        };
+        // Monitor scope is currently fixed to AllSessions (s/m keys disabled)
+        let scope_str = "All Sessions".to_string();
 
         vec![
             Self::title_line("tmai - Tmux Multi Agent Interface"),
@@ -146,11 +135,8 @@ impl HelpScreen {
             Self::description_line("  Split → List only → Preview only"),
             Self::key_line("l", "Toggle split direction (layout)"),
             Self::description_line("  Horizontal (left/right) ↔ Vertical (top/bottom)"),
-            Self::key_line("s", "Cycle sort method"),
-            Self::description_line("  Directory → Session → Type → Status → Updated"),
-            Self::key_line("m", "Cycle monitor scope"),
-            Self::description_line("  All Sessions → Current Session → Current Window"),
-            Self::description_line("  Filters which agents are monitored"),
+            Self::key_line("s", "(disabled) Cycle sort method"),
+            Self::key_line("m", "(disabled) Cycle monitor scope"),
             Line::from(""),
             Self::section_header("Creating New Agents"),
             Self::key_line("Enter", "On [+] entry: start create process wizard"),

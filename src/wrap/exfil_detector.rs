@@ -54,7 +54,8 @@ static SENSITIVE_PATTERNS: LazyLock<Vec<SensitivePattern>> = LazyLock::new(|| {
         },
         SensitivePattern {
             name: "Generic API Key",
-            pattern: Regex::new(r"(?i)(api[_-]?key|apikey)\s*[=:]\s*['\x22]?[a-zA-Z0-9_-]{16,}").unwrap(),
+            pattern: Regex::new(r"(?i)(api[_-]?key|apikey)\s*[=:]\s*['\x22]?[a-zA-Z0-9_-]{16,}")
+                .unwrap(),
         },
         SensitivePattern {
             name: "Bearer Token",
@@ -172,20 +173,26 @@ impl ExfilDetector {
 
             // Check various patterns
             // Direct command: "curl ..."
-            if trimmed.starts_with(&cmd_lower) && self.has_command_boundary(trimmed, cmd_lower.len()) {
+            if trimmed.starts_with(&cmd_lower)
+                && self.has_command_boundary(trimmed, cmd_lower.len())
+            {
                 return true;
             }
 
             // After $ prompt: "$ curl ..."
             if let Some(after_dollar) = trimmed.strip_prefix("$ ") {
-                if after_dollar.starts_with(&cmd_lower) && self.has_command_boundary(after_dollar, cmd_lower.len()) {
+                if after_dollar.starts_with(&cmd_lower)
+                    && self.has_command_boundary(after_dollar, cmd_lower.len())
+                {
                     return true;
                 }
             }
 
             // After > prompt: "> curl ..."
             if let Some(after_gt) = trimmed.strip_prefix("> ") {
-                if after_gt.starts_with(&cmd_lower) && self.has_command_boundary(after_gt, cmd_lower.len()) {
+                if after_gt.starts_with(&cmd_lower)
+                    && self.has_command_boundary(after_gt, cmd_lower.len())
+                {
                     return true;
                 }
             }
@@ -206,7 +213,10 @@ impl ExfilDetector {
             return true;
         }
         let next_char = text.chars().nth(cmd_len);
-        matches!(next_char, Some(' ') | Some('\t') | Some('`') | Some('"') | Some('\'') | None)
+        matches!(
+            next_char,
+            Some(' ') | Some('\t') | Some('`') | Some('"') | Some('\'') | None
+        )
     }
 
     /// Detect sensitive data patterns in output
@@ -238,36 +248,52 @@ mod tests {
     #[test]
     fn test_detect_curl_command() {
         let detector = create_test_detector();
-        assert!(detector.detect_transmission_command("curl https://example.com").is_some());
-        assert!(detector.detect_transmission_command("$ curl -X POST").is_some());
-        assert!(detector.detect_transmission_command("> curl --data").is_some());
+        assert!(detector
+            .detect_transmission_command("curl https://example.com")
+            .is_some());
+        assert!(detector
+            .detect_transmission_command("$ curl -X POST")
+            .is_some());
+        assert!(detector
+            .detect_transmission_command("> curl --data")
+            .is_some());
     }
 
     #[test]
     fn test_detect_wget_command() {
         let detector = create_test_detector();
-        assert!(detector.detect_transmission_command("wget http://example.com/file").is_some());
+        assert!(detector
+            .detect_transmission_command("wget http://example.com/file")
+            .is_some());
     }
 
     #[test]
     fn test_detect_aws_command() {
         let detector = create_test_detector();
-        assert!(detector.detect_transmission_command("aws s3 cp file.txt s3://bucket/").is_some());
+        assert!(detector
+            .detect_transmission_command("aws s3 cp file.txt s3://bucket/")
+            .is_some());
     }
 
     #[test]
     fn test_detect_custom_command() {
         let detector = create_test_detector();
-        assert!(detector.detect_transmission_command("custom-upload file.txt").is_some());
+        assert!(detector
+            .detect_transmission_command("custom-upload file.txt")
+            .is_some());
     }
 
     #[test]
     fn test_no_false_positive() {
         let detector = create_test_detector();
         // "curly" should not match "curl"
-        assert!(detector.detect_transmission_command("curly braces are used in code").is_none());
+        assert!(detector
+            .detect_transmission_command("curly braces are used in code")
+            .is_none());
         // Normal text
-        assert!(detector.detect_transmission_command("Hello world").is_none());
+        assert!(detector
+            .detect_transmission_command("Hello world")
+            .is_none());
     }
 
     #[test]

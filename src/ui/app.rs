@@ -109,13 +109,13 @@ impl App {
 
             // Update selectable entries count
             {
-                let (entries, _ui_idx, selectable_count, agent_index) = {
+                let (selectable_count, agent_index) = {
                     let state = self.state.read();
-                    SessionList::build_entries(&state)
+                    let (_, _, count, idx) = SessionList::build_entries(&state);
+                    (count, idx)
                 };
                 let mut state = self.state.write();
                 state.update_selectable_entries(selectable_count, agent_index);
-                drop(entries); // Avoid unused warning
             }
 
             // Draw UI
@@ -316,23 +316,26 @@ impl App {
                 state.quit();
             }
 
-            // Enter input mode
+            // Enter input mode (skip for virtual agents)
             KeyCode::Char('i') | KeyCode::Char('/') => {
-                state.enter_input_mode();
+                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                    state.enter_input_mode();
+                }
             }
 
-            // "Other" input for AskUserQuestion
+            // "Other" input for AskUserQuestion (skip for virtual agents)
             KeyCode::Char('o') => {
                 // Check if we're in an AskUserQuestion state
                 if let Some(target) = state.selected_target() {
                     let is_user_question = state.agents.get(target).is_some_and(|agent| {
-                        matches!(
-                            &agent.status,
-                            AgentStatus::AwaitingApproval {
-                                approval_type: ApprovalType::UserQuestion { .. },
-                                ..
-                            }
-                        )
+                        !agent.is_virtual
+                            && matches!(
+                                &agent.status,
+                                AgentStatus::AwaitingApproval {
+                                    approval_type: ApprovalType::UserQuestion { .. },
+                                    ..
+                                }
+                            )
                     });
                     if is_user_question {
                         state.enter_input_mode();
@@ -362,7 +365,7 @@ impl App {
                 state.scroll_preview_up(10);
             }
 
-            // Number selection (for AskUserQuestion)
+            // Number selection (for AskUserQuestion, skip for virtual agents)
             // Support both half-width (1-9) and full-width (１-９) digits
             KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
                 let num = if c.is_ascii_digit() {
@@ -373,8 +376,11 @@ impl App {
                 };
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    // Check if it's a UserQuestion and get choices + multi_select
+                    // Check if it's a UserQuestion and get choices + multi_select (skip virtual)
                     let question_info = state.agents.get(&target).and_then(|agent| {
+                        if agent.is_virtual {
+                            return None;
+                        }
                         if let AgentStatus::AwaitingApproval {
                             approval_type:
                                 ApprovalType::UserQuestion {
@@ -429,22 +435,23 @@ impl App {
                 }
             }
 
-            // Space key for toggle in multi-select UserQuestion
+            // Space key for toggle in multi-select UserQuestion (skip for virtual agents)
             KeyCode::Char(' ') => {
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    // Check if it's a multi-select UserQuestion
+                    // Check if it's a multi-select UserQuestion (skip virtual)
                     let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
-                        matches!(
-                            &agent.status,
-                            AgentStatus::AwaitingApproval {
-                                approval_type: ApprovalType::UserQuestion {
-                                    multi_select: true,
+                        !agent.is_virtual
+                            && matches!(
+                                &agent.status,
+                                AgentStatus::AwaitingApproval {
+                                    approval_type: ApprovalType::UserQuestion {
+                                        multi_select: true,
+                                        ..
+                                    },
                                     ..
-                                },
-                                ..
-                            }
-                        )
+                                }
+                            )
                     });
                     if is_multi_select {
                         drop(state);
@@ -453,15 +460,19 @@ impl App {
                 }
             }
 
-            // Approval key (y) - send to agent when awaiting approval
+            // Approval key (y) - send to agent when awaiting approval (skip for virtual agents)
             KeyCode::Char('y') => {
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    let agent_info = state.agents.get(&target).map(|a| {
-                        (
-                            matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                            a.agent_type.clone(),
-                        )
+                    let agent_info = state.agents.get(&target).and_then(|a| {
+                        if a.is_virtual {
+                            None
+                        } else {
+                            Some((
+                                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
+                                a.agent_type.clone(),
+                            ))
+                        }
                     });
                     if let Some((true, agent_type)) = agent_info {
                         drop(state);
@@ -492,8 +503,11 @@ impl App {
 
                 if let Some(target) = state.selected_target() {
                     let target = target.to_string();
-                    // Check if it's a multi-select UserQuestion and get info
+                    // Check if it's a multi-select UserQuestion and get info (skip virtual)
                     let multi_info = state.agents.get(&target).and_then(|agent| {
+                        if agent.is_virtual {
+                            return None;
+                        }
                         if let AgentStatus::AwaitingApproval {
                             approval_type:
                                 ApprovalType::UserQuestion {
@@ -524,12 +538,14 @@ impl App {
                 }
             }
 
-            // Focus pane
+            // Focus pane (skip for virtual agents)
             KeyCode::Char('f') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    drop(state);
-                    let _ = self.tmux_client.focus_pane(&target);
+                if let Some(agent) = state.selected_agent() {
+                    if !agent.is_virtual {
+                        let target = agent.target.clone();
+                        drop(state);
+                        let _ = self.tmux_client.focus_pane(&target);
+                    }
                 }
             }
 
@@ -545,19 +561,14 @@ impl App {
                 self.layout.toggle_split_direction();
             }
 
-            // Cycle sort method
-            KeyCode::Char('s') => {
-                state.cycle_sort();
-            }
+            // Sort/scope cycling temporarily disabled — always Directory + AllSessions
+            KeyCode::Char('s') | KeyCode::Char('m') => {}
 
-            // Cycle monitor scope
-            KeyCode::Char('m') => {
-                state.cycle_monitor_scope();
-            }
-
-            // Enter passthrough mode (direct key input to pane)
+            // Enter passthrough mode (direct key input to pane, skip for virtual agents)
             KeyCode::Char('p') | KeyCode::Right => {
-                state.enter_passthrough_mode();
+                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                    state.enter_passthrough_mode();
+                }
             }
 
             // Help
@@ -570,16 +581,18 @@ impl App {
                 state.toggle_qr();
             }
 
-            // Kill pane (with confirmation)
+            // Kill pane (with confirmation, skip for virtual agents)
             KeyCode::Char('x') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    state.show_confirmation(
-                        ConfirmAction::KillPane {
-                            target: target.clone(),
-                        },
-                        format!("Kill pane {}?", target),
-                    );
+                if let Some(agent) = state.selected_agent() {
+                    if !agent.is_virtual {
+                        let target = agent.target.clone();
+                        state.show_confirmation(
+                            ConfirmAction::KillPane {
+                                target: target.clone(),
+                            },
+                            format!("Kill pane {}?", target),
+                        );
+                    }
                 }
             }
 
@@ -590,6 +603,9 @@ impl App {
                     .is_some_and(|a| a.team_info.is_some());
                 if has_team {
                     state.show_task_overlay = !state.show_task_overlay;
+                    if state.show_task_overlay {
+                        state.task_overlay_scroll = 0;
+                    }
                 }
             }
 
@@ -779,6 +795,26 @@ impl App {
             KeyCode::Char('t') | KeyCode::Esc => {
                 let mut state = self.state.write();
                 state.show_task_overlay = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                let mut state = self.state.write();
+                state.task_overlay_scroll = state.task_overlay_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                let mut state = self.state.write();
+                state.task_overlay_scroll = state.task_overlay_scroll.saturating_sub(1);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                let mut state = self.state.write();
+                state.task_overlay_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                let mut state = self.state.write();
+                state.task_overlay_scroll = u16::MAX;
             }
             _ => {}
         }

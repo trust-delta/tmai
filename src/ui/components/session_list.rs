@@ -75,7 +75,14 @@ impl SessionList {
                             .get(*agent_idx)
                             .and_then(|id| state.agents.get(id))
                         {
-                            Self::create_list_item(agent, spinner_char, is_selected, marquee_offset)
+                            let tree_prefix = Self::get_tree_prefix(agent, state, *agent_idx);
+                            Self::create_list_item(
+                                agent,
+                                spinner_char,
+                                is_selected,
+                                marquee_offset,
+                                &tree_prefix,
+                            )
                         } else {
                             ListItem::new(Line::from(""))
                         }
@@ -154,12 +161,14 @@ impl SessionList {
                             .get(*agent_idx)
                             .and_then(|id| state.agents.get(id))
                         {
+                            let tree_prefix = Self::get_tree_prefix(agent, state, *agent_idx);
                             Self::create_compact_item(
                                 agent,
                                 spinner_char,
                                 inner_width,
                                 is_selected,
                                 marquee_offset,
+                                &tree_prefix,
                             )
                         } else {
                             ListItem::new(Line::from(""))
@@ -255,9 +264,12 @@ impl SessionList {
         let mut current_group: Option<String> = None;
         for (agent_idx, id) in state.agent_order.iter().enumerate() {
             if let Some(agent) = state.agents.get(id) {
+                // Skip group header for team members (non-lead) — they nest under their leader
+                let is_nested_member = agent.team_info.as_ref().is_some_and(|ti| !ti.is_lead);
+
                 // Check if we need a group header
                 if let Some(group_key) = state.get_group_key(agent) {
-                    if current_group.as_ref() != Some(&group_key) {
+                    if current_group.as_ref() != Some(&group_key) && !is_nested_member {
                         let collapsed = state.is_group_collapsed(&group_key);
                         let (agent_count, attention_count) =
                             group_stats.get(&group_key).copied().unwrap_or((0, 0));
@@ -399,6 +411,7 @@ impl SessionList {
         spinner_char: char,
         is_selected: bool,
         marquee_offset: usize,
+        tree_prefix: &str,
     ) -> ListItem<'static> {
         let status_indicator = match &agent.status {
             AgentStatus::Processing { .. } => spinner_char.to_string(),
@@ -406,7 +419,7 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Line 1: [detection icon] AgentType | pid:xxx [context warning]
+        // Line 1: [tree_prefix] [detection icon] AgentType | pid:xxx [context warning]
         // ● = PTY state file, ○ = capture-pane
         let detection_icon = agent.detection_source.icon();
         let detection_color = match agent.detection_source {
@@ -414,7 +427,16 @@ impl SessionList {
             crate::agents::DetectionSource::CapturePane => Color::DarkGray,
         };
 
-        let mut line1_spans = vec![
+        let mut line1_spans: Vec<Span<'static>> = Vec::new();
+
+        if !tree_prefix.is_empty() {
+            line1_spans.push(Span::styled(
+                format!("{} ", tree_prefix),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        line1_spans.extend([
             Span::styled(
                 format!("{} ", detection_icon),
                 Style::default().fg(detection_color),
@@ -428,7 +450,7 @@ impl SessionList {
                 format!("pid:{}", agent.pid),
                 Style::default().fg(Color::DarkGray),
             ),
-        ];
+        ]);
 
         // Add context warning if present
         if let Some(percent) = agent.context_warning {
@@ -473,6 +495,7 @@ impl SessionList {
                 let error_text = get_marquee_text(message, 20, marquee_offset, is_selected);
                 format!("Error: {}", error_text.trim_end())
             }
+            AgentStatus::Offline => "Offline".to_string(),
             AgentStatus::Unknown => "Unknown".to_string(),
         };
 
@@ -519,7 +542,53 @@ impl SessionList {
             AgentStatus::Processing { .. } => Color::Yellow,
             AgentStatus::AwaitingApproval { .. } => Color::Magenta,
             AgentStatus::Error { .. } => Color::Red,
+            AgentStatus::Offline => Color::DarkGray,
             AgentStatus::Unknown => Color::Gray,
+        }
+    }
+
+    /// Determine if an agent at a given index is the last team member under its leader
+    fn is_last_team_member(state: &AppState, agent_idx: usize) -> bool {
+        let agent = match state
+            .agent_order
+            .get(agent_idx)
+            .and_then(|id| state.agents.get(id))
+        {
+            Some(a) => a,
+            None => return false,
+        };
+
+        let team_name = match &agent.team_info {
+            Some(ti) if !ti.is_lead => &ti.team_name,
+            _ => return false,
+        };
+
+        // Check the next agent in order
+        if let Some(next_id) = state.agent_order.get(agent_idx + 1) {
+            if let Some(next_agent) = state.agents.get(next_id) {
+                if let Some(ref next_ti) = next_agent.team_info {
+                    // Same team and also a non-lead member → not last
+                    if &next_ti.team_name == team_name && !next_ti.is_lead {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Get the tree prefix for a team member agent
+    fn get_tree_prefix(agent: &MonitoredAgent, state: &AppState, agent_idx: usize) -> String {
+        match &agent.team_info {
+            Some(ti) if !ti.is_lead => {
+                if Self::is_last_team_member(state, agent_idx) {
+                    "\u{2514}\u{2500}".to_string() // └─
+                } else {
+                    "\u{251C}\u{2500}".to_string() // ├─
+                }
+            }
+            _ => String::new(),
         }
     }
 
@@ -532,6 +601,7 @@ impl SessionList {
         max_width: u16,
         is_selected: bool,
         marquee_offset: usize,
+        tree_prefix: &str,
     ) -> ListItem<'static> {
         let status_indicator = match &agent.status {
             AgentStatus::Processing { .. } => spinner_char.to_string(),
@@ -546,7 +616,12 @@ impl SessionList {
 
         // Calculate remaining space for title
         // Fixed parts: indicator(2) + CC(2) + separators(12) + status(12) + pid(10) + session(18) = 56
-        let fixed_len = 56_usize;
+        let prefix_len = if tree_prefix.is_empty() {
+            0
+        } else {
+            tree_prefix.width() + 1
+        };
+        let fixed_len = 56_usize + prefix_len;
         let title_width = (max_width as usize).saturating_sub(fixed_len).max(10);
 
         // Apply marquee to title for selected item
@@ -561,6 +636,7 @@ impl SessionList {
             AgentStatus::Processing { .. } => "Processing".to_string(),
             AgentStatus::AwaitingApproval { .. } => "Awaiting".to_string(),
             AgentStatus::Error { .. } => "Error".to_string(),
+            AgentStatus::Offline => "Offline".to_string(),
             AgentStatus::Unknown => "Unknown".to_string(),
         };
         let status_text = fixed_width(&status_text, STATUS_WIDTH);
@@ -576,7 +652,16 @@ impl SessionList {
             agent.window_index, agent.window_name, agent.pane_index
         );
 
-        let mut spans = vec![
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        if !tree_prefix.is_empty() {
+            spans.push(Span::styled(
+                format!("{} ", tree_prefix),
+                Style::default().fg(Color::DarkGray).bg(bg_color),
+            ));
+        }
+
+        spans.extend([
             Span::styled(
                 format!("{} ", status_indicator),
                 Style::default().fg(status_color).bg(bg_color),
@@ -602,7 +687,7 @@ impl SessionList {
                 title_display,
                 Style::default().fg(Color::White).bg(bg_color),
             ),
-        ];
+        ]);
 
         // Add team badge if agent is part of a team
         if let Some(ref team_info) = agent.team_info {

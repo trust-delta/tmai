@@ -7,6 +7,8 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+// MonitorScope and SortBy temporarily unused (scope/sort cycling disabled)
+#[allow(unused_imports)]
 use crate::state::{AppState, MonitorScope, SortBy};
 use crate::ui::{SplitDirection, ViewMode};
 
@@ -188,35 +190,7 @@ impl StatusBar {
             ));
             spans.push(Span::styled(":Quit ", Style::default().fg(Color::DarkGray)));
 
-            // Show current monitor scope
-            let scope_display = match state.monitor_scope {
-                MonitorScope::AllSessions => "[All]".to_string(),
-                MonitorScope::CurrentSession => {
-                    if let Some(ref session) = state.current_session {
-                        format!("[{}]", session)
-                    } else {
-                        "[Session]".to_string()
-                    }
-                }
-                MonitorScope::CurrentWindow => {
-                    match (&state.current_session, state.current_window) {
-                        (Some(session), Some(window)) => format!("[{}:{}]", session, window),
-                        _ => "[Window]".to_string(),
-                    }
-                }
-            };
-            spans.push(Span::styled(
-                format!("{} ", scope_display),
-                Style::default().fg(Color::Magenta),
-            ));
-
-            // Show current sort method if not default (Directory)
-            if state.sort_by != SortBy::Directory {
-                spans.push(Span::styled(
-                    format!("[Sort:{}] ", state.sort_by.display_name()),
-                    Style::default().fg(Color::Blue),
-                ));
-            }
+            // Scope/sort display temporarily disabled (always AllSessions + Directory)
         }
 
         // Spacer
@@ -264,40 +238,57 @@ impl StatusBar {
             // CreateNew entry selected
             spans.push(Span::styled(" [+ New] ", Style::default().fg(Color::Green)));
         } else if let Some(agent) = state.selected_agent() {
-            // Agent selected - show target and agent type
-            let short_target = if agent.id.width() > 12 {
-                // Truncate with ellipsis
-                let truncated = truncate_to_width(&agent.id, 9);
-                format!("{}...", truncated)
-            } else {
-                agent.id.clone()
-            };
-            spans.push(Span::styled(
-                format!(" {} ", short_target),
-                Style::default().fg(Color::Cyan),
-            ));
-            spans.push(Span::styled(
-                format!("{} ", agent.agent_type.short_name()),
-                Style::default().fg(Color::Yellow),
-            ));
-
-            // Show detection source
-            let detection_label = agent.detection_source.label();
-            let detection_color = match agent.detection_source {
-                crate::agents::DetectionSource::PtyStateFile => Color::Green,
-                crate::agents::DetectionSource::CapturePane => Color::DarkGray,
-            };
-            spans.push(Span::styled(
-                format!("[{}] ", detection_label),
-                Style::default().fg(detection_color),
-            ));
-
-            // Show team info if the agent is part of a team
-            if let Some(team_info) = &agent.team_info {
+            if agent.is_virtual {
+                // Virtual agent (offline team member)
                 spans.push(Span::styled(
-                    format!("[{}/{}] ", team_info.team_name, team_info.member_name),
-                    Style::default().fg(Color::Magenta),
+                    " [Offline] ",
+                    Style::default().fg(Color::DarkGray),
                 ));
+                if let Some(ref team_info) = agent.team_info {
+                    spans.push(Span::styled(
+                        format!(
+                            "{}/{} - Pane not found ",
+                            team_info.team_name, team_info.member_name
+                        ),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+            } else {
+                // Agent selected - show target and agent type
+                let short_target = if agent.id.width() > 12 {
+                    // Truncate with ellipsis
+                    let truncated = truncate_to_width(&agent.id, 9);
+                    format!("{}...", truncated)
+                } else {
+                    agent.id.clone()
+                };
+                spans.push(Span::styled(
+                    format!(" {} ", short_target),
+                    Style::default().fg(Color::Cyan),
+                ));
+                spans.push(Span::styled(
+                    format!("{} ", agent.agent_type.short_name()),
+                    Style::default().fg(Color::Yellow),
+                ));
+
+                // Show detection source
+                let detection_label = agent.detection_source.label();
+                let detection_color = match agent.detection_source {
+                    crate::agents::DetectionSource::PtyStateFile => Color::Green,
+                    crate::agents::DetectionSource::CapturePane => Color::DarkGray,
+                };
+                spans.push(Span::styled(
+                    format!("[{}] ", detection_label),
+                    Style::default().fg(detection_color),
+                ));
+
+                // Show team info if the agent is part of a team
+                if let Some(team_info) = &agent.team_info {
+                    spans.push(Span::styled(
+                        format!("[{}/{}] ", team_info.team_name, team_info.member_name),
+                        Style::default().fg(Color::Magenta),
+                    ));
+                }
             }
         }
     }

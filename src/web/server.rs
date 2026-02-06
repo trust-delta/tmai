@@ -1,6 +1,7 @@
 //! Web server implementation using axum
 
 use anyhow::Result;
+use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
     routing::{get, post},
@@ -60,11 +61,16 @@ impl WebServer {
             app_state: self.app_state.clone(),
         });
 
-        // CORS layer for cross-origin requests
+        // Security: Token authentication in URL is the primary defense.
+        // CORS is restricted as defense-in-depth but allow_origin(Any) is
+        // intentional since mobile devices on the same LAN need access.
         let cors = CorsLayer::new()
             .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any);
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([
+                HeaderName::from_static("content-type"),
+                HeaderName::from_static("authorization"),
+            ]);
 
         // API routes (require authentication)
         // Note: reject endpoint removed - use select with option number instead

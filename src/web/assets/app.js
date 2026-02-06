@@ -14,6 +14,7 @@ class TmaiRemote {
         this.previewCache = new Map();
         this.previewIntervals = new Map();
         this.pendingRender = false;
+        this.reconnectDelay = 1000;
 
         this.elements = {
             agentList: document.getElementById('agent-list'),
@@ -202,11 +203,13 @@ class TmaiRemote {
 
         this.eventSource.onopen = () => {
             this.setConnected(true);
+            this.reconnectDelay = 1000;
         };
 
         this.eventSource.onerror = () => {
             this.setConnected(false);
-            setTimeout(() => this.connectSSE(), 5000);
+            setTimeout(() => this.connectSSE(), this.reconnectDelay);
+            this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
         };
     }
 
@@ -417,6 +420,22 @@ class TmaiRemote {
         let actionsHtml = '';
         let detailsHtml = '';
 
+        // Skip action buttons and text input for virtual (offline) agents
+        if (agent.is_virtual) {
+            return `
+                <div class="agent-card" data-agent-id="${this.escapeAttr(agent.id)}">
+                    <div class="agent-header">
+                        <div class="agent-header-left">
+                            <span class="agent-type">${agent.agent_type}</span>
+                            ${agent.team ? `<span class="team-badge">${this.escapeHtml(agent.team.member_name)}${agent.team.is_lead ? ' (lead)' : ''}</span>` : ''}
+                        </div>
+                        <span class="agent-status offline">Offline</span>
+                    </div>
+                    <div class="agent-info">Pane not found</div>
+                </div>
+            `;
+        }
+
         if (agent.status.type === 'awaiting_approval') {
             const details = agent.status.details || '';
             detailsHtml = details ? `<div class="agent-details">${this.escapeHtml(details)}</div>` : '';
@@ -428,7 +447,7 @@ class TmaiRemote {
                 // Only approve button - for other options use number keys or input mode
                 actionsHtml = `
                     <div class="agent-actions">
-                        <button class="btn btn-approve" data-action="approve" data-id="${agent.id}">
+                        <button class="btn btn-approve" data-action="approve" data-id="${this.escapeAttr(agent.id)}">
                             Approve (y)
                         </button>
                     </div>
@@ -441,9 +460,9 @@ class TmaiRemote {
             <div class="text-input-container">
                 <input type="text" class="text-input"
                        placeholder="Type message..."
-                       data-agent-id="${agent.id}"
+                       data-agent-id="${this.escapeAttr(agent.id)}"
                        onkeydown="if(event.key==='Enter')this.nextElementSibling.click()">
-                <button class="btn btn-send" data-action="send-text" data-id="${agent.id}">Send</button>
+                <button class="btn btn-send" data-action="send-text" data-id="${this.escapeAttr(agent.id)}">Send</button>
             </div>
         `;
 
@@ -451,7 +470,7 @@ class TmaiRemote {
         const isExpanded = this.expandedPreviews.has(agent.id);
         const previewContent = this.previewCache.get(agent.id);
         const previewHtml = `
-            <div class="preview-toggle ${isExpanded ? 'expanded' : ''}" data-action="toggle-preview" data-id="${agent.id}">
+            <div class="preview-toggle ${isExpanded ? 'expanded' : ''}" data-action="toggle-preview" data-id="${this.escapeAttr(agent.id)}">
                 <svg viewBox="0 0 24 24">
                     <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
                 </svg>
@@ -466,7 +485,7 @@ class TmaiRemote {
             : '';
 
         return `
-            <div class="agent-card ${needsAttention}" data-agent-id="${agent.id}">
+            <div class="agent-card ${needsAttention}" data-agent-id="${this.escapeAttr(agent.id)}">
                 <div class="agent-header">
                     <div class="agent-header-left">
                         <span class="agent-type">${agent.agent_type}</span>
@@ -499,7 +518,7 @@ class TmaiRemote {
             return `
                 <button class="choice-btn ${selectedClass}"
                         data-action="select"
-                        data-id="${agentId}"
+                        data-id="${this.escapeAttr(agentId)}"
                         data-choice="${num}"
                         data-multi="${multiSelect}">
                     <span class="choice-number">${num}</span>
@@ -514,7 +533,7 @@ class TmaiRemote {
         const otherHtml = `
             <button class="choice-btn ${otherSelected ? 'selected' : ''}"
                     data-action="select"
-                    data-id="${agentId}"
+                    data-id="${this.escapeAttr(agentId)}"
                     data-choice="${otherNum}"
                     data-multi="${multiSelect}">
                 <span class="choice-number">${otherNum}</span>
@@ -523,7 +542,7 @@ class TmaiRemote {
         `;
 
         const submitBtn = multiSelect ? `
-            <button class="btn btn-submit" data-action="submit" data-id="${agentId}">
+            <button class="btn btn-submit" data-action="submit" data-id="${this.escapeAttr(agentId)}">
                 Submit Selection
             </button>
         ` : '';
@@ -835,6 +854,15 @@ class TmaiRemote {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Escape string for use in HTML attributes
+     * @param {string} text
+     * @returns {string}
+     */
+    escapeAttr(text) {
+        return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     /**
