@@ -25,6 +25,7 @@ tmux上でAIエージェント（Claude Code、Codex CLI、Gemini CLI）を監�
 - [AskUserQuestion対応](./features/ask-user-question.md) - 番号キーで選択肢を直接選択
 - [外部送信検知](./features/exfil-detection.md) - セキュリティ機能
 - [Web Remote Control](./features/web-remote.md) - スマホからQRコードで操作
+- [Agent Teams](./features/agent-teams.md) - Claude Codeチーム監視
 
 ## ガイド
 

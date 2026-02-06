@@ -85,5 +85,6 @@ Benefits:
 ## Next Steps
 
 - [Multi-Agent Monitoring](./workflows/multi-agent.md) - Monitor multiple agents
+- [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
 - [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Parallel development workflow
 - [tmai's Strengths](./guides/strengths.md) - What makes tmai unique

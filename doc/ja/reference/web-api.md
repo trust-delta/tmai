@@ -203,14 +203,86 @@ GET /api/events?token=abc123
 **レスポンス：**
 
 ```
-event: update
+event: agents
 data: {"agents":[...]}
 
-event: update
-data: {"agents":[...]}
+event: teams
+data: {"teams":[...]}
 ```
 
-エージェントの状態が変化するたびにイベントが送信されます。
+| イベント | 説明 |
+|---------|------|
+| `agents` | エージェントの状態が変化した時に送信 |
+| `teams` | チーム/タスクのデータが変化した時に送信 |
+
+### GET /api/teams
+
+検出されたAgent Teamsをタスクサマリー付きで一覧表示。
+
+**リクエスト：**
+
+```
+GET /api/teams?token=abc123
+```
+
+**レスポンス：**
+
+```json
+{
+  "teams": [
+    {
+      "name": "my-project",
+      "members": [
+        {
+          "name": "team-lead",
+          "agent_type": "general-purpose"
+        },
+        {
+          "name": "researcher",
+          "agent_type": "Explore"
+        }
+      ],
+      "task_summary": {
+        "total": 5,
+        "completed": 2,
+        "in_progress": 1,
+        "pending": 2
+      }
+    }
+  ]
+}
+```
+
+### GET /api/teams/:name/tasks
+
+特定チームのタスク一覧を取得。
+
+**リクエスト：**
+
+```
+GET /api/teams/my-project/tasks?token=abc123
+```
+
+**レスポンス：**
+
+```json
+{
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Implement auth module",
+      "status": "completed",
+      "owner": "researcher"
+    },
+    {
+      "id": "2",
+      "subject": "Write tests",
+      "status": "in_progress",
+      "owner": "team-lead"
+    }
+  ]
+}
+```
 
 ## エラーレスポンス
 
@@ -291,6 +363,12 @@ curl -X POST "$BASE/api/agents/0/select?token=$TOKEN" \
 curl -X POST "$BASE/api/agents/0/input?token=$TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text": "hello"}'
+
+# チーム一覧
+curl "$BASE/api/teams?token=$TOKEN"
+
+# チームタスク取得
+curl "$BASE/api/teams/my-project/tasks?token=$TOKEN"
 ```
 
 ## 次のステップ

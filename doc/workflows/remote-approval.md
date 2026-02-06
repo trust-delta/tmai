@@ -61,7 +61,7 @@ Scan the QR code with your phone's camera and open in browser.
 ├─────────────────────────────────────┤
 │                                     │
 │  ● agent-1        [Approval]        │
-│    → Approve  Reject                │
+│    → Approve                        │
 │                                     │
 │  ○ agent-2        [Processing]      │
 │                                     │

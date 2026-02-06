@@ -203,14 +203,86 @@ GET /api/events?token=abc123
 **Response:**
 
 ```
-event: update
+event: agents
 data: {"agents":[...]}
 
-event: update
-data: {"agents":[...]}
+event: teams
+data: {"teams":[...]}
 ```
 
-Events are sent whenever agent status changes.
+| Event | Description |
+|-------|-------------|
+| `agents` | Sent when agent status changes |
+| `teams` | Sent when team/task data changes |
+
+### GET /api/teams
+
+List all detected Agent Teams with task summaries.
+
+**Request:**
+
+```
+GET /api/teams?token=abc123
+```
+
+**Response:**
+
+```json
+{
+  "teams": [
+    {
+      "name": "my-project",
+      "members": [
+        {
+          "name": "team-lead",
+          "agent_type": "general-purpose"
+        },
+        {
+          "name": "researcher",
+          "agent_type": "Explore"
+        }
+      ],
+      "task_summary": {
+        "total": 5,
+        "completed": 2,
+        "in_progress": 1,
+        "pending": 2
+      }
+    }
+  ]
+}
+```
+
+### GET /api/teams/:name/tasks
+
+List tasks for a specific team.
+
+**Request:**
+
+```
+GET /api/teams/my-project/tasks?token=abc123
+```
+
+**Response:**
+
+```json
+{
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Implement auth module",
+      "status": "completed",
+      "owner": "researcher"
+    },
+    {
+      "id": "2",
+      "subject": "Write tests",
+      "status": "in_progress",
+      "owner": "team-lead"
+    }
+  ]
+}
+```
 
 ## Error Responses
 
@@ -291,6 +363,12 @@ curl -X POST "$BASE/api/agents/0/select?token=$TOKEN" \
 curl -X POST "$BASE/api/agents/0/input?token=$TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text": "hello"}'
+
+# List teams
+curl "$BASE/api/teams?token=$TOKEN"
+
+# Get team tasks
+curl "$BASE/api/teams/my-project/tasks?token=$TOKEN"
 ```
 
 ## Next Steps

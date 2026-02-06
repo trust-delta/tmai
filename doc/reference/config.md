@@ -20,6 +20,10 @@ port = 9876
 [exfil_detection]
 enabled = true
 additional_commands = ["custom-upload", "my-sync"]
+
+[teams]
+enabled = true
+scan_interval = 5
 ```
 
 ## Sections
@@ -72,6 +76,31 @@ Add custom commands:
 ```toml
 [exfil_detection]
 additional_commands = ["custom-upload", "internal-sync", "deploy-tool"]
+```
+
+### [teams]
+
+Agent Teams integration settings (experimental).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` | Enable/disable team scanning |
+| `scan_interval` | integer | `5` | Scan interval in polling cycles (~2.5 seconds at default poll rate) |
+
+#### Examples
+
+Disable team scanning:
+
+```toml
+[teams]
+enabled = false
+```
+
+Increase scan frequency:
+
+```toml
+[teams]
+scan_interval = 2
 ```
 
 ## Environment Variables
@@ -136,6 +165,8 @@ tmai wrap gemini
 | `web.port` | `9876` |
 | `exfil_detection.enabled` | `true` |
 | `exfil_detection.additional_commands` | `[]` |
+| `teams.enabled` | `true` |
+| `teams.scan_interval` | `5` |
 
 ## Config File Format
 

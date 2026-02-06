@@ -20,6 +20,10 @@ port = 9876
 [exfil_detection]
 enabled = true
 additional_commands = ["custom-upload", "my-sync"]
+
+[teams]
+enabled = true
+scan_interval = 5
 ```
 
 ## セクション
@@ -72,6 +76,31 @@ enabled = false
 ```toml
 [exfil_detection]
 additional_commands = ["custom-upload", "internal-sync", "deploy-tool"]
+```
+
+### [teams]
+
+Agent Teamsの統合設定（実験的機能）。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `enabled` | bool | `true` | チームスキャンの有効/無効 |
+| `scan_interval` | integer | `5` | スキャン間隔（ポーリング周期数、デフォルトのポーリングレートで約2.5秒） |
+
+#### 例
+
+チームスキャンを無効化：
+
+```toml
+[teams]
+enabled = false
+```
+
+スキャン頻度を上げる：
+
+```toml
+[teams]
+scan_interval = 2
 ```
 
 ## 環境変数
@@ -136,6 +165,8 @@ tmai wrap gemini
 | `web.port` | `9876` |
 | `exfil_detection.enabled` | `true` |
 | `exfil_detection.additional_commands` | `[]` |
+| `teams.enabled` | `true` |
+| `teams.scan_interval` | `5` |
 
 ## 設定ファイル形式
 

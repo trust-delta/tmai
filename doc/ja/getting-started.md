@@ -10,6 +10,12 @@ tmaiのインストールから最初の監視までのガイド。
 
 ## インストール
 
+### crates.ioからインストール
+
+```bash
+cargo install tmai
+```
+
 ### ソースからビルド
 
 ```bash
@@ -79,5 +85,6 @@ tmai wrap claude
 ## 次のステップ
 
 - [マルチエージェント監視](./workflows/multi-agent.md) - 複数エージェントを同時に監視
+- [Agent Teams](./features/agent-teams.md) - Claude Codeチーム監視
 - [ワークツリーで並列開発](./workflows/worktree-parallel.md) - 並列開発のワークフロー
 - [tmaiの強み](./guides/strengths.md) - tmaiが得意なこと

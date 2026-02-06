@@ -158,21 +158,24 @@ impl StatusBar {
             ));
 
             spans.push(Span::styled(
-                "s",
+                "t",
                 Style::default()
                     .fg(Color::Blue)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::styled(":Sort ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                ":Tasks ",
+                Style::default().fg(Color::DarkGray),
+            ));
 
             spans.push(Span::styled(
-                "m",
+                "T",
                 Style::default()
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
-                ":Scope ",
+                ":Teams ",
                 Style::default().fg(Color::DarkGray),
             ));
 

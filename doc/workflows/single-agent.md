@@ -40,8 +40,7 @@ When claude requests approval, in the tmai pane:
 
 | Key | Action |
 |-----|--------|
-| `y` | Approve (send Yes) |
-| `n` | Reject (send No) |
+| `y` | Approve (send Enter to confirm) |
 
 ### AskUserQuestion
 

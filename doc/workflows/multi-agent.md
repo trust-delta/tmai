@@ -19,7 +19,7 @@ tmai allows you to operate multiple agents **without attaching** to each pane.
 │ tmai                                                        │
 │                                                             │
 │  Operate directly from monitor screen                       │
-│  - y/n keys to approve/reject                               │
+│  - y key to approve                                          │
 │  - 1-9 keys to select options                               │
 │  - All agents visible while operating                       │
 └─────────────────────────────────────────────────────────────┘
@@ -69,7 +69,6 @@ Operate directly on the selected agent:
 | Key | Action |
 |-----|--------|
 | `y` | Approve (send Yes) |
-| `n` | Reject (send No) |
 | `1-9` | Select AskUserQuestion option |
 | `Space` | Toggle for multi-select |
 
@@ -106,6 +105,19 @@ tmai screen:
 └──────────────────────────┴──────────────────────────────────┘
   → Press y to approve immediately, other agents still visible
 ```
+
+## Agent Teams Integration
+
+When using Claude Code's Agent Teams feature (multiple agents collaborating on a project), tmai can visualize the team structure and task progress.
+
+| Key | Action |
+|-----|--------|
+| `t` | Show task overlay for selected team member |
+| `T` | Show team overview (all teams and members) |
+
+This is especially useful when running large teams with many agents—tmai gives you a single dashboard to monitor all team members and their task progress.
+
+See [Agent Teams](../features/agent-teams.md) for details.
 
 ## Benefits
 

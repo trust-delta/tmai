@@ -15,11 +15,12 @@
 - **自動状態検出** - Idle、Processing、承認待ちなどの状態を自動判定
 - **PTYラッピング** - PTYプロキシによる高精度なリアルタイム状態検出
 - **Web Remote Control** - スマホからQRコード経由で承認操作
+- **Agent Teams** - Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 
 ## インストール
 
 ```bash
-cargo install --git https://github.com/trust-delta/tmai
+cargo install tmai
 ```
 
 または、ソースからビルド:
@@ -61,6 +62,10 @@ color = true
 [web]
 enabled = true
 port = 9876
+
+[teams]
+enabled = true
+scan_interval = 5
 ```
 
 ### キーバインド
@@ -76,8 +81,10 @@ port = 9876
 | `x` | ペインを終了（確認あり） |
 | `Tab` | ビューモード切り替え（Split/List/Preview） |
 | `l` | 分割方向切り替え（横/縦） |
-| `s` | ソート切り替え |
-| `m` | モニタースコープ切り替え（All/Session/Window） |
+| `s` | ソート切り替え（現在無効） |
+| `m` | モニタースコープ切り替え（現在無効） |
+| `t` | タスクオーバーレイ（チームメンバー選択時） |
+| `T` | チーム一覧画面 |
 | `r` | Web RemoteのQRコード表示 |
 | `?` | ヘルプ |
 | `Esc` / `q` | 終了 |

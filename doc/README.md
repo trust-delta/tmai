@@ -25,6 +25,7 @@ Detailed feature documentation.
 - [AskUserQuestion Support](./features/ask-user-question.md) - Number key selection
 - [Exfil Detection](./features/exfil-detection.md) - Security monitoring
 - [Web Remote Control](./features/web-remote.md) - Smartphone control via QR code
+- [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
 
 ## Guides
 

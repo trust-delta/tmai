@@ -155,6 +155,30 @@ Approve from anywhere, even while away.
 
 Details: [Web Remote Control](../features/web-remote.md)
 
+## 8. Agent Teams Visualization
+
+Monitor Claude Code Agent Teams structure and task progress.
+
+- View all teams and their members
+- Track task status (pending, in progress, completed)
+- See which team member is working on what
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Team: my-project                                            │
+│                                                             │
+│  team-lead     [Processing]  Task: Implement auth module    │
+│  researcher    [Idle]        Task: Write tests (completed)  │
+│  tester        [Approval]    Task: Run integration tests    │
+│                                                             │
+│  Progress: ████████░░ 3/5 tasks                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Keys: `t` for task overlay, `T` for team overview.
+
+Details: [Agent Teams](../features/agent-teams.md)
+
 ## Summary
 
 | Strength | Description |
@@ -166,3 +190,4 @@ Details: [Web Remote Control](../features/web-remote.md)
 | High-precision detection | Real-time detection via PTY wrapping |
 | Security | Exfil detection |
 | Remote operation | Approve from smartphone |
+| Agent Teams | Visualize team structure and task progress |

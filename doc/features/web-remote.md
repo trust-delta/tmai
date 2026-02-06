@@ -180,12 +180,13 @@ For programmatic access:
 |--------|------|-------------|
 | GET | `/api/agents` | List agents |
 | POST | `/api/agents/:id/approve` | Approve (send y) |
-| POST | `/api/agents/:id/reject` | Reject (send n) |
 | POST | `/api/agents/:id/select` | Select option |
 | POST | `/api/agents/:id/submit` | Confirm multi-select |
 | POST | `/api/agents/:id/input` | Send text |
 | GET | `/api/agents/:id/preview` | Get pane content |
 | GET | `/api/events` | SSE stream |
+| GET | `/api/teams` | List teams with task summaries |
+| GET | `/api/teams/:name/tasks` | List team tasks |
 
 See [Web API Reference](../reference/web-api.md) for details.
 

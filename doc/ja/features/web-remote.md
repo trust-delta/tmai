@@ -180,12 +180,13 @@ mirroredモードを使用していない場合：
 |---------|------|------|
 | GET | `/api/agents` | エージェント一覧 |
 | POST | `/api/agents/:id/approve` | 承認（y送信） |
-| POST | `/api/agents/:id/reject` | 拒否（n送信） |
 | POST | `/api/agents/:id/select` | 選択肢選択 |
 | POST | `/api/agents/:id/submit` | 複数選択確定 |
 | POST | `/api/agents/:id/input` | テキスト送信 |
 | GET | `/api/agents/:id/preview` | ペイン内容取得 |
 | GET | `/api/events` | SSEストリーム |
+| GET | `/api/teams` | チーム一覧（タスクサマリー付き） |
+| GET | `/api/teams/:name/tasks` | チームタスク一覧 |
 
 詳細は[Web APIリファレンス](../reference/web-api.md)を参照。
 

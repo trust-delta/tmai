@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+- Agent Teams integration for Claude Code team monitoring
+  - Team overview screen (`T` key)
+  - Task overlay for team members (`t` key)
+  - Team structure and task progress visualization
+- Web API endpoints for teams (`/api/teams`, `/api/teams/{name}/tasks`)
+- SSE event type `teams` for real-time team updates
+- `[teams]` configuration section
+- Documentation updates for Agent Teams across all docs (EN/JA)
+
+### Changed
+- Sort (`s`) and monitor scope (`m`) keys temporarily disabled
+  - Sort fixed to Directory, scope fixed to AllSessions
+- Status bar: replaced `s:Sort`/`m:Scope` hints with `t:Tasks`/`T:Teams`
+- Help screen: `s` and `m` keys grayed out, Agent Teams section added
+
+### Fixed
+- Removed stale `n` (reject) key references from documentation
+- Removed stale "Reject" button from Web Remote documentation
+
 ## [0.1.4]
 
 ### Changed

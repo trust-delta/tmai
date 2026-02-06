@@ -135,8 +135,12 @@ impl HelpScreen {
             Self::description_line("  Split → List only → Preview only"),
             Self::key_line("l", "Toggle split direction (layout)"),
             Self::description_line("  Horizontal (left/right) ↔ Vertical (top/bottom)"),
-            Self::key_line("s", "(disabled) Cycle sort method"),
-            Self::key_line("m", "(disabled) Cycle monitor scope"),
+            Self::disabled_key_line("s", "Cycle sort method (temporarily disabled)"),
+            Self::disabled_key_line("m", "Cycle monitor scope (temporarily disabled)"),
+            Line::from(""),
+            Self::section_header("Agent Teams"),
+            Self::key_line("t", "Show task overlay for selected team member"),
+            Self::key_line("T", "Show team overview (all teams and members)"),
             Line::from(""),
             Self::section_header("Creating New Agents"),
             Self::key_line("Enter", "On [+] entry: start create process wizard"),
@@ -199,6 +203,19 @@ impl HelpScreen {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(description.to_string(), Style::default().fg(Color::White)),
+        ])
+    }
+
+    fn disabled_key_line(key: &str, description: &str) -> Line<'static> {
+        Line::from(vec![
+            Span::styled(
+                format!("  {:14}", key),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                description.to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
         ])
     }
 

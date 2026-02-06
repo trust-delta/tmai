@@ -61,7 +61,7 @@ QRコードをスマホのカメラでスキャンし、ブラウザで開きま
 ├─────────────────────────────────────┤
 │                                     │
 │  ● agent-1        [Approval]        │
-│    → Approve  Reject                │
+│    → Approve                        │
 │                                     │
 │  ○ agent-2        [Processing]      │
 │                                     │

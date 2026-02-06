@@ -155,6 +155,30 @@ WARN  Sensitive data in transmission command="curl" sensitive_type="API Key"
 
 詳細: [Web Remote Control](../features/web-remote.md)
 
+## 8. Agent Teams可視化
+
+Claude Code Agent Teamsのチーム構造とタスク進捗を監視。
+
+- 全チームとメンバーを表示
+- タスクステータス（pending, in progress, completed）を追跡
+- どのチームメンバーが何に取り組んでいるか確認
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Team: my-project                                            │
+│                                                             │
+│  team-lead     [Processing]  Task: Implement auth module    │
+│  researcher    [Idle]        Task: Write tests (completed)  │
+│  tester        [Approval]    Task: Run integration tests    │
+│                                                             │
+│  Progress: ████████░░ 3/5 tasks                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+キー: `t` でタスクオーバーレイ、`T` でチーム一覧画面。
+
+詳細: [Agent Teams](../features/agent-teams.md)
+
 ## まとめ
 
 | 強み | 説明 |
@@ -166,3 +190,4 @@ WARN  Sensitive data in transmission command="curl" sensitive_type="API Key"
 | 高精度検出 | PTYラッピングでリアルタイム検出 |
 | セキュリティ | 外部送信検知 |
 | リモート操作 | スマホから承認可能 |
+| Agent Teams | チーム構造・タスク進捗を可視化 |

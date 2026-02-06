@@ -48,8 +48,17 @@
 |-----|--------|
 | `Tab` | Toggle view mode (Split/List/Preview) |
 | `l` | Toggle split direction (Horizontal/Vertical) |
-| `s` | Toggle sort |
-| `m` | Toggle monitor scope (All/Session/Window) |
+| `s` | Toggle sort (currently disabled) |
+| `m` | Toggle monitor scope (currently disabled) |
+
+## Agent Teams
+
+| Key | Action |
+|-----|--------|
+| `t` | Show task overlay (when team member selected) |
+| `T` | Show team overview |
+
+> **Note**: Agent Teams is an experimental feature. Sort and monitor scope are temporarily fixed while teams integration is active.
 
 ## Web Remote
 

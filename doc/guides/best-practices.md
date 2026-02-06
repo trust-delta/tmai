@@ -58,7 +58,7 @@ Toggle with `Tab`.
 
 ### Monitor Session vs Window vs All
 
-Press `m` to cycle through scopes:
+> **Note**: Monitor scope (`m`) is currently disabled while Agent Teams integration is active. Scope is fixed to AllSessions.
 
 | Scope | Use Case |
 |-------|----------|
@@ -95,6 +95,25 @@ tmai wrap claude
 ```
 
 tmai monitors the existing session—no special commands needed.
+
+## Agent Teams Tips
+
+### Monitor Team Progress
+
+When using Claude Code Agent Teams, use the team overview (`T`) to see all teams and their task progress at a glance.
+
+### Use Task Overlay for Details
+
+Select a team member in the agent list and press `t` to see their team's task list with status indicators.
+
+### Configure Scan Interval
+
+If team data updates too frequently or not often enough:
+
+```toml
+[teams]
+scan_interval = 2  # Faster updates (default: 5)
+```
 
 ## Security Tips
 
