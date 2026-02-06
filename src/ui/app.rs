@@ -16,7 +16,7 @@ use crate::tmux::TmuxClient;
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    QrScreen, SelectionPopup, SessionList, StatusBar,
+    QrScreen, SelectionPopup, SessionList, StatusBar, TaskOverlay, TeamOverview,
 };
 use super::Layout;
 
@@ -134,6 +134,12 @@ impl App {
                     return;
                 }
 
+                // Team overview (full-screen, like help)
+                if state.show_team_overview {
+                    TeamOverview::render(frame, frame.area(), &state);
+                    return;
+                }
+
                 let show_input = state.is_input_mode();
                 let areas = self.layout.calculate_with_input(frame.area(), show_input);
 
@@ -186,6 +192,11 @@ impl App {
                     let popup_area = self.layout.popup_area(frame.area(), 35, 25);
                     ConfirmationPopup::render(frame, popup_area, confirmation);
                 }
+
+                // Task overlay popup
+                if state.show_task_overlay {
+                    TaskOverlay::render(frame, frame.area(), &state);
+                }
             })?;
 
             // Tick spinner and marquee animations
@@ -235,6 +246,8 @@ impl App {
         let (
             show_help,
             show_qr,
+            show_task_overlay,
+            show_team_overview,
             is_input_mode,
             is_passthrough_mode,
             is_create_process_mode,
@@ -244,6 +257,8 @@ impl App {
             (
                 state.show_help,
                 state.show_qr,
+                state.show_task_overlay,
+                state.show_team_overview,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
@@ -264,6 +279,16 @@ impl App {
         // Handle help screen
         if show_help {
             return self.handle_help_screen_key(code, modifiers);
+        }
+
+        // Handle task overlay
+        if show_task_overlay {
+            return self.handle_task_overlay_key(code);
+        }
+
+        // Handle team overview
+        if show_team_overview {
+            return self.handle_team_overview_key(code, modifiers);
         }
 
         // Handle create process mode
@@ -558,6 +583,24 @@ impl App {
                 }
             }
 
+            // Task overlay (only if selected agent has team_info)
+            KeyCode::Char('t') => {
+                let has_team = state
+                    .selected_agent()
+                    .is_some_and(|a| a.team_info.is_some());
+                if has_team {
+                    state.show_task_overlay = !state.show_task_overlay;
+                }
+            }
+
+            // Team overview (Shift+T)
+            KeyCode::Char('T') => {
+                state.show_team_overview = !state.show_team_overview;
+                if state.show_team_overview {
+                    state.team_overview_scroll = 0;
+                }
+            }
+
             _ => {}
         }
 
@@ -722,6 +765,64 @@ impl App {
             // Jump to bottom
             KeyCode::Char('G') => {
                 state.help_scroll = u16::MAX; // Will be clamped in render
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Handle keys in task overlay mode
+    fn handle_task_overlay_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            // Close task overlay
+            KeyCode::Char('t') | KeyCode::Esc => {
+                let mut state = self.state.write();
+                state.show_task_overlay = false;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Handle keys in team overview mode
+    fn handle_team_overview_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+        let mut state = self.state.write();
+
+        match code {
+            // Close team overview
+            KeyCode::Char('T') | KeyCode::Esc => {
+                state.show_team_overview = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(1);
+            }
+            // Page down
+            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_add(10);
+            }
+            KeyCode::PageDown => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_add(10);
+            }
+            // Page up
+            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(10);
+            }
+            KeyCode::PageUp => {
+                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(10);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                state.team_overview_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                state.team_overview_scroll = u16::MAX; // Will be clamped in render
             }
             _ => {}
         }

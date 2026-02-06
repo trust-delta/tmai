@@ -2,6 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::teams::TaskStatus;
+
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
@@ -123,48 +125,12 @@ impl AgentType {
     fn is_known_non_agent_command(cmd_lower: &str) -> bool {
         const NON_AGENT_COMMANDS: &[&str] = &[
             // File managers
-            "yazi",
-            "ranger",
-            "lf",
-            "nnn",
-            "mc",
-            "vifm",
-            // Editors
-            "vim",
-            "nvim",
-            "nano",
-            "emacs",
-            "helix",
-            "hx",
-            "micro",
-            "code",
-            // Shells
-            "bash",
-            "zsh",
-            "fish",
-            "sh",
-            "dash",
-            "tcsh",
-            "ksh",
-            // Common utilities
-            "less",
-            "more",
-            "man",
-            "htop",
-            "btop",
-            "top",
-            "tmux",
-            "screen",
-            "git",
-            "tig",
-            "lazygit",
-            "docker",
-            "kubectl",
-            // Pagers and viewers
-            "bat",
-            "cat",
-            "head",
-            "tail",
+            "yazi", "ranger", "lf", "nnn", "mc", "vifm", // Editors
+            "vim", "nvim", "nano", "emacs", "helix", "hx", "micro", "code", // Shells
+            "bash", "zsh", "fish", "sh", "dash", "tcsh", "ksh", // Common utilities
+            "less", "more", "man", "htop", "btop", "top", "tmux", "screen", "git", "tig",
+            "lazygit", "docker", "kubectl", // Pagers and viewers
+            "bat", "cat", "head", "tail",
         ];
         NON_AGENT_COMMANDS.contains(&cmd_lower)
     }
@@ -391,6 +357,30 @@ impl fmt::Display for AgentStatus {
     }
 }
 
+/// Team information associated with an agent
+#[derive(Debug, Clone)]
+pub struct AgentTeamInfo {
+    /// Team name
+    pub team_name: String,
+    /// Member name within the team
+    pub member_name: String,
+    /// Whether this agent is the team lead
+    pub is_lead: bool,
+    /// Currently assigned task (if any)
+    pub current_task: Option<TeamTaskSummaryItem>,
+}
+
+/// Summary of a task for display purposes
+#[derive(Debug, Clone)]
+pub struct TeamTaskSummaryItem {
+    /// Task ID
+    pub id: String,
+    /// Task subject/title
+    pub subject: String,
+    /// Task status
+    pub status: TaskStatus,
+}
+
 /// A monitored agent instance
 #[derive(Debug, Clone)]
 pub struct MonitoredAgent {
@@ -428,6 +418,8 @@ pub struct MonitoredAgent {
     pub context_warning: Option<u8>,
     /// How the agent state was detected
     pub detection_source: DetectionSource,
+    /// Team information (if this agent is part of a team)
+    pub team_info: Option<AgentTeamInfo>,
 }
 
 impl MonitoredAgent {
@@ -462,6 +454,7 @@ impl MonitoredAgent {
             last_update: chrono::Utc::now(),
             context_warning: None,
             detection_source: DetectionSource::default(),
+            team_info: None,
         }
     }
 
@@ -675,8 +668,14 @@ mod tests {
 
         // Should NOT match: file paths or filenames containing agent name
         assert!(!AgentType::is_likely_agent_title("codex.rs", "codex"));
-        assert!(!AgentType::is_likely_agent_title("/path/to/codex/file", "codex"));
-        assert!(!AgentType::is_likely_agent_title("editing codex.py", "codex"));
+        assert!(!AgentType::is_likely_agent_title(
+            "/path/to/codex/file",
+            "codex"
+        ));
+        assert!(!AgentType::is_likely_agent_title(
+            "editing codex.py",
+            "codex"
+        ));
 
         // Gemini tests
         assert!(AgentType::is_likely_agent_title("gemini", "gemini"));

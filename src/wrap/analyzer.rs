@@ -29,6 +29,12 @@ pub struct Analyzer {
     pid: u32,
     /// Compiled patterns
     patterns: AnalyzerPatterns,
+    /// Team name (if this agent is part of a team)
+    team_name: Option<String>,
+    /// Team member name
+    team_member_name: Option<String>,
+    /// Whether this agent is the team lead
+    is_team_lead: bool,
 }
 
 /// Pre-compiled regex patterns
@@ -81,6 +87,14 @@ impl Default for AnalyzerPatterns {
 impl Analyzer {
     /// Create a new analyzer
     pub fn new(pid: u32) -> Self {
+        // Detect team info from environment variables
+        let team_name = std::env::var("CLAUDE_CODE_TASK_LIST_ID").ok();
+        let team_member_name = std::env::var("CLAUDE_AGENT_NAME").ok();
+        let is_team_lead = team_member_name
+            .as_deref()
+            .map(|n| n.contains("lead"))
+            .unwrap_or(false);
+
         let now = Instant::now();
         Self {
             last_output: now,
@@ -91,6 +105,9 @@ impl Analyzer {
             pending_approval_at: None,
             pid,
             patterns: AnalyzerPatterns::default(),
+            team_name,
+            team_member_name,
+            is_team_lead,
         }
     }
 
@@ -135,18 +152,18 @@ impl Analyzer {
         let since_output = now.duration_since(self.last_output);
         let _since_input = now.duration_since(self.last_input);
 
+        let mut state;
+
         // If output is still flowing, we're processing
         if since_output < Duration::from_millis(PROCESSING_TIMEOUT_MS) {
-            return WrapState::processing(self.pid);
-        }
-
-        // Check for approval that has settled
-        if let Some((ref approval_type, ref details)) = self.pending_approval {
+            state = WrapState::processing(self.pid);
+        } else if let Some((ref approval_type, ref details)) = self.pending_approval {
+            // Check for approval that has settled
             if let Some(detected_at) = self.pending_approval_at {
                 let since_detected = now.duration_since(detected_at);
                 if since_detected >= Duration::from_millis(APPROVAL_SETTLE_MS) {
                     // Approval has settled, return it
-                    return match approval_type {
+                    state = match approval_type {
                         WrapApprovalType::UserQuestion => {
                             let (choices, multi_select, cursor_pos) = self.extract_choices();
                             WrapState::user_question(self.pid, choices, multi_select, cursor_pos)
@@ -159,15 +176,23 @@ impl Analyzer {
                     };
                 } else {
                     // Still settling, show as processing
-                    return WrapState::processing(self.pid);
+                    state = WrapState::processing(self.pid);
                 }
+            } else {
+                state = WrapState::idle(self.pid);
             }
+        } else {
+            // No approval detected, output stopped - we're idle
+            state = WrapState::idle(self.pid);
+            state.last_output = instant_to_millis(self.last_output);
+            state.last_input = instant_to_millis(self.last_input);
         }
 
-        // No approval detected, output stopped - we're idle
-        let mut state = WrapState::idle(self.pid);
-        state.last_output = instant_to_millis(self.last_output);
-        state.last_input = instant_to_millis(self.last_input);
+        // Apply team information
+        state.team_name = self.team_name.clone();
+        state.team_member_name = self.team_member_name.clone();
+        state.is_team_lead = self.is_team_lead;
+
         state
     }
 
@@ -536,7 +561,11 @@ Which option?
         let lines: Vec<&str> = content.lines().collect();
         for line in &lines {
             let matched = analyzer.patterns.choice_pattern.captures(line);
-            eprintln!("Line: {:?} -> Match: {:?}", line, matched.map(|c| c[0].to_string()));
+            eprintln!(
+                "Line: {:?} -> Match: {:?}",
+                line,
+                matched.map(|c| c[0].to_string())
+            );
         }
 
         let detected = analyzer.detect_user_question(&analyzer.output_buffer);

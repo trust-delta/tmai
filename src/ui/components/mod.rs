@@ -7,6 +7,8 @@ mod qr_screen;
 mod selection_popup;
 mod session_list;
 mod status_bar;
+mod task_overlay;
+mod team_overview;
 
 pub use confirmation_popup::ConfirmationPopup;
 pub use create_process_popup::CreateProcessPopup;
@@ -17,3 +19,5 @@ pub use qr_screen::QrScreen;
 pub use selection_popup::SelectionPopup;
 pub use session_list::{ListEntry, SessionList};
 pub use status_bar::StatusBar;
+pub use task_overlay::TaskOverlay;
+pub use team_overview::TeamOverview;

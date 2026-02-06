@@ -6,6 +6,7 @@ class TmaiRemote {
     constructor() {
         this.token = this.getToken();
         this.agents = [];
+        this.teams = [];
         this.eventSource = null;
         this.selectedChoices = new Map();
         this.previousStates = new Map();
@@ -190,6 +191,15 @@ class TmaiRemote {
             }
         });
 
+        this.eventSource.addEventListener('teams', (event) => {
+            try {
+                this.teams = JSON.parse(event.data);
+                this.render();
+            } catch (error) {
+                console.error('Error parsing teams SSE data:', error);
+            }
+        });
+
         this.eventSource.onopen = () => {
             this.setConnected(true);
         };
@@ -270,7 +280,15 @@ class TmaiRemote {
             return 0;
         });
 
-        this.elements.agentList.innerHTML = sorted.map(agent => this.renderAgent(agent)).join('');
+        // Group agents by team if team data is available
+        let html = '';
+        if (this.teams.length > 0) {
+            html = this.renderWithTeamGroups(sorted);
+        } else {
+            html = sorted.map(agent => this.renderAgent(agent)).join('');
+        }
+
+        this.elements.agentList.innerHTML = html;
         this.attachEventListeners();
 
         // Restore state after re-rendering
@@ -297,6 +315,91 @@ class TmaiRemote {
         });
 
         this.pendingRender = false;
+    }
+
+    /**
+     * Render agents grouped by team
+     * @param {Array} agents - sorted agent list
+     * @returns {string} HTML string
+     */
+    renderWithTeamGroups(agents) {
+        // Build a map of team_name -> team info
+        const teamMap = new Map();
+        for (const team of this.teams) {
+            teamMap.set(team.name, team);
+        }
+
+        // Separate agents into team groups and ungrouped
+        const teamAgents = new Map();
+        const ungrouped = [];
+
+        for (const agent of agents) {
+            if (agent.team && agent.team.team_name) {
+                const teamName = agent.team.team_name;
+                if (!teamAgents.has(teamName)) {
+                    teamAgents.set(teamName, []);
+                }
+                teamAgents.get(teamName).push(agent);
+            } else {
+                ungrouped.push(agent);
+            }
+        }
+
+        let html = '';
+
+        // Render team groups
+        for (const [teamName, members] of teamAgents) {
+            const team = teamMap.get(teamName);
+            html += this.renderTeamGroup(teamName, team, members);
+        }
+
+        // Render ungrouped agents
+        if (ungrouped.length > 0 && teamAgents.size > 0) {
+            html += '<div class="team-group"><div class="team-header"><span class="team-name">Other Agents</span></div>';
+            html += ungrouped.map(agent => this.renderAgent(agent)).join('');
+            html += '</div>';
+        } else {
+            html += ungrouped.map(agent => this.renderAgent(agent)).join('');
+        }
+
+        return html;
+    }
+
+    /**
+     * Render a team group with header and progress bar
+     * @param {string} teamName
+     * @param {Object|undefined} team - team info from SSE
+     * @param {Array} agents - agents in this team
+     * @returns {string} HTML string
+     */
+    renderTeamGroup(teamName, team, agents) {
+        const summary = team ? team.task_summary : { total: 0, completed: 0, in_progress: 0, pending: 0 };
+        const pct = summary.total > 0 ? Math.round((summary.completed / summary.total) * 100) : 0;
+
+        const progressHtml = summary.total > 0 ? `
+            <div class="team-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${pct}%"></div>
+                </div>
+                <span class="progress-text">${summary.completed}/${summary.total} tasks (${pct}%)</span>
+            </div>
+        ` : '';
+
+        const descHtml = team && team.description
+            ? `<span class="team-description">${this.escapeHtml(team.description)}</span>`
+            : '';
+
+        let html = `<div class="team-group">`;
+        html += `<div class="team-header">
+            <div class="team-header-top">
+                <span class="team-name">${this.escapeHtml(teamName)}</span>
+                ${descHtml}
+            </div>
+            ${progressHtml}
+        </div>`;
+        html += agents.map(agent => this.renderAgent(agent)).join('');
+        html += '</div>';
+        return html;
     }
 
     /**
@@ -357,10 +460,18 @@ class TmaiRemote {
             ${isExpanded ? `<div class="preview-content">${previewContent ? this.escapeHtml(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
         `;
 
+        // Team badge
+        const teamBadgeHtml = agent.team
+            ? `<span class="team-badge">${this.escapeHtml(agent.team.member_name)}${agent.team.is_lead ? ' (lead)' : ''}</span>`
+            : '';
+
         return `
             <div class="agent-card ${needsAttention}" data-agent-id="${agent.id}">
                 <div class="agent-header">
-                    <span class="agent-type">${agent.agent_type}</span>
+                    <div class="agent-header-left">
+                        <span class="agent-type">${agent.agent_type}</span>
+                        ${teamBadgeHtml}
+                    </div>
                     <span class="agent-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <div class="agent-info">

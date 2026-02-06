@@ -72,6 +72,15 @@ pub struct WrapState {
     /// Tmux pane ID (if known)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pane_id: Option<String>,
+    /// Team name (if this agent is part of a team)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub team_name: Option<String>,
+    /// Team member name
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub team_member_name: Option<String>,
+    /// Whether this agent is the team lead
+    #[serde(default)]
+    pub is_team_lead: bool,
 }
 
 impl Default for WrapState {
@@ -88,6 +97,9 @@ impl Default for WrapState {
             last_input: now,
             pid: 0,
             pane_id: None,
+            team_name: None,
+            team_member_name: None,
+            is_team_lead: false,
         }
     }
 }
@@ -202,8 +214,14 @@ impl StateFile {
             fs::create_dir_all(&state_dir)
                 .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
             // Set directory permissions to 0700 (owner only)
-            fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700))
-                .with_context(|| format!("Failed to set permissions on state directory: {}", STATE_DIR))?;
+            fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700)).with_context(
+                || {
+                    format!(
+                        "Failed to set permissions on state directory: {}",
+                        STATE_DIR
+                    )
+                },
+            )?;
         }
 
         let path = state_dir.join(format!("{}.state", id));

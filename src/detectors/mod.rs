@@ -83,10 +83,9 @@ pub fn get_detector(agent_type: &AgentType) -> &'static dyn StatusDetector {
                 detector
             } else {
                 // Only leak once per unique custom agent name
-                let detector: &'static dyn StatusDetector =
-                    Box::leak(Box::new(DefaultDetector::new(AgentType::Custom(
-                        name.clone(),
-                    ))));
+                let detector: &'static dyn StatusDetector = Box::leak(Box::new(
+                    DefaultDetector::new(AgentType::Custom(name.clone())),
+                ));
                 cache.insert(name.clone(), detector);
                 detector
             }

@@ -101,6 +101,10 @@ pub struct Settings {
     /// External transmission detection settings
     #[serde(default)]
     pub exfil_detection: ExfilDetectionSettings,
+
+    /// Team detection settings
+    #[serde(default)]
+    pub teams: TeamSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -198,6 +202,37 @@ impl Default for ExfilDetectionSettings {
     }
 }
 
+/// Team detection settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamSettings {
+    /// Enable team detection
+    #[serde(default = "default_team_enabled")]
+    pub enabled: bool,
+
+    /// Scan interval in poll cycles (default: 5 = ~2.5s at 500ms poll)
+    #[serde(default = "default_scan_interval")]
+    pub scan_interval: u32,
+}
+
+/// Default for team enabled
+fn default_team_enabled() -> bool {
+    true
+}
+
+/// Default scan interval
+fn default_scan_interval() -> u32 {
+    5
+}
+
+impl Default for TeamSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_team_enabled(),
+            scan_interval: default_scan_interval(),
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -231,6 +266,7 @@ impl Default for Settings {
             ui: UiSettings::default(),
             web: WebSettings::default(),
             exfil_detection: ExfilDetectionSettings::default(),
+            teams: TeamSettings::default(),
         }
     }
 }

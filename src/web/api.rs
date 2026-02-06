@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::agents::{AgentStatus, ApprovalType};
 use crate::detectors::get_detector;
 use crate::state::SharedState;
+use crate::teams::TaskStatus;
 use crate::tmux::TmuxClient;
 
 /// Text input request body
@@ -42,6 +43,65 @@ pub struct AgentInfo {
     pub session: String,
     pub window_name: String,
     pub needs_attention: bool,
+    pub team: Option<AgentTeamInfoResponse>,
+}
+
+/// Team information associated with an agent for API response
+#[derive(Debug, Serialize)]
+pub struct AgentTeamInfoResponse {
+    pub team_name: String,
+    pub member_name: String,
+    pub is_lead: bool,
+    pub current_task: Option<TaskSummaryResponse>,
+}
+
+/// Summary of a task for API response
+#[derive(Debug, Serialize)]
+pub struct TaskSummaryResponse {
+    pub id: String,
+    pub subject: String,
+    pub status: String,
+}
+
+/// Team overview information for API response
+#[derive(Debug, Serialize)]
+pub(crate) struct TeamInfoResponse {
+    name: String,
+    description: Option<String>,
+    task_summary: TaskSummaryOverview,
+    members: Vec<TeamMemberResponse>,
+}
+
+/// Task progress summary for API response
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskSummaryOverview {
+    total: usize,
+    completed: usize,
+    in_progress: usize,
+    pending: usize,
+}
+
+/// Team member information for API response
+#[derive(Debug, Serialize)]
+pub(crate) struct TeamMemberResponse {
+    name: String,
+    agent_type: Option<String>,
+    is_lead: bool,
+    pane_target: Option<String>,
+    current_task: Option<TaskSummaryResponse>,
+}
+
+/// Detailed team task information for API response
+#[derive(Debug, Serialize)]
+pub(crate) struct TeamTaskResponse {
+    id: String,
+    subject: String,
+    description: String,
+    active_form: Option<String>,
+    status: String,
+    owner: Option<String>,
+    blocks: Vec<String>,
+    blocked_by: Vec<String>,
 }
 
 /// Status information for API response
@@ -108,6 +168,23 @@ impl From<&AgentStatus> for StatusInfo {
     }
 }
 
+/// Convert agent team info to API response format
+fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoResponse {
+    AgentTeamInfoResponse {
+        team_name: team_info.team_name.clone(),
+        member_name: team_info.member_name.clone(),
+        is_lead: team_info.is_lead,
+        current_task: team_info
+            .current_task
+            .as_ref()
+            .map(|t| TaskSummaryResponse {
+                id: t.id.clone(),
+                subject: t.subject.clone(),
+                status: t.status.to_string(),
+            }),
+    }
+}
+
 /// Get all agents
 pub async fn get_agents(State(state): State<Arc<ApiState>>) -> Json<Vec<AgentInfo>> {
     let app_state = state.app_state.read();
@@ -123,6 +200,7 @@ pub async fn get_agents(State(state): State<Arc<ApiState>>) -> Json<Vec<AgentInf
             session: agent.session.clone(),
             window_name: agent.window_name.clone(),
             needs_attention: agent.status.needs_attention(),
+            team: agent.team_info.as_ref().map(convert_team_info),
         })
         .collect();
 
@@ -274,7 +352,11 @@ pub async fn send_text(
     }
 
     // Send the text literally followed by Enter in a single command
-    if state.tmux_client.send_text_and_enter(&id, &req.text).is_err() {
+    if state
+        .tmux_client
+        .send_text_and_enter(&id, &req.text)
+        .is_err()
+    {
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
@@ -304,4 +386,125 @@ pub async fn get_preview(
         }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
+}
+
+/// Get all teams with their task summaries and member info
+pub async fn get_teams(State(state): State<Arc<ApiState>>) -> Json<Vec<TeamInfoResponse>> {
+    let app_state = state.app_state.read();
+
+    let teams: Vec<TeamInfoResponse> = app_state
+        .teams
+        .values()
+        .map(|snapshot| {
+            let total = snapshot.tasks.len();
+            let completed = snapshot
+                .tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::Completed)
+                .count();
+            let in_progress = snapshot
+                .tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::InProgress)
+                .count();
+            let pending = snapshot
+                .tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::Pending)
+                .count();
+
+            let members: Vec<TeamMemberResponse> = snapshot
+                .config
+                .members
+                .iter()
+                .map(|member| {
+                    let pane_target = snapshot.member_panes.get(&member.name).cloned();
+
+                    // Find this member's current task from agent info
+                    let current_task = pane_target
+                        .as_ref()
+                        .and_then(|target| app_state.agents.get(target))
+                        .and_then(|agent| agent.team_info.as_ref())
+                        .and_then(|ti| ti.current_task.as_ref())
+                        .map(|t| TaskSummaryResponse {
+                            id: t.id.clone(),
+                            subject: t.subject.clone(),
+                            status: t.status.to_string(),
+                        });
+
+                    // Check if this member is the lead (first member is typically lead)
+                    let is_lead = snapshot
+                        .config
+                        .members
+                        .first()
+                        .map(|first| first.name == member.name)
+                        .unwrap_or(false);
+
+                    TeamMemberResponse {
+                        name: member.name.clone(),
+                        agent_type: member.agent_type.clone(),
+                        is_lead,
+                        pane_target,
+                        current_task,
+                    }
+                })
+                .collect();
+
+            TeamInfoResponse {
+                name: snapshot.config.team_name.clone(),
+                description: snapshot.config.description.clone(),
+                task_summary: TaskSummaryOverview {
+                    total,
+                    completed,
+                    in_progress,
+                    pending,
+                },
+                members,
+            }
+        })
+        .collect();
+
+    Json(teams)
+}
+
+/// Validate team name to prevent path traversal
+///
+/// Only allows alphanumeric characters, `-`, and `_`.
+fn is_valid_team_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Get tasks for a specific team
+pub async fn get_team_tasks(
+    State(state): State<Arc<ApiState>>,
+    Path(name): Path<String>,
+) -> Result<Json<Vec<TeamTaskResponse>>, StatusCode> {
+    // Validate team name to prevent path traversal
+    if !is_valid_team_name(&name) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let app_state = state.app_state.read();
+
+    let snapshot = app_state.teams.get(&name).ok_or(StatusCode::NOT_FOUND)?;
+
+    let tasks: Vec<TeamTaskResponse> = snapshot
+        .tasks
+        .iter()
+        .map(|task| TeamTaskResponse {
+            id: task.id.clone(),
+            subject: task.subject.clone(),
+            description: task.description.clone(),
+            active_form: task.active_form.clone(),
+            status: task.status.to_string(),
+            owner: task.owner.clone(),
+            blocks: task.blocks.clone(),
+            blocked_by: task.blocked_by.clone(),
+        })
+        .collect();
+
+    Ok(Json(tasks))
 }

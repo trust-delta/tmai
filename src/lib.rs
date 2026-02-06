@@ -3,6 +3,7 @@ pub mod config;
 pub mod detectors;
 pub mod monitor;
 pub mod state;
+pub mod teams;
 pub mod tmux;
 pub mod ui;
 pub mod web;

@@ -75,6 +75,8 @@ impl WebServer {
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))
             .route("/agents/{id}/preview", get(api::get_preview))
+            .route("/teams", get(api::get_teams))
+            .route("/teams/{name}/tasks", get(api::get_team_tasks))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

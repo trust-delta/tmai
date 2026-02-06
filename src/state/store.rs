@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::agents::MonitoredAgent;
+use crate::teams::{TeamConfig, TeamTask};
 use crate::tmux::PaneInfo;
 
 /// Shared state type alias
@@ -34,6 +35,8 @@ pub enum SortBy {
     Status,
     /// Sort by last update time
     LastUpdate,
+    /// Sort by team
+    Team,
 }
 
 impl SortBy {
@@ -44,7 +47,8 @@ impl SortBy {
             SortBy::SessionOrder => SortBy::AgentType,
             SortBy::AgentType => SortBy::Status,
             SortBy::Status => SortBy::LastUpdate,
-            SortBy::LastUpdate => SortBy::Directory,
+            SortBy::LastUpdate => SortBy::Team,
+            SortBy::Team => SortBy::Directory,
         }
     }
 
@@ -56,6 +60,7 @@ impl SortBy {
             SortBy::AgentType => "Type",
             SortBy::Status => "Status",
             SortBy::LastUpdate => "Updated",
+            SortBy::Team => "Team",
         }
     }
 }
@@ -208,6 +213,19 @@ pub struct CreateProcessState {
     pub is_input_mode: bool,
 }
 
+/// Snapshot of a team's state at a point in time
+#[derive(Debug, Clone)]
+pub struct TeamSnapshot {
+    /// Team configuration
+    pub config: TeamConfig,
+    /// Current tasks
+    pub tasks: Vec<TeamTask>,
+    /// Mapping of member_name → pane target
+    pub member_panes: HashMap<String, String>,
+    /// When this snapshot was last updated
+    pub last_scan: chrono::DateTime<chrono::Utc>,
+}
+
 /// Application state
 #[derive(Debug)]
 pub struct AppState {
@@ -267,6 +285,14 @@ pub struct AppState {
     pub web_port: u16,
     /// Marquee animation state for selected item
     pub marquee_state: MarqueeState,
+    /// Team snapshots by team name
+    pub teams: HashMap<String, TeamSnapshot>,
+    /// Whether the team overview screen is shown
+    pub show_team_overview: bool,
+    /// Whether the task overlay is shown
+    pub show_task_overlay: bool,
+    /// Team overview scroll offset
+    pub team_overview_scroll: u16,
 }
 
 impl AppState {
@@ -301,6 +327,10 @@ impl AppState {
             web_token: None,
             web_port: 9876,
             marquee_state: MarqueeState::default(),
+            teams: HashMap::new(),
+            show_team_overview: false,
+            show_task_overlay: false,
+            team_overview_scroll: 0,
         }
     }
 
@@ -397,6 +427,7 @@ impl AppState {
                 existing.window_name = agent.window_name;
                 existing.window_index = agent.window_index;
                 existing.pane_index = agent.pane_index;
+                existing.team_info = agent.team_info;
             } else {
                 self.agents.insert(id.clone(), agent);
             }
@@ -471,6 +502,20 @@ impl AppState {
                             .cmp(&a.last_update)
                             .then_with(|| a.id.cmp(&b.id))
                     }
+                    SortBy::Team => {
+                        // Sort by team name (no-team agents last), then by member name
+                        let team_a = a
+                            .team_info
+                            .as_ref()
+                            .map(|t| t.team_name.as_str())
+                            .unwrap_or("\u{ffff}"); // Sort no-team last
+                        let team_b = b
+                            .team_info
+                            .as_ref()
+                            .map(|t| t.team_name.as_str())
+                            .unwrap_or("\u{ffff}");
+                        team_a.cmp(team_b).then_with(|| a.id.cmp(&b.id))
+                    }
                 },
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,
@@ -496,6 +541,13 @@ impl AppState {
             SortBy::Directory => Some(agent.cwd.clone()),
             SortBy::SessionOrder => Some(agent.session.clone()),
             SortBy::AgentType => Some(agent.agent_type.short_name().to_string()),
+            SortBy::Team => Some(
+                agent
+                    .team_info
+                    .as_ref()
+                    .map(|t| format!("Team: {}", t.team_name))
+                    .unwrap_or_else(|| "(No Team)".to_string()),
+            ),
             _ => None,
         }
     }
@@ -623,7 +675,10 @@ impl AppState {
 
         // Try to get Windows host IP if running in WSL
         if let Some(host_ip) = get_wsl_host_ip() {
-            return Some(format!("http://{}:{}/?token={}", host_ip, self.web_port, token));
+            return Some(format!(
+                "http://{}:{}/?token={}",
+                host_ip, self.web_port, token
+            ));
         }
 
         // Fall back to local IP detection

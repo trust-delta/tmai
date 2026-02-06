@@ -291,6 +291,14 @@ impl StatusBar {
                 format!("[{}] ", detection_label),
                 Style::default().fg(detection_color),
             ));
+
+            // Show team info if the agent is part of a team
+            if let Some(team_info) = &agent.team_info {
+                spans.push(Span::styled(
+                    format!("[{}/{}] ", team_info.team_name, team_info.member_name),
+                    Style::default().fg(Color::Magenta),
+                ));
+            }
         }
     }
 }

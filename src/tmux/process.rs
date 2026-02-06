@@ -116,6 +116,37 @@ impl ProcessCache {
         cache.retain(|_, info| info.last_update.elapsed() < self.ttl);
     }
 
+    /// Read a specific environment variable from a process
+    ///
+    /// Reads `/proc/{pid}/environ` and extracts the value of the given variable.
+    /// Returns None on any error (permission denied, process gone, etc.)
+    pub fn get_env_var(&self, pid: u32, var_name: &str) -> Option<String> {
+        // Use cache key with env_ prefix to differentiate from cmdline cache
+        let cache_key = pid + 2_000_000_000; // Use different offset from child cmdline
+        let cache_subkey = format!("{}:{}", cache_key, var_name);
+
+        // Check cache first (using the hash of var_name + pid as key)
+        // For simplicity, just read from /proc directly since env reads are infrequent
+        let environ_path = format!("/proc/{}/environ", pid);
+        let content = std::fs::read(&environ_path).ok()?;
+
+        let prefix = format!("{}=", var_name);
+
+        // environ is null-byte separated
+        for entry in content.split(|&b| b == 0) {
+            if let Ok(entry_str) = std::str::from_utf8(entry) {
+                if let Some(value) = entry_str.strip_prefix(&prefix) {
+                    return Some(value.to_string());
+                }
+            }
+        }
+
+        // Suppress unused variable warning
+        let _ = cache_subkey;
+
+        None
+    }
+
     /// Clear all entries from the cache
     pub fn clear(&self) {
         let mut cache = self.cache.write();

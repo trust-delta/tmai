@@ -1,14 +1,18 @@
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentStatus, ApprovalType, DetectionSource, MonitoredAgent};
+use crate::agents::{
+    AgentStatus, AgentTeamInfo, ApprovalType, DetectionSource, MonitoredAgent, TeamTaskSummaryItem,
+};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::{get_detector, DetectionContext};
-use crate::state::{MonitorScope, SharedState};
+use crate::state::{MonitorScope, SharedState, TeamSnapshot};
+use crate::teams::{self, TaskStatus};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
 use crate::wrap::state_file::{self, WrapApprovalType, WrapState, WrapStatus};
 
@@ -98,7 +102,7 @@ impl Poller {
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
 
             match self.poll_once().await {
-                Ok(agents) => {
+                Ok(mut agents) => {
                     backoff_ms = 0;
                     last_error = None;
                     last_error_at = None;
@@ -107,6 +111,13 @@ impl Poller {
                     poll_count = poll_count.wrapping_add(1);
                     if poll_count.is_multiple_of(10) {
                         self.process_cache.cleanup();
+                    }
+
+                    // Team scanning at configured interval
+                    if self.settings.teams.enabled
+                        && poll_count.is_multiple_of(self.settings.teams.scan_interval)
+                    {
+                        self.scan_and_apply_teams(&mut agents);
                     }
 
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
@@ -152,10 +163,7 @@ impl Poller {
         // Get current monitor scope and selected agent ID from state
         let (monitor_scope, selected_agent_id) = {
             let state = self.state.read();
-            let selected_id = state
-                .agent_order
-                .get(state.selected_index)
-                .cloned();
+            let selected_id = state.agent_order.get(state.selected_index).cloned();
             (state.monitor_scope, selected_id)
         };
 
@@ -266,6 +274,109 @@ impl Poller {
         });
 
         Ok(agents)
+    }
+
+    /// Scan for teams and apply team info to agents
+    fn scan_and_apply_teams(&self, agents: &mut [MonitoredAgent]) {
+        let team_configs = match teams::scan_teams() {
+            Ok(configs) => configs,
+            Err(_) => return,
+        };
+
+        if team_configs.is_empty() {
+            // Clear teams from state
+            let mut state = self.state.write();
+            state.teams.clear();
+            return;
+        }
+
+        // Collect agent pids for mapping
+        let agent_pids: Vec<(String, u32)> =
+            agents.iter().map(|a| (a.target.clone(), a.pid)).collect();
+
+        let mut snapshots: HashMap<String, TeamSnapshot> = HashMap::new();
+
+        for team_config in &team_configs {
+            // Scan tasks for this team
+            let tasks = teams::scan_tasks(&team_config.team_name).unwrap_or_default();
+
+            // Map members to panes
+            let member_panes = teams::map_members_to_panes(team_config, &agent_pids);
+
+            // Also try env var based matching via process cache
+            let mut env_mapping: HashMap<String, String> = HashMap::new();
+            for (target, pid) in &agent_pids {
+                if let Some(task_list_id) = self
+                    .process_cache
+                    .get_env_var(*pid, "CLAUDE_CODE_TASK_LIST_ID")
+                {
+                    if task_list_id == team_config.team_name {
+                        // Found a match - try to identify which member
+                        for member in &team_config.members {
+                            if let Some(agent_id) =
+                                self.process_cache.get_env_var(*pid, "CLAUDE_AGENT_ID")
+                            {
+                                if agent_id == member.agent_id {
+                                    env_mapping.insert(member.name.clone(), target.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Merge mappings (env-based takes priority)
+            let mut final_mapping = member_panes;
+            for (name, target) in env_mapping {
+                final_mapping.insert(name, target);
+            }
+
+            // Apply team info to matching agents
+            for (member_name, pane_target) in &final_mapping {
+                if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
+                    let is_lead = team_config
+                        .members
+                        .first()
+                        .map(|m| &m.name == member_name)
+                        .unwrap_or(false);
+
+                    // Find current task for this member
+                    let current_task = tasks
+                        .iter()
+                        .find(|t| {
+                            t.owner.as_deref() == Some(member_name)
+                                && t.status == TaskStatus::InProgress
+                        })
+                        .map(|t| TeamTaskSummaryItem {
+                            id: t.id.clone(),
+                            subject: t.subject.clone(),
+                            status: t.status,
+                        });
+
+                    agent.team_info = Some(AgentTeamInfo {
+                        team_name: team_config.team_name.clone(),
+                        member_name: member_name.clone(),
+                        is_lead,
+                        current_task,
+                    });
+                }
+            }
+
+            snapshots.insert(
+                team_config.team_name.clone(),
+                TeamSnapshot {
+                    config: team_config.clone(),
+                    tasks,
+                    member_panes: final_mapping,
+                    last_scan: chrono::Utc::now(),
+                },
+            );
+        }
+
+        // Update state with team snapshots
+        let mut state = self.state.write();
+        state.teams = snapshots;
     }
 
     /// Check if a pane matches the current monitor scope

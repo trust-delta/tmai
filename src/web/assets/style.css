@@ -452,6 +452,83 @@ main {
     font-style: italic;
 }
 
+/* Team Groups */
+.team-group {
+    margin-bottom: 20px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    padding: 12px;
+    background: var(--bg-card);
+}
+
+.team-header {
+    padding: 8px 12px;
+    margin-bottom: 12px;
+}
+
+.team-header-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.team-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.team-description {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.team-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--success);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* Team Badge on Agent Cards */
+.team-badge {
+    font-size: 0.7rem;
+    background: rgba(96, 165, 250, 0.2);
+    color: var(--info);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.agent-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
 /* Toast improvements */
 .toast {
     background: var(--bg-card-solid);

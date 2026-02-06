@@ -8,8 +8,18 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::agents::{AgentStatus, MonitoredAgent};
-use crate::state::AppState;
+use crate::state::{AppState, SortBy};
+use crate::teams::TaskStatus;
 use crate::ui::SplitDirection;
+
+/// Optional task summary for team group headers
+#[derive(Debug, Clone, Default)]
+pub struct GroupTaskSummary {
+    /// Number of completed tasks
+    pub done: usize,
+    /// Total number of tasks
+    pub total: usize,
+}
 
 /// Entry in the session list (can be agent, group header, or create new button)
 #[derive(Debug, Clone)]
@@ -20,6 +30,8 @@ pub enum ListEntry {
         agent_count: usize,
         attention_count: usize,
         collapsed: bool,
+        /// Task summary (only populated when sorted by Team)
+        task_summary: Option<GroupTaskSummary>,
     },
     CreateNew {
         group_key: String,
@@ -73,6 +85,7 @@ impl SessionList {
                         agent_count,
                         attention_count,
                         collapsed,
+                        task_summary,
                     } => Self::create_group_header(
                         key,
                         *agent_count,
@@ -80,6 +93,7 @@ impl SessionList {
                         *collapsed,
                         is_selected,
                         marquee_offset,
+                        task_summary.as_ref(),
                     ),
                     ListEntry::CreateNew { .. } => Self::create_new_item(),
                 }
@@ -109,7 +123,7 @@ impl SessionList {
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol("▶ ");
+            .highlight_symbol("\u{25B6} ");
 
         let mut list_state = ListState::default();
         list_state.select(Some(ui_entry_index));
@@ -156,6 +170,7 @@ impl SessionList {
                         agent_count,
                         attention_count,
                         collapsed,
+                        task_summary,
                     } => Self::create_compact_group_header(
                         key,
                         inner_width,
@@ -164,6 +179,7 @@ impl SessionList {
                         *collapsed,
                         is_selected,
                         marquee_offset,
+                        task_summary.as_ref(),
                     ),
                     ListEntry::CreateNew { .. } => {
                         Self::create_compact_new_item(inner_width, is_selected)
@@ -251,11 +267,31 @@ impl SessionList {
                             ui_entry_index = entries.len();
                         }
 
+                        // Build task summary for team groups
+                        let task_summary = if state.sort_by == SortBy::Team {
+                            // Extract team name from "Team: {name}" format
+                            let team_name = group_key.strip_prefix("Team: ");
+                            team_name.and_then(|name| {
+                                state.teams.get(name).map(|snapshot| {
+                                    let total = snapshot.tasks.len();
+                                    let done = snapshot
+                                        .tasks
+                                        .iter()
+                                        .filter(|t| t.status == TaskStatus::Completed)
+                                        .count();
+                                    GroupTaskSummary { done, total }
+                                })
+                            })
+                        } else {
+                            None
+                        };
+
                         entries.push(ListEntry::GroupHeader {
                             key: group_key.clone(),
                             agent_count,
                             attention_count,
                             collapsed,
+                            task_summary,
                         });
                         selectable_index += 1; // GroupHeader is now selectable
                         current_group = Some(group_key.clone());
@@ -296,6 +332,8 @@ impl SessionList {
     }
 
     /// Create a group header item
+    ///
+    /// When `task_summary` is provided (Team sort mode), displays task progress info.
     fn create_group_header(
         header: &str,
         agent_count: usize,
@@ -303,9 +341,10 @@ impl SessionList {
         collapsed: bool,
         is_selected: bool,
         marquee_offset: usize,
+        task_summary: Option<&GroupTaskSummary>,
     ) -> ListItem<'static> {
-        // Collapse icon: ▸ (collapsed) or ▾ (expanded)
-        let icon = if collapsed { "▸" } else { "▾" };
+        // Collapse icon: \u{25B8} (collapsed) or \u{25BE} (expanded)
+        let icon = if collapsed { "\u{25B8}" } else { "\u{25BE}" };
 
         // Max width for header text (reserve space for icon, count, attention)
         const HEADER_MAX_WIDTH: usize = 40;
@@ -327,9 +366,19 @@ impl SessionList {
         // Show attention count if any (in red)
         if attention_count > 0 {
             spans.push(Span::styled(
-                format!(" ⚠{}", attention_count),
+                format!(" \u{26A0}{}", attention_count),
                 Style::default().fg(Color::Red),
             ));
+        }
+
+        // Show task summary if available (Team sort mode)
+        if let Some(summary) = task_summary {
+            if summary.total > 0 {
+                spans.push(Span::styled(
+                    format!("  Tasks: {}/{}", summary.done, summary.total),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
         }
 
         ListItem::new(Line::from(spans))
@@ -391,8 +440,16 @@ impl SessionList {
                 Color::Rgb(255, 165, 0) // Orange
             };
             line1_spans.push(Span::styled(
-                format!(" ⚠{}%", percent),
+                format!(" \u{26A0}{}%", percent),
                 Style::default().fg(warning_color),
+            ));
+        }
+
+        // Add team badge if agent is part of a team
+        if let Some(ref team_info) = agent.team_info {
+            line1_spans.push(Span::styled(
+                format!(" [{}/{}]", team_info.team_name, team_info.member_name),
+                Style::default().fg(Color::Magenta),
             ));
         }
 
@@ -405,8 +462,7 @@ impl SessionList {
                 if activity.is_empty() {
                     "Processing...".to_string()
                 } else {
-                    let activity_text =
-                        get_marquee_text(activity, 20, marquee_offset, is_selected);
+                    let activity_text = get_marquee_text(activity, 20, marquee_offset, is_selected);
                     format!("Processing: {}", activity_text.trim_end())
                 }
             }
@@ -502,13 +558,7 @@ impl SessionList {
 
         let status_text = match &agent.status {
             AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { activity } => {
-                if activity.is_empty() {
-                    "Processing".to_string()
-                } else {
-                    "Processing".to_string() // Keep it short for alignment
-                }
-            }
+            AgentStatus::Processing { .. } => "Processing".to_string(),
             AgentStatus::AwaitingApproval { .. } => "Awaiting".to_string(),
             AgentStatus::Error { .. } => "Error".to_string(),
             AgentStatus::Unknown => "Unknown".to_string(),
@@ -526,7 +576,7 @@ impl SessionList {
             agent.window_index, agent.window_name, agent.pane_index
         );
 
-        let line = Line::from(vec![
+        let mut spans = vec![
             Span::styled(
                 format!("{} ", status_indicator),
                 Style::default().fg(status_color).bg(bg_color),
@@ -552,12 +602,23 @@ impl SessionList {
                 title_display,
                 Style::default().fg(Color::White).bg(bg_color),
             ),
-        ]);
+        ];
 
-        ListItem::new(line)
+        // Add team badge if agent is part of a team
+        if let Some(ref team_info) = agent.team_info {
+            spans.push(Span::styled(
+                format!(" [{}/{}]", team_info.team_name, team_info.member_name),
+                Style::default().fg(Color::Magenta).bg(bg_color),
+            ));
+        }
+
+        ListItem::new(Line::from(spans))
     }
 
     /// Create a compact group header for horizontal layout
+    ///
+    /// When `task_summary` is provided (Team sort mode), displays task progress info.
+    #[allow(clippy::too_many_arguments)]
     fn create_compact_group_header(
         header: &str,
         max_width: u16,
@@ -566,13 +627,18 @@ impl SessionList {
         collapsed: bool,
         is_selected: bool,
         marquee_offset: usize,
+        task_summary: Option<&GroupTaskSummary>,
     ) -> ListItem<'static> {
-        // Collapse icon: ▸ (collapsed) or ▾ (expanded)
-        let icon = if collapsed { "▸" } else { "▾" };
+        // Collapse icon: \u{25B8} (collapsed) or \u{25BE} (expanded)
+        let icon = if collapsed { "\u{25B8}" } else { "\u{25BE}" };
 
         // Calculate available space
-        // Reserve: icon(2) + space(1) + count_display(~8) + attention(~4)
-        let reserved = 15_usize;
+        // Reserve: icon(2) + space(1) + count_display(~8) + attention(~4) + task_info(~15)
+        let reserved = if task_summary.is_some() {
+            30_usize
+        } else {
+            15_usize
+        };
         let available = (max_width as usize).saturating_sub(reserved);
 
         // Apply marquee for selected item
@@ -601,9 +667,19 @@ impl SessionList {
         // Show attention count if any (in red)
         if attention_count > 0 {
             spans.push(Span::styled(
-                format!(" ⚠{}", attention_count),
+                format!(" \u{26A0}{}", attention_count),
                 Style::default().fg(Color::Red).bg(bg_color),
             ));
+        }
+
+        // Show task summary if available (Team sort mode)
+        if let Some(summary) = task_summary {
+            if summary.total > 0 {
+                spans.push(Span::styled(
+                    format!("  Tasks: {}/{}", summary.done, summary.total),
+                    Style::default().fg(Color::Yellow).bg(bg_color),
+                ));
+            }
         }
 
         ListItem::new(Line::from(spans))
