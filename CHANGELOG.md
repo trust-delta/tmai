@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1]
+
+### Improved
+- Directory group headers now show the **tail** of long paths instead of the head
+  - e.g., `...conversation-handoff-mcp` instead of `/home/trustdelta/wo...`
+  - Selected items still use marquee scrolling for full path visibility
+- Team members now display `activeForm` from task files as their title when processing
+  - e.g., "Fixing authentication bug" instead of the tmux pane title
+  - Falls back to pane title when `activeForm` is not available
+
 ## [0.2.0]
 
 ### Added

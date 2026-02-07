@@ -383,6 +383,8 @@ pub struct TeamTaskSummaryItem {
     pub subject: String,
     /// Task status
     pub status: TaskStatus,
+    /// Present continuous form shown while task is in progress (e.g., "Fixing bug...")
+    pub active_form: Option<String>,
 }
 
 /// A monitored agent instance

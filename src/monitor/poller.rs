@@ -590,6 +590,7 @@ fn build_member_team_info(
             id: t.id.clone(),
             subject: t.subject.clone(),
             status: t.status,
+            active_form: t.active_form.clone(),
         });
 
     AgentTeamInfo {

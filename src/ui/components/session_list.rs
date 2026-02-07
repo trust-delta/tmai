@@ -360,7 +360,7 @@ impl SessionList {
 
         // Max width for header text (reserve space for icon, count, attention)
         const HEADER_MAX_WIDTH: usize = 40;
-        let display = get_marquee_text(header, HEADER_MAX_WIDTH, marquee_offset, is_selected);
+        let display = get_marquee_text_path(header, HEADER_MAX_WIDTH, marquee_offset, is_selected);
 
         let mut spans = vec![Span::styled(
             format!("{} {} ", icon, display.trim_end()),
@@ -508,12 +508,20 @@ impl SessionList {
             Span::styled(status_text, Style::default().fg(status_color)),
         ]);
 
-        // Line 3: title (with marquee)
+        // Line 3: title (prefer active_form from team task if available)
         const TITLE_MAX_WIDTH: usize = 35;
-        let title_display = if agent.title.is_empty() {
+        let title_source = agent
+            .team_info
+            .as_ref()
+            .and_then(|ti| ti.current_task.as_ref())
+            .and_then(|task| task.active_form.as_ref())
+            .cloned()
+            .unwrap_or_else(|| agent.title.clone());
+
+        let title_display = if title_source.is_empty() {
             "-".to_string()
         } else {
-            get_marquee_text(&agent.title, TITLE_MAX_WIDTH, marquee_offset, is_selected)
+            get_marquee_text(&title_source, TITLE_MAX_WIDTH, marquee_offset, is_selected)
         };
 
         let line3 = Line::from(vec![
@@ -625,10 +633,19 @@ impl SessionList {
         let title_width = (max_width as usize).saturating_sub(fixed_len).max(10);
 
         // Apply marquee to title for selected item
-        let title_display = if agent.title.is_empty() {
+        // Prefer active_form from team task if available
+        let title_source = agent
+            .team_info
+            .as_ref()
+            .and_then(|ti| ti.current_task.as_ref())
+            .and_then(|task| task.active_form.as_ref())
+            .cloned()
+            .unwrap_or_else(|| agent.title.clone());
+
+        let title_display = if title_source.is_empty() {
             fixed_width("-", title_width)
         } else {
-            get_marquee_text(&agent.title, title_width, marquee_offset, is_selected)
+            get_marquee_text(&title_source, title_width, marquee_offset, is_selected)
         };
 
         let status_text = match &agent.status {
@@ -726,8 +743,8 @@ impl SessionList {
         };
         let available = (max_width as usize).saturating_sub(reserved);
 
-        // Apply marquee for selected item
-        let display = get_marquee_text(header, available, marquee_offset, is_selected);
+        // Apply marquee for selected item (path-aware: show tail on truncation)
+        let display = get_marquee_text_path(header, available, marquee_offset, is_selected);
 
         let bg_color = if is_selected {
             Color::DarkGray
@@ -788,6 +805,31 @@ impl SessionList {
     }
 }
 
+/// Get marquee-scrolled text for paths: non-selected items show the tail (end) of the path
+/// instead of the head, since the meaningful part of a path is usually at the end.
+fn get_marquee_text_path(text: &str, max_width: usize, offset: usize, is_selected: bool) -> String {
+    let text_width = text.width();
+
+    // If text fits within max_width, pad with spaces
+    if text_width <= max_width {
+        let padding = max_width.saturating_sub(text_width);
+        return format!("{}{}", text, " ".repeat(padding));
+    }
+
+    // Non-selected items: truncate showing the tail with leading ellipsis
+    if !is_selected {
+        return truncate_path_with_ellipsis(text, max_width);
+    }
+
+    // Selected item: marquee scroll (same as regular get_marquee_text)
+    let padding = "   "; // 3 spaces between loops
+    let looped_text = format!("{}{}{}", text, padding, text);
+    let loop_length = text_width + padding.width();
+    let effective_offset = offset % loop_length;
+
+    extract_substring_by_width(&looped_text, effective_offset, max_width)
+}
+
 /// Get marquee-scrolled text for the selected item, or truncated text for non-selected items
 fn get_marquee_text(text: &str, max_width: usize, offset: usize, is_selected: bool) -> String {
     let text_width = text.width();
@@ -810,6 +852,42 @@ fn get_marquee_text(text: &str, max_width: usize, offset: usize, is_selected: bo
     let effective_offset = offset % loop_length;
 
     extract_substring_by_width(&looped_text, effective_offset, max_width)
+}
+
+/// Truncate a path string to fit within max_width, keeping the tail (end) visible
+/// with a leading "..." ellipsis. This is useful for directory paths where the
+/// meaningful part is at the end (e.g., "...conversation-handoff-mcp" instead of
+/// "/home/trustdelta/wo...").
+fn truncate_path_with_ellipsis(s: &str, max_width: usize) -> String {
+    if max_width <= 3 {
+        return truncate_to_width(s, max_width);
+    }
+
+    let s_width = s.width();
+    if s_width <= max_width {
+        let padding = max_width.saturating_sub(s_width);
+        return format!("{}{}", s, " ".repeat(padding));
+    }
+
+    // We need to show "..." + tail portion
+    let tail_max = max_width.saturating_sub(3); // reserve 3 chars for "..."
+
+    // Walk from the end of the string to find the tail portion
+    let chars: Vec<char> = s.chars().collect();
+    let mut tail_start = chars.len();
+    let mut tail_width = 0;
+    for i in (0..chars.len()).rev() {
+        let cw = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(0);
+        if tail_width + cw > tail_max {
+            break;
+        }
+        tail_width += cw;
+        tail_start = i;
+    }
+
+    let tail: String = chars[tail_start..].iter().collect();
+    let padding = max_width.saturating_sub(3 + tail_width);
+    format!("...{}{}", tail, " ".repeat(padding))
 }
 
 /// Truncate a string to fit within max_width, adding ellipsis
@@ -930,6 +1008,47 @@ mod tests {
         let result_0 = get_marquee_text(text, 10, 0, true);
         let result_1 = get_marquee_text(text, 10, 1, true);
         // Different offsets should produce different results
+        assert_ne!(result_0, result_1);
+    }
+
+    #[test]
+    fn test_truncate_path_with_ellipsis_short() {
+        // Path that fits - should be padded
+        let result = truncate_path_with_ellipsis("/short", 20);
+        assert!(result.starts_with("/short"));
+        assert_eq!(result.width(), 20);
+    }
+
+    #[test]
+    fn test_truncate_path_with_ellipsis_long() {
+        // Long path - should show "..." + tail
+        let result =
+            truncate_path_with_ellipsis("/home/trustdelta/works/conversation-handoff-mcp", 30);
+        assert!(result.starts_with("..."));
+        assert_eq!(result.width(), 30);
+        // Should contain the tail of the path
+        assert!(result.contains("handoff-mcp"));
+    }
+
+    #[test]
+    fn test_get_marquee_text_path_non_selected() {
+        // Long path, non-selected - should show tail with leading ellipsis
+        let result = get_marquee_text_path(
+            "/home/trustdelta/works/conversation-handoff-mcp",
+            30,
+            0,
+            false,
+        );
+        assert!(result.starts_with("..."));
+        assert!(result.contains("handoff-mcp"));
+    }
+
+    #[test]
+    fn test_get_marquee_text_path_selected() {
+        // Long path, selected - should marquee scroll
+        let text = "/home/trustdelta/works/conversation-handoff-mcp";
+        let result_0 = get_marquee_text_path(text, 20, 0, true);
+        let result_1 = get_marquee_text_path(text, 20, 1, true);
         assert_ne!(result_0, result_1);
     }
 }
