@@ -406,6 +406,10 @@ impl SessionList {
         )]))
     }
 
+    /// Create a 2-line list item for vertical layout
+    ///
+    /// Line 1: `[tree] status_indicator detection_icon AgentType  pid:NNNN  W:N[name] P:N  [team/member]  ⚠N%`
+    /// Line 2: `    StatusLabel: detail_text` (with marquee)
     fn create_list_item(
         agent: &MonitoredAgent,
         spinner_char: char,
@@ -419,14 +423,14 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Line 1: [tree_prefix] [detection icon] AgentType | pid:xxx [context warning]
-        // ● = PTY state file, ○ = capture-pane
+        // Detection source icon
         let detection_icon = agent.detection_source.icon();
         let detection_color = match agent.detection_source {
             crate::agents::DetectionSource::PtyStateFile => Color::Green,
             crate::agents::DetectionSource::CapturePane => Color::DarkGray,
         };
 
+        // Line 1: identification info in a single line
         let mut line1_spans: Vec<Span<'static>> = Vec::new();
 
         if !tree_prefix.is_empty() {
@@ -436,23 +440,19 @@ impl SessionList {
             ));
         }
 
+        // 1) AI name
         line1_spans.extend([
             Span::styled(
-                format!("{} ", detection_icon),
-                Style::default().fg(detection_color),
+                format!("{} ", status_indicator),
+                Style::default().fg(status_color),
             ),
             Span::styled(
                 agent.agent_type.short_name().to_string(),
                 Style::default().fg(Color::Cyan),
             ),
-            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("pid:{}", agent.pid),
-                Style::default().fg(Color::DarkGray),
-            ),
         ]);
 
-        // Add context warning if present
+        // 2) Context warning (high visibility, right after AI name)
         if let Some(percent) = agent.context_warning {
             let warning_color = if percent <= 10 {
                 Color::Red
@@ -462,54 +462,44 @@ impl SessionList {
                 Color::Rgb(255, 165, 0) // Orange
             };
             line1_spans.push(Span::styled(
-                format!(" \u{26A0}{}%", percent),
+                format!("  \u{26A0}{}%", percent),
                 Style::default().fg(warning_color),
             ));
         }
 
-        // Add team badge if agent is part of a team
+        // 3) Team badge
         if let Some(ref team_info) = agent.team_info {
             line1_spans.push(Span::styled(
-                format!(" [{}/{}]", team_info.team_name, team_info.member_name),
+                format!("  [{}/{}]", team_info.team_name, team_info.member_name),
                 Style::default().fg(Color::Magenta),
             ));
         }
 
-        let line1 = Line::from(line1_spans);
-
-        // Line 2: status indicator + status_text (with marquee for activity)
-        let status_text = match &agent.status {
-            AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { activity } => {
-                if activity.is_empty() {
-                    "Processing...".to_string()
-                } else {
-                    let activity_text = get_marquee_text(activity, 20, marquee_offset, is_selected);
-                    format!("Processing: {}", activity_text.trim_end())
-                }
-            }
-            AgentStatus::AwaitingApproval { approval_type, .. } => {
-                format!("Awaiting: {}", approval_type)
-            }
-            AgentStatus::Error { message } => {
-                let error_text = get_marquee_text(message, 20, marquee_offset, is_selected);
-                format!("Error: {}", error_text.trim_end())
-            }
-            AgentStatus::Offline => "Offline".to_string(),
-            AgentStatus::Unknown => "Unknown".to_string(),
-        };
-
-        let line2 = Line::from(vec![
-            Span::styled("    ", Style::default()),
+        // 4) Other meta: detection icon, pid, window/pane
+        line1_spans.extend([
             Span::styled(
-                format!("{} ", status_indicator),
-                Style::default().fg(status_color),
+                format!("  {}", detection_icon),
+                Style::default().fg(detection_color),
             ),
-            Span::styled(status_text, Style::default().fg(status_color)),
+            Span::styled(
+                format!("  pid:{}", agent.pid),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                format!(
+                    "  W:{}[{}] P:{}",
+                    agent.window_index, agent.window_name, agent.pane_index
+                ),
+                Style::default().fg(Color::DarkGray),
+            ),
         ]);
 
-        // Line 3: title (prefer active_form from team task if available)
-        const TITLE_MAX_WIDTH: usize = 35;
+        let line1 = Line::from(line1_spans);
+
+        // Line 2: status label + detail text (with marquee for long text)
+        const DETAIL_MAX_WIDTH: usize = 40;
+
+        // Resolve title source: prefer active_form from team task, fallback to title
         let title_source = agent
             .team_info
             .as_ref()
@@ -518,30 +508,49 @@ impl SessionList {
             .cloned()
             .unwrap_or_else(|| agent.title.clone());
 
-        let title_display = if title_source.is_empty() {
-            "-".to_string()
-        } else {
-            get_marquee_text(&title_source, TITLE_MAX_WIDTH, marquee_offset, is_selected)
+        let detail_text = match &agent.status {
+            AgentStatus::Processing { activity } => {
+                if !activity.is_empty() {
+                    let text = format!("Processing: {}", activity);
+                    get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
+                } else if !title_source.is_empty() {
+                    get_marquee_text(&title_source, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
+                } else {
+                    "Processing...".to_string()
+                }
+            }
+            AgentStatus::Idle => {
+                if !title_source.is_empty() {
+                    let text = format!("Idle: {}", title_source);
+                    get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
+                } else {
+                    "Idle".to_string()
+                }
+            }
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                format!("Awaiting: {}", approval_type)
+            }
+            AgentStatus::Error { message } => {
+                let text = format!("Error: {}", message);
+                get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
+            }
+            AgentStatus::Offline => "Offline".to_string(),
+            AgentStatus::Unknown => "Unknown".to_string(),
         };
 
-        let line3 = Line::from(vec![
-            Span::styled("    ", Style::default()),
-            Span::styled(title_display, Style::default().fg(Color::White)),
+        // Indent: 4 spaces (+ tree_prefix width if applicable)
+        let indent = if tree_prefix.is_empty() {
+            "    ".to_string()
+        } else {
+            format!("{}  ", " ".repeat(tree_prefix.width()))
+        };
+
+        let line2 = Line::from(vec![
+            Span::styled(indent, Style::default()),
+            Span::styled(detail_text, Style::default().fg(status_color)),
         ]);
 
-        // Line 4: W:index[name]  P:index
-        let line4 = Line::from(vec![
-            Span::styled("    ", Style::default()),
-            Span::styled(
-                format!(
-                    "W:{}[{}]  P:{}",
-                    agent.window_index, agent.window_name, agent.pane_index
-                ),
-                Style::default().fg(Color::White),
-            ),
-        ]);
-
-        ListItem::new(vec![line1, line2, line3, line4])
+        ListItem::new(vec![line1, line2])
     }
 
     fn status_color(status: &AgentStatus) -> Color {
