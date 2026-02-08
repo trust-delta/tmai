@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2]
+
+### Improved
+- Session list display compressed from 4 lines to 2 lines per agent (50% vertical space reduction)
+  - Line 1: AI name, context alert, team badge, detection/pid/window meta
+  - Line 2: Status label + detail text with marquee scrolling
+
+### Added
+- CI workflow for develop → master pull requests
+
 ## [0.2.1]
 
 ### Improved
