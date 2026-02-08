@@ -1000,14 +1000,12 @@ impl AppState {
     fn build_tree_entries(panes: &[PaneInfo], collapsed_nodes: &HashSet<String>) -> Vec<TreeEntry> {
         let mut entries = Vec::new();
 
-        // Add "New Session" at the top
-        entries.push(TreeEntry::NewSession);
-
         // Group panes by session, then by window
         let mut sessions: Vec<String> = panes.iter().map(|p| p.session.clone()).collect();
         sessions.sort();
         sessions.dedup();
 
+        // Existing sessions/windows/panes first (current location options)
         for session in &sessions {
             let session_collapsed = collapsed_nodes.contains(session);
             entries.push(TreeEntry::Session {
@@ -1016,11 +1014,6 @@ impl AppState {
             });
 
             if !session_collapsed {
-                // Add "New Window" under the session
-                entries.push(TreeEntry::NewWindow {
-                    session: session.clone(),
-                });
-
                 // Collect windows in this session
                 let mut windows: Vec<(u32, String)> = panes
                     .iter()
@@ -1055,8 +1048,16 @@ impl AppState {
                         }
                     }
                 }
+
+                // Add "New Window" at the bottom of the session
+                entries.push(TreeEntry::NewWindow {
+                    session: session.clone(),
+                });
             }
         }
+
+        // Add "New Session" at the bottom
+        entries.push(TreeEntry::NewSession);
 
         entries
     }

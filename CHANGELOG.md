@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3]
+
+### Improved
+- Session list layout reorganized for better visibility
+  - Line 1: AI name, team badge, context warning, status label
+  - Line 2: Title (marquee), detection icon, pid, window/pane meta
+- "New Process" and "New Session/Window" options moved to the bottom of their respective lists
+
 ## [0.2.2]
 
 ### Improved
 - Session list display compressed from 4 lines to 2 lines per agent (50% vertical space reduction)
-  - Line 1: AI name, context alert, team badge, detection/pid/window meta
-  - Line 2: Status label + detail text with marquee scrolling
 
 ### Added
 - CI workflow for develop → master pull requests
