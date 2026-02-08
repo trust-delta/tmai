@@ -236,15 +236,6 @@ impl SessionList {
         let mut ui_entry_index = 0; // Index in the full entries list for highlighting
         let mut selected_agent_index: Option<usize> = None;
 
-        // Add CreateNew at the top (always first selectable item)
-        if state.selected_entry_index == 0 {
-            ui_entry_index = 0;
-        }
-        entries.push(ListEntry::CreateNew {
-            group_key: String::new(),
-        });
-        selectable_index += 1;
-
         // First pass: collect group statistics
         let mut group_stats: std::collections::HashMap<String, (usize, usize)> =
             std::collections::HashMap::new();
@@ -328,6 +319,15 @@ impl SessionList {
                 selectable_index += 1;
             }
         }
+
+        // Add CreateNew at the bottom (last selectable item)
+        if selectable_index == state.selected_entry_index {
+            ui_entry_index = entries.len();
+        }
+        entries.push(ListEntry::CreateNew {
+            group_key: String::new(),
+        });
+        selectable_index += 1;
 
         (
             entries,
@@ -452,7 +452,15 @@ impl SessionList {
             ),
         ]);
 
-        // 2) Context warning (high visibility, right after AI name)
+        // 2) Team badge
+        if let Some(ref team_info) = agent.team_info {
+            line1_spans.push(Span::styled(
+                format!("  [{}/{}]", team_info.team_name, team_info.member_name),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        // 3) Context warning
         if let Some(percent) = agent.context_warning {
             let warning_color = if percent <= 10 {
                 Color::Red
@@ -467,16 +475,52 @@ impl SessionList {
             ));
         }
 
-        // 3) Team badge
-        if let Some(ref team_info) = agent.team_info {
-            line1_spans.push(Span::styled(
-                format!("  [{}/{}]", team_info.team_name, team_info.member_name),
-                Style::default().fg(Color::Magenta),
-            ));
-        }
+        // 4) Status label
+        let status_label = match &agent.status {
+            AgentStatus::Idle => "Idle".to_string(),
+            AgentStatus::Processing { .. } => "Processing".to_string(),
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                format!("Awaiting: {}", approval_type)
+            }
+            AgentStatus::Error { .. } => "Error".to_string(),
+            AgentStatus::Offline => "Offline".to_string(),
+            AgentStatus::Unknown => "Unknown".to_string(),
+        };
+        line1_spans.push(Span::styled(
+            format!("  {}", status_label),
+            Style::default().fg(status_color),
+        ));
 
-        // 4) Other meta: detection icon, pid, window/pane
-        line1_spans.extend([
+        let line1 = Line::from(line1_spans);
+
+        // Line 2: title + other meta (detection icon, pid, window/pane)
+        const DETAIL_MAX_WIDTH: usize = 40;
+
+        // Resolve title source: prefer active_form from team task, fallback to title
+        let title_source = agent
+            .team_info
+            .as_ref()
+            .and_then(|ti| ti.current_task.as_ref())
+            .and_then(|task| task.active_form.as_ref())
+            .cloned()
+            .unwrap_or_else(|| agent.title.clone());
+
+        let title_text = if title_source.is_empty() {
+            "-".to_string()
+        } else {
+            get_marquee_text(&title_source, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
+        };
+
+        // Indent: 4 spaces (+ tree_prefix width if applicable)
+        let indent = if tree_prefix.is_empty() {
+            "    ".to_string()
+        } else {
+            format!("{}  ", " ".repeat(tree_prefix.width()))
+        };
+
+        let line2 = Line::from(vec![
+            Span::styled(indent, Style::default()),
+            Span::styled(title_text, Style::default().fg(Color::White)),
             Span::styled(
                 format!("  {}", detection_icon),
                 Style::default().fg(detection_color),
@@ -492,62 +536,6 @@ impl SessionList {
                 ),
                 Style::default().fg(Color::DarkGray),
             ),
-        ]);
-
-        let line1 = Line::from(line1_spans);
-
-        // Line 2: status label + detail text (with marquee for long text)
-        const DETAIL_MAX_WIDTH: usize = 40;
-
-        // Resolve title source: prefer active_form from team task, fallback to title
-        let title_source = agent
-            .team_info
-            .as_ref()
-            .and_then(|ti| ti.current_task.as_ref())
-            .and_then(|task| task.active_form.as_ref())
-            .cloned()
-            .unwrap_or_else(|| agent.title.clone());
-
-        let detail_text = match &agent.status {
-            AgentStatus::Processing { activity } => {
-                if !activity.is_empty() {
-                    let text = format!("Processing: {}", activity);
-                    get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
-                } else if !title_source.is_empty() {
-                    get_marquee_text(&title_source, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
-                } else {
-                    "Processing...".to_string()
-                }
-            }
-            AgentStatus::Idle => {
-                if !title_source.is_empty() {
-                    let text = format!("Idle: {}", title_source);
-                    get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
-                } else {
-                    "Idle".to_string()
-                }
-            }
-            AgentStatus::AwaitingApproval { approval_type, .. } => {
-                format!("Awaiting: {}", approval_type)
-            }
-            AgentStatus::Error { message } => {
-                let text = format!("Error: {}", message);
-                get_marquee_text(&text, DETAIL_MAX_WIDTH, marquee_offset, is_selected)
-            }
-            AgentStatus::Offline => "Offline".to_string(),
-            AgentStatus::Unknown => "Unknown".to_string(),
-        };
-
-        // Indent: 4 spaces (+ tree_prefix width if applicable)
-        let indent = if tree_prefix.is_empty() {
-            "    ".to_string()
-        } else {
-            format!("{}  ", " ".repeat(tree_prefix.width()))
-        };
-
-        let line2 = Line::from(vec![
-            Span::styled(indent, Style::default()),
-            Span::styled(detail_text, Style::default().fg(status_color)),
         ]);
 
         ListItem::new(vec![line1, line2])
