@@ -210,10 +210,22 @@ impl StateFile {
 
         // Ensure state directory exists with secure permissions (0700)
         let state_dir = PathBuf::from(STATE_DIR);
-        if !state_dir.exists() {
-            fs::create_dir_all(&state_dir)
-                .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
-            // Set directory permissions to 0700 (owner only)
+
+        // Always attempt to create — create_dir_all is idempotent (Ok if already exists)
+        fs::create_dir_all(&state_dir)
+            .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
+
+        // Verify it's actually a directory (not a file/symlink placed by attacker)
+        let metadata = fs::metadata(&state_dir).with_context(|| {
+            format!("Failed to read metadata for state directory: {}", STATE_DIR)
+        })?;
+        if !metadata.is_dir() {
+            bail!("State path exists but is not a directory: {}", STATE_DIR);
+        }
+
+        // Ensure correct permissions (0o700 = owner only)
+        let current_mode = metadata.permissions().mode() & 0o777;
+        if current_mode != 0o700 {
             fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700)).with_context(
                 || {
                     format!(

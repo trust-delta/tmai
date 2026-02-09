@@ -224,6 +224,14 @@ pub struct TeamSnapshot {
     pub member_panes: HashMap<String, String>,
     /// When this snapshot was last updated
     pub last_scan: chrono::DateTime<chrono::Utc>,
+    /// Pre-computed completed task count
+    pub task_done: usize,
+    /// Pre-computed total task count
+    pub task_total: usize,
+    /// Pre-computed in-progress task count
+    pub task_in_progress: usize,
+    /// Pre-computed pending task count
+    pub task_pending: usize,
 }
 
 /// Application state

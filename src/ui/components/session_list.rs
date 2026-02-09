@@ -9,7 +9,6 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::state::{AppState, SortBy};
-use crate::teams::TaskStatus;
 use crate::ui::SplitDirection;
 
 /// Optional task summary for team group headers
@@ -275,14 +274,9 @@ impl SessionList {
                             // Extract team name from "Team: {name}" format
                             let team_name = group_key.strip_prefix("Team: ");
                             team_name.and_then(|name| {
-                                state.teams.get(name).map(|snapshot| {
-                                    let total = snapshot.tasks.len();
-                                    let done = snapshot
-                                        .tasks
-                                        .iter()
-                                        .filter(|t| t.status == TaskStatus::Completed)
-                                        .count();
-                                    GroupTaskSummary { done, total }
+                                state.teams.get(name).map(|snapshot| GroupTaskSummary {
+                                    done: snapshot.task_done,
+                                    total: snapshot.task_total,
                                 })
                             })
                         } else {
