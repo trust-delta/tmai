@@ -50,6 +50,20 @@ class TmaiRemote {
     }
 
     /**
+     * Fetch wrapper that automatically adds Authorization header
+     * @param {string} url
+     * @param {Object} options - fetch options
+     * @returns {Promise<Response>}
+     */
+    apiFetch(url, options = {}) {
+        const headers = options.headers instanceof Headers
+            ? options.headers
+            : new Headers(options.headers || {});
+        headers.set('Authorization', `Bearer ${this.token}`);
+        return fetch(url, { ...options, headers });
+    }
+
+    /**
      * Load theme from localStorage or system preference
      */
     loadTheme() {
@@ -158,7 +172,7 @@ class TmaiRemote {
      */
     async loadAgents() {
         try {
-            const response = await fetch(`/api/agents?token=${this.token}`);
+            const response = await this.apiFetch('/api/agents');
             if (!response.ok) {
                 throw new Error('Failed to load agents');
             }
@@ -758,7 +772,7 @@ class TmaiRemote {
      * API: Approve agent
      */
     async approve(id) {
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/approve?token=${this.token}`, {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/approve`, {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Approve failed');
@@ -770,7 +784,7 @@ class TmaiRemote {
      * API: Select choice
      */
     async select(id, choice) {
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/select?token=${this.token}`, {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/select`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ choice })
@@ -790,7 +804,7 @@ class TmaiRemote {
         }
 
         // Then submit
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/submit?token=${this.token}`, {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/submit`, {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Submit failed');
@@ -802,7 +816,7 @@ class TmaiRemote {
      * @param {string} text
      */
     async sendText(id, text) {
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/input?token=${this.token}`, {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/input`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
@@ -816,7 +830,7 @@ class TmaiRemote {
      * @returns {Promise<string>}
      */
     async getPreview(id) {
-        const response = await fetch(`/api/agents/${encodeURIComponent(id)}/preview?token=${this.token}`);
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/preview`);
         if (!response.ok) throw new Error('Get preview failed');
         const data = await response.json();
         return data.content;

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4]
+
+### Security
+- Web API now supports `Authorization: Bearer <token>` header authentication
+  - Header takes priority over query parameter when present
+  - Query parameter fallback preserved for SSE EventSource connections
+- Frontend `fetch()` calls migrated to use Authorization header instead of URL query parameter
+
+### Improved
+- Team member search optimized with HashMap-based cmdline cache (eliminates duplicate PID lookups)
+- Task summary counts pre-computed in TeamSnapshot (avoids per-frame iteration)
+- API operation logging added for state-changing endpoints (approve, select, submit, input)
+
+### Fixed
+- State directory creation race condition (TOCTOU) in PTY wrapper
+  - Now uses idempotent `create_dir_all` + metadata verification + permission auto-repair
+- Defensive digit parsing in key handler (`unwrap()` → `unwrap_or(0)`)
+
+### Added
+- Web API test suite with 12 test cases covering all endpoints
+  - Empty state, 404, 400, path traversal validation, agent state checks
+
 ## [0.2.3]
 
 ### Improved

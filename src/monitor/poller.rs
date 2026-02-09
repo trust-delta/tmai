@@ -300,6 +300,22 @@ impl Poller {
             .map(|p| (p.target.clone(), p.pid))
             .collect();
 
+        // Pre-build cmdline cache to avoid duplicate lookups for overlapping pids
+        let mut cmdline_cache: HashMap<u32, Option<String>> = HashMap::new();
+        for (_, pid) in agent_pids.iter().chain(all_pane_pids.iter()) {
+            cmdline_cache.entry(*pid).or_insert_with(|| {
+                self.process_cache
+                    .get_child_cmdline(*pid)
+                    .or_else(|| self.process_cache.get_cmdline(*pid))
+            });
+        }
+
+        // Deduplicate (target, pid) pairs to avoid redundant iterations
+        let mut unique_pids: HashMap<u32, String> = HashMap::new();
+        for (target, pid) in agent_pids.iter().chain(all_pane_pids.iter()) {
+            unique_pids.entry(*pid).or_insert_with(|| target.clone());
+        }
+
         let mut snapshots: HashMap<String, TeamSnapshot> = HashMap::new();
 
         for team_config in &team_configs {
@@ -311,18 +327,22 @@ impl Poller {
 
             // Try cmdline-based matching: child process cmdline contains --agent-id
             let mut cmdline_mapping: HashMap<String, String> = HashMap::new();
-            for (target, pid) in agent_pids.iter().chain(all_pane_pids.iter()) {
-                // Check child cmdline (pane pid is usually bash, child is claude)
-                let cmdline = self
-                    .process_cache
-                    .get_child_cmdline(*pid)
-                    .or_else(|| self.process_cache.get_cmdline(*pid));
-                if let Some(cl) = cmdline {
+            let mut matched_members: std::collections::HashSet<&str> =
+                std::collections::HashSet::new();
+            for (pid, target) in &unique_pids {
+                if matched_members.len() == team_config.members.len() {
+                    break; // All members matched
+                }
+                if let Some(Some(cl)) = cmdline_cache.get(pid) {
                     for member in &team_config.members {
+                        if matched_members.contains(member.name.as_str()) {
+                            continue; // Already matched
+                        }
                         // Match --agent-id member_agent_id in cmdline
                         let marker = format!("--agent-id {}", member.agent_id);
                         if cl.contains(&marker) {
                             cmdline_mapping.insert(member.name.clone(), target.clone());
+                            matched_members.insert(&member.name);
                             break;
                         }
                     }
@@ -418,6 +438,20 @@ impl Poller {
                 }
             }
 
+            let task_done = tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::Completed)
+                .count();
+            let task_total = tasks.len();
+            let task_in_progress = tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::InProgress)
+                .count();
+            let task_pending = tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::Pending)
+                .count();
+
             snapshots.insert(
                 team_config.team_name.clone(),
                 TeamSnapshot {
@@ -425,6 +459,10 @@ impl Poller {
                     tasks,
                     member_panes: final_mapping,
                     last_scan: chrono::Utc::now(),
+                    task_done,
+                    task_total,
+                    task_in_progress,
+                    task_pending,
                 },
             );
         }

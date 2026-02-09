@@ -369,7 +369,7 @@ impl App {
             // Support both half-width (1-9) and full-width (１-９) digits
             KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
                 let num = if c.is_ascii_digit() {
-                    c.to_digit(10).unwrap() as usize
+                    c.to_digit(10).unwrap_or(0) as usize
                 } else {
                     // Full-width digit: convert '１'-'９' to 1-9
                     (c as u32 - '０' as u32) as usize

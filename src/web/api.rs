@@ -11,7 +11,6 @@ use std::sync::Arc;
 use crate::agents::{AgentStatus, ApprovalType};
 use crate::detectors::get_detector;
 use crate::state::SharedState;
-use crate::teams::TaskStatus;
 use crate::tmux::TmuxClient;
 
 /// Helper to create JSON error responses
@@ -235,6 +234,7 @@ pub async fn approve_agent(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: approve agent_id={}", id);
     let agent_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).map(|a| {
@@ -247,25 +247,40 @@ pub async fn approve_agent(
     };
 
     match agent_info {
-        Some((_, _, true)) => Err(json_error(
-            StatusCode::BAD_REQUEST,
-            "Cannot approve virtual agent",
-        )),
+        Some((_, _, true)) => {
+            tracing::warn!("API: approve failed - virtual agent agent_id={}", id);
+            Err(json_error(
+                StatusCode::BAD_REQUEST,
+                "Cannot approve virtual agent",
+            ))
+        }
         Some((true, agent_type, false)) => {
             let detector = get_detector(&agent_type);
             match state.tmux_client.send_keys(&id, detector.approval_keys()) {
                 Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
-                Err(_) => Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send approval",
-                )),
+                Err(_) => {
+                    tracing::warn!("API: approve failed - send_keys error agent_id={}", id);
+                    Err(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to send approval",
+                    ))
+                }
             }
         }
-        Some((false, _, false)) => Err(json_error(
-            StatusCode::BAD_REQUEST,
-            "Agent is not awaiting approval",
-        )),
-        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
+        Some((false, _, false)) => {
+            tracing::warn!(
+                "API: approve failed - not awaiting approval agent_id={}",
+                id
+            );
+            Err(json_error(
+                StatusCode::BAD_REQUEST,
+                "Agent is not awaiting approval",
+            ))
+        }
+        None => {
+            tracing::warn!("API: approve failed - not found agent_id={}", id);
+            Err(json_error(StatusCode::NOT_FOUND, "Agent not found"))
+        }
     }
 }
 
@@ -277,6 +292,7 @@ pub async fn select_choice(
     Path(id): Path<String>,
     Json(req): Json<SelectRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: select choice={} agent_id={}", req.choice, id);
     let question_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).and_then(|agent| {
@@ -334,6 +350,7 @@ pub async fn submit_selection(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: submit agent_id={}", id);
     let multi_info = {
         let app_state = state.app_state.read();
         app_state.agents.get(&id).and_then(|agent| {
@@ -387,6 +404,7 @@ pub async fn send_text(
     Path(id): Path<String>,
     Json(req): Json<TextInputRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: input agent_id={}", id);
     // Text length limit
     if req.text.len() > 1024 {
         return Err(json_error(
@@ -452,22 +470,10 @@ pub(super) fn build_team_info(
     snapshot: &crate::state::TeamSnapshot,
     app_state: &crate::state::AppState,
 ) -> TeamInfoResponse {
-    let total = snapshot.tasks.len();
-    let completed = snapshot
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::Completed)
-        .count();
-    let in_progress = snapshot
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::InProgress)
-        .count();
-    let pending = snapshot
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::Pending)
-        .count();
+    let total = snapshot.task_total;
+    let completed = snapshot.task_done;
+    let in_progress = snapshot.task_in_progress;
+    let pending = snapshot.task_pending;
 
     let members: Vec<TeamMemberResponse> = snapshot
         .config
@@ -575,4 +581,262 @@ pub async fn get_team_tasks(
         .collect();
 
     Ok(Json(tasks))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::routing::{get, post};
+    use axum::Router;
+    use http::Request;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    /// Create a fresh shared AppState for tests
+    fn test_app_state() -> SharedState {
+        crate::state::AppState::shared()
+    }
+
+    /// Build a Router with all API routes but NO auth middleware
+    fn test_router_with_state(app_state: SharedState) -> Router {
+        let api_state = Arc::new(ApiState {
+            app_state,
+            tmux_client: crate::tmux::TmuxClient::new(),
+        });
+        Router::new()
+            .route("/agents", get(get_agents))
+            .route("/agents/{id}/approve", post(approve_agent))
+            .route("/agents/{id}/select", post(select_choice))
+            .route("/agents/{id}/submit", post(submit_selection))
+            .route("/agents/{id}/input", post(send_text))
+            .route("/agents/{id}/preview", get(get_preview))
+            .route("/teams", get(get_teams))
+            .route("/teams/{name}/tasks", get(get_team_tasks))
+            .with_state(api_state)
+    }
+
+    /// Build a Router with default empty state
+    fn test_router() -> Router {
+        test_router_with_state(test_app_state())
+    }
+
+    /// Add an idle agent to the shared state
+    fn add_idle_agent(state: &SharedState, id: &str) {
+        let mut s = state.write();
+        let mut agent = crate::agents::MonitoredAgent::new(
+            id.to_string(),
+            crate::agents::AgentType::ClaudeCode,
+            "Test".to_string(),
+            "/tmp".to_string(),
+            1234,
+            "main".to_string(),
+            "window".to_string(),
+            0,
+            0,
+        );
+        agent.status = AgentStatus::Idle;
+        s.agents.insert(id.to_string(), agent);
+        s.agent_order.push(id.to_string());
+    }
+
+    #[tokio::test]
+    async fn test_get_agents_empty() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let agents: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert!(agents.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_approve_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/approve")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_select_choice_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/select")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"choice":1}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_submit_selection_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/submit")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_send_text_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"text":"hello"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_preview_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents/nonexistent/preview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_teams_empty() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/teams")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let teams: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert!(teams.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_team_tasks_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/teams/nonexistent/tasks")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_team_tasks_path_traversal() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/teams/..%2Fevil/tasks")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_approve_idle_agent_returns_bad_request() {
+        let state = test_app_state();
+        add_idle_agent(&state, "main:0.0");
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/approve")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_get_agents_with_agent() {
+        let state = test_app_state();
+        add_idle_agent(&state, "main:0.0");
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let agents: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0]["id"], "main:0.0");
+        assert_eq!(agents[0]["status"]["type"], "idle");
+    }
+
+    #[test]
+    fn test_is_valid_team_name() {
+        assert!(is_valid_team_name("my-team"));
+        assert!(is_valid_team_name("team_1"));
+        assert!(is_valid_team_name("TeamAlpha"));
+        assert!(!is_valid_team_name(""));
+        assert!(!is_valid_team_name("../evil"));
+        assert!(!is_valid_team_name("team/name"));
+        assert!(!is_valid_team_name("team name"));
+    }
 }

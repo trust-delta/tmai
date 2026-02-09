@@ -1,6 +1,6 @@
 [package]
 name = "tmai"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 authors = ["TrustDelta"]
 description = "Tmux Multi Agent Interface - Monitor and control AI agents in tmux"
@@ -50,6 +50,9 @@ nix = { version = "0.31", features = ["signal", "process", "term"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+http-body-util = "0.1"
 
 [[bin]]
 name = "tmai"
