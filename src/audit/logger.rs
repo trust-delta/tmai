@@ -3,8 +3,8 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use super::events::AuditEvent;
+use crate::ipc::protocol::state_dir;
 
-const AUDIT_DIR: &str = "/tmp/tmai/audit";
 const AUDIT_FILE: &str = "detection.ndjson";
 
 /// Logger for audit events in ndjson format
@@ -20,7 +20,7 @@ impl AuditLogger {
     ///
     /// If `enabled` is false, all log calls are no-ops.
     pub fn new(enabled: bool, max_size_bytes: u64) -> Self {
-        let file_path = Path::new(AUDIT_DIR).join(AUDIT_FILE);
+        let file_path = state_dir().join("audit").join(AUDIT_FILE);
         let writer = if enabled {
             Self::open_writer(&file_path)
         } else {

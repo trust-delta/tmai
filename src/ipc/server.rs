@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -38,32 +37,32 @@ impl IpcServer {
         let connections: Arc<RwLock<HashMap<String, ConnectionHandle>>> =
             Arc::new(RwLock::new(HashMap::new()));
 
-        // Ensure /tmp/tmai/ directory exists with 0o700 permissions
+        // Ensure state directory exists with 0o700 permissions
         ensure_state_dir()?;
 
         // Clean up stale socket
-        let socket_path = Path::new(SOCKET_PATH);
-        if socket_path.exists() {
-            match tokio::net::UnixStream::connect(SOCKET_PATH).await {
+        let sock = socket_path();
+        if sock.exists() {
+            match tokio::net::UnixStream::connect(&sock).await {
                 Ok(_) => {
                     anyhow::bail!(
                         "Another tmai instance is already running (socket {} is active)",
-                        SOCKET_PATH
+                        sock.display()
                     );
                 }
                 Err(_) => {
                     // Stale socket, safe to remove
-                    std::fs::remove_file(socket_path).with_context(|| {
-                        format!("Failed to remove stale socket: {}", SOCKET_PATH)
+                    std::fs::remove_file(&sock).with_context(|| {
+                        format!("Failed to remove stale socket: {}", sock.display())
                     })?;
                 }
             }
         }
 
-        let listener = UnixListener::bind(SOCKET_PATH).context("Failed to bind IPC Unix socket")?;
+        let listener = UnixListener::bind(&sock).context("Failed to bind IPC Unix socket")?;
 
         // Set socket permissions to owner-only
-        std::fs::set_permissions(SOCKET_PATH, std::fs::Permissions::from_mode(0o700))
+        std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o700))
             .context("Failed to set socket permissions")?;
 
         let server = Self {
@@ -76,7 +75,7 @@ impl IpcServer {
             Self::accept_loop(listener, registry, connections).await;
         });
 
-        tracing::info!("IPC server started on {}", SOCKET_PATH);
+        tracing::info!("IPC server started on {}", sock.display());
         Ok(server)
     }
 
@@ -156,14 +155,19 @@ impl IpcServer {
         writer.write_all(&msg_bytes).await?;
         writer.flush().await?;
 
-        // Store connection handle
-        connections.write().insert(
-            connection_id.clone(),
-            ConnectionHandle {
-                pane_id: pane_id.clone(),
-                tx,
-            },
-        );
+        // Remove any existing connection for this pane_id (reconnect scenario)
+        // then store the new connection handle
+        {
+            let mut conns = connections.write();
+            conns.retain(|_, handle| handle.pane_id != pane_id);
+            conns.insert(
+                connection_id.clone(),
+                ConnectionHandle {
+                    pane_id: pane_id.clone(),
+                    tx,
+                },
+            );
+        }
 
         tracing::info!("IPC client registered: pane_id={}", pane_id);
 
@@ -263,26 +267,37 @@ impl IpcServer {
     }
 }
 
-/// Ensure /tmp/tmai/ directory exists with proper permissions
+/// Ensure state directory exists with proper permissions
 fn ensure_state_dir() -> Result<()> {
-    let dir = Path::new(STATE_DIR);
-    std::fs::create_dir_all(dir)
-        .with_context(|| format!("Failed to create state directory: {}", STATE_DIR))?;
-    let metadata = std::fs::metadata(dir)
-        .with_context(|| format!("Failed to read metadata for: {}", STATE_DIR))?;
+    let dir = state_dir();
+    // Check for symlink attack before creating
+    if dir.exists() {
+        let meta = std::fs::symlink_metadata(&dir)
+            .with_context(|| format!("Failed to read metadata for: {}", dir.display()))?;
+        if meta.is_symlink() {
+            anyhow::bail!(
+                "State directory is a symlink (possible attack): {}",
+                dir.display()
+            );
+        }
+    }
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Failed to create state directory: {}", dir.display()))?;
+    let metadata = std::fs::metadata(&dir)
+        .with_context(|| format!("Failed to read metadata for: {}", dir.display()))?;
     if !metadata.is_dir() {
-        anyhow::bail!("State path is not a directory: {}", STATE_DIR);
+        anyhow::bail!("State path is not a directory: {}", dir.display());
     }
     let mode = metadata.permissions().mode() & 0o777;
     if mode != 0o700 {
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .with_context(|| format!("Failed to set permissions on: {}", STATE_DIR))?;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("Failed to set permissions on: {}", dir.display()))?;
     }
     Ok(())
 }
 
 impl Drop for IpcServer {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(socket_path());
     }
 }

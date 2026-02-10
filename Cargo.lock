@@ -2840,6 +2840,7 @@ dependencies = [
  "http",
  "http-body-util",
  "image",
+ "libc",
  "local-ip-address",
  "mime_guess",
  "nix 0.31.1",
