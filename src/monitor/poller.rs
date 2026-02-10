@@ -46,6 +46,8 @@ pub struct Poller {
     current_window: Option<u32>,
     /// Audit logger for detection events
     audit_logger: AuditLogger,
+    /// Receiver for audit events from external sources (UI, Web API)
+    audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     /// Previous status per agent target for change detection
     previous_statuses: HashMap<String, (String, DetectionReason)>,
     /// Set of agent targets seen in the previous poll
@@ -54,7 +56,12 @@ pub struct Poller {
 
 impl Poller {
     /// Create a new poller
-    pub fn new(settings: Settings, state: SharedState, ipc_registry: IpcRegistry) -> Self {
+    pub fn new(
+        settings: Settings,
+        state: SharedState,
+        ipc_registry: IpcRegistry,
+        audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
+    ) -> Self {
         let client = TmuxClient::with_capture_lines(settings.capture_lines);
 
         // Capture current location at startup for scope filtering
@@ -75,6 +82,7 @@ impl Poller {
             current_session,
             current_window,
             audit_logger,
+            audit_event_rx,
             previous_statuses: HashMap::new(),
             previous_agent_ids: HashSet::new(),
         }
@@ -143,6 +151,13 @@ impl Poller {
 
                     // Audit: track state transitions
                     self.emit_audit_events(&agents);
+
+                    // Drain externally-submitted audit events (from UI/Web)
+                    if let Some(ref mut rx) = self.audit_event_rx {
+                        while let Ok(event) = rx.try_recv() {
+                            self.audit_logger.log(&event);
+                        }
+                    }
 
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
                         break; // Receiver dropped
@@ -859,6 +874,6 @@ mod tests {
         let settings = Settings::default();
         let state = AppState::shared();
         let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
-        let _poller = Poller::new(settings, state, ipc_registry);
+        let _poller = Poller::new(settings, state, ipc_registry, None);
     }
 }

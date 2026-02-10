@@ -36,8 +36,21 @@ async fn main() -> Result<()> {
         .context("Failed to start IPC server")?;
     let ipc_server = Arc::new(ipc_server);
 
+    // Create audit event channel (if audit enabled)
+    let (audit_tx, audit_rx) = if settings.audit.enabled {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     // Run the application with web server
-    let mut app = App::new(settings.clone(), Some(ipc_server.clone()));
+    let mut app = App::new(
+        settings.clone(),
+        Some(ipc_server.clone()),
+        audit_tx.clone(),
+        audit_rx,
+    );
 
     // Start web server if enabled
     if settings.web.enabled {
@@ -51,7 +64,13 @@ async fn main() -> Result<()> {
         }
 
         // Start web server in background
-        let web_server = WebServer::new(settings.clone(), state, token, Some(ipc_server.clone()));
+        let web_server = WebServer::new(
+            settings.clone(),
+            state,
+            token,
+            Some(ipc_server.clone()),
+            audit_tx,
+        );
         web_server.start();
     }
 

@@ -42,4 +42,23 @@ pub enum AuditEvent {
         agent_type: String,
         last_status: String,
     },
+    /// User sent input while agent was detected as Processing or Idle
+    /// (possible false negative — detection may have missed an approval prompt)
+    UserInputDuringProcessing {
+        ts: u64,
+        pane_id: String,
+        agent_type: String,
+        /// What action the user took: "input_text", "passthrough_key"
+        action: String,
+        /// Source of input: "tui_input_mode", "tui_passthrough", "web_api_input"
+        input_source: String,
+        /// Current detected status: "processing" or "idle"
+        current_status: String,
+        /// Detection reason at the time of input
+        detection_reason: Option<DetectionReason>,
+        /// Detection source: "ipc_socket" or "capture_pane"
+        detection_source: String,
+        /// Last ~20 lines of pane content for post-hoc analysis
+        screen_context: Option<String>,
+    },
 }
