@@ -11,8 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **UserInputDuringProcessing audit event**: Detects potential false negatives in agent state detection
   - Logs when user sends input while agent status is Processing or Idle (likely missed approval prompt)
   - Sources: TUI input mode, passthrough mode (5s debounce), Web API `/input` endpoint
+  - Extended to normal mode: y-key, number-key, Enter-key when agent is not in AwaitingApproval
   - Includes detection context (rule, confidence, screen content) for post-hoc analysis
   - Cross-thread architecture: mpsc channel bridges UI/Web threads to Poller's audit logger
+- **Compacting status label**: Shows "Compacting" instead of "Processing" during `/compact` operation
+  - Detects `compacting` keyword in Processing activity text from spinner detection
+
+### Fixed
+- **Blank preview after `/compact`**: Preview no longer shows empty area after terminal clear
+  - Trailing empty lines are trimmed before calculating visible content range
+  - Fixes issue where `capture-pane` returns content at top with empty lines below cursor
 
 ## [0.2.5]
 
