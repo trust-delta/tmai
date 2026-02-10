@@ -472,7 +472,7 @@ impl SessionList {
         // 4) Status label
         let status_label = match &agent.status {
             AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { .. } => "Processing".to_string(),
+            AgentStatus::Processing { activity } => Self::processing_label(activity),
             AgentStatus::AwaitingApproval { approval_type, .. } => {
                 format!("Awaiting: {}", approval_type)
             }
@@ -533,6 +533,16 @@ impl SessionList {
         ]);
 
         ListItem::new(vec![line1, line2])
+    }
+
+    /// Map Processing activity to a specific status label
+    fn processing_label(activity: &str) -> String {
+        let lower = activity.to_lowercase();
+        if lower.contains("compacting") {
+            "Compacting".to_string()
+        } else {
+            "Processing".to_string()
+        }
     }
 
     fn status_color(status: &AgentStatus) -> Color {
@@ -641,7 +651,7 @@ impl SessionList {
 
         let status_text = match &agent.status {
             AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { .. } => "Processing".to_string(),
+            AgentStatus::Processing { activity } => Self::processing_label(activity),
             AgentStatus::AwaitingApproval { .. } => "Awaiting".to_string(),
             AgentStatus::Error { .. } => "Error".to_string(),
             AgentStatus::Offline => "Offline".to_string(),
@@ -1041,5 +1051,21 @@ mod tests {
         let result_0 = get_marquee_text_path(text, 20, 0, true);
         let result_1 = get_marquee_text_path(text, 20, 1, true);
         assert_ne!(result_0, result_1);
+    }
+
+    #[test]
+    fn test_processing_label_compacting() {
+        assert_eq!(
+            SessionList::processing_label("✻ Compacting conversation…"),
+            "Compacting"
+        );
+        assert_eq!(SessionList::processing_label("Compacting..."), "Compacting");
+    }
+
+    #[test]
+    fn test_processing_label_default() {
+        assert_eq!(SessionList::processing_label("Cerebrating…"), "Processing");
+        assert_eq!(SessionList::processing_label(""), "Processing");
+        assert_eq!(SessionList::processing_label("Tasks running"), "Processing");
     }
 }
