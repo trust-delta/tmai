@@ -17,10 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compacting status label**: Shows "Compacting" instead of "Processing" during `/compact` operation
   - Detects `compacting` keyword in Processing activity text from spinner detection
 
+### Security
+- **XDG_RUNTIME_DIR for state directory**: Socket/state files now use `$XDG_RUNTIME_DIR/tmai` (preferred) or `/tmp/tmai-<UID>` (fallback)
+  - Prevents TOCTOU/symlink attacks in multi-user environments
+  - Symlink detection added to `ensure_state_dir()` before directory creation
+
 ### Fixed
 - **Blank preview after `/compact`**: Preview no longer shows empty area after terminal clear
   - Trailing empty lines are trimmed before calculating visible content range
   - Fixes issue where `capture-pane` returns content at top with empty lines below cursor
+- **C-key conversion**: Use bitmask (`c & 0x1f`) for Ctrl-key byte calculation
+  - Fixes incorrect bytes for uppercase (`C-A`) and special characters (`C-@`, `C-[`)
+- **IPC reconnection**: Old connections for the same pane_id are now removed before registering new ones
+  - Prevents stale connections from receiving keystrokes and cleanup conflicts
 
 ## [0.2.5]
 
