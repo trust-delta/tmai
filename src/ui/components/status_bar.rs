@@ -277,7 +277,7 @@ impl StatusBar {
                 // Show detection source
                 let detection_label = agent.detection_source.label();
                 let detection_color = match agent.detection_source {
-                    crate::agents::DetectionSource::PtyStateFile => Color::Green,
+                    crate::agents::DetectionSource::IpcSocket => Color::Green,
                     crate::agents::DetectionSource::CapturePane => Color::DarkGray,
                 };
                 spans.push(Span::styled(

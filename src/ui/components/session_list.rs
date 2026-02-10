@@ -420,7 +420,7 @@ impl SessionList {
         // Detection source icon
         let detection_icon = agent.detection_source.icon();
         let detection_color = match agent.detection_source {
-            crate::agents::DetectionSource::PtyStateFile => Color::Green,
+            crate::agents::DetectionSource::IpcSocket => Color::Green,
             crate::agents::DetectionSource::CapturePane => Color::DarkGray,
         };
 

@@ -7,8 +7,8 @@ use crate::teams::TaskStatus;
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
-    /// State detected via PTY state file (/tmp/tmai/*.state)
-    PtyStateFile,
+    /// State detected via IPC socket connection
+    IpcSocket,
     /// State detected via tmux capture-pane
     #[default]
     CapturePane,
@@ -18,7 +18,7 @@ impl DetectionSource {
     /// Get icon for this detection source
     pub fn icon(&self) -> char {
         match self {
-            DetectionSource::PtyStateFile => '●',
+            DetectionSource::IpcSocket => '◉',
             DetectionSource::CapturePane => '○',
         }
     }
@@ -26,7 +26,7 @@ impl DetectionSource {
     /// Get short label for this detection source
     pub fn label(&self) -> &'static str {
         match self {
-            DetectionSource::PtyStateFile => "PTY",
+            DetectionSource::IpcSocket => "IPC",
             DetectionSource::CapturePane => "capture",
         }
     }

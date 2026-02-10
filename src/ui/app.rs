@@ -2,12 +2,14 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 use crate::config::Settings;
 use crate::detectors::get_detector;
+use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
     AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState, TreeEntry,
@@ -26,11 +28,12 @@ pub struct App {
     settings: Settings,
     tmux_client: TmuxClient,
     layout: Layout,
+    ipc_server: Option<Arc<IpcServer>>,
 }
 
 impl App {
     /// Create a new application
-    pub fn new(settings: Settings) -> Self {
+    pub fn new(settings: Settings, ipc_server: Option<Arc<IpcServer>>) -> Self {
         let state = AppState::shared();
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
         let layout = Layout::new().with_preview_height(settings.ui.preview_height);
@@ -40,6 +43,7 @@ impl App {
             settings,
             tmux_client,
             layout,
+            ipc_server,
         }
     }
 
@@ -75,7 +79,14 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
 
         // Start poller
-        let poller = Poller::new(self.settings.clone(), self.state.clone());
+        let ipc_registry = self
+            .ipc_server
+            .as_ref()
+            .map(|s| s.registry())
+            .unwrap_or_else(|| {
+                Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()))
+            });
+        let poller = Poller::new(self.settings.clone(), self.state.clone(), ipc_registry);
         let mut poll_rx = poller.start();
 
         // Main loop
@@ -239,6 +250,49 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Send keys via IPC if connected, otherwise via tmux
+    fn send_keys_via_ipc_or_tmux(&self, target: &str, keys: &str) -> Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            if let Some(pane_id) = self.get_pane_id_for_target(target) {
+                if ipc.try_send_keys(&pane_id, keys, false) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_keys(target, keys)
+    }
+
+    /// Send literal keys via IPC if connected, otherwise via tmux
+    fn send_keys_literal_via_ipc_or_tmux(&self, target: &str, keys: &str) -> Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            if let Some(pane_id) = self.get_pane_id_for_target(target) {
+                if ipc.try_send_keys(&pane_id, keys, true) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_keys_literal(target, keys)
+    }
+
+    /// Send text + Enter via IPC if connected, otherwise via tmux
+    #[allow(dead_code)]
+    fn send_text_and_enter_via_ipc_or_tmux(&self, target: &str, text: &str) -> Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            if let Some(pane_id) = self.get_pane_id_for_target(target) {
+                if ipc.try_send_keys_and_enter(&pane_id, text) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_text_and_enter(target, text)
+    }
+
+    /// Look up pane_id from target using the mapping in AppState
+    fn get_pane_id_for_target(&self, target: &str) -> Option<String> {
+        let state = self.state.read();
+        state.target_to_pane_id.get(target).cloned()
     }
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
@@ -414,8 +468,7 @@ impl App {
                                 drop(state);
                                 // Send the number to select it (use literal to avoid key interpretation issues)
                                 let _ = self
-                                    .tmux_client
-                                    .send_keys_literal(&target, &num.to_string());
+                                    .send_keys_literal_via_ipc_or_tmux(&target, &num.to_string());
                                 // Then enter tmai input mode for user to type
                                 let mut state = self.state.write();
                                 state.enter_input_mode();
@@ -423,11 +476,10 @@ impl App {
                                 drop(state);
                                 // Send the number key as literal
                                 let _ = self
-                                    .tmux_client
-                                    .send_keys_literal(&target, &num.to_string());
+                                    .send_keys_literal_via_ipc_or_tmux(&target, &num.to_string());
                                 if !multi_select {
                                     // Single select: confirm with Enter
-                                    let _ = self.tmux_client.send_keys(&target, "Enter");
+                                    let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
                                 }
                             }
                         }
@@ -455,7 +507,7 @@ impl App {
                     });
                     if is_multi_select {
                         drop(state);
-                        let _ = self.tmux_client.send_keys(&target, "Space");
+                        let _ = self.send_keys_via_ipc_or_tmux(&target, "Space");
                     }
                 }
             }
@@ -477,9 +529,7 @@ impl App {
                     if let Some((true, agent_type)) = agent_info {
                         drop(state);
                         let detector = get_detector(&agent_type);
-                        let _ = self
-                            .tmux_client
-                            .send_keys(&target, detector.approval_keys());
+                        let _ = self.send_keys_via_ipc_or_tmux(&target, detector.approval_keys());
                     }
                 }
             }
@@ -531,9 +581,9 @@ impl App {
                         let downs_needed =
                             choice_count.saturating_sub(cursor_pos.saturating_sub(1));
                         for _ in 0..downs_needed {
-                            let _ = self.tmux_client.send_keys(&target, "Down");
+                            let _ = self.send_keys_via_ipc_or_tmux(&target, "Down");
                         }
-                        let _ = self.tmux_client.send_keys(&target, "Enter");
+                        let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
                     }
                 }
             }
@@ -686,9 +736,9 @@ impl App {
         if !input.is_empty() {
             if let Some(target) = target {
                 // Send text as literal (preserves special characters)
-                self.tmux_client.send_keys_literal(&target, &input)?;
+                self.send_keys_literal_via_ipc_or_tmux(&target, &input)?;
                 // Send Enter to submit
-                self.tmux_client.send_keys(&target, "Enter")?;
+                self.send_keys_via_ipc_or_tmux(&target, "Enter")?;
             }
         }
         Ok(())
@@ -896,8 +946,7 @@ impl App {
                     format!("C-{}", c)
                 } else {
                     // Send character as literal - no preview refresh, poller handles it
-                    self.tmux_client
-                        .send_keys_literal(&target, &c.to_string())?;
+                    self.send_keys_literal_via_ipc_or_tmux(&target, &c.to_string())?;
                     return Ok(());
                 }
             }
@@ -917,7 +966,7 @@ impl App {
         };
 
         // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
-        let _ = self.tmux_client.send_keys(&target, &key_str);
+        let _ = self.send_keys_via_ipc_or_tmux(&target, &key_str);
         Ok(())
     }
 
@@ -1286,6 +1335,6 @@ mod tests {
     #[test]
     fn test_app_creation() {
         let settings = Settings::default();
-        let _app = App::new(settings);
+        let _app = App::new(settings, None);
     }
 }

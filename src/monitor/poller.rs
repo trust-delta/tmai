@@ -12,10 +12,11 @@ use crate::agents::{
 };
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::{get_detector, DetectionContext};
+use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
+use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
 use crate::teams::{self, TaskStatus};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
-use crate::wrap::state_file::{self, WrapApprovalType, WrapState, WrapStatus};
 
 /// Message sent from poller to main loop
 #[derive(Debug)]
@@ -34,6 +35,8 @@ pub struct Poller {
     claude_settings_cache: Arc<ClaudeSettingsCache>,
     settings: Settings,
     state: SharedState,
+    /// IPC registry for reading wrapper states
+    ipc_registry: IpcRegistry,
     /// Current session name (captured at startup, unused while scope is disabled)
     #[allow(dead_code)]
     current_session: Option<String>,
@@ -44,7 +47,7 @@ pub struct Poller {
 
 impl Poller {
     /// Create a new poller
-    pub fn new(settings: Settings, state: SharedState) -> Self {
+    pub fn new(settings: Settings, state: SharedState, ipc_registry: IpcRegistry) -> Self {
         let client = TmuxClient::with_capture_lines(settings.capture_lines);
 
         // Capture current location at startup for scope filtering
@@ -59,6 +62,7 @@ impl Poller {
             claude_settings_cache: Arc::new(ClaudeSettingsCache::new()),
             settings,
             state,
+            ipc_registry,
             current_session,
             current_window,
         }
@@ -185,14 +189,17 @@ impl Poller {
                 .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
 
             if let Some(agent_type) = agent_type {
-                // Try to read state from wrap state file first
+                // Try to read state from IPC registry first
                 // Use pane_id (global unique ID like "5" from "%5") not pane_index (local window index)
-                let wrap_state = state_file::read_state(&pane.pane_id).ok();
+                let wrap_state = {
+                    let registry = self.ipc_registry.read();
+                    registry.get(&pane.pane_id).cloned()
+                };
                 let is_selected = selected_agent_id.as_ref() == Some(&pane.target);
 
-                // Optimize capture-pane based on selection and PTY state:
+                // Optimize capture-pane based on selection and IPC state:
                 // - Selected: ANSI capture for preview
-                // - Non-selected + PTY: skip capture-pane entirely (state from file)
+                // - Non-selected + IPC: skip capture-pane entirely (state from IPC registry)
                 // - Non-selected + capture-pane mode: plain capture for detection only
                 let (content_ansi, content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
@@ -200,7 +207,7 @@ impl Poller {
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
                 } else if wrap_state.is_some() {
-                    // Non-selected + PTY mode: skip capture-pane entirely
+                    // Non-selected + IPC mode: skip capture-pane entirely
                     (String::new(), String::new())
                 } else {
                     // Non-selected + capture-pane mode: plain capture for detection
@@ -216,7 +223,7 @@ impl Poller {
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
-                // Determine status: use wrap state file if available, otherwise detect from content
+                // Determine status: use IPC state if available, otherwise detect from content
                 let (status, context_warning) = if let Some(ref ws) = wrap_state {
                     // Convert WrapState to AgentStatus
                     let status = wrap_state_to_agent_status(ws);
@@ -253,7 +260,7 @@ impl Poller {
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
                 agent.detection_source = if wrap_state.is_some() {
-                    DetectionSource::PtyStateFile
+                    DetectionSource::IpcSocket
                 } else {
                     DetectionSource::CapturePane
                 };
@@ -269,6 +276,18 @@ impl Poller {
                 .then(a.window_index.cmp(&b.window_index))
                 .then(a.pane_index.cmp(&b.pane_index))
         });
+
+        // Build target → pane_id mapping for IPC key sending
+        let target_to_pane_id: HashMap<String, String> = all_panes
+            .iter()
+            .map(|p| (p.target.clone(), p.pane_id.clone()))
+            .collect();
+
+        // Update in app state
+        {
+            let mut state = self.state.write();
+            state.target_to_pane_id = target_to_pane_id;
+        }
 
         Ok((agents, all_panes))
     }
@@ -705,6 +724,7 @@ mod tests {
     fn test_poller_creation() {
         let settings = Settings::default();
         let state = AppState::shared();
-        let _poller = Poller::new(settings, state);
+        let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
+        let _poller = Poller::new(settings, state, ipc_registry);
     }
 }

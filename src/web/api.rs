@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use crate::agents::{AgentStatus, ApprovalType};
 use crate::detectors::get_detector;
+use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
 use crate::tmux::TmuxClient;
 
@@ -35,6 +36,57 @@ pub struct PreviewResponse {
 pub struct ApiState {
     pub app_state: SharedState,
     pub tmux_client: TmuxClient,
+    pub ipc_server: Option<Arc<IpcServer>>,
+}
+
+impl ApiState {
+    /// Send keys via IPC if connected, otherwise via tmux
+    fn send_keys(&self, target: &str, keys: &str) -> anyhow::Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            let pane_id = {
+                let state = self.app_state.read();
+                state.target_to_pane_id.get(target).cloned()
+            };
+            if let Some(ref pid) = pane_id {
+                if ipc.try_send_keys(pid, keys, false) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_keys(target, keys)
+    }
+
+    /// Send literal keys via IPC if connected, otherwise via tmux
+    fn send_keys_literal(&self, target: &str, keys: &str) -> anyhow::Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            let pane_id = {
+                let state = self.app_state.read();
+                state.target_to_pane_id.get(target).cloned()
+            };
+            if let Some(ref pid) = pane_id {
+                if ipc.try_send_keys(pid, keys, true) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_keys_literal(target, keys)
+    }
+
+    /// Send text + Enter via IPC if connected, otherwise via tmux
+    fn send_text_and_enter(&self, target: &str, text: &str) -> anyhow::Result<()> {
+        if let Some(ref ipc) = self.ipc_server {
+            let pane_id = {
+                let state = self.app_state.read();
+                state.target_to_pane_id.get(target).cloned()
+            };
+            if let Some(ref pid) = pane_id {
+                if ipc.try_send_keys_and_enter(pid, text) {
+                    return Ok(());
+                }
+            }
+        }
+        self.tmux_client.send_text_and_enter(target, text)
+    }
 }
 
 /// Agent information for API response
@@ -256,7 +308,7 @@ pub async fn approve_agent(
         }
         Some((true, agent_type, false)) => {
             let detector = get_detector(&agent_type);
-            match state.tmux_client.send_keys(&id, detector.approval_keys()) {
+            match state.send_keys(&id, detector.approval_keys()) {
                 Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
                 Err(_) => {
                     tracing::warn!("API: approve failed - send_keys error agent_id={}", id);
@@ -317,7 +369,6 @@ pub async fn select_choice(
         Some((count, multi_select)) if req.choice >= 1 && req.choice <= count + 1 => {
             // Send the number key
             if state
-                .tmux_client
                 .send_keys_literal(&id, &req.choice.to_string())
                 .is_err()
             {
@@ -328,7 +379,7 @@ pub async fn select_choice(
             }
 
             // For single select, confirm with Enter
-            if !multi_select && state.tmux_client.send_keys(&id, "Enter").is_err() {
+            if !multi_select && state.send_keys(&id, "Enter").is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to confirm selection",
@@ -376,14 +427,14 @@ pub async fn submit_selection(
             // Navigate to Submit button
             let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
             for _ in 0..downs_needed {
-                if state.tmux_client.send_keys(&id, "Down").is_err() {
+                if state.send_keys(&id, "Down").is_err() {
                     return Err(json_error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to navigate",
                     ));
                 }
             }
-            if state.tmux_client.send_keys(&id, "Enter").is_err() {
+            if state.send_keys(&id, "Enter").is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to submit",
@@ -427,7 +478,7 @@ pub async fn send_text(
         )),
         Some(false) => {
             // Send the text literally followed by Enter
-            match state.tmux_client.send_text_and_enter(&id, &req.text) {
+            match state.send_text_and_enter(&id, &req.text) {
                 Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
                 Err(_) => Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -603,6 +654,7 @@ mod tests {
         let api_state = Arc::new(ApiState {
             app_state,
             tmux_client: crate::tmux::TmuxClient::new(),
+            ipc_server: None,
         });
         Router::new()
             .route("/agents", get(get_agents))

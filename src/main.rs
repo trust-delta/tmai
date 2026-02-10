@@ -1,7 +1,10 @@
-use anyhow::Result;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use tmai::config::{Config, Settings};
+use tmai::ipc::server::IpcServer;
 use tmai::ui::App;
 use tmai::web::WebServer;
 use tmai::wrap::{
@@ -27,8 +30,14 @@ async fn main() -> Result<()> {
     settings.merge_cli(&cli);
     settings.validate();
 
+    // Start IPC server
+    let ipc_server = IpcServer::start()
+        .await
+        .context("Failed to start IPC server")?;
+    let ipc_server = Arc::new(ipc_server);
+
     // Run the application with web server
-    let mut app = App::new(settings.clone());
+    let mut app = App::new(settings.clone(), Some(ipc_server.clone()));
 
     // Start web server if enabled
     if settings.web.enabled {
@@ -42,7 +51,7 @@ async fn main() -> Result<()> {
         }
 
         // Start web server in background
-        let web_server = WebServer::new(settings.clone(), state, token);
+        let web_server = WebServer::new(settings.clone(), state, token, Some(ipc_server.clone()));
         web_server.start();
     }
 
