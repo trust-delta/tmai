@@ -5,7 +5,7 @@
 use regex::Regex;
 use std::time::{Duration, Instant};
 
-use crate::wrap::state_file::{WrapApprovalType, WrapState};
+use crate::ipc::protocol::{WrapApprovalType, WrapState};
 
 /// Thresholds for state detection
 const PROCESSING_TIMEOUT_MS: u64 = 200; // Output within this time = Processing
@@ -109,6 +109,21 @@ impl Analyzer {
             team_member_name,
             is_team_lead,
         }
+    }
+
+    /// Get team name
+    pub fn team_name(&self) -> Option<&String> {
+        self.team_name.as_ref()
+    }
+
+    /// Get team member name
+    pub fn team_member_name(&self) -> Option<&String> {
+        self.team_member_name.as_ref()
+    }
+
+    /// Whether this agent is the team lead
+    pub fn is_team_lead(&self) -> bool {
+        self.is_team_lead
     }
 
     /// Process output data

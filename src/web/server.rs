@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::config::Settings;
+use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
 use crate::tmux::TmuxClient;
 
@@ -25,15 +26,22 @@ pub struct WebServer {
     settings: Settings,
     app_state: SharedState,
     token: String,
+    ipc_server: Option<Arc<IpcServer>>,
 }
 
 impl WebServer {
     /// Create a new web server
-    pub fn new(settings: Settings, app_state: SharedState, token: String) -> Self {
+    pub fn new(
+        settings: Settings,
+        app_state: SharedState,
+        token: String,
+        ipc_server: Option<Arc<IpcServer>>,
+    ) -> Self {
         Self {
             settings,
             app_state,
             token,
+            ipc_server,
         }
     }
 
@@ -55,6 +63,7 @@ impl WebServer {
         let api_state = Arc::new(ApiState {
             app_state: self.app_state.clone(),
             tmux_client: TmuxClient::new(),
+            ipc_server: self.ipc_server.clone(),
         });
 
         let sse_state = Arc::new(SseState {

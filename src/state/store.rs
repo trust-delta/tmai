@@ -295,6 +295,8 @@ pub struct AppState {
     pub marquee_state: MarqueeState,
     /// Team snapshots by team name
     pub teams: HashMap<String, TeamSnapshot>,
+    /// Mapping of tmux target (e.g. "main:0.1") to pane_id (e.g. "5") for IPC
+    pub target_to_pane_id: HashMap<String, String>,
     /// Whether the team overview screen is shown
     pub show_team_overview: bool,
     /// Whether the task overlay is shown
@@ -338,6 +340,7 @@ impl AppState {
             web_port: 9876,
             marquee_state: MarqueeState::default(),
             teams: HashMap::new(),
+            target_to_pane_id: HashMap::new(),
             show_team_overview: false,
             show_task_overlay: false,
             task_overlay_scroll: 0,

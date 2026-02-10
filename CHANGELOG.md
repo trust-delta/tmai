@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5]
+
+### Added
+- **IPC communication**: PTY wrapper ↔ parent process communication migrated from file-based state to Unix domain socket (`/tmp/tmai/control.sock`)
+  - Bidirectional: state push (wrapper → parent) + keystroke forwarding (parent → wrapper via IPC direct PTY write)
+  - IPC-first with tmux fallback for all send_keys operations
+  - Exponential backoff reconnection in IPC client
+- **Detection audit log**: ndjson-format logging of detection events for debugging and precision analysis (`--audit` flag)
+  - Events: `StateChanged`, `AgentAppeared`, `AgentDisappeared`, `SourceDisagreement`
+  - Detection reasoning: each result includes rule name, confidence level (High/Medium/Low), and matched text
+  - 36 detection rules across 4 detectors (claude_code, codex, gemini, default)
+  - Log rotation at 10MB (`/tmp/tmai/audit/detection.ndjson`)
+  - Disabled by default; enable via `--audit` CLI flag or `[audit] enabled = true`
+- `[audit]` configuration section with `enabled`, `max_size_bytes`, `log_source_disagreement` options
+- Content-area spinner detection for Claude Code (`✶`, `✻`, `✽`, `*` + verb + `…` pattern)
+  - Fixes false idle during `/compact` when title still shows `✳` but content has active spinner
+
+### Changed
+- Detection source renamed: `DetectionSource::PtyStateFile` → `IpcSocket`
+- `src/wrap/state_file.rs` removed; types moved to `src/ipc/protocol.rs`
+
+### Fixed
+- False idle detection during Claude Code `/compact` operation
+  - Title shows `✳` (idle) while content shows active spinner verb (e.g., `✶ Spinning…`)
+  - Content spinner check now runs before title-based idle detection
+- Low-confidence fallback detections for `✻ Levitating…`, `* Working…` etc. upgraded to Medium confidence
+
 ## [0.2.4]
 
 ### Security

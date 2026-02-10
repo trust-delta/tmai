@@ -27,6 +27,10 @@ pub struct Config {
     #[arg(long, action = clap::ArgAction::Set)]
     pub attached_only: Option<bool>,
 
+    /// Enable detection audit log (/tmp/tmai/audit/detection.ndjson)
+    #[arg(long)]
+    pub audit: bool,
+
     /// Subcommand
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -105,6 +109,10 @@ pub struct Settings {
     /// Team detection settings
     #[serde(default)]
     pub teams: TeamSettings,
+
+    /// Audit log settings
+    #[serde(default)]
+    pub audit: AuditSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -233,6 +241,42 @@ impl Default for TeamSettings {
     }
 }
 
+/// Audit log settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditSettings {
+    /// Enable audit logging
+    #[serde(default = "default_audit_enabled")]
+    pub enabled: bool,
+
+    /// Maximum log file size in bytes before rotation
+    #[serde(default = "default_audit_max_size")]
+    pub max_size_bytes: u64,
+
+    /// Log source disagreement events
+    #[serde(default)]
+    pub log_source_disagreement: bool,
+}
+
+/// Default for audit enabled
+fn default_audit_enabled() -> bool {
+    false
+}
+
+/// Default audit max size (10MB)
+fn default_audit_max_size() -> u64 {
+    10_485_760
+}
+
+impl Default for AuditSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_audit_enabled(),
+            max_size_bytes: default_audit_max_size(),
+            log_source_disagreement: false,
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -267,6 +311,7 @@ impl Default for Settings {
             web: WebSettings::default(),
             exfil_detection: ExfilDetectionSettings::default(),
             teams: TeamSettings::default(),
+            audit: AuditSettings::default(),
         }
     }
 }
@@ -314,6 +359,9 @@ impl Settings {
         }
         if let Some(attached_only) = cli.attached_only {
             self.attached_only = attached_only;
+        }
+        if cli.audit {
+            self.audit.enabled = true;
         }
     }
 

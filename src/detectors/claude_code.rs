@@ -3,16 +3,20 @@ use regex::Regex;
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 use crate::config::SpinnerVerbsMode;
 
-use super::{DetectionContext, StatusDetector};
+use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
 /// Idle indicator - ✳ appears when Claude Code is waiting for input
 const IDLE_INDICATOR: char = '✳';
 
-/// Processing spinner characters (Braille patterns)
+/// Processing spinner characters (Braille patterns) - used in title
 const PROCESSING_SPINNERS: &[char] = &[
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
     '⠰', '◐', '◓', '◑', '◒',
 ];
+
+/// Content-area spinner characters (decorative asterisks used by Claude Code)
+/// These appear in content as "✶ Spinning…", "✻ Working…", etc.
+const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧'];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
@@ -336,8 +340,8 @@ impl ClaudeCodeDetector {
         false
     }
 
-    /// Detect approval request in content
-    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String)> {
+    /// Detect approval request in content, returning the rule name that matched
+    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String, &'static str)> {
         let lines: Vec<&str> = content.lines().collect();
         if lines.is_empty() {
             return None;
@@ -349,8 +353,8 @@ impl ClaudeCodeDetector {
         let _recent = recent_lines.join("\n");
 
         // Check for AskUserQuestion first (highest priority)
-        if let Some(result) = self.detect_user_question(content) {
-            return Some(result);
+        if let Some((approval_type, details)) = self.detect_user_question(content) {
+            return Some((approval_type, details, "user_question_numbered_choices"));
         }
 
         // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
@@ -368,36 +372,46 @@ impl ClaudeCodeDetector {
             return None;
         }
 
+        // Determine which rule matched
+        let rule = if has_proceed_prompt {
+            "proceed_prompt"
+        } else if has_yes_no_buttons {
+            "yes_no_buttons"
+        } else {
+            "yes_no_text_pattern"
+        };
+
         // Determine approval type
         let context = safe_tail(content, 1500);
 
         if self.file_edit_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileEdit, details));
+            return Some((ApprovalType::FileEdit, details, rule));
         }
 
         if self.file_create_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileCreate, details));
+            return Some((ApprovalType::FileCreate, details, rule));
         }
 
         if self.file_delete_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileDelete, details));
+            return Some((ApprovalType::FileDelete, details, rule));
         }
 
         if self.bash_pattern.is_match(context) {
             let details = self.extract_command(context).unwrap_or_default();
-            return Some((ApprovalType::ShellCommand, details));
+            return Some((ApprovalType::ShellCommand, details, rule));
         }
 
         if self.mcp_pattern.is_match(context) {
-            return Some((ApprovalType::McpTool, "MCP tool call".to_string()));
+            return Some((ApprovalType::McpTool, "MCP tool call".to_string(), rule));
         }
 
         Some((
             ApprovalType::Other("Pending approval".to_string()),
             String::new(),
+            rule,
         ))
     }
 
@@ -497,6 +511,49 @@ impl ClaudeCodeDetector {
         None
     }
 
+    /// Detect active spinner verbs in content area
+    ///
+    /// Claude Code shows spinner activity like "✶ Spinning…", "✻ Levitating…", "* Working…"
+    /// in the content. Active spinners contain "…" (ellipsis), while completed ones show
+    /// "✻ Crunched for 6m 5s" (past tense + time, no ellipsis).
+    ///
+    /// This is critical for detecting processing when the title still shows ✳ (idle),
+    /// e.g. during /compact or title update lag.
+    fn detect_content_spinner(content: &str) -> Option<String> {
+        for line in content.lines().rev().take(15) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let first_char = match trimmed.chars().next() {
+                Some(c) => c,
+                None => continue,
+            };
+
+            // Check for decorative asterisk chars or plain '*'
+            let is_spinner_char = CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
+            if !is_spinner_char {
+                continue;
+            }
+
+            let rest = trimmed[first_char.len_utf8()..].trim_start();
+
+            // Must start with uppercase letter (verb) and contain ellipsis (active)
+            let starts_upper = rest
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false);
+            let has_ellipsis = rest.contains('…') || rest.contains("...");
+
+            if starts_upper && has_ellipsis {
+                return Some(trimmed.to_string());
+            }
+        }
+        None
+    }
+
     /// Check if we should skip default Braille spinner detection
     ///
     /// Returns true if mode is "replace" and custom verbs are configured.
@@ -526,8 +583,8 @@ impl Default for ClaudeCodeDetector {
 
 impl StatusDetector for ClaudeCodeDetector {
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus {
-        // Fall back to context-less detection
-        self.detect_status_with_context(title, content, &DetectionContext::default())
+        self.detect_status_with_reason(title, content, &DetectionContext::default())
+            .status
     }
 
     fn detect_status_with_context(
@@ -536,61 +593,123 @@ impl StatusDetector for ClaudeCodeDetector {
         content: &str,
         context: &DetectionContext,
     ) -> AgentStatus {
+        self.detect_status_with_reason(title, content, context)
+            .status
+    }
+
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        context: &DetectionContext,
+    ) -> DetectionResult {
         // 1. Check for AskUserQuestion or approval (highest priority)
-        if let Some((approval_type, details)) = self.detect_approval(content) {
-            return AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            };
+        if let Some((approval_type, details, rule)) = self.detect_approval(content) {
+            let matched = safe_tail(content, 200);
+            return DetectionResult::new(
+                AgentStatus::AwaitingApproval {
+                    approval_type,
+                    details,
+                },
+                rule,
+                DetectionConfidence::High,
+            )
+            .with_matched_text(matched);
         }
 
         // 2. Check for errors
         if let Some(message) = self.detect_error(content) {
-            return AgentStatus::Error { message };
+            return DetectionResult::new(
+                AgentStatus::Error {
+                    message: message.clone(),
+                },
+                "error_pattern",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&message);
         }
 
         // 3. Check for Tasks list with in-progress tasks (◼)
-        // This takes priority over title-based Idle detection
         if Self::has_in_progress_tasks(content) {
-            return AgentStatus::Processing {
-                activity: "Tasks running".to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: "Tasks running".to_string(),
+                },
+                "tasks_in_progress",
+                DetectionConfidence::High,
+            );
         }
 
         // 4. Check for Compacting (✽ Compacting conversation)
         if title.contains('✽') && title.to_lowercase().contains("compacting") {
-            return AgentStatus::Processing {
-                activity: "Compacting...".to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: "Compacting...".to_string(),
+                },
+                "title_compacting",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(title);
         }
 
-        // 5. Title-based detection
-        // ✳ in title = Idle (waiting for input)
+        // 5. Content-based spinner detection (overrides title idle)
+        //    Catches cases where title still shows ✳ but content has active spinner
+        //    e.g. during /compact, or title update lag
+        if let Some(activity) = Self::detect_content_spinner(content) {
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: activity.clone(),
+                },
+                "content_spinner_verb",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(&activity);
+        }
+
+        // 6. Title-based detection: ✳ in title = Idle
         if title.contains(IDLE_INDICATOR) {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "title_idle_indicator",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(title);
         }
 
-        // 6. Check for custom spinner verbs from settings
+        // 7. Check for custom spinner verbs from settings
         if let Some(activity) = Self::detect_custom_spinner_verb(title, context) {
-            return AgentStatus::Processing { activity };
+            return DetectionResult::new(
+                AgentStatus::Processing { activity },
+                "custom_spinner_verb",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
-        // 7. Default Braille spinner detection (unless mode is "replace")
+        // 8. Default Braille spinner detection (unless mode is "replace")
         if !Self::should_skip_default_spinners(context)
             && title.chars().any(|c| PROCESSING_SPINNERS.contains(&c))
         {
-            // Try to extract activity from title
             let activity = title
                 .chars()
                 .skip_while(|c| PROCESSING_SPINNERS.contains(c) || c.is_whitespace())
                 .collect::<String>();
-            return AgentStatus::Processing { activity };
+            return DetectionResult::new(
+                AgentStatus::Processing { activity },
+                "braille_spinner",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // No indicator - default to Processing
-        AgentStatus::Processing {
-            activity: String::new(),
-        }
+        DetectionResult::new(
+            AgentStatus::Processing {
+                activity: String::new(),
+            },
+            "fallback_no_indicator",
+            DetectionConfidence::Low,
+        )
     }
 
     fn detect_context_warning(&self, content: &str) -> Option<u8> {
@@ -1073,6 +1192,71 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
             matches!(status, AgentStatus::AwaitingApproval { .. }),
             "Expected AwaitingApproval, got {:?}",
             status
+        );
+    }
+
+    #[test]
+    fn test_content_spinner_overrides_title_idle() {
+        let detector = ClaudeCodeDetector::new();
+        // Title shows ✳ (idle) but content has active spinner - should be Processing
+        let content = r#"
+✻ Cogitated for 2m 6s
+
+❯ コミットしてdev-log
+
+✶ Spinning… (37s · ↑ 38 tokens)
+
+────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────
+   Model: Opus 4.6  Ctx: 78.9%
+  -- INSERT --
+"#;
+        let result = detector.detect_status_with_reason(
+            "✳ Git commit dev-log",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing when content has active spinner, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+        assert_eq!(result.reason.confidence, DetectionConfidence::Medium);
+    }
+
+    #[test]
+    fn test_content_spinner_with_plain_asterisk() {
+        let detector = ClaudeCodeDetector::new();
+        // Plain * spinner should also be detected
+        let content = "Some output\n\n* Perambulating…\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for * spinner, got {:?}",
+            result.status
+        );
+    }
+
+    #[test]
+    fn test_completed_spinner_not_detected_as_active() {
+        let detector = ClaudeCodeDetector::new();
+        // Completed spinners (past tense, no ellipsis) should NOT trigger processing
+        let content = "Some output\n\n✻ Crunched for 6m 5s\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for completed spinner, got {:?}",
+            result.status
         );
     }
 

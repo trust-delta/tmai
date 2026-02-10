@@ -1,21 +1,23 @@
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 use crate::agents::{
     AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
     TeamTaskSummaryItem,
 };
+use crate::audit::{AuditEvent, AuditLogger};
 use crate::config::{ClaudeSettingsCache, Settings};
-use crate::detectors::{get_detector, DetectionContext};
+use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
+use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
+use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
 use crate::teams::{self, TaskStatus};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
-use crate::wrap::state_file::{self, WrapApprovalType, WrapState, WrapStatus};
 
 /// Message sent from poller to main loop
 #[derive(Debug)]
@@ -34,17 +36,25 @@ pub struct Poller {
     claude_settings_cache: Arc<ClaudeSettingsCache>,
     settings: Settings,
     state: SharedState,
+    /// IPC registry for reading wrapper states
+    ipc_registry: IpcRegistry,
     /// Current session name (captured at startup, unused while scope is disabled)
     #[allow(dead_code)]
     current_session: Option<String>,
     /// Current window index (captured at startup, unused while scope is disabled)
     #[allow(dead_code)]
     current_window: Option<u32>,
+    /// Audit logger for detection events
+    audit_logger: AuditLogger,
+    /// Previous status per agent target for change detection
+    previous_statuses: HashMap<String, (String, DetectionReason)>,
+    /// Set of agent targets seen in the previous poll
+    previous_agent_ids: HashSet<String>,
 }
 
 impl Poller {
     /// Create a new poller
-    pub fn new(settings: Settings, state: SharedState) -> Self {
+    pub fn new(settings: Settings, state: SharedState, ipc_registry: IpcRegistry) -> Self {
         let client = TmuxClient::with_capture_lines(settings.capture_lines);
 
         // Capture current location at startup for scope filtering
@@ -53,14 +63,20 @@ impl Poller {
             Err(_) => (None, None),
         };
 
+        let audit_logger = AuditLogger::new(settings.audit.enabled, settings.audit.max_size_bytes);
+
         Self {
             client,
             process_cache: Arc::new(ProcessCache::new()),
             claude_settings_cache: Arc::new(ClaudeSettingsCache::new()),
             settings,
             state,
+            ipc_registry,
             current_session,
             current_window,
+            audit_logger,
+            previous_statuses: HashMap::new(),
+            previous_agent_ids: HashSet::new(),
         }
     }
 
@@ -76,7 +92,7 @@ impl Poller {
     }
 
     /// Run the polling loop
-    async fn run(self, tx: mpsc::Sender<PollMessage>) {
+    async fn run(mut self, tx: mpsc::Sender<PollMessage>) {
         let normal_interval = self.settings.poll_interval_ms;
         let fast_interval = self.settings.passthrough_poll_interval_ms;
         let mut backoff_ms: u64 = 0;
@@ -124,6 +140,9 @@ impl Poller {
                             self.apply_cached_team_info(&mut agents);
                         }
                     }
+
+                    // Audit: track state transitions
+                    self.emit_audit_events(&agents);
 
                     if tx.send(PollMessage::AgentsUpdated(agents)).await.is_err() {
                         break; // Receiver dropped
@@ -185,14 +204,17 @@ impl Poller {
                 .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
 
             if let Some(agent_type) = agent_type {
-                // Try to read state from wrap state file first
+                // Try to read state from IPC registry first
                 // Use pane_id (global unique ID like "5" from "%5") not pane_index (local window index)
-                let wrap_state = state_file::read_state(&pane.pane_id).ok();
+                let wrap_state = {
+                    let registry = self.ipc_registry.read();
+                    registry.get(&pane.pane_id).cloned()
+                };
                 let is_selected = selected_agent_id.as_ref() == Some(&pane.target);
 
-                // Optimize capture-pane based on selection and PTY state:
+                // Optimize capture-pane based on selection and IPC state:
                 // - Selected: ANSI capture for preview
-                // - Non-selected + PTY: skip capture-pane entirely (state from file)
+                // - Non-selected + IPC: skip capture-pane entirely (state from IPC registry)
                 // - Non-selected + capture-pane mode: plain capture for detection only
                 let (content_ansi, content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
@@ -200,7 +222,7 @@ impl Poller {
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
                 } else if wrap_state.is_some() {
-                    // Non-selected + PTY mode: skip capture-pane entirely
+                    // Non-selected + IPC mode: skip capture-pane entirely
                     (String::new(), String::new())
                 } else {
                     // Non-selected + capture-pane mode: plain capture for detection
@@ -216,12 +238,16 @@ impl Poller {
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
-                // Determine status: use wrap state file if available, otherwise detect from content
-                let (status, context_warning) = if let Some(ref ws) = wrap_state {
+                // Determine status: use IPC state if available, otherwise detect from content
+                let (status, context_warning, detection_reason) = if let Some(ref ws) = wrap_state {
                     // Convert WrapState to AgentStatus
                     let status = wrap_state_to_agent_status(ws);
-                    // No context warning from wrap state for now
-                    (status, None)
+                    let reason = DetectionReason {
+                        rule: "ipc_state".to_string(),
+                        confidence: DetectionConfidence::High,
+                        matched_text: None,
+                    };
+                    (status, None, Some(reason))
                 } else {
                     // Build detection context for this pane
                     let detection_context = DetectionContext {
@@ -229,12 +255,12 @@ impl Poller {
                         settings_cache: Some(&self.claude_settings_cache),
                     };
 
-                    // Detect status using appropriate detector
+                    // Detect status using appropriate detector with reason
                     let detector = get_detector(&agent_type);
-                    let status =
-                        detector.detect_status_with_context(&title, &content, &detection_context);
+                    let result =
+                        detector.detect_status_with_reason(&title, &content, &detection_context);
                     let context_warning = detector.detect_context_warning(&content);
-                    (status, context_warning)
+                    (result.status, context_warning, Some(result.reason))
                 };
 
                 let mut agent = MonitoredAgent::new(
@@ -252,8 +278,9 @@ impl Poller {
                 agent.last_content = content;
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
+                agent.detection_reason = detection_reason;
                 agent.detection_source = if wrap_state.is_some() {
-                    DetectionSource::PtyStateFile
+                    DetectionSource::IpcSocket
                 } else {
                     DetectionSource::CapturePane
                 };
@@ -269,6 +296,18 @@ impl Poller {
                 .then(a.window_index.cmp(&b.window_index))
                 .then(a.pane_index.cmp(&b.pane_index))
         });
+
+        // Build target → pane_id mapping for IPC key sending
+        let target_to_pane_id: HashMap<String, String> = all_panes
+            .iter()
+            .map(|p| (p.target.clone(), p.pane_id.clone()))
+            .collect();
+
+        // Update in app state
+        {
+            let mut state = self.state.write();
+            state.target_to_pane_id = target_to_pane_id;
+        }
 
         Ok((agents, all_panes))
     }
@@ -564,6 +603,108 @@ impl Poller {
         }
     }
 
+    /// Emit audit events for state transitions
+    fn emit_audit_events(&mut self, agents: &[MonitoredAgent]) {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let current_ids: HashSet<String> = agents
+            .iter()
+            .filter(|a| !a.is_virtual)
+            .map(|a| a.target.clone())
+            .collect();
+
+        // AgentDisappeared: was in previous, not in current
+        for target in &self.previous_agent_ids {
+            if !current_ids.contains(target) {
+                let (last_status, _) =
+                    self.previous_statuses
+                        .get(target)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            (
+                                "unknown".to_string(),
+                                DetectionReason {
+                                    rule: "unknown".to_string(),
+                                    confidence: DetectionConfidence::Low,
+                                    matched_text: None,
+                                },
+                            )
+                        });
+                self.audit_logger.log(&AuditEvent::AgentDisappeared {
+                    ts,
+                    pane_id: target.clone(),
+                    agent_type: "unknown".to_string(),
+                    last_status,
+                });
+            }
+        }
+
+        for agent in agents {
+            if agent.is_virtual {
+                continue;
+            }
+
+            let current_status_name = status_name(&agent.status).to_string();
+            let reason = agent
+                .detection_reason
+                .clone()
+                .unwrap_or_else(|| DetectionReason {
+                    rule: "unknown".to_string(),
+                    confidence: DetectionConfidence::Low,
+                    matched_text: None,
+                });
+            let source = agent.detection_source.label().to_string();
+
+            if !self.previous_agent_ids.contains(&agent.target) {
+                // AgentAppeared
+                self.audit_logger.log(&AuditEvent::AgentAppeared {
+                    ts,
+                    pane_id: agent.target.clone(),
+                    agent_type: agent.agent_type.short_name().to_string(),
+                    source,
+                    initial_status: current_status_name.clone(),
+                });
+            } else if let Some((prev_status, _)) = self.previous_statuses.get(&agent.target) {
+                // StateChanged
+                if *prev_status != current_status_name {
+                    let screen_context = if !agent.last_content.is_empty() {
+                        let lines: Vec<&str> = agent.last_content.lines().collect();
+                        let start = lines.len().saturating_sub(20);
+                        let tail = lines[start..].join("\n");
+                        // Truncate to 2000 bytes
+                        Some(if tail.len() > 2000 {
+                            tail[..tail.floor_char_boundary(2000)].to_string()
+                        } else {
+                            tail
+                        })
+                    } else {
+                        None
+                    };
+
+                    self.audit_logger.log(&AuditEvent::StateChanged {
+                        ts,
+                        pane_id: agent.target.clone(),
+                        agent_type: agent.agent_type.short_name().to_string(),
+                        source,
+                        prev_status: prev_status.clone(),
+                        new_status: current_status_name.clone(),
+                        reason: reason.clone(),
+                        screen_context,
+                    });
+                }
+            }
+
+            // Update tracking
+            self.previous_statuses
+                .insert(agent.target.clone(), (current_status_name, reason));
+        }
+
+        self.previous_agent_ids = current_ids;
+    }
+
     /// Cleanup the process cache
     pub fn cleanup_cache(&self) {
         self.process_cache.cleanup();
@@ -666,6 +807,18 @@ fn create_virtual_agent(
     agent
 }
 
+/// Get a short name for an AgentStatus variant
+fn status_name(status: &AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::Idle => "idle",
+        AgentStatus::Processing { .. } => "processing",
+        AgentStatus::AwaitingApproval { .. } => "awaiting_approval",
+        AgentStatus::Error { .. } => "error",
+        AgentStatus::Offline => "offline",
+        AgentStatus::Unknown => "unknown",
+    }
+}
+
 /// Convert WrapState from state file to AgentStatus
 fn wrap_state_to_agent_status(ws: &WrapState) -> AgentStatus {
     match ws.status {
@@ -705,6 +858,7 @@ mod tests {
     fn test_poller_creation() {
         let settings = Settings::default();
         let state = AppState::shared();
-        let _poller = Poller::new(settings, state);
+        let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
+        let _poller = Poller::new(settings, state, ipc_registry);
     }
 }
