@@ -102,8 +102,7 @@ impl ApiState {
 
         let status_name = match &agent.status {
             AgentStatus::Processing { .. } => "processing",
-            AgentStatus::Idle => "idle",
-            _ => return,
+            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
         };
 
         let ts = std::time::SystemTime::now()

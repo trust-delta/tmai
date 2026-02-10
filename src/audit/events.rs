@@ -52,7 +52,7 @@ pub enum AuditEvent {
         action: String,
         /// Source of input: "tui_input_mode", "tui_passthrough", "web_api_input"
         input_source: String,
-        /// Current detected status: "processing" or "idle"
+        /// Current detected status at the time of input (always "processing")
         current_status: String,
         /// Detection reason at the time of input
         detection_reason: Option<DetectionReason>,

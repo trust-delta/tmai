@@ -986,7 +986,6 @@ impl App {
                 } else {
                     // Send character as literal - no preview refresh, poller handles it
                     self.send_keys_literal_via_ipc_or_tmux(&target, &c.to_string())?;
-                    self.maybe_emit_passthrough_audit(&target);
                     return Ok(());
                 }
             }
@@ -1007,7 +1006,11 @@ impl App {
 
         // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
         let _ = self.send_keys_via_ipc_or_tmux(&target, &key_str);
-        self.maybe_emit_passthrough_audit(&target);
+
+        // Audit: only log Enter key in passthrough mode (actual submission)
+        if code == KeyCode::Enter {
+            self.maybe_emit_passthrough_audit(&target);
+        }
         Ok(())
     }
 
@@ -1391,8 +1394,7 @@ impl App {
 
         let status_name = match status {
             AgentStatus::Processing { .. } => "processing",
-            AgentStatus::Idle => "idle",
-            _ => return,
+            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
         };
 
         let ts = std::time::SystemTime::now()
