@@ -532,8 +532,7 @@ impl ClaudeCodeDetector {
             };
 
             // Check for decorative asterisk chars or plain '*'
-            let is_spinner_char =
-                CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
+            let is_spinner_char = CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
             if !is_spinner_char {
                 continue;
             }
@@ -541,7 +540,11 @@ impl ClaudeCodeDetector {
             let rest = trimmed[first_char.len_utf8()..].trim_start();
 
             // Must start with uppercase letter (verb) and contain ellipsis (active)
-            let starts_upper = rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+            let starts_upper = rest
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false);
             let has_ellipsis = rest.contains('…') || rest.contains("...");
 
             if starts_upper && has_ellipsis {
