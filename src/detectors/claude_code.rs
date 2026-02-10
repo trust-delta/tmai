@@ -17,7 +17,8 @@ const PROCESSING_SPINNERS: &[char] = &[
 /// Content-area spinner characters (decorative asterisks used by Claude Code)
 /// These appear in content as "✶ Spinning…", "✻ Working…", "✢ Thinking…", etc.
 /// Claude Code animates through these characters, so all variants must be covered.
-const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢'];
+/// The full rotation includes: ✶ ✻ ✽ ✢ · * (and possibly ✹ ✧)
+const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢', '·'];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
