@@ -8,11 +8,15 @@ use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetect
 /// Idle indicator - ✳ appears when Claude Code is waiting for input
 const IDLE_INDICATOR: char = '✳';
 
-/// Processing spinner characters (Braille patterns)
+/// Processing spinner characters (Braille patterns) - used in title
 const PROCESSING_SPINNERS: &[char] = &[
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
     '⠰', '◐', '◓', '◑', '◒',
 ];
+
+/// Content-area spinner characters (decorative asterisks used by Claude Code)
+/// These appear in content as "✶ Spinning…", "✻ Working…", etc.
+const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧'];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
@@ -507,6 +511,46 @@ impl ClaudeCodeDetector {
         None
     }
 
+    /// Detect active spinner verbs in content area
+    ///
+    /// Claude Code shows spinner activity like "✶ Spinning…", "✻ Levitating…", "* Working…"
+    /// in the content. Active spinners contain "…" (ellipsis), while completed ones show
+    /// "✻ Crunched for 6m 5s" (past tense + time, no ellipsis).
+    ///
+    /// This is critical for detecting processing when the title still shows ✳ (idle),
+    /// e.g. during /compact or title update lag.
+    fn detect_content_spinner(content: &str) -> Option<String> {
+        for line in content.lines().rev().take(15) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let first_char = match trimmed.chars().next() {
+                Some(c) => c,
+                None => continue,
+            };
+
+            // Check for decorative asterisk chars or plain '*'
+            let is_spinner_char =
+                CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
+            if !is_spinner_char {
+                continue;
+            }
+
+            let rest = trimmed[first_char.len_utf8()..].trim_start();
+
+            // Must start with uppercase letter (verb) and contain ellipsis (active)
+            let starts_upper = rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+            let has_ellipsis = rest.contains('…') || rest.contains("...");
+
+            if starts_upper && has_ellipsis {
+                return Some(trimmed.to_string());
+            }
+        }
+        None
+    }
+
     /// Check if we should skip default Braille spinner detection
     ///
     /// Returns true if mode is "replace" and custom verbs are configured.
@@ -605,7 +649,21 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 5. Title-based detection: ✳ in title = Idle
+        // 5. Content-based spinner detection (overrides title idle)
+        //    Catches cases where title still shows ✳ but content has active spinner
+        //    e.g. during /compact, or title update lag
+        if let Some(activity) = Self::detect_content_spinner(content) {
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: activity.clone(),
+                },
+                "content_spinner_verb",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(&activity);
+        }
+
+        // 6. Title-based detection: ✳ in title = Idle
         if title.contains(IDLE_INDICATOR) {
             return DetectionResult::new(
                 AgentStatus::Idle,
@@ -615,7 +673,7 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 6. Check for custom spinner verbs from settings
+        // 7. Check for custom spinner verbs from settings
         if let Some(activity) = Self::detect_custom_spinner_verb(title, context) {
             return DetectionResult::new(
                 AgentStatus::Processing { activity },
@@ -625,7 +683,7 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 7. Default Braille spinner detection (unless mode is "replace")
+        // 8. Default Braille spinner detection (unless mode is "replace")
         if !Self::should_skip_default_spinners(context)
             && title.chars().any(|c| PROCESSING_SPINNERS.contains(&c))
         {
@@ -1131,6 +1189,71 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
             matches!(status, AgentStatus::AwaitingApproval { .. }),
             "Expected AwaitingApproval, got {:?}",
             status
+        );
+    }
+
+    #[test]
+    fn test_content_spinner_overrides_title_idle() {
+        let detector = ClaudeCodeDetector::new();
+        // Title shows ✳ (idle) but content has active spinner - should be Processing
+        let content = r#"
+✻ Cogitated for 2m 6s
+
+❯ コミットしてdev-log
+
+✶ Spinning… (37s · ↑ 38 tokens)
+
+────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────
+   Model: Opus 4.6  Ctx: 78.9%
+  -- INSERT --
+"#;
+        let result = detector.detect_status_with_reason(
+            "✳ Git commit dev-log",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing when content has active spinner, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+        assert_eq!(result.reason.confidence, DetectionConfidence::Medium);
+    }
+
+    #[test]
+    fn test_content_spinner_with_plain_asterisk() {
+        let detector = ClaudeCodeDetector::new();
+        // Plain * spinner should also be detected
+        let content = "Some output\n\n* Perambulating…\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for * spinner, got {:?}",
+            result.status
+        );
+    }
+
+    #[test]
+    fn test_completed_spinner_not_detected_as_active() {
+        let detector = ClaudeCodeDetector::new();
+        // Completed spinners (past tense, no ellipsis) should NOT trigger processing
+        let content = "Some output\n\n✻ Crunched for 6m 5s\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for completed spinner, got {:?}",
+            result.status
         );
     }
 
