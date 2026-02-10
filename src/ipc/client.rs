@@ -78,7 +78,7 @@ impl IpcClient {
         let mut backoff_ms = 100u64;
 
         while running.load(Ordering::Relaxed) {
-            match UnixStream::connect(SOCKET_PATH) {
+            match UnixStream::connect(socket_path()) {
                 Ok(stream) => {
                     backoff_ms = 100; // Reset on successful connect
                     tracing::info!("IPC connected to server");
@@ -238,9 +238,9 @@ fn tmux_key_to_bytes(key: &str) -> Vec<u8> {
         "NPage" => vec![0x1b, b'[', b'6', b'~'],
         "DC" => vec![0x1b, b'[', b'3', b'~'],
         s if s.starts_with("C-") && s.len() == 3 => {
-            // Control character: C-a = 0x01, C-z = 0x1a
+            // Control character via bitmask: C-a/C-A = 0x01, C-@ = 0x00, C-[ = 0x1b
             let c = s.as_bytes()[2];
-            vec![c.wrapping_sub(b'a').wrapping_add(1)]
+            vec![c & 0x1f]
         }
         // For literal text like "y"
         other => other.as_bytes().to_vec(),
@@ -257,6 +257,9 @@ mod tests {
         assert_eq!(tmux_key_to_bytes("Space"), vec![b' ']);
         assert_eq!(tmux_key_to_bytes("Up"), vec![0x1b, b'[', b'A']);
         assert_eq!(tmux_key_to_bytes("C-c"), vec![3]); // 0x03
+        assert_eq!(tmux_key_to_bytes("C-A"), vec![1]); // uppercase: same as C-a
+        assert_eq!(tmux_key_to_bytes("C-@"), vec![0]); // NUL
+        assert_eq!(tmux_key_to_bytes("C-["), vec![0x1b]); // ESC
         assert_eq!(tmux_key_to_bytes("y"), vec![b'y']);
     }
 }
