@@ -15,8 +15,9 @@ const PROCESSING_SPINNERS: &[char] = &[
 ];
 
 /// Content-area spinner characters (decorative asterisks used by Claude Code)
-/// These appear in content as "✶ Spinning…", "✻ Working…", etc.
-const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧'];
+/// These appear in content as "✶ Spinning…", "✻ Working…", "✢ Thinking…", etc.
+/// Claude Code animates through these characters, so all variants must be covered.
+const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢'];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
@@ -1224,6 +1225,24 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
         );
         assert_eq!(result.reason.rule, "content_spinner_verb");
         assert_eq!(result.reason.confidence, DetectionConfidence::Medium);
+    }
+
+    #[test]
+    fn test_content_spinner_with_four_teardrop() {
+        let detector = ClaudeCodeDetector::new();
+        // ✢ (U+2722) is another spinner char Claude Code uses
+        let content = "Some output\n\n✢ Bootstrapping… (1m 27s)\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for ✢ spinner, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
     }
 
     #[test]
