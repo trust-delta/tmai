@@ -2,7 +2,7 @@ use regex::Regex;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 
-use super::StatusDetector;
+use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
 /// Detector for Codex CLI
 pub struct CodexDetector {
@@ -148,40 +148,74 @@ impl Default for CodexDetector {
 
 impl StatusDetector for CodexDetector {
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus {
+        self.detect_status_with_reason(title, content, &DetectionContext::default())
+            .status
+    }
+
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        _context: &DetectionContext,
+    ) -> DetectionResult {
         // Check for approval requests
         if let Some((approval_type, details)) = self.detect_approval(content) {
-            return AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
+            let rule = match &approval_type {
+                ApprovalType::UserQuestion { .. } => "codex_numbered_choices",
+                _ => "codex_approval_pattern",
             };
+            return DetectionResult::new(
+                AgentStatus::AwaitingApproval {
+                    approval_type,
+                    details,
+                },
+                rule,
+                DetectionConfidence::High,
+            );
         }
 
         // Check for errors
         if let Some(message) = self.detect_error(content) {
-            return AgentStatus::Error { message };
+            return DetectionResult::new(
+                AgentStatus::Error {
+                    message: message.clone(),
+                },
+                "codex_error_pattern",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&message);
         }
 
         // Title-based detection
         let title_lower = title.to_lowercase();
         if title_lower.contains("idle") || title_lower.contains("ready") {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "codex_title_idle",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         if title_lower.contains("working") || title_lower.contains("processing") {
-            return AgentStatus::Processing {
-                activity: title.to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: title.to_string(),
+                },
+                "codex_title_processing",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // Content-based detection for Codex CLI
         let lines: Vec<&str> = content.lines().collect();
         let recent_lines: Vec<&str> = lines.iter().rev().take(15).copied().collect();
 
-        // Check for processing indicators first (e.g., spinners, "thinking...")
+        // Check for processing indicators first
         for line in &recent_lines {
             let trimmed = line.trim();
 
-            // Spinner patterns (Codex uses various spinners during processing)
             if trimmed.starts_with('⠋')
                 || trimmed.starts_with('⠙')
                 || trimmed.starts_with('⠹')
@@ -193,74 +227,81 @@ impl StatusDetector for CodexDetector {
                 || trimmed.starts_with('⠇')
                 || trimmed.starts_with('⠏')
             {
-                return AgentStatus::Processing {
-                    activity: trimmed.to_string(),
-                };
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: trimmed.to_string(),
+                    },
+                    "codex_spinner",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
             }
 
-            // "Thinking..." or similar processing indicators
             if trimmed.contains("Thinking") || trimmed.contains("Generating") {
-                return AgentStatus::Processing {
-                    activity: trimmed.to_string(),
-                };
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: trimmed.to_string(),
+                    },
+                    "codex_thinking",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
             }
 
-            // "esc to interrupt" indicates processing
             if trimmed.contains("esc to interrupt") {
-                return AgentStatus::Processing {
-                    activity: String::new(),
-                };
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: String::new(),
+                    },
+                    "codex_esc_to_interrupt",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
             }
         }
 
         // Check for idle indicators
-        // Codex shows "› " prompt when waiting for input
-        // The prompt line should be followed only by footer (? for shortcuts... % context left)
         let mut prompt_line_idx: Option<usize> = None;
         let mut footer_line_idx: Option<usize> = None;
 
         for (idx, line) in recent_lines.iter().enumerate() {
             let trimmed = line.trim();
-
-            // Footer line with "% context left"
             if trimmed.contains("% context left") {
                 footer_line_idx = Some(idx);
             }
-
-            // Prompt line starting with "› "
             if trimmed.starts_with('›') {
                 prompt_line_idx = Some(idx);
-                break; // Prompt is above footer, stop searching
+                break;
             }
         }
 
-        // Idle if: prompt exists and is right above footer (with maybe empty lines between)
         if let (Some(prompt_idx), Some(footer_idx)) = (prompt_line_idx, footer_line_idx) {
-            // In reversed order: footer is at lower index, prompt at higher
-            // Check if there's only empty lines between them
             if prompt_idx > footer_idx {
                 let between = &recent_lines[footer_idx + 1..prompt_idx];
                 let only_empty_or_hints = between
                     .iter()
                     .all(|l| l.trim().is_empty() || l.trim().starts_with('?'));
                 if only_empty_or_hints {
-                    return AgentStatus::Idle;
+                    return DetectionResult::new(
+                        AgentStatus::Idle,
+                        "codex_prompt_footer",
+                        DetectionConfidence::Medium,
+                    );
                 }
             }
         }
 
-        // Fallback: if we see the footer but no clear processing indicator,
-        // check for selection choices which indicate response completed
         for line in &recent_lines {
             let trimmed = line.trim();
-            // Numbered choices pattern (e.g., "1. Fix bug" or "  1  Fix bug")
             if trimmed.starts_with("1.") || trimmed.starts_with("2.") || trimmed.starts_with("3.") {
-                return AgentStatus::Idle;
+                return DetectionResult::new(
+                    AgentStatus::Idle,
+                    "codex_numbered_list",
+                    DetectionConfidence::Low,
+                );
             }
         }
 
-        // Check for slash command menu (shown when user types "/")
-        // Pattern: lines starting with "/" followed by command name
         let has_slash_menu = recent_lines.iter().any(|line| {
             let trimmed = line.trim();
             trimmed.starts_with("/model")
@@ -275,22 +316,35 @@ impl StatusDetector for CodexDetector {
         });
 
         if has_slash_menu {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "codex_slash_menu",
+                DetectionConfidence::Medium,
+            );
         }
 
-        // If prompt is visible, likely idle (even without footer)
         if prompt_line_idx.is_some() {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "codex_prompt_only",
+                DetectionConfidence::Medium,
+            );
         }
 
-        // Default to unknown/processing based on context
         if footer_line_idx.is_some() {
-            // Footer visible but unclear state - likely idle after response
-            AgentStatus::Idle
+            DetectionResult::new(
+                AgentStatus::Idle,
+                "codex_footer_only",
+                DetectionConfidence::Low,
+            )
         } else {
-            AgentStatus::Processing {
-                activity: String::new(),
-            }
+            DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: String::new(),
+                },
+                "codex_fallback_processing",
+                DetectionConfidence::Low,
+            )
         }
     }
 

@@ -2,7 +2,7 @@ use regex::Regex;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 
-use super::StatusDetector;
+use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
 /// Default detector for unknown or custom agents
 pub struct DefaultDetector {
@@ -57,17 +57,38 @@ impl DefaultDetector {
 
 impl StatusDetector for DefaultDetector {
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus {
+        self.detect_status_with_reason(title, content, &DetectionContext::default())
+            .status
+    }
+
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        _context: &DetectionContext,
+    ) -> DetectionResult {
         // Check for approval requests
         if let Some((approval_type, details)) = self.detect_approval(content) {
-            return AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            };
+            return DetectionResult::new(
+                AgentStatus::AwaitingApproval {
+                    approval_type,
+                    details,
+                },
+                "default_approval_pattern",
+                DetectionConfidence::High,
+            );
         }
 
         // Check for errors
         if let Some(message) = self.detect_error(content) {
-            return AgentStatus::Error { message };
+            return DetectionResult::new(
+                AgentStatus::Error {
+                    message: message.clone(),
+                },
+                "default_error_pattern",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&message);
         }
 
         // Title-based heuristics
@@ -76,23 +97,32 @@ impl StatusDetector for DefaultDetector {
             || title_lower.contains("ready")
             || title_lower.contains("waiting")
         {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "default_title_idle",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         if title_lower.contains("working")
             || title_lower.contains("processing")
             || title_lower.contains("running")
         {
-            return AgentStatus::Processing {
-                activity: title.to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: title.to_string(),
+                },
+                "default_title_processing",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // Content-based heuristics
         let lines: Vec<&str> = content.lines().collect();
         if let Some(last) = lines.last() {
             let trimmed = last.trim();
-            // Common prompt endings
             if trimmed.ends_with('>')
                 || trimmed.ends_with('$')
                 || trimmed.ends_with('#')
@@ -100,12 +130,19 @@ impl StatusDetector for DefaultDetector {
                 || trimmed.ends_with(':')
                 || trimmed.is_empty()
             {
-                return AgentStatus::Idle;
+                return DetectionResult::new(
+                    AgentStatus::Idle,
+                    "default_prompt_ending",
+                    DetectionConfidence::Medium,
+                );
             }
         }
 
-        // Default to unknown
-        AgentStatus::Unknown
+        DetectionResult::new(
+            AgentStatus::Unknown,
+            "default_fallback_unknown",
+            DetectionConfidence::Low,
+        )
     }
 
     fn agent_type(&self) -> AgentType {

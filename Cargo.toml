@@ -53,6 +53,7 @@ pretty_assertions = "1"
 tower = { version = "0.5", features = ["util"] }
 http = "1"
 http-body-util = "0.1"
+tempfile = "3.25.0"
 
 [[bin]]
 name = "tmai"

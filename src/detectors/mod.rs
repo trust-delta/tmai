@@ -10,10 +10,68 @@ pub use gemini::GeminiDetector;
 
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::agents::{AgentStatus, AgentType};
 use crate::config::ClaudeSettingsCache;
+
+/// Detection confidence level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DetectionConfidence {
+    /// Explicit pattern match
+    High,
+    /// Heuristic-based detection
+    Medium,
+    /// Fallback detection
+    Low,
+}
+
+/// Reason for a detection result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectionReason {
+    /// Rule name (e.g., "user_question_numbered_choices")
+    pub rule: String,
+    /// Confidence level
+    pub confidence: DetectionConfidence,
+    /// Matched text (truncated)
+    pub matched_text: Option<String>,
+}
+
+/// Detection result combining status and reason
+#[derive(Debug, Clone)]
+pub struct DetectionResult {
+    /// Detected agent status
+    pub status: AgentStatus,
+    /// Reason for this detection
+    pub reason: DetectionReason,
+}
+
+impl DetectionResult {
+    /// Create a new detection result
+    pub fn new(status: AgentStatus, rule: &str, confidence: DetectionConfidence) -> Self {
+        Self {
+            status,
+            reason: DetectionReason {
+                rule: rule.to_string(),
+                confidence,
+                matched_text: None,
+            },
+        }
+    }
+
+    /// Add matched text to the detection result
+    pub fn with_matched_text(mut self, text: &str) -> Self {
+        // Truncate to 200 chars
+        let truncated = if text.len() > 200 {
+            format!("{}...", &text[..text.floor_char_boundary(197)])
+        } else {
+            text.to_string()
+        };
+        self.reason.matched_text = Some(truncated);
+        self
+    }
+}
 
 /// Context passed to detectors for additional information
 #[derive(Default)]
@@ -49,6 +107,19 @@ pub trait StatusDetector: Send + Sync {
     /// Returns the percentage remaining if warning is present
     fn detect_context_warning(&self, _content: &str) -> Option<u8> {
         None
+    }
+
+    /// Detect status with reason for audit logging
+    ///
+    /// Default implementation wraps `detect_status_with_context` with a legacy fallback reason.
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        context: &DetectionContext,
+    ) -> DetectionResult {
+        let status = self.detect_status_with_context(title, content, context);
+        DetectionResult::new(status, "legacy_fallback", DetectionConfidence::Low)
     }
 
     /// Keys to send for approval (Enter for cursor-based UI)

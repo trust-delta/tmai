@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod audit;
 pub mod config;
 pub mod detectors;
 pub mod ipc;

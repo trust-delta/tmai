@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::detectors::DetectionReason;
 use crate::teams::TaskStatus;
 
 /// Source of agent state detection
@@ -428,6 +429,8 @@ pub struct MonitoredAgent {
     pub team_info: Option<AgentTeamInfo>,
     /// Whether this is a virtual agent (team member without detected pane)
     pub is_virtual: bool,
+    /// Detection reason from the last status detection
+    pub detection_reason: Option<DetectionReason>,
 }
 
 impl MonitoredAgent {
@@ -464,6 +467,7 @@ impl MonitoredAgent {
             detection_source: DetectionSource::default(),
             team_info: None,
             is_virtual: false,
+            detection_reason: None,
         }
     }
 

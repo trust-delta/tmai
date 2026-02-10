@@ -3,7 +3,7 @@ use regex::Regex;
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 use crate::config::SpinnerVerbsMode;
 
-use super::{DetectionContext, StatusDetector};
+use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
 /// Idle indicator - ✳ appears when Claude Code is waiting for input
 const IDLE_INDICATOR: char = '✳';
@@ -336,8 +336,8 @@ impl ClaudeCodeDetector {
         false
     }
 
-    /// Detect approval request in content
-    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String)> {
+    /// Detect approval request in content, returning the rule name that matched
+    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String, &'static str)> {
         let lines: Vec<&str> = content.lines().collect();
         if lines.is_empty() {
             return None;
@@ -349,8 +349,8 @@ impl ClaudeCodeDetector {
         let _recent = recent_lines.join("\n");
 
         // Check for AskUserQuestion first (highest priority)
-        if let Some(result) = self.detect_user_question(content) {
-            return Some(result);
+        if let Some((approval_type, details)) = self.detect_user_question(content) {
+            return Some((approval_type, details, "user_question_numbered_choices"));
         }
 
         // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
@@ -368,36 +368,46 @@ impl ClaudeCodeDetector {
             return None;
         }
 
+        // Determine which rule matched
+        let rule = if has_proceed_prompt {
+            "proceed_prompt"
+        } else if has_yes_no_buttons {
+            "yes_no_buttons"
+        } else {
+            "yes_no_text_pattern"
+        };
+
         // Determine approval type
         let context = safe_tail(content, 1500);
 
         if self.file_edit_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileEdit, details));
+            return Some((ApprovalType::FileEdit, details, rule));
         }
 
         if self.file_create_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileCreate, details));
+            return Some((ApprovalType::FileCreate, details, rule));
         }
 
         if self.file_delete_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileDelete, details));
+            return Some((ApprovalType::FileDelete, details, rule));
         }
 
         if self.bash_pattern.is_match(context) {
             let details = self.extract_command(context).unwrap_or_default();
-            return Some((ApprovalType::ShellCommand, details));
+            return Some((ApprovalType::ShellCommand, details, rule));
         }
 
         if self.mcp_pattern.is_match(context) {
-            return Some((ApprovalType::McpTool, "MCP tool call".to_string()));
+            return Some((ApprovalType::McpTool, "MCP tool call".to_string(), rule));
         }
 
         Some((
             ApprovalType::Other("Pending approval".to_string()),
             String::new(),
+            rule,
         ))
     }
 
@@ -526,8 +536,8 @@ impl Default for ClaudeCodeDetector {
 
 impl StatusDetector for ClaudeCodeDetector {
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus {
-        // Fall back to context-less detection
-        self.detect_status_with_context(title, content, &DetectionContext::default())
+        self.detect_status_with_reason(title, content, &DetectionContext::default())
+            .status
     }
 
     fn detect_status_with_context(
@@ -536,61 +546,109 @@ impl StatusDetector for ClaudeCodeDetector {
         content: &str,
         context: &DetectionContext,
     ) -> AgentStatus {
+        self.detect_status_with_reason(title, content, context)
+            .status
+    }
+
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        context: &DetectionContext,
+    ) -> DetectionResult {
         // 1. Check for AskUserQuestion or approval (highest priority)
-        if let Some((approval_type, details)) = self.detect_approval(content) {
-            return AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            };
+        if let Some((approval_type, details, rule)) = self.detect_approval(content) {
+            let matched = safe_tail(content, 200);
+            return DetectionResult::new(
+                AgentStatus::AwaitingApproval {
+                    approval_type,
+                    details,
+                },
+                rule,
+                DetectionConfidence::High,
+            )
+            .with_matched_text(matched);
         }
 
         // 2. Check for errors
         if let Some(message) = self.detect_error(content) {
-            return AgentStatus::Error { message };
+            return DetectionResult::new(
+                AgentStatus::Error {
+                    message: message.clone(),
+                },
+                "error_pattern",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&message);
         }
 
         // 3. Check for Tasks list with in-progress tasks (◼)
-        // This takes priority over title-based Idle detection
         if Self::has_in_progress_tasks(content) {
-            return AgentStatus::Processing {
-                activity: "Tasks running".to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: "Tasks running".to_string(),
+                },
+                "tasks_in_progress",
+                DetectionConfidence::High,
+            );
         }
 
         // 4. Check for Compacting (✽ Compacting conversation)
         if title.contains('✽') && title.to_lowercase().contains("compacting") {
-            return AgentStatus::Processing {
-                activity: "Compacting...".to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: "Compacting...".to_string(),
+                },
+                "title_compacting",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(title);
         }
 
-        // 5. Title-based detection
-        // ✳ in title = Idle (waiting for input)
+        // 5. Title-based detection: ✳ in title = Idle
         if title.contains(IDLE_INDICATOR) {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "title_idle_indicator",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(title);
         }
 
         // 6. Check for custom spinner verbs from settings
         if let Some(activity) = Self::detect_custom_spinner_verb(title, context) {
-            return AgentStatus::Processing { activity };
+            return DetectionResult::new(
+                AgentStatus::Processing { activity },
+                "custom_spinner_verb",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // 7. Default Braille spinner detection (unless mode is "replace")
         if !Self::should_skip_default_spinners(context)
             && title.chars().any(|c| PROCESSING_SPINNERS.contains(&c))
         {
-            // Try to extract activity from title
             let activity = title
                 .chars()
                 .skip_while(|c| PROCESSING_SPINNERS.contains(c) || c.is_whitespace())
                 .collect::<String>();
-            return AgentStatus::Processing { activity };
+            return DetectionResult::new(
+                AgentStatus::Processing { activity },
+                "braille_spinner",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // No indicator - default to Processing
-        AgentStatus::Processing {
-            activity: String::new(),
-        }
+        DetectionResult::new(
+            AgentStatus::Processing {
+                activity: String::new(),
+            },
+            "fallback_no_indicator",
+            DetectionConfidence::Low,
+        )
     }
 
     fn detect_context_warning(&self, content: &str) -> Option<u8> {

@@ -2,7 +2,7 @@ use regex::Regex;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
 
-use super::StatusDetector;
+use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
 /// Detector for Gemini CLI
 pub struct GeminiDetector {
@@ -61,32 +61,63 @@ impl Default for GeminiDetector {
 
 impl StatusDetector for GeminiDetector {
     fn detect_status(&self, title: &str, content: &str) -> AgentStatus {
+        self.detect_status_with_reason(title, content, &DetectionContext::default())
+            .status
+    }
+
+    fn detect_status_with_reason(
+        &self,
+        title: &str,
+        content: &str,
+        _context: &DetectionContext,
+    ) -> DetectionResult {
         // Check for approval requests
-        if let Some((approval_type, details)) = self.detect_approval(content) {
-            return AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            };
+        if let Some((_approval_type, _details)) = self.detect_approval(content) {
+            return DetectionResult::new(
+                AgentStatus::AwaitingApproval {
+                    approval_type: _approval_type,
+                    details: _details,
+                },
+                "gemini_approval_pattern",
+                DetectionConfidence::High,
+            );
         }
 
         // Check for errors
         if let Some(message) = self.detect_error(content) {
-            return AgentStatus::Error { message };
+            return DetectionResult::new(
+                AgentStatus::Error {
+                    message: message.clone(),
+                },
+                "gemini_error_pattern",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&message);
         }
 
         // Title-based detection
         let title_lower = title.to_lowercase();
         if title_lower.contains("idle") || title_lower.contains("ready") {
-            return AgentStatus::Idle;
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "gemini_title_idle",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         if title_lower.contains("working")
             || title_lower.contains("processing")
             || title_lower.contains("thinking")
         {
-            return AgentStatus::Processing {
-                activity: title.to_string(),
-            };
+            return DetectionResult::new(
+                AgentStatus::Processing {
+                    activity: title.to_string(),
+                },
+                "gemini_title_processing",
+                DetectionConfidence::Medium,
+            )
+            .with_matched_text(title);
         }
 
         // Default based on content heuristics
@@ -98,13 +129,21 @@ impl StatusDetector for GeminiDetector {
                 || trimmed.ends_with('❯')
                 || trimmed.is_empty()
             {
-                return AgentStatus::Idle;
+                return DetectionResult::new(
+                    AgentStatus::Idle,
+                    "gemini_prompt_ending",
+                    DetectionConfidence::Medium,
+                );
             }
         }
 
-        AgentStatus::Processing {
-            activity: String::new(),
-        }
+        DetectionResult::new(
+            AgentStatus::Processing {
+                activity: String::new(),
+            },
+            "gemini_fallback_processing",
+            DetectionConfidence::Low,
+        )
     }
 
     fn agent_type(&self) -> AgentType {
