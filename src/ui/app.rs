@@ -503,6 +503,9 @@ impl App {
                                 }
                             }
                         }
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "number_selection");
                     }
                 }
             }
@@ -550,6 +553,9 @@ impl App {
                         drop(state);
                         let detector = get_detector(&agent_type);
                         let _ = self.send_keys_via_ipc_or_tmux(&target, detector.approval_keys());
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "approval_key");
                     }
                 }
             }
@@ -604,6 +610,9 @@ impl App {
                             let _ = self.send_keys_via_ipc_or_tmux(&target, "Down");
                         }
                         let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "enter_key");
                     }
                 }
             }
@@ -986,6 +995,10 @@ impl App {
                 } else {
                     // Send character as literal - no preview refresh, poller handles it
                     self.send_keys_literal_via_ipc_or_tmux(&target, &c.to_string())?;
+                    // Audit: log interaction keys before early return (y/Y, digits)
+                    if matches!(c, 'y' | 'Y' | '1'..='9' | '１'..='９') {
+                        self.maybe_emit_passthrough_audit(&target);
+                    }
                     return Ok(());
                 }
             }
@@ -1007,7 +1020,7 @@ impl App {
         // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
         let _ = self.send_keys_via_ipc_or_tmux(&target, &key_str);
 
-        // Audit: only log Enter key in passthrough mode (actual submission)
+        // Audit: log Enter key (y/digits handled above before early return)
         if code == KeyCode::Enter {
             self.maybe_emit_passthrough_audit(&target);
         }
@@ -1464,6 +1477,28 @@ impl App {
             "tui_passthrough",
             audit_info.as_ref(),
         );
+    }
+
+    /// Emit audit event for normal-mode interaction keys (y, numbers, Enter)
+    /// No debounce — each press is a deliberate interaction attempt
+    fn maybe_emit_normal_audit(&self, target: &str, action: &str) {
+        if self.audit_tx.is_none() {
+            return;
+        }
+
+        let audit_info = {
+            let state = self.state.read();
+            state.agents.get(target).map(|a| {
+                (
+                    a.status.clone(),
+                    a.detection_reason.clone(),
+                    a.detection_source,
+                    a.agent_type.short_name().to_string(),
+                    a.last_content.clone(),
+                )
+            })
+        };
+        self.maybe_emit_input_audit(target, action, "tui_normal_mode", audit_info.as_ref());
     }
 }
 
