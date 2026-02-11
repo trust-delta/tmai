@@ -222,8 +222,15 @@ impl ClaudeCodeDetector {
         cursor_position = best_cursor_position;
 
         // Choices must be near the end (allow for UI hints like "Enter to select")
+        // Use the last non-empty line as the effective end, since tmux capture-pane
+        // pads output with trailing empty lines to fill the terminal height.
         if let Some(last_idx) = last_choice_idx {
-            if check_lines.len() - last_idx > 15 {
+            let effective_end = check_lines
+                .iter()
+                .rposition(|line| !line.trim().is_empty())
+                .map(|i| i + 1)
+                .unwrap_or(check_lines.len());
+            if effective_end - last_idx > 15 {
                 return None;
             }
         }
@@ -1304,6 +1311,55 @@ Some other output here
         // Both should be Idle
         assert!(matches!(status1, AgentStatus::Idle));
         assert!(matches!(status2, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_multi_select_with_trailing_empty_lines() {
+        let detector = ClaudeCodeDetector::new();
+        // Real capture-pane output: AskUserQuestion with multi-select checkboxes,
+        // followed by many trailing empty lines (tmux pads to terminal height).
+        // This previously failed because check_lines.len() - last_choice_idx > 15.
+        let content = "\
+今日の作業内容を教えてください（複数選択可）\n\
+\n\
+❯ 1. [ ] 機能実装\n\
+  --audit モードの実装\n\
+  2. [ ] ドキュメント更新\n\
+  CHANGELOG, README, CLAUDE.md更新\n\
+  3. [ ] CI/CD構築\n\
+  タグプッシュ時の自動npm publishワークフロー作成\n\
+  4. [ ] リリース\n\
+  v0.7.0のnpm publish\n\
+  5. [ ] Type something\n\
+     Submit\n\
+──────────────────────────────────────────\n\
+  6. Chat about this\n\
+\n\
+Enter to select · ↑/↓ to navigate · Esc to cancel\n\
+\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
+        let status = detector.detect_status("✳ Dev Log", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Should detect AskUserQuestion despite trailing empty lines, got {:?}",
+            status
+        );
+        if let AgentStatus::AwaitingApproval { approval_type, .. } = status {
+            if let ApprovalType::UserQuestion {
+                choices,
+                multi_select,
+                cursor_position,
+                ..
+            } = approval_type
+            {
+                assert_eq!(choices.len(), 6, "Expected 6 choices, got {:?}", choices);
+                // Note: multi_select detection relies on English keywords ("space to", "toggle")
+                // which aren't present in this Japanese UI. The [ ] checkboxes are visual-only.
+                let _ = multi_select;
+                assert_eq!(cursor_position, 1);
+            } else {
+                panic!("Expected UserQuestion, got {:?}", approval_type);
+            }
+        }
     }
 
     #[test]

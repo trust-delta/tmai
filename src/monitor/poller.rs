@@ -302,10 +302,15 @@ impl Poller {
                     // P1: IPC Approval lag correction — when IPC reports non-Approval,
                     // check screen content for High-confidence Approval patterns
                     if !matches!(status, AgentStatus::AwaitingApproval { .. }) {
-                        let plain = self
-                            .client
-                            .capture_pane_plain(&pane.target)
-                            .unwrap_or_default();
+                        // Reuse existing content if available (selected agent already has
+                        // plain text from ANSI capture), otherwise capture for non-selected agents
+                        let plain = if !content.is_empty() {
+                            content.clone()
+                        } else {
+                            self.client
+                                .capture_pane_plain(&pane.target)
+                                .unwrap_or_default()
+                        };
                         let detection_context = DetectionContext {
                             cwd: Some(pane.cwd.as_str()),
                             settings_cache: Some(&self.claude_settings_cache),

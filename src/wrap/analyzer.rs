@@ -2,6 +2,7 @@
 //!
 //! Analyzes agent output to determine current state.
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::time::{Duration, Instant};
 
@@ -131,8 +132,13 @@ impl Analyzer {
     pub fn process_output(&mut self, data: &str) {
         self.last_output = Instant::now();
 
+        // Strip ANSI escape codes before buffering for clean pattern matching.
+        // PTY output from ink-based CLIs (e.g. Claude Code) includes color codes
+        // like \x1b[36m❯\x1b[0m that break regex patterns.
+        let clean = strip_ansi(data);
+
         // Append to buffer, truncating old data if necessary
-        self.output_buffer.push_str(data);
+        self.output_buffer.push_str(&clean);
         if self.output_buffer.len() > self.max_buffer_size {
             let drain_to = self.output_buffer.len() - self.max_buffer_size / 2;
             // Find UTF-8 boundary
@@ -472,6 +478,16 @@ impl Analyzer {
     }
 }
 
+/// Strip ANSI escape sequences (OSC and CSI) from text
+fn strip_ansi(input: &str) -> String {
+    static OSC_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
+    static CSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
+
+    let without_osc = OSC_RE.replace_all(input, "");
+    CSI_RE.replace_all(&without_osc, "").to_string()
+}
+
 /// Convert Instant to Unix milliseconds (approximate)
 fn instant_to_millis(instant: Instant) -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -588,5 +604,78 @@ Which option?
 
         let detected = analyzer.detect_user_question(&analyzer.output_buffer);
         assert!(detected, "Should detect as UserQuestion");
+    }
+
+    #[test]
+    fn test_strip_ansi_removes_color_codes() {
+        let input = "\x1b[36m❯\x1b[0m 1. Option A";
+        let result = strip_ansi(input);
+        assert_eq!(result, "❯ 1. Option A");
+    }
+
+    #[test]
+    fn test_detect_user_question_with_ansi_colors() {
+        let mut analyzer = Analyzer::new(1234);
+        // Simulates ink (Claude Code) output with ANSI color codes
+        let content = "Which option?\n\n\
+            \x1b[36m❯\x1b[0m \x1b[36m1.\x1b[0m Option A\n\
+            \x1b[2m  \x1b[0m\x1b[2m2.\x1b[0m Option B\n\
+            \x1b[2m  \x1b[0m\x1b[2m3.\x1b[0m Option C\n";
+        analyzer.process_output(content);
+
+        // ANSI codes should be stripped by process_output, so detection works
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect AskUserQuestion even when raw output has ANSI codes"
+        );
+
+        let (choices, _, cursor) = analyzer.extract_choices();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], "Option A");
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn test_detect_user_question_with_ansi_yes_no() {
+        let mut analyzer = Analyzer::new(1234);
+        // Yes/No prompt with ANSI codes (common Claude Code approval)
+        let content = " Do you want to proceed?\n\
+            \x1b[36m ❯\x1b[0m \x1b[36m1.\x1b[0m Yes\n\
+            \x1b[2m   \x1b[0m\x1b[2m2.\x1b[0m No\n";
+        analyzer.process_output(content);
+
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect Yes/No UserQuestion with ANSI codes"
+        );
+    }
+
+    #[test]
+    fn test_process_output_buffer_is_plain_text() {
+        let mut analyzer = Analyzer::new(1234);
+        analyzer.process_output("\x1b[1;32mHello\x1b[0m \x1b[31mWorld\x1b[0m");
+        assert_eq!(analyzer.output_buffer, "Hello World");
+    }
+
+    #[test]
+    fn test_detect_multi_select_with_checkboxes() {
+        let mut analyzer = Analyzer::new(1234);
+        // Multi-select format with [ ] checkboxes (Claude Code AskUserQuestion)
+        let content = "Which features do you want to enable?\n\n\
+            ❯ 1. [ ] Feature A\n\
+              2. [ ] Feature B\n\
+              3. [ ] Feature C\n\
+            \n(Press Space to toggle, Enter to submit)\n";
+        analyzer.process_output(content);
+
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect multi-select UserQuestion with checkboxes"
+        );
+
+        let (choices, multi_select, cursor) = analyzer.extract_choices();
+        assert_eq!(choices.len(), 3);
+        assert!(multi_select, "Should detect multi_select from toggle hint");
+        assert_eq!(cursor, 1);
     }
 }
