@@ -186,7 +186,7 @@ impl IpcClient {
                                 ServerMessage::SendKeysAndEnter { text } => {
                                     let mut writer = pty_writer_clone.lock();
                                     let _ = writer.write_all(text.as_bytes());
-                                    let _ = writer.write_all(b"\n");
+                                    let _ = writer.write_all(b"\r");
                                     let _ = writer.flush();
                                     // Notify analyzer of IPC-originated input for echo grace
                                     analyzer_clone.lock().process_input(&text);
