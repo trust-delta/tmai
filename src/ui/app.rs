@@ -1384,7 +1384,7 @@ impl App {
         Ok(())
     }
 
-    /// Emit a UserInputDuringProcessing audit event if the agent is Processing or Idle
+    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
     fn maybe_emit_input_audit(
         &self,
         target: &str,

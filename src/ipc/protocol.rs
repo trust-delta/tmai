@@ -318,10 +318,19 @@ mod tests {
     #[test]
     fn test_state_dir_default() {
         // Without XDG_RUNTIME_DIR, should use /tmp/tmai-UID
-        std::env::remove_var("XDG_RUNTIME_DIR");
-        let dir = state_dir();
-        let uid = unsafe { libc::getuid() };
-        assert_eq!(dir, PathBuf::from(format!("/tmp/tmai-{}", uid)));
+        temp_env::with_var_unset("XDG_RUNTIME_DIR", || {
+            let dir = state_dir();
+            let uid = unsafe { libc::getuid() };
+            assert_eq!(dir, PathBuf::from(format!("/tmp/tmai-{}", uid)));
+        });
+    }
+
+    #[test]
+    fn test_state_dir_with_xdg() {
+        temp_env::with_var("XDG_RUNTIME_DIR", Some("/run/user/1000"), || {
+            let dir = state_dir();
+            assert_eq!(dir, PathBuf::from("/run/user/1000/tmai"));
+        });
     }
 
     #[test]

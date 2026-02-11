@@ -90,7 +90,7 @@ impl ApiState {
         self.tmux_client.send_text_and_enter(target, text)
     }
 
-    /// Emit a UserInputDuringProcessing audit event if the agent is Processing or Idle
+    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
     fn maybe_emit_input_audit(&self, target: &str, action: &str, input_source: &str) {
         let Some(ref tx) = self.audit_tx else {
             return;

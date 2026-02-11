@@ -42,7 +42,7 @@ pub enum AuditEvent {
         agent_type: String,
         last_status: String,
     },
-    /// User sent input while agent was detected as Processing or Idle
+    /// User sent input while agent was detected as Processing
     /// (possible false negative — detection may have missed an approval prompt)
     UserInputDuringProcessing {
         ts: u64,

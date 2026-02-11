@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **UserInputDuringProcessing audit event**: Detects potential false negatives in agent state detection
-  - Logs when user sends input while agent status is Processing or Idle (likely missed approval prompt)
+  - Logs when user sends input while agent status is Processing (likely missed approval prompt)
   - Sources: TUI input mode, passthrough mode (5s debounce), Web API `/input` endpoint
   - Extended to normal mode: y-key, number-key, Enter-key when agent is not in AwaitingApproval
   - Includes detection context (rule, confidence, screen content) for post-hoc analysis
