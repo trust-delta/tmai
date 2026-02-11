@@ -160,8 +160,8 @@ fn setup_logging(debug: bool, log_to_file: bool) {
         // TUIモード: ファイルに出力（$STATE_DIR/tmai.log）
         let log_dir = tmai::ipc::protocol::state_dir();
         let _ = std::fs::create_dir_all(&log_dir);
-        let log_file = std::fs::File::create(log_dir.join("tmai.log"))
-            .expect("Failed to create log file");
+        let log_file =
+            std::fs::File::create(log_dir.join("tmai.log")).expect("Failed to create log file");
         tracing_subscriber::registry()
             .with(filter)
             .with(

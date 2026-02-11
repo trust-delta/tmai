@@ -34,6 +34,7 @@ impl IpcClient {
     /// used to forward keystroke commands from the server to the PTY.
     /// The `analyzer` is notified of IPC-originated input so the echo
     /// grace period applies equally to remote keystrokes.
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         pane_id: String,
         pid: u32,
@@ -94,8 +95,7 @@ impl IpcClient {
                         &running,
                         &pty_writer,
                         &analyzer,
-                    )
-                    {
+                    ) {
                         tracing::debug!("IPC connection lost: {}", e);
                     }
                 }
