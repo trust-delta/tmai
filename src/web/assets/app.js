@@ -804,16 +804,11 @@ class TmaiRemote {
      * API: Submit multi-select
      */
     async submit(id) {
-        // First send all selected choices
         const selected = this.selectedChoices.get(id) || new Set();
-        for (const choice of selected) {
-            await this.select(id, choice);
-            await this.delay(100);
-        }
-
-        // Then submit
         const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/submit`, {
-            method: 'POST'
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_choices: Array.from(selected).sort((a, b) => a - b) })
         });
         if (!response.ok) throw new Error('Submit failed');
     }

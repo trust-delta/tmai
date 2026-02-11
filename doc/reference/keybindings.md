@@ -13,12 +13,14 @@
 
 | Key | Action |
 |-----|--------|
-| `y` | Approve (send Enter to confirm) |
-| `1-9` | Select AskUserQuestion option |
+| `y` | Approve / select Yes |
+| `n` | Select No (UserQuestion only) |
+| `1-9` | Select option by number (navigate + confirm) |
 | `１-９` | Full-width numbers also work |
-| `Space` | Toggle for multi-select |
+| `Space` | Toggle selection (multi-select mode) |
+| `Enter` | Confirm multi-select |
 
-> **Note**: To reject or select other options, use number keys, input mode (`i`), or passthrough mode (`p`).
+> **Note**: For other options, use input mode (`i`) or passthrough mode (`p`).
 
 ## Input Modes
 

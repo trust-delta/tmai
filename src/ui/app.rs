@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::AgentType;
 use crate::audit::helper::AuditHelper;
 use crate::audit::{AuditEvent, AuditEventSender};
 use crate::command_sender::CommandSender;
@@ -22,7 +22,7 @@ use super::key_handler::{self, KeyAction};
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    QrScreen, SelectionPopup, SessionList, StatusBar, TaskOverlay, TeamOverview,
+    QrScreen, SessionList, StatusBar, TaskOverlay, TeamOverview,
 };
 use super::Layout;
 
@@ -199,22 +199,6 @@ impl App {
                     self.layout.split_direction(),
                 );
 
-                // Selection popup for AskUserQuestion (only show in input mode)
-                if state.is_input_mode() {
-                    if let Some(agent) = state.selected_agent() {
-                        if let AgentStatus::AwaitingApproval {
-                            approval_type,
-                            details,
-                        } = &agent.status
-                        {
-                            if SelectionPopup::should_show(approval_type) {
-                                let popup_area = self.layout.popup_area(frame.area(), 50, 50);
-                                SelectionPopup::render(frame, popup_area, approval_type, details);
-                            }
-                        }
-                    }
-                }
-
                 // Create process popup
                 if state.is_create_process_mode() {
                     let popup_area = self.layout.popup_area(frame.area(), 50, 50);
@@ -349,20 +333,11 @@ impl App {
             // Support both half-width (1-9) and full-width (１-９) digits
             KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
                 let num = key_handler::char_to_digit(c);
-                let (result, needs_confirm) = {
+                let result = {
                     let state = self.state.read();
-                    let result = key_handler::resolve_number_selection(&state, num);
-                    let needs_confirm = key_handler::needs_single_select_confirm(&state, num);
-                    (result, needs_confirm)
+                    key_handler::resolve_number_selection(&state, num)
                 };
                 self.execute_key_action(result.action)?;
-                if needs_confirm {
-                    // Single select: confirm with Enter after sending number
-                    if let Some(target) = self.state.read().selected_target().map(|s| s.to_string())
-                    {
-                        let _ = self.command_sender.send_keys(&target, "Enter");
-                    }
-                }
                 if result.enter_input_mode {
                     self.state.write().enter_input_mode();
                 }
@@ -370,18 +345,22 @@ impl App {
 
             // Space key for toggle in multi-select UserQuestion
             KeyCode::Char(' ') => {
-                let action = {
+                let result = {
                     let state = self.state.read();
                     key_handler::resolve_space_toggle(&state)
                 };
-                self.execute_key_action(action)?;
+                self.execute_key_action(result.action)?;
+                if result.enter_input_mode {
+                    self.state.write().enter_input_mode();
+                }
             }
 
-            // Approval key (y)
-            KeyCode::Char('y') => {
+            // Approval key (y) / Rejection key (n)
+            KeyCode::Char('y') | KeyCode::Char('n') => {
+                let key = if code == KeyCode::Char('y') { 'y' } else { 'n' };
                 let action = {
                     let state = self.state.read();
-                    key_handler::resolve_approval(&state)
+                    key_handler::resolve_yes_no(&state, key)
                 };
                 self.execute_key_action(action)?;
             }
@@ -436,33 +415,18 @@ impl App {
                 self.state.write().quit();
             }
 
-            // Enter input mode (skip for virtual agents)
+            // Enter input mode (requires a real agent selected)
             KeyCode::Char('i') | KeyCode::Char('/') => {
                 let mut state = self.state.write();
-                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                if !state.selection.is_on_create_new
+                    && state.selected_agent().is_some_and(|a| !a.is_virtual)
+                {
                     state.enter_input_mode();
                 }
             }
 
-            // "Other" input for AskUserQuestion (skip for virtual agents)
-            KeyCode::Char('o') => {
-                let mut state = self.state.write();
-                if let Some(target) = state.selected_target() {
-                    let is_user_question = state.agents.get(target).is_some_and(|agent| {
-                        !agent.is_virtual
-                            && matches!(
-                                &agent.status,
-                                AgentStatus::AwaitingApproval {
-                                    approval_type: ApprovalType::UserQuestion { .. },
-                                    ..
-                                }
-                            )
-                    });
-                    if is_user_question {
-                        state.enter_input_mode();
-                    }
-                }
-            }
+            // Note: 'o' key for "Other" input removed — use input mode ('i') or
+            // Space on "Type something" to enter text input instead.
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => self.state.write().select_next(),
@@ -487,10 +451,12 @@ impl App {
             // Sort/scope cycling temporarily disabled
             KeyCode::Char('s') | KeyCode::Char('m') => {}
 
-            // Enter passthrough mode (skip for virtual agents)
+            // Enter passthrough mode (requires a real agent selected)
             KeyCode::Char('p') | KeyCode::Right => {
                 let mut state = self.state.write();
-                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                if !state.selection.is_on_create_new
+                    && state.selected_agent().is_some_and(|a| !a.is_virtual)
+                {
                     state.enter_passthrough_mode();
                 }
             }
@@ -564,6 +530,23 @@ impl App {
                     let _ = self.command_sender.send_keys(&target, "Down");
                 }
                 let _ = self.command_sender.send_keys(&target, "Enter");
+            }
+            KeyAction::MultiSelectSubmitTab { target } => {
+                let _ = self.command_sender.send_keys(&target, "Right");
+                let _ = self.command_sender.send_keys(&target, "Enter");
+            }
+            KeyAction::NavigateSelection {
+                target,
+                steps,
+                confirm,
+            } => {
+                let key = if steps > 0 { "Down" } else { "Up" };
+                for _ in 0..steps.unsigned_abs() {
+                    let _ = self.command_sender.send_keys(&target, key);
+                }
+                if confirm {
+                    let _ = self.command_sender.send_keys(&target, "Enter");
+                }
             }
             KeyAction::FocusPane { target } => {
                 let _ = self.command_sender.tmux_client().focus_pane(&target);
@@ -1195,15 +1178,16 @@ impl App {
         };
 
         // Create the target based on placement type
+        let window_name = agent_type.command();
         let target = match placement_type {
             PlacementType::NewSession => {
                 // Generate unique session name
                 let session_name = format!("ai-{}", chrono::Utc::now().timestamp());
-                if let Err(e) = self
-                    .command_sender
-                    .tmux_client()
-                    .create_session(&session_name, &directory)
-                {
+                if let Err(e) = self.command_sender.tmux_client().create_session(
+                    &session_name,
+                    &directory,
+                    Some(window_name),
+                ) {
                     let mut state = self.state.write();
                     state.set_error(format!("Failed to create session: {}", e));
                     state.cancel_create_process();
@@ -1212,11 +1196,11 @@ impl App {
                 // New session starts with window 0, pane 0
                 format!("{}:0.0", session_name)
             }
-            PlacementType::NewWindow => match self
-                .command_sender
-                .tmux_client()
-                .new_window(&session, &directory)
-            {
+            PlacementType::NewWindow => match self.command_sender.tmux_client().new_window(
+                &session,
+                &directory,
+                Some(window_name),
+            ) {
                 Ok(t) => t,
                 Err(e) => {
                     let mut state = self.state.write();

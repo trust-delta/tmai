@@ -19,6 +19,42 @@ use crate::state::{MonitorScope, SharedState, TeamSnapshot};
 use crate::teams::{self, TaskStatus};
 use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
 
+/// Tracks the last committed (actually emitted) state for an agent
+struct CommittedAgentState {
+    status: String,
+    /// Full AgentStatus preserved for debounce override (retains activity/error text)
+    full_status: AgentStatus,
+    #[allow(dead_code)]
+    reason: DetectionReason,
+    agent_type: String,
+    committed_at_ms: u64,
+}
+
+/// A pending state transition waiting to be committed after debounce period
+struct PendingTransition {
+    new_status: String,
+    new_reason: DetectionReason,
+    first_seen: Instant,
+}
+
+/// Calculate debounce threshold for a state transition
+fn debounce_threshold(from: &str, to: &str) -> Duration {
+    // Approval should be shown immediately
+    if to == "awaiting_approval" {
+        return Duration::from_millis(0);
+    }
+    // User action after approval is fast
+    if from == "awaiting_approval" {
+        return Duration::from_millis(200);
+    }
+    // idle<->processing oscillation is the main noise source
+    if (from == "idle" && to == "processing") || (from == "processing" && to == "idle") {
+        return Duration::from_millis(500);
+    }
+    // Default
+    Duration::from_millis(300)
+}
+
 /// Message sent from poller to main loop
 #[derive(Debug)]
 pub enum PollMessage {
@@ -49,7 +85,9 @@ pub struct Poller {
     /// Receiver for audit events from external sources (UI, Web API)
     audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     /// Previous status per agent target for change detection
-    previous_statuses: HashMap<String, (String, DetectionReason)>,
+    previous_statuses: HashMap<String, CommittedAgentState>,
+    /// Pending state transitions waiting for debounce period to elapse
+    pending_transitions: HashMap<String, PendingTransition>,
     /// Set of agent targets seen in the previous poll
     previous_agent_ids: HashSet<String>,
 }
@@ -84,6 +122,7 @@ impl Poller {
             audit_logger,
             audit_event_rx,
             previous_statuses: HashMap::new(),
+            pending_transitions: HashMap::new(),
             previous_agent_ids: HashSet::new(),
         }
     }
@@ -150,7 +189,7 @@ impl Poller {
                     }
 
                     // Audit: track state transitions
-                    self.emit_audit_events(&agents);
+                    self.emit_audit_events(&mut agents);
 
                     // Drain externally-submitted audit events (from UI/Web)
                     if let Some(ref mut rx) = self.audit_event_rx {
@@ -234,7 +273,7 @@ impl Poller {
                 // - Selected: ANSI capture for preview
                 // - Non-selected + IPC: skip capture-pane entirely (state from IPC registry)
                 // - Non-selected + capture-pane mode: plain capture for detection only
-                let (content_ansi, content) = if is_selected {
+                let (content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
@@ -257,15 +296,57 @@ impl Poller {
                     .unwrap_or(pane.title.clone());
 
                 // Determine status: use IPC state if available, otherwise detect from content
+                let mut screen_override = false;
                 let (status, context_warning, detection_reason) = if let Some(ref ws) = wrap_state {
                     // Convert WrapState to AgentStatus
                     let status = wrap_state_to_agent_status(ws);
-                    let reason = DetectionReason {
-                        rule: "ipc_state".to_string(),
-                        confidence: DetectionConfidence::High,
-                        matched_text: None,
-                    };
-                    (status, None, Some(reason))
+
+                    // P1: IPC Approval lag correction — when IPC reports non-Approval,
+                    // check screen content for High-confidence Approval patterns
+                    if !matches!(status, AgentStatus::AwaitingApproval { .. }) {
+                        // Reuse existing content if available (selected agent already has
+                        // plain text from ANSI capture), otherwise capture for non-selected agents
+                        let plain = if !content.is_empty() {
+                            content.clone()
+                        } else {
+                            self.client
+                                .capture_pane_plain(&pane.target)
+                                .unwrap_or_default()
+                        };
+                        let detection_context = DetectionContext {
+                            cwd: Some(pane.cwd.as_str()),
+                            settings_cache: Some(&self.claude_settings_cache),
+                        };
+                        let detector = get_detector(&agent_type);
+                        let result =
+                            detector.detect_status_with_reason(&title, &plain, &detection_context);
+                        if matches!(result.status, AgentStatus::AwaitingApproval { .. })
+                            && result.reason.confidence == DetectionConfidence::High
+                        {
+                            // Screen override: Approval visible on screen but IPC lagging
+                            let context_warning = detector.detect_context_warning(&plain);
+                            content = plain;
+                            screen_override = true;
+                            (result.status, context_warning, Some(result.reason))
+                        } else {
+                            // Enrich IPC Processing with screen-detected activity
+                            // (e.g., "Compacting..." from title_compacting rule)
+                            let status = enrich_ipc_activity(status, &result.status);
+                            let reason = DetectionReason {
+                                rule: "ipc_state".to_string(),
+                                confidence: DetectionConfidence::High,
+                                matched_text: None,
+                            };
+                            (status, None, Some(reason))
+                        }
+                    } else {
+                        let reason = DetectionReason {
+                            rule: "ipc_state".to_string(),
+                            confidence: DetectionConfidence::High,
+                            matched_text: None,
+                        };
+                        (status, None, Some(reason))
+                    }
                 } else {
                     // Build detection context for this pane
                     let detection_context = DetectionContext {
@@ -297,7 +378,9 @@ impl Poller {
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
-                agent.detection_source = if wrap_state.is_some() {
+                agent.detection_source = if screen_override {
+                    DetectionSource::CapturePane
+                } else if wrap_state.is_some() {
                     DetectionSource::IpcSocket
                 } else {
                     DetectionSource::CapturePane
@@ -621,8 +704,8 @@ impl Poller {
         }
     }
 
-    /// Emit audit events for state transitions
-    fn emit_audit_events(&mut self, agents: &[MonitoredAgent]) {
+    /// Emit audit events for state transitions with debounce
+    fn emit_audit_events(&mut self, agents: &mut [MonitoredAgent]) {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -637,30 +720,23 @@ impl Poller {
         // AgentDisappeared: was in previous, not in current
         for target in &self.previous_agent_ids {
             if !current_ids.contains(target) {
-                let (last_status, _) =
-                    self.previous_statuses
-                        .get(target)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            (
-                                "unknown".to_string(),
-                                DetectionReason {
-                                    rule: "unknown".to_string(),
-                                    confidence: DetectionConfidence::Low,
-                                    matched_text: None,
-                                },
-                            )
-                        });
+                let (last_status, agent_type) = self
+                    .previous_statuses
+                    .get(target)
+                    .map(|c| (c.status.clone(), c.agent_type.clone()))
+                    .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
                 self.audit_logger.log(&AuditEvent::AgentDisappeared {
                     ts,
                     pane_id: target.clone(),
-                    agent_type: "unknown".to_string(),
+                    agent_type,
                     last_status,
                 });
+                // Clean up pending transition for disappeared agent
+                self.pending_transitions.remove(target);
             }
         }
 
-        for agent in agents {
+        for agent in agents.iter_mut() {
             if agent.is_virtual {
                 continue;
             }
@@ -677,7 +753,7 @@ impl Poller {
             let source = agent.detection_source.label().to_string();
 
             if !self.previous_agent_ids.contains(&agent.target) {
-                // AgentAppeared
+                // AgentAppeared - no debounce needed
                 self.audit_logger.log(&AuditEvent::AgentAppeared {
                     ts,
                     pane_id: agent.target.clone(),
@@ -685,39 +761,166 @@ impl Poller {
                     source,
                     initial_status: current_status_name.clone(),
                 });
-            } else if let Some((prev_status, _)) = self.previous_statuses.get(&agent.target) {
-                // StateChanged
-                if *prev_status != current_status_name {
-                    let screen_context = if !agent.last_content.is_empty() {
-                        let lines: Vec<&str> = agent.last_content.lines().collect();
-                        let start = lines.len().saturating_sub(20);
-                        let tail = lines[start..].join("\n");
-                        // Truncate to 2000 bytes
-                        Some(if tail.len() > 2000 {
-                            tail[..tail.floor_char_boundary(2000)].to_string()
-                        } else {
-                            tail
-                        })
-                    } else {
-                        None
-                    };
-
-                    self.audit_logger.log(&AuditEvent::StateChanged {
-                        ts,
-                        pane_id: agent.target.clone(),
+                self.previous_statuses.insert(
+                    agent.target.clone(),
+                    CommittedAgentState {
+                        status: current_status_name,
+                        full_status: agent.status.clone(),
+                        reason,
                         agent_type: agent.agent_type.short_name().to_string(),
-                        source,
-                        prev_status: prev_status.clone(),
-                        new_status: current_status_name.clone(),
-                        reason: reason.clone(),
-                        screen_context,
-                    });
-                }
+                        committed_at_ms: ts,
+                    },
+                );
+                continue;
             }
 
-            // Update tracking
-            self.previous_statuses
-                .insert(agent.target.clone(), (current_status_name, reason));
+            let committed = self.previous_statuses.get(&agent.target);
+            let committed_status = committed.map(|c| c.status.as_str()).unwrap_or("unknown");
+
+            if committed_status == current_status_name {
+                // Status same as committed - cancel any pending transition (oscillation)
+                self.pending_transitions.remove(&agent.target);
+                continue;
+            }
+
+            // Status differs from committed - check debounce
+            let threshold = debounce_threshold(committed_status, &current_status_name);
+
+            if threshold.is_zero() {
+                // Immediate commit (e.g., -> awaiting_approval)
+                self.pending_transitions.remove(&agent.target);
+                let prev_duration = committed.map(|c| ts.saturating_sub(c.committed_at_ms));
+
+                let screen_context = if !agent.last_content.is_empty() {
+                    let lines: Vec<&str> = agent.last_content.lines().collect();
+                    let start = lines.len().saturating_sub(20);
+                    let tail = lines[start..].join("\n");
+                    Some(if tail.len() > 2000 {
+                        tail[..tail.floor_char_boundary(2000)].to_string()
+                    } else {
+                        tail
+                    })
+                } else {
+                    None
+                };
+
+                self.audit_logger.log(&AuditEvent::StateChanged {
+                    ts,
+                    pane_id: agent.target.clone(),
+                    agent_type: agent.agent_type.short_name().to_string(),
+                    source,
+                    prev_status: committed_status.to_string(),
+                    new_status: current_status_name.clone(),
+                    reason: reason.clone(),
+                    screen_context,
+                    prev_state_duration_ms: prev_duration,
+                });
+                self.previous_statuses.insert(
+                    agent.target.clone(),
+                    CommittedAgentState {
+                        status: current_status_name,
+                        full_status: agent.status.clone(),
+                        reason,
+                        agent_type: agent.agent_type.short_name().to_string(),
+                        committed_at_ms: ts,
+                    },
+                );
+            } else if let Some(pending) = self.pending_transitions.get(&agent.target) {
+                if pending.new_status == current_status_name {
+                    // Still in same pending transition - check if threshold elapsed
+                    if pending.first_seen.elapsed() >= threshold {
+                        // Commit the transition
+                        let pending = self.pending_transitions.remove(&agent.target).unwrap();
+                        let prev_duration = committed.map(|c| ts.saturating_sub(c.committed_at_ms));
+
+                        let screen_context = if !agent.last_content.is_empty() {
+                            let lines: Vec<&str> = agent.last_content.lines().collect();
+                            let start = lines.len().saturating_sub(20);
+                            let tail = lines[start..].join("\n");
+                            Some(if tail.len() > 2000 {
+                                tail[..tail.floor_char_boundary(2000)].to_string()
+                            } else {
+                                tail
+                            })
+                        } else {
+                            None
+                        };
+
+                        self.audit_logger.log(&AuditEvent::StateChanged {
+                            ts,
+                            pane_id: agent.target.clone(),
+                            agent_type: agent.agent_type.short_name().to_string(),
+                            source,
+                            prev_status: committed_status.to_string(),
+                            new_status: current_status_name.clone(),
+                            reason: pending.new_reason.clone(),
+                            screen_context,
+                            prev_state_duration_ms: prev_duration,
+                        });
+                        self.previous_statuses.insert(
+                            agent.target.clone(),
+                            CommittedAgentState {
+                                status: current_status_name.clone(),
+                                full_status: agent.status.clone(),
+                                reason: pending.new_reason,
+                                agent_type: agent.agent_type.short_name().to_string(),
+                                committed_at_ms: ts,
+                            },
+                        );
+                    } else {
+                        // Still within debounce window - override agent status for UI stability
+                        if let Some(committed) = self.previous_statuses.get(&agent.target) {
+                            agent.status = committed.full_status.clone();
+                        }
+                    }
+                } else {
+                    // Different pending status - replace pending transition
+                    self.pending_transitions.insert(
+                        agent.target.clone(),
+                        PendingTransition {
+                            new_status: current_status_name.clone(),
+                            new_reason: reason,
+                            first_seen: Instant::now(),
+                        },
+                    );
+                    // Override agent status for UI stability
+                    if let Some(committed) = self.previous_statuses.get(&agent.target) {
+                        agent.status = match committed.status.as_str() {
+                            "idle" => AgentStatus::Idle,
+                            "processing" => AgentStatus::Processing {
+                                activity: String::new(),
+                            },
+                            "error" => AgentStatus::Error {
+                                message: String::new(),
+                            },
+                            _ => agent.status.clone(),
+                        };
+                    }
+                }
+            } else {
+                // No pending transition yet - start one
+                self.pending_transitions.insert(
+                    agent.target.clone(),
+                    PendingTransition {
+                        new_status: current_status_name.clone(),
+                        new_reason: reason,
+                        first_seen: Instant::now(),
+                    },
+                );
+                // Override agent status for UI stability
+                if let Some(committed) = self.previous_statuses.get(&agent.target) {
+                    agent.status = match committed.status.as_str() {
+                        "idle" => AgentStatus::Idle,
+                        "processing" => AgentStatus::Processing {
+                            activity: String::new(),
+                        },
+                        "error" => AgentStatus::Error {
+                            message: String::new(),
+                        },
+                        _ => agent.status.clone(),
+                    };
+                }
+            }
         }
 
         self.previous_agent_ids = current_ids;
@@ -835,6 +1038,28 @@ fn status_name(status: &AgentStatus) -> &'static str {
         AgentStatus::Offline => "offline",
         AgentStatus::Unknown => "unknown",
     }
+}
+
+/// Enrich IPC Processing status with screen-detected activity
+///
+/// When IPC reports Processing with empty activity, use the screen-detected
+/// activity (e.g., "Compacting..." from title_compacting rule) for better UI labels.
+fn enrich_ipc_activity(ipc_status: AgentStatus, screen_status: &AgentStatus) -> AgentStatus {
+    if let AgentStatus::Processing { ref activity } = ipc_status {
+        if activity.is_empty() {
+            if let AgentStatus::Processing {
+                activity: ref screen_activity,
+            } = screen_status
+            {
+                if !screen_activity.is_empty() {
+                    return AgentStatus::Processing {
+                        activity: screen_activity.clone(),
+                    };
+                }
+            }
+        }
+    }
+    ipc_status
 }
 
 /// Convert WrapState from state file to AgentStatus

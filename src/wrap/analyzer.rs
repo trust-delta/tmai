@@ -2,6 +2,7 @@
 //!
 //! Analyzes agent output to determine current state.
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::time::{Duration, Instant};
 
@@ -131,8 +132,13 @@ impl Analyzer {
     pub fn process_output(&mut self, data: &str) {
         self.last_output = Instant::now();
 
+        // Strip ANSI escape codes before buffering for clean pattern matching.
+        // PTY output from ink-based CLIs (e.g. Claude Code) includes color codes
+        // like \x1b[36m❯\x1b[0m that break regex patterns.
+        let clean = strip_ansi(data);
+
         // Append to buffer, truncating old data if necessary
-        self.output_buffer.push_str(data);
+        self.output_buffer.push_str(&clean);
         if self.output_buffer.len() > self.max_buffer_size {
             let drain_to = self.output_buffer.len() - self.max_buffer_size / 2;
             // Find UTF-8 boundary
@@ -232,6 +238,20 @@ impl Analyzer {
             return;
         }
 
+        // Check for proceed-prompt style (numbered Yes/No without cursor)
+        if self.detect_proceed_prompt(content) {
+            if self.pending_approval.is_none()
+                || !matches!(
+                    self.pending_approval,
+                    Some((WrapApprovalType::UserQuestion, _))
+                )
+            {
+                self.pending_approval = Some((WrapApprovalType::UserQuestion, String::new()));
+                self.pending_approval_at = Some(Instant::now());
+            }
+            return;
+        }
+
         // Check for Yes/No buttons
         if self.detect_yes_no_approval(content) {
             let approval_type = self.determine_approval_type(content);
@@ -302,6 +322,34 @@ impl Analyzer {
 
         // Need at least 2 choices with cursor marker
         consecutive_choices >= 2 && has_cursor
+    }
+
+    /// Detect proceed-prompt style approval (numbered Yes/No without cursor marker)
+    ///
+    /// Catches cases where `detect_user_question` misses due to missing ❯ cursor,
+    /// allowing number key navigation for 3-choice approvals like:
+    ///   1. Yes
+    ///   2. Yes, and don't ask again for ...
+    ///   3. No
+    fn detect_proceed_prompt(&self, content: &str) -> bool {
+        let lines: Vec<&str> = content.lines().collect();
+        let check_start = lines.len().saturating_sub(15);
+        let check_lines = &lines[check_start..];
+
+        let mut has_yes = false;
+        let mut has_no = false;
+
+        for line in check_lines {
+            let trimmed = line.trim();
+            if trimmed.contains("1.") && trimmed.contains("Yes") {
+                has_yes = true;
+            }
+            if (trimmed.contains("2. No") || trimmed.contains("3. No")) && trimmed.len() < 20 {
+                has_no = true;
+            }
+        }
+
+        has_yes && has_no
     }
 
     /// Detect Yes/No button-style approval
@@ -411,6 +459,33 @@ impl Analyzer {
             }
         }
 
+        // [ ] checkbox format detection
+        if !multi_select {
+            for line in check_lines {
+                if let Some(cap) = self.patterns.choice_pattern.captures(line) {
+                    let choice_text = cap[2].trim();
+                    if choice_text.starts_with("[ ]")
+                        || choice_text.starts_with("[x]")
+                        || choice_text.starts_with("[X]")
+                        || choice_text.starts_with("[✔]")
+                    {
+                        multi_select = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !multi_select {
+            for line in check_lines {
+                let lower = line.to_lowercase();
+                if lower.contains("複数選択") || lower.contains("enter to select") {
+                    multi_select = true;
+                    break;
+                }
+            }
+        }
+
         // Extract choices
         for line in check_lines {
             if let Some(cap) = self.patterns.choice_pattern.captures(line) {
@@ -470,6 +545,16 @@ impl Analyzer {
         self.pending_approval = None;
         self.pending_approval_at = None;
     }
+}
+
+/// Strip ANSI escape sequences (OSC and CSI) from text
+fn strip_ansi(input: &str) -> String {
+    static OSC_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
+    static CSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
+
+    let without_osc = OSC_RE.replace_all(input, "");
+    CSI_RE.replace_all(&without_osc, "").to_string()
 }
 
 /// Convert Instant to Unix milliseconds (approximate)
@@ -588,5 +673,78 @@ Which option?
 
         let detected = analyzer.detect_user_question(&analyzer.output_buffer);
         assert!(detected, "Should detect as UserQuestion");
+    }
+
+    #[test]
+    fn test_strip_ansi_removes_color_codes() {
+        let input = "\x1b[36m❯\x1b[0m 1. Option A";
+        let result = strip_ansi(input);
+        assert_eq!(result, "❯ 1. Option A");
+    }
+
+    #[test]
+    fn test_detect_user_question_with_ansi_colors() {
+        let mut analyzer = Analyzer::new(1234);
+        // Simulates ink (Claude Code) output with ANSI color codes
+        let content = "Which option?\n\n\
+            \x1b[36m❯\x1b[0m \x1b[36m1.\x1b[0m Option A\n\
+            \x1b[2m  \x1b[0m\x1b[2m2.\x1b[0m Option B\n\
+            \x1b[2m  \x1b[0m\x1b[2m3.\x1b[0m Option C\n";
+        analyzer.process_output(content);
+
+        // ANSI codes should be stripped by process_output, so detection works
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect AskUserQuestion even when raw output has ANSI codes"
+        );
+
+        let (choices, _, cursor) = analyzer.extract_choices();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], "Option A");
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn test_detect_user_question_with_ansi_yes_no() {
+        let mut analyzer = Analyzer::new(1234);
+        // Yes/No prompt with ANSI codes (common Claude Code approval)
+        let content = " Do you want to proceed?\n\
+            \x1b[36m ❯\x1b[0m \x1b[36m1.\x1b[0m Yes\n\
+            \x1b[2m   \x1b[0m\x1b[2m2.\x1b[0m No\n";
+        analyzer.process_output(content);
+
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect Yes/No UserQuestion with ANSI codes"
+        );
+    }
+
+    #[test]
+    fn test_process_output_buffer_is_plain_text() {
+        let mut analyzer = Analyzer::new(1234);
+        analyzer.process_output("\x1b[1;32mHello\x1b[0m \x1b[31mWorld\x1b[0m");
+        assert_eq!(analyzer.output_buffer, "Hello World");
+    }
+
+    #[test]
+    fn test_detect_multi_select_with_checkboxes() {
+        let mut analyzer = Analyzer::new(1234);
+        // Multi-select format with [ ] checkboxes (Claude Code AskUserQuestion)
+        let content = "Which features do you want to enable?\n\n\
+            ❯ 1. [ ] Feature A\n\
+              2. [ ] Feature B\n\
+              3. [ ] Feature C\n\
+            \n(Press Space to toggle, Enter to submit)\n";
+        analyzer.process_output(content);
+
+        assert!(
+            analyzer.detect_user_question(&analyzer.output_buffer),
+            "Should detect multi-select UserQuestion with checkboxes"
+        );
+
+        let (choices, multi_select, cursor) = analyzer.extract_choices();
+        assert_eq!(choices.len(), 3);
+        assert!(multi_select, "Should detect multi_select from toggle hint");
+        assert_eq!(cursor, 1);
     }
 }

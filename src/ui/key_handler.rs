@@ -15,9 +15,20 @@ pub enum KeyAction {
     /// Send keys via IPC/tmux (non-literal)
     SendKeys { target: String, keys: String },
     /// Send literal keys via IPC/tmux
+    #[allow(dead_code)]
     SendKeysLiteral { target: String, keys: String },
     /// Send multiple Down keys followed by Enter (for multi-select submit)
     MultiSelectSubmit { target: String, downs_needed: usize },
+    /// Tab-based submit for checkbox format (Right + Enter)
+    MultiSelectSubmitTab { target: String },
+    /// Navigate selection with arrow keys, optionally confirming with Enter
+    NavigateSelection {
+        target: String,
+        /// Positive = Down, negative = Up
+        steps: i32,
+        /// Whether to press Enter after navigating
+        confirm: bool,
+    },
     /// Focus a tmux pane
     FocusPane { target: String },
     /// Emit audit event for normal-mode interaction
@@ -57,7 +68,7 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
     };
     let target = target.to_string();
 
-    // Check if it's a UserQuestion and get choices + multi_select (skip virtual)
+    // Check if it's a UserQuestion and get choices + multi_select + cursor (skip virtual)
     let question_info = state.agents.get(&target).and_then(|agent| {
         if agent.is_virtual {
             return None;
@@ -67,18 +78,18 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
                 ApprovalType::UserQuestion {
                     choices,
                     multi_select,
-                    ..
+                    cursor_position,
                 },
             ..
         } = &agent.status
         {
-            Some((choices.clone(), *multi_select))
+            Some((choices.clone(), *multi_select, *cursor_position))
         } else {
             None
         }
     });
 
-    let Some((choices, multi_select)) = question_info else {
+    let Some((choices, multi_select, cursor_position)) = question_info else {
         // Not a UserQuestion — emit audit for potential false negative
         return NumberSelectionResult {
             action: KeyAction::EmitAudit {
@@ -103,105 +114,132 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
             .map(|c| c.to_lowercase().contains("type something"))
             .unwrap_or(false);
 
+    // Calculate arrow steps from current cursor position to target option
+    let cursor = if cursor_position == 0 {
+        1
+    } else {
+        cursor_position
+    };
+    let steps = num as i32 - cursor as i32;
+
     if is_other {
-        // "Other" or "Type something" — send number, then enter input mode
+        // "Other" or "Type something" — navigate, confirm, then enter input mode
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: true,
             },
             enter_input_mode: true,
         }
     } else if multi_select {
-        // Multi-select: send number only (no Enter)
+        // Multi-select: navigate only (toggle is done via Space key)
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: false,
             },
             enter_input_mode: false,
         }
     } else {
-        // Single select: send number + Enter
-        // Return SendKeysLiteral for the number; the caller handles the follow-up Enter
+        // Single select: navigate + Enter
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: true,
             },
             enter_input_mode: false,
         }
     }
 }
 
-/// Whether the number selection for a single-select question needs a confirm Enter
-pub fn needs_single_select_confirm(state: &AppState, num: usize) -> bool {
-    let Some(target) = state.selected_target() else {
-        return false;
+/// Resolve space key for multi-select toggle
+///
+/// Returns action + whether to enter input mode (for "Type something" / Other).
+pub fn resolve_space_toggle(state: &AppState) -> NumberSelectionResult {
+    let noop = NumberSelectionResult {
+        action: KeyAction::None,
+        enter_input_mode: false,
     };
 
-    state.agents.get(target).is_some_and(|agent| {
+    let Some(target) = state.selected_target() else {
+        return noop;
+    };
+    let target = target.to_string();
+
+    let question_info = state.agents.get(&target).and_then(|agent| {
         if agent.is_virtual {
-            return false;
+            return None;
         }
         if let AgentStatus::AwaitingApproval {
             approval_type:
                 ApprovalType::UserQuestion {
                     choices,
-                    multi_select,
-                    ..
+                    multi_select: true,
+                    cursor_position,
                 },
             ..
         } = &agent.status
         {
-            let total_options = choices.len() + 1;
-            let is_other = num == total_options
-                || choices
-                    .get(num - 1)
-                    .map(|c| c.to_lowercase().contains("type something"))
-                    .unwrap_or(false);
-            !is_other && !multi_select && num <= total_options
+            Some((choices.clone(), *cursor_position))
         } else {
-            false
+            None
         }
-    })
-}
-
-/// Resolve space key for multi-select toggle
-pub fn resolve_space_toggle(state: &AppState) -> KeyAction {
-    let Some(target) = state.selected_target() else {
-        return KeyAction::None;
-    };
-    let target = target.to_string();
-
-    let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
-        !agent.is_virtual
-            && matches!(
-                &agent.status,
-                AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::UserQuestion {
-                        multi_select: true,
-                        ..
-                    },
-                    ..
-                }
-            )
     });
 
-    if is_multi_select {
-        KeyAction::SendKeys {
-            target,
-            keys: "Space".to_string(),
-        }
+    let Some((choices, cursor_position)) = question_info else {
+        return noop;
+    };
+
+    let cursor = if cursor_position == 0 {
+        1
     } else {
-        KeyAction::None
+        cursor_position
+    };
+
+    // Cursor beyond choices = "Other" option, or on "Type something"
+    let is_text_input = cursor > choices.len()
+        || choices
+            .get(cursor - 1)
+            .is_some_and(|c| c.to_lowercase().contains("type something"));
+
+    if is_text_input {
+        // Select the text-input option (Enter) and switch to input mode
+        return NumberSelectionResult {
+            action: KeyAction::SendKeys {
+                target,
+                keys: "Enter".to_string(),
+            },
+            enter_input_mode: true,
+        };
+    }
+
+    // Checkbox format uses Enter to toggle, legacy uses Space
+    let key = if has_checkbox_format(&choices) {
+        "Enter"
+    } else {
+        "Space"
+    };
+    NumberSelectionResult {
+        action: KeyAction::SendKeys {
+            target,
+            keys: key.to_string(),
+        },
+        enter_input_mode: false,
     }
 }
 
-/// Resolve approval key ('y')
+/// Resolve approval/rejection key ('y' or 'n')
 ///
-/// Returns the action and optionally a target for audit if not awaiting approval.
-pub fn resolve_approval(state: &AppState) -> KeyAction {
+/// For UserQuestion: navigates to the choice matching the key and confirms.
+/// - 'y': finds first choice containing "Yes" (case-insensitive)
+/// - 'n': finds first choice containing "No" (case-insensitive)
+///
+/// For non-UserQuestion approval: 'y' sends approval keys, 'n' is ignored.
+/// When not awaiting approval: emits audit event.
+pub fn resolve_yes_no(state: &AppState, key: char) -> KeyAction {
     let Some(target) = state.selected_target() else {
         return KeyAction::None;
     };
@@ -211,26 +249,75 @@ pub fn resolve_approval(state: &AppState) -> KeyAction {
         if a.is_virtual {
             None
         } else {
-            Some((
-                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                a.agent_type.clone(),
-            ))
+            Some((&a.status, a.agent_type.clone()))
         }
     });
 
-    match agent_info {
-        Some((true, agent_type)) => {
-            let detector = get_detector(&agent_type);
-            KeyAction::SendKeys {
+    let Some((status, agent_type)) = agent_info else {
+        return KeyAction::None;
+    };
+
+    match status {
+        AgentStatus::AwaitingApproval {
+            approval_type:
+                ApprovalType::UserQuestion {
+                    choices,
+                    cursor_position,
+                    ..
+                },
+            ..
+        } => {
+            // Find choice matching "Yes" or "No" (word-boundary check)
+            let needle = if key == 'y' { "yes" } else { "no" };
+            let match_pos = choices
+                .iter()
+                .position(|c| choice_starts_with_word(c, needle));
+
+            let Some(idx) = match_pos else {
+                // No matching choice — for 'y' fall back to approval keys
+                if key == 'y' {
+                    let detector = get_detector(&agent_type);
+                    return KeyAction::SendKeys {
+                        target,
+                        keys: detector.approval_keys().to_string(),
+                    };
+                }
+                return KeyAction::None;
+            };
+
+            let target_pos = idx + 1; // 1-indexed
+            let cursor = if *cursor_position == 0 {
+                1
+            } else {
+                *cursor_position
+            };
+            let steps = target_pos as i32 - cursor as i32;
+
+            KeyAction::NavigateSelection {
                 target,
-                keys: detector.approval_keys().to_string(),
+                steps,
+                confirm: true,
             }
         }
-        Some((false, _)) => KeyAction::EmitAudit {
-            target,
-            action: "approval_key".to_string(),
-        },
-        None => KeyAction::None,
+        AgentStatus::AwaitingApproval { .. } => {
+            // Non-UserQuestion approval: only 'y' sends approval keys
+            if key == 'y' {
+                let detector = get_detector(&agent_type);
+                KeyAction::SendKeys {
+                    target,
+                    keys: detector.approval_keys().to_string(),
+                }
+            } else {
+                KeyAction::None
+            }
+        }
+        _ => {
+            // Not awaiting approval — emit audit
+            KeyAction::EmitAudit {
+                target,
+                action: format!("{}_key", key),
+            }
+        }
     }
 }
 
@@ -265,10 +352,33 @@ pub fn resolve_enter_submit(state: &AppState) -> KeyAction {
 
     match multi_info {
         Some((choice_count, cursor_pos)) => {
-            let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
-            KeyAction::MultiSelectSubmit {
-                target,
-                downs_needed,
+            // Check if checkbox format
+            let is_checkbox = state
+                .agents
+                .get(&target)
+                .and_then(|agent| {
+                    if let AgentStatus::AwaitingApproval {
+                        approval_type: ApprovalType::UserQuestion { choices, .. },
+                        ..
+                    } = &agent.status
+                    {
+                        Some(has_checkbox_format(choices))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(false);
+
+            if is_checkbox {
+                // Checkbox format: Right + Enter to submit
+                KeyAction::MultiSelectSubmitTab { target }
+            } else {
+                // Legacy format: Down × N + Enter
+                let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
+                KeyAction::MultiSelectSubmit {
+                    target,
+                    downs_needed,
+                }
             }
         }
         None => {
@@ -291,4 +401,27 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
         }
     }
     KeyAction::None
+}
+
+/// Check if choices use checkbox format ([ ], [x], [X], [✔])
+fn has_checkbox_format(choices: &[String]) -> bool {
+    choices.iter().any(|c| {
+        let t = c.trim();
+        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
+    })
+}
+
+/// Check if a choice starts with the given word (case-insensitive, word-boundary aware).
+///
+/// Matches "Yes", "Yes (Recommended)", "No, cancel" but NOT "None", "Not now", "Yesterday".
+fn choice_starts_with_word(choice: &str, word: &str) -> bool {
+    let lower = choice.trim().to_lowercase();
+    if lower == word {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix(word) {
+        // Next char after the word must be non-alphabetic (word boundary)
+        return rest.chars().next().is_none_or(|c| !c.is_alphabetic());
+    }
+    false
 }

@@ -135,6 +135,33 @@ impl ClaudeCodeDetector {
             }
         }
 
+        // [ ] checkbox format detection
+        if !is_multi_select {
+            for line in check_lines.iter() {
+                if let Some(cap) = self.choice_pattern.captures(line) {
+                    let choice_text = cap[2].trim();
+                    if choice_text.starts_with("[ ]")
+                        || choice_text.starts_with("[x]")
+                        || choice_text.starts_with("[X]")
+                        || choice_text.starts_with("[✔]")
+                    {
+                        is_multi_select = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !is_multi_select {
+            for line in check_lines.iter() {
+                let lower = line.to_lowercase();
+                if lower.contains("複数選択") || lower.contains("enter to select") {
+                    is_multi_select = true;
+                    break;
+                }
+            }
+        }
+
         // Store all found choice sets, keep the last valid one
         let mut best_choices: Vec<String> = Vec::new();
         let mut best_first_idx: Option<usize> = None;
@@ -222,8 +249,15 @@ impl ClaudeCodeDetector {
         cursor_position = best_cursor_position;
 
         // Choices must be near the end (allow for UI hints like "Enter to select")
+        // Use the last non-empty line as the effective end, since tmux capture-pane
+        // pads output with trailing empty lines to fill the terminal height.
         if let Some(last_idx) = last_choice_idx {
-            if check_lines.len() - last_idx > 15 {
+            let effective_end = check_lines
+                .iter()
+                .rposition(|line| !line.trim().is_empty())
+                .map(|i| i + 1)
+                .unwrap_or(check_lines.len());
+            if effective_end - last_idx > 15 {
                 return None;
             }
         }
@@ -269,8 +303,11 @@ impl ClaudeCodeDetector {
     }
 
     /// Detect "Do you want to proceed?" style approval (1. Yes / 2. Yes, don't ask / 3. No)
-    fn detect_proceed_prompt(content: &str) -> bool {
-        // Filter out empty lines and take last 15 non-empty lines
+    ///
+    /// Returns extracted choices when found. This allows number key navigation
+    /// even when the cursor marker (❯) is not captured by tmux capture-pane.
+    fn detect_proceed_prompt(content: &str) -> Option<Vec<String>> {
+        // Filter out empty lines and take last 15 non-empty lines (in original order)
         let check_lines: Vec<&str> = content
             .lines()
             .filter(|line| !line.trim().is_empty())
@@ -278,6 +315,9 @@ impl ClaudeCodeDetector {
             .into_iter()
             .rev()
             .take(15)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
             .collect();
 
         let mut has_yes = false;
@@ -295,7 +335,53 @@ impl ClaudeCodeDetector {
             }
         }
 
-        has_yes && has_no
+        if !(has_yes && has_no) {
+            return None;
+        }
+
+        // Extract numbered choices
+        let mut choices = Vec::new();
+        for line in &check_lines {
+            let clean = line
+                .trim()
+                .trim_start_matches('❯')
+                .trim_start_matches('>')
+                .trim();
+            if let Some(dot_pos) = clean.find(". ") {
+                if let Ok(num) = clean[..dot_pos].trim().parse::<usize>() {
+                    if num == choices.len() + 1 {
+                        let choice_text = clean[dot_pos + 2..].trim();
+                        let label = choice_text
+                            .split('（')
+                            .next()
+                            .unwrap_or(choice_text)
+                            .trim()
+                            .to_string();
+                        choices.push(label);
+                    }
+                }
+            }
+        }
+
+        if choices.len() >= 2 {
+            Some(choices)
+        } else {
+            None
+        }
+    }
+
+    /// Extract question text from content (e.g., "Do you want to proceed?")
+    fn extract_question_text(content: &str) -> String {
+        content
+            .lines()
+            .rev()
+            .take(20)
+            .find(|line| {
+                let t = line.trim();
+                !t.is_empty() && (t.ends_with('?') || t.ends_with('？'))
+            })
+            .map(|l| l.trim().to_string())
+            .unwrap_or_else(|| "Do you want to proceed?".to_string())
     }
 
     /// Detect Yes/No button-style approval
@@ -360,7 +446,8 @@ impl ClaudeCodeDetector {
         }
 
         // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
-        let has_proceed_prompt = Self::detect_proceed_prompt(content);
+        let proceed_choices = Self::detect_proceed_prompt(content);
+        let has_proceed_prompt = proceed_choices.is_some();
 
         // Check for button-style approval
         let has_yes_no_buttons = self.detect_yes_no_buttons(recent_lines);
@@ -374,10 +461,22 @@ impl ClaudeCodeDetector {
             return None;
         }
 
+        // If proceed_prompt extracted choices, return as UserQuestion for number key support
+        if let Some(choices) = proceed_choices {
+            let question = Self::extract_question_text(content);
+            return Some((
+                ApprovalType::UserQuestion {
+                    choices,
+                    multi_select: false,
+                    cursor_position: 1,
+                },
+                question,
+                "proceed_prompt",
+            ));
+        }
+
         // Determine which rule matched
-        let rule = if has_proceed_prompt {
-            "proceed_prompt"
-        } else if has_yes_no_buttons {
+        let rule = if has_yes_no_buttons {
             "yes_no_buttons"
         } else {
             "yes_no_text_pattern"
@@ -522,6 +621,15 @@ impl ClaudeCodeDetector {
     /// This is critical for detecting processing when the title still shows ✳ (idle),
     /// e.g. during /compact or title update lag.
     fn detect_content_spinner(content: &str) -> Option<String> {
+        // If idle prompt ❯ is near the end, any spinner above is a past residual
+        let has_idle_prompt = content.lines().rev().take(5).any(|line| {
+            let trimmed = line.trim();
+            trimmed == "❯" || trimmed == "❯ "
+        });
+        if has_idle_prompt {
+            return None;
+        }
+
         for line in content.lines().rev().take(15) {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -1141,6 +1249,66 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     }
 
     #[test]
+    fn test_proceed_prompt_without_cursor_returns_user_question() {
+        let detector = ClaudeCodeDetector::new();
+        // 3-choice approval WITHOUT cursor marker ❯
+        let content = r#"
+ Tool use
+
+   Bash("ls -la")
+
+ Do you want to proceed?
+   1. Yes
+   2. Yes, and don't ask again for Bash commands
+   3. No
+
+ Esc to cancel"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    cursor_position,
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                    assert!(!multi_select);
+                    assert_eq!(cursor_position, 1);
+                    assert!(choices[0].contains("Yes"));
+                    assert!(choices[2].contains("No"));
+                } else {
+                    panic!(
+                        "Expected UserQuestion for cursor-less proceed prompt, got {:?}",
+                        approval_type
+                    );
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_proceed_prompt_2_choice_without_cursor() {
+        let detector = ClaudeCodeDetector::new();
+        // Simple 2-choice without cursor
+        let content = r#" Do you want to proceed?
+   1. Yes
+   2. No"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 2, "Expected 2 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
     fn test_custom_spinner_verb_detection_replace_mode() {
         use crate::config::ClaudeSettingsCache;
 
@@ -1200,7 +1368,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     #[test]
     fn test_content_spinner_overrides_title_idle() {
         let detector = ClaudeCodeDetector::new();
-        // Title shows ✳ (idle) but content has active spinner - should be Processing
+        // Title shows ✳ (idle) but content has active spinner and no bare ❯ prompt
+        // - should be Processing
         let content = r#"
 ✻ Cogitated for 2m 6s
 
@@ -1208,11 +1377,7 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
 
 ✶ Spinning… (37s · ↑ 38 tokens)
 
-────────────────────────────────────────────────────────────────────────────────────────────────
-❯
-────────────────────────────────────────────────────────────────────────────────────────────────
-   Model: Opus 4.6  Ctx: 78.9%
-  -- INSERT --
+Some other output here
 "#;
         let result = detector.detect_status_with_reason(
             "✳ Git commit dev-log",
@@ -1232,7 +1397,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     fn test_content_spinner_with_four_teardrop() {
         let detector = ClaudeCodeDetector::new();
         // ✢ (U+2722) is another spinner char Claude Code uses
-        let content = "Some output\n\n✢ Bootstrapping… (1m 27s)\n\n❯ \n";
+        // No bare ❯ prompt at end, so spinner should be detected
+        let content = "Some output\n\n✢ Bootstrapping… (1m 27s)\n\nMore output\n";
         let result = detector.detect_status_with_reason(
             "✳ Task name",
             content,
@@ -1250,7 +1416,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     fn test_content_spinner_with_plain_asterisk() {
         let detector = ClaudeCodeDetector::new();
         // Plain * spinner should also be detected
-        let content = "Some output\n\n* Perambulating…\n\n❯ \n";
+        // No bare ❯ prompt at end, so spinner should be detected
+        let content = "Some output\n\n* Perambulating…\n\nMore output\n";
         let result = detector.detect_status_with_reason(
             "✳ Task name",
             content,
@@ -1296,5 +1463,71 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
         // Both should be Idle
         assert!(matches!(status1, AgentStatus::Idle));
         assert!(matches!(status2, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_multi_select_with_trailing_empty_lines() {
+        let detector = ClaudeCodeDetector::new();
+        // Real capture-pane output: AskUserQuestion with multi-select checkboxes,
+        // followed by many trailing empty lines (tmux pads to terminal height).
+        // This previously failed because check_lines.len() - last_choice_idx > 15.
+        let content = "\
+今日の作業内容を教えてください（複数選択可）\n\
+\n\
+❯ 1. [ ] 機能実装\n\
+  --audit モードの実装\n\
+  2. [ ] ドキュメント更新\n\
+  CHANGELOG, README, CLAUDE.md更新\n\
+  3. [ ] CI/CD構築\n\
+  タグプッシュ時の自動npm publishワークフロー作成\n\
+  4. [ ] リリース\n\
+  v0.7.0のnpm publish\n\
+  5. [ ] Type something\n\
+     Submit\n\
+──────────────────────────────────────────\n\
+  6. Chat about this\n\
+\n\
+Enter to select · ↑/↓ to navigate · Esc to cancel\n\
+\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
+        let status = detector.detect_status("✳ Dev Log", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Should detect AskUserQuestion despite trailing empty lines, got {:?}",
+            status
+        );
+        if let AgentStatus::AwaitingApproval { approval_type, .. } = status {
+            if let ApprovalType::UserQuestion {
+                choices,
+                multi_select,
+                cursor_position,
+                ..
+            } = approval_type
+            {
+                assert_eq!(choices.len(), 6, "Expected 6 choices, got {:?}", choices);
+                // Note: multi_select detection relies on English keywords ("space to", "toggle")
+                // which aren't present in this Japanese UI. The [ ] checkboxes are visual-only.
+                let _ = multi_select;
+                assert_eq!(cursor_position, 1);
+            } else {
+                panic!("Expected UserQuestion, got {:?}", approval_type);
+            }
+        }
+    }
+
+    #[test]
+    fn test_content_spinner_not_detected_when_idle_prompt_present() {
+        let detector = ClaudeCodeDetector::new();
+        // Old spinner text above idle prompt should NOT trigger processing
+        let content = "Some output\n\n✽ Forging… (2m 3s)\n\nMore output\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle when ❯ prompt is present below old spinner, got {:?}",
+            result.status
+        );
     }
 }

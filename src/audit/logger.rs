@@ -197,6 +197,7 @@ mod tests {
                 matched_text: Some("⠋ Working".to_string()),
             },
             screen_context: None,
+            prev_state_duration_ms: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
