@@ -434,7 +434,11 @@ pub async fn send_text(
             // Send text literally, then Enter after a short delay.
             // Without the delay, text + Enter arrive in a single PTY read() and
             // Claude Code (ink) treats the burst as pasted text where Enter = newline.
-            if state.command_sender.send_keys_literal(&id, &req.text).is_err() {
+            if state
+                .command_sender
+                .send_keys_literal(&id, &req.text)
+                .is_err()
+            {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to send text",
