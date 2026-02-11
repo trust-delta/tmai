@@ -17,13 +17,12 @@ async fn main() -> Result<()> {
     // Parse CLI arguments
     let cli = Config::parse_args();
 
-    // Setup logging
-    setup_logging(cli.debug);
-
-    // Check for wrap subcommand
+    // Check for wrap subcommand (logging setup is mode-dependent)
     if cli.is_wrap_mode() {
+        setup_logging(cli.debug, false); // stderr output
         return run_wrap_mode(&cli);
     }
+    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
 
     // Load settings
     let mut settings = Settings::load(cli.config.as_ref())?;
@@ -148,15 +147,35 @@ impl Drop for RawModeGuard {
     }
 }
 
-fn setup_logging(debug: bool) {
+/// Setup tracing subscriber.
+/// - `log_to_file`: TUIモード時はファイル出力（画面崩れ防止）、wrapモード時はstderr出力。
+fn setup_logging(debug: bool, log_to_file: bool) {
     let filter = if debug {
         EnvFilter::new("tmai=debug")
     } else {
         EnvFilter::new("tmai=info")
     };
 
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().with_target(false))
-        .init();
+    if log_to_file {
+        // TUIモード: ファイルに出力（$STATE_DIR/tmai.log）
+        let log_dir = tmai::ipc::protocol::state_dir();
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_file = std::fs::File::create(log_dir.join("tmai.log"))
+            .expect("Failed to create log file");
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(false)
+                    .with_ansi(false)
+                    .with_writer(log_file),
+            )
+            .init();
+    } else {
+        // Wrapモード: stderr（従来通り）
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_target(false))
+            .init();
+    }
 }
