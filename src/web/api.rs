@@ -431,19 +431,23 @@ pub async fn send_text(
             "Cannot send text to virtual agent",
         )),
         Some(false) => {
-            // Send the text literally followed by Enter
-            match state.command_sender.send_text_and_enter(&id, &req.text) {
-                Ok(_) => {
-                    state
-                        .audit_helper
-                        .maybe_emit_input(&id, "input_text", "web_api_input", None);
-                    Ok(Json(serde_json::json!({"status": "ok"})))
-                }
-                Err(_) => Err(json_error(
+            // Send text literally, then Enter separately (same pattern as TUI send_input)
+            if state.command_sender.send_keys_literal(&id, &req.text).is_err() {
+                return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to send text",
-                )),
+                ));
             }
+            if state.command_sender.send_keys(&id, "Enter").is_err() {
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send Enter",
+                ));
+            }
+            state
+                .audit_helper
+                .maybe_emit_input(&id, "input_text", "web_api_input", None);
+            Ok(Json(serde_json::json!({"status": "ok"})))
         }
     }
 }
