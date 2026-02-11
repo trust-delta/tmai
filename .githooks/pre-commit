@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-commit hook: run cargo fmt check and clippy with -D warnings
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "Running cargo fmt --check..."
+cargo fmt --check
+if [ $? -ne 0 ]; then
+    echo "cargo fmt check failed. Run 'cargo fmt' to fix."
+    exit 1
+fi
+
+echo "Running cargo clippy..."
+cargo clippy -- -D warnings
+if [ $? -ne 0 ]; then
+    echo "cargo clippy failed. Fix warnings before committing."
+    exit 1
+fi
