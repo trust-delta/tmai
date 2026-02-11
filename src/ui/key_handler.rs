@@ -15,9 +15,18 @@ pub enum KeyAction {
     /// Send keys via IPC/tmux (non-literal)
     SendKeys { target: String, keys: String },
     /// Send literal keys via IPC/tmux
+    #[allow(dead_code)]
     SendKeysLiteral { target: String, keys: String },
     /// Send multiple Down keys followed by Enter (for multi-select submit)
     MultiSelectSubmit { target: String, downs_needed: usize },
+    /// Navigate selection with arrow keys, optionally confirming with Enter
+    NavigateSelection {
+        target: String,
+        /// Positive = Down, negative = Up
+        steps: i32,
+        /// Whether to press Enter after navigating
+        confirm: bool,
+    },
     /// Focus a tmux pane
     FocusPane { target: String },
     /// Emit audit event for normal-mode interaction
@@ -57,7 +66,7 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
     };
     let target = target.to_string();
 
-    // Check if it's a UserQuestion and get choices + multi_select (skip virtual)
+    // Check if it's a UserQuestion and get choices + multi_select + cursor (skip virtual)
     let question_info = state.agents.get(&target).and_then(|agent| {
         if agent.is_virtual {
             return None;
@@ -67,18 +76,18 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
                 ApprovalType::UserQuestion {
                     choices,
                     multi_select,
-                    ..
+                    cursor_position,
                 },
             ..
         } = &agent.status
         {
-            Some((choices.clone(), *multi_select))
+            Some((choices.clone(), *multi_select, *cursor_position))
         } else {
             None
         }
     });
 
-    let Some((choices, multi_select)) = question_info else {
+    let Some((choices, multi_select, cursor_position)) = question_info else {
         // Not a UserQuestion — emit audit for potential false negative
         return NumberSelectionResult {
             action: KeyAction::EmitAudit {
@@ -103,68 +112,45 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
             .map(|c| c.to_lowercase().contains("type something"))
             .unwrap_or(false);
 
+    // Calculate arrow steps from current cursor position to target option
+    let cursor = if cursor_position == 0 {
+        1
+    } else {
+        cursor_position
+    };
+    let steps = num as i32 - cursor as i32;
+
     if is_other {
-        // "Other" or "Type something" — send number, then enter input mode
+        // "Other" or "Type something" — navigate, confirm, then enter input mode
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: true,
             },
             enter_input_mode: true,
         }
     } else if multi_select {
-        // Multi-select: send number only (no Enter)
+        // Multi-select: navigate only (Space toggle handled separately)
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: false,
             },
             enter_input_mode: false,
         }
     } else {
-        // Single select: send number + Enter
-        // Return SendKeysLiteral for the number; the caller handles the follow-up Enter
+        // Single select: navigate + Enter
         NumberSelectionResult {
-            action: KeyAction::SendKeysLiteral {
+            action: KeyAction::NavigateSelection {
                 target,
-                keys: num.to_string(),
+                steps,
+                confirm: true,
             },
             enter_input_mode: false,
         }
     }
-}
-
-/// Whether the number selection for a single-select question needs a confirm Enter
-pub fn needs_single_select_confirm(state: &AppState, num: usize) -> bool {
-    let Some(target) = state.selected_target() else {
-        return false;
-    };
-
-    state.agents.get(target).is_some_and(|agent| {
-        if agent.is_virtual {
-            return false;
-        }
-        if let AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select,
-                    ..
-                },
-            ..
-        } = &agent.status
-        {
-            let total_options = choices.len() + 1;
-            let is_other = num == total_options
-                || choices
-                    .get(num - 1)
-                    .map(|c| c.to_lowercase().contains("type something"))
-                    .unwrap_or(false);
-            !is_other && !multi_select && num <= total_options
-        } else {
-            false
-        }
-    })
 }
 
 /// Resolve space key for multi-select toggle

@@ -349,20 +349,11 @@ impl App {
             // Support both half-width (1-9) and full-width (１-９) digits
             KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
                 let num = key_handler::char_to_digit(c);
-                let (result, needs_confirm) = {
+                let result = {
                     let state = self.state.read();
-                    let result = key_handler::resolve_number_selection(&state, num);
-                    let needs_confirm = key_handler::needs_single_select_confirm(&state, num);
-                    (result, needs_confirm)
+                    key_handler::resolve_number_selection(&state, num)
                 };
                 self.execute_key_action(result.action)?;
-                if needs_confirm {
-                    // Single select: confirm with Enter after sending number
-                    if let Some(target) = self.state.read().selected_target().map(|s| s.to_string())
-                    {
-                        let _ = self.command_sender.send_keys(&target, "Enter");
-                    }
-                }
                 if result.enter_input_mode {
                     self.state.write().enter_input_mode();
                 }
@@ -568,6 +559,19 @@ impl App {
                     let _ = self.command_sender.send_keys(&target, "Down");
                 }
                 let _ = self.command_sender.send_keys(&target, "Enter");
+            }
+            KeyAction::NavigateSelection {
+                target,
+                steps,
+                confirm,
+            } => {
+                let key = if steps > 0 { "Down" } else { "Up" };
+                for _ in 0..steps.unsigned_abs() {
+                    let _ = self.command_sender.send_keys(&target, key);
+                }
+                if confirm {
+                    let _ = self.command_sender.send_keys(&target, "Enter");
+                }
             }
             KeyAction::FocusPane { target } => {
                 let _ = self.command_sender.tmux_client().focus_pane(&target);
