@@ -234,69 +234,26 @@ pub struct TeamSnapshot {
     pub task_pending: usize,
 }
 
-/// Application state
+/// Input-related state
+#[derive(Debug, Default)]
+pub struct InputState {
+    /// Current input mode
+    pub mode: InputMode,
+    /// Input buffer for text entry
+    pub buffer: String,
+    /// Cursor position in input buffer (byte offset)
+    pub cursor_position: usize,
+}
+
+/// UI view state (overlays, scroll, animations)
 #[derive(Debug)]
-pub struct AppState {
-    /// All monitored agents by target ID
-    pub agents: HashMap<String, MonitoredAgent>,
-    /// Order of agents for display
-    pub agent_order: Vec<String>,
-    /// Currently selected agent index
-    pub selected_index: usize,
+pub struct ViewState {
     /// Whether help screen is shown
     pub show_help: bool,
     /// Help screen scroll offset
     pub help_scroll: u16,
-    /// Preview scroll offset
-    pub preview_scroll: u16,
-    /// Error message to display
-    pub error_message: Option<String>,
-    /// Last poll timestamp
-    pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
-    /// Whether the app is running
-    pub running: bool,
-    /// Current input mode
-    pub input_mode: InputMode,
-    /// Input buffer for text entry
-    pub input_buffer: String,
-    /// Cursor position in input buffer (byte offset)
-    pub cursor_position: usize,
-    /// Spinner animation frame counter
-    pub spinner_frame: usize,
-    /// Last spinner update time
-    last_spinner_update: std::time::Instant,
-    /// Current sort method
-    pub sort_by: SortBy,
-    /// Create process flow state (None if not in create mode)
-    pub create_process: Option<CreateProcessState>,
-    /// Selected entry index (for UI navigation including CreateNew entries)
-    pub selected_entry_index: usize,
-    /// Total selectable entries count (cached)
-    pub selectable_count: usize,
-    /// Whether CreateNew entry is currently selected
-    pub is_on_create_new: bool,
-    /// Monitor scope for filtering panes
-    pub monitor_scope: MonitorScope,
-    /// Current session name (for scope display)
-    pub current_session: Option<String>,
-    /// Current window index (for scope display)
-    pub current_window: Option<u32>,
-    /// Confirmation dialog state (None if not showing)
-    pub confirmation_state: Option<ConfirmationState>,
-    /// Collapsed group keys (for group header folding)
-    pub collapsed_groups: HashSet<String>,
     /// Whether QR code screen is shown
     pub show_qr: bool,
-    /// Web server authentication token
-    pub web_token: Option<String>,
-    /// Web server port
-    pub web_port: u16,
-    /// Marquee animation state for selected item
-    pub marquee_state: MarqueeState,
-    /// Team snapshots by team name
-    pub teams: HashMap<String, TeamSnapshot>,
-    /// Mapping of tmux target (e.g. "main:0.1") to pane_id (e.g. "5") for IPC
-    pub target_to_pane_id: HashMap<String, String>,
     /// Whether the team overview screen is shown
     pub show_team_overview: bool,
     /// Whether the task overlay is shown
@@ -305,84 +262,164 @@ pub struct AppState {
     pub task_overlay_scroll: u16,
     /// Team overview scroll offset
     pub team_overview_scroll: u16,
+    /// Preview scroll offset
+    pub preview_scroll: u16,
+    /// Spinner animation frame counter
+    pub spinner_frame: usize,
+    /// Last spinner update time
+    pub last_spinner_update: std::time::Instant,
+    /// Marquee animation state for selected item
+    pub marquee_state: MarqueeState,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            show_help: false,
+            help_scroll: 0,
+            show_qr: false,
+            show_team_overview: false,
+            show_task_overlay: false,
+            task_overlay_scroll: 0,
+            team_overview_scroll: 0,
+            preview_scroll: 0,
+            spinner_frame: 0,
+            last_spinner_update: std::time::Instant::now(),
+            marquee_state: MarqueeState::default(),
+        }
+    }
+}
+
+/// Selection/navigation state
+#[derive(Debug, Default)]
+pub struct SelectionState {
+    /// Currently selected agent index
+    pub selected_index: usize,
+    /// Selected entry index (for UI navigation including CreateNew entries)
+    pub selected_entry_index: usize,
+    /// Total selectable entries count (cached)
+    pub selectable_count: usize,
+    /// Whether CreateNew entry is currently selected
+    pub is_on_create_new: bool,
+    /// Collapsed group keys (for group header folding)
+    pub collapsed_groups: HashSet<String>,
+}
+
+/// Web-related state
+#[derive(Debug, Default)]
+pub struct WebState {
+    /// Web server authentication token
+    pub token: Option<String>,
+    /// Web server port
+    pub port: u16,
+}
+
+/// Application state
+#[derive(Debug)]
+pub struct AppState {
+    // Sub-states
+    /// Input-related state
+    pub input: InputState,
+    /// UI view state (overlays, scroll, animations)
+    pub view: ViewState,
+    /// Selection/navigation state
+    pub selection: SelectionState,
+    /// Web-related state
+    pub web: WebState,
+
+    // Core domain (unchanged)
+    /// All monitored agents by target ID
+    pub agents: HashMap<String, MonitoredAgent>,
+    /// Order of agents for display
+    pub agent_order: Vec<String>,
+    /// Current sort method
+    pub sort_by: SortBy,
+    /// Monitor scope for filtering panes
+    pub monitor_scope: MonitorScope,
+    /// Current session name (for scope display)
+    pub current_session: Option<String>,
+    /// Current window index (for scope display)
+    pub current_window: Option<u32>,
+    /// Team snapshots by team name
+    pub teams: HashMap<String, TeamSnapshot>,
+    /// Mapping of tmux target (e.g. "main:0.1") to pane_id (e.g. "5") for IPC
+    pub target_to_pane_id: HashMap<String, String>,
+
+    // Dialog/mode state (unchanged)
+    /// Create process flow state (None if not in create mode)
+    pub create_process: Option<CreateProcessState>,
+    /// Confirmation dialog state (None if not showing)
+    pub confirmation_state: Option<ConfirmationState>,
+    /// Error message to display
+    pub error_message: Option<String>,
+    /// Last poll timestamp
+    pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether the app is running
+    pub running: bool,
 }
 
 impl AppState {
     /// Create a new application state
     pub fn new() -> Self {
         Self {
+            input: InputState::default(),
+            view: ViewState::default(),
+            selection: SelectionState::default(),
+            web: WebState {
+                token: None,
+                port: 9876,
+            },
             agents: HashMap::new(),
             agent_order: Vec::new(),
-            selected_index: 0,
-            show_help: false,
-            help_scroll: 0,
-            preview_scroll: 0,
-            error_message: None,
-            last_poll: None,
-            running: true,
-            input_mode: InputMode::Normal,
-            input_buffer: String::new(),
-            cursor_position: 0,
-            spinner_frame: 0,
-            last_spinner_update: std::time::Instant::now(),
             sort_by: SortBy::Directory,
-            create_process: None,
-            selected_entry_index: 0,
-            selectable_count: 0,
-            is_on_create_new: false,
             monitor_scope: MonitorScope::default(),
             current_session: None,
             current_window: None,
-            confirmation_state: None,
-            collapsed_groups: HashSet::new(),
-            show_qr: false,
-            web_token: None,
-            web_port: 9876,
-            marquee_state: MarqueeState::default(),
             teams: HashMap::new(),
             target_to_pane_id: HashMap::new(),
-            show_team_overview: false,
-            show_task_overlay: false,
-            task_overlay_scroll: 0,
-            team_overview_scroll: 0,
+            create_process: None,
+            confirmation_state: None,
+            error_message: None,
+            last_poll: None,
+            running: true,
         }
     }
 
     /// Advance the spinner animation frame (time-based, ~150ms per frame)
     pub fn tick_spinner(&mut self) {
-        let elapsed = self.last_spinner_update.elapsed();
+        let elapsed = self.view.last_spinner_update.elapsed();
         if elapsed.as_millis() >= 150 {
-            self.last_spinner_update = std::time::Instant::now();
-            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+            self.view.last_spinner_update = std::time::Instant::now();
+            self.view.spinner_frame = (self.view.spinner_frame + 1) % SPINNER_FRAMES.len();
         }
     }
 
     /// Get the current spinner character
     pub fn spinner_char(&self) -> char {
-        SPINNER_FRAMES[self.spinner_frame]
+        SPINNER_FRAMES[self.view.spinner_frame]
     }
 
     /// Advance the marquee scroll offset (time-based)
     pub fn tick_marquee(&mut self) {
-        let elapsed = self.marquee_state.last_update.elapsed();
+        let elapsed = self.view.marquee_state.last_update.elapsed();
         if elapsed.as_millis() >= MARQUEE_INTERVAL_MS as u128 {
-            self.marquee_state.last_update = std::time::Instant::now();
-            self.marquee_state.offset += 1;
+            self.view.marquee_state.last_update = std::time::Instant::now();
+            self.view.marquee_state.offset += 1;
         }
     }
 
     /// Reset marquee state when selection changes
     pub fn reset_marquee(&mut self, new_id: Option<String>) {
-        if self.marquee_state.selected_id != new_id {
-            self.marquee_state.offset = 0;
-            self.marquee_state.selected_id = new_id;
-            self.marquee_state.last_update = std::time::Instant::now();
+        if self.view.marquee_state.selected_id != new_id {
+            self.view.marquee_state.offset = 0;
+            self.view.marquee_state.selected_id = new_id;
+            self.view.marquee_state.last_update = std::time::Instant::now();
         }
     }
 
     /// Get the current marquee scroll offset
     pub fn marquee_offset(&self) -> usize {
-        self.marquee_state.offset
+        self.view.marquee_state.offset
     }
 
     /// Create a shared state
@@ -393,13 +430,13 @@ impl AppState {
     /// Get the currently selected agent
     pub fn selected_agent(&self) -> Option<&MonitoredAgent> {
         self.agent_order
-            .get(self.selected_index)
+            .get(self.selection.selected_index)
             .and_then(|id| self.agents.get(id))
     }
 
     /// Get a mutable reference to the selected agent
     pub fn selected_agent_mut(&mut self) -> Option<&mut MonitoredAgent> {
-        if let Some(id) = self.agent_order.get(self.selected_index).cloned() {
+        if let Some(id) = self.agent_order.get(self.selection.selected_index).cloned() {
             self.agents.get_mut(&id)
         } else {
             None
@@ -409,7 +446,7 @@ impl AppState {
     /// Get the selected agent's target ID
     pub fn selected_target(&self) -> Option<&str> {
         self.agent_order
-            .get(self.selected_index)
+            .get(self.selection.selected_index)
             .map(|s| s.as_str())
     }
 
@@ -459,13 +496,13 @@ impl AppState {
         // Try to preserve selection
         if let Some(old_id) = old_selected {
             if let Some(new_index) = self.agent_order.iter().position(|id| id == &old_id) {
-                self.selected_index = new_index;
+                self.selection.selected_index = new_index;
             }
         }
 
         // Ensure selection is valid
-        if self.selected_index >= self.agent_order.len() && !self.agent_order.is_empty() {
-            self.selected_index = self.agent_order.len() - 1;
+        if self.selection.selected_index >= self.agent_order.len() && !self.agent_order.is_empty() {
+            self.selection.selected_index = self.agent_order.len() - 1;
         }
 
         self.last_poll = Some(chrono::Utc::now());
@@ -659,23 +696,25 @@ impl AppState {
 
     /// Toggle collapse state for a group
     pub fn toggle_group_collapse(&mut self, group_key: &str) {
-        if self.collapsed_groups.contains(group_key) {
-            self.collapsed_groups.remove(group_key);
+        if self.selection.collapsed_groups.contains(group_key) {
+            self.selection.collapsed_groups.remove(group_key);
         } else {
-            self.collapsed_groups.insert(group_key.to_string());
+            self.selection
+                .collapsed_groups
+                .insert(group_key.to_string());
         }
     }
 
     /// Check if a group is collapsed
     pub fn is_group_collapsed(&self, group_key: &str) -> bool {
-        self.collapsed_groups.contains(group_key)
+        self.selection.collapsed_groups.contains(group_key)
     }
 
     /// Move selection up
     pub fn select_previous(&mut self) {
-        if self.selected_entry_index > 0 {
-            self.selected_entry_index -= 1;
-            self.preview_scroll = 0;
+        if self.selection.selected_entry_index > 0 {
+            self.selection.selected_entry_index -= 1;
+            self.view.preview_scroll = 0;
             self.sync_selected_index_from_entry();
             self.reset_marquee_for_selection();
         }
@@ -683,9 +722,11 @@ impl AppState {
 
     /// Move selection down
     pub fn select_next(&mut self) {
-        if self.selectable_count > 0 && self.selected_entry_index < self.selectable_count - 1 {
-            self.selected_entry_index += 1;
-            self.preview_scroll = 0;
+        if self.selection.selectable_count > 0
+            && self.selection.selected_entry_index < self.selection.selectable_count - 1
+        {
+            self.selection.selected_entry_index += 1;
+            self.view.preview_scroll = 0;
             self.sync_selected_index_from_entry();
             self.reset_marquee_for_selection();
         }
@@ -693,9 +734,9 @@ impl AppState {
 
     /// Select first entry
     pub fn select_first(&mut self) {
-        if self.selectable_count > 0 {
-            self.selected_entry_index = 0;
-            self.preview_scroll = 0;
+        if self.selection.selectable_count > 0 {
+            self.selection.selected_entry_index = 0;
+            self.view.preview_scroll = 0;
             self.sync_selected_index_from_entry();
             self.reset_marquee_for_selection();
         }
@@ -703,9 +744,9 @@ impl AppState {
 
     /// Select last entry
     pub fn select_last(&mut self) {
-        if self.selectable_count > 0 {
-            self.selected_entry_index = self.selectable_count - 1;
-            self.preview_scroll = 0;
+        if self.selection.selectable_count > 0 {
+            self.selection.selected_entry_index = self.selection.selectable_count - 1;
+            self.view.preview_scroll = 0;
             self.sync_selected_index_from_entry();
             self.reset_marquee_for_selection();
         }
@@ -722,8 +763,8 @@ impl AppState {
     fn sync_selected_index_from_entry(&mut self) {
         // This will be properly synced when build_entries is called during render
         // For now, just ensure selected_index stays valid
-        if !self.agent_order.is_empty() && self.selected_index >= self.agent_order.len() {
-            self.selected_index = self.agent_order.len() - 1;
+        if !self.agent_order.is_empty() && self.selection.selected_index >= self.agent_order.len() {
+            self.selection.selected_index = self.agent_order.len() - 1;
         }
     }
 
@@ -733,14 +774,14 @@ impl AppState {
         selectable_count: usize,
         agent_index: Option<usize>,
     ) {
-        self.selectable_count = selectable_count;
-        self.is_on_create_new = agent_index.is_none();
+        self.selection.selectable_count = selectable_count;
+        self.selection.is_on_create_new = agent_index.is_none();
         if let Some(idx) = agent_index {
-            self.selected_index = idx;
+            self.selection.selected_index = idx;
         }
         // Ensure entry index is valid
-        if self.selected_entry_index >= selectable_count && selectable_count > 0 {
-            self.selected_entry_index = selectable_count - 1;
+        if self.selection.selected_entry_index >= selectable_count && selectable_count > 0 {
+            self.selection.selected_entry_index = selectable_count - 1;
         }
     }
 
@@ -754,21 +795,21 @@ impl AppState {
 
     /// Toggle help screen
     pub fn toggle_help(&mut self) {
-        self.show_help = !self.show_help;
-        if self.show_help {
-            self.help_scroll = 0;
+        self.view.show_help = !self.view.show_help;
+        if self.view.show_help {
+            self.view.help_scroll = 0;
         }
     }
 
     /// Toggle QR code screen
     pub fn toggle_qr(&mut self) {
-        self.show_qr = !self.show_qr;
+        self.view.show_qr = !self.view.show_qr;
     }
 
     /// Initialize web settings
     pub fn init_web(&mut self, token: String, port: u16) {
-        self.web_token = Some(token);
-        self.web_port = port;
+        self.web.token = Some(token);
+        self.web.port = port;
     }
 
     /// Get web URL for QR code
@@ -776,45 +817,45 @@ impl AppState {
     /// In WSL environments, returns Windows host IP instead of WSL internal IP,
     /// since external devices (phones) cannot access WSL's internal network directly.
     pub fn get_web_url(&self) -> Option<String> {
-        let token = self.web_token.as_ref()?;
+        let token = self.web.token.as_ref()?;
 
         // Try to get Windows host IP if running in WSL
         if let Some(host_ip) = get_wsl_host_ip() {
             return Some(format!(
                 "http://{}:{}/?token={}",
-                host_ip, self.web_port, token
+                host_ip, self.web.port, token
             ));
         }
 
         // Fall back to local IP detection
         if let Ok(ip) = local_ip_address::local_ip() {
-            Some(format!("http://{}:{}/?token={}", ip, self.web_port, token))
+            Some(format!("http://{}:{}/?token={}", ip, self.web.port, token))
         } else {
             Some(format!(
                 "http://localhost:{}/?token={}",
-                self.web_port, token
+                self.web.port, token
             ))
         }
     }
 
     /// Scroll help screen down
     pub fn scroll_help_down(&mut self, amount: u16) {
-        self.help_scroll = self.help_scroll.saturating_add(amount);
+        self.view.help_scroll = self.view.help_scroll.saturating_add(amount);
     }
 
     /// Scroll help screen up
     pub fn scroll_help_up(&mut self, amount: u16) {
-        self.help_scroll = self.help_scroll.saturating_sub(amount);
+        self.view.help_scroll = self.view.help_scroll.saturating_sub(amount);
     }
 
     /// Scroll preview down
     pub fn scroll_preview_down(&mut self, amount: u16) {
-        self.preview_scroll = self.preview_scroll.saturating_add(amount);
+        self.view.preview_scroll = self.view.preview_scroll.saturating_add(amount);
     }
 
     /// Scroll preview up
     pub fn scroll_preview_up(&mut self, amount: u16) {
-        self.preview_scroll = self.preview_scroll.saturating_sub(amount);
+        self.view.preview_scroll = self.view.preview_scroll.saturating_sub(amount);
     }
 
     /// Get agents that need attention (awaiting approval or error)
@@ -852,73 +893,73 @@ impl AppState {
 
     /// Enter input mode
     pub fn enter_input_mode(&mut self) {
-        self.input_mode = InputMode::Input;
+        self.input.mode = InputMode::Input;
     }
 
     /// Enter passthrough mode
     pub fn enter_passthrough_mode(&mut self) {
-        self.input_mode = InputMode::Passthrough;
+        self.input.mode = InputMode::Passthrough;
     }
 
     /// Exit input mode and clear buffer
     pub fn exit_input_mode(&mut self) {
-        self.input_mode = InputMode::Normal;
-        self.input_buffer.clear();
-        self.cursor_position = 0;
+        self.input.mode = InputMode::Normal;
+        self.input.buffer.clear();
+        self.input.cursor_position = 0;
     }
 
     /// Check if in input mode
     pub fn is_input_mode(&self) -> bool {
-        self.input_mode == InputMode::Input
+        self.input.mode == InputMode::Input
     }
 
     /// Check if in passthrough mode
     pub fn is_passthrough_mode(&self) -> bool {
-        self.input_mode == InputMode::Passthrough
+        self.input.mode == InputMode::Passthrough
     }
 
     /// Get the input buffer
     pub fn get_input(&self) -> &str {
-        &self.input_buffer
+        &self.input.buffer
     }
 
     /// Get cursor position
     pub fn get_cursor_position(&self) -> usize {
-        self.cursor_position
+        self.input.cursor_position
     }
 
     /// Insert a character at cursor position
     pub fn input_char(&mut self, c: char) {
-        self.input_buffer.insert(self.cursor_position, c);
-        self.cursor_position += c.len_utf8();
+        self.input.buffer.insert(self.input.cursor_position, c);
+        self.input.cursor_position += c.len_utf8();
     }
 
     /// Delete character before cursor (backspace)
     pub fn input_backspace(&mut self) {
-        if self.cursor_position > 0 {
+        if self.input.cursor_position > 0 {
             // Find the previous character boundary
-            let prev_char_boundary = self.input_buffer[..self.cursor_position]
+            let prev_char_boundary = self.input.buffer[..self.input.cursor_position]
                 .char_indices()
                 .last()
                 .map(|(i, _)| i)
                 .unwrap_or(0);
-            self.input_buffer.remove(prev_char_boundary);
-            self.cursor_position = prev_char_boundary;
+            self.input.buffer.remove(prev_char_boundary);
+            self.input.cursor_position = prev_char_boundary;
         }
     }
 
     /// Delete character at cursor (delete key)
     pub fn input_delete(&mut self) {
-        if self.cursor_position < self.input_buffer.len() {
-            self.input_buffer.remove(self.cursor_position);
+        if self.input.cursor_position < self.input.buffer.len() {
+            self.input.buffer.remove(self.input.cursor_position);
         }
     }
 
     /// Move cursor left
     pub fn cursor_left(&mut self) {
-        if self.cursor_position > 0 {
+        if self.input.cursor_position > 0 {
             // Find the previous character boundary
-            self.cursor_position = self.input_buffer[..self.cursor_position]
+            self.input.cursor_position = self.input.buffer[..self.input.cursor_position]
                 .char_indices()
                 .last()
                 .map(|(i, _)| i)
@@ -928,28 +969,31 @@ impl AppState {
 
     /// Move cursor right
     pub fn cursor_right(&mut self) {
-        if self.cursor_position < self.input_buffer.len() {
+        if self.input.cursor_position < self.input.buffer.len() {
             // Find the next character boundary
-            if let Some(c) = self.input_buffer[self.cursor_position..].chars().next() {
-                self.cursor_position += c.len_utf8();
+            if let Some(c) = self.input.buffer[self.input.cursor_position..]
+                .chars()
+                .next()
+            {
+                self.input.cursor_position += c.len_utf8();
             }
         }
     }
 
     /// Move cursor to start
     pub fn cursor_home(&mut self) {
-        self.cursor_position = 0;
+        self.input.cursor_position = 0;
     }
 
     /// Move cursor to end
     pub fn cursor_end(&mut self) {
-        self.cursor_position = self.input_buffer.len();
+        self.input.cursor_position = self.input.buffer.len();
     }
 
     /// Take the input buffer content and clear it
     pub fn take_input(&mut self) -> String {
-        let input = std::mem::take(&mut self.input_buffer);
-        self.cursor_position = 0;
+        let input = std::mem::take(&mut self.input.buffer);
+        self.input.cursor_position = 0;
         input
     }
 
@@ -1266,30 +1310,30 @@ mod tests {
         ];
         state.update_agents(agents);
         // Simulate selectable count: 3 agents + 1 CreateNew = 4
-        state.selectable_count = 4;
+        state.selection.selectable_count = 4;
 
-        assert_eq!(state.selected_entry_index, 0);
-
-        state.select_next();
-        assert_eq!(state.selected_entry_index, 1);
+        assert_eq!(state.selection.selected_entry_index, 0);
 
         state.select_next();
-        assert_eq!(state.selected_entry_index, 2);
+        assert_eq!(state.selection.selected_entry_index, 1);
 
         state.select_next();
-        assert_eq!(state.selected_entry_index, 3); // CreateNew entry
+        assert_eq!(state.selection.selected_entry_index, 2);
 
         state.select_next();
-        assert_eq!(state.selected_entry_index, 3); // Can't go past end
+        assert_eq!(state.selection.selected_entry_index, 3); // CreateNew entry
+
+        state.select_next();
+        assert_eq!(state.selection.selected_entry_index, 3); // Can't go past end
 
         state.select_previous();
-        assert_eq!(state.selected_entry_index, 2);
+        assert_eq!(state.selection.selected_entry_index, 2);
 
         state.select_first();
-        assert_eq!(state.selected_entry_index, 0);
+        assert_eq!(state.selection.selected_entry_index, 0);
 
         state.select_last();
-        assert_eq!(state.selected_entry_index, 3);
+        assert_eq!(state.selection.selected_entry_index, 3);
     }
 
     #[test]

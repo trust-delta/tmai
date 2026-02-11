@@ -237,7 +237,7 @@ impl StatusBar {
 
     /// Render selection info at the start of status bar
     fn render_selection_info(spans: &mut Vec<Span<'static>>, state: &AppState) {
-        if state.is_on_create_new {
+        if state.selection.is_on_create_new {
             // CreateNew entry selected
             spans.push(Span::styled(" [+ New] ", Style::default().fg(Color::Green)));
         } else if let Some(agent) = state.selected_agent() {

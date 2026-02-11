@@ -28,7 +28,7 @@ impl TeamOverview {
 
         // Clamp scroll to valid range
         let max_scroll = total_lines.saturating_sub(visible_height);
-        let scroll = (state.team_overview_scroll as usize).min(max_scroll);
+        let scroll = (state.view.team_overview_scroll as usize).min(max_scroll);
 
         let block = Block::default()
             .title(" Team Overview (j/k to scroll, T or Esc to close) ")

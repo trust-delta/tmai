@@ -17,7 +17,7 @@ impl PanePreview {
     /// Render the preview with ANSI color support
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         // Show empty preview when CreateNew is selected
-        if state.is_on_create_new {
+        if state.selection.is_on_create_new {
             let block = Block::default()
                 .title(" Preview ")
                 .borders(Borders::ALL)
@@ -76,7 +76,7 @@ impl PanePreview {
                 .rposition(|line| !line.trim().is_empty())
                 .map(|i| i + 1)
                 .unwrap_or(0);
-            let scroll = state.preview_scroll as usize;
+            let scroll = state.view.preview_scroll as usize;
             let start = total_lines.saturating_sub(available_height + scroll);
             let end = total_lines.saturating_sub(scroll);
 

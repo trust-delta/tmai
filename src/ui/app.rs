@@ -7,15 +7,18 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::audit::helper::AuditHelper;
 use crate::audit::{AuditEvent, AuditEventSender};
+use crate::command_sender::CommandSender;
 use crate::config::Settings;
-use crate::detectors::{get_detector, DetectionReason};
 use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
     AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState, TreeEntry,
 };
 use crate::tmux::TmuxClient;
+
+use super::key_handler::{self, KeyAction};
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
@@ -27,11 +30,10 @@ use super::Layout;
 pub struct App {
     state: SharedState,
     settings: Settings,
-    tmux_client: TmuxClient,
+    command_sender: CommandSender,
     layout: Layout,
-    ipc_server: Option<Arc<IpcServer>>,
-    /// Sender for audit events (None if audit disabled)
-    audit_tx: Option<AuditEventSender>,
+    /// Helper for emitting audit events
+    audit_helper: AuditHelper,
     /// Receiver passed to Poller on start (consumed once)
     audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     /// Debounce: last passthrough audit emission per target
@@ -48,15 +50,16 @@ impl App {
     ) -> Self {
         let state = AppState::shared();
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
+        let command_sender = CommandSender::new(ipc_server, tmux_client, state.clone());
+        let audit_helper = AuditHelper::new(audit_tx, state.clone());
         let layout = Layout::new().with_preview_height(settings.ui.preview_height);
 
         Self {
             state,
             settings,
-            tmux_client,
+            command_sender,
             layout,
-            ipc_server,
-            audit_tx,
+            audit_helper,
             audit_event_rx,
             audit_last_passthrough: std::collections::HashMap::new(),
         }
@@ -70,12 +73,12 @@ impl App {
     /// Run the application
     pub async fn run(&mut self) -> Result<()> {
         // Check if tmux is available
-        if !self.tmux_client.is_available() {
+        if !self.command_sender.tmux_client().is_available() {
             anyhow::bail!("tmux is not running or not available");
         }
 
         // Capture current location for scope filtering display
-        if let Ok((session, window)) = self.tmux_client.get_current_location() {
+        if let Ok((session, window)) = self.command_sender.tmux_client().get_current_location() {
             let mut state = self.state.write();
             state.current_session = Some(session);
             state.current_window = Some(window);
@@ -95,8 +98,8 @@ impl App {
 
         // Start poller
         let ipc_registry = self
-            .ipc_server
-            .as_ref()
+            .command_sender
+            .ipc_server()
             .map(|s| s.registry())
             .unwrap_or_else(|| {
                 Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()))
@@ -154,19 +157,19 @@ impl App {
                 let state = self.state.read();
 
                 // Full-screen help mode
-                if state.show_help {
+                if state.view.show_help {
                     HelpScreen::render(frame, frame.area(), &state);
                     return;
                 }
 
                 // QR code screen (overlay popup)
-                if state.show_qr {
+                if state.view.show_qr {
                     QrScreen::render(frame, frame.area(), &state);
                     return;
                 }
 
                 // Team overview (full-screen, like help)
-                if state.show_team_overview {
+                if state.view.show_team_overview {
                     TeamOverview::render(frame, frame.area(), &state);
                     return;
                 }
@@ -225,7 +228,7 @@ impl App {
                 }
 
                 // Task overlay popup
-                if state.show_task_overlay {
+                if state.view.show_task_overlay {
                     TaskOverlay::render(frame, frame.area(), &state);
                 }
             })?;
@@ -272,49 +275,6 @@ impl App {
         Ok(())
     }
 
-    /// Send keys via IPC if connected, otherwise via tmux
-    fn send_keys_via_ipc_or_tmux(&self, target: &str, keys: &str) -> Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys(&pane_id, keys, false) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_keys(target, keys)
-    }
-
-    /// Send literal keys via IPC if connected, otherwise via tmux
-    fn send_keys_literal_via_ipc_or_tmux(&self, target: &str, keys: &str) -> Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys(&pane_id, keys, true) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_keys_literal(target, keys)
-    }
-
-    /// Send text + Enter via IPC if connected, otherwise via tmux
-    #[allow(dead_code)]
-    fn send_text_and_enter_via_ipc_or_tmux(&self, target: &str, text: &str) -> Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys_and_enter(&pane_id, text) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_text_and_enter(target, text)
-    }
-
-    /// Look up pane_id from target using the mapping in AppState
-    fn get_pane_id_for_target(&self, target: &str) -> Option<String> {
-        let state = self.state.read();
-        state.target_to_pane_id.get(target).cloned()
-    }
-
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
         // Check state without holding the lock for the entire function
         let (
@@ -329,10 +289,10 @@ impl App {
         ) = {
             let state = self.state.read();
             (
-                state.show_help,
-                state.show_qr,
-                state.show_task_overlay,
-                state.show_team_overview,
+                state.view.show_help,
+                state.view.show_qr,
+                state.view.show_task_overlay,
+                state.view.show_team_overview,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
@@ -382,16 +342,103 @@ impl App {
 
     /// Handle keys in normal (navigation) mode
     fn handle_normal_mode_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
-        let mut state = self.state.write();
-
         match code {
+            // === Arms that need CommandSender (KeyAction pattern) ===
+
+            // Number selection (for AskUserQuestion, skip for virtual agents)
+            // Support both half-width (1-9) and full-width (１-９) digits
+            KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
+                let num = key_handler::char_to_digit(c);
+                let (result, needs_confirm) = {
+                    let state = self.state.read();
+                    let result = key_handler::resolve_number_selection(&state, num);
+                    let needs_confirm = key_handler::needs_single_select_confirm(&state, num);
+                    (result, needs_confirm)
+                };
+                self.execute_key_action(result.action)?;
+                if needs_confirm {
+                    // Single select: confirm with Enter after sending number
+                    if let Some(target) = self.state.read().selected_target().map(|s| s.to_string())
+                    {
+                        let _ = self.command_sender.send_keys(&target, "Enter");
+                    }
+                }
+                if result.enter_input_mode {
+                    self.state.write().enter_input_mode();
+                }
+            }
+
+            // Space key for toggle in multi-select UserQuestion
+            KeyCode::Char(' ') => {
+                let action = {
+                    let state = self.state.read();
+                    key_handler::resolve_space_toggle(&state)
+                };
+                self.execute_key_action(action)?;
+            }
+
+            // Approval key (y)
+            KeyCode::Char('y') => {
+                let action = {
+                    let state = self.state.read();
+                    key_handler::resolve_approval(&state)
+                };
+                self.execute_key_action(action)?;
+            }
+
+            // Enter key - handle CreateNew, GroupHeader, or multi-select submit
+            KeyCode::Enter => {
+                // First check for CreateNew / GroupHeader (needs mut state + tmux)
+                let entry_action = {
+                    let state = self.state.read();
+                    match SessionList::get_selected_entry(&state) {
+                        Some(ListEntry::CreateNew { group_key }) => Some((true, group_key.clone())),
+                        Some(ListEntry::GroupHeader { key, .. }) => Some((false, key.clone())),
+                        _ => None,
+                    }
+                };
+                if let Some((is_create, key)) = entry_action {
+                    let mut state = self.state.write();
+                    if is_create {
+                        let panes = self
+                            .command_sender
+                            .tmux_client()
+                            .list_all_panes()
+                            .unwrap_or_default();
+                        state.start_create_process(key, panes);
+                    } else {
+                        state.toggle_group_collapse(&key);
+                    }
+                    return Ok(());
+                }
+
+                // Multi-select submit or audit
+                let action = {
+                    let state = self.state.read();
+                    key_handler::resolve_enter_submit(&state)
+                };
+                self.execute_key_action(action)?;
+            }
+
+            // Focus pane (skip for virtual agents)
+            KeyCode::Char('f') => {
+                let action = {
+                    let state = self.state.read();
+                    key_handler::resolve_focus_pane(&state)
+                };
+                self.execute_key_action(action)?;
+            }
+
+            // === Arms that only need state mutation (simple write lock) ===
+
             // Quit
             KeyCode::Char('q') | KeyCode::Esc => {
-                state.quit();
+                self.state.write().quit();
             }
 
             // Enter input mode (skip for virtual agents)
             KeyCode::Char('i') | KeyCode::Char('/') => {
+                let mut state = self.state.write();
                 if !state.selected_agent().is_some_and(|a| a.is_virtual) {
                     state.enter_input_mode();
                 }
@@ -399,7 +446,7 @@ impl App {
 
             // "Other" input for AskUserQuestion (skip for virtual agents)
             KeyCode::Char('o') => {
-                // Check if we're in an AskUserQuestion state
+                let mut state = self.state.write();
                 if let Some(target) = state.selected_target() {
                     let is_user_question = state.agents.get(target).is_some_and(|agent| {
                         !agent.is_virtual
@@ -418,250 +465,45 @@ impl App {
             }
 
             // Navigation
-            KeyCode::Char('j') | KeyCode::Down => {
-                state.select_next();
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                state.select_previous();
-            }
-            KeyCode::Char('g') => {
-                state.select_first();
-            }
-            KeyCode::Char('G') => {
-                state.select_last();
-            }
+            KeyCode::Char('j') | KeyCode::Down => self.state.write().select_next(),
+            KeyCode::Char('k') | KeyCode::Up => self.state.write().select_previous(),
+            KeyCode::Char('g') => self.state.write().select_first(),
+            KeyCode::Char('G') => self.state.write().select_last(),
 
             // Preview scroll
             KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                state.scroll_preview_down(10);
+                self.state.write().scroll_preview_down(10);
             }
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                state.scroll_preview_up(10);
-            }
-
-            // Number selection (for AskUserQuestion, skip for virtual agents)
-            // Support both half-width (1-9) and full-width (１-９) digits
-            KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
-                let num = if c.is_ascii_digit() {
-                    c.to_digit(10).unwrap_or(0) as usize
-                } else {
-                    // Full-width digit: convert '１'-'９' to 1-9
-                    (c as u32 - '０' as u32) as usize
-                };
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    // Check if it's a UserQuestion and get choices + multi_select (skip virtual)
-                    let question_info = state.agents.get(&target).and_then(|agent| {
-                        if agent.is_virtual {
-                            return None;
-                        }
-                        if let AgentStatus::AwaitingApproval {
-                            approval_type:
-                                ApprovalType::UserQuestion {
-                                    choices,
-                                    multi_select,
-                                    ..
-                                },
-                            ..
-                        } = &agent.status
-                        {
-                            Some((choices.clone(), *multi_select))
-                        } else {
-                            None
-                        }
-                    });
-
-                    if let Some((choices, multi_select)) = question_info {
-                        let count = choices.len();
-                        // count+1 for "Other" option
-                        let total_options = count + 1;
-                        if num <= total_options {
-                            // Check if this is the "Other" option or "Type something" choice
-                            let is_other = num == total_options
-                                || choices
-                                    .get(num - 1)
-                                    .map(|c| c.to_lowercase().contains("type something"))
-                                    .unwrap_or(false);
-
-                            if is_other {
-                                // "Other" or "Type something" - enter input mode
-                                drop(state);
-                                // Send the number to select it (use literal to avoid key interpretation issues)
-                                let _ = self
-                                    .send_keys_literal_via_ipc_or_tmux(&target, &num.to_string());
-                                // Then enter tmai input mode for user to type
-                                let mut state = self.state.write();
-                                state.enter_input_mode();
-                            } else {
-                                drop(state);
-                                // Send the number key as literal
-                                let _ = self
-                                    .send_keys_literal_via_ipc_or_tmux(&target, &num.to_string());
-                                if !multi_select {
-                                    // Single select: confirm with Enter
-                                    let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
-                                }
-                            }
-                        }
-                    } else {
-                        drop(state);
-                        self.maybe_emit_normal_audit(&target, "number_selection");
-                    }
-                }
-            }
-
-            // Space key for toggle in multi-select UserQuestion (skip for virtual agents)
-            KeyCode::Char(' ') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    // Check if it's a multi-select UserQuestion (skip virtual)
-                    let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
-                        !agent.is_virtual
-                            && matches!(
-                                &agent.status,
-                                AgentStatus::AwaitingApproval {
-                                    approval_type: ApprovalType::UserQuestion {
-                                        multi_select: true,
-                                        ..
-                                    },
-                                    ..
-                                }
-                            )
-                    });
-                    if is_multi_select {
-                        drop(state);
-                        let _ = self.send_keys_via_ipc_or_tmux(&target, "Space");
-                    }
-                }
-            }
-
-            // Approval key (y) - send to agent when awaiting approval (skip for virtual agents)
-            KeyCode::Char('y') => {
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    let agent_info = state.agents.get(&target).and_then(|a| {
-                        if a.is_virtual {
-                            None
-                        } else {
-                            Some((
-                                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                                a.agent_type.clone(),
-                            ))
-                        }
-                    });
-                    if let Some((true, agent_type)) = agent_info {
-                        drop(state);
-                        let detector = get_detector(&agent_type);
-                        let _ = self.send_keys_via_ipc_or_tmux(&target, detector.approval_keys());
-                    } else {
-                        drop(state);
-                        self.maybe_emit_normal_audit(&target, "approval_key");
-                    }
-                }
-            }
-
-            // Enter key - handle CreateNew selection, GroupHeader toggle, or multi-select confirmation
-            KeyCode::Enter => {
-                // Check the selected entry type
-                match SessionList::get_selected_entry(&state) {
-                    Some(ListEntry::CreateNew { group_key }) => {
-                        let group_key = group_key.clone();
-                        let panes = self.tmux_client.list_all_panes().unwrap_or_default();
-                        state.start_create_process(group_key, panes);
-                        return Ok(());
-                    }
-                    Some(ListEntry::GroupHeader { key, .. }) => {
-                        state.toggle_group_collapse(&key);
-                        return Ok(());
-                    }
-                    _ => {}
-                }
-
-                if let Some(target) = state.selected_target() {
-                    let target = target.to_string();
-                    // Check if it's a multi-select UserQuestion and get info (skip virtual)
-                    let multi_info = state.agents.get(&target).and_then(|agent| {
-                        if agent.is_virtual {
-                            return None;
-                        }
-                        if let AgentStatus::AwaitingApproval {
-                            approval_type:
-                                ApprovalType::UserQuestion {
-                                    choices,
-                                    multi_select: true,
-                                    cursor_position,
-                                },
-                            ..
-                        } = &agent.status
-                        {
-                            Some((choices.len(), *cursor_position))
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some((choice_count, cursor_pos)) = multi_info {
-                        drop(state);
-                        // Calculate how many Down presses needed to reach Submit
-                        // Submit is right after the last choice
-                        // (choice_count - cursor_pos) moves to last choice, then Submit
-                        let downs_needed =
-                            choice_count.saturating_sub(cursor_pos.saturating_sub(1));
-                        for _ in 0..downs_needed {
-                            let _ = self.send_keys_via_ipc_or_tmux(&target, "Down");
-                        }
-                        let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
-                    } else {
-                        drop(state);
-                        self.maybe_emit_normal_audit(&target, "enter_key");
-                    }
-                }
-            }
-
-            // Focus pane (skip for virtual agents)
-            KeyCode::Char('f') => {
-                if let Some(agent) = state.selected_agent() {
-                    if !agent.is_virtual {
-                        let target = agent.target.clone();
-                        drop(state);
-                        let _ = self.tmux_client.focus_pane(&target);
-                    }
-                }
+                self.state.write().scroll_preview_up(10);
             }
 
             // Cycle view mode (Both -> AgentsOnly -> PreviewOnly)
-            KeyCode::Tab => {
-                drop(state);
-                self.layout.cycle_view_mode();
-            }
+            KeyCode::Tab => self.layout.cycle_view_mode(),
 
             // Toggle split direction (Horizontal <-> Vertical)
-            KeyCode::Char('l') => {
-                drop(state);
-                self.layout.toggle_split_direction();
-            }
+            KeyCode::Char('l') => self.layout.toggle_split_direction(),
 
-            // Sort/scope cycling temporarily disabled — always Directory + AllSessions
+            // Sort/scope cycling temporarily disabled
             KeyCode::Char('s') | KeyCode::Char('m') => {}
 
-            // Enter passthrough mode (direct key input to pane, skip for virtual agents)
+            // Enter passthrough mode (skip for virtual agents)
             KeyCode::Char('p') | KeyCode::Right => {
+                let mut state = self.state.write();
                 if !state.selected_agent().is_some_and(|a| a.is_virtual) {
                     state.enter_passthrough_mode();
                 }
             }
 
             // Help
-            KeyCode::Char('h') | KeyCode::Char('?') => {
-                state.toggle_help();
-            }
+            KeyCode::Char('h') | KeyCode::Char('?') => self.state.write().toggle_help(),
 
             // QR code screen
-            KeyCode::Char('r') => {
-                state.toggle_qr();
-            }
+            KeyCode::Char('r') => self.state.write().toggle_qr(),
 
             // Kill pane (with confirmation, skip for virtual agents)
             KeyCode::Char('x') => {
+                let mut state = self.state.write();
                 if let Some(agent) = state.selected_agent() {
                     if !agent.is_virtual {
                         let target = agent.target.clone();
@@ -677,28 +519,59 @@ impl App {
 
             // Task overlay (only if selected agent has team_info)
             KeyCode::Char('t') => {
+                let mut state = self.state.write();
                 let has_team = state
                     .selected_agent()
                     .is_some_and(|a| a.team_info.is_some());
                 if has_team {
-                    state.show_task_overlay = !state.show_task_overlay;
-                    if state.show_task_overlay {
-                        state.task_overlay_scroll = 0;
+                    state.view.show_task_overlay = !state.view.show_task_overlay;
+                    if state.view.show_task_overlay {
+                        state.view.task_overlay_scroll = 0;
                     }
                 }
             }
 
             // Team overview (Shift+T)
             KeyCode::Char('T') => {
-                state.show_team_overview = !state.show_team_overview;
-                if state.show_team_overview {
-                    state.team_overview_scroll = 0;
+                let mut state = self.state.write();
+                state.view.show_team_overview = !state.view.show_team_overview;
+                if state.view.show_team_overview {
+                    state.view.team_overview_scroll = 0;
                 }
             }
 
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Execute a KeyAction from the key handler (called after state lock is released)
+    fn execute_key_action(&self, action: KeyAction) -> Result<()> {
+        match action {
+            KeyAction::None => {}
+            KeyAction::SendKeys { target, keys } => {
+                let _ = self.command_sender.send_keys(&target, &keys);
+            }
+            KeyAction::SendKeysLiteral { target, keys } => {
+                let _ = self.command_sender.send_keys_literal(&target, &keys);
+            }
+            KeyAction::MultiSelectSubmit {
+                target,
+                downs_needed,
+            } => {
+                for _ in 0..downs_needed {
+                    let _ = self.command_sender.send_keys(&target, "Down");
+                }
+                let _ = self.command_sender.send_keys(&target, "Enter");
+            }
+            KeyAction::FocusPane { target } => {
+                let _ = self.command_sender.tmux_client().focus_pane(&target);
+            }
+            KeyAction::EmitAudit { target, action } => {
+                self.maybe_emit_normal_audit(&target, &action);
+            }
+        }
         Ok(())
     }
 
@@ -756,37 +629,23 @@ impl App {
 
     /// Send the input buffer content to the selected pane
     fn send_input(&mut self) -> Result<()> {
-        let mut state = self.state.write();
-        let input = state.take_input();
-        let target = state.selected_target().map(|s| s.to_string());
-        // Capture audit info before dropping state lock
-        let audit_info = target.as_ref().and_then(|t| {
-            state.agents.get(t).map(|a| {
-                (
-                    a.status.clone(),
-                    a.detection_reason.clone(),
-                    a.detection_source,
-                    a.agent_type.short_name().to_string(),
-                    a.last_content.clone(),
-                )
-            })
-        });
-        state.exit_input_mode();
-        drop(state);
+        let (input, target) = {
+            let mut state = self.state.write();
+            let input = state.take_input();
+            let target = state.selected_target().map(|s| s.to_string());
+            state.exit_input_mode();
+            (input, target)
+        };
 
         if !input.is_empty() {
             if let Some(ref target) = target {
                 // Send text as literal (preserves special characters)
-                self.send_keys_literal_via_ipc_or_tmux(target, &input)?;
+                self.command_sender.send_keys_literal(target, &input)?;
                 // Send Enter to submit
-                self.send_keys_via_ipc_or_tmux(target, "Enter")?;
+                self.command_sender.send_keys(target, "Enter")?;
                 // Audit: check for potential false negative
-                self.maybe_emit_input_audit(
-                    target,
-                    "input_text",
-                    "tui_input_mode",
-                    audit_info.as_ref(),
-                );
+                self.audit_helper
+                    .maybe_emit_input(target, "input_text", "tui_input_mode", None);
             }
         }
         Ok(())
@@ -807,7 +666,7 @@ impl App {
                 if let Some(action) = action {
                     match action {
                         ConfirmAction::KillPane { target } => {
-                            if let Err(e) = self.tmux_client.kill_pane(&target) {
+                            if let Err(e) = self.command_sender.tmux_client().kill_pane(&target) {
                                 let mut state = self.state.write();
                                 state.set_error(format!("Failed to kill pane: {}", e));
                             }
@@ -834,7 +693,7 @@ impl App {
             // Close QR screen
             KeyCode::Char('r') | KeyCode::Esc | KeyCode::Char('q') => {
                 let mut state = self.state.write();
-                state.show_qr = false;
+                state.view.show_qr = false;
             }
             _ => {}
         }
@@ -848,7 +707,7 @@ impl App {
         match code {
             // Close help
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('h') | KeyCode::Char('?') => {
-                state.show_help = false;
+                state.view.show_help = false;
             }
             // Scroll down
             KeyCode::Char('j') | KeyCode::Down => {
@@ -874,11 +733,11 @@ impl App {
             }
             // Jump to top
             KeyCode::Char('g') => {
-                state.help_scroll = 0;
+                state.view.help_scroll = 0;
             }
             // Jump to bottom
             KeyCode::Char('G') => {
-                state.help_scroll = u16::MAX; // Will be clamped in render
+                state.view.help_scroll = u16::MAX; // Will be clamped in render
             }
             _ => {}
         }
@@ -892,27 +751,27 @@ impl App {
             // Close task overlay
             KeyCode::Char('t') | KeyCode::Esc => {
                 let mut state = self.state.write();
-                state.show_task_overlay = false;
+                state.view.show_task_overlay = false;
             }
             // Scroll down
             KeyCode::Char('j') | KeyCode::Down => {
                 let mut state = self.state.write();
-                state.task_overlay_scroll = state.task_overlay_scroll.saturating_add(1);
+                state.view.task_overlay_scroll = state.view.task_overlay_scroll.saturating_add(1);
             }
             // Scroll up
             KeyCode::Char('k') | KeyCode::Up => {
                 let mut state = self.state.write();
-                state.task_overlay_scroll = state.task_overlay_scroll.saturating_sub(1);
+                state.view.task_overlay_scroll = state.view.task_overlay_scroll.saturating_sub(1);
             }
             // Jump to top
             KeyCode::Char('g') => {
                 let mut state = self.state.write();
-                state.task_overlay_scroll = 0;
+                state.view.task_overlay_scroll = 0;
             }
             // Jump to bottom
             KeyCode::Char('G') => {
                 let mut state = self.state.write();
-                state.task_overlay_scroll = u16::MAX;
+                state.view.task_overlay_scroll = u16::MAX;
             }
             _ => {}
         }
@@ -926,37 +785,41 @@ impl App {
         match code {
             // Close team overview
             KeyCode::Char('T') | KeyCode::Esc => {
-                state.show_team_overview = false;
+                state.view.show_team_overview = false;
             }
             // Scroll down
             KeyCode::Char('j') | KeyCode::Down => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_add(1);
+                state.view.team_overview_scroll = state.view.team_overview_scroll.saturating_add(1);
             }
             // Scroll up
             KeyCode::Char('k') | KeyCode::Up => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(1);
+                state.view.team_overview_scroll = state.view.team_overview_scroll.saturating_sub(1);
             }
             // Page down
             KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_add(10);
+                state.view.team_overview_scroll =
+                    state.view.team_overview_scroll.saturating_add(10);
             }
             KeyCode::PageDown => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_add(10);
+                state.view.team_overview_scroll =
+                    state.view.team_overview_scroll.saturating_add(10);
             }
             // Page up
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(10);
+                state.view.team_overview_scroll =
+                    state.view.team_overview_scroll.saturating_sub(10);
             }
             KeyCode::PageUp => {
-                state.team_overview_scroll = state.team_overview_scroll.saturating_sub(10);
+                state.view.team_overview_scroll =
+                    state.view.team_overview_scroll.saturating_sub(10);
             }
             // Jump to top
             KeyCode::Char('g') => {
-                state.team_overview_scroll = 0;
+                state.view.team_overview_scroll = 0;
             }
             // Jump to bottom
             KeyCode::Char('G') => {
-                state.team_overview_scroll = u16::MAX; // Will be clamped in render
+                state.view.team_overview_scroll = u16::MAX; // Will be clamped in render
             }
             _ => {}
         }
@@ -994,7 +857,8 @@ impl App {
                     format!("C-{}", c)
                 } else {
                     // Send character as literal - no preview refresh, poller handles it
-                    self.send_keys_literal_via_ipc_or_tmux(&target, &c.to_string())?;
+                    self.command_sender
+                        .send_keys_literal(&target, &c.to_string())?;
                     // Audit: log interaction keys before early return (y/Y, digits)
                     if matches!(c, 'y' | 'Y' | '1'..='9' | '１'..='９') {
                         self.maybe_emit_passthrough_audit(&target);
@@ -1018,7 +882,7 @@ impl App {
         };
 
         // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
-        let _ = self.send_keys_via_ipc_or_tmux(&target, &key_str);
+        let _ = self.command_sender.send_keys(&target, &key_str);
 
         // Audit: log Enter key (y/digits handled above before early return)
         if code == KeyCode::Enter {
@@ -1332,7 +1196,11 @@ impl App {
             PlacementType::NewSession => {
                 // Generate unique session name
                 let session_name = format!("ai-{}", chrono::Utc::now().timestamp());
-                if let Err(e) = self.tmux_client.create_session(&session_name, &directory) {
+                if let Err(e) = self
+                    .command_sender
+                    .tmux_client()
+                    .create_session(&session_name, &directory)
+                {
                     let mut state = self.state.write();
                     state.set_error(format!("Failed to create session: {}", e));
                     state.cancel_create_process();
@@ -1341,7 +1209,11 @@ impl App {
                 // New session starts with window 0, pane 0
                 format!("{}:0.0", session_name)
             }
-            PlacementType::NewWindow => match self.tmux_client.new_window(&session, &directory) {
+            PlacementType::NewWindow => match self
+                .command_sender
+                .tmux_client()
+                .new_window(&session, &directory)
+            {
                 Ok(t) => t,
                 Err(e) => {
                     let mut state = self.state.write();
@@ -1353,7 +1225,11 @@ impl App {
             PlacementType::SplitPane => {
                 // Use target_pane (currently selected pane) for splitting
                 let pane = target_pane.unwrap_or_else(|| session.clone());
-                match self.tmux_client.split_window(&pane, &directory) {
+                match self
+                    .command_sender
+                    .tmux_client()
+                    .split_window(&pane, &directory)
+                {
                     Ok(t) => t,
                     Err(e) => {
                         let mut state = self.state.write();
@@ -1369,7 +1245,11 @@ impl App {
         let command = agent_type.command();
         if !command.is_empty() {
             // Use wrapped command for better state detection via PTY monitoring
-            if let Err(e) = self.tmux_client.run_command_wrapped(&target, command) {
+            if let Err(e) = self
+                .command_sender
+                .tmux_client()
+                .run_command_wrapped(&target, command)
+            {
                 let mut state = self.state.write();
                 state.set_error(format!("Failed to start agent: {}", e));
             }
@@ -1384,70 +1264,9 @@ impl App {
         Ok(())
     }
 
-    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
-    fn maybe_emit_input_audit(
-        &self,
-        target: &str,
-        action: &str,
-        input_source: &str,
-        agent_info: Option<&(
-            AgentStatus,
-            Option<DetectionReason>,
-            crate::agents::DetectionSource,
-            String,
-            String,
-        )>,
-    ) {
-        let Some(ref tx) = self.audit_tx else {
-            return;
-        };
-        let Some((status, reason, source, agent_type, content)) = agent_info else {
-            return;
-        };
-
-        let status_name = match status {
-            AgentStatus::Processing { .. } => "processing",
-            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
-        };
-
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
-        let screen_context = if !content.is_empty() {
-            let lines: Vec<&str> = content.lines().collect();
-            let start = lines.len().saturating_sub(20);
-            let tail = lines[start..].join("\n");
-            Some(if tail.len() > 2000 {
-                tail[..tail.floor_char_boundary(2000)].to_string()
-            } else {
-                tail
-            })
-        } else {
-            None
-        };
-
-        let pane_id = self
-            .get_pane_id_for_target(target)
-            .unwrap_or_else(|| target.to_string());
-
-        let _ = tx.send(AuditEvent::UserInputDuringProcessing {
-            ts,
-            pane_id,
-            agent_type: agent_type.clone(),
-            action: action.to_string(),
-            input_source: input_source.to_string(),
-            current_status: status_name.to_string(),
-            detection_reason: reason.clone(),
-            detection_source: source.label().to_string(),
-            screen_context,
-        });
-    }
-
     /// Emit a passthrough audit event with debounce (max once per 5 seconds per target)
     fn maybe_emit_passthrough_audit(&mut self, target: &str) {
-        if self.audit_tx.is_none() {
+        if !self.audit_helper.is_enabled() {
             return;
         }
 
@@ -1458,47 +1277,15 @@ impl App {
             }
         }
         self.audit_last_passthrough.insert(target.to_string(), now);
-
-        let audit_info = {
-            let state = self.state.read();
-            state.agents.get(target).map(|a| {
-                (
-                    a.status.clone(),
-                    a.detection_reason.clone(),
-                    a.detection_source,
-                    a.agent_type.short_name().to_string(),
-                    a.last_content.clone(),
-                )
-            })
-        };
-        self.maybe_emit_input_audit(
-            target,
-            "passthrough_key",
-            "tui_passthrough",
-            audit_info.as_ref(),
-        );
+        self.audit_helper
+            .maybe_emit_input(target, "passthrough_key", "tui_passthrough", None);
     }
 
     /// Emit audit event for normal-mode interaction keys (y, numbers, Enter)
     /// No debounce — each press is a deliberate interaction attempt
     fn maybe_emit_normal_audit(&self, target: &str, action: &str) {
-        if self.audit_tx.is_none() {
-            return;
-        }
-
-        let audit_info = {
-            let state = self.state.read();
-            state.agents.get(target).map(|a| {
-                (
-                    a.status.clone(),
-                    a.detection_reason.clone(),
-                    a.detection_source,
-                    a.agent_type.short_name().to_string(),
-                    a.last_content.clone(),
-                )
-            })
-        };
-        self.maybe_emit_input_audit(target, action, "tui_normal_mode", audit_info.as_ref());
+        self.audit_helper
+            .maybe_emit_input(target, action, "tui_normal_mode", None);
     }
 }
 

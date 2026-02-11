@@ -265,7 +265,7 @@ impl SessionList {
                             group_stats.get(&group_key).copied().unwrap_or((0, 0));
 
                         // Track the entry index for the selected entry (group header is now selectable)
-                        if selectable_index == state.selected_entry_index {
+                        if selectable_index == state.selection.selected_entry_index {
                             ui_entry_index = entries.len();
                         }
 
@@ -304,7 +304,7 @@ impl SessionList {
                 }
 
                 // Track the entry index for the selected entry
-                if selectable_index == state.selected_entry_index {
+                if selectable_index == state.selection.selected_entry_index {
                     ui_entry_index = entries.len();
                     selected_agent_index = Some(agent_idx);
                 }
@@ -315,7 +315,7 @@ impl SessionList {
         }
 
         // Add CreateNew at the bottom (last selectable item)
-        if selectable_index == state.selected_entry_index {
+        if selectable_index == state.selection.selected_entry_index {
             ui_entry_index = entries.len();
         }
         entries.push(ListEntry::CreateNew {
