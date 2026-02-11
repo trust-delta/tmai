@@ -469,15 +469,15 @@ class TmaiRemote {
             }
         }
 
-        // Text input section
+        // Text input section (form wrapper for reliable Enter handling on mobile)
         const textInputHtml = `
-            <div class="text-input-container">
+            <form class="text-input-container" onsubmit="event.preventDefault(); this.querySelector('.btn-send').click()">
                 <input type="text" class="text-input"
+                       enterkeyhint="send"
                        placeholder="Type message..."
-                       data-agent-id="${this.escapeAttr(agent.id)}"
-                       onkeydown="if(event.key==='Enter')this.nextElementSibling.click()">
-                <button class="btn btn-send" data-action="send-text" data-id="${this.escapeAttr(agent.id)}">Send</button>
-            </div>
+                       data-agent-id="${this.escapeAttr(agent.id)}">
+                <button type="button" class="btn btn-send" data-action="send-text" data-id="${this.escapeAttr(agent.id)}">Send</button>
+            </form>
         `;
 
         // Preview toggle section
