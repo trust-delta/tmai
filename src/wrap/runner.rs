@@ -115,13 +115,19 @@ impl PtyRunner {
         let master_writer_shared: Arc<parking_lot::Mutex<Box<dyn Write + Send>>> =
             Arc::new(parking_lot::Mutex::new(master_writer));
 
+        // Extract team info before starting IPC client
+        // (each lock() must be in its own statement to avoid deadlock)
+        let team_name = analyzer.lock().team_name().cloned();
+        let team_member_name = analyzer.lock().team_member_name().cloned();
+        let is_team_lead = analyzer.lock().is_team_lead();
+
         // Start IPC client for communication with tmai parent
         let ipc_client = IpcClient::start(
             self.config.id.clone(),
             child_pid,
-            analyzer.lock().team_name().cloned(),
-            analyzer.lock().team_member_name().cloned(),
-            analyzer.lock().is_team_lead(),
+            team_name,
+            team_member_name,
+            is_team_lead,
             running.clone(),
             master_writer_shared.clone(),
         );

@@ -438,12 +438,15 @@ impl TmuxClient {
         validate_target(target)?;
 
         // Get the path to tmai executable
+        // Note: On Linux, current_exe() reads /proc/self/exe which appends " (deleted)"
+        // when the binary has been recompiled. We strip this suffix to avoid shell errors.
         let tmai_path = std::env::current_exe()
             .map(|p| p.display().to_string())
+            .map(|s| s.strip_suffix(" (deleted)").unwrap_or(&s).to_string())
             .unwrap_or_else(|_| "tmai".to_string());
 
-        // Wrap the command with tmai wrap
-        let wrapped_command = format!("{} wrap {}", tmai_path, command);
+        // Wrap the command with tmai wrap (quote path for spaces/special chars)
+        let wrapped_command = format!("\"{}\" wrap {}", tmai_path, command);
 
         // Send the wrapped command
         self.send_keys_literal(target, &wrapped_command)?;
