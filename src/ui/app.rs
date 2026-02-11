@@ -1195,15 +1195,16 @@ impl App {
         };
 
         // Create the target based on placement type
+        let window_name = agent_type.command();
         let target = match placement_type {
             PlacementType::NewSession => {
                 // Generate unique session name
                 let session_name = format!("ai-{}", chrono::Utc::now().timestamp());
-                if let Err(e) = self
-                    .command_sender
-                    .tmux_client()
-                    .create_session(&session_name, &directory)
-                {
+                if let Err(e) = self.command_sender.tmux_client().create_session(
+                    &session_name,
+                    &directory,
+                    Some(window_name),
+                ) {
                     let mut state = self.state.write();
                     state.set_error(format!("Failed to create session: {}", e));
                     state.cancel_create_process();
@@ -1212,11 +1213,11 @@ impl App {
                 // New session starts with window 0, pane 0
                 format!("{}:0.0", session_name)
             }
-            PlacementType::NewWindow => match self
-                .command_sender
-                .tmux_client()
-                .new_window(&session, &directory)
-            {
+            PlacementType::NewWindow => match self.command_sender.tmux_client().new_window(
+                &session,
+                &directory,
+                Some(window_name),
+            ) {
                 Ok(t) => t,
                 Err(e) => {
                     let mut state = self.state.write();

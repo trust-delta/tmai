@@ -287,9 +287,16 @@ impl TmuxClient {
     }
 
     /// Create a new tmux session
-    pub fn create_session(&self, name: &str, cwd: &str) -> Result<()> {
+    ///
+    /// `window_name` sets the initial window name (e.g. "claude", "codex").
+    pub fn create_session(&self, name: &str, cwd: &str, window_name: Option<&str>) -> Result<()> {
+        let mut args = vec!["new-session", "-d", "-s", name, "-c", cwd];
+        if let Some(wn) = window_name {
+            args.push("-n");
+            args.push(wn);
+        }
         let output = Command::new("tmux")
-            .args(["new-session", "-d", "-s", name, "-c", cwd])
+            .args(&args)
             .output()
             .context("Failed to execute tmux new-session")?;
 
@@ -370,19 +377,31 @@ impl TmuxClient {
 
     /// Create a new window in an existing session
     /// Returns the new pane's target identifier (session:window.pane)
-    pub fn new_window(&self, session: &str, cwd: &str) -> Result<String> {
+    ///
+    /// `window_name` sets the window name (e.g. "claude", "codex").
+    pub fn new_window(
+        &self,
+        session: &str,
+        cwd: &str,
+        window_name: Option<&str>,
+    ) -> Result<String> {
+        let mut args = vec![
+            "new-window",
+            "-d",
+            "-t",
+            session,
+            "-c",
+            cwd,
+            "-P",
+            "-F",
+            "#{session_name}:#{window_index}.#{pane_index}",
+        ];
+        if let Some(wn) = window_name {
+            args.push("-n");
+            args.push(wn);
+        }
         let output = Command::new("tmux")
-            .args([
-                "new-window",
-                "-d",
-                "-t",
-                session,
-                "-c",
-                cwd,
-                "-P",
-                "-F",
-                "#{session_name}:#{window_index}.#{pane_index}",
-            ])
+            .args(&args)
             .output()
             .context("Failed to execute tmux new-window")?;
 
