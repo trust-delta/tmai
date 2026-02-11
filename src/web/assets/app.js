@@ -469,15 +469,15 @@ class TmaiRemote {
             }
         }
 
-        // Text input section
+        // Text input section (form wrapper for reliable Enter handling on mobile)
         const textInputHtml = `
-            <div class="text-input-container">
+            <form class="text-input-container" data-agent-id="${this.escapeAttr(agent.id)}">
                 <input type="text" class="text-input"
+                       enterkeyhint="send"
                        placeholder="Type message..."
-                       data-agent-id="${this.escapeAttr(agent.id)}"
-                       onkeydown="if(event.key==='Enter')this.nextElementSibling.click()">
-                <button class="btn btn-send" data-action="send-text" data-id="${this.escapeAttr(agent.id)}">Send</button>
-            </div>
+                       data-agent-id="${this.escapeAttr(agent.id)}">
+                <button type="submit" class="btn btn-send">Send</button>
+            </form>
         `;
 
         // Preview toggle section
@@ -578,6 +578,17 @@ class TmaiRemote {
             btn.addEventListener('click', (e) => this.handleAction(e));
         });
 
+        // Handle form submit for text input (Enter key on mobile + Send button)
+        this.elements.agentList.querySelectorAll('form.text-input-container').forEach(form => {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const agentId = form.dataset.agentId;
+                if (agentId) {
+                    this.handleSendText(agentId);
+                }
+            });
+        });
+
         // Handle blur on text inputs to trigger pending render
         this.elements.agentList.querySelectorAll('.text-input').forEach(input => {
             input.addEventListener('blur', () => {
@@ -622,9 +633,6 @@ class TmaiRemote {
                     await this.submit(id);
                     this.selectedChoices.delete(id);
                     this.showToast('Selection submitted', 'success');
-                    break;
-                case 'send-text':
-                    await this.handleSendText(id);
                     break;
                 case 'toggle-preview':
                     await this.handleTogglePreview(id);

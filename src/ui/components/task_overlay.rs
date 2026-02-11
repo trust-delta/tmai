@@ -144,7 +144,7 @@ impl TaskOverlay {
 
         let paragraph = Paragraph::new(lines)
             .block(block)
-            .scroll((state.task_overlay_scroll, 0));
+            .scroll((state.view.task_overlay_scroll, 0));
 
         frame.render_widget(paragraph, popup_area);
     }

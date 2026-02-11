@@ -374,6 +374,7 @@ impl TmuxClient {
         let output = Command::new("tmux")
             .args([
                 "new-window",
+                "-d",
                 "-t",
                 session,
                 "-c",
@@ -400,6 +401,7 @@ impl TmuxClient {
         let output = Command::new("tmux")
             .args([
                 "split-window",
+                "-d",
                 "-t",
                 session,
                 "-c",

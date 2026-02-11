@@ -1,4 +1,5 @@
 pub mod events;
+pub mod helper;
 pub mod logger;
 
 pub use events::AuditEvent;

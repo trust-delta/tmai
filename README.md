@@ -159,11 +159,11 @@ For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for po
 ┌─────────────────┬─────────────────────────────────┐
 │ Sessions        │ Preview                         │
 │                 │                                 │
-│ ● main:0.0      │ Do you want to make this edit?  │
+│ [IPC] main:0.0  │ Do you want to make this edit?  │
 │   Claude Code   │                                 │
 │   ⠋ Processing  │ ❯ 1. Yes                        │
 │                 │   2. Yes, allow all...          │
-│ ○ main:0.1      │   3. No                         │
+│ [capture] 0.1   │   3. No                         │
 │   Claude Code   │                                 │
 │   ✳ Idle        │                                 │
 └─────────────────┴─────────────────────────────────┘

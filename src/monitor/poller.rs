@@ -201,7 +201,10 @@ impl Poller {
 
         let selected_agent_id = {
             let state = self.state.read();
-            state.agent_order.get(state.selected_index).cloned()
+            state
+                .agent_order
+                .get(state.selection.selected_index)
+                .cloned()
         };
 
         // Filter and convert to monitored agents

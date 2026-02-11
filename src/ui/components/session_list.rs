@@ -265,7 +265,7 @@ impl SessionList {
                             group_stats.get(&group_key).copied().unwrap_or((0, 0));
 
                         // Track the entry index for the selected entry (group header is now selectable)
-                        if selectable_index == state.selected_entry_index {
+                        if selectable_index == state.selection.selected_entry_index {
                             ui_entry_index = entries.len();
                         }
 
@@ -304,7 +304,7 @@ impl SessionList {
                 }
 
                 // Track the entry index for the selected entry
-                if selectable_index == state.selected_entry_index {
+                if selectable_index == state.selection.selected_entry_index {
                     ui_entry_index = entries.len();
                     selected_agent_index = Some(agent_idx);
                 }
@@ -315,7 +315,7 @@ impl SessionList {
         }
 
         // Add CreateNew at the bottom (last selectable item)
-        if selectable_index == state.selected_entry_index {
+        if selectable_index == state.selection.selected_entry_index {
             ui_entry_index = entries.len();
         }
         entries.push(ListEntry::CreateNew {
@@ -417,8 +417,7 @@ impl SessionList {
         };
         let status_color = Self::status_color(&agent.status);
 
-        // Detection source icon
-        let detection_icon = agent.detection_source.icon();
+        // Detection source color
         let detection_color = match agent.detection_source {
             crate::agents::DetectionSource::IpcSocket => Color::Green,
             crate::agents::DetectionSource::CapturePane => Color::DarkGray,
@@ -434,7 +433,7 @@ impl SessionList {
             ));
         }
 
-        // 1) AI name
+        // 1) AI name + detection source
         line1_spans.extend([
             Span::styled(
                 format!("{} ", status_indicator),
@@ -443,6 +442,10 @@ impl SessionList {
             Span::styled(
                 agent.agent_type.short_name().to_string(),
                 Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(
+                format!("[{}]", agent.detection_source.label()),
+                Style::default().fg(detection_color),
             ),
         ]);
 
@@ -515,10 +518,6 @@ impl SessionList {
         let line2 = Line::from(vec![
             Span::styled(indent, Style::default()),
             Span::styled(title_text, Style::default().fg(Color::White)),
-            Span::styled(
-                format!("  {}", detection_icon),
-                Style::default().fg(detection_color),
-            ),
             Span::styled(
                 format!("  pid:{}", agent.pid),
                 Style::default().fg(Color::DarkGray),

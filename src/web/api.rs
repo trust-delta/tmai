@@ -9,11 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::agents::{AgentStatus, ApprovalType};
-use crate::audit::{AuditEvent, AuditEventSender};
+use crate::audit::helper::AuditHelper;
+use crate::command_sender::CommandSender;
 use crate::detectors::get_detector;
-use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
-use crate::tmux::TmuxClient;
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
@@ -36,111 +35,8 @@ pub struct PreviewResponse {
 /// Shared application state for API handlers
 pub struct ApiState {
     pub app_state: SharedState,
-    pub tmux_client: TmuxClient,
-    pub ipc_server: Option<Arc<IpcServer>>,
-    pub audit_tx: Option<AuditEventSender>,
-}
-
-impl ApiState {
-    /// Send keys via IPC if connected, otherwise via tmux
-    fn send_keys(&self, target: &str, keys: &str) -> anyhow::Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            let pane_id = {
-                let state = self.app_state.read();
-                state.target_to_pane_id.get(target).cloned()
-            };
-            if let Some(ref pid) = pane_id {
-                if ipc.try_send_keys(pid, keys, false) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_keys(target, keys)
-    }
-
-    /// Send literal keys via IPC if connected, otherwise via tmux
-    fn send_keys_literal(&self, target: &str, keys: &str) -> anyhow::Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            let pane_id = {
-                let state = self.app_state.read();
-                state.target_to_pane_id.get(target).cloned()
-            };
-            if let Some(ref pid) = pane_id {
-                if ipc.try_send_keys(pid, keys, true) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_keys_literal(target, keys)
-    }
-
-    /// Send text + Enter via IPC if connected, otherwise via tmux
-    fn send_text_and_enter(&self, target: &str, text: &str) -> anyhow::Result<()> {
-        if let Some(ref ipc) = self.ipc_server {
-            let pane_id = {
-                let state = self.app_state.read();
-                state.target_to_pane_id.get(target).cloned()
-            };
-            if let Some(ref pid) = pane_id {
-                if ipc.try_send_keys_and_enter(pid, text) {
-                    return Ok(());
-                }
-            }
-        }
-        self.tmux_client.send_text_and_enter(target, text)
-    }
-
-    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
-    fn maybe_emit_input_audit(&self, target: &str, action: &str, input_source: &str) {
-        let Some(ref tx) = self.audit_tx else {
-            return;
-        };
-        let app_state = self.app_state.read();
-        let Some(agent) = app_state.agents.get(target) else {
-            return;
-        };
-
-        let status_name = match &agent.status {
-            AgentStatus::Processing { .. } => "processing",
-            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
-        };
-
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
-        let screen_context = if !agent.last_content.is_empty() {
-            let lines: Vec<&str> = agent.last_content.lines().collect();
-            let start = lines.len().saturating_sub(20);
-            let tail = lines[start..].join("\n");
-            Some(if tail.len() > 2000 {
-                tail[..tail.floor_char_boundary(2000)].to_string()
-            } else {
-                tail
-            })
-        } else {
-            None
-        };
-
-        let pane_id = app_state
-            .target_to_pane_id
-            .get(target)
-            .cloned()
-            .unwrap_or_else(|| target.to_string());
-
-        let _ = tx.send(AuditEvent::UserInputDuringProcessing {
-            ts,
-            pane_id,
-            agent_type: agent.agent_type.short_name().to_string(),
-            action: action.to_string(),
-            input_source: input_source.to_string(),
-            current_status: status_name.to_string(),
-            detection_reason: agent.detection_reason.clone(),
-            detection_source: agent.detection_source.label().to_string(),
-            screen_context,
-        });
-    }
+    pub command_sender: CommandSender,
+    pub audit_helper: AuditHelper,
 }
 
 /// Agent information for API response
@@ -362,7 +258,10 @@ pub async fn approve_agent(
         }
         Some((true, agent_type, false)) => {
             let detector = get_detector(&agent_type);
-            match state.send_keys(&id, detector.approval_keys()) {
+            match state
+                .command_sender
+                .send_keys(&id, detector.approval_keys())
+            {
                 Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
                 Err(_) => {
                     tracing::warn!("API: approve failed - send_keys error agent_id={}", id);
@@ -423,6 +322,7 @@ pub async fn select_choice(
         Some((count, multi_select)) if req.choice >= 1 && req.choice <= count + 1 => {
             // Send the number key
             if state
+                .command_sender
                 .send_keys_literal(&id, &req.choice.to_string())
                 .is_err()
             {
@@ -433,7 +333,7 @@ pub async fn select_choice(
             }
 
             // For single select, confirm with Enter
-            if !multi_select && state.send_keys(&id, "Enter").is_err() {
+            if !multi_select && state.command_sender.send_keys(&id, "Enter").is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to confirm selection",
@@ -481,14 +381,14 @@ pub async fn submit_selection(
             // Navigate to Submit button
             let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
             for _ in 0..downs_needed {
-                if state.send_keys(&id, "Down").is_err() {
+                if state.command_sender.send_keys(&id, "Down").is_err() {
                     return Err(json_error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to navigate",
                     ));
                 }
             }
-            if state.send_keys(&id, "Enter").is_err() {
+            if state.command_sender.send_keys(&id, "Enter").is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to submit",
@@ -531,17 +431,30 @@ pub async fn send_text(
             "Cannot send text to virtual agent",
         )),
         Some(false) => {
-            // Send the text literally followed by Enter
-            match state.send_text_and_enter(&id, &req.text) {
-                Ok(_) => {
-                    state.maybe_emit_input_audit(&id, "input_text", "web_api_input");
-                    Ok(Json(serde_json::json!({"status": "ok"})))
-                }
-                Err(_) => Err(json_error(
+            // Send text literally, then Enter after a short delay.
+            // Without the delay, text + Enter arrive in a single PTY read() and
+            // Claude Code (ink) treats the burst as pasted text where Enter = newline.
+            if state
+                .command_sender
+                .send_keys_literal(&id, &req.text)
+                .is_err()
+            {
+                return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to send text",
-                )),
+                ));
             }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if state.command_sender.send_keys(&id, "Enter").is_err() {
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send Enter",
+                ));
+            }
+            state
+                .audit_helper
+                .maybe_emit_input(&id, "input_text", "web_api_input", None);
+            Ok(Json(serde_json::json!({"status": "ok"})))
         }
     }
 }
@@ -562,7 +475,7 @@ pub async fn get_preview(
     }
 
     // Capture pane content
-    match state.tmux_client.capture_pane_plain(&id) {
+    match state.command_sender.tmux_client().capture_pane_plain(&id) {
         Ok(content) => {
             let lines = content.lines().count();
             Ok(Json(PreviewResponse { content, lines }))
@@ -709,10 +622,13 @@ mod tests {
     /// Build a Router with all API routes but NO auth middleware
     fn test_router_with_state(app_state: SharedState) -> Router {
         let api_state = Arc::new(ApiState {
+            command_sender: CommandSender::new(
+                None,
+                crate::tmux::TmuxClient::new(),
+                app_state.clone(),
+            ),
+            audit_helper: AuditHelper::new(None, app_state.clone()),
             app_state,
-            tmux_client: crate::tmux::TmuxClient::new(),
-            ipc_server: None,
-            audit_tx: None,
         });
         Router::new()
             .route("/agents", get(get_agents))

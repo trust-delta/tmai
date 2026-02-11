@@ -24,7 +24,7 @@ impl HelpScreen {
 
         // Clamp scroll to valid range
         let max_scroll = total_lines.saturating_sub(visible_height);
-        let scroll = (state.help_scroll as usize).min(max_scroll);
+        let scroll = (state.view.help_scroll as usize).min(max_scroll);
 
         let block = Block::default()
             .title(" Help (j/k or ↑/↓ to scroll, q to close) ")
