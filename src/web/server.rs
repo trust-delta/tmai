@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::audit::AuditEventSender;
 use crate::config::Settings;
 use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
@@ -27,6 +28,7 @@ pub struct WebServer {
     app_state: SharedState,
     token: String,
     ipc_server: Option<Arc<IpcServer>>,
+    audit_tx: Option<AuditEventSender>,
 }
 
 impl WebServer {
@@ -36,12 +38,14 @@ impl WebServer {
         app_state: SharedState,
         token: String,
         ipc_server: Option<Arc<IpcServer>>,
+        audit_tx: Option<AuditEventSender>,
     ) -> Self {
         Self {
             settings,
             app_state,
             token,
             ipc_server,
+            audit_tx,
         }
     }
 
@@ -64,6 +68,7 @@ impl WebServer {
             app_state: self.app_state.clone(),
             tmux_client: TmuxClient::new(),
             ipc_server: self.ipc_server.clone(),
+            audit_tx: self.audit_tx.clone(),
         });
 
         let sse_state = Arc::new(SseState {

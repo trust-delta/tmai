@@ -70,7 +70,12 @@ impl PanePreview {
 
             // Apply scroll offset - work with ANSI content for color rendering
             let content_lines: Vec<&str> = agent.last_content_ansi.lines().collect();
-            let total_lines = content_lines.len();
+            // Trim trailing empty lines to prevent blank preview after terminal clear/compact
+            let total_lines = content_lines
+                .iter()
+                .rposition(|line| !line.trim().is_empty())
+                .map(|i| i + 1)
+                .unwrap_or(0);
             let scroll = state.preview_scroll as usize;
             let start = total_lines.saturating_sub(available_height + scroll);
             let end = total_lines.saturating_sub(scroll);
@@ -194,5 +199,47 @@ mod tests {
         let short = "short";
         let truncated = PanePreview::truncate_line(short, 50);
         assert_eq!(truncated, "short");
+    }
+
+    /// Helper to compute effective line count (same logic as render)
+    fn effective_line_count(content: &str) -> usize {
+        let lines: Vec<&str> = content.lines().collect();
+        lines
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn test_trailing_empty_lines_trimmed() {
+        // Simulates post-compact: content at top, empty lines below
+        let content = "line1\nline2\n\n\n\n";
+        assert_eq!(effective_line_count(content), 2);
+    }
+
+    #[test]
+    fn test_no_trailing_empty_lines() {
+        let content = "line1\nline2\nline3";
+        assert_eq!(effective_line_count(content), 3);
+    }
+
+    #[test]
+    fn test_all_empty_lines() {
+        let content = "\n\n\n";
+        assert_eq!(effective_line_count(content), 0);
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let content = "";
+        assert_eq!(effective_line_count(content), 0);
+    }
+
+    #[test]
+    fn test_content_with_middle_empty_lines() {
+        // Empty lines in the middle should be preserved (content at bottom counts)
+        let content = "header\n\n\n\nfooter";
+        assert_eq!(effective_line_count(content), 5);
     }
 }

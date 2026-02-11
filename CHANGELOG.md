@@ -5,7 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.6]
+
+### Added
+- **UserInputDuringProcessing audit event**: Detects potential false negatives in agent state detection
+  - Logs when user sends input while agent status is Processing (likely missed approval prompt)
+  - Sources: TUI input mode, passthrough mode (5s debounce), Web API `/input` endpoint
+  - Extended to normal mode: y-key, number-key, Enter-key when agent is not in AwaitingApproval
+  - Includes detection context (rule, confidence, screen content) for post-hoc analysis
+  - Cross-thread architecture: mpsc channel bridges UI/Web threads to Poller's audit logger
+- **Compacting status label**: Shows "Compacting" instead of "Processing" during `/compact` operation
+  - Detects `compacting` keyword in Processing activity text from spinner detection
+
+### Security
+- **XDG_RUNTIME_DIR for state directory**: Socket/state files now use `$XDG_RUNTIME_DIR/tmai` (preferred) or `/tmp/tmai-<UID>` (fallback)
+  - Prevents TOCTOU/symlink attacks in multi-user environments
+  - Symlink detection added to `ensure_state_dir()` before directory creation
+
+### Changed
+- IPC log messages downgraded from `info` to `debug` level (reduces noise in normal operation)
+- IPC client max reconnection backoff reduced from 5s to 2s for faster recovery
+
+### Fixed
+- **Agent detection for `tmai wrap <agent>`**: Agent name at end of cmdline (no trailing space) was not matched
+  - New `cmdline_contains_agent()` helper with word boundary matching (`/agent`, `agent `, or trailing `agent`)
+  - Fixes detection of wrapped agents like `tmai wrap claude`, `tmai wrap codex --model o3`
+- **Input echo false Processing**: Output immediately after user input (keyboard echo) no longer triggers Processing state
+  - 300ms grace period after input suppresses echo-induced state changes
+  - Applied to both local PTY input and IPC-originated remote keystrokes
+- **Blank preview after `/compact`**: Preview no longer shows empty area after terminal clear
+  - Trailing empty lines are trimmed before calculating visible content range
+  - Fixes issue where `capture-pane` returns content at top with empty lines below cursor
+- **C-key conversion**: Use bitmask (`c & 0x1f`) for Ctrl-key byte calculation
+  - Fixes incorrect bytes for uppercase (`C-A`) and special characters (`C-@`, `C-[`)
+- **IPC reconnection**: Old connections for the same pane_id are now removed before registering new ones
+  - Prevents stale connections from receiving keystrokes and cleanup conflicts
 
 ## [0.2.5]
 

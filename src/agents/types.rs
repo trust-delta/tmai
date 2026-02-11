@@ -82,19 +82,19 @@ impl AgentType {
             return None;
         }
 
-        // Check cmdline for agent keywords (e.g., "node /path/to/codex")
+        // Check cmdline for agent keywords (e.g., "node /path/to/codex", "tmai wrap claude")
+        // Uses helper that matches both "agent " (mid-string) and trailing "agent" (end-of-string)
         if let Some(ref cl) = cmdline_lower {
-            if cl.contains("/codex") || cl.contains("codex ") {
+            if Self::cmdline_contains_agent(cl, "codex") {
                 return Some(AgentType::CodexCli);
             }
-            if cl.contains("/gemini") || cl.contains("gemini ") {
+            if Self::cmdline_contains_agent(cl, "gemini") {
                 return Some(AgentType::GeminiCli);
             }
-            if cl.contains("/opencode") || cl.contains("opencode ") {
+            if Self::cmdline_contains_agent(cl, "opencode") {
                 return Some(AgentType::OpenCode);
             }
-            // Claude check via cmdline
-            if cl.contains("/claude") || cl.contains("claude ") {
+            if Self::cmdline_contains_agent(cl, "claude") {
                 return Some(AgentType::ClaudeCode);
             }
         }
@@ -120,6 +120,17 @@ impl AgentType {
         }
 
         None
+    }
+
+    /// Check if cmdline contains an agent name as a word boundary match.
+    ///
+    /// Matches `/agent`, `agent `, or `agent` at end-of-string.
+    /// This handles cases like `tmai wrap claude` where the agent name
+    /// appears at the end without a trailing space.
+    fn cmdline_contains_agent(cmdline: &str, agent: &str) -> bool {
+        cmdline.contains(&format!("/{}", agent))
+            || cmdline.contains(&format!("{} ", agent))
+            || cmdline.ends_with(agent)
     }
 
     /// Check if command is a known non-agent application
@@ -599,6 +610,28 @@ mod tests {
                 Some("node /home/user/app/server.js")
             ),
             None
+        );
+
+        // tmai wrap claude - agent name at end of cmdline (no trailing space)
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "tmai",
+                "",
+                "",
+                Some("/home/user/tmai/target/debug/tmai wrap claude")
+            ),
+            Some(AgentType::ClaudeCode)
+        );
+
+        // tmai wrap with flags
+        assert_eq!(
+            AgentType::from_detection_with_cmdline(
+                "tmai",
+                "",
+                "",
+                Some("tmai wrap codex --model o3")
+            ),
+            Some(AgentType::CodexCli)
         );
     }
 

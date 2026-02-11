@@ -17,13 +17,12 @@ async fn main() -> Result<()> {
     // Parse CLI arguments
     let cli = Config::parse_args();
 
-    // Setup logging
-    setup_logging(cli.debug);
-
-    // Check for wrap subcommand
+    // Check for wrap subcommand (logging setup is mode-dependent)
     if cli.is_wrap_mode() {
+        setup_logging(cli.debug, false); // stderr output
         return run_wrap_mode(&cli);
     }
+    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
 
     // Load settings
     let mut settings = Settings::load(cli.config.as_ref())?;
@@ -36,8 +35,21 @@ async fn main() -> Result<()> {
         .context("Failed to start IPC server")?;
     let ipc_server = Arc::new(ipc_server);
 
+    // Create audit event channel (if audit enabled)
+    let (audit_tx, audit_rx) = if settings.audit.enabled {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     // Run the application with web server
-    let mut app = App::new(settings.clone(), Some(ipc_server.clone()));
+    let mut app = App::new(
+        settings.clone(),
+        Some(ipc_server.clone()),
+        audit_tx.clone(),
+        audit_rx,
+    );
 
     // Start web server if enabled
     if settings.web.enabled {
@@ -51,7 +63,13 @@ async fn main() -> Result<()> {
         }
 
         // Start web server in background
-        let web_server = WebServer::new(settings.clone(), state, token, Some(ipc_server.clone()));
+        let web_server = WebServer::new(
+            settings.clone(),
+            state,
+            token,
+            Some(ipc_server.clone()),
+            audit_tx,
+        );
         web_server.start();
     }
 
@@ -64,7 +82,7 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
         anyhow::anyhow!("No command specified for wrap mode. Usage: tmai wrap <command> [args...]")
     })?;
 
-    tracing::info!("Wrapping command: {} {:?}", command, args);
+    tracing::debug!("Wrapping command: {} {:?}", command, args);
 
     // Load settings for exfil detection config
     let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
@@ -129,15 +147,35 @@ impl Drop for RawModeGuard {
     }
 }
 
-fn setup_logging(debug: bool) {
+/// Setup tracing subscriber.
+/// - `log_to_file`: TUIモード時はファイル出力（画面崩れ防止）、wrapモード時はstderr出力。
+fn setup_logging(debug: bool, log_to_file: bool) {
     let filter = if debug {
         EnvFilter::new("tmai=debug")
     } else {
         EnvFilter::new("tmai=info")
     };
 
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().with_target(false))
-        .init();
+    if log_to_file {
+        // TUIモード: ファイルに出力（$STATE_DIR/tmai.log）
+        let log_dir = tmai::ipc::protocol::state_dir();
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_file =
+            std::fs::File::create(log_dir.join("tmai.log")).expect("Failed to create log file");
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(false)
+                    .with_ansi(false)
+                    .with_writer(log_file),
+            )
+            .init();
+    } else {
+        // Wrapモード: stderr（従来通り）
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_target(false))
+            .init();
+    }
 }

@@ -7,8 +7,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::audit::{AuditEvent, AuditEventSender};
 use crate::config::Settings;
-use crate::detectors::get_detector;
+use crate::detectors::{get_detector, DetectionReason};
 use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
@@ -29,11 +30,22 @@ pub struct App {
     tmux_client: TmuxClient,
     layout: Layout,
     ipc_server: Option<Arc<IpcServer>>,
+    /// Sender for audit events (None if audit disabled)
+    audit_tx: Option<AuditEventSender>,
+    /// Receiver passed to Poller on start (consumed once)
+    audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
+    /// Debounce: last passthrough audit emission per target
+    audit_last_passthrough: std::collections::HashMap<String, std::time::Instant>,
 }
 
 impl App {
     /// Create a new application
-    pub fn new(settings: Settings, ipc_server: Option<Arc<IpcServer>>) -> Self {
+    pub fn new(
+        settings: Settings,
+        ipc_server: Option<Arc<IpcServer>>,
+        audit_tx: Option<AuditEventSender>,
+        audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
+    ) -> Self {
         let state = AppState::shared();
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
         let layout = Layout::new().with_preview_height(settings.ui.preview_height);
@@ -44,6 +56,9 @@ impl App {
             tmux_client,
             layout,
             ipc_server,
+            audit_tx,
+            audit_event_rx,
+            audit_last_passthrough: std::collections::HashMap::new(),
         }
     }
 
@@ -86,7 +101,12 @@ impl App {
             .unwrap_or_else(|| {
                 Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()))
             });
-        let poller = Poller::new(self.settings.clone(), self.state.clone(), ipc_registry);
+        let poller = Poller::new(
+            self.settings.clone(),
+            self.state.clone(),
+            ipc_registry,
+            self.audit_event_rx.take(),
+        );
         let mut poll_rx = poller.start();
 
         // Main loop
@@ -483,6 +503,9 @@ impl App {
                                 }
                             }
                         }
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "number_selection");
                     }
                 }
             }
@@ -530,6 +553,9 @@ impl App {
                         drop(state);
                         let detector = get_detector(&agent_type);
                         let _ = self.send_keys_via_ipc_or_tmux(&target, detector.approval_keys());
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "approval_key");
                     }
                 }
             }
@@ -584,6 +610,9 @@ impl App {
                             let _ = self.send_keys_via_ipc_or_tmux(&target, "Down");
                         }
                         let _ = self.send_keys_via_ipc_or_tmux(&target, "Enter");
+                    } else {
+                        drop(state);
+                        self.maybe_emit_normal_audit(&target, "enter_key");
                     }
                 }
             }
@@ -730,15 +759,34 @@ impl App {
         let mut state = self.state.write();
         let input = state.take_input();
         let target = state.selected_target().map(|s| s.to_string());
+        // Capture audit info before dropping state lock
+        let audit_info = target.as_ref().and_then(|t| {
+            state.agents.get(t).map(|a| {
+                (
+                    a.status.clone(),
+                    a.detection_reason.clone(),
+                    a.detection_source,
+                    a.agent_type.short_name().to_string(),
+                    a.last_content.clone(),
+                )
+            })
+        });
         state.exit_input_mode();
         drop(state);
 
         if !input.is_empty() {
-            if let Some(target) = target {
+            if let Some(ref target) = target {
                 // Send text as literal (preserves special characters)
-                self.send_keys_literal_via_ipc_or_tmux(&target, &input)?;
+                self.send_keys_literal_via_ipc_or_tmux(target, &input)?;
                 // Send Enter to submit
-                self.send_keys_via_ipc_or_tmux(&target, "Enter")?;
+                self.send_keys_via_ipc_or_tmux(target, "Enter")?;
+                // Audit: check for potential false negative
+                self.maybe_emit_input_audit(
+                    target,
+                    "input_text",
+                    "tui_input_mode",
+                    audit_info.as_ref(),
+                );
             }
         }
         Ok(())
@@ -947,6 +995,10 @@ impl App {
                 } else {
                     // Send character as literal - no preview refresh, poller handles it
                     self.send_keys_literal_via_ipc_or_tmux(&target, &c.to_string())?;
+                    // Audit: log interaction keys before early return (y/Y, digits)
+                    if matches!(c, 'y' | 'Y' | '1'..='9' | '１'..='９') {
+                        self.maybe_emit_passthrough_audit(&target);
+                    }
                     return Ok(());
                 }
             }
@@ -967,6 +1019,11 @@ impl App {
 
         // Send key - no preview refresh, poller handles it with faster interval in passthrough mode
         let _ = self.send_keys_via_ipc_or_tmux(&target, &key_str);
+
+        // Audit: log Enter key (y/digits handled above before early return)
+        if code == KeyCode::Enter {
+            self.maybe_emit_passthrough_audit(&target);
+        }
         Ok(())
     }
 
@@ -1326,6 +1383,123 @@ impl App {
 
         Ok(())
     }
+
+    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
+    fn maybe_emit_input_audit(
+        &self,
+        target: &str,
+        action: &str,
+        input_source: &str,
+        agent_info: Option<&(
+            AgentStatus,
+            Option<DetectionReason>,
+            crate::agents::DetectionSource,
+            String,
+            String,
+        )>,
+    ) {
+        let Some(ref tx) = self.audit_tx else {
+            return;
+        };
+        let Some((status, reason, source, agent_type, content)) = agent_info else {
+            return;
+        };
+
+        let status_name = match status {
+            AgentStatus::Processing { .. } => "processing",
+            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
+        };
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let screen_context = if !content.is_empty() {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(20);
+            let tail = lines[start..].join("\n");
+            Some(if tail.len() > 2000 {
+                tail[..tail.floor_char_boundary(2000)].to_string()
+            } else {
+                tail
+            })
+        } else {
+            None
+        };
+
+        let pane_id = self
+            .get_pane_id_for_target(target)
+            .unwrap_or_else(|| target.to_string());
+
+        let _ = tx.send(AuditEvent::UserInputDuringProcessing {
+            ts,
+            pane_id,
+            agent_type: agent_type.clone(),
+            action: action.to_string(),
+            input_source: input_source.to_string(),
+            current_status: status_name.to_string(),
+            detection_reason: reason.clone(),
+            detection_source: source.label().to_string(),
+            screen_context,
+        });
+    }
+
+    /// Emit a passthrough audit event with debounce (max once per 5 seconds per target)
+    fn maybe_emit_passthrough_audit(&mut self, target: &str) {
+        if self.audit_tx.is_none() {
+            return;
+        }
+
+        let now = std::time::Instant::now();
+        if let Some(last) = self.audit_last_passthrough.get(target) {
+            if now.duration_since(*last) < Duration::from_secs(5) {
+                return;
+            }
+        }
+        self.audit_last_passthrough.insert(target.to_string(), now);
+
+        let audit_info = {
+            let state = self.state.read();
+            state.agents.get(target).map(|a| {
+                (
+                    a.status.clone(),
+                    a.detection_reason.clone(),
+                    a.detection_source,
+                    a.agent_type.short_name().to_string(),
+                    a.last_content.clone(),
+                )
+            })
+        };
+        self.maybe_emit_input_audit(
+            target,
+            "passthrough_key",
+            "tui_passthrough",
+            audit_info.as_ref(),
+        );
+    }
+
+    /// Emit audit event for normal-mode interaction keys (y, numbers, Enter)
+    /// No debounce — each press is a deliberate interaction attempt
+    fn maybe_emit_normal_audit(&self, target: &str, action: &str) {
+        if self.audit_tx.is_none() {
+            return;
+        }
+
+        let audit_info = {
+            let state = self.state.read();
+            state.agents.get(target).map(|a| {
+                (
+                    a.status.clone(),
+                    a.detection_reason.clone(),
+                    a.detection_source,
+                    a.agent_type.short_name().to_string(),
+                    a.last_content.clone(),
+                )
+            })
+        };
+        self.maybe_emit_input_audit(target, action, "tui_normal_mode", audit_info.as_ref());
+    }
 }
 
 #[cfg(test)]
@@ -1335,6 +1509,6 @@ mod tests {
     #[test]
     fn test_app_creation() {
         let settings = Settings::default();
-        let _app = App::new(settings, None);
+        let _app = App::new(settings, None, None, None);
     }
 }

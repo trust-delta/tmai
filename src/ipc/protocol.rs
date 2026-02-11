@@ -3,15 +3,26 @@
 //! Uses newline-delimited JSON (ndjson) for bidirectional messaging
 //! over Unix domain sockets.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-/// Unix domain socket path for IPC
-pub const SOCKET_PATH: &str = "/tmp/tmai/control.sock";
+/// Get the base state directory, preferring XDG_RUNTIME_DIR for security
+pub fn state_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+        PathBuf::from(xdg).join("tmai")
+    } else {
+        let uid = unsafe { libc::getuid() };
+        PathBuf::from(format!("/tmp/tmai-{}", uid))
+    }
+}
 
-/// Base directory for state/socket files
-pub const STATE_DIR: &str = "/tmp/tmai";
+/// Get the IPC socket path
+pub fn socket_path() -> PathBuf {
+    state_dir().join("control.sock")
+}
 
 /// Status of a wrapped agent
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,6 +313,30 @@ mod tests {
             }
             _ => panic!("Expected SendKeys"),
         }
+    }
+
+    #[test]
+    fn test_state_dir_default() {
+        // Without XDG_RUNTIME_DIR, should use /tmp/tmai-UID
+        temp_env::with_var_unset("XDG_RUNTIME_DIR", || {
+            let dir = state_dir();
+            let uid = unsafe { libc::getuid() };
+            assert_eq!(dir, PathBuf::from(format!("/tmp/tmai-{}", uid)));
+        });
+    }
+
+    #[test]
+    fn test_state_dir_with_xdg() {
+        temp_env::with_var("XDG_RUNTIME_DIR", Some("/run/user/1000"), || {
+            let dir = state_dir();
+            assert_eq!(dir, PathBuf::from("/run/user/1000/tmai"));
+        });
+    }
+
+    #[test]
+    fn test_socket_path_contains_control_sock() {
+        let path = socket_path();
+        assert!(path.ends_with("control.sock"));
     }
 
     #[test]

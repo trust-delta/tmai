@@ -10,6 +10,7 @@ use crate::ipc::protocol::{WrapApprovalType, WrapState};
 /// Thresholds for state detection
 const PROCESSING_TIMEOUT_MS: u64 = 200; // Output within this time = Processing
 const APPROVAL_SETTLE_MS: u64 = 500; // Wait this long after output stops before declaring Approval
+const INPUT_ECHO_GRACE_MS: u64 = 300; // After input, ignore output for this duration (echo suppression)
 
 /// Analyzer for PTY output
 pub struct Analyzer {
@@ -165,12 +166,14 @@ impl Analyzer {
     pub fn get_state(&self) -> WrapState {
         let now = Instant::now();
         let since_output = now.duration_since(self.last_output);
-        let _since_input = now.duration_since(self.last_input);
+        let since_input = now.duration_since(self.last_input);
 
         let mut state;
 
         // If output is still flowing, we're processing
-        if since_output < Duration::from_millis(PROCESSING_TIMEOUT_MS) {
+        // But skip if we're in the input echo grace period (output is likely just echo)
+        let in_echo_grace = since_input < Duration::from_millis(INPUT_ECHO_GRACE_MS);
+        if since_output < Duration::from_millis(PROCESSING_TIMEOUT_MS) && !in_echo_grace {
             state = WrapState::processing(self.pid);
         } else if let Some((ref approval_type, ref details)) = self.pending_approval {
             // Check for approval that has settled

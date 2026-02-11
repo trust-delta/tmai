@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::agents::{AgentStatus, ApprovalType};
+use crate::audit::{AuditEvent, AuditEventSender};
 use crate::detectors::get_detector;
 use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
@@ -37,6 +38,7 @@ pub struct ApiState {
     pub app_state: SharedState,
     pub tmux_client: TmuxClient,
     pub ipc_server: Option<Arc<IpcServer>>,
+    pub audit_tx: Option<AuditEventSender>,
 }
 
 impl ApiState {
@@ -86,6 +88,58 @@ impl ApiState {
             }
         }
         self.tmux_client.send_text_and_enter(target, text)
+    }
+
+    /// Emit a UserInputDuringProcessing audit event if the agent is Processing
+    fn maybe_emit_input_audit(&self, target: &str, action: &str, input_source: &str) {
+        let Some(ref tx) = self.audit_tx else {
+            return;
+        };
+        let app_state = self.app_state.read();
+        let Some(agent) = app_state.agents.get(target) else {
+            return;
+        };
+
+        let status_name = match &agent.status {
+            AgentStatus::Processing { .. } => "processing",
+            _ => return, // Idle/AwaitingApproval are normal — only Processing is suspicious
+        };
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let screen_context = if !agent.last_content.is_empty() {
+            let lines: Vec<&str> = agent.last_content.lines().collect();
+            let start = lines.len().saturating_sub(20);
+            let tail = lines[start..].join("\n");
+            Some(if tail.len() > 2000 {
+                tail[..tail.floor_char_boundary(2000)].to_string()
+            } else {
+                tail
+            })
+        } else {
+            None
+        };
+
+        let pane_id = app_state
+            .target_to_pane_id
+            .get(target)
+            .cloned()
+            .unwrap_or_else(|| target.to_string());
+
+        let _ = tx.send(AuditEvent::UserInputDuringProcessing {
+            ts,
+            pane_id,
+            agent_type: agent.agent_type.short_name().to_string(),
+            action: action.to_string(),
+            input_source: input_source.to_string(),
+            current_status: status_name.to_string(),
+            detection_reason: agent.detection_reason.clone(),
+            detection_source: agent.detection_source.label().to_string(),
+            screen_context,
+        });
     }
 }
 
@@ -479,7 +533,10 @@ pub async fn send_text(
         Some(false) => {
             // Send the text literally followed by Enter
             match state.send_text_and_enter(&id, &req.text) {
-                Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
+                Ok(_) => {
+                    state.maybe_emit_input_audit(&id, "input_text", "web_api_input");
+                    Ok(Json(serde_json::json!({"status": "ok"})))
+                }
                 Err(_) => Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to send text",
@@ -655,6 +712,7 @@ mod tests {
             app_state,
             tmux_client: crate::tmux::TmuxClient::new(),
             ipc_server: None,
+            audit_tx: None,
         });
         Router::new()
             .route("/agents", get(get_agents))
