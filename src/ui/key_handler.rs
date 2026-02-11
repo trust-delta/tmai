@@ -184,10 +184,15 @@ pub fn resolve_space_toggle(state: &AppState) -> KeyAction {
     }
 }
 
-/// Resolve approval key ('y')
+/// Resolve approval/rejection key ('y' or 'n')
 ///
-/// Returns the action and optionally a target for audit if not awaiting approval.
-pub fn resolve_approval(state: &AppState) -> KeyAction {
+/// For UserQuestion: navigates to the choice matching the key and confirms.
+/// - 'y': finds first choice containing "Yes" (case-insensitive)
+/// - 'n': finds first choice containing "No" (case-insensitive)
+///
+/// For non-UserQuestion approval: 'y' sends approval keys, 'n' is ignored.
+/// When not awaiting approval: emits audit event.
+pub fn resolve_yes_no(state: &AppState, key: char) -> KeyAction {
     let Some(target) = state.selected_target() else {
         return KeyAction::None;
     };
@@ -197,26 +202,75 @@ pub fn resolve_approval(state: &AppState) -> KeyAction {
         if a.is_virtual {
             None
         } else {
-            Some((
-                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                a.agent_type.clone(),
-            ))
+            Some((&a.status, a.agent_type.clone()))
         }
     });
 
-    match agent_info {
-        Some((true, agent_type)) => {
-            let detector = get_detector(&agent_type);
-            KeyAction::SendKeys {
+    let Some((status, agent_type)) = agent_info else {
+        return KeyAction::None;
+    };
+
+    match status {
+        AgentStatus::AwaitingApproval {
+            approval_type:
+                ApprovalType::UserQuestion {
+                    choices,
+                    cursor_position,
+                    ..
+                },
+            ..
+        } => {
+            // Find choice matching "Yes" or "No" (word-boundary check)
+            let needle = if key == 'y' { "yes" } else { "no" };
+            let match_pos = choices
+                .iter()
+                .position(|c| choice_starts_with_word(c, needle));
+
+            let Some(idx) = match_pos else {
+                // No matching choice — for 'y' fall back to approval keys
+                if key == 'y' {
+                    let detector = get_detector(&agent_type);
+                    return KeyAction::SendKeys {
+                        target,
+                        keys: detector.approval_keys().to_string(),
+                    };
+                }
+                return KeyAction::None;
+            };
+
+            let target_pos = idx + 1; // 1-indexed
+            let cursor = if *cursor_position == 0 {
+                1
+            } else {
+                *cursor_position
+            };
+            let steps = target_pos as i32 - cursor as i32;
+
+            KeyAction::NavigateSelection {
                 target,
-                keys: detector.approval_keys().to_string(),
+                steps,
+                confirm: true,
             }
         }
-        Some((false, _)) => KeyAction::EmitAudit {
-            target,
-            action: "approval_key".to_string(),
-        },
-        None => KeyAction::None,
+        AgentStatus::AwaitingApproval { .. } => {
+            // Non-UserQuestion approval: only 'y' sends approval keys
+            if key == 'y' {
+                let detector = get_detector(&agent_type);
+                KeyAction::SendKeys {
+                    target,
+                    keys: detector.approval_keys().to_string(),
+                }
+            } else {
+                KeyAction::None
+            }
+        }
+        _ => {
+            // Not awaiting approval — emit audit
+            KeyAction::EmitAudit {
+                target,
+                action: format!("{}_key", key),
+            }
+        }
     }
 }
 
@@ -277,4 +331,22 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
         }
     }
     KeyAction::None
+}
+
+/// Check if a choice starts with the given word (case-insensitive, word-boundary aware).
+///
+/// Matches "Yes", "Yes (Recommended)", "No, cancel" but NOT "None", "Not now", "Yesterday".
+fn choice_starts_with_word(choice: &str, word: &str) -> bool {
+    let lower = choice.trim().to_lowercase();
+    if lower == word {
+        return true;
+    }
+    if lower.starts_with(word) {
+        // Next char after the word must be non-alphabetic (word boundary)
+        return lower[word.len()..]
+            .chars()
+            .next()
+            .map_or(true, |c| !c.is_alphabetic());
+    }
+    false
 }

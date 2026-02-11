@@ -368,11 +368,12 @@ impl App {
                 self.execute_key_action(action)?;
             }
 
-            // Approval key (y)
-            KeyCode::Char('y') => {
+            // Approval key (y) / Rejection key (n)
+            KeyCode::Char('y') | KeyCode::Char('n') => {
+                let key = if code == KeyCode::Char('y') { 'y' } else { 'n' };
                 let action = {
                     let state = self.state.read();
-                    key_handler::resolve_approval(&state)
+                    key_handler::resolve_yes_no(&state, key)
                 };
                 self.execute_key_action(action)?;
             }

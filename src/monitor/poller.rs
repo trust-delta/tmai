@@ -322,6 +322,9 @@ impl Poller {
                             screen_override = true;
                             (result.status, context_warning, Some(result.reason))
                         } else {
+                            // Enrich IPC Processing with screen-detected activity
+                            // (e.g., "Compacting..." from title_compacting rule)
+                            let status = enrich_ipc_activity(status, &result.status);
                             let reason = DetectionReason {
                                 rule: "ipc_state".to_string(),
                                 confidence: DetectionConfidence::High,
@@ -1034,6 +1037,28 @@ fn status_name(status: &AgentStatus) -> &'static str {
         AgentStatus::Offline => "offline",
         AgentStatus::Unknown => "unknown",
     }
+}
+
+/// Enrich IPC Processing status with screen-detected activity
+///
+/// When IPC reports Processing with empty activity, use the screen-detected
+/// activity (e.g., "Compacting..." from title_compacting rule) for better UI labels.
+fn enrich_ipc_activity(ipc_status: AgentStatus, screen_status: &AgentStatus) -> AgentStatus {
+    if let AgentStatus::Processing { ref activity } = ipc_status {
+        if activity.is_empty() {
+            if let AgentStatus::Processing {
+                activity: ref screen_activity,
+            } = screen_status
+            {
+                if !screen_activity.is_empty() {
+                    return AgentStatus::Processing {
+                        activity: screen_activity.clone(),
+                    };
+                }
+            }
+        }
+    }
+    ipc_status
 }
 
 /// Convert WrapState from state file to AgentStatus
