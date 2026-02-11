@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7]
+
+### Changed
+- **Detection source label**: Detection source now shown as `[IPC]` or `[capture]` text next to agent name instead of icon on detail line
+- **New process focus retention**: Creating new window/pane via New Process wizard no longer steals focus from tmai
+
+### Improved
+- **Codebase structure refactoring**: 4-part structural refactoring for maintainability
+  - `CommandSender`: Unified IPC→tmux fallback logic extracted from App
+  - `AuditHelper`: Audit event emission extracted with lock-free snapshot pattern
+  - `KeyHandler`: Key event resolution separated from execution (KeyAction enum)
+  - `AppState` sub-states: InputState, ViewState, SelectionState, WebState
+- Tracing output redirected to file in TUI mode to prevent screen corruption
+
+### Fixed
+- PTY wrapper deadlock when binary path contains `(deleted)` after upgrade
+- Agent detection for `tmai wrap <agent>` command format (word boundary matching)
+- Input echo suppression timing for IPC-originated remote keystrokes
+- IPC reconnection: stale connections cleaned up before re-registration
+
 ## [0.2.6]
 
 ### Added
