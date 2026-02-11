@@ -419,12 +419,9 @@ fn choice_starts_with_word(choice: &str, word: &str) -> bool {
     if lower == word {
         return true;
     }
-    if lower.starts_with(word) {
+    if let Some(rest) = lower.strip_prefix(word) {
         // Next char after the word must be non-alphabetic (word boundary)
-        return lower[word.len()..]
-            .chars()
-            .next()
-            .map_or(true, |c| !c.is_alphabetic());
+        return rest.chars().next().is_none_or(|c| !c.is_alphabetic());
     }
     false
 }
