@@ -436,10 +436,12 @@ impl App {
                 self.state.write().quit();
             }
 
-            // Enter input mode (skip for virtual agents)
+            // Enter input mode (requires a real agent selected)
             KeyCode::Char('i') | KeyCode::Char('/') => {
                 let mut state = self.state.write();
-                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                if !state.selection.is_on_create_new
+                    && state.selected_agent().is_some_and(|a| !a.is_virtual)
+                {
                     state.enter_input_mode();
                 }
             }
@@ -487,10 +489,12 @@ impl App {
             // Sort/scope cycling temporarily disabled
             KeyCode::Char('s') | KeyCode::Char('m') => {}
 
-            // Enter passthrough mode (skip for virtual agents)
+            // Enter passthrough mode (requires a real agent selected)
             KeyCode::Char('p') | KeyCode::Right => {
                 let mut state = self.state.write();
-                if !state.selected_agent().is_some_and(|a| a.is_virtual) {
+                if !state.selection.is_on_create_new
+                    && state.selected_agent().is_some_and(|a| !a.is_virtual)
+                {
                     state.enter_passthrough_mode();
                 }
             }
