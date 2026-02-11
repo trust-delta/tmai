@@ -431,13 +431,16 @@ pub async fn send_text(
             "Cannot send text to virtual agent",
         )),
         Some(false) => {
-            // Send text literally, then Enter separately (same pattern as TUI send_input)
+            // Send text literally, then Enter after a short delay.
+            // Without the delay, text + Enter arrive in a single PTY read() and
+            // Claude Code (ink) treats the burst as pasted text where Enter = newline.
             if state.command_sender.send_keys_literal(&id, &req.text).is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to send text",
                 ));
             }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             if state.command_sender.send_keys(&id, "Enter").is_err() {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,

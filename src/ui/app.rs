@@ -641,6 +641,9 @@ impl App {
             if let Some(ref target) = target {
                 // Send text as literal (preserves special characters)
                 self.command_sender.send_keys_literal(target, &input)?;
+                // Brief delay so Enter arrives in a separate PTY read() from the text.
+                // Without this, Claude Code (ink) treats the burst as paste and Enter = newline.
+                std::thread::sleep(std::time::Duration::from_millis(50));
                 // Send Enter to submit
                 self.command_sender.send_keys(target, "Enter")?;
                 // Audit: check for potential false negative
