@@ -16,6 +16,8 @@ pub enum AuditEvent {
         new_status: String,
         reason: DetectionReason,
         screen_context: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prev_state_duration_ms: Option<u64>,
     },
     /// IPC and capture-pane disagree on status
     SourceDisagreement {

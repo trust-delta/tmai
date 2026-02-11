@@ -522,6 +522,15 @@ impl ClaudeCodeDetector {
     /// This is critical for detecting processing when the title still shows ✳ (idle),
     /// e.g. during /compact or title update lag.
     fn detect_content_spinner(content: &str) -> Option<String> {
+        // If idle prompt ❯ is near the end, any spinner above is a past residual
+        let has_idle_prompt = content.lines().rev().take(5).any(|line| {
+            let trimmed = line.trim();
+            trimmed == "❯" || trimmed == "❯ "
+        });
+        if has_idle_prompt {
+            return None;
+        }
+
         for line in content.lines().rev().take(15) {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -1200,7 +1209,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     #[test]
     fn test_content_spinner_overrides_title_idle() {
         let detector = ClaudeCodeDetector::new();
-        // Title shows ✳ (idle) but content has active spinner - should be Processing
+        // Title shows ✳ (idle) but content has active spinner and no bare ❯ prompt
+        // - should be Processing
         let content = r#"
 ✻ Cogitated for 2m 6s
 
@@ -1208,11 +1218,7 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
 
 ✶ Spinning… (37s · ↑ 38 tokens)
 
-────────────────────────────────────────────────────────────────────────────────────────────────
-❯
-────────────────────────────────────────────────────────────────────────────────────────────────
-   Model: Opus 4.6  Ctx: 78.9%
-  -- INSERT --
+Some other output here
 "#;
         let result = detector.detect_status_with_reason(
             "✳ Git commit dev-log",
@@ -1232,7 +1238,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     fn test_content_spinner_with_four_teardrop() {
         let detector = ClaudeCodeDetector::new();
         // ✢ (U+2722) is another spinner char Claude Code uses
-        let content = "Some output\n\n✢ Bootstrapping… (1m 27s)\n\n❯ \n";
+        // No bare ❯ prompt at end, so spinner should be detected
+        let content = "Some output\n\n✢ Bootstrapping… (1m 27s)\n\nMore output\n";
         let result = detector.detect_status_with_reason(
             "✳ Task name",
             content,
@@ -1250,7 +1257,8 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
     fn test_content_spinner_with_plain_asterisk() {
         let detector = ClaudeCodeDetector::new();
         // Plain * spinner should also be detected
-        let content = "Some output\n\n* Perambulating…\n\n❯ \n";
+        // No bare ❯ prompt at end, so spinner should be detected
+        let content = "Some output\n\n* Perambulating…\n\nMore output\n";
         let result = detector.detect_status_with_reason(
             "✳ Task name",
             content,
@@ -1296,5 +1304,22 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
         // Both should be Idle
         assert!(matches!(status1, AgentStatus::Idle));
         assert!(matches!(status2, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_content_spinner_not_detected_when_idle_prompt_present() {
+        let detector = ClaudeCodeDetector::new();
+        // Old spinner text above idle prompt should NOT trigger processing
+        let content = "Some output\n\n✽ Forging… (2m 3s)\n\nMore output\n\n❯ \n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle when ❯ prompt is present below old spinner, got {:?}",
+            result.status
+        );
     }
 }
