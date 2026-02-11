@@ -75,7 +75,7 @@ impl IpcServer {
             Self::accept_loop(listener, registry, connections).await;
         });
 
-        tracing::info!("IPC server started on {}", sock.display());
+        tracing::debug!("IPC server started on {}", sock.display());
         Ok(server)
     }
 
@@ -169,7 +169,7 @@ impl IpcServer {
             );
         }
 
-        tracing::info!("IPC client registered: pane_id={}", pane_id);
+        tracing::debug!("IPC client registered: pane_id={}", pane_id);
 
         // Main loop: read from client OR send to client
         line_buf.clear();
@@ -219,7 +219,7 @@ impl IpcServer {
         // Cleanup on disconnect
         registry.write().remove(&pane_id);
         connections.write().remove(&connection_id);
-        tracing::info!("IPC client disconnected: pane_id={}", pane_id);
+        tracing::debug!("IPC client disconnected: pane_id={}", pane_id);
 
         Ok(())
     }

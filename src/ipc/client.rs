@@ -32,6 +32,8 @@ impl IpcClient {
     /// Creates a background thread that connects to the IPC server
     /// and handles bidirectional communication. The `pty_writer` is
     /// used to forward keystroke commands from the server to the PTY.
+    /// The `analyzer` is notified of IPC-originated input so the echo
+    /// grace period applies equally to remote keystrokes.
     pub fn start(
         pane_id: String,
         pid: u32,
@@ -40,6 +42,7 @@ impl IpcClient {
         is_team_lead: bool,
         running: Arc<AtomicBool>,
         pty_writer: Arc<parking_lot::Mutex<Box<dyn Write + Send>>>,
+        analyzer: Arc<parking_lot::Mutex<crate::wrap::analyzer::Analyzer>>,
     ) -> Self {
         // Bounded channel with capacity 2 - only recent states matter
         let (state_tx, state_rx) = std::sync::mpsc::sync_channel::<WrapState>(2);
@@ -53,7 +56,7 @@ impl IpcClient {
         };
         let client_running = running;
         thread::spawn(move || {
-            Self::connection_loop(reg, state_rx, client_running, pty_writer);
+            Self::connection_loop(reg, state_rx, client_running, pty_writer, analyzer);
         });
 
         Self { state_tx }
@@ -74,6 +77,7 @@ impl IpcClient {
         state_rx: std::sync::mpsc::Receiver<WrapState>,
         running: Arc<AtomicBool>,
         pty_writer: Arc<parking_lot::Mutex<Box<dyn Write + Send>>>,
+        analyzer: Arc<parking_lot::Mutex<crate::wrap::analyzer::Analyzer>>,
     ) {
         let mut backoff_ms = 100u64;
 
@@ -81,10 +85,16 @@ impl IpcClient {
             match UnixStream::connect(socket_path()) {
                 Ok(stream) => {
                     backoff_ms = 100; // Reset on successful connect
-                    tracing::info!("IPC connected to server");
+                    tracing::debug!("IPC connected to server");
 
-                    if let Err(e) =
-                        Self::handle_connection(stream, &reg, &state_rx, &running, &pty_writer)
+                    if let Err(e) = Self::handle_connection(
+                        stream,
+                        &reg,
+                        &state_rx,
+                        &running,
+                        &pty_writer,
+                        &analyzer,
+                    )
                     {
                         tracing::debug!("IPC connection lost: {}", e);
                     }
@@ -99,7 +109,7 @@ impl IpcClient {
             }
 
             thread::sleep(Duration::from_millis(backoff_ms));
-            backoff_ms = (backoff_ms * 2).min(5000);
+            backoff_ms = (backoff_ms * 2).min(2000);
         }
     }
 
@@ -110,6 +120,7 @@ impl IpcClient {
         state_rx: &std::sync::mpsc::Receiver<WrapState>,
         running: &Arc<AtomicBool>,
         pty_writer: &Arc<parking_lot::Mutex<Box<dyn Write + Send>>>,
+        analyzer: &Arc<parking_lot::Mutex<crate::wrap::analyzer::Analyzer>>,
     ) -> anyhow::Result<()> {
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
@@ -140,7 +151,7 @@ impl IpcClient {
             .get_ref()
             .set_read_timeout(Some(Duration::from_millis(100)))?;
 
-        tracing::info!("IPC registered as pane_id={}", reg.pane_id);
+        tracing::debug!("IPC registered as pane_id={}", reg.pane_id);
 
         // Connection is live flag
         let connected = Arc::new(AtomicBool::new(true));
@@ -149,6 +160,7 @@ impl IpcClient {
         let reader_connected = connected.clone();
         let reader_running = running.clone();
         let pty_writer_clone = pty_writer.clone();
+        let analyzer_clone = analyzer.clone();
         let reader_thread = thread::spawn(move || {
             let mut read_line = String::new();
             while reader_connected.load(Ordering::Relaxed) && reader_running.load(Ordering::Relaxed)
@@ -168,12 +180,16 @@ impl IpcClient {
                                     let mut writer = pty_writer_clone.lock();
                                     let _ = writer.write_all(&data);
                                     let _ = writer.flush();
+                                    // Notify analyzer of IPC-originated input for echo grace
+                                    analyzer_clone.lock().process_input(&keys);
                                 }
                                 ServerMessage::SendKeysAndEnter { text } => {
                                     let mut writer = pty_writer_clone.lock();
                                     let _ = writer.write_all(text.as_bytes());
                                     let _ = writer.write_all(b"\n");
                                     let _ = writer.flush();
+                                    // Notify analyzer of IPC-originated input for echo grace
+                                    analyzer_clone.lock().process_input(&text);
                                 }
                                 ServerMessage::Registered { .. } => {
                                     // Ignore duplicate

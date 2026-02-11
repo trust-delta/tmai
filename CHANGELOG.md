@@ -22,7 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents TOCTOU/symlink attacks in multi-user environments
   - Symlink detection added to `ensure_state_dir()` before directory creation
 
+### Changed
+- IPC log messages downgraded from `info` to `debug` level (reduces noise in normal operation)
+- IPC client max reconnection backoff reduced from 5s to 2s for faster recovery
+
 ### Fixed
+- **Agent detection for `tmai wrap <agent>`**: Agent name at end of cmdline (no trailing space) was not matched
+  - New `cmdline_contains_agent()` helper with word boundary matching (`/agent`, `agent `, or trailing `agent`)
+  - Fixes detection of wrapped agents like `tmai wrap claude`, `tmai wrap codex --model o3`
+- **Input echo false Processing**: Output immediately after user input (keyboard echo) no longer triggers Processing state
+  - 300ms grace period after input suppresses echo-induced state changes
+  - Applied to both local PTY input and IPC-originated remote keystrokes
 - **Blank preview after `/compact`**: Preview no longer shows empty area after terminal clear
   - Trailing empty lines are trimmed before calculating visible content range
   - Fixes issue where `capture-pane` returns content at top with empty lines below cursor

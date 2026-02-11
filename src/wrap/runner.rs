@@ -130,6 +130,7 @@ impl PtyRunner {
             is_team_lead,
             running.clone(),
             master_writer_shared.clone(),
+            analyzer.clone(),
         );
 
         // Thread: Read from PTY master -> write to stdout

@@ -83,7 +83,7 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
         anyhow::anyhow!("No command specified for wrap mode. Usage: tmai wrap <command> [args...]")
     })?;
 
-    tracing::info!("Wrapping command: {} {:?}", command, args);
+    tracing::debug!("Wrapping command: {} {:?}", command, args);
 
     // Load settings for exfil detection config
     let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
