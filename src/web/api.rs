@@ -404,6 +404,10 @@ pub async fn submit_selection(
             if is_checkbox && !selected.is_empty() {
                 // Checkbox format: toggle each selected choice then submit
                 let mut sorted = selected.clone();
+                sorted.retain(|&c| c >= 1 && c <= choices.len());
+                if sorted.is_empty() {
+                    return Err(json_error(StatusCode::BAD_REQUEST, "No valid choices"));
+                }
                 sorted.sort();
                 let mut current_pos = if cursor_pos == 0 { 1 } else { cursor_pos };
 

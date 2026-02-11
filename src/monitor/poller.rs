@@ -22,6 +22,8 @@ use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
 /// Tracks the last committed (actually emitted) state for an agent
 struct CommittedAgentState {
     status: String,
+    /// Full AgentStatus preserved for debounce override (retains activity/error text)
+    full_status: AgentStatus,
     #[allow(dead_code)]
     reason: DetectionReason,
     agent_type: String,
@@ -763,6 +765,7 @@ impl Poller {
                     agent.target.clone(),
                     CommittedAgentState {
                         status: current_status_name,
+                        full_status: agent.status.clone(),
                         reason,
                         agent_type: agent.agent_type.short_name().to_string(),
                         committed_at_ms: ts,
@@ -816,6 +819,7 @@ impl Poller {
                     agent.target.clone(),
                     CommittedAgentState {
                         status: current_status_name,
+                        full_status: agent.status.clone(),
                         reason,
                         agent_type: agent.agent_type.short_name().to_string(),
                         committed_at_ms: ts,
@@ -857,6 +861,7 @@ impl Poller {
                             agent.target.clone(),
                             CommittedAgentState {
                                 status: current_status_name.clone(),
+                                full_status: agent.status.clone(),
                                 reason: pending.new_reason,
                                 agent_type: agent.agent_type.short_name().to_string(),
                                 committed_at_ms: ts,
@@ -865,16 +870,7 @@ impl Poller {
                     } else {
                         // Still within debounce window - override agent status for UI stability
                         if let Some(committed) = self.previous_statuses.get(&agent.target) {
-                            agent.status = match committed.status.as_str() {
-                                "idle" => AgentStatus::Idle,
-                                "processing" => AgentStatus::Processing {
-                                    activity: String::new(),
-                                },
-                                "error" => AgentStatus::Error {
-                                    message: String::new(),
-                                },
-                                _ => agent.status.clone(),
-                            };
+                            agent.status = committed.full_status.clone();
                         }
                     }
                 } else {
