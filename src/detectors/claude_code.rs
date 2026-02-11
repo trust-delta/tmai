@@ -303,8 +303,11 @@ impl ClaudeCodeDetector {
     }
 
     /// Detect "Do you want to proceed?" style approval (1. Yes / 2. Yes, don't ask / 3. No)
-    fn detect_proceed_prompt(content: &str) -> bool {
-        // Filter out empty lines and take last 15 non-empty lines
+    ///
+    /// Returns extracted choices when found. This allows number key navigation
+    /// even when the cursor marker (❯) is not captured by tmux capture-pane.
+    fn detect_proceed_prompt(content: &str) -> Option<Vec<String>> {
+        // Filter out empty lines and take last 15 non-empty lines (in original order)
         let check_lines: Vec<&str> = content
             .lines()
             .filter(|line| !line.trim().is_empty())
@@ -312,6 +315,9 @@ impl ClaudeCodeDetector {
             .into_iter()
             .rev()
             .take(15)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
             .collect();
 
         let mut has_yes = false;
@@ -329,7 +335,53 @@ impl ClaudeCodeDetector {
             }
         }
 
-        has_yes && has_no
+        if !(has_yes && has_no) {
+            return None;
+        }
+
+        // Extract numbered choices
+        let mut choices = Vec::new();
+        for line in &check_lines {
+            let clean = line
+                .trim()
+                .trim_start_matches('❯')
+                .trim_start_matches('>')
+                .trim();
+            if let Some(dot_pos) = clean.find(". ") {
+                if let Ok(num) = clean[..dot_pos].trim().parse::<usize>() {
+                    if num == choices.len() + 1 {
+                        let choice_text = clean[dot_pos + 2..].trim();
+                        let label = choice_text
+                            .split('（')
+                            .next()
+                            .unwrap_or(choice_text)
+                            .trim()
+                            .to_string();
+                        choices.push(label);
+                    }
+                }
+            }
+        }
+
+        if choices.len() >= 2 {
+            Some(choices)
+        } else {
+            None
+        }
+    }
+
+    /// Extract question text from content (e.g., "Do you want to proceed?")
+    fn extract_question_text(content: &str) -> String {
+        content
+            .lines()
+            .rev()
+            .take(20)
+            .find(|line| {
+                let t = line.trim();
+                !t.is_empty() && (t.ends_with('?') || t.ends_with('？'))
+            })
+            .map(|l| l.trim().to_string())
+            .unwrap_or_else(|| "Do you want to proceed?".to_string())
     }
 
     /// Detect Yes/No button-style approval
@@ -394,7 +446,8 @@ impl ClaudeCodeDetector {
         }
 
         // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
-        let has_proceed_prompt = Self::detect_proceed_prompt(content);
+        let proceed_choices = Self::detect_proceed_prompt(content);
+        let has_proceed_prompt = proceed_choices.is_some();
 
         // Check for button-style approval
         let has_yes_no_buttons = self.detect_yes_no_buttons(recent_lines);
@@ -408,10 +461,22 @@ impl ClaudeCodeDetector {
             return None;
         }
 
+        // If proceed_prompt extracted choices, return as UserQuestion for number key support
+        if let Some(choices) = proceed_choices {
+            let question = Self::extract_question_text(content);
+            return Some((
+                ApprovalType::UserQuestion {
+                    choices,
+                    multi_select: false,
+                    cursor_position: 1,
+                },
+                question,
+                "proceed_prompt",
+            ));
+        }
+
         // Determine which rule matched
-        let rule = if has_proceed_prompt {
-            "proceed_prompt"
-        } else if has_yes_no_buttons {
+        let rule = if has_yes_no_buttons {
             "yes_no_buttons"
         } else {
             "yes_no_text_pattern"
@@ -1181,6 +1246,66 @@ Line11\nLine12\nLine13\nLine14\nLine15\n\
             "Expected AwaitingApproval, got {:?}",
             status
         );
+    }
+
+    #[test]
+    fn test_proceed_prompt_without_cursor_returns_user_question() {
+        let detector = ClaudeCodeDetector::new();
+        // 3-choice approval WITHOUT cursor marker ❯
+        let content = r#"
+ Tool use
+
+   Bash("ls -la")
+
+ Do you want to proceed?
+   1. Yes
+   2. Yes, and don't ask again for Bash commands
+   3. No
+
+ Esc to cancel"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    cursor_position,
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                    assert!(!multi_select);
+                    assert_eq!(cursor_position, 1);
+                    assert!(choices[0].contains("Yes"));
+                    assert!(choices[2].contains("No"));
+                } else {
+                    panic!(
+                        "Expected UserQuestion for cursor-less proceed prompt, got {:?}",
+                        approval_type
+                    );
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_proceed_prompt_2_choice_without_cursor() {
+        let detector = ClaudeCodeDetector::new();
+        // Simple 2-choice without cursor
+        let content = r#" Do you want to proceed?
+   1. Yes
+   2. No"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+                    assert_eq!(choices.len(), 2, "Expected 2 choices, got {:?}", choices);
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
     }
 
     #[test]

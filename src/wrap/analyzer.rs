@@ -238,6 +238,20 @@ impl Analyzer {
             return;
         }
 
+        // Check for proceed-prompt style (numbered Yes/No without cursor)
+        if self.detect_proceed_prompt(content) {
+            if self.pending_approval.is_none()
+                || !matches!(
+                    self.pending_approval,
+                    Some((WrapApprovalType::UserQuestion, _))
+                )
+            {
+                self.pending_approval = Some((WrapApprovalType::UserQuestion, String::new()));
+                self.pending_approval_at = Some(Instant::now());
+            }
+            return;
+        }
+
         // Check for Yes/No buttons
         if self.detect_yes_no_approval(content) {
             let approval_type = self.determine_approval_type(content);
@@ -308,6 +322,34 @@ impl Analyzer {
 
         // Need at least 2 choices with cursor marker
         consecutive_choices >= 2 && has_cursor
+    }
+
+    /// Detect proceed-prompt style approval (numbered Yes/No without cursor marker)
+    ///
+    /// Catches cases where `detect_user_question` misses due to missing ❯ cursor,
+    /// allowing number key navigation for 3-choice approvals like:
+    ///   1. Yes
+    ///   2. Yes, and don't ask again for ...
+    ///   3. No
+    fn detect_proceed_prompt(&self, content: &str) -> bool {
+        let lines: Vec<&str> = content.lines().collect();
+        let check_start = lines.len().saturating_sub(15);
+        let check_lines = &lines[check_start..];
+
+        let mut has_yes = false;
+        let mut has_no = false;
+
+        for line in check_lines {
+            let trimmed = line.trim();
+            if trimmed.contains("1.") && trimmed.contains("Yes") {
+                has_yes = true;
+            }
+            if (trimmed.contains("2. No") || trimmed.contains("3. No")) && trimmed.len() < 20 {
+                has_no = true;
+            }
+        }
+
+        has_yes && has_no
     }
 
     /// Detect Yes/No button-style approval

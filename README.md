@@ -81,7 +81,10 @@ scan_interval = 5
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate agents |
-| `1-9` / `１-９` | Select option (AskUserQuestion) |
+| `y` | Approve / select Yes |
+| `n` | Select No (UserQuestion) |
+| `1-9` / `１-９` | Select option by number |
+| `Space` | Toggle (multi-select) |
 | `i` | Enter input mode |
 | `→` | Enter passthrough mode |
 | `t` | Task overlay (team member selected) |

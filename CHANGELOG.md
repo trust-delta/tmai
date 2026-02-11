@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8]
+
+### Added
+- **`n` key for No selection**: Select "No" choice in AskUserQuestion dialogs (word-boundary matching for accuracy)
+- **Number key support for proceed-prompt approvals**: 3-choice approvals (1. Yes / 2. Yes, don't ask / 3. No) now support number key navigation even without cursor marker (`❯`)
+- **Checkbox format support** (Claude Code v2.1.39): Multi-select detection for `[ ]` / `[x]` / `[✔]` checkbox format
+  - Enter to toggle checkboxes, Right+Enter to submit (replaces Space toggle / Down×N+Enter)
+  - Japanese keyword detection (`複数選択`, `enter to select`)
+- IPC activity enrichment with screen content context for better state detection
+
+### Changed
+- AskUserQuestion selection uses arrow key navigation instead of literal number key sending
+- `o` key removed (use `Space` on "Type something" choice or input mode `i` instead)
+- SelectionPopup overlay removed in favor of direct number key navigation
+- Multi-select number keys navigate only (no auto-toggle); use `Space` to toggle
+
+### Fixed
+- AskUserQuestion detection failure due to tmux trailing empty lines padding
+- Approval override: screen-based approval check on all non-Approval IPC states
+- Prevent entering passthrough/input mode without an agent selected
+- Window name set to agent command when creating new windows/panes
+- Audit log quality: debounce, content spinner verb fix, IPC override timing
+
 ## [0.2.7]
 
 ### Changed

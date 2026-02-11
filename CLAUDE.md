@@ -117,17 +117,20 @@ cargo build --release  # リリースビルド
 | Codex CLI | `codex` コマンド | `y` (Enter送信) |
 | Gemini CLI | `gemini` コマンド | `y` (Enter送信) |
 
-> **Note**: 拒否や他の選択は数字キー、入力モード(`i`)、パススルーモード(`p`)を使用
+> **Note**: `n`キーでNo選択（UserQuestion）、他の選択は数字キー、入力モード(`i`)、パススルーモード(`p`)を使用
 
 ## キーバインド
 
 | キー | 動作 |
 |------|------|
 | j/k, ↓/↑ | ナビゲーション |
-| i | 入力モード |
-| p / → | パススルーモード（直接キー入力） |
+| y | 承認 / Yesを選択 |
+| n | Noを選択（UserQuestionのみ） |
 | 1-9 / １-９ | AskUserQuestion選択（全角対応） |
 | Space | 複数選択トグル |
+| Enter | 複数選択確定 |
+| i | 入力モード |
+| p / → | パススルーモード（直接キー入力） |
 | f | ペインにフォーカス |
 | x | ペインを終了（確認あり） |
 | Tab | ビューモード切り替え (Split/List/Preview) |
@@ -138,7 +141,6 @@ cargo build --release  # リリースビルド
 | T | チーム一覧画面 |
 | g | 先頭へ移動 |
 | G | 末尾へ移動 |
-| o | AskUserQuestion「その他」入力 |
 | r | Web Remote ControlのQRコード表示 |
 | h / ? | ヘルプ |
 | q / Esc | 終了 |
@@ -146,9 +148,10 @@ cargo build --release  # リリースビルド
 
 ## Claude Code検出器の設計
 
-**検出優先度（3段階）：**
+**検出優先度（4段階）：**
 1. **Approval検出**（最高優先度）
-   - AskUserQuestion（番号付き選択肢）
+   - AskUserQuestion（番号付き選択肢 + カーソルマーカー）
+   - Proceed-prompt（番号付きYes/No、カーソルなしフォールバック）
    - Yes/No ボタン形式（4行以内proximity check）
    - `[y/n]` パターン
 2. **Error検出**

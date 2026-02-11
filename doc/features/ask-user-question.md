@@ -31,6 +31,8 @@ Just press `1`, `2`, or `3`.
 |-----|--------|
 | `1-9` | Select option by number |
 | `１-９` | Full-width numbers also work |
+| `y` | Select Yes |
+| `n` | Select No |
 | `Space` | Toggle selection (multi-select mode) |
 | `Enter` | Confirm multi-select |
 
@@ -73,15 +75,17 @@ tmai detects AskUserQuestion patterns:
 
 - Numbered options (`1.`, `2.`, etc.)
 - Selection cursor (`❯` or `>`)
-- Multi-select checkboxes (`[ ]`, `[x]`)
+- Multi-select checkboxes (`[ ]`, `[x]`, `[✔]`)
+- Proceed-prompt style (1. Yes / 2. ... / 3. No) even without cursor marker
 
 ### Detection Priority
 
 1. **AskUserQuestion** (highest) - Numbered options with cursor
-2. **Yes/No approval** - Button-style confirmation
-3. **`[y/n]` pattern** - Simple confirmation
-4. **Error detection**
-5. **Title-based detection** (lowest) - Spinner/idle indicators
+2. **Proceed-prompt** - Numbered Yes/No choices (cursor-less fallback)
+3. **Yes/No approval** - Button-style confirmation
+4. **`[y/n]` pattern** - Simple confirmation
+5. **Error detection**
+6. **Title-based detection** (lowest) - Spinner/idle indicators
 
 ## Status Display
 
