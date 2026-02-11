@@ -231,6 +231,21 @@ pub struct SelectRequest {
     pub choice: usize,
 }
 
+/// Submit multi-select request body
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    #[serde(default)]
+    pub selected_choices: Vec<usize>,
+}
+
+/// Check if choices use checkbox format ([ ], [x], [X], [✔])
+fn has_checkbox_format(choices: &[String]) -> bool {
+    choices.iter().any(|c| {
+        let t = c.trim();
+        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
+    })
+}
+
 /// Approve an agent action (send 'y')
 pub async fn approve_agent(
     State(state): State<Arc<ApiState>>,
@@ -306,12 +321,12 @@ pub async fn select_choice(
                     ApprovalType::UserQuestion {
                         choices,
                         multi_select,
-                        ..
+                        cursor_position,
                     },
                 ..
             } = &agent.status
             {
-                Some((choices.len(), *multi_select))
+                Some((choices.clone(), *multi_select, *cursor_position))
             } else {
                 None
             }
@@ -319,21 +334,25 @@ pub async fn select_choice(
     };
 
     match question_info {
-        Some((count, multi_select)) if req.choice >= 1 && req.choice <= count + 1 => {
-            // Send the number key
-            if state
-                .command_sender
-                .send_keys_literal(&id, &req.choice.to_string())
-                .is_err()
-            {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send selection",
-                ));
+        Some((choices, multi_select, cursor_pos))
+            if req.choice >= 1 && req.choice <= choices.len() + 1 =>
+        {
+            let cursor = if cursor_pos == 0 { 1 } else { cursor_pos };
+            let steps = req.choice as i32 - cursor as i32;
+            let key = if steps > 0 { "Down" } else { "Up" };
+            for _ in 0..steps.unsigned_abs() {
+                if state.command_sender.send_keys(&id, key).is_err() {
+                    return Err(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to navigate",
+                    ));
+                }
             }
 
-            // For single select, confirm with Enter
-            if !multi_select && state.command_sender.send_keys(&id, "Enter").is_err() {
+            // Confirm: single-select always, multi-select only for checkbox toggle
+            if (!multi_select || has_checkbox_format(&choices))
+                && state.command_sender.send_keys(&id, "Enter").is_err()
+            {
                 return Err(json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to confirm selection",
@@ -354,6 +373,7 @@ pub async fn select_choice(
 pub async fn submit_selection(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
+    body: Option<Json<SubmitRequest>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     tracing::info!("API: submit agent_id={}", id);
     let multi_info = {
@@ -369,7 +389,7 @@ pub async fn submit_selection(
                 ..
             } = &agent.status
             {
-                Some((choices.len(), *cursor_position))
+                Some((choices.clone(), *cursor_position))
             } else {
                 None
             }
@@ -377,22 +397,66 @@ pub async fn submit_selection(
     };
 
     match multi_info {
-        Some((choice_count, cursor_pos)) => {
-            // Navigate to Submit button
-            let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
-            for _ in 0..downs_needed {
-                if state.command_sender.send_keys(&id, "Down").is_err() {
+        Some((choices, cursor_pos)) => {
+            let is_checkbox = has_checkbox_format(&choices);
+            let selected = body.map(|b| b.0.selected_choices).unwrap_or_default();
+
+            if is_checkbox && !selected.is_empty() {
+                // Checkbox format: toggle each selected choice then submit
+                let mut sorted = selected.clone();
+                sorted.sort();
+                let mut current_pos = if cursor_pos == 0 { 1 } else { cursor_pos };
+
+                for &choice in &sorted {
+                    let steps = choice as i32 - current_pos as i32;
+                    let key = if steps > 0 { "Down" } else { "Up" };
+                    for _ in 0..steps.unsigned_abs() {
+                        if state.command_sender.send_keys(&id, key).is_err() {
+                            return Err(json_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Failed to navigate",
+                            ));
+                        }
+                    }
+                    // Enter to toggle checkbox
+                    if state.command_sender.send_keys(&id, "Enter").is_err() {
+                        return Err(json_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to toggle",
+                        ));
+                    }
+                    current_pos = choice;
+                }
+                // Right + Enter to submit
+                if state.command_sender.send_keys(&id, "Right").is_err() {
                     return Err(json_error(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to navigate",
+                        "Failed to submit",
                     ));
                 }
-            }
-            if state.command_sender.send_keys(&id, "Enter").is_err() {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to submit",
-                ));
+                if state.command_sender.send_keys(&id, "Enter").is_err() {
+                    return Err(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to submit",
+                    ));
+                }
+            } else {
+                // Legacy format: Down × N + Enter
+                let downs_needed = choices.len().saturating_sub(cursor_pos.saturating_sub(1));
+                for _ in 0..downs_needed {
+                    if state.command_sender.send_keys(&id, "Down").is_err() {
+                        return Err(json_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to navigate",
+                        ));
+                    }
+                }
+                if state.command_sender.send_keys(&id, "Enter").is_err() {
+                    return Err(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to submit",
+                    ));
+                }
             }
             Ok(Json(serde_json::json!({"status": "ok"})))
         }

@@ -112,7 +112,7 @@ impl HelpScreen {
             Self::description_line("  Multi-select: toggles the option on/off"),
             Self::key_line("Space", "Toggle current option (multi-select mode)"),
             Self::key_line("Enter", "Confirm selection (multi-select mode)"),
-            Self::key_line("o", "Enter 'Other' input mode for custom response"),
+            Self::description_line("  On 'Type something': opens input mode"),
             Line::from(""),
             Self::section_header("Input Mode"),
             Self::key_line("i", "Enter input mode to type text"),

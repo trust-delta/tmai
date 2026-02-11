@@ -135,6 +135,33 @@ impl ClaudeCodeDetector {
             }
         }
 
+        // [ ] checkbox format detection
+        if !is_multi_select {
+            for line in check_lines.iter() {
+                if let Some(cap) = self.choice_pattern.captures(line) {
+                    let choice_text = cap[2].trim();
+                    if choice_text.starts_with("[ ]")
+                        || choice_text.starts_with("[x]")
+                        || choice_text.starts_with("[X]")
+                        || choice_text.starts_with("[✔]")
+                    {
+                        is_multi_select = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !is_multi_select {
+            for line in check_lines.iter() {
+                let lower = line.to_lowercase();
+                if lower.contains("複数選択") || lower.contains("enter to select") {
+                    is_multi_select = true;
+                    break;
+                }
+            }
+        }
+
         // Store all found choice sets, keep the last valid one
         let mut best_choices: Vec<String> = Vec::new();
         let mut best_first_idx: Option<usize> = None;

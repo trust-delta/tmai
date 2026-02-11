@@ -19,6 +19,8 @@ pub enum KeyAction {
     SendKeysLiteral { target: String, keys: String },
     /// Send multiple Down keys followed by Enter (for multi-select submit)
     MultiSelectSubmit { target: String, downs_needed: usize },
+    /// Tab-based submit for checkbox format (Right + Enter)
+    MultiSelectSubmitTab { target: String },
     /// Navigate selection with arrow keys, optionally confirming with Enter
     NavigateSelection {
         target: String,
@@ -131,7 +133,7 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
             enter_input_mode: true,
         }
     } else if multi_select {
-        // Multi-select: navigate only (Space toggle handled separately)
+        // Multi-select: navigate only (toggle is done via Space key)
         NumberSelectionResult {
             action: KeyAction::NavigateSelection {
                 target,
@@ -154,33 +156,78 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
 }
 
 /// Resolve space key for multi-select toggle
-pub fn resolve_space_toggle(state: &AppState) -> KeyAction {
+///
+/// Returns action + whether to enter input mode (for "Type something" / Other).
+pub fn resolve_space_toggle(state: &AppState) -> NumberSelectionResult {
+    let noop = NumberSelectionResult {
+        action: KeyAction::None,
+        enter_input_mode: false,
+    };
+
     let Some(target) = state.selected_target() else {
-        return KeyAction::None;
+        return noop;
     };
     let target = target.to_string();
 
-    let is_multi_select = state.agents.get(&target).is_some_and(|agent| {
-        !agent.is_virtual
-            && matches!(
-                &agent.status,
-                AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::UserQuestion {
-                        multi_select: true,
-                        ..
-                    },
-                    ..
-                }
-            )
+    let question_info = state.agents.get(&target).and_then(|agent| {
+        if agent.is_virtual {
+            return None;
+        }
+        if let AgentStatus::AwaitingApproval {
+            approval_type:
+                ApprovalType::UserQuestion {
+                    choices,
+                    multi_select: true,
+                    cursor_position,
+                },
+            ..
+        } = &agent.status
+        {
+            Some((choices.clone(), *cursor_position))
+        } else {
+            None
+        }
     });
 
-    if is_multi_select {
-        KeyAction::SendKeys {
-            target,
-            keys: "Space".to_string(),
-        }
+    let Some((choices, cursor_position)) = question_info else {
+        return noop;
+    };
+
+    let cursor = if cursor_position == 0 {
+        1
     } else {
-        KeyAction::None
+        cursor_position
+    };
+
+    // Cursor beyond choices = "Other" option, or on "Type something"
+    let is_text_input = cursor > choices.len()
+        || choices
+            .get(cursor - 1)
+            .is_some_and(|c| c.to_lowercase().contains("type something"));
+
+    if is_text_input {
+        // Select the text-input option (Enter) and switch to input mode
+        return NumberSelectionResult {
+            action: KeyAction::SendKeys {
+                target,
+                keys: "Enter".to_string(),
+            },
+            enter_input_mode: true,
+        };
+    }
+
+    // Checkbox format uses Enter to toggle, legacy uses Space
+    let key = if has_checkbox_format(&choices) {
+        "Enter"
+    } else {
+        "Space"
+    };
+    NumberSelectionResult {
+        action: KeyAction::SendKeys {
+            target,
+            keys: key.to_string(),
+        },
+        enter_input_mode: false,
     }
 }
 
@@ -305,10 +352,33 @@ pub fn resolve_enter_submit(state: &AppState) -> KeyAction {
 
     match multi_info {
         Some((choice_count, cursor_pos)) => {
-            let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
-            KeyAction::MultiSelectSubmit {
-                target,
-                downs_needed,
+            // Check if checkbox format
+            let is_checkbox = state
+                .agents
+                .get(&target)
+                .and_then(|agent| {
+                    if let AgentStatus::AwaitingApproval {
+                        approval_type: ApprovalType::UserQuestion { choices, .. },
+                        ..
+                    } = &agent.status
+                    {
+                        Some(has_checkbox_format(choices))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(false);
+
+            if is_checkbox {
+                // Checkbox format: Right + Enter to submit
+                KeyAction::MultiSelectSubmitTab { target }
+            } else {
+                // Legacy format: Down × N + Enter
+                let downs_needed = choice_count.saturating_sub(cursor_pos.saturating_sub(1));
+                KeyAction::MultiSelectSubmit {
+                    target,
+                    downs_needed,
+                }
             }
         }
         None => {
@@ -331,6 +401,14 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
         }
     }
     KeyAction::None
+}
+
+/// Check if choices use checkbox format ([ ], [x], [X], [✔])
+fn has_checkbox_format(choices: &[String]) -> bool {
+    choices.iter().any(|c| {
+        let t = c.trim();
+        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
+    })
 }
 
 /// Check if a choice starts with the given word (case-insensitive, word-boundary aware).

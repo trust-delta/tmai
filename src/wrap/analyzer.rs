@@ -417,6 +417,33 @@ impl Analyzer {
             }
         }
 
+        // [ ] checkbox format detection
+        if !multi_select {
+            for line in check_lines {
+                if let Some(cap) = self.patterns.choice_pattern.captures(line) {
+                    let choice_text = cap[2].trim();
+                    if choice_text.starts_with("[ ]")
+                        || choice_text.starts_with("[x]")
+                        || choice_text.starts_with("[X]")
+                        || choice_text.starts_with("[✔]")
+                    {
+                        multi_select = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !multi_select {
+            for line in check_lines {
+                let lower = line.to_lowercase();
+                if lower.contains("複数選択") || lower.contains("enter to select") {
+                    multi_select = true;
+                    break;
+                }
+            }
+        }
+
         // Extract choices
         for line in check_lines {
             if let Some(cap) = self.patterns.choice_pattern.captures(line) {

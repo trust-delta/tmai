@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::AgentType;
 use crate::audit::helper::AuditHelper;
 use crate::audit::{AuditEvent, AuditEventSender};
 use crate::command_sender::CommandSender;
@@ -22,7 +22,7 @@ use super::key_handler::{self, KeyAction};
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    QrScreen, SelectionPopup, SessionList, StatusBar, TaskOverlay, TeamOverview,
+    QrScreen, SessionList, StatusBar, TaskOverlay, TeamOverview,
 };
 use super::Layout;
 
@@ -199,22 +199,6 @@ impl App {
                     self.layout.split_direction(),
                 );
 
-                // Selection popup for AskUserQuestion (only show in input mode)
-                if state.is_input_mode() {
-                    if let Some(agent) = state.selected_agent() {
-                        if let AgentStatus::AwaitingApproval {
-                            approval_type,
-                            details,
-                        } = &agent.status
-                        {
-                            if SelectionPopup::should_show(approval_type) {
-                                let popup_area = self.layout.popup_area(frame.area(), 50, 50);
-                                SelectionPopup::render(frame, popup_area, approval_type, details);
-                            }
-                        }
-                    }
-                }
-
                 // Create process popup
                 if state.is_create_process_mode() {
                     let popup_area = self.layout.popup_area(frame.area(), 50, 50);
@@ -361,11 +345,14 @@ impl App {
 
             // Space key for toggle in multi-select UserQuestion
             KeyCode::Char(' ') => {
-                let action = {
+                let result = {
                     let state = self.state.read();
                     key_handler::resolve_space_toggle(&state)
                 };
-                self.execute_key_action(action)?;
+                self.execute_key_action(result.action)?;
+                if result.enter_input_mode {
+                    self.state.write().enter_input_mode();
+                }
             }
 
             // Approval key (y) / Rejection key (n)
@@ -438,25 +425,8 @@ impl App {
                 }
             }
 
-            // "Other" input for AskUserQuestion (skip for virtual agents)
-            KeyCode::Char('o') => {
-                let mut state = self.state.write();
-                if let Some(target) = state.selected_target() {
-                    let is_user_question = state.agents.get(target).is_some_and(|agent| {
-                        !agent.is_virtual
-                            && matches!(
-                                &agent.status,
-                                AgentStatus::AwaitingApproval {
-                                    approval_type: ApprovalType::UserQuestion { .. },
-                                    ..
-                                }
-                            )
-                    });
-                    if is_user_question {
-                        state.enter_input_mode();
-                    }
-                }
-            }
+            // Note: 'o' key for "Other" input removed — use input mode ('i') or
+            // Space on "Type something" to enter text input instead.
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => self.state.write().select_next(),
@@ -559,6 +529,10 @@ impl App {
                 for _ in 0..downs_needed {
                     let _ = self.command_sender.send_keys(&target, "Down");
                 }
+                let _ = self.command_sender.send_keys(&target, "Enter");
+            }
+            KeyAction::MultiSelectSubmitTab { target } => {
+                let _ = self.command_sender.send_keys(&target, "Right");
                 let _ = self.command_sender.send_keys(&target, "Enter");
             }
             KeyAction::NavigateSelection {
