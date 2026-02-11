@@ -299,9 +299,9 @@ impl Poller {
                     // Convert WrapState to AgentStatus
                     let status = wrap_state_to_agent_status(ws);
 
-                    // P1: IPC Approval lag correction — when IPC reports Processing,
+                    // P1: IPC Approval lag correction — when IPC reports non-Approval,
                     // check screen content for High-confidence Approval patterns
-                    if matches!(status, AgentStatus::Processing { .. }) {
+                    if !matches!(status, AgentStatus::AwaitingApproval { .. }) {
                         let plain = self
                             .client
                             .capture_pane_plain(&pane.target)
