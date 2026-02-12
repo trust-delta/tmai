@@ -5,6 +5,31 @@ use serde::{Deserialize, Serialize};
 use crate::detectors::DetectionReason;
 use crate::teams::TaskStatus;
 
+/// Claude Code permission mode detected from title icon
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentMode {
+    /// Default mode - normal permissions
+    #[default]
+    Default,
+    /// ⏸ Plan mode - read-only exploration, no tool execution
+    Plan,
+    /// ⇢ Delegate mode
+    Delegate,
+    /// ⏵⏵ Auto-approve mode (acceptEdits / bypassPermissions / dontAsk)
+    AutoApprove,
+}
+
+impl fmt::Display for AgentMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentMode::Default => write!(f, ""),
+            AgentMode::Plan => write!(f, "\u{23F8} Plan"),
+            AgentMode::Delegate => write!(f, "\u{21E2} Delegate"),
+            AgentMode::AutoApprove => write!(f, "\u{23F5}\u{23F5} Auto"),
+        }
+    }
+}
+
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
@@ -442,6 +467,8 @@ pub struct MonitoredAgent {
     pub is_virtual: bool,
     /// Detection reason from the last status detection
     pub detection_reason: Option<DetectionReason>,
+    /// Permission mode (Plan, Delegate, AutoApprove, etc.)
+    pub mode: AgentMode,
 }
 
 impl MonitoredAgent {
@@ -479,6 +506,7 @@ impl MonitoredAgent {
             team_info: None,
             is_virtual: false,
             detection_reason: None,
+            mode: AgentMode::Default,
         }
     }
 

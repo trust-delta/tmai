@@ -7,7 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::agents::{AgentStatus, MonitoredAgent};
+use crate::agents::{AgentMode, AgentStatus, MonitoredAgent};
 use crate::state::{AppState, SortBy};
 use crate::ui::SplitDirection;
 
@@ -488,6 +488,14 @@ impl SessionList {
             Style::default().fg(status_color),
         ));
 
+        // 5) Mode icon (Plan/Delegate/AutoApprove)
+        if agent.mode != AgentMode::Default {
+            line1_spans.push(Span::styled(
+                format!("  {}", agent.mode),
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+
         let line1 = Line::from(line1_spans);
 
         // Line 2: title + other meta (detection icon, pid, window/pane)
@@ -705,6 +713,14 @@ impl SessionList {
                 Style::default().fg(Color::White).bg(bg_color),
             ),
         ]);
+
+        // Add mode icon if not default
+        if agent.mode != AgentMode::Default {
+            spans.push(Span::styled(
+                format!(" {}", agent.mode),
+                Style::default().fg(Color::Cyan).bg(bg_color),
+            ));
+        }
 
         // Add team badge if agent is part of a team
         if let Some(ref team_info) = agent.team_info {

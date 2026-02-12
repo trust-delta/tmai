@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9]
+
+### Added
+- **Permission mode detection**: Detect Claude Code permission mode from title icons
+  - ⏸ Plan mode, ⇢ Delegate mode, ⏵⏵ Auto-approve (acceptEdits/bypassPermissions/dontAsk)
+  - New `AgentMode` enum with Display impl showing mode icon + label
+  - Displayed in TUI session list (after status label) and Web API (`mode` field)
+- **Content spinner `✳` support**: macOS/Ghostty uses ✳ as content spinner character
+  - Same char as idle indicator in title, but content spinner detection requires uppercase verb + ellipsis, preventing false positives
+- **Windows checkbox `[×]` support**: Multi-select detection for `[×]` checkbox format (Windows/fallback)
+
+### Changed
+- Processing spinner constants reorganized with documentation clarifying Claude Code actual spinners (⠂/⠐ only, 960ms interval) vs legacy compatibility chars
+
 ## [0.2.8]
 
 ### Added

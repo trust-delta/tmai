@@ -13,6 +13,7 @@ AIエージェントのターミナル監視ツールとして、以下の機能
 - **Web Remote Control**: スマホからQRコード経由で承認操作が可能
 - **検出ソース表示**: PTY検出（高精度）かcapture-pane検出かをステータスバーに表示
 - **Agent Teams対応**: Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
+- **モード検出**: Plan/Delegate/AutoApproveモードをタイトルアイコンから自動検出・表示
 - **検出監査ログ**: 判定理由付きndjsonログで検出精度を検証可能（`--audit` フラグで有効化）
 
 ## ディレクトリ構成
@@ -159,9 +160,20 @@ cargo build --release  # リリースビルド
    - `✳` = Idle
    - Braille spinners = Processing
 
+**モード検出（タイトルアイコン）：**
+
+| アイコン | モード | 説明 |
+|---------|--------|------|
+| ⏸ | Plan | 読み取り専用、ツール実行なし |
+| ⇢ | Delegate | 委任モード |
+| ⏵⏵ | AutoApprove | acceptEdits/bypassPermissions/dontAsk |
+| (なし) | Default | 通常モード |
+
 **検出精度の工夫：**
 - `❯` 単独行は選択カーソルとして認識（入力プロンプトと誤認識しない）
 - Yes/No検出は行距離チェック付き（無関係な箇所を誤検出しない）
+- チェックボックス: `[ ]`, `[x]`, `[X]`, `[×]`, `[✔]` に対応（Windows/macOS/Linux）
+- コンテンツスピナー: `✳` を含む全文字に対応（macOS/Ghostty互換）
 
 ## Web Remote Control（スマホ連携）
 
@@ -441,7 +453,7 @@ cargo run -- --audit --debug   # debug併用推奨
 | `error_pattern` | High | エラー検出 |
 | `tasks_in_progress` | High | Tasks一覧のin-progress |
 | `title_idle_indicator` | High | タイトルの ✳ |
-| `content_spinner_verb` | Medium | コンテンツ内spinner（✶/✻/✽/* + 動詞 + …） |
+| `content_spinner_verb` | Medium | コンテンツ内spinner（✶/✻/✽/✳/* + 動詞 + …） |
 | `braille_spinner` | Medium | Brailleスピナー |
 | `custom_spinner_verb` | Medium | カスタムspinnerVerbs |
 | `fallback_no_indicator` | Low | 判定根拠なし |
