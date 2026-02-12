@@ -804,6 +804,7 @@ impl Poller {
                     None
                 };
 
+                let (approval_type, approval_details) = extract_approval_info(&agent.status);
                 self.audit_logger.log(&AuditEvent::StateChanged {
                     ts,
                     pane_id: agent.target.clone(),
@@ -814,6 +815,8 @@ impl Poller {
                     reason: reason.clone(),
                     screen_context,
                     prev_state_duration_ms: prev_duration,
+                    approval_type,
+                    approval_details,
                 });
                 self.previous_statuses.insert(
                     agent.target.clone(),
@@ -846,6 +849,8 @@ impl Poller {
                             None
                         };
 
+                        let (approval_type, approval_details) =
+                            extract_approval_info(&agent.status);
                         self.audit_logger.log(&AuditEvent::StateChanged {
                             ts,
                             pane_id: agent.target.clone(),
@@ -856,6 +861,8 @@ impl Poller {
                             reason: pending.new_reason.clone(),
                             screen_context,
                             prev_state_duration_ms: prev_duration,
+                            approval_type,
+                            approval_details,
                         });
                         self.previous_statuses.insert(
                             agent.target.clone(),
@@ -1026,6 +1033,33 @@ fn create_virtual_agent(
     agent.is_virtual = true;
     agent.team_info = Some(team_info);
     agent
+}
+
+/// Extract approval_type and approval_details from an AgentStatus for audit logging
+fn extract_approval_info(status: &AgentStatus) -> (Option<String>, Option<String>) {
+    if let AgentStatus::AwaitingApproval {
+        approval_type,
+        details,
+    } = status
+    {
+        let type_str = match approval_type {
+            ApprovalType::FileEdit => "file_edit".to_string(),
+            ApprovalType::FileCreate => "file_create".to_string(),
+            ApprovalType::FileDelete => "file_delete".to_string(),
+            ApprovalType::ShellCommand => "shell_command".to_string(),
+            ApprovalType::McpTool => "mcp_tool".to_string(),
+            ApprovalType::UserQuestion { .. } => "user_question".to_string(),
+            ApprovalType::Other(s) => format!("other:{}", s),
+        };
+        let details_opt = if details.is_empty() {
+            None
+        } else {
+            Some(details.clone())
+        };
+        (Some(type_str), details_opt)
+    } else {
+        (None, None)
+    }
 }
 
 /// Get a short name for an AgentStatus variant

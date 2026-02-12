@@ -198,6 +198,8 @@ mod tests {
             },
             screen_context: None,
             prev_state_duration_ms: None,
+            approval_type: None,
+            approval_details: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -205,5 +207,34 @@ mod tests {
         assert_eq!(parsed["event"], "StateChanged");
         assert_eq!(parsed["reason"]["rule"], "braille_spinner");
         assert_eq!(parsed["reason"]["confidence"], "Medium");
+        // approval_type/approval_details should be absent (skip_serializing_if)
+        assert!(parsed.get("approval_type").is_none());
+        assert!(parsed.get("approval_details").is_none());
+    }
+
+    #[test]
+    fn test_state_changed_with_approval_info() {
+        let event = AuditEvent::StateChanged {
+            ts: 1234567890,
+            pane_id: "5".to_string(),
+            agent_type: "ClaudeCode".to_string(),
+            source: "capture_pane".to_string(),
+            prev_status: "idle".to_string(),
+            new_status: "awaiting_approval".to_string(),
+            reason: DetectionReason {
+                rule: "proceed_prompt".to_string(),
+                confidence: DetectionConfidence::High,
+                matched_text: None,
+            },
+            screen_context: None,
+            prev_state_duration_ms: Some(5000),
+            approval_type: Some("user_question".to_string()),
+            approval_details: Some("Do you want to proceed?".to_string()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["approval_type"], "user_question");
+        assert_eq!(parsed["approval_details"], "Do you want to proceed?");
     }
 }

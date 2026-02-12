@@ -10,6 +10,7 @@ const IDLE_INDICATOR: char = '✳';
 
 /// Processing spinner characters (Braille patterns) - used in title
 const PROCESSING_SPINNERS: &[char] = &[
+    '⠂', '⠐', // Actual Claude Code title spinner (2 frames, 960ms interval)
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
     '⠰', '◐', '◓', '◑', '◒',
 ];
@@ -621,20 +622,30 @@ impl ClaudeCodeDetector {
     /// This is critical for detecting processing when the title still shows ✳ (idle),
     /// e.g. during /compact or title update lag.
     fn detect_content_spinner(content: &str) -> Option<String> {
-        // If idle prompt ❯ is near the end, any spinner above is a past residual
-        let has_idle_prompt = content.lines().rev().take(5).any(|line| {
-            let trimmed = line.trim();
-            trimmed == "❯" || trimmed == "❯ "
-        });
+        // If idle prompt ❯ is near the end (last 5 non-empty lines), any spinner above is a past residual
+        let has_idle_prompt = content
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .take(5)
+            .any(|line| {
+                let trimmed = line.trim();
+                trimmed == "❯" || trimmed == "❯ "
+            });
         if has_idle_prompt {
             return None;
         }
 
-        for line in content.lines().rev().take(15) {
+        // Check last 15 non-empty lines (skip empty lines entirely).
+        // Claude Code TUI has status bar (3 lines) + separators + empty padding,
+        // so using raw line count can miss spinners beyond the window.
+        for line in content
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .take(15)
+        {
             let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
 
             let first_char = match trimmed.chars().next() {
                 Some(c) => c,
@@ -1527,6 +1538,96 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
         assert!(
             matches!(result.status, AgentStatus::Idle),
             "Expected Idle when ❯ prompt is present below old spinner, got {:?}",
+            result.status
+        );
+    }
+
+    #[test]
+    fn test_actual_title_spinner_chars() {
+        let detector = ClaudeCodeDetector::new();
+        // ⠂ (U+2802) and ⠐ (U+2810) are the actual Claude Code title spinner frames
+        for (spinner, label) in [('⠂', "U+2802"), ('⠐', "U+2810")] {
+            let title = format!("{} Working on task", spinner);
+            let result = detector.detect_status_with_reason(
+                &title,
+                "some content",
+                &DetectionContext::default(),
+            );
+            assert!(
+                matches!(result.status, AgentStatus::Processing { .. }),
+                "Expected Processing for {} ({}), got {:?}",
+                spinner,
+                label,
+                result.status
+            );
+            assert_eq!(
+                result.reason.rule, "braille_spinner",
+                "Expected braille_spinner rule for {} ({})",
+                spinner, label
+            );
+        }
+    }
+
+    #[test]
+    fn test_content_spinner_with_empty_line_padding() {
+        let detector = ClaudeCodeDetector::new();
+        // Spinner line followed by many empty lines (TUI padding)
+        let content = "Some output\n\n✶ Bootstrapping… (5s)\n\n\n\n\n\n\n\n\n\n\n\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing when spinner is followed by empty line padding, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+    }
+
+    #[test]
+    fn test_content_spinner_beyond_old_window() {
+        let detector = ClaudeCodeDetector::new();
+        // Spinner line with >15 lines after it (mix of empty and non-empty status bar lines)
+        // Previously the 15-line raw window would miss this spinner
+        let mut content = String::from("Some output\n\n✻ Levitating… (10s)\n");
+        // Add 10 empty lines + 3 status bar lines + 5 empty lines = 18 trailing lines
+        for _ in 0..10 {
+            content.push('\n');
+        }
+        content.push_str("───────────────────────\n");
+        content.push_str("  ctrl-g to edit\n");
+        content.push_str("  Status bar line\n");
+        for _ in 0..5 {
+            content.push('\n');
+        }
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            &content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing when spinner is beyond old 15-line window, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+    }
+
+    #[test]
+    fn test_idle_prompt_detection_with_empty_lines() {
+        let detector = ClaudeCodeDetector::new();
+        // ❯ prompt with empty lines after it should still be detected as idle
+        let content = "Some output\n\n✶ Spinning… (5s)\n\nMore output\n\n❯ \n\n\n\n\n\n\n\n\n\n\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle when ❯ prompt is present (even with empty line padding), got {:?}",
             result.status
         );
     }
