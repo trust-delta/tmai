@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::{AgentMode, AgentStatus, AgentType, ApprovalType};
 use crate::config::SpinnerVerbsMode;
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
@@ -8,18 +8,27 @@ use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetect
 /// Idle indicator - ✳ appears when Claude Code is waiting for input
 const IDLE_INDICATOR: char = '✳';
 
-/// Processing spinner characters (Braille patterns) - used in title
+/// Processing spinner characters used in terminal title
+///
+/// Claude Code uses only ⠂ (U+2802) and ⠐ (U+2810) as title spinners.
+/// The remaining Braille/circle patterns are kept for compatibility with
+/// other agents or future changes, but are not used by Claude Code v2.1.39.
 const PROCESSING_SPINNERS: &[char] = &[
-    '⠂', '⠐', // Actual Claude Code title spinner (2 frames, 960ms interval)
+    // Claude Code actual spinners (2 frames, 960ms interval)
+    '⠂', '⠐', // Legacy Braille patterns (kept for other agents / future compatibility)
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
-    '⠰', '◐', '◓', '◑', '◒',
+    '⠰', // Circle spinners
+    '◐', '◓', '◑', '◒',
 ];
 
 /// Content-area spinner characters (decorative asterisks used by Claude Code)
 /// These appear in content as "✶ Spinning…", "✻ Working…", "✢ Thinking…", etc.
 /// Claude Code animates through these characters, so all variants must be covered.
-/// The full rotation includes: ✶ ✻ ✽ ✢ · * (and possibly ✹ ✧)
-const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢', '·'];
+/// The full rotation includes: ✶ ✻ ✽ ✢ · * ✳ (and possibly ✹ ✧)
+/// Note: ✳ is also the IDLE_INDICATOR in title, but in content it appears as a
+/// spinner char (macOS/Ghostty). The detect_content_spinner() function requires
+/// uppercase verb + ellipsis after the char, so title-based idle detection is unaffected.
+const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢', '·', '✳'];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
@@ -144,6 +153,7 @@ impl ClaudeCodeDetector {
                     if choice_text.starts_with("[ ]")
                         || choice_text.starts_with("[x]")
                         || choice_text.starts_with("[X]")
+                        || choice_text.starts_with("[×]")
                         || choice_text.starts_with("[✔]")
                     {
                         is_multi_select = true;
@@ -673,6 +683,24 @@ impl ClaudeCodeDetector {
             }
         }
         None
+    }
+
+    /// Detect permission mode from title icon
+    ///
+    /// Claude Code displays mode icons in the terminal title:
+    /// - ⏸ (U+23F8) = Plan mode
+    /// - ⇢ (U+21E2) = Delegate mode
+    /// - ⏵⏵ (U+23F5 x2) = Auto-approve (acceptEdits/bypassPermissions/dontAsk)
+    pub fn detect_mode(title: &str) -> AgentMode {
+        if title.contains('\u{23F8}') {
+            AgentMode::Plan
+        } else if title.contains('\u{21E2}') {
+            AgentMode::Delegate
+        } else if title.contains("\u{23F5}\u{23F5}") {
+            AgentMode::AutoApprove
+        } else {
+            AgentMode::Default
+        }
     }
 
     /// Check if we should skip default Braille spinner detection
@@ -1629,6 +1657,100 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
             matches!(result.status, AgentStatus::Idle),
             "Expected Idle when ❯ prompt is present (even with empty line padding), got {:?}",
             result.status
+        );
+    }
+
+    #[test]
+    fn test_content_spinner_with_idle_indicator_char() {
+        let detector = ClaudeCodeDetector::new();
+        // ✳ used as content spinner on macOS/Ghostty (same char as IDLE_INDICATOR)
+        // Should be detected as Processing when used with uppercase verb + ellipsis
+        let content = "Some output\n\n✳ Ruminating… (3s)\n\nMore output\n";
+        let result = detector.detect_status_with_reason(
+            "⠂ Task name", // title shows processing spinner
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for ✳ content spinner, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+    }
+
+    #[test]
+    fn test_multi_select_windows_checkbox() {
+        let detector = ClaudeCodeDetector::new();
+        // Windows/fallback uses [×] for checked checkbox
+        let content = r#"
+Which items to include?
+
+❯ 1. [×] Feature A
+  2. [ ] Feature B
+  3. [×] Feature C
+  4. Type something.
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    ..
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
+                    assert!(multi_select, "Expected multi_select=true for [×] checkbox");
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_mode_detection_plan() {
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⏸ ✳ Claude Code"),
+            AgentMode::Plan
+        );
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⏸ ⠂ Working on task"),
+            AgentMode::Plan
+        );
+    }
+
+    #[test]
+    fn test_mode_detection_delegate() {
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⇢ ✳ Claude Code"),
+            AgentMode::Delegate
+        );
+    }
+
+    #[test]
+    fn test_mode_detection_auto_approve() {
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⏵⏵ ✳ Claude Code"),
+            AgentMode::AutoApprove
+        );
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⏵⏵ ⠐ Processing"),
+            AgentMode::AutoApprove
+        );
+    }
+
+    #[test]
+    fn test_mode_detection_default() {
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("✳ Claude Code"),
+            AgentMode::Default
+        );
+        assert_eq!(
+            ClaudeCodeDetector::detect_mode("⠂ Working"),
+            AgentMode::Default
         );
     }
 }

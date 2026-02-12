@@ -12,6 +12,7 @@ use crate::agents::{
 };
 use crate::audit::{AuditEvent, AuditLogger};
 use crate::config::{ClaudeSettingsCache, Settings};
+use crate::detectors::ClaudeCodeDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
@@ -385,6 +386,11 @@ impl Poller {
                 } else {
                     DetectionSource::CapturePane
                 };
+
+                // Detect permission mode from title (Claude Code only)
+                if matches!(agent.agent_type, AgentType::ClaudeCode) {
+                    agent.mode = ClaudeCodeDetector::detect_mode(&agent.title);
+                }
 
                 agents.push(agent);
             }

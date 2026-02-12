@@ -51,6 +51,8 @@ pub struct AgentInfo {
     pub needs_attention: bool,
     pub is_virtual: bool,
     pub team: Option<AgentTeamInfoResponse>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mode: String,
 }
 
 /// Team information associated with an agent for API response
@@ -199,6 +201,7 @@ fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoR
 ///
 /// Shared helper used by both the REST API and SSE events.
 pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentInfo {
+    let mode = agent.mode.to_string();
     AgentInfo {
         id: agent.id.clone(),
         agent_type: agent.agent_type.short_name().to_string(),
@@ -209,6 +212,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         needs_attention: agent.status.needs_attention(),
         is_virtual: agent.is_virtual,
         team: agent.team_info.as_ref().map(convert_team_info),
+        mode,
     }
 }
 
@@ -242,7 +246,11 @@ pub struct SubmitRequest {
 fn has_checkbox_format(choices: &[String]) -> bool {
     choices.iter().any(|c| {
         let t = c.trim();
-        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
+        t.starts_with("[ ]")
+            || t.starts_with("[x]")
+            || t.starts_with("[X]")
+            || t.starts_with("[×]")
+            || t.starts_with("[✔]")
     })
 }
 
