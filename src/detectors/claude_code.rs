@@ -21,6 +21,19 @@ const PROCESSING_SPINNERS: &[char] = &[
     '◐', '◓', '◑', '◒',
 ];
 
+/// Past-tense verbs used in turn duration display (e.g., "✻ Cooked for 1m 6s")
+/// These indicate a completed turn and should be detected as Idle.
+const TURN_DURATION_VERBS: &[&str] = &[
+    "Baked",
+    "Brewed",
+    "Churned",
+    "Cogitated",
+    "Cooked",
+    "Crunched",
+    "Sautéed",
+    "Worked",
+];
+
 /// Content-area spinner characters (decorative asterisks used by Claude Code)
 /// These appear in content as "✶ Spinning…", "✻ Working…", "✢ Thinking…", etc.
 /// Claude Code animates through these characters, so all variants must be covered.
@@ -29,6 +42,199 @@ const PROCESSING_SPINNERS: &[char] = &[
 /// spinner char (macOS/Ghostty). The detect_content_spinner() function requires
 /// uppercase verb + ellipsis after the char, so title-based idle detection is unaffected.
 const CONTENT_SPINNER_CHARS: &[char] = &['✶', '✻', '✽', '✹', '✧', '✢', '·', '✳'];
+
+/// Built-in spinner verbs used by Claude Code (v2.1.41, 185 verbs)
+///
+/// These are the default verbs that appear in content spinners like "✶ Spinning…".
+/// When a verb from this list is detected, confidence is elevated to High.
+/// Custom verbs from settings remain at Medium confidence.
+const BUILTIN_SPINNER_VERBS: &[&str] = &[
+    "Accomplishing",
+    "Actioning",
+    "Actualizing",
+    "Architecting",
+    "Baking",
+    "Beaming",
+    "Beboppin'",
+    "Befuddling",
+    "Billowing",
+    "Blanching",
+    "Bloviating",
+    "Boogieing",
+    "Boondoggling",
+    "Booping",
+    "Bootstrapping",
+    "Brewing",
+    "Burrowing",
+    "Calculating",
+    "Canoodling",
+    "Caramelizing",
+    "Cascading",
+    "Catapulting",
+    "Cerebrating",
+    "Channeling",
+    "Channelling",
+    "Choreographing",
+    "Churning",
+    "Clauding",
+    "Coalescing",
+    "Cogitating",
+    "Combobulating",
+    "Composing",
+    "Computing",
+    "Concocting",
+    "Considering",
+    "Contemplating",
+    "Cooking",
+    "Crafting",
+    "Creating",
+    "Crunching",
+    "Crystallizing",
+    "Cultivating",
+    "Deciphering",
+    "Deliberating",
+    "Determining",
+    "Dilly-dallying",
+    "Discombobulating",
+    "Doing",
+    "Doodling",
+    "Drizzling",
+    "Ebbing",
+    "Effecting",
+    "Elucidating",
+    "Embellishing",
+    "Enchanting",
+    "Envisioning",
+    "Evaporating",
+    "Fermenting",
+    "Fiddle-faddling",
+    "Finagling",
+    "Flambéing",
+    "Flibbertigibbeting",
+    "Flowing",
+    "Flummoxing",
+    "Fluttering",
+    "Forging",
+    "Forming",
+    "Frolicking",
+    "Frosting",
+    "Gallivanting",
+    "Galloping",
+    "Garnishing",
+    "Generating",
+    "Germinating",
+    "Gitifying",
+    "Grooving",
+    "Gusting",
+    "Harmonizing",
+    "Hashing",
+    "Hatching",
+    "Herding",
+    "Honking",
+    "Hullaballooing",
+    "Hyperspacing",
+    "Ideating",
+    "Imagining",
+    "Improvising",
+    "Incubating",
+    "Inferring",
+    "Infusing",
+    "Ionizing",
+    "Jitterbugging",
+    "Julienning",
+    "Kneading",
+    "Leavening",
+    "Levitating",
+    "Lollygagging",
+    "Manifesting",
+    "Marinating",
+    "Meandering",
+    "Metamorphosing",
+    "Misting",
+    "Moonwalking",
+    "Moseying",
+    "Mulling",
+    "Mustering",
+    "Musing",
+    "Nebulizing",
+    "Nesting",
+    "Newspapering",
+    "Noodling",
+    "Nucleating",
+    "Orbiting",
+    "Orchestrating",
+    "Osmosing",
+    "Perambulating",
+    "Percolating",
+    "Perusing",
+    "Philosophising",
+    "Photosynthesizing",
+    "Pollinating",
+    "Pondering",
+    "Pontificating",
+    "Pouncing",
+    "Precipitating",
+    "Prestidigitating",
+    "Processing",
+    "Proofing",
+    "Propagating",
+    "Puttering",
+    "Puzzling",
+    "Quantumizing",
+    "Razzle-dazzling",
+    "Razzmatazzing",
+    "Recombobulating",
+    "Reticulating",
+    "Roosting",
+    "Ruminating",
+    "Sautéing",
+    "Scampering",
+    "Schlepping",
+    "Scurrying",
+    "Seasoning",
+    "Shenaniganing",
+    "Shimmying",
+    "Simmering",
+    "Skedaddling",
+    "Sketching",
+    "Slithering",
+    "Smooshing",
+    "Sock-hopping",
+    "Spelunking",
+    "Spinning",
+    "Sprouting",
+    "Stewing",
+    "Sublimating",
+    "Swirling",
+    "Swooping",
+    "Symbioting",
+    "Synthesizing",
+    "Tempering",
+    "Thinking",
+    "Thundering",
+    "Tinkering",
+    "Tomfoolering",
+    "Topsy-turvying",
+    "Transfiguring",
+    "Transmuting",
+    "Twisting",
+    "Undulating",
+    "Unfurling",
+    "Unravelling",
+    "Vibing",
+    "Waddling",
+    "Wandering",
+    "Warping",
+    "Whatchamacalliting",
+    "Whirlpooling",
+    "Whirring",
+    "Whisking",
+    "Wibbling",
+    "Working",
+    "Wrangling",
+    "Zesting",
+    "Zigzagging",
+];
 
 /// Detector for Claude Code CLI
 pub struct ClaudeCodeDetector {
@@ -155,6 +361,8 @@ impl ClaudeCodeDetector {
                         || choice_text.starts_with("[X]")
                         || choice_text.starts_with("[×]")
                         || choice_text.starts_with("[✔]")
+                        || choice_text.starts_with("( )")
+                        || choice_text.starts_with("(*)")
                     {
                         is_multi_select = true;
                         break;
@@ -623,15 +831,56 @@ impl ClaudeCodeDetector {
         None
     }
 
+    /// Detect turn duration completion pattern (e.g., "✻ Cooked for 1m 6s")
+    ///
+    /// When Claude Code finishes a turn, it displays a line like "✻ Cooked for 1m 6s"
+    /// using a past-tense verb. This is a definitive Idle indicator.
+    fn detect_turn_duration(content: &str) -> Option<String> {
+        for line in content
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .take(15)
+        {
+            let trimmed = line.trim();
+
+            // Check for any content spinner char at the start
+            let first_char = match trimmed.chars().next() {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let is_spinner_char = CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
+            if !is_spinner_char {
+                continue;
+            }
+
+            let rest = trimmed[first_char.len_utf8()..].trim_start();
+
+            // Check for past-tense verb + " for " + duration pattern
+            for verb in TURN_DURATION_VERBS {
+                if let Some(after_verb) = rest.strip_prefix(verb) {
+                    if after_verb.starts_with(" for ") {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Detect active spinner verbs in content area
     ///
     /// Claude Code shows spinner activity like "✶ Spinning…", "✻ Levitating…", "* Working…"
     /// in the content. Active spinners contain "…" (ellipsis), while completed ones show
     /// "✻ Crunched for 6m 5s" (past tense + time, no ellipsis).
     ///
+    /// Returns (matched_text, is_builtin_verb) — builtin verbs get High confidence,
+    /// unknown/custom verbs get Medium confidence.
+    ///
     /// This is critical for detecting processing when the title still shows ✳ (idle),
     /// e.g. during /compact or title update lag.
-    fn detect_content_spinner(content: &str) -> Option<String> {
+    fn detect_content_spinner(content: &str) -> Option<(String, bool)> {
         // If idle prompt ❯ is near the end (last 5 non-empty lines), any spinner above is a past residual
         let has_idle_prompt = content
             .lines()
@@ -679,7 +928,12 @@ impl ClaudeCodeDetector {
             let has_ellipsis = rest.contains('…') || rest.contains("...");
 
             if starts_upper && has_ellipsis {
-                return Some(trimmed.to_string());
+                // Extract the verb (first word) and check against builtin list
+                let verb = rest.split_whitespace().next().unwrap_or("");
+                // Strip trailing ellipsis from verb if present (e.g., "Spinning…")
+                let verb_clean = verb.trim_end_matches('…').trim_end_matches("...");
+                let is_builtin = BUILTIN_SPINNER_VERBS.contains(&verb_clean);
+                return Some((trimmed.to_string(), is_builtin));
             }
         }
         None
@@ -801,21 +1055,61 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 5. Content-based spinner detection (overrides title idle)
+        // 5. Content-based "Conversation compacted" detection → Idle
+        //    e.g., "✻ Conversation compacted (ctrl+o for history)"
+        {
+            let recent = safe_tail(content, 1000);
+            if recent.contains("Conversation compacted") {
+                // Verify it's a spinner-prefixed line (not just any text mentioning it)
+                for line in recent.lines().rev().take(15) {
+                    let trimmed = line.trim();
+                    let first_char = trimmed.chars().next().unwrap_or('\0');
+                    if (CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*')
+                        && trimmed.contains("Conversation compacted")
+                    {
+                        return DetectionResult::new(
+                            AgentStatus::Idle,
+                            "content_conversation_compacted",
+                            DetectionConfidence::High,
+                        )
+                        .with_matched_text(trimmed);
+                    }
+                }
+            }
+        }
+
+        // 6. Content-based spinner detection (overrides title idle)
         //    Catches cases where title still shows ✳ but content has active spinner
         //    e.g. during /compact, or title update lag
-        if let Some(activity) = Self::detect_content_spinner(content) {
+        if let Some((activity, is_builtin)) = Self::detect_content_spinner(content) {
+            let confidence = if is_builtin {
+                DetectionConfidence::High
+            } else {
+                DetectionConfidence::Medium
+            };
             return DetectionResult::new(
                 AgentStatus::Processing {
                     activity: activity.clone(),
                 },
                 "content_spinner_verb",
-                DetectionConfidence::Medium,
+                confidence,
             )
             .with_matched_text(&activity);
         }
 
-        // 6. Title-based detection: ✳ in title = Idle
+        // 7. Check for turn duration completion (e.g., "✻ Cooked for 1m 6s")
+        //    Placed after content spinner so active spinners take priority over
+        //    residual turn duration messages from previous turns.
+        if let Some(matched) = Self::detect_turn_duration(content) {
+            return DetectionResult::new(
+                AgentStatus::Idle,
+                "turn_duration_completed",
+                DetectionConfidence::High,
+            )
+            .with_matched_text(&matched);
+        }
+
+        // 8. Title-based detection: ✳ in title = Idle
         if title.contains(IDLE_INDICATOR) {
             return DetectionResult::new(
                 AgentStatus::Idle,
@@ -825,7 +1119,7 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 7. Check for custom spinner verbs from settings
+        // 9. Check for custom spinner verbs from settings
         if let Some(activity) = Self::detect_custom_spinner_verb(title, context) {
             return DetectionResult::new(
                 AgentStatus::Processing { activity },
@@ -835,7 +1129,7 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
-        // 8. Default Braille spinner detection (unless mode is "replace")
+        // 10. Default Braille spinner detection (unless mode is "replace")
         if !Self::should_skip_default_spinners(context)
             && title.chars().any(|c| PROCESSING_SPINNERS.contains(&c))
         {
@@ -1429,7 +1723,8 @@ Some other output here
             result.status
         );
         assert_eq!(result.reason.rule, "content_spinner_verb");
-        assert_eq!(result.reason.confidence, DetectionConfidence::Medium);
+        // "Spinning" is a builtin verb, so confidence is High
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
     }
 
     #[test]
@@ -1752,5 +2047,197 @@ Which items to include?
             ClaudeCodeDetector::detect_mode("⠂ Working"),
             AgentMode::Default
         );
+    }
+
+    #[test]
+    fn test_turn_duration_cooked() {
+        let detector = ClaudeCodeDetector::new();
+        // "✻ Cooked for 1m 6s" = completed turn → Idle
+        let content = "Some output\n\n✻ Cooked for 1m 6s\n\nSome status bar\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for turn duration, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "turn_duration_completed");
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
+    }
+
+    #[test]
+    fn test_turn_duration_brewed() {
+        let detector = ClaudeCodeDetector::new();
+        let content = "Output\n\n✻ Brewed for 42s\n\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Claude Code",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for Brewed duration, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "turn_duration_completed");
+    }
+
+    #[test]
+    fn test_turn_duration_sauteed() {
+        let detector = ClaudeCodeDetector::new();
+        // Sautéed with accent
+        let content = "Output\n\n✶ Sautéed for 3m 12s\n\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Claude Code",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for Sautéed duration, got {:?}",
+            result.status
+        );
+    }
+
+    #[test]
+    fn test_turn_duration_does_not_match_active_spinner() {
+        let detector = ClaudeCodeDetector::new();
+        // Active spinner (with ellipsis) should NOT be matched as turn duration
+        let content = "Output\n\n✻ Cooking… (5s)\n\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Claude Code",
+            content,
+            &DetectionContext::default(),
+        );
+        // Should be Processing (content spinner), not Idle
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for active spinner, got {:?}",
+            result.status
+        );
+    }
+
+    #[test]
+    fn test_conversation_compacted_in_content() {
+        let detector = ClaudeCodeDetector::new();
+        let content =
+            "Some output\n\n✻ Conversation compacted (ctrl+o for history)\n\nStatus bar\n";
+        let result = detector.detect_status_with_reason(
+            "✳ Claude Code",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Idle),
+            "Expected Idle for Conversation compacted, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_conversation_compacted");
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
+    }
+
+    #[test]
+    fn test_conversation_compacted_title_still_works() {
+        let detector = ClaudeCodeDetector::new();
+        // Title-based compacting detection should still work
+        let content = "Some content\n";
+        let result = detector.detect_status_with_reason(
+            "✽ Compacting conversation",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing for title compacting, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "title_compacting");
+    }
+
+    #[test]
+    fn test_builtin_spinner_verb_high_confidence() {
+        let detector = ClaudeCodeDetector::new();
+        // Builtin verb "Spinning" should get High confidence
+        let content = "Some output\n\n✶ Spinning… (5s)\n\nMore output\n";
+        let result = detector.detect_status_with_reason(
+            "⠂ Task name", // title shows processing spinner
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
+    }
+
+    #[test]
+    fn test_unknown_spinner_verb_medium_confidence() {
+        let detector = ClaudeCodeDetector::new();
+        // Unknown verb should get Medium confidence
+        let content = "Some output\n\n✶ Zazzlefrazzing… (5s)\n\nMore output\n";
+        let result = detector.detect_status_with_reason(
+            "⠂ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "content_spinner_verb");
+        assert_eq!(result.reason.confidence, DetectionConfidence::Medium);
+    }
+
+    #[test]
+    fn test_builtin_verb_flambeing_with_accent() {
+        let detector = ClaudeCodeDetector::new();
+        // "Flambéing" with accent should match as builtin
+        let content = "Output\n\n✻ Flambéing… (2s)\n\n";
+        let result = detector.detect_status_with_reason(
+            "⠂ Task name",
+            content,
+            &DetectionContext::default(),
+        );
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
+    }
+
+    #[test]
+    fn test_windows_ascii_radio_buttons() {
+        let detector = ClaudeCodeDetector::new();
+        // Windows ASCII radio buttons: ( ) and (*)
+        let content = r#"
+Which option?
+
+❯ 1. (*) Option A
+  2. ( ) Option B
+  3. ( ) Option C
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    ..
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                    assert!(
+                        multi_select,
+                        "Expected multi_select=true for (*) radio buttons"
+                    );
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
     }
 }

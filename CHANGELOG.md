@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10]
+
+### Added
+- **Turn duration completion detection**: Detect `✻ Cooked for 1m 6s` pattern (8 past-tense verbs) as definitive Idle indicator
+- **Content-based Conversation compacted detection**: Detect `✻ Conversation compacted` in content as Idle (previously title-only)
+- **Built-in spinner verb list (185 verbs)**: All Claude Code v2.1.41 spinner verbs built into detector; matching verbs get High confidence (previously all Medium)
+- **Windows ASCII radio button support**: Detect `( )` / `(*)` patterns as multi-select indicators
+
 ## [0.2.9]
 
 ### Added
