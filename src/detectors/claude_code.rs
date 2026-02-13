@@ -361,8 +361,6 @@ impl ClaudeCodeDetector {
                         || choice_text.starts_with("[X]")
                         || choice_text.starts_with("[×]")
                         || choice_text.starts_with("[✔]")
-                        || choice_text.starts_with("( )")
-                        || choice_text.starts_with("(*)")
                     {
                         is_multi_select = true;
                         break;
@@ -835,23 +833,25 @@ impl ClaudeCodeDetector {
     ///
     /// When Claude Code finishes a turn, it displays a line like "✻ Cooked for 1m 6s"
     /// using a past-tense verb. This is a definitive Idle indicator.
+    ///
+    /// Only checks the last 5 non-empty lines to avoid matching residual
+    /// turn duration messages from previous turns while a new turn is active.
     fn detect_turn_duration(content: &str) -> Option<String> {
         for line in content
             .lines()
             .rev()
             .filter(|line| !line.trim().is_empty())
-            .take(15)
+            .take(5)
         {
             let trimmed = line.trim();
 
-            // Check for any content spinner char at the start
+            // Check for content spinner char at the start (Unicode only, not plain *)
             let first_char = match trimmed.chars().next() {
                 Some(c) => c,
                 None => continue,
             };
 
-            let is_spinner_char = CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*';
-            if !is_spinner_char {
+            if !CONTENT_SPINNER_CHARS.contains(&first_char) {
                 continue;
             }
 
@@ -2211,7 +2211,7 @@ Which items to include?
     #[test]
     fn test_windows_ascii_radio_buttons() {
         let detector = ClaudeCodeDetector::new();
-        // Windows ASCII radio buttons: ( ) and (*)
+        // Windows ASCII radio buttons: ( ) and (*) — single-select (not multi)
         let content = r#"
 Which option?
 
@@ -2230,8 +2230,8 @@ Which option?
                 {
                     assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
                     assert!(
-                        multi_select,
-                        "Expected multi_select=true for (*) radio buttons"
+                        !multi_select,
+                        "Expected multi_select=false for (*) radio buttons (single-select)"
                     );
                 } else {
                     panic!("Expected UserQuestion, got {:?}", approval_type);
