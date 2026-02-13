@@ -1061,7 +1061,12 @@ impl StatusDetector for ClaudeCodeDetector {
             let recent = safe_tail(content, 1000);
             if recent.contains("Conversation compacted") {
                 // Verify it's a spinner-prefixed line (not just any text mentioning it)
-                for line in recent.lines().rev().take(15) {
+                for line in recent
+                    .lines()
+                    .rev()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(15)
+                {
                     let trimmed = line.trim();
                     let first_char = trimmed.chars().next().unwrap_or('\0');
                     if (CONTENT_SPINNER_CHARS.contains(&first_char) || first_char == '*')
