@@ -1,6 +1,6 @@
 [package]
 name = "tmai"
-version = "0.2.9"
+version = "0.2.10"
 edition = "2021"
 authors = ["TrustDelta"]
 description = "Tmux Multi Agent Interface - Monitor and control AI agents in tmux"
