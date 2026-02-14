@@ -2,7 +2,7 @@
 
 **Tmux Multi Agent Interface** - Monitor and control multiple AI agents running in tmux.
 
-![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
+![Rust](https://img.shields.io/badge/rust-1.91%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ![tmai demo](assets/tmai-demo.gif)
