@@ -22,6 +22,15 @@ async fn main() -> Result<()> {
         setup_logging(cli.debug, false); // stderr output
         return run_wrap_mode(&cli);
     }
+
+    // Check for demo subcommand (no tmux, IPC, or web required)
+    if cli.is_demo_mode() {
+        setup_logging(cli.debug, true);
+        let settings = tmai::config::Settings::default();
+        let mut app = App::new(settings, None, None, None);
+        return app.run_demo().await;
+    }
+
     setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
 
     // Load settings

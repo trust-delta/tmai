@@ -45,6 +45,8 @@ pub enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Run interactive demo mode (no tmux required)
+    Demo,
 }
 
 impl Config {
@@ -56,6 +58,11 @@ impl Config {
     /// Check if running in wrap mode
     pub fn is_wrap_mode(&self) -> bool {
         matches!(self.command, Some(Command::Wrap { .. }))
+    }
+
+    /// Check if running in demo mode
+    pub fn is_demo_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Demo))
     }
 
     /// Get wrap command and arguments

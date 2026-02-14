@@ -5,6 +5,8 @@
 ![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+![tmai demo](assets/tmai-demo.gif)
+
 ## Features
 
 - **Multi-agent monitoring** - Track multiple AI coding agents (Claude Code, OpenCode, etc.) across tmux panes

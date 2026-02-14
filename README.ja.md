@@ -5,6 +5,8 @@
 ![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+![tmai デモ](assets/tmai-demo.gif)
+
 ## 機能
 
 - **マルチエージェント監視** - Claude Code、OpenCode、Codex CLI、Gemini CLIなど複数のAIエージェントをtmuxペイン上で一元監視

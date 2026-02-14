@@ -212,7 +212,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         id: agent.id.clone(),
         agent_type: agent.agent_type.short_name().to_string(),
         status: StatusInfo::from(&agent.status),
-        cwd: agent.cwd.clone(),
+        cwd: agent.display_cwd(),
         session: agent.session.clone(),
         window_name: agent.window_name.clone(),
         needs_attention: agent.status.needs_attention(),

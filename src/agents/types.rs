@@ -539,10 +539,26 @@ impl MonitoredAgent {
         self.context_warning = context_warning;
     }
 
+    /// Get the cwd with $HOME replaced by ~
+    pub fn display_cwd(&self) -> String {
+        shorten_home_dir(&self.cwd)
+    }
+
     /// Get the display name for the agent
     pub fn display_name(&self) -> String {
         format!("{}:{}.{}", self.session, self.window_index, self.pane_index)
     }
+}
+
+/// Replace the home directory prefix with ~ for display
+fn shorten_home_dir(path: &str) -> String {
+    if let Some(home) = dirs::home_dir() {
+        let home_str = home.to_string_lossy();
+        if let Some(rest) = path.strip_prefix(home_str.as_ref()) {
+            return format!("~{rest}");
+        }
+    }
+    path.to_string()
 }
 
 #[cfg(test)]
