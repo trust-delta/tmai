@@ -16,11 +16,10 @@
 | `y` | Approve / select Yes |
 | `n` | Select No (UserQuestion only) |
 | `1-9` | Select option by number (navigate + confirm) |
-| `１-９` | Full-width numbers also work |
 | `Space` | Toggle selection (multi-select mode) |
 | `Enter` | Confirm multi-select |
 
-> **Note**: For other options, use input mode (`i`) or passthrough mode (`p`).
+> **Note**: All keys support full-width input (IME on). Full-width alphanumerics and space are automatically converted to half-width, except in passthrough and input modes. For other options, use input mode (`i`) or passthrough mode (`p`).
 
 ## Input Modes
 

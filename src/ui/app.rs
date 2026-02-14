@@ -284,6 +284,14 @@ impl App {
             )
         };
 
+        // Normalize full-width ASCII to half-width for shortcut modes.
+        // Skip for passthrough (direct terminal input) and input mode (text entry).
+        let code = if is_passthrough_mode || is_input_mode {
+            code
+        } else {
+            key_handler::normalize_keycode(code)
+        };
+
         // Handle confirmation dialog first (highest priority)
         if is_showing_confirmation {
             return self.handle_confirmation_key(code);
@@ -330,8 +338,8 @@ impl App {
             // === Arms that need CommandSender (KeyAction pattern) ===
 
             // Number selection (for AskUserQuestion, skip for virtual agents)
-            // Support both half-width (1-9) and full-width (１-９) digits
-            KeyCode::Char(c) if matches!(c, '1'..='9' | '１'..='９') => {
+            // Full-width digits are normalized to half-width before reaching here
+            KeyCode::Char(c) if matches!(c, '1'..='9') => {
                 let num = key_handler::char_to_digit(c);
                 let result = {
                     let state = self.state.read();
@@ -846,7 +854,7 @@ impl App {
                     self.command_sender
                         .send_keys_literal(&target, &c.to_string())?;
                     // Audit: log interaction keys before early return (y/Y, digits)
-                    if matches!(c, 'y' | 'Y' | '1'..='9' | '１'..='９') {
+                    if matches!(c, 'y' | 'Y' | 'ｙ' | 'Ｙ' | '1'..='9' | '１'..='９') {
                         self.maybe_emit_passthrough_audit(&target);
                     }
                     return Ok(());
@@ -1182,7 +1190,13 @@ impl App {
         let target = match placement_type {
             PlacementType::NewSession => {
                 // Generate unique session name
-                let session_name = format!("ai-{}", chrono::Utc::now().timestamp());
+                // Get existing tmux session names for collision check
+                let existing_sessions = self
+                    .command_sender
+                    .tmux_client()
+                    .list_sessions()
+                    .unwrap_or_default();
+                let session_name = crate::utils::namegen::generate_unique_name(&existing_sessions);
                 if let Err(e) = self.command_sender.tmux_client().create_session(
                     &session_name,
                     &directory,

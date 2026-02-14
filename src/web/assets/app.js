@@ -498,12 +498,18 @@ class TmaiRemote {
             ? `<span class="team-badge">${this.escapeHtml(agent.team.member_name)}${agent.team.is_lead ? ' (lead)' : ''}</span>`
             : '';
 
+        // Git branch badge
+        const gitBadgeHtml = agent.git_branch
+            ? `<span class="git-badge ${agent.git_dirty ? 'git-dirty' : ''}">${this.escapeHtml(agent.git_branch)}</span>`
+            : '';
+
         return `
             <div class="agent-card ${needsAttention}" data-agent-id="${this.escapeAttr(agent.id)}">
                 <div class="agent-header">
                     <div class="agent-header-left">
                         <span class="agent-type">${agent.agent_type}</span>
                         ${teamBadgeHtml}
+                        ${gitBadgeHtml}
                     </div>
                     <span class="agent-status ${statusClass}">${statusLabel}</span>
                 </div>

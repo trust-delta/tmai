@@ -291,6 +291,14 @@ impl ClaudeCodeDetector {
             return None;
         }
 
+        // Strip trailing empty lines (tmux capture-pane pads with blank lines)
+        let effective_len = lines
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(lines.len());
+        let lines = &lines[..effective_len];
+
         // Find the last prompt marker (❯) - choices should be BEFORE it
         // Note: ❯ followed by number is a selection cursor, not a prompt
         let last_prompt_idx = lines.iter().rposition(|line| {
@@ -320,10 +328,11 @@ impl ClaudeCodeDetector {
         // If no prompt found, search entire content; otherwise search before prompt
         let search_end = last_prompt_idx.unwrap_or(lines.len());
         // Also search the entire content if prompt is at the very end
+        // Narrowed window (was 30/25) reduces false positives from conversation history
         let search_start = if search_end == lines.len() {
-            lines.len().saturating_sub(30)
+            lines.len().saturating_sub(15)
         } else {
-            search_end.saturating_sub(25)
+            search_end.saturating_sub(15)
         };
         let check_lines = &lines[search_start..search_end];
 
@@ -652,8 +661,16 @@ impl ClaudeCodeDetector {
             return None;
         }
 
-        // Check last ~20 lines
-        let check_start = lines.len().saturating_sub(20);
+        // Strip trailing empty lines (tmux capture-pane pads with blank lines)
+        let effective_len = lines
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(lines.len());
+        let lines = &lines[..effective_len];
+
+        // Check last ~12 lines (narrowed from 20 to reduce false positives)
+        let check_start = lines.len().saturating_sub(12);
         let recent_lines = &lines[check_start..];
         let _recent = recent_lines.join("\n");
 
@@ -1018,6 +1035,28 @@ impl StatusDetector for ClaudeCodeDetector {
                 DetectionConfidence::High,
             )
             .with_matched_text(matched);
+        }
+
+        // 1.5 Fast path: Braille spinner in title → Processing (skip content parsing)
+        //     Any character in the Braille Patterns block (U+2800..=U+28FF) indicates
+        //     active processing. This avoids expensive content analysis when the title
+        //     already provides a definitive signal.
+        //     Approval detection (step 1) is always checked first.
+        {
+            let title_activity = title
+                .chars()
+                .skip_while(|c| matches!(*c, '\u{2800}'..='\u{28FF}') || c.is_whitespace())
+                .collect::<String>();
+            if title.chars().any(|c| matches!(c, '\u{2800}'..='\u{28FF}')) {
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: title_activity,
+                    },
+                    "title_braille_spinner_fast_path",
+                    DetectionConfidence::High,
+                )
+                .with_matched_text(title);
+            }
         }
 
         // 2. Check for errors
@@ -1889,8 +1928,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
                 result.status
             );
             assert_eq!(
-                result.reason.rule, "braille_spinner",
-                "Expected braille_spinner rule for {} ({})",
+                result.reason.rule, "title_braille_spinner_fast_path",
+                "Expected title_braille_spinner_fast_path rule for {} ({})",
                 spinner, label
             );
         }
@@ -1967,7 +2006,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
         // Should be detected as Processing when used with uppercase verb + ellipsis
         let content = "Some output\n\n✳ Ruminating… (3s)\n\nMore output\n";
         let result = detector.detect_status_with_reason(
-            "⠂ Task name", // title shows processing spinner
+            "Claude Code", // non-Braille title so fast path doesn't intercept
             content,
             &DetectionContext::default(),
         );
@@ -2168,7 +2207,7 @@ Which items to include?
         // Builtin verb "Spinning" should get High confidence
         let content = "Some output\n\n✶ Spinning… (5s)\n\nMore output\n";
         let result = detector.detect_status_with_reason(
-            "⠂ Task name", // title shows processing spinner
+            "Claude Code", // non-Braille title so fast path doesn't intercept
             content,
             &DetectionContext::default(),
         );
@@ -2187,7 +2226,7 @@ Which items to include?
         // Unknown verb should get Medium confidence
         let content = "Some output\n\n✶ Zazzlefrazzing… (5s)\n\nMore output\n";
         let result = detector.detect_status_with_reason(
-            "⠂ Task name",
+            "Claude Code", // non-Braille title so fast path doesn't intercept
             content,
             &DetectionContext::default(),
         );

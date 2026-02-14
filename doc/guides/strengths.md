@@ -51,7 +51,7 @@ tmai operation: Just press "1"
 ```
 
 - Direct selection with number keys (1-9)
-- Full-width numbers (１-９) also supported
+- All keys support full-width input (IME on)
 - Multi-select with Space key toggle
 
 **Other tools**: Most only support y/n approval, no option selection

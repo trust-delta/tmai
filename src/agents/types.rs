@@ -469,6 +469,10 @@ pub struct MonitoredAgent {
     pub detection_reason: Option<DetectionReason>,
     /// Permission mode (Plan, Delegate, AutoApprove, etc.)
     pub mode: AgentMode,
+    /// Git branch name (if in a git repo)
+    pub git_branch: Option<String>,
+    /// Whether the git working tree has uncommitted changes
+    pub git_dirty: Option<bool>,
 }
 
 impl MonitoredAgent {
@@ -507,6 +511,8 @@ impl MonitoredAgent {
             is_virtual: false,
             detection_reason: None,
             mode: AgentMode::Default,
+            git_branch: None,
+            git_dirty: None,
         }
     }
 

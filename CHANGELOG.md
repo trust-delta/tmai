@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+- **Spinner Grace Period (6s)**: Prevent Processing→Idle→Processing flicker during tool calls by maintaining Processing state for 6 seconds after spinner disappears (Approval/Error bypass immediately)
+- **Title Braille spinner fast path**: Skip content parsing when Braille spinner detected in title, returning Processing with High confidence (`title_braille_spinner_fast_path` rule)
+- **Docker-style session naming**: New sessions get memorable names like `amber-badger` instead of `ai-1707123456` (100 adjectives × 100 nouns, collision-safe)
+- **Git branch detection + badge**: Show `[branch]` badge on agents with git repository context (yellow=dirty, cyan=clean) in TUI session list, status bar, and Web UI
+- **Full-width key support**: All keyboard shortcuts now work with full-width input (IME on); full-width alphanumerics (ａ-ｚ, Ａ-Ｚ, ０-９) and full-width space automatically converted to half-width (except passthrough and input modes)
+
+### Improved
+- **Approval detection accuracy**: Narrowed search windows (AskUserQuestion: 30→15 lines, approval: 20→12 lines) to reduce false positives from conversation history; added trailing blank line stripping for tmux capture-pane padding
+
+### Changed
+- Detection rule `braille_spinner` superseded by `title_braille_spinner_fast_path` for title-based Braille detection (existing `braille_spinner` retained as content fallback)
+
 ## [0.2.10]
 
 ### Added

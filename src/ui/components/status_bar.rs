@@ -292,6 +292,19 @@ impl StatusBar {
                         Style::default().fg(Color::Magenta),
                     ));
                 }
+
+                // Show git branch if available
+                if let Some(ref branch) = agent.git_branch {
+                    let branch_color = if agent.git_dirty.unwrap_or(false) {
+                        Color::Yellow
+                    } else {
+                        Color::Cyan
+                    };
+                    spans.push(Span::styled(
+                        format!("[{}] ", branch),
+                        Style::default().fg(branch_color),
+                    ));
+                }
             }
         }
     }

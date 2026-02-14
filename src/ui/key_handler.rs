@@ -4,9 +4,33 @@
 //! that the App executes after releasing the state lock. This separates "decide" from "execute"
 //! and minimizes lock hold duration.
 
+use crossterm::event::KeyCode;
+
 use crate::agents::{AgentStatus, ApprovalType};
 use crate::detectors::get_detector;
 use crate::state::AppState;
+
+/// Normalize full-width ASCII characters in KeyCode to half-width equivalents.
+///
+/// Converts Ａ-Ｚ, ａ-ｚ, ０-９, and full-width space (　) to ASCII equivalents.
+/// Use this for keyboard shortcut modes; skip for passthrough and text input modes.
+pub fn normalize_keycode(code: KeyCode) -> KeyCode {
+    match code {
+        KeyCode::Char(c) => KeyCode::Char(normalize_fullwidth_char(c)),
+        other => other,
+    }
+}
+
+/// Convert a full-width ASCII character to its half-width equivalent.
+fn normalize_fullwidth_char(c: char) -> char {
+    match c {
+        '０'..='９' => ((c as u32 - '０' as u32) + '0' as u32) as u8 as char,
+        'Ａ'..='Ｚ' => ((c as u32 - 'Ａ' as u32) + 'A' as u32) as u8 as char,
+        'ａ'..='ｚ' => ((c as u32 - 'ａ' as u32) + 'a' as u32) as u8 as char,
+        '\u{3000}' => ' ', // full-width space → half-width space
+        _ => c,
+    }
+}
 
 /// Action to execute after releasing the state lock
 pub enum KeyAction {
@@ -424,4 +448,60 @@ fn choice_starts_with_word(choice: &str, word: &str) -> bool {
         return rest.chars().next().is_none_or(|c| !c.is_alphabetic());
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_fullwidth_digits() {
+        assert_eq!(normalize_fullwidth_char('０'), '0');
+        assert_eq!(normalize_fullwidth_char('１'), '1');
+        assert_eq!(normalize_fullwidth_char('９'), '9');
+    }
+
+    #[test]
+    fn test_normalize_fullwidth_lowercase() {
+        assert_eq!(normalize_fullwidth_char('ａ'), 'a');
+        assert_eq!(normalize_fullwidth_char('ｙ'), 'y');
+        assert_eq!(normalize_fullwidth_char('ｚ'), 'z');
+    }
+
+    #[test]
+    fn test_normalize_fullwidth_uppercase() {
+        assert_eq!(normalize_fullwidth_char('Ａ'), 'A');
+        assert_eq!(normalize_fullwidth_char('Ｇ'), 'G');
+        assert_eq!(normalize_fullwidth_char('Ｔ'), 'T');
+        assert_eq!(normalize_fullwidth_char('Ｚ'), 'Z');
+    }
+
+    #[test]
+    fn test_normalize_fullwidth_space() {
+        assert_eq!(normalize_fullwidth_char('\u{3000}'), ' ');
+    }
+
+    #[test]
+    fn test_normalize_halfwidth_unchanged() {
+        assert_eq!(normalize_fullwidth_char('a'), 'a');
+        assert_eq!(normalize_fullwidth_char('Z'), 'Z');
+        assert_eq!(normalize_fullwidth_char('5'), '5');
+        assert_eq!(normalize_fullwidth_char(' '), ' ');
+    }
+
+    #[test]
+    fn test_normalize_non_ascii_unchanged() {
+        assert_eq!(normalize_fullwidth_char('あ'), 'あ');
+        assert_eq!(normalize_fullwidth_char('漢'), '漢');
+        assert_eq!(normalize_fullwidth_char('✳'), '✳');
+    }
+
+    #[test]
+    fn test_normalize_keycode() {
+        assert_eq!(normalize_keycode(KeyCode::Char('ｙ')), KeyCode::Char('y'));
+        assert_eq!(normalize_keycode(KeyCode::Char('Ｇ')), KeyCode::Char('G'));
+        assert_eq!(normalize_keycode(KeyCode::Char('１')), KeyCode::Char('1'));
+        assert_eq!(normalize_keycode(KeyCode::Enter), KeyCode::Enter);
+        assert_eq!(normalize_keycode(KeyCode::Esc), KeyCode::Esc);
+    }
 }

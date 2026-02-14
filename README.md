@@ -84,7 +84,7 @@ scan_interval = 5
 | `j` / `k` | Navigate agents |
 | `y` | Approve / select Yes |
 | `n` | Select No (UserQuestion) |
-| `1-9` / `１-９` | Select option by number |
+| `1-9` | Select option by number |
 | `Space` | Toggle (multi-select) |
 | `i` | Enter input mode |
 | `→` | Enter passthrough mode |
