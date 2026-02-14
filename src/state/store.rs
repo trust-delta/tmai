@@ -680,7 +680,7 @@ impl AppState {
     /// Get the current group key for an agent (for display headers)
     pub fn get_group_key(&self, agent: &MonitoredAgent) -> Option<String> {
         match self.sort_by {
-            SortBy::Directory => Some(agent.cwd.clone()),
+            SortBy::Directory => Some(agent.display_cwd()),
             SortBy::SessionOrder => Some(agent.session.clone()),
             SortBy::AgentType => Some(agent.agent_type.short_name().to_string()),
             SortBy::Team => Some(

@@ -2,6 +2,7 @@ pub mod agents;
 pub mod audit;
 pub mod command_sender;
 pub mod config;
+pub mod demo;
 pub mod detectors;
 pub mod git;
 pub mod ipc;

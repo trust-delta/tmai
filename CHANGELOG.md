@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1]
+
+### Added
+- **Demo mode** (`tmai demo`): Built-in demo with simulated agents for recording GIFs without requiring live tmux sessions
+- **Demo GIF in README**: Added animated demo GIF to both English and Japanese READMEs
+
+### Changed
+- **CWD display**: Home directory path now displayed as `~` instead of full absolute path in TUI and Web UI
+
 ## [0.3.0]
 
 ### Added

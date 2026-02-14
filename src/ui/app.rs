@@ -11,6 +11,7 @@ use crate::audit::helper::AuditHelper;
 use crate::audit::{AuditEvent, AuditEventSender};
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
+use crate::demo::poller::{DemoAction, DemoPoller};
 use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
@@ -38,6 +39,8 @@ pub struct App {
     audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     /// Debounce: last passthrough audit emission per target
     audit_last_passthrough: std::collections::HashMap<String, std::time::Instant>,
+    /// Sender for demo actions (only set in demo mode)
+    demo_action_tx: Option<mpsc::Sender<DemoAction>>,
 }
 
 impl App {
@@ -62,6 +65,7 @@ impl App {
             audit_helper,
             audit_event_rx,
             audit_last_passthrough: std::collections::HashMap::new(),
+            demo_action_tx: None,
         }
     }
 
@@ -113,6 +117,48 @@ impl App {
         let mut poll_rx = poller.start();
 
         // Main loop
+        let result = self.main_loop(&mut terminal, &mut poll_rx).await;
+
+        // Restore terminal
+        crossterm::terminal::disable_raw_mode()?;
+        crossterm::execute!(
+            terminal.backend_mut(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+
+        result
+    }
+
+    /// Run the application in demo mode (no tmux required)
+    pub async fn run_demo(&mut self) -> Result<()> {
+        // Pre-populate state with demo agents so they appear on the first frame
+        {
+            let initial_agents = DemoPoller::build_initial_agents();
+            let mut state = self.state.write();
+            state.current_session = Some("demo".to_string());
+            state.update_agents(initial_agents);
+        }
+
+        // Setup terminal
+        crossterm::terminal::enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        crossterm::execute!(
+            stdout,
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        )?;
+
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+
+        // Start demo poller
+        let (demo_poller, action_tx) = DemoPoller::new(self.state.clone());
+        self.demo_action_tx = Some(action_tx);
+        let mut poll_rx = demo_poller.start();
+
+        // Main loop (shared with normal mode)
         let result = self.main_loop(&mut terminal, &mut poll_rx).await;
 
         // Restore terminal
@@ -522,6 +568,50 @@ impl App {
 
     /// Execute a KeyAction from the key handler (called after state lock is released)
     fn execute_key_action(&self, action: KeyAction) -> Result<()> {
+        // Demo mode intercept: translate key actions into DemoActions
+        if let Some(ref tx) = self.demo_action_tx {
+            match &action {
+                KeyAction::SendKeys { target, keys } if keys.contains('y') => {
+                    let _ = tx.try_send(DemoAction::Approve {
+                        target: target.clone(),
+                    });
+                    return Ok(());
+                }
+                KeyAction::SendKeys { target, keys } if keys.contains('n') => {
+                    let _ = tx.try_send(DemoAction::Reject {
+                        target: target.clone(),
+                    });
+                    return Ok(());
+                }
+                KeyAction::NavigateSelection {
+                    target, confirm, ..
+                } if *confirm => {
+                    let _ = tx.try_send(DemoAction::SelectChoice {
+                        target: target.clone(),
+                        choice_num: 1,
+                    });
+                    return Ok(());
+                }
+                // In demo mode, skip actions that require tmux (FocusPane, SendKeysLiteral, etc.)
+                KeyAction::FocusPane { .. }
+                | KeyAction::EmitAudit { .. }
+                | KeyAction::SendKeysLiteral { .. }
+                | KeyAction::MultiSelectSubmit { .. }
+                | KeyAction::MultiSelectSubmitTab { .. } => return Ok(()),
+                KeyAction::None => return Ok(()),
+                // For NavigateSelection without confirm (just number key → selection), send SelectChoice
+                KeyAction::NavigateSelection { target, .. } => {
+                    // Number key press resolves as NavigateSelection; extract choice from steps
+                    let _ = tx.try_send(DemoAction::SelectChoice {
+                        target: target.clone(),
+                        choice_num: 1,
+                    });
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+
         match action {
             KeyAction::None => {}
             KeyAction::SendKeys { target, keys } => {

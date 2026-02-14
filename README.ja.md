@@ -2,8 +2,10 @@
 
 **Tmux Multi Agent Interface** - tmux上で複数のAIエージェントを監視・操作するツール
 
-![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
+![Rust](https://img.shields.io/badge/rust-1.91%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
+
+![tmai デモ](assets/tmai-demo.gif)
 
 ## 機能
 
