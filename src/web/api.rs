@@ -53,6 +53,12 @@ pub struct AgentInfo {
     pub team: Option<AgentTeamInfoResponse>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub mode: String,
+    /// Git branch name (if in a git repo)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    /// Whether the git working tree has uncommitted changes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_dirty: Option<bool>,
 }
 
 /// Team information associated with an agent for API response
@@ -213,6 +219,8 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         is_virtual: agent.is_virtual,
         team: agent.team_info.as_ref().map(convert_team_info),
         mode,
+        git_branch: agent.git_branch.clone(),
+        git_dirty: agent.git_dirty,
     }
 }
 

@@ -30,7 +30,6 @@ Just press `1`, `2`, or `3`.
 | Key | Action |
 |-----|--------|
 | `1-9` | Select option by number |
-| `１-９` | Full-width numbers also work |
 | `y` | Select Yes |
 | `n` | Select No |
 | `Space` | Toggle selection (multi-select mode) |

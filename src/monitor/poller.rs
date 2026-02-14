@@ -14,6 +14,7 @@ use crate::audit::{AuditEvent, AuditLogger};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::ClaudeCodeDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
+use crate::git::GitCache;
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
@@ -91,6 +92,12 @@ pub struct Poller {
     pending_transitions: HashMap<String, PendingTransition>,
     /// Set of agent targets seen in the previous poll
     previous_agent_ids: HashSet<String>,
+    /// Grace period tracker: keeps agents in Processing for up to 6 seconds after
+    /// the spinner disappears, preventing Processing→Idle→Processing flicker
+    /// during tool call gaps.
+    grace_periods: HashMap<String, Instant>,
+    /// Git branch/dirty cache for agent cwd directories
+    git_cache: GitCache,
 }
 
 impl Poller {
@@ -125,6 +132,8 @@ impl Poller {
             previous_statuses: HashMap::new(),
             pending_transitions: HashMap::new(),
             previous_agent_ids: HashSet::new(),
+            grace_periods: HashMap::new(),
+            git_cache: GitCache::new(),
         }
     }
 
@@ -178,6 +187,9 @@ impl Poller {
                     poll_count = poll_count.wrapping_add(1);
                     if poll_count.is_multiple_of(10) {
                         self.process_cache.cleanup();
+                        // Remove expired grace periods (> 30s old to avoid unbounded growth)
+                        self.grace_periods
+                            .retain(|_, ts| ts.elapsed().as_secs() < 30);
                     }
 
                     // Team scanning at configured interval, or re-apply cached info
@@ -187,6 +199,14 @@ impl Poller {
                         } else {
                             self.apply_cached_team_info(&mut agents);
                         }
+                    }
+
+                    // Git branch detection (every ~10 seconds)
+                    if poll_count.is_multiple_of(20) {
+                        self.update_git_info(&mut agents).await;
+                        self.git_cache.cleanup();
+                    } else {
+                        self.apply_cached_git_info(&mut agents).await;
                     }
 
                     // Audit: track state transitions
@@ -232,7 +252,7 @@ impl Poller {
     ///
     /// Returns `(agents, all_panes)` where `all_panes` includes detached sessions
     /// for use in team scanning.
-    async fn poll_once(&self) -> Result<(Vec<MonitoredAgent>, Vec<PaneInfo>)> {
+    async fn poll_once(&mut self) -> Result<(Vec<MonitoredAgent>, Vec<PaneInfo>)> {
         // Always get all panes (needed for team scanning)
         let all_panes = self.client.list_all_panes()?;
 
@@ -362,6 +382,12 @@ impl Poller {
                     let context_warning = detector.detect_context_warning(&content);
                     (result.status, context_warning, Some(result.reason))
                 };
+
+                // Grace period: prevent Processing→Idle flicker during tool call gaps.
+                // When Processing is detected, record the timestamp.
+                // When Idle or fallback is detected, maintain Processing if within 6 seconds.
+                // Approval and Error always bypass the grace period.
+                let status = self.apply_grace_period(&pane.target, status, &detection_reason);
 
                 let mut agent = MonitoredAgent::new(
                     pane.target.clone(),
@@ -937,6 +963,88 @@ impl Poller {
         }
 
         self.previous_agent_ids = current_ids;
+    }
+
+    /// Apply spinner grace period to prevent Processing→Idle flicker.
+    ///
+    /// When a spinner disappears between tool calls, the detector briefly sees Idle
+    /// before the next tool starts. This method holds the agent in Processing for
+    /// up to 6 seconds after the last Processing detection.
+    ///
+    /// Approval and Error statuses always bypass the grace period.
+    fn apply_grace_period(
+        &mut self,
+        target: &str,
+        status: AgentStatus,
+        detection_reason: &Option<DetectionReason>,
+    ) -> AgentStatus {
+        const GRACE_PERIOD_SECS: u64 = 6;
+
+        match &status {
+            AgentStatus::Processing { .. } => {
+                // Update grace period timestamp
+                self.grace_periods
+                    .insert(target.to_string(), Instant::now());
+                status
+            }
+            AgentStatus::AwaitingApproval { .. } | AgentStatus::Error { .. } => {
+                // Always pass through immediately — these are high-priority states
+                self.grace_periods.remove(target);
+                status
+            }
+            AgentStatus::Idle | AgentStatus::Unknown => {
+                // Check if grace period applies (Idle or low-confidence fallback)
+                let is_low_confidence = detection_reason
+                    .as_ref()
+                    .map(|r| {
+                        r.rule == "fallback_no_indicator"
+                            || r.confidence == DetectionConfidence::Low
+                    })
+                    .unwrap_or(false);
+
+                if is_low_confidence || matches!(status, AgentStatus::Idle) {
+                    if let Some(last_processing) = self.grace_periods.get(target) {
+                        if last_processing.elapsed().as_secs() < GRACE_PERIOD_SECS {
+                            // Within grace period — maintain Processing
+                            return AgentStatus::Processing {
+                                activity: String::new(),
+                            };
+                        } else {
+                            // Grace period expired — allow transition
+                            self.grace_periods.remove(target);
+                        }
+                    }
+                }
+                status
+            }
+            _ => status,
+        }
+    }
+
+    /// Fetch and apply git branch/dirty info for all agents
+    async fn update_git_info(&mut self, agents: &mut [MonitoredAgent]) {
+        for agent in agents.iter_mut() {
+            if agent.is_virtual || agent.cwd.is_empty() {
+                continue;
+            }
+            if let Some(info) = self.git_cache.get_info(&agent.cwd).await {
+                agent.git_branch = Some(info.branch);
+                agent.git_dirty = Some(info.dirty);
+            }
+        }
+    }
+
+    /// Apply cached git info on non-refresh polls
+    async fn apply_cached_git_info(&mut self, agents: &mut [MonitoredAgent]) {
+        for agent in agents.iter_mut() {
+            if agent.is_virtual || agent.cwd.is_empty() {
+                continue;
+            }
+            if let Some(info) = self.git_cache.get_info(&agent.cwd).await {
+                agent.git_branch = Some(info.branch);
+                agent.git_dirty = Some(info.dirty);
+            }
+        }
     }
 
     /// Cleanup the process cache

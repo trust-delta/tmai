@@ -496,6 +496,19 @@ impl SessionList {
             ));
         }
 
+        // 6) Git branch badge
+        if let Some(ref branch) = agent.git_branch {
+            let branch_color = if agent.git_dirty.unwrap_or(false) {
+                Color::Yellow
+            } else {
+                Color::Cyan
+            };
+            line1_spans.push(Span::styled(
+                format!("  [{}]", branch),
+                Style::default().fg(branch_color),
+            ));
+        }
+
         let line1 = Line::from(line1_spans);
 
         // Line 2: title + other meta (detection icon, pid, window/pane)
@@ -727,6 +740,19 @@ impl SessionList {
             spans.push(Span::styled(
                 format!(" [{}/{}]", team_info.team_name, team_info.member_name),
                 Style::default().fg(Color::Magenta).bg(bg_color),
+            ));
+        }
+
+        // Add git branch badge if available
+        if let Some(ref branch) = agent.git_branch {
+            let branch_color = if agent.git_dirty.unwrap_or(false) {
+                Color::Yellow
+            } else {
+                Color::Cyan
+            };
+            spans.push(Span::styled(
+                format!(" [{}]", branch),
+                Style::default().fg(branch_color).bg(bg_color),
             ));
         }
 

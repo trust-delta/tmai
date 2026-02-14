@@ -104,10 +104,8 @@ impl HelpScreen {
             Self::description_line("  For other options, use number keys or input mode"),
             Line::from(""),
             Self::section_header("AskUserQuestion (Selection Dialogs)"),
-            Self::key_line(
-                "1-9 / １-９",
-                "Select option by number (full-width supported)",
-            ),
+            Self::key_line("1-9", "Select option by number"),
+            Self::description_line("  All keys support full-width input (IME on)"),
             Self::description_line("  Single-select: immediately confirms the choice"),
             Self::description_line("  Multi-select: toggles the option on/off"),
             Self::key_line("Space", "Toggle current option (multi-select mode)"),

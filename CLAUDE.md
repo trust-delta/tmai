@@ -127,7 +127,7 @@ cargo build --release  # リリースビルド
 | j/k, ↓/↑ | ナビゲーション |
 | y | 承認 / Yesを選択 |
 | n | Noを選択（UserQuestionのみ） |
-| 1-9 / １-９ | AskUserQuestion選択（全角対応） |
+| 1-9 | AskUserQuestion選択 |
 | Space | 複数選択トグル |
 | Enter | 複数選択確定 |
 | i | 入力モード |
@@ -146,6 +146,8 @@ cargo build --release  # リリースビルド
 | h / ? | ヘルプ |
 | q / Esc | 終了 |
 | Ctrl+d/u | プレビュースクロール |
+
+> **Note**: 全キーが全角入力（IME ON）に対応。パススルーモード・入力モードを除き、全角英数字（ａ-ｚ、Ａ-Ｚ、０-９）および全角スペースは自動的に半角に変換される。
 
 ## Claude Code検出器の設計
 
