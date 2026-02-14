@@ -206,7 +206,7 @@ impl Poller {
                         self.update_git_info(&mut agents).await;
                         self.git_cache.cleanup();
                     } else {
-                        self.apply_cached_git_info(&mut agents).await;
+                        self.apply_cached_git_info(&mut agents);
                     }
 
                     // Audit: track state transitions
@@ -1034,13 +1034,13 @@ impl Poller {
         }
     }
 
-    /// Apply cached git info on non-refresh polls
-    async fn apply_cached_git_info(&mut self, agents: &mut [MonitoredAgent]) {
+    /// Apply cached git info on non-refresh polls (no git commands executed)
+    fn apply_cached_git_info(&self, agents: &mut [MonitoredAgent]) {
         for agent in agents.iter_mut() {
             if agent.is_virtual || agent.cwd.is_empty() {
                 continue;
             }
-            if let Some(info) = self.git_cache.get_info(&agent.cwd).await {
+            if let Some(info) = self.git_cache.get_cached(&agent.cwd) {
                 agent.git_branch = Some(info.branch);
                 agent.git_dirty = Some(info.dirty);
             }
