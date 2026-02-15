@@ -13,6 +13,7 @@ use crate::agents::{
 use crate::audit::{AuditEvent, AuditLogger};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::ClaudeCodeDetector;
+use crate::detectors::GeminiDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::git::GitCache;
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
@@ -351,12 +352,22 @@ impl Poller {
                             (result.status, context_warning, Some(result.reason))
                         } else {
                             // Enrich IPC Processing with screen-detected activity
-                            // (e.g., "Compacting..." from title_compacting rule)
-                            let status = enrich_ipc_activity(status, &result.status);
+                            // (e.g., "Compacting..." from title or spinner verb)
+                            let status = enrich_ipc_activity(status, &result.status, &title);
+                            let matched_text =
+                                if let AgentStatus::Processing { ref activity } = status {
+                                    if !activity.is_empty() {
+                                        Some(format!("enriched: {}", activity))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
                             let reason = DetectionReason {
                                 rule: "ipc_state".to_string(),
                                 confidence: DetectionConfidence::High,
-                                matched_text: None,
+                                matched_text,
                             };
                             (status, None, Some(reason))
                         }
@@ -413,9 +424,15 @@ impl Poller {
                     DetectionSource::CapturePane
                 };
 
-                // Detect permission mode from title (Claude Code only)
-                if matches!(agent.agent_type, AgentType::ClaudeCode) {
-                    agent.mode = ClaudeCodeDetector::detect_mode(&agent.title);
+                // Detect permission mode from title/content
+                match agent.agent_type {
+                    AgentType::ClaudeCode => {
+                        agent.mode = ClaudeCodeDetector::detect_mode(&agent.title);
+                    }
+                    AgentType::GeminiCli => {
+                        agent.mode = GeminiDetector::detect_mode(&agent.last_content);
+                    }
+                    _ => {}
                 }
 
                 agents.push(agent);
@@ -1188,13 +1205,39 @@ fn status_name(status: &AgentStatus) -> &'static str {
     }
 }
 
+/// Extract activity text from a tmux pane title
+///
+/// Strips Braille spinner characters (`⠂`, `⠐`) and mode icons, returning the
+/// remaining text as activity.  Returns empty string when an idle indicator (`✳`)
+/// is present or when no meaningful text remains.
+fn extract_activity_from_title(title: &str) -> String {
+    // Idle indicator means no processing activity
+    if title.contains('✳') {
+        return String::new();
+    }
+    let cleaned: String = title
+        .chars()
+        .filter(|&c| !matches!(c, '⠂' | '⠐' | '⏸' | '⇢' | '⏵'))
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    trimmed.to_string()
+}
+
 /// Enrich IPC Processing status with screen-detected activity
 ///
-/// When IPC reports Processing with empty activity, use the screen-detected
-/// activity (e.g., "Compacting..." from title_compacting rule) for better UI labels.
-fn enrich_ipc_activity(ipc_status: AgentStatus, screen_status: &AgentStatus) -> AgentStatus {
+/// When IPC reports Processing with empty activity, first try the screen-detected
+/// activity, then fall back to extracting activity directly from the pane title.
+fn enrich_ipc_activity(
+    ipc_status: AgentStatus,
+    screen_status: &AgentStatus,
+    title: &str,
+) -> AgentStatus {
     if let AgentStatus::Processing { ref activity } = ipc_status {
         if activity.is_empty() {
+            // 1. Try screen-detected activity
             if let AgentStatus::Processing {
                 activity: ref screen_activity,
             } = screen_status
@@ -1204,6 +1247,13 @@ fn enrich_ipc_activity(ipc_status: AgentStatus, screen_status: &AgentStatus) -> 
                         activity: screen_activity.clone(),
                     };
                 }
+            }
+            // 2. Fall back to title-based extraction
+            let title_activity = extract_activity_from_title(title);
+            if !title_activity.is_empty() {
+                return AgentStatus::Processing {
+                    activity: title_activity,
+                };
             }
         }
     }
@@ -1251,5 +1301,63 @@ mod tests {
         let state = AppState::shared();
         let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
         let _poller = Poller::new(settings, state, ipc_registry, None);
+    }
+
+    #[test]
+    fn test_extract_activity_from_title() {
+        // Braille spinner + text
+        assert_eq!(extract_activity_from_title("⠐ Compacting"), "Compacting");
+        assert_eq!(extract_activity_from_title("⠂ Levitating"), "Levitating");
+        // Idle indicator → empty
+        assert_eq!(extract_activity_from_title("✳"), "");
+        assert_eq!(extract_activity_from_title("✳ idle text"), "");
+        // Empty / whitespace
+        assert_eq!(extract_activity_from_title(""), "");
+        assert_eq!(extract_activity_from_title("   "), "");
+        // Pure spinner chars
+        assert_eq!(extract_activity_from_title("⠐"), "");
+        // Mode icons stripped
+        assert_eq!(extract_activity_from_title("⏸ ⠐ Planning"), "Planning");
+    }
+
+    #[test]
+    fn test_enrich_ipc_activity_screen_priority() {
+        let ipc = AgentStatus::Processing {
+            activity: String::new(),
+        };
+        let screen = AgentStatus::Processing {
+            activity: "✶ Compacting…".to_string(),
+        };
+        let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
+        assert!(
+            matches!(result, AgentStatus::Processing { ref activity } if activity == "✶ Compacting…")
+        );
+    }
+
+    #[test]
+    fn test_enrich_ipc_activity_title_fallback() {
+        let ipc = AgentStatus::Processing {
+            activity: String::new(),
+        };
+        // Screen returns Idle (e.g., ✳ in title caused screen detector to return Idle)
+        let screen = AgentStatus::Idle;
+        let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
+        assert!(
+            matches!(result, AgentStatus::Processing { ref activity } if activity == "Compacting")
+        );
+    }
+
+    #[test]
+    fn test_enrich_ipc_activity_no_enrichment_when_filled() {
+        let ipc = AgentStatus::Processing {
+            activity: "Already set".to_string(),
+        };
+        let screen = AgentStatus::Processing {
+            activity: "Other".to_string(),
+        };
+        let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
+        assert!(
+            matches!(result, AgentStatus::Processing { ref activity } if activity == "Already set")
+        );
     }
 }
