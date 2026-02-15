@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2]
+
+### Improved
+- **Codex CLI detector**: Specific approval patterns (exec/patch/MCP/network), Codex choice pattern, `Working (Ns)` elapsed time detection, confirm footer, context warning display
+- **Gemini CLI detector**: Title icon detection (◇/✦/⏲/✋), radio button / confirmation question patterns, Braille spinner, plan/yolo mode detection
+- **IPC activity enrichment**: Fall back to title-based activity extraction when screen detection returns Idle
+- **Processing label**: Display actual spinner verb (Compacting, Levitating, etc.) instead of generic "Processing"
+
 ## [0.3.1]
 
 ### Added

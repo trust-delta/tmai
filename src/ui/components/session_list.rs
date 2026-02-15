@@ -556,12 +556,23 @@ impl SessionList {
     }
 
     /// Map Processing activity to a specific status label
+    ///
+    /// Extracts the leading verb from the activity string (e.g., "Compacting" from
+    /// "✶ Compacting…").  Returns "Processing" when the activity is empty or does
+    /// not start with an uppercase letter.
     fn processing_label(activity: &str) -> String {
-        let lower = activity.to_lowercase();
-        if lower.contains("compacting") {
-            "Compacting".to_string()
-        } else {
+        if activity.is_empty() {
+            return "Processing".to_string();
+        }
+        // Strip spinner chars and whitespace prefix
+        let stripped =
+            activity.trim_start_matches(|c: char| "·✢✳✶✻✽*".contains(c) || c.is_whitespace());
+        // Take the first word (split on whitespace, '…', or '.')
+        let verb = stripped.split(['\u{2026}', '.', ' ']).next().unwrap_or("");
+        if verb.is_empty() || !verb.starts_with(|c: char| c.is_uppercase()) {
             "Processing".to_string()
+        } else {
+            verb.to_string()
         }
     }
 
@@ -1101,12 +1112,29 @@ mod tests {
             "Compacting"
         );
         assert_eq!(SessionList::processing_label("Compacting..."), "Compacting");
+        assert_eq!(SessionList::processing_label("Compacting"), "Compacting");
     }
 
     #[test]
     fn test_processing_label_default() {
-        assert_eq!(SessionList::processing_label("Cerebrating…"), "Processing");
         assert_eq!(SessionList::processing_label(""), "Processing");
-        assert_eq!(SessionList::processing_label("Tasks running"), "Processing");
+        // Lowercase start → Processing
+        assert_eq!(SessionList::processing_label("tasks running"), "Processing");
+    }
+
+    #[test]
+    fn test_processing_label_various_verbs() {
+        assert_eq!(SessionList::processing_label("Cerebrating…"), "Cerebrating");
+        assert_eq!(
+            SessionList::processing_label("✻ Levitating… (2m · ↓ 13 tokens)"),
+            "Levitating"
+        );
+        assert_eq!(
+            SessionList::processing_label("· Gallivanting…"),
+            "Gallivanting"
+        );
+        assert_eq!(SessionList::processing_label("✶ Crunching…"), "Crunching");
+        // First word is capitalized → extract it
+        assert_eq!(SessionList::processing_label("Tasks running"), "Tasks");
     }
 }

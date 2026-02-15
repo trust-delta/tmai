@@ -8,9 +8,12 @@ use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetect
 pub struct CodexDetector {
     approval_pattern: Regex,
     error_pattern: Regex,
+    working_elapsed_pattern: Regex,
+    context_left_pattern: Regex,
 }
 
 impl CodexDetector {
+    /// Create a new CodexDetector with compiled regex patterns
     pub fn new() -> Self {
         Self {
             // Only match explicit approval prompts, not general text containing these words
@@ -19,20 +22,68 @@ impl CodexDetector {
             )
             .unwrap(),
             error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
+            working_elapsed_pattern: Regex::new(r"Working.*\(\d+[smh]").unwrap(),
+            context_left_pattern: Regex::new(r"(\d+)% context left").unwrap(),
         }
     }
 
-    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String)> {
+    /// Detect approval patterns in content, returning (ApprovalType, details) if found
+    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String, &'static str)> {
         let lines: Vec<&str> = content.lines().collect();
         let check_start = lines.len().saturating_sub(30);
         let recent_lines = &lines[check_start..];
 
-        // First check for numbered choices (user question pattern)
-        if let Some(question) = self.detect_numbered_choices(recent_lines) {
-            return Some(question);
+        // Check for confirm footer as a reinforcing signal
+        let has_confirm_footer = recent_lines
+            .iter()
+            .any(|l| l.contains("Press Enter to confirm or Esc to cancel"));
+
+        // 1. Specific approval patterns (High confidence)
+        for line in recent_lines {
+            let trimmed = line.trim();
+            if trimmed.contains("Would you like to run the following command?") {
+                return Some((
+                    ApprovalType::ShellCommand,
+                    trimmed.to_string(),
+                    "exec_approval",
+                ));
+            }
+            if trimmed.contains("Would you like to make the following edits?") {
+                return Some((
+                    ApprovalType::FileEdit,
+                    trimmed.to_string(),
+                    "patch_approval",
+                ));
+            }
+            if trimmed.contains("needs your approval") {
+                return Some((ApprovalType::McpTool, trimmed.to_string(), "mcp_approval"));
+            }
+            if trimmed.contains("Do you want to approve access to") {
+                return Some((
+                    ApprovalType::Other("Network".to_string()),
+                    trimmed.to_string(),
+                    "network_approval",
+                ));
+            }
         }
 
-        // Then check for y/n approval patterns
+        // 2. Codex approval choices pattern (High confidence)
+        //    "Yes, proceed" with [y], "Yes, and don't ask again" with [p]/[a],
+        //    "No, and tell Codex" with [Esc/n]
+        if let Some(rule) = self.detect_codex_choices(recent_lines) {
+            return Some((
+                ApprovalType::Other("Codex approval".to_string()),
+                String::new(),
+                rule,
+            ));
+        }
+
+        // 3. Numbered choices (user question pattern)
+        if let Some(question) = self.detect_numbered_choices(recent_lines) {
+            return Some((question.0, question.1, "codex_numbered_choices"));
+        }
+
+        // 4. Generic [y/n] approval patterns
         for line in recent_lines {
             // Skip tip/hint lines and footer
             if line.contains("Tip:")
@@ -47,10 +98,50 @@ impl CodexDetector {
                 return Some((
                     ApprovalType::Other("Codex approval".to_string()),
                     String::new(),
+                    "codex_approval_pattern",
                 ));
             }
         }
+
+        // 5. Confirm footer alone (without other approval signals) as a weaker signal
+        if has_confirm_footer {
+            return Some((
+                ApprovalType::Other("Codex approval".to_string()),
+                String::new(),
+                "confirm_footer",
+            ));
+        }
+
         None
+    }
+
+    /// Detect Codex-specific approval choice lines
+    ///
+    /// Looks for patterns like:
+    /// - "Yes, proceed" with `[y]`
+    /// - "Yes, and don't ask again" with `[p]` or `[a]`
+    /// - "No, and tell Codex" with `[Esc/n]`
+    fn detect_codex_choices(&self, lines: &[&str]) -> Option<&'static str> {
+        let mut has_yes_proceed = false;
+        let mut has_no_tell = false;
+
+        for line in lines {
+            let trimmed = line.trim();
+            if (trimmed.contains("Yes, proceed") || trimmed.contains("Yes, and don't ask again"))
+                && (trimmed.contains("[y]") || trimmed.contains("[p]") || trimmed.contains("[a]"))
+            {
+                has_yes_proceed = true;
+            }
+            if trimmed.contains("No, and tell Codex") && trimmed.contains("[Esc/n]") {
+                has_no_tell = true;
+            }
+        }
+
+        if has_yes_proceed || has_no_tell {
+            Some("codex_choice_pattern")
+        } else {
+            None
+        }
     }
 
     /// Detect numbered choices pattern (e.g., "1. Option", "2. Option")
@@ -158,23 +249,20 @@ impl StatusDetector for CodexDetector {
         content: &str,
         _context: &DetectionContext,
     ) -> DetectionResult {
-        // Check for approval requests
-        if let Some((approval_type, details)) = self.detect_approval(content) {
-            let rule = match &approval_type {
-                ApprovalType::UserQuestion { .. } => "codex_numbered_choices",
-                _ => "codex_approval_pattern",
-            };
+        // 1-4. Check for approval requests (specific patterns, codex choices, numbered choices, generic [y/n])
+        if let Some((approval_type, details, rule)) = self.detect_approval(content) {
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
                     approval_type,
-                    details,
+                    details: details.clone(),
                 },
                 rule,
                 DetectionConfidence::High,
-            );
+            )
+            .with_matched_text(&details);
         }
 
-        // Check for errors
+        // 5. Check for errors
         if let Some(message) = self.detect_error(content) {
             return DetectionResult::new(
                 AgentStatus::Error {
@@ -184,6 +272,81 @@ impl StatusDetector for CodexDetector {
                 DetectionConfidence::High,
             )
             .with_matched_text(&message);
+        }
+
+        // Content-based detection for Codex CLI
+        let lines: Vec<&str> = content.lines().collect();
+        let recent_lines: Vec<&str> = lines.iter().rev().take(15).copied().collect();
+
+        // 6. Working + elapsed time pattern (High confidence)
+        for line in &recent_lines {
+            let trimmed = line.trim();
+            if self.working_elapsed_pattern.is_match(trimmed) {
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: trimmed.to_string(),
+                    },
+                    "working_elapsed_time",
+                    DetectionConfidence::High,
+                )
+                .with_matched_text(trimmed);
+            }
+        }
+
+        // 7. Spinner detection (Medium confidence)
+        for line in &recent_lines {
+            let trimmed = line.trim();
+
+            if trimmed.starts_with('⠋')
+                || trimmed.starts_with('⠙')
+                || trimmed.starts_with('⠹')
+                || trimmed.starts_with('⠸')
+                || trimmed.starts_with('⠼')
+                || trimmed.starts_with('⠴')
+                || trimmed.starts_with('⠦')
+                || trimmed.starts_with('⠧')
+                || trimmed.starts_with('⠇')
+                || trimmed.starts_with('⠏')
+            {
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: trimmed.to_string(),
+                    },
+                    "codex_spinner",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
+            }
+        }
+
+        // 8. "esc to interrupt" (Medium confidence)
+        for line in &recent_lines {
+            let trimmed = line.trim();
+            if trimmed.contains("esc to interrupt") {
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: String::new(),
+                    },
+                    "codex_esc_to_interrupt",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
+            }
+        }
+
+        // 9. Thinking/Generating text (Medium confidence)
+        for line in &recent_lines {
+            let trimmed = line.trim();
+            if trimmed.contains("Thinking") || trimmed.contains("Generating") {
+                return DetectionResult::new(
+                    AgentStatus::Processing {
+                        activity: trimmed.to_string(),
+                    },
+                    "codex_thinking",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text(trimmed);
+            }
         }
 
         // Title-based detection
@@ -208,59 +371,7 @@ impl StatusDetector for CodexDetector {
             .with_matched_text(title);
         }
 
-        // Content-based detection for Codex CLI
-        let lines: Vec<&str> = content.lines().collect();
-        let recent_lines: Vec<&str> = lines.iter().rev().take(15).copied().collect();
-
-        // Check for processing indicators first
-        for line in &recent_lines {
-            let trimmed = line.trim();
-
-            if trimmed.starts_with('⠋')
-                || trimmed.starts_with('⠙')
-                || trimmed.starts_with('⠹')
-                || trimmed.starts_with('⠸')
-                || trimmed.starts_with('⠼')
-                || trimmed.starts_with('⠴')
-                || trimmed.starts_with('⠦')
-                || trimmed.starts_with('⠧')
-                || trimmed.starts_with('⠇')
-                || trimmed.starts_with('⠏')
-            {
-                return DetectionResult::new(
-                    AgentStatus::Processing {
-                        activity: trimmed.to_string(),
-                    },
-                    "codex_spinner",
-                    DetectionConfidence::Medium,
-                )
-                .with_matched_text(trimmed);
-            }
-
-            if trimmed.contains("Thinking") || trimmed.contains("Generating") {
-                return DetectionResult::new(
-                    AgentStatus::Processing {
-                        activity: trimmed.to_string(),
-                    },
-                    "codex_thinking",
-                    DetectionConfidence::Medium,
-                )
-                .with_matched_text(trimmed);
-            }
-
-            if trimmed.contains("esc to interrupt") {
-                return DetectionResult::new(
-                    AgentStatus::Processing {
-                        activity: String::new(),
-                    },
-                    "codex_esc_to_interrupt",
-                    DetectionConfidence::Medium,
-                )
-                .with_matched_text(trimmed);
-            }
-        }
-
-        // Check for idle indicators
+        // 10. Idle detection indicators
         let mut prompt_line_idx: Option<usize> = None;
         let mut footer_line_idx: Option<usize> = None;
 
@@ -275,6 +386,7 @@ impl StatusDetector for CodexDetector {
             }
         }
 
+        // Prompt + footer together
         if let (Some(prompt_idx), Some(footer_idx)) = (prompt_line_idx, footer_line_idx) {
             if prompt_idx > footer_idx {
                 let between = &recent_lines[footer_idx + 1..prompt_idx];
@@ -291,17 +403,7 @@ impl StatusDetector for CodexDetector {
             }
         }
 
-        for line in &recent_lines {
-            let trimmed = line.trim();
-            if trimmed.starts_with("1.") || trimmed.starts_with("2.") || trimmed.starts_with("3.") {
-                return DetectionResult::new(
-                    AgentStatus::Idle,
-                    "codex_numbered_list",
-                    DetectionConfidence::Low,
-                );
-            }
-        }
-
+        // Slash menu
         let has_slash_menu = recent_lines.iter().any(|line| {
             let trimmed = line.trim();
             trimmed.starts_with("/model")
@@ -323,6 +425,7 @@ impl StatusDetector for CodexDetector {
             );
         }
 
+        // Prompt only
         if prompt_line_idx.is_some() {
             return DetectionResult::new(
                 AgentStatus::Idle,
@@ -331,6 +434,7 @@ impl StatusDetector for CodexDetector {
             );
         }
 
+        // Footer only
         if footer_line_idx.is_some() {
             DetectionResult::new(
                 AgentStatus::Idle,
@@ -338,6 +442,7 @@ impl StatusDetector for CodexDetector {
                 DetectionConfidence::Low,
             )
         } else {
+            // 11. Fallback - Processing (Low confidence)
             DetectionResult::new(
                 AgentStatus::Processing {
                     activity: String::new(),
@@ -354,6 +459,22 @@ impl StatusDetector for CodexDetector {
 
     fn approval_keys(&self) -> &str {
         "Enter"
+    }
+
+    /// Detect context warning from Codex footer (e.g., "83% context left")
+    fn detect_context_warning(&self, content: &str) -> Option<u8> {
+        let lines: Vec<&str> = content.lines().collect();
+        let check_start = lines.len().saturating_sub(5);
+        for line in &lines[check_start..] {
+            if let Some(caps) = self.context_left_pattern.captures(line) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(pct) = m.as_str().parse::<u8>() {
+                        return Some(pct);
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -515,5 +636,142 @@ Some long response text...
             "Expected Idle when prompt is visible, got {:?}",
             status
         );
+    }
+
+    #[test]
+    fn test_working_elapsed_time() {
+        let detector = CodexDetector::new();
+        let content = "Working (3s \u{2022} esc to interrupt)";
+        let result = detector.detect_status_with_reason("", content, &DetectionContext::default());
+        assert!(
+            matches!(result.status, AgentStatus::Processing { .. }),
+            "Expected Processing, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "working_elapsed_time");
+        assert_eq!(result.reason.confidence, DetectionConfidence::High);
+    }
+
+    #[test]
+    fn test_exec_approval() {
+        let detector = CodexDetector::new();
+        let content = "Would you like to run the following command?\n\n  ls -la\n\nPress Enter to confirm or Esc to cancel";
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(
+                status,
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::ShellCommand,
+                    ..
+                }
+            ),
+            "Expected AwaitingApproval with ShellCommand, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_patch_approval() {
+        let detector = CodexDetector::new();
+        let content = "Would you like to make the following edits?\n\n  src/main.rs\n  + fn new_function() {}";
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(
+                status,
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::FileEdit,
+                    ..
+                }
+            ),
+            "Expected AwaitingApproval with FileEdit, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_mcp_approval() {
+        let detector = CodexDetector::new();
+        let content = "The tool 'web_search' needs your approval to run.";
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(
+                status,
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::McpTool,
+                    ..
+                }
+            ),
+            "Expected AwaitingApproval with McpTool, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_network_approval() {
+        let detector = CodexDetector::new();
+        let content = "Do you want to approve access to api.example.com?";
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(
+                status,
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::Other(ref s),
+                    ..
+                } if s == "Network"
+            ),
+            "Expected AwaitingApproval with Other(Network), got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_codex_choice_pattern() {
+        let detector = CodexDetector::new();
+        let content = r#"
+Would you like to run the following command?
+
+  npm install express
+
+  Yes, proceed                      [y]
+  Yes, and don't ask again          [a]
+  No, and tell Codex why            [Esc/n]
+"#;
+        let status = detector.detect_status("", content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_context_warning() {
+        let detector = CodexDetector::new();
+        let content =
+            "Some output\n\n  ? for shortcuts                                 83% context left";
+        let result = detector.detect_context_warning(content);
+        assert_eq!(result, Some(83));
+    }
+
+    #[test]
+    fn test_context_warning_none() {
+        let detector = CodexDetector::new();
+        let content = "Some output without context info";
+        let result = detector.detect_context_warning(content);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_confirm_footer() {
+        let detector = CodexDetector::new();
+        // Confirm footer alone should trigger approval detection
+        let content = "Some content here\n\nPress Enter to confirm or Esc to cancel";
+        let result = detector.detect_status_with_reason("", content, &DetectionContext::default());
+        assert!(
+            matches!(result.status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval, got {:?}",
+            result.status
+        );
+        assert_eq!(result.reason.rule, "confirm_footer");
     }
 }
