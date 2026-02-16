@@ -356,6 +356,9 @@ pub struct AppState {
     pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
     /// Whether the app is running
     pub running: bool,
+
+    /// Show activity name (tool/verb) during Processing instead of generic "Processing"
+    pub show_activity_name: bool,
 }
 
 impl AppState {
@@ -382,6 +385,7 @@ impl AppState {
             error_message: None,
             last_poll: None,
             running: true,
+            show_activity_name: true,
         }
     }
 

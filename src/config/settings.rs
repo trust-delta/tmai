@@ -165,6 +165,12 @@ pub struct UiSettings {
     /// Enable color output
     #[serde(default = "default_color")]
     pub color: bool,
+
+    /// Show activity name (tool name) during Processing instead of generic "Processing"
+    /// When true (default): shows "Bash", "Compacting", etc.
+    /// When false: always shows "Processing"
+    #[serde(default = "default_show_activity_name")]
+    pub show_activity_name: bool,
 }
 
 /// Web server settings
@@ -380,12 +386,17 @@ fn default_color() -> bool {
     true
 }
 
+fn default_show_activity_name() -> bool {
+    true
+}
+
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
             show_preview: default_show_preview(),
             preview_height: default_preview_height(),
             color: default_color(),
+            show_activity_name: default_show_activity_name(),
         }
     }
 }

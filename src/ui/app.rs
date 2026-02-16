@@ -52,6 +52,10 @@ impl App {
         audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     ) -> Self {
         let state = AppState::shared();
+        {
+            let mut s = state.write();
+            s.show_activity_name = settings.ui.show_activity_name;
+        }
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
         let command_sender = CommandSender::new(ipc_server, tmux_client, state.clone());
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
