@@ -24,6 +24,10 @@ additional_commands = ["custom-upload", "my-sync"]
 [teams]
 enabled = true
 scan_interval = 5
+
+[auto_approve]
+enabled = true
+model = "haiku"
 ```
 
 ## Sections
@@ -103,6 +107,41 @@ Increase scan frequency:
 scan_interval = 2
 ```
 
+### [auto_approve]
+
+AI-powered automatic approval of safe agent actions. Requires the `claude` CLI.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable/disable auto-approve |
+| `provider` | string | `"claude_haiku"` | Judgment provider |
+| `model` | string | `"haiku"` | Model passed to `claude --model` |
+| `timeout_secs` | integer | `30` | Timeout for each judgment in seconds |
+| `cooldown_secs` | integer | `10` | Cooldown before re-evaluating the same agent |
+| `check_interval_ms` | integer | `1000` | Interval between candidate scans in ms |
+| `max_concurrent` | integer | `3` | Maximum parallel judgments |
+| `allowed_types` | string[] | `[]` | Approval types to auto-approve (empty = all except genuine user questions) |
+| `custom_command` | string | `null` | Custom command instead of `claude` |
+
+#### Examples
+
+Enable with defaults:
+
+```toml
+[auto_approve]
+enabled = true
+```
+
+Only auto-approve file operations:
+
+```toml
+[auto_approve]
+enabled = true
+allowed_types = ["file_edit", "file_create"]
+```
+
+For detailed usage, see [Auto-Approve](../features/auto-approve.md).
+
 ## Environment Variables
 
 ### RUST_LOG
@@ -167,6 +206,13 @@ tmai wrap gemini
 | `exfil_detection.additional_commands` | `[]` |
 | `teams.enabled` | `true` |
 | `teams.scan_interval` | `5` |
+| `auto_approve.enabled` | `false` |
+| `auto_approve.model` | `"haiku"` |
+| `auto_approve.timeout_secs` | `30` |
+| `auto_approve.cooldown_secs` | `10` |
+| `auto_approve.check_interval_ms` | `1000` |
+| `auto_approve.max_concurrent` | `3` |
+| `auto_approve.allowed_types` | `[]` |
 
 ## Config File Format
 

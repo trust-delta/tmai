@@ -24,6 +24,10 @@ additional_commands = ["custom-upload", "my-sync"]
 [teams]
 enabled = true
 scan_interval = 5
+
+[auto_approve]
+enabled = true
+model = "haiku"
 ```
 
 ## セクション
@@ -103,6 +107,41 @@ enabled = false
 scan_interval = 2
 ```
 
+### [auto_approve]
+
+AIを使って安全なエージェント操作を自動承認する機能。`claude` CLIが必要。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `enabled` | bool | `false` | Auto-approveの有効/無効 |
+| `provider` | string | `"claude_haiku"` | 判定プロバイダー |
+| `model` | string | `"haiku"` | `claude --model` に渡すモデル名 |
+| `timeout_secs` | integer | `30` | 各判定のタイムアウト秒数 |
+| `cooldown_secs` | integer | `10` | 同一エージェントの再評価までの待ち時間 |
+| `check_interval_ms` | integer | `1000` | 候補スキャンの間隔（ms） |
+| `max_concurrent` | integer | `3` | 最大並列判定数 |
+| `allowed_types` | string[] | `[]` | 自動承認する承認タイプ（空 = 本物のユーザー質問以外すべて） |
+| `custom_command` | string | `null` | `claude` の代わりに使うカスタムコマンド |
+
+#### 例
+
+デフォルトで有効化：
+
+```toml
+[auto_approve]
+enabled = true
+```
+
+ファイル操作のみ自動承認：
+
+```toml
+[auto_approve]
+enabled = true
+allowed_types = ["file_edit", "file_create"]
+```
+
+詳細は [Auto-Approve](../features/auto-approve.md) を参照。
+
 ## 環境変数
 
 ### RUST_LOG
@@ -167,6 +206,13 @@ tmai wrap gemini
 | `exfil_detection.additional_commands` | `[]` |
 | `teams.enabled` | `true` |
 | `teams.scan_interval` | `5` |
+| `auto_approve.enabled` | `false` |
+| `auto_approve.model` | `"haiku"` |
+| `auto_approve.timeout_secs` | `30` |
+| `auto_approve.cooldown_secs` | `10` |
+| `auto_approve.check_interval_ms` | `1000` |
+| `auto_approve.max_concurrent` | `3` |
+| `auto_approve.allowed_types` | `[]` |
 
 ## 設定ファイル形式
 

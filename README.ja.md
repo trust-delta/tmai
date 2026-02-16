@@ -19,6 +19,7 @@
 - **Web Remote Control** - スマホからQRコード経由で承認操作
 - **Agent Teams** - Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **モード検出** - Plan/Delegate/Auto-approveモードをタイトルアイコンから自動検出・表示
+- **Auto-approve** - AIを使って安全なエージェント操作を自動承認
 
 ## インストール
 
@@ -69,6 +70,10 @@ port = 9876
 [teams]
 enabled = true
 scan_interval = 5
+
+[auto_approve]
+enabled = true
+model = "haiku"
 ```
 
 ### キーバインド

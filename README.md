@@ -21,6 +21,7 @@
 - **Web Remote Control** - Control agents from your smartphone via QR code
 - **Agent Teams** - Visualize Claude Code Agent Teams structure and task progress
 - **Mode detection** - Detect Plan/Delegate/Auto-approve modes from terminal title icons
+- **Auto-approve** - AI-powered automatic approval of safe agent actions
 
 ## Documentation
 
@@ -31,6 +32,7 @@ For detailed guides and workflows, see [doc/](./doc/README.md):
 - [Worktree Parallel Development](./doc/workflows/worktree-parallel.md) - Git worktree workflow
 - [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
 - [Agent Teams](./doc/features/agent-teams.md) - Claude Code team monitoring
+- [Auto-Approve](./doc/features/auto-approve.md) - AI-powered automatic approval
 
 ## Installation
 
@@ -77,6 +79,10 @@ color = true
 [teams]
 enabled = true
 scan_interval = 5
+
+[auto_approve]
+enabled = true
+model = "haiku"
 ```
 
 ### Keybindings
