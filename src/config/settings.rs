@@ -120,6 +120,10 @@ pub struct Settings {
     /// Audit log settings
     #[serde(default)]
     pub audit: AuditSettings,
+
+    /// Auto-approve settings
+    #[serde(default)]
+    pub auto_approve: AutoApproveSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -284,6 +288,86 @@ impl Default for AuditSettings {
     }
 }
 
+/// Auto-approve settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoApproveSettings {
+    /// Enable auto-approve feature
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Judgment provider (currently only "claude_haiku")
+    #[serde(default = "default_aa_provider")]
+    pub provider: String,
+
+    /// Model to use for judgment
+    #[serde(default = "default_aa_model")]
+    pub model: String,
+
+    /// Timeout for each judgment in seconds
+    #[serde(default = "default_aa_timeout")]
+    pub timeout_secs: u64,
+
+    /// Cooldown after judgment before re-evaluating the same target (seconds)
+    #[serde(default = "default_aa_cooldown")]
+    pub cooldown_secs: u64,
+
+    /// Interval between checking for new approval candidates (milliseconds)
+    #[serde(default = "default_aa_interval")]
+    pub check_interval_ms: u64,
+
+    /// Allowed approval types (empty = all types except UserQuestion)
+    #[serde(default)]
+    pub allowed_types: Vec<String>,
+
+    /// Maximum concurrent judgments
+    #[serde(default = "default_aa_max_concurrent")]
+    pub max_concurrent: usize,
+
+    /// Custom command to use instead of "claude" (for alternative providers)
+    #[serde(default)]
+    pub custom_command: Option<String>,
+}
+
+fn default_aa_provider() -> String {
+    "claude_haiku".to_string()
+}
+
+fn default_aa_model() -> String {
+    "haiku".to_string()
+}
+
+fn default_aa_timeout() -> u64 {
+    30
+}
+
+fn default_aa_cooldown() -> u64 {
+    10
+}
+
+fn default_aa_interval() -> u64 {
+    1000
+}
+
+fn default_aa_max_concurrent() -> usize {
+    3
+}
+
+impl Default for AutoApproveSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_aa_provider(),
+            model: default_aa_model(),
+            timeout_secs: default_aa_timeout(),
+            cooldown_secs: default_aa_cooldown(),
+            check_interval_ms: default_aa_interval(),
+            allowed_types: Vec::new(),
+            max_concurrent: default_aa_max_concurrent(),
+            custom_command: None,
+        }
+    }
+}
+
 fn default_show_preview() -> bool {
     true
 }
@@ -319,6 +403,7 @@ impl Default for Settings {
             exfil_detection: ExfilDetectionSettings::default(),
             teams: TeamSettings::default(),
             audit: AuditSettings::default(),
+            auto_approve: AutoApproveSettings::default(),
         }
     }
 }

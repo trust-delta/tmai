@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
 use crate::teams::TaskStatus;
 
@@ -473,6 +474,8 @@ pub struct MonitoredAgent {
     pub git_branch: Option<String>,
     /// Whether the git working tree has uncommitted changes
     pub git_dirty: Option<bool>,
+    /// Auto-approve judgment phase (set by AutoApproveService)
+    pub auto_approve_phase: Option<AutoApprovePhase>,
 }
 
 impl MonitoredAgent {
@@ -513,6 +516,7 @@ impl MonitoredAgent {
             mode: AgentMode::Default,
             git_branch: None,
             git_dirty: None,
+            auto_approve_phase: None,
         }
     }
 

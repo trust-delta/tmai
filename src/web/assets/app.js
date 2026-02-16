@@ -454,6 +454,14 @@ class TmaiRemote {
             const details = agent.status.details || '';
             detailsHtml = details ? `<div class="agent-details">${this.escapeHtml(details)}</div>` : '';
 
+            // Auto-approve phase badge
+            const phase = agent.auto_approve_phase;
+            if (phase === 'judging') {
+                detailsHtml += `<div class="auto-approve-badge judging">\u{1F504} AI judging...</div>`;
+            } else if (phase === 'approved') {
+                detailsHtml += `<div class="auto-approve-badge approved">\u{2713} Approved</div>`;
+            }
+
             if (agent.status.approval_type === 'user_question' && agent.status.choices) {
                 const multiSelect = agent.status.multi_select || false;
                 actionsHtml = this.renderChoices(agent.id, agent.status.choices, multiSelect);

@@ -59,6 +59,9 @@ pub struct AgentInfo {
     /// Whether the git working tree has uncommitted changes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_dirty: Option<bool>,
+    /// Auto-approve judgment phase: "judging", "approved", or "manual_required"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_approve_phase: Option<String>,
 }
 
 /// Team information associated with an agent for API response
@@ -207,7 +210,14 @@ fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoR
 ///
 /// Shared helper used by both the REST API and SSE events.
 pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentInfo {
+    use crate::auto_approve::AutoApprovePhase;
+
     let mode = agent.mode.to_string();
+    let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
+        AutoApprovePhase::Judging => "judging".to_string(),
+        AutoApprovePhase::Approved => "approved".to_string(),
+        AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
+    });
     AgentInfo {
         id: agent.id.clone(),
         agent_type: agent.agent_type.short_name().to_string(),
@@ -221,6 +231,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         mode,
         git_branch: agent.git_branch.clone(),
         git_dirty: agent.git_dirty,
+        auto_approve_phase,
     }
 }
 

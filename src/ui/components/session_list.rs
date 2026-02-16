@@ -8,6 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::agents::{AgentMode, AgentStatus, MonitoredAgent};
+use crate::auto_approve::AutoApprovePhase;
 use crate::state::{AppState, SortBy};
 use crate::ui::SplitDirection;
 
@@ -411,11 +412,21 @@ impl SessionList {
         marquee_offset: usize,
         tree_prefix: &str,
     ) -> ListItem<'static> {
-        let status_indicator = match &agent.status {
-            AgentStatus::Processing { .. } => spinner_char.to_string(),
-            _ => agent.status.indicator().to_string(),
+        let (status_indicator, status_color) = match (&agent.status, &agent.auto_approve_phase) {
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
+                ("\u{27F3}".to_string(), Color::Cyan) // ⟳
+            }
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
+                ("\u{2713}".to_string(), Color::Green) // ✓
+            }
+            (AgentStatus::Processing { .. }, _) => {
+                (spinner_char.to_string(), Self::status_color(&agent.status))
+            }
+            _ => (
+                agent.status.indicator().to_string(),
+                Self::status_color(&agent.status),
+            ),
         };
-        let status_color = Self::status_color(&agent.status);
 
         // Detection source color
         let detection_color = match agent.detection_source {
@@ -472,16 +483,28 @@ impl SessionList {
             ));
         }
 
-        // 4) Status label
-        let status_label = match &agent.status {
-            AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { activity } => Self::processing_label(activity),
-            AgentStatus::AwaitingApproval { approval_type, .. } => {
+        // 4) Status label (auto-approve phase aware)
+        let status_label = match (&agent.status, &agent.auto_approve_phase) {
+            (
+                AgentStatus::AwaitingApproval { approval_type, .. },
+                Some(AutoApprovePhase::Judging),
+            ) => {
+                format!("Judging: {}", approval_type)
+            }
+            (
+                AgentStatus::AwaitingApproval { approval_type, .. },
+                Some(AutoApprovePhase::Approved),
+            ) => {
+                format!("Approved: {}", approval_type)
+            }
+            (AgentStatus::Idle, _) => "Idle".to_string(),
+            (AgentStatus::Processing { activity }, _) => Self::processing_label(activity),
+            (AgentStatus::AwaitingApproval { approval_type, .. }, _) => {
                 format!("Awaiting: {}", approval_type)
             }
-            AgentStatus::Error { .. } => "Error".to_string(),
-            AgentStatus::Offline => "Offline".to_string(),
-            AgentStatus::Unknown => "Unknown".to_string(),
+            (AgentStatus::Error { .. }, _) => "Error".to_string(),
+            (AgentStatus::Offline, _) => "Offline".to_string(),
+            (AgentStatus::Unknown, _) => "Unknown".to_string(),
         };
         line1_spans.push(Span::styled(
             format!("  {}", status_label),
@@ -643,11 +666,21 @@ impl SessionList {
         marquee_offset: usize,
         tree_prefix: &str,
     ) -> ListItem<'static> {
-        let status_indicator = match &agent.status {
-            AgentStatus::Processing { .. } => spinner_char.to_string(),
-            _ => agent.status.indicator().to_string(),
+        let (status_indicator, status_color) = match (&agent.status, &agent.auto_approve_phase) {
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
+                ("\u{27F3}".to_string(), Color::Cyan) // ⟳
+            }
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
+                ("\u{2713}".to_string(), Color::Green) // ✓
+            }
+            (AgentStatus::Processing { .. }, _) => {
+                (spinner_char.to_string(), Self::status_color(&agent.status))
+            }
+            _ => (
+                agent.status.indicator().to_string(),
+                Self::status_color(&agent.status),
+            ),
         };
-        let status_color = Self::status_color(&agent.status);
 
         // Fixed column widths
         const STATUS_WIDTH: usize = 12; // "Processing" or "Awaiting..."
@@ -680,13 +713,19 @@ impl SessionList {
             get_marquee_text(&title_source, title_width, marquee_offset, is_selected)
         };
 
-        let status_text = match &agent.status {
-            AgentStatus::Idle => "Idle".to_string(),
-            AgentStatus::Processing { activity } => Self::processing_label(activity),
-            AgentStatus::AwaitingApproval { .. } => "Awaiting".to_string(),
-            AgentStatus::Error { .. } => "Error".to_string(),
-            AgentStatus::Offline => "Offline".to_string(),
-            AgentStatus::Unknown => "Unknown".to_string(),
+        let status_text = match (&agent.status, &agent.auto_approve_phase) {
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
+                "Judging".to_string()
+            }
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
+                "Approved".to_string()
+            }
+            (AgentStatus::Idle, _) => "Idle".to_string(),
+            (AgentStatus::Processing { activity }, _) => Self::processing_label(activity),
+            (AgentStatus::AwaitingApproval { .. }, _) => "Awaiting".to_string(),
+            (AgentStatus::Error { .. }, _) => "Error".to_string(),
+            (AgentStatus::Offline, _) => "Offline".to_string(),
+            (AgentStatus::Unknown, _) => "Unknown".to_string(),
         };
         let status_text = fixed_width(&status_text, STATUS_WIDTH);
 

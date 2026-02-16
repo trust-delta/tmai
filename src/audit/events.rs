@@ -48,6 +48,29 @@ pub enum AuditEvent {
         agent_type: String,
         last_status: String,
     },
+    /// Auto-approve AI judgment result
+    AutoApproveJudgment {
+        ts: u64,
+        pane_id: String,
+        agent_type: String,
+        /// Approval type (e.g., "file_edit", "shell_command")
+        approval_type: String,
+        /// Details of the approval request
+        approval_details: String,
+        /// Decision: "approve", "reject", "uncertain", or "error"
+        decision: String,
+        /// AI reasoning or error message
+        reasoning: String,
+        /// Model used for judgment
+        model: String,
+        /// Time taken for judgment in milliseconds
+        elapsed_ms: u64,
+        /// Whether approval keys were actually sent
+        approval_sent: bool,
+        /// Screen context (included for approve/reject decisions)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        screen_context: Option<String>,
+    },
     /// User sent input while agent was detected as Processing
     /// (possible false negative — detection may have missed an approval prompt)
     UserInputDuringProcessing {
