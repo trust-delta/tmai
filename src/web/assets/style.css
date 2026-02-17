@@ -399,6 +399,41 @@ main {
     flex-shrink: 0;
 }
 
+/* Special Key Buttons */
+.special-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.key-btn {
+    min-width: 40px;
+    height: 40px;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.key-btn:hover {
+    background: var(--bg-card-solid);
+}
+
+.key-btn:active {
+    transform: scale(0.9);
+    background: var(--info);
+    color: #000;
+}
+
 /* Preview */
 .preview-toggle {
     display: flex;

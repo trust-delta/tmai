@@ -488,6 +488,21 @@ class TmaiRemote {
             </form>
         `;
 
+        // Special key buttons
+        const specialKeysHtml = `
+            <div class="special-keys">
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Enter" title="Enter">&#x23CE;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Escape" title="Escape">Esc</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Space" title="Space">&#x2423;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Tab" title="Tab">&#x21E5;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="BSpace" title="Backspace">&#x232B;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Up" title="Up">&#x2191;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Down" title="Down">&#x2193;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Left" title="Left">&#x2190;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Right" title="Right">&#x2192;</button>
+            </div>
+        `;
+
         // Preview toggle section
         const isExpanded = this.expandedPreviews.has(agent.id);
         const previewContent = this.previewCache.get(agent.id);
@@ -528,6 +543,7 @@ class TmaiRemote {
                 ${detailsHtml}
                 ${actionsHtml}
                 ${textInputHtml}
+                ${specialKeysHtml}
                 ${previewHtml}
             </div>
         `;
@@ -647,6 +663,11 @@ class TmaiRemote {
                     await this.submit(id);
                     this.selectedChoices.delete(id);
                     this.showToast('Selection submitted', 'success');
+                    break;
+                case 'send-key':
+                    const key = btn.dataset.key;
+                    await this.sendKey(id, key);
+                    this.showToast(`Sent ${key}`, 'success');
                     break;
                 case 'toggle-preview':
                     await this.handleTogglePreview(id);
@@ -839,6 +860,20 @@ class TmaiRemote {
             body: JSON.stringify({ text })
         });
         if (!response.ok) throw new Error('Send text failed');
+    }
+
+    /**
+     * API: Send special key to agent
+     * @param {string} id
+     * @param {string} key
+     */
+    async sendKey(id, key) {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/key`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key })
+        });
+        if (!response.ok) throw new Error('Send key failed');
     }
 
     /**
