@@ -796,8 +796,15 @@ impl ClaudeCodeDetector {
         // Check for Tasks header with in_progress count > 0
         for line in recent.lines() {
             let trimmed = line.trim();
-            // Match "Tasks (X done, Y in progress, Z open)"
-            if trimmed.starts_with("Tasks (") && trimmed.contains("in progress") {
+            // Match task summary formats:
+            // - "Tasks (X done, Y in progress, Z open)" (Teams/Plan format)
+            // - "N tasks (X done, Y in progress, Z open)" (internal task list)
+            // - "N task (X done, Y in progress, Z open)" (singular)
+            let is_task_summary = trimmed.contains("in progress")
+                && (trimmed.starts_with("Tasks (")
+                    || trimmed.contains(" tasks (")
+                    || trimmed.contains(" task ("));
+            if is_task_summary {
                 // Check if there's at least 1 in progress
                 if let Some(start) = trimmed.find(", ") {
                     if let Some(end) = trimmed[start + 2..].find(" in progress") {
@@ -810,8 +817,9 @@ impl ClaudeCodeDetector {
                     }
                 }
             }
-            // Also check for ◼ #N pattern (in-progress task indicator)
-            if trimmed.starts_with("◼ #") {
+            // Check for ◼ indicator (in-progress task)
+            // Formats: "◼ #N task name" (Teams) or "◼ task name" (internal)
+            if trimmed.starts_with('◼') {
                 return true;
             }
         }
@@ -1491,6 +1499,39 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
     }
 
     #[test]
+    fn test_tasks_in_progress_internal_format() {
+        let detector = ClaudeCodeDetector::new();
+        // Claude Code internal task format: "N tasks (X done, Y in progress, Z open)"
+        // Note: uses lowercase "tasks" with number prefix, and ◼ without #N
+        let content = r#"
+  7 tasks (6 done, 1 in progress, 0 open)
+  ✔ Fix 1: screen_context の機密情報サニタイズ
+  ✔ Fix 2: in_flight/cooldowns の TOCTOU 修正
+  ◼ 検証: cargo fmt, clippy, test, build
+  ✔ Fix 4: judge.rs の stdout truncation
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::Processing { .. }),
+            "Expected Processing for internal task format, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_tasks_in_progress_indicator_without_hash() {
+        let detector = ClaudeCodeDetector::new();
+        // ◼ without #N should also be detected
+        let content = "Some output\n  ◼ Running tests\n  ✔ Build passed\n";
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::Processing { .. }),
+            "Expected Processing for ◼ without #N, got {:?}",
+            status
+        );
+    }
+
+    #[test]
     fn test_tasks_all_done_is_idle() {
         let detector = ClaudeCodeDetector::new();
         // Tasks list with all done (no in_progress) should be Idle
@@ -1504,6 +1545,23 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
         assert!(
             matches!(status, AgentStatus::Idle),
             "Expected Idle, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_tasks_all_done_internal_format_is_idle() {
+        let detector = ClaudeCodeDetector::new();
+        // Internal format with all tasks done
+        let content = r#"
+  7 tasks (7 done, 0 in progress, 0 open)
+  ✔ Fix 1: screen_context の機密情報サニタイズ
+  ✔ Fix 2: in_flight/cooldowns の TOCTOU 修正
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        assert!(
+            matches!(status, AgentStatus::Idle),
+            "Expected Idle for all-done internal format, got {:?}",
             status
         );
     }
