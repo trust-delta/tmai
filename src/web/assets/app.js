@@ -491,15 +491,15 @@ class TmaiRemote {
         // Special key buttons
         const specialKeysHtml = `
             <div class="special-keys">
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Enter" title="Enter">&#x23CE;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Escape" title="Escape">Esc</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Space" title="Space">&#x2423;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Tab" title="Tab">&#x21E5;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="BSpace" title="Backspace">&#x232B;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Up" title="Up">&#x2191;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Down" title="Down">&#x2193;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Left" title="Left">&#x2190;</button>
-                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Right" title="Right">&#x2192;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Enter" title="Enter" aria-label="Send Enter key">&#x23CE;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Escape" title="Escape" aria-label="Send Escape key">Esc</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Space" title="Space" aria-label="Send Space key">&#x2423;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Tab" title="Tab" aria-label="Send Tab key">&#x21E5;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="BSpace" title="Backspace" aria-label="Send Backspace key">&#x232B;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Up" title="Up" aria-label="Send Up arrow key">&#x2191;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Down" title="Down" aria-label="Send Down arrow key">&#x2193;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Left" title="Left" aria-label="Send Left arrow key">&#x2190;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Right" title="Right" aria-label="Send Right arrow key">&#x2192;</button>
             </div>
         `;
 

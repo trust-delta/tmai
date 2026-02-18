@@ -157,12 +157,21 @@ impl JudgmentProvider for ClaudeHaikuJudge {
                 model: self.model.clone(),
                 elapsed_ms,
             }),
-            Err(e) => Ok(JudgmentResult {
-                decision: JudgmentDecision::Uncertain,
-                reasoning: format!("Failed to parse output: {}. Raw: {}", e, stdout),
-                model: self.model.clone(),
-                elapsed_ms,
-            }),
+            Err(e) => {
+                // Truncate raw stdout to prevent log bloat
+                let truncated: String = stdout.chars().take(500).collect();
+                let raw_display = if stdout.chars().count() > 500 {
+                    format!("{}...(truncated)", truncated)
+                } else {
+                    truncated
+                };
+                Ok(JudgmentResult {
+                    decision: JudgmentDecision::Uncertain,
+                    reasoning: format!("Failed to parse output: {}. Raw: {}", e, raw_display),
+                    model: self.model.clone(),
+                    elapsed_ms,
+                })
+            }
         }
     }
 }

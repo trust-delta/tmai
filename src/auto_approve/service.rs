@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,14 @@ use super::types::{AutoApprovePhase, JudgmentDecision, JudgmentRequest, Judgment
 
 /// Number of screen context lines to capture for judgment
 const SCREEN_CONTEXT_LINES: usize = 30;
+
+/// Tracks whether a target is being judged or in cooldown after judgment
+enum FlightStatus {
+    /// Judgment is currently in progress
+    InFlight,
+    /// Judgment completed; cooldown started at this instant
+    Cooldown(Instant),
+}
 
 /// Auto-approve service that monitors agents and auto-approves safe actions
 pub struct AutoApproveService {
@@ -44,6 +52,30 @@ impl AutoApproveService {
 
     /// Start the service as a background tokio task
     pub fn start(self) -> tokio::task::JoinHandle<()> {
+        // Validate custom_command path at startup
+        if let Some(ref cmd) = self.settings.custom_command {
+            let path = std::path::Path::new(cmd);
+            if path.is_absolute() {
+                if !path.exists() {
+                    tracing::warn!(
+                        custom_command = %cmd,
+                        "Auto-approve custom_command not found at absolute path"
+                    );
+                }
+            } else {
+                // For relative command names, check via `which`
+                match std::process::Command::new("which").arg(cmd).output() {
+                    Ok(output) if output.status.success() => {}
+                    _ => {
+                        tracing::warn!(
+                            custom_command = %cmd,
+                            "Auto-approve custom_command not found in PATH"
+                        );
+                    }
+                }
+            }
+        }
+
         tokio::spawn(async move {
             self.run().await;
         })
@@ -57,8 +89,8 @@ impl AutoApproveService {
             self.settings.custom_command.clone(),
         ));
 
-        let in_flight: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-        let cooldowns: Arc<Mutex<HashMap<String, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
+        let flight_tracker: Arc<Mutex<HashMap<String, FlightStatus>>> =
+            Arc::new(Mutex::new(HashMap::new()));
         let semaphore = Arc::new(Semaphore::new(self.settings.max_concurrent));
         let interval = Duration::from_millis(self.settings.check_interval_ms);
         let cooldown_duration = Duration::from_secs(self.settings.cooldown_secs);
@@ -143,15 +175,17 @@ impl AutoApproveService {
                         }
                     }
 
-                    // Skip if in flight (already being judged)
-                    if in_flight.lock().contains(target) {
-                        continue;
-                    }
-
-                    // Skip if in cooldown
-                    if let Some(cooldown_until) = cooldowns.lock().get(target) {
-                        if cooldown_until.elapsed() < cooldown_duration {
-                            continue;
+                    // Skip if in flight or in cooldown (single lock check)
+                    {
+                        let tracker = flight_tracker.lock();
+                        match tracker.get(target) {
+                            Some(FlightStatus::InFlight) => continue,
+                            Some(FlightStatus::Cooldown(since)) => {
+                                if since.elapsed() < cooldown_duration {
+                                    continue;
+                                }
+                            }
+                            None => {}
                         }
                     }
 
@@ -175,7 +209,9 @@ impl AutoApproveService {
                     Err(_) => continue, // Max concurrent reached
                 };
 
-                in_flight.lock().insert(target.clone());
+                flight_tracker
+                    .lock()
+                    .insert(target.clone(), FlightStatus::InFlight);
 
                 // Mark agent as being judged
                 {
@@ -195,8 +231,7 @@ impl AutoApproveService {
                 };
 
                 let judge_ref = judge.clone();
-                let in_flight = in_flight.clone();
-                let cooldowns = cooldowns.clone();
+                let flight_tracker = flight_tracker.clone();
                 let app_state = self.app_state.clone();
                 let command_sender = self.command_sender.clone();
                 let audit_tx = self.audit_tx.clone();
@@ -274,9 +309,10 @@ impl AutoApproveService {
                         }
                     }
 
-                    // Remove from in-flight and set cooldown
-                    in_flight.lock().remove(&request.target);
-                    cooldowns.lock().insert(request.target, Instant::now());
+                    // Atomically transition from InFlight to Cooldown (single lock)
+                    flight_tracker
+                        .lock()
+                        .insert(request.target, FlightStatus::Cooldown(Instant::now()));
                 });
             }
         }
@@ -363,11 +399,7 @@ fn emit_audit_event(
             model: result.model.clone(),
             elapsed_ms: result.elapsed_ms,
             approval_sent,
-            screen_context: if approval_sent || result.decision == JudgmentDecision::Reject {
-                Some(request.screen_context.clone())
-            } else {
-                None
-            },
+            screen_context: Some(request.screen_context.clone()),
         };
         let _ = tx.send(event);
     }
@@ -423,11 +455,24 @@ fn approval_type_to_string(approval_type: &ApprovalType) -> String {
     }
 }
 
-/// Extract the last N lines from screen content
+/// Mask sensitive data patterns (API keys, tokens, etc.) before sending to AI
+fn sanitize_sensitive_data(text: &str) -> String {
+    use crate::wrap::exfil_detector::SENSITIVE_PATTERNS;
+    let mut result = text.to_string();
+    for sp in SENSITIVE_PATTERNS.iter() {
+        result = sp
+            .pattern
+            .replace_all(&result, format!("[REDACTED:{}]", sp.name))
+            .to_string();
+    }
+    result
+}
+
+/// Extract the last N lines from screen content, with sensitive data sanitized
 fn extract_screen_context(content: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
-    lines[start..].join("\n")
+    sanitize_sensitive_data(&lines[start..].join("\n"))
 }
 
 #[cfg(test)]
@@ -527,5 +572,36 @@ mod tests {
         // Non-UserQuestion types are never genuine user questions
         assert!(!is_genuine_user_question(&ApprovalType::FileEdit));
         assert!(!is_genuine_user_question(&ApprovalType::ShellCommand));
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_data_openai_key() {
+        let text = "export OPENAI_API_KEY=sk-test1234567890abcdefghij";
+        let result = sanitize_sensitive_data(text);
+        assert!(result.contains("[REDACTED:OpenAI API Key]"));
+        assert!(!result.contains("sk-test1234567890abcdefghij"));
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_data_github_token() {
+        let text = "GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz";
+        let result = sanitize_sensitive_data(text);
+        assert!(result.contains("[REDACTED:GitHub Token]"));
+        assert!(!result.contains("ghp_1234567890abcdefghijklmnopqrstuvwxyz"));
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_data_no_sensitive() {
+        let text = "Hello world\nnormal output\nno secrets here";
+        let result = sanitize_sensitive_data(text);
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_extract_screen_context_sanitizes() {
+        let content = "line 1\nline 2\napi_key=sk-secret1234567890abcdefghij\nline 4";
+        let context = extract_screen_context(content, 30);
+        assert!(context.contains("[REDACTED:"));
+        assert!(!context.contains("sk-secret1234567890abcdefghij"));
     }
 }
