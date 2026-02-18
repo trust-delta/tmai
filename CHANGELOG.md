@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+### Added
+- **Auto-approve**: AI model (Claude Haiku) judges pending approval prompts and auto-approves low-risk operations; phase visualization in TUI (Judging/Approved/ManualRequired indicators)
+- **Mobile Web special key buttons**: Tab, Escape, Ctrl+C, arrow keys, and other special keys available as tap buttons in Web Remote
+- **Processing activity name display**: Show actual spinner verb (e.g., "Levitating…") in session list via `show_activity_name` config option
+- **Auto-approve usage tracking**: Token usage and cost (input/output/cache tokens, cost_usd) recorded in audit log for each AI judgment
+
+### Fixed
+- **Internal task format detection**: `has_in_progress_tasks` now supports Claude Code's `N tasks (X done, Y in progress, Z open)` format and `◼` indicator without `#N` prefix
+- **Auto-approve security**: Sanitize sensitive data (API keys, tokens) before sending screen context to AI; fix TOCTOU race in flight tracker; record screen_context for Uncertain judgments; truncate stdout on parse failure; validate custom_command path at startup
+- **Web UI accessibility**: Added aria-labels to all special key buttons
+
+### Docs
+- **Auto-approve documentation**: Added comprehensive auto-approve feature documentation to CLAUDE.md
+
 ## [0.3.2]
 
 ### Improved
