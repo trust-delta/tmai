@@ -55,6 +55,34 @@ impl fmt::Display for JudgmentDecision {
     }
 }
 
+/// Token usage from a single judgment call
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct JudgmentUsage {
+    /// Direct input tokens (non-cached)
+    pub input_tokens: u64,
+    /// Output tokens generated
+    pub output_tokens: u64,
+    /// Tokens read from cache
+    #[serde(skip_serializing_if = "is_zero")]
+    pub cache_read_input_tokens: u64,
+    /// Tokens written to cache
+    #[serde(skip_serializing_if = "is_zero")]
+    pub cache_creation_input_tokens: u64,
+    /// Cost in USD (as reported by claude CLI)
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub cost_usd: f64,
+}
+
+/// Helper for serde skip
+fn is_zero(v: &u64) -> bool {
+    *v == 0
+}
+
+/// Helper for serde skip
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 /// Result of an AI judgment
 #[derive(Debug, Clone)]
 pub struct JudgmentResult {
@@ -66,6 +94,8 @@ pub struct JudgmentResult {
     pub model: String,
     /// Time taken for the judgment in milliseconds
     pub elapsed_ms: u64,
+    /// Token usage (if available)
+    pub usage: Option<JudgmentUsage>,
 }
 
 /// JSON output schema expected from claude CLI

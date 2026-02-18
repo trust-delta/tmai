@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use tokio::io::AsyncWriteExt;
 
-use super::types::{JudgmentDecision, JudgmentOutput, JudgmentRequest, JudgmentResult};
+use super::types::{
+    JudgmentDecision, JudgmentOutput, JudgmentRequest, JudgmentResult, JudgmentUsage,
+};
 
 /// JSON schema for the claude CLI output
 const JUDGMENT_SCHEMA: &str = r#"{"type":"object","properties":{"decision":{"type":"string","enum":["approve","reject","uncertain"]},"reasoning":{"type":"string"}},"required":["decision","reasoning"]}"#;
@@ -119,6 +121,7 @@ impl JudgmentProvider for ClaudeHaikuJudge {
                     reasoning: format!("Process error: {}", e),
                     model: self.model.clone(),
                     elapsed_ms: start.elapsed().as_millis() as u64,
+                    usage: None,
                 });
             }
             Err(_) => {
@@ -129,38 +132,55 @@ impl JudgmentProvider for ClaudeHaikuJudge {
                     reasoning: "Judgment timed out".to_string(),
                     model: self.model.clone(),
                     elapsed_ms: start.elapsed().as_millis() as u64,
+                    usage: None,
                 });
             }
         };
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
+        // Parse usage from stderr (claude CLI outputs metadata as JSON to stderr)
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let usage = Self::parse_usage_from_stderr(&stderr);
+
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             return Ok(JudgmentResult {
                 decision: JudgmentDecision::Uncertain,
                 reasoning: format!("CLI error (exit {}): {}", output.status, stderr),
                 model: self.model.clone(),
                 elapsed_ms,
+                usage,
             });
         }
 
-        // Parse JSON output
+        // Parse JSON output (claude CLI sends structured output to stdout,
+        // but with --output-format json it may send everything to stderr)
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // The claude CLI with --output-format json wraps the response in a JSON structure.
-        // Try to extract the result text first, then parse the schema output.
-        match Self::parse_claude_output(&stdout) {
+        // Try stdout first, fall back to extracting from stderr JSON
+        let parse_source = if stdout.trim().is_empty() {
+            &stderr
+        } else {
+            &stdout
+        };
+
+        match Self::parse_claude_output(parse_source) {
             Ok(judgment_output) => Ok(JudgmentResult {
                 decision: judgment_output.parse_decision(),
                 reasoning: judgment_output.reasoning,
                 model: self.model.clone(),
                 elapsed_ms,
+                usage,
             }),
             Err(e) => {
-                // Truncate raw stdout to prevent log bloat
-                let truncated: String = stdout.chars().take(500).collect();
-                let raw_display = if stdout.chars().count() > 500 {
+                // Truncate raw output to prevent log bloat
+                let raw = if stdout.trim().is_empty() {
+                    &stderr
+                } else {
+                    &stdout
+                };
+                let truncated: String = raw.chars().take(500).collect();
+                let raw_display = if raw.chars().count() > 500 {
                     format!("{}...(truncated)", truncated)
                 } else {
                     truncated
@@ -170,6 +190,7 @@ impl JudgmentProvider for ClaudeHaikuJudge {
                     reasoning: format!("Failed to parse output: {}. Raw: {}", e, raw_display),
                     model: self.model.clone(),
                     elapsed_ms,
+                    usage,
                 })
             }
         }
@@ -243,5 +264,43 @@ impl ClaudeHaikuJudge {
         }
 
         None
+    }
+
+    /// Parse usage/cost info from claude CLI stderr JSON
+    ///
+    /// The claude CLI with `--output-format json` outputs metadata to stderr as JSON:
+    /// ```json
+    /// {"type":"result","usage":{"input_tokens":2,"output_tokens":69,
+    ///   "cache_read_input_tokens":14282,"cache_creation_input_tokens":56864},
+    ///  "total_cost_usd":0.07,...}
+    /// ```
+    fn parse_usage_from_stderr(stderr: &str) -> Option<JudgmentUsage> {
+        let value: serde_json::Value = serde_json::from_str(stderr.trim()).ok()?;
+
+        let usage_obj = value.get("usage")?;
+        let cost = value
+            .get("total_cost_usd")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
+        Some(JudgmentUsage {
+            input_tokens: usage_obj
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            output_tokens: usage_obj
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            cache_read_input_tokens: usage_obj
+                .get("cache_read_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            cache_creation_input_tokens: usage_obj
+                .get("cache_creation_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            cost_usd: cost,
+        })
     }
 }

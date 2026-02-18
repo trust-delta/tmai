@@ -303,6 +303,7 @@ impl AutoApproveService {
                                     reasoning: format!("Error: {}", e),
                                     model: "unknown".to_string(),
                                     elapsed_ms: 0,
+                                    usage: None,
                                 },
                                 false,
                             );
@@ -399,6 +400,7 @@ fn emit_audit_event(
             model: result.model.clone(),
             elapsed_ms: result.elapsed_ms,
             approval_sent,
+            usage: result.usage.clone(),
             screen_context: Some(request.screen_context.clone()),
         };
         let _ = tx.send(event);

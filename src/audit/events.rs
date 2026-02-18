@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::auto_approve::types::JudgmentUsage;
 use crate::detectors::DetectionReason;
 
 /// Audit event types for detection logging
@@ -67,6 +68,9 @@ pub enum AuditEvent {
         elapsed_ms: u64,
         /// Whether approval keys were actually sent
         approval_sent: bool,
+        /// Token usage and cost (if available from claude CLI)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<JudgmentUsage>,
         /// Screen context (included for approve/reject decisions)
         #[serde(skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
