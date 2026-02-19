@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-02-19
+
+### Changed
+- **Web UI modernization**: Redesign to shadcn/zinc-inspired aesthetic with flat colors, subtle borders, and clean typography; dark/light themes improved
+- **Header agent summary**: Show agent count and attention-needed count in header
+- **Scroll-to-attention FAB**: Floating button to cycle through agents needing approval
+- **Preview horizontal line formatting**: Box-drawing character lines (─━═) replaced with styled `<hr>` instead of wrapping across multiple lines
+
+### Fixed
+- **Special key button layout**: Replaced flex-wrap with CSS Grid (5-column) to prevent orphan button on mobile
+
+### Docs
+- **Web Remote screenshot**: Added real device mobile screenshot to README and feature docs
+
 ## [0.4.0] - 2026-02-19
 
 ### Added
