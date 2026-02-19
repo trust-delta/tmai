@@ -726,6 +726,16 @@ main {
     color: #a1a1aa;
 }
 
+.preview-hr {
+    border: none;
+    border-top: 1px solid #3f3f46;
+    margin: 4px 0;
+}
+
+[data-theme="light"] .preview-hr {
+    border-top-color: #52525b;
+}
+
 .preview-loading {
     color: var(--text-muted);
     font-style: italic;

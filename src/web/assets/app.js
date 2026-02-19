@@ -551,7 +551,7 @@ class TmaiRemote {
                 </svg>
                 <span>Output</span>
             </div>
-            ${isExpanded ? `<div class="preview-content">${previewContent ? this.escapeHtml(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
+            ${isExpanded ? `<div class="preview-content">${previewContent ? this.formatPreviewContent(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
         `;
 
         const teamBadgeHtml = agent.team
@@ -784,7 +784,7 @@ class TmaiRemote {
         const previewEl = card.querySelector('.preview-content');
         if (previewEl) {
             const scrollTop = previewEl.scrollTop;
-            previewEl.textContent = content;
+            previewEl.innerHTML = this.formatPreviewContent(content);
             if (scrollToBottom) {
                 previewEl.scrollTop = previewEl.scrollHeight;
             } else {
@@ -936,6 +936,17 @@ class TmaiRemote {
                 <p>${this.escapeHtml(message)}</p>
             </div>
         `;
+    }
+
+    /**
+     * Format preview content: escape HTML, then replace horizontal line chars with styled hr
+     * @param {string} text - raw preview text
+     * @returns {string} formatted HTML
+     */
+    formatPreviewContent(text) {
+        const escaped = this.escapeHtml(text);
+        // Replace lines consisting mostly of box-drawing horizontal chars (─━═╌╍┄┅┈┉─) or dashes
+        return escaped.replace(/^[\s]*[─━═╌╍┄┅┈┉\-]{4,}[\s]*$/gm, '<hr class="preview-hr">');
     }
 
     /**
