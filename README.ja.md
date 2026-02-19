@@ -135,6 +135,10 @@ tmai UIから新規AIプロセスを作成すると、自動的にラップさ�
 2. スマホでスキャン
 3. Webインターフェースで承認/拒否、選択肢の選択
 
+<p align="center">
+  <img src="assets/mobile-screenshot.jpg" alt="Web Remote - Mobile" width="280">
+</p>
+
 ### WSL2での設定
 
 #### Mirrored mode（推奨）
