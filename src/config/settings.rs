@@ -480,6 +480,17 @@ impl Settings {
         if self.passthrough_poll_interval_ms < MIN_POLL_INTERVAL {
             self.passthrough_poll_interval_ms = MIN_POLL_INTERVAL;
         }
+
+        // Validate auto-approve settings to prevent dangerous edge cases
+        if self.auto_approve.check_interval_ms < 100 {
+            self.auto_approve.check_interval_ms = 100;
+        }
+        if self.auto_approve.max_concurrent == 0 {
+            self.auto_approve.max_concurrent = 1;
+        }
+        if self.auto_approve.timeout_secs == 0 {
+            self.auto_approve.timeout_secs = 5;
+        }
     }
 }
 

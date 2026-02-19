@@ -109,7 +109,8 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
     tracing::debug!("Wrapping command: {} {:?}", command, args);
 
     // Load settings for exfil detection config
-    let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+    let mut settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+    settings.validate();
 
     // Set up raw terminal mode
     let _raw_guard = setup_raw_mode()?;

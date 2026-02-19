@@ -100,6 +100,7 @@ impl JudgmentProvider for ClaudeHaikuJudge {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
             .spawn()?;
 
         // Write prompt to stdin
@@ -158,13 +159,13 @@ impl JudgmentProvider for ClaudeHaikuJudge {
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         // Try stdout first, fall back to extracting from stderr JSON
-        let parse_source = if stdout.trim().is_empty() {
+        let raw_source = if stdout.trim().is_empty() {
             &stderr
         } else {
             &stdout
         };
 
-        match Self::parse_claude_output(parse_source) {
+        match Self::parse_claude_output(raw_source) {
             Ok(judgment_output) => Ok(JudgmentResult {
                 decision: judgment_output.parse_decision(),
                 reasoning: judgment_output.reasoning,
@@ -174,13 +175,8 @@ impl JudgmentProvider for ClaudeHaikuJudge {
             }),
             Err(e) => {
                 // Truncate raw output to prevent log bloat
-                let raw = if stdout.trim().is_empty() {
-                    &stderr
-                } else {
-                    &stdout
-                };
-                let truncated: String = raw.chars().take(500).collect();
-                let raw_display = if raw.chars().count() > 500 {
+                let truncated: String = raw_source.chars().take(500).collect();
+                let raw_display = if raw_source.chars().count() > 500 {
                     format!("{}...(truncated)", truncated)
                 } else {
                     truncated
