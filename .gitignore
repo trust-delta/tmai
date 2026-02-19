@@ -3,4 +3,7 @@
 # Claude Code
 CLAUDE.md
 .claude/
-memory/
+knowledge/
+
+# Windows Zone.Identifier streams
+*:Zone.Identifier

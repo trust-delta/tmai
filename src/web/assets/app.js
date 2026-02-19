@@ -16,11 +16,16 @@ class TmaiRemote {
         this.pendingRender = false;
         this.reconnectDelay = 1000;
 
+        this.attentionScrollIndex = 0;
+
         this.elements = {
             agentList: document.getElementById('agent-list'),
             connectionStatus: document.getElementById('connection-status'),
             toast: document.getElementById('toast'),
-            themeBtn: document.getElementById('theme-btn')
+            themeBtn: document.getElementById('theme-btn'),
+            agentSummary: document.getElementById('agent-summary'),
+            scrollFab: document.getElementById('scroll-to-attention'),
+            attentionCount: document.getElementById('attention-count')
         };
 
         if (!this.token) {
@@ -94,10 +99,8 @@ class TmaiRemote {
         const theme = document.documentElement.getAttribute('data-theme');
         const icon = document.getElementById('theme-icon');
         if (theme === 'light') {
-            // Sun icon for light mode
             icon.innerHTML = '<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>';
         } else {
-            // Moon icon for dark mode
             icon.innerHTML = '<path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>';
         }
     }
@@ -107,6 +110,7 @@ class TmaiRemote {
      */
     setupHeaderButtons() {
         this.elements.themeBtn.addEventListener('click', () => this.toggleTheme());
+        this.elements.scrollFab.addEventListener('click', () => this.scrollToNextAttention());
     }
 
     /**
@@ -126,7 +130,6 @@ class TmaiRemote {
             this.previousStates.set(agent.id, agent.status.type);
         }
 
-        // Cleanup stale data for removed agents
         this.cleanupStaleData(agents);
     }
 
@@ -137,21 +140,18 @@ class TmaiRemote {
     cleanupStaleData(agents) {
         const currentIds = new Set(agents.map(a => a.id));
 
-        // Cleanup previousStates
         for (const id of this.previousStates.keys()) {
             if (!currentIds.has(id)) {
                 this.previousStates.delete(id);
             }
         }
 
-        // Cleanup previewCache
         for (const id of this.previewCache.keys()) {
             if (!currentIds.has(id)) {
                 this.previewCache.delete(id);
             }
         }
 
-        // Cleanup expandedPreviews and stop intervals
         for (const id of this.expandedPreviews) {
             if (!currentIds.has(id)) {
                 this.expandedPreviews.delete(id);
@@ -159,7 +159,6 @@ class TmaiRemote {
             }
         }
 
-        // Cleanup selectedChoices
         for (const id of this.selectedChoices.keys()) {
             if (!currentIds.has(id)) {
                 this.selectedChoices.delete(id);
@@ -255,7 +254,6 @@ class TmaiRemote {
      * Render the agent list
      */
     render() {
-        // Skip render if input is focused, mark as pending
         if (this.isInputFocused()) {
             this.pendingRender = true;
             return;
@@ -265,7 +263,6 @@ class TmaiRemote {
         const scrollPositions = new Map();
         const inputValues = new Map();
 
-        // Save scroll positions and input values
         this.elements.agentList.querySelectorAll('[data-agent-id]').forEach(card => {
             const agentId = card.dataset.agentId;
 
@@ -312,7 +309,6 @@ class TmaiRemote {
         this.elements.agentList.querySelectorAll('[data-agent-id]').forEach(card => {
             const agentId = card.dataset.agentId;
 
-            // Restore scroll position
             const scrollTop = scrollPositions.get(agentId);
             if (scrollTop !== undefined) {
                 const previewEl = card.querySelector('.preview-content');
@@ -321,7 +317,6 @@ class TmaiRemote {
                 }
             }
 
-            // Restore input value
             const inputValue = inputValues.get(agentId);
             if (inputValue) {
                 const inputEl = card.querySelector('.text-input');
@@ -332,6 +327,58 @@ class TmaiRemote {
         });
 
         this.pendingRender = false;
+        this.updateSummary();
+    }
+
+    /**
+     * Update header summary and scroll FAB visibility
+     */
+    updateSummary() {
+        const total = this.agents.length;
+        const attentionCount = this.agents.filter(a => a.needs_attention).length;
+
+        if (total === 0) {
+            this.elements.agentSummary.textContent = '';
+            this.elements.scrollFab.classList.add('hidden');
+            return;
+        }
+
+        if (attentionCount > 0) {
+            this.elements.agentSummary.innerHTML =
+                `${total} agents <span class="attention-count">${attentionCount} attention</span>`;
+            this.elements.scrollFab.classList.remove('hidden');
+            this.elements.attentionCount.textContent = attentionCount;
+        } else {
+            this.elements.agentSummary.textContent = `${total} agents`;
+            this.elements.scrollFab.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Scroll to the next agent needing attention (cycles through)
+     */
+    scrollToNextAttention() {
+        const cards = Array.from(
+            this.elements.agentList.querySelectorAll('.agent-card.needs-attention')
+        );
+        if (cards.length === 0) return;
+
+        // Cycle through attention cards
+        if (this.attentionScrollIndex >= cards.length) {
+            this.attentionScrollIndex = 0;
+        }
+
+        const target = cards[this.attentionScrollIndex];
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Brief highlight effect
+        target.style.transition = 'box-shadow 0.3s ease';
+        target.style.boxShadow = '0 0 0 2px var(--warning)';
+        setTimeout(() => {
+            target.style.boxShadow = '';
+        }, 1500);
+
+        this.attentionScrollIndex++;
     }
 
     /**
@@ -340,13 +387,11 @@ class TmaiRemote {
      * @returns {string} HTML string
      */
     renderWithTeamGroups(agents) {
-        // Build a map of team_name -> team info
         const teamMap = new Map();
         for (const team of this.teams) {
             teamMap.set(team.name, team);
         }
 
-        // Separate agents into team groups and ungrouped
         const teamAgents = new Map();
         const ungrouped = [];
 
@@ -364,15 +409,13 @@ class TmaiRemote {
 
         let html = '';
 
-        // Render team groups
         for (const [teamName, members] of teamAgents) {
             const team = teamMap.get(teamName);
             html += this.renderTeamGroup(teamName, team, members);
         }
 
-        // Render ungrouped agents
         if (ungrouped.length > 0 && teamAgents.size > 0) {
-            html += '<div class="team-group"><div class="team-header"><span class="team-name">Other Agents</span></div>';
+            html += `<div class="team-group"><div class="team-header"><div class="team-header-top"><span class="team-name">Other Agents</span></div></div>`;
             html += ungrouped.map(agent => this.renderAgent(agent)).join('');
             html += '</div>';
         } else {
@@ -398,7 +441,7 @@ class TmaiRemote {
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: ${pct}%"></div>
                 </div>
-                <span class="progress-text">${summary.completed}/${summary.total} tasks (${pct}%)</span>
+                <span class="progress-text">${summary.completed}/${summary.total} (${pct}%)</span>
             </div>
         ` : '';
 
@@ -431,10 +474,7 @@ class TmaiRemote {
             statusLabel = agent.status.message;
         }
 
-        let actionsHtml = '';
-        let detailsHtml = '';
-
-        // Skip action buttons and text input for virtual (offline) agents
+        // Virtual (offline) agents - minimal card
         if (agent.is_virtual) {
             return `
                 <div class="agent-card" data-agent-id="${this.escapeAttr(agent.id)}">
@@ -443,18 +483,20 @@ class TmaiRemote {
                             <span class="agent-type">${agent.agent_type}</span>
                             ${agent.team ? `<span class="team-badge">${this.escapeHtml(agent.team.member_name)}${agent.team.is_lead ? ' (lead)' : ''}</span>` : ''}
                         </div>
-                        <span class="agent-status offline">Offline</span>
+                        <span class="agent-status offline">offline</span>
                     </div>
                     <div class="agent-info">Pane not found</div>
                 </div>
             `;
         }
 
+        let detailsHtml = '';
+        let actionsHtml = '';
+
         if (agent.status.type === 'awaiting_approval') {
             const details = agent.status.details || '';
             detailsHtml = details ? `<div class="agent-details">${this.escapeHtml(details)}</div>` : '';
 
-            // Auto-approve phase badge
             const phase = agent.auto_approve_phase;
             if (phase === 'judging') {
                 detailsHtml += `<div class="auto-approve-badge judging">\u{1F504} AI judging...</div>`;
@@ -466,29 +508,26 @@ class TmaiRemote {
                 const multiSelect = agent.status.multi_select || false;
                 actionsHtml = this.renderChoices(agent.id, agent.status.choices, multiSelect);
             } else {
-                // Only approve button - for other options use number keys or input mode
                 actionsHtml = `
                     <div class="agent-actions">
                         <button class="btn btn-approve" data-action="approve" data-id="${this.escapeAttr(agent.id)}">
-                            Approve (y)
+                            Approve
                         </button>
                     </div>
                 `;
             }
         }
 
-        // Text input section (form wrapper for reliable Enter handling on mobile)
         const textInputHtml = `
             <form class="text-input-container" data-agent-id="${this.escapeAttr(agent.id)}">
                 <input type="text" class="text-input"
                        enterkeyhint="send"
-                       placeholder="Type message..."
+                       placeholder="Send message..."
                        data-agent-id="${this.escapeAttr(agent.id)}">
                 <button type="submit" class="btn btn-send">Send</button>
             </form>
         `;
 
-        // Special key buttons
         const specialKeysHtml = `
             <div class="special-keys">
                 <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Enter" title="Enter" aria-label="Send Enter key">&#x23CE;</button>
@@ -503,7 +542,6 @@ class TmaiRemote {
             </div>
         `;
 
-        // Preview toggle section
         const isExpanded = this.expandedPreviews.has(agent.id);
         const previewContent = this.previewCache.get(agent.id);
         const previewHtml = `
@@ -511,17 +549,15 @@ class TmaiRemote {
                 <svg viewBox="0 0 24 24">
                     <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
                 </svg>
-                <span>Show Output</span>
+                <span>Output</span>
             </div>
-            ${isExpanded ? `<div class="preview-content">${previewContent ? this.escapeHtml(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
+            ${isExpanded ? `<div class="preview-content">${previewContent ? this.formatPreviewContent(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
         `;
 
-        // Team badge
         const teamBadgeHtml = agent.team
             ? `<span class="team-badge">${this.escapeHtml(agent.team.member_name)}${agent.team.is_lead ? ' (lead)' : ''}</span>`
             : '';
 
-        // Git branch badge
         const gitBadgeHtml = agent.git_branch
             ? `<span class="git-badge ${agent.git_dirty ? 'git-dirty' : ''}">${this.escapeHtml(agent.git_branch)}</span>`
             : '';
@@ -571,7 +607,6 @@ class TmaiRemote {
             `;
         }).join('');
 
-        // Add "Other" option
         const otherNum = choices.length + 1;
         const otherSelected = selected.has(otherNum);
         const otherHtml = `
@@ -608,7 +643,6 @@ class TmaiRemote {
             btn.addEventListener('click', (e) => this.handleAction(e));
         });
 
-        // Handle form submit for text input (Enter key on mobile + Send button)
         this.elements.agentList.querySelectorAll('form.text-input-container').forEach(form => {
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -619,7 +653,6 @@ class TmaiRemote {
             });
         });
 
-        // Handle blur on text inputs to trigger pending render
         this.elements.agentList.querySelectorAll('.text-input').forEach(input => {
             input.addEventListener('blur', () => {
                 if (this.pendingRender) {
@@ -637,7 +670,6 @@ class TmaiRemote {
         const action = btn.dataset.action;
         const id = btn.dataset.id;
 
-        // Don't disable for toggle-preview
         if (action !== 'toggle-preview') {
             btn.disabled = true;
         }
@@ -707,15 +739,13 @@ class TmaiRemote {
      */
     async handleTogglePreview(agentId) {
         if (this.expandedPreviews.has(agentId)) {
-            // Close preview - stop auto-refresh
             this.expandedPreviews.delete(agentId);
             this.stopPreviewAutoRefresh(agentId);
         } else {
-            // Open preview - start auto-refresh
             this.expandedPreviews.add(agentId);
             this.previewCache.delete(agentId);
             this.render();
-            await this.refreshPreview(agentId, true); // scroll to bottom on initial load
+            await this.refreshPreview(agentId, true);
             this.startPreviewAutoRefresh(agentId);
         }
         this.render();
@@ -730,7 +760,6 @@ class TmaiRemote {
         try {
             const content = await this.getPreview(agentId);
             this.previewCache.set(agentId, content);
-            // Only update if preview is still expanded
             if (this.expandedPreviews.has(agentId)) {
                 this.updatePreviewContent(agentId, content, scrollToBottom);
             }
@@ -754,9 +783,8 @@ class TmaiRemote {
 
         const previewEl = card.querySelector('.preview-content');
         if (previewEl) {
-            // Preserve scroll position unless scrollToBottom is requested
             const scrollTop = previewEl.scrollTop;
-            previewEl.textContent = content;
+            previewEl.innerHTML = this.formatPreviewContent(content);
             if (scrollToBottom) {
                 previewEl.scrollTop = previewEl.scrollHeight;
             } else {
@@ -770,7 +798,6 @@ class TmaiRemote {
      * @param {string} agentId
      */
     startPreviewAutoRefresh(agentId) {
-        // Clear existing interval if any
         this.stopPreviewAutoRefresh(agentId);
 
         const intervalId = setInterval(() => {
@@ -820,8 +847,6 @@ class TmaiRemote {
         });
         if (!response.ok) throw new Error('Approve failed');
     }
-
-    // Note: reject removed - use select with option number instead
 
     /**
      * API: Select choice
@@ -911,6 +936,17 @@ class TmaiRemote {
                 <p>${this.escapeHtml(message)}</p>
             </div>
         `;
+    }
+
+    /**
+     * Format preview content: escape HTML, then replace horizontal line chars with styled hr
+     * @param {string} text - raw preview text
+     * @returns {string} formatted HTML
+     */
+    formatPreviewContent(text) {
+        const escaped = this.escapeHtml(text);
+        // Replace lines consisting mostly of box-drawing horizontal chars (─━═╌╍┄┅┈┉─) or dashes
+        return escaped.replace(/^[\s]*[─━═╌╍┄┅┈┉\-]{4,}[\s]*$/gm, '<hr class="preview-hr">');
     }
 
     /**
