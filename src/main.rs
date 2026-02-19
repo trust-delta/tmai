@@ -77,9 +77,24 @@ async fn main() -> Result<()> {
             state,
             token,
             Some(ipc_server.clone()),
-            audit_tx,
+            audit_tx.clone(),
         );
         web_server.start();
+    }
+
+    // Start auto-approve service if enabled
+    if settings.auto_approve.enabled {
+        let service = tmai::auto_approve::AutoApproveService::new(
+            settings.auto_approve.clone(),
+            app.shared_state(),
+            tmai::command_sender::CommandSender::new(
+                Some(ipc_server.clone()),
+                tmai::tmux::TmuxClient::with_capture_lines(settings.capture_lines),
+                app.shared_state(),
+            ),
+            audit_tx,
+        );
+        service.start();
     }
 
     app.run().await
@@ -94,7 +109,8 @@ fn run_wrap_mode(cli: &Config) -> Result<()> {
     tracing::debug!("Wrapping command: {} {:?}", command, args);
 
     // Load settings for exfil detection config
-    let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+    let mut settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+    settings.validate();
 
     // Set up raw terminal mode
     let _raw_guard = setup_raw_mode()?;

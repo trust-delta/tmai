@@ -26,6 +26,7 @@ Detailed feature documentation.
 - [Exfil Detection](./features/exfil-detection.md) - Security monitoring
 - [Web Remote Control](./features/web-remote.md) - Smartphone control via QR code
 - [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
+- [Auto-Approve](./features/auto-approve.md) - AI-powered automatic approval
 
 ## Guides
 

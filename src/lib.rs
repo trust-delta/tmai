@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod audit;
+pub mod auto_approve;
 pub mod command_sender;
 pub mod config;
 pub mod demo;

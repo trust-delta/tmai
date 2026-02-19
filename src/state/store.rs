@@ -356,6 +356,9 @@ pub struct AppState {
     pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
     /// Whether the app is running
     pub running: bool,
+
+    /// Show activity name (tool/verb) during Processing instead of generic "Processing"
+    pub show_activity_name: bool,
 }
 
 impl AppState {
@@ -382,6 +385,7 @@ impl AppState {
             error_message: None,
             last_poll: None,
             running: true,
+            show_activity_name: true,
         }
     }
 
@@ -481,6 +485,14 @@ impl AppState {
                 existing.team_info = agent.team_info;
                 existing.is_virtual = agent.is_virtual;
                 existing.detection_source = agent.detection_source;
+                // Preserve auto_approve_phase from service, but clear it when
+                // agent is no longer awaiting approval (state has transitioned)
+                if !matches!(
+                    existing.status,
+                    crate::agents::AgentStatus::AwaitingApproval { .. }
+                ) {
+                    existing.auto_approve_phase = None;
+                }
             } else {
                 self.agents.insert(id.clone(), agent);
             }

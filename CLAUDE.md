@@ -15,6 +15,7 @@ AIエージェントのターミナル監視ツールとして、以下の機能
 - **Agent Teams対応**: Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **モード検出**: Plan/Delegate/AutoApproveモードをタイトルアイコンから自動検出・表示
 - **検出監査ログ**: 判定理由付きndjsonログで検出精度を検証可能（`--audit` フラグで有効化）
+- **Auto-approve**: AIモデル（Claude Haiku）を使って安全な操作を自動承認
 
 ## ディレクトリ構成
 
@@ -33,6 +34,11 @@ tmai/
 │   │   ├── mod.rs
 │   │   ├── events.rs           # AuditEvent enum
 │   │   └── logger.rs           # ndjsonロガー + ローテーション
+│   ├── auto_approve/           # AI自動承認
+│   │   ├── mod.rs
+│   │   ├── types.rs            # AutoApprovePhase, JudgmentRequest/Result
+│   │   ├── service.rs          # AutoApproveService（メインループ）
+│   │   └── judge.rs            # ClaudeHaikuJudge（AI判定プロバイダー）
 │   ├── detectors/              # 状態検出
 │   │   ├── mod.rs              # StatusDetector trait, DetectionResult/Reason
 │   │   ├── claude_code.rs      # Claude Code専用検出器
@@ -206,6 +212,15 @@ scan_interval = 5    # スキャン間隔（ポーリング周期数、デフォ
 enabled = false               # 検出監査ログ（デフォルト: false、--audit フラグでも有効化可）
 max_size_bytes = 10485760     # ログファイル最大サイズ（デフォルト: 10MB、超過でローテーション）
 log_source_disagreement = false  # IPC/capture-pane不一致イベントの記録
+
+[auto_approve]
+enabled = false              # AI自動承認（デフォルト: false）
+model = "haiku"              # 判定モデル（デフォルト: "haiku"）
+timeout_secs = 30            # 判定タイムアウト（デフォルト: 30秒）
+cooldown_secs = 10           # 同一ターゲットの再評価待ち（デフォルト: 10秒）
+check_interval_ms = 1000     # チェック間隔（デフォルト: 1000ms）
+max_concurrent = 3           # 最大同時判定数（デフォルト: 3）
+allowed_types = []           # 承認タイプフィルタ（空=全タイプ、例: ["file_edit", "shell_command"]）
 ```
 
 ### 使用方法
@@ -433,6 +448,7 @@ cargo run -- --audit --debug   # debug併用推奨
 | `AgentDisappeared` | エージェントが消失 |
 | `SourceDisagreement` | IPC検出とcapture-pane検出の結果が不一致 |
 | `UserInputDuringProcessing` | Processing/Idle中にユーザ入力があった（検出漏れの可能性） |
+| `AutoApproveJudgment` | Auto-approveのAI判定結果 |
 
 ### 判定理由（DetectionReason）
 
@@ -490,6 +506,43 @@ cat $STATE_DIR/audit/detection.ndjson | jq 'select(.pane_id == "5")'
 # 検出漏れの可能性を確認（Processing中にユーザ入力）
 cat $STATE_DIR/audit/detection.ndjson | jq 'select(.event == "UserInputDuringProcessing")'
 ```
+
+## Auto-approve（AI自動承認）
+
+AIモデル（デフォルト: Claude Haiku）を使って、承認待ちプロンプトの安全性を自動判定し、低リスクな操作を自動承認する機能。
+
+### アーキテクチャ
+
+```
+Agent → AwaitingApproval
+  ↓ (~1秒間隔)
+AutoApproveService が候補を検出
+  ↓ 画面コンテキスト（末尾30行）をAIに送信
+  ├─ Approve   → 承認キー自動送信 → Agent → Processing
+  ├─ Reject    → ManualRequired（ユーザー操作必要）
+  └─ Uncertain → ManualRequired（ユーザー操作必要）
+```
+
+### 判定フェーズ（AutoApprovePhase）
+
+`MonitoredAgent.auto_approve_phase` で判定ライフサイクルを追跡:
+
+| フェーズ | 意味 | TUIインジケータ |
+|---------|------|---------------|
+| `Judging` | AI判定中（待てば自動処理される） | `⟳` Cyan |
+| `Approved` | 承認済み（キー送信済み、まもなく遷移） | `✓` Green |
+| `ManualRequired(reason)` | ユーザー操作が必要 | `⚠` Magenta |
+
+### スキップされるケース
+- 本物のAskUserQuestion（カスタム選択肢、multi_select）
+- AutoApproveモードのエージェント（`--dangerously-skip-permissions`）
+- `allowed_types` フィルターに含まれない承認タイプ
+- 仮想エージェント（ペインなし）
+
+### 安全性ルール
+- **Approve**: 読み取り専用/低リスク操作、ビルド破壊なし、権限昇格なし、データ流出リスクなし
+- **Reject**: 破壊的操作、システムファイル変更、外部への機密データ送信、権限昇格
+- **Uncertain**: 判断できない場合（手動にフォールバック）
 
 ## 課題・TODO
 

@@ -25,6 +25,17 @@ pub struct TextInputRequest {
     pub text: String,
 }
 
+/// Special key request body
+#[derive(Debug, Deserialize)]
+pub struct KeyRequest {
+    pub key: String,
+}
+
+/// Allowed special key names (whitelist)
+const ALLOWED_KEYS: &[&str] = &[
+    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BSpace",
+];
+
 /// Preview response
 #[derive(Debug, Serialize)]
 pub struct PreviewResponse {
@@ -59,6 +70,9 @@ pub struct AgentInfo {
     /// Whether the git working tree has uncommitted changes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_dirty: Option<bool>,
+    /// Auto-approve judgment phase: "judging", "approved", or "manual_required"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_approve_phase: Option<String>,
 }
 
 /// Team information associated with an agent for API response
@@ -207,7 +221,14 @@ fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoR
 ///
 /// Shared helper used by both the REST API and SSE events.
 pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentInfo {
+    use crate::auto_approve::AutoApprovePhase;
+
     let mode = agent.mode.to_string();
+    let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
+        AutoApprovePhase::Judging => "judging".to_string(),
+        AutoApprovePhase::Approved => "approved".to_string(),
+        AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
+    });
     AgentInfo {
         id: agent.id.clone(),
         agent_type: agent.agent_type.short_name().to_string(),
@@ -221,6 +242,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         mode,
         git_branch: agent.git_branch.clone(),
         git_dirty: agent.git_dirty,
+        auto_approve_phase,
     }
 }
 
@@ -543,6 +565,46 @@ pub async fn send_text(
     }
 }
 
+/// Send a special key to an agent
+pub async fn send_key(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<KeyRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: send_key key={} agent_id={}", req.key, id);
+
+    // Validate key against whitelist
+    if !ALLOWED_KEYS.contains(&req.key.as_str()) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid key name"));
+    }
+
+    // Check if agent exists and is not virtual
+    let agent_info = {
+        let app_state = state.app_state.read();
+        app_state.agents.get(&id).map(|a| a.is_virtual)
+    };
+
+    match agent_info {
+        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
+        Some(true) => Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Cannot send key to virtual agent",
+        )),
+        Some(false) => {
+            if state.command_sender.send_keys(&id, &req.key).is_err() {
+                return Err(json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to send key",
+                ));
+            }
+            state
+                .audit_helper
+                .maybe_emit_input(&id, "special_key", "web_api_input", None);
+            Ok(Json(serde_json::json!({"status": "ok"})))
+        }
+    }
+}
+
 /// Get preview content (pane capture) for an agent
 pub async fn get_preview(
     State(state): State<Arc<ApiState>>,
@@ -720,6 +782,7 @@ mod tests {
             .route("/agents/{id}/select", post(select_choice))
             .route("/agents/{id}/submit", post(submit_selection))
             .route("/agents/{id}/input", post(send_text))
+            .route("/agents/{id}/key", post(send_key))
             .route("/agents/{id}/preview", get(get_preview))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
@@ -937,6 +1000,43 @@ mod tests {
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0]["id"], "main:0.0");
         assert_eq!(agents[0]["status"]["type"], "idle");
+    }
+
+    #[tokio::test]
+    async fn test_send_key_not_found() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"key":"Enter"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_send_key_invalid_key() {
+        let state = test_app_state();
+        add_idle_agent(&state, "main:0.0");
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"key":"Delete"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]

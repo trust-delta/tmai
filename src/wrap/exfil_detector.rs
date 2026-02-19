@@ -37,8 +37,8 @@ const BUILTIN_COMMANDS: &[&str] = &[
     "cargo publish",
 ];
 
-/// Sensitive data patterns
-static SENSITIVE_PATTERNS: LazyLock<Vec<SensitivePattern>> = LazyLock::new(|| {
+/// Sensitive data patterns (pub(crate) for reuse in auto-approve sanitization)
+pub(crate) static SENSITIVE_PATTERNS: LazyLock<Vec<SensitivePattern>> = LazyLock::new(|| {
     vec![
         SensitivePattern {
             name: "OpenAI API Key",
@@ -81,9 +81,9 @@ static SENSITIVE_PATTERNS: LazyLock<Vec<SensitivePattern>> = LazyLock::new(|| {
 });
 
 /// Sensitive data pattern definition
-struct SensitivePattern {
-    name: &'static str,
-    pattern: Regex,
+pub(crate) struct SensitivePattern {
+    pub(crate) name: &'static str,
+    pub(crate) pattern: Regex,
 }
 
 /// External transmission detector

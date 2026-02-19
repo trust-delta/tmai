@@ -454,6 +454,14 @@ class TmaiRemote {
             const details = agent.status.details || '';
             detailsHtml = details ? `<div class="agent-details">${this.escapeHtml(details)}</div>` : '';
 
+            // Auto-approve phase badge
+            const phase = agent.auto_approve_phase;
+            if (phase === 'judging') {
+                detailsHtml += `<div class="auto-approve-badge judging">\u{1F504} AI judging...</div>`;
+            } else if (phase === 'approved') {
+                detailsHtml += `<div class="auto-approve-badge approved">\u{2713} Approved</div>`;
+            }
+
             if (agent.status.approval_type === 'user_question' && agent.status.choices) {
                 const multiSelect = agent.status.multi_select || false;
                 actionsHtml = this.renderChoices(agent.id, agent.status.choices, multiSelect);
@@ -478,6 +486,21 @@ class TmaiRemote {
                        data-agent-id="${this.escapeAttr(agent.id)}">
                 <button type="submit" class="btn btn-send">Send</button>
             </form>
+        `;
+
+        // Special key buttons
+        const specialKeysHtml = `
+            <div class="special-keys">
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Enter" title="Enter" aria-label="Send Enter key">&#x23CE;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Escape" title="Escape" aria-label="Send Escape key">Esc</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Space" title="Space" aria-label="Send Space key">&#x2423;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Tab" title="Tab" aria-label="Send Tab key">&#x21E5;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="BSpace" title="Backspace" aria-label="Send Backspace key">&#x232B;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Up" title="Up" aria-label="Send Up arrow key">&#x2191;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Down" title="Down" aria-label="Send Down arrow key">&#x2193;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Left" title="Left" aria-label="Send Left arrow key">&#x2190;</button>
+                <button class="key-btn" data-action="send-key" data-id="${this.escapeAttr(agent.id)}" data-key="Right" title="Right" aria-label="Send Right arrow key">&#x2192;</button>
+            </div>
         `;
 
         // Preview toggle section
@@ -520,6 +543,7 @@ class TmaiRemote {
                 ${detailsHtml}
                 ${actionsHtml}
                 ${textInputHtml}
+                ${specialKeysHtml}
                 ${previewHtml}
             </div>
         `;
@@ -639,6 +663,11 @@ class TmaiRemote {
                     await this.submit(id);
                     this.selectedChoices.delete(id);
                     this.showToast('Selection submitted', 'success');
+                    break;
+                case 'send-key':
+                    const key = btn.dataset.key;
+                    await this.sendKey(id, key);
+                    this.showToast(`Sent ${key}`, 'success');
                     break;
                 case 'toggle-preview':
                     await this.handleTogglePreview(id);
@@ -831,6 +860,20 @@ class TmaiRemote {
             body: JSON.stringify({ text })
         });
         if (!response.ok) throw new Error('Send text failed');
+    }
+
+    /**
+     * API: Send special key to agent
+     * @param {string} id
+     * @param {string} key
+     */
+    async sendKey(id, key) {
+        const response = await this.apiFetch(`/api/agents/${encodeURIComponent(id)}/key`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key })
+        });
+        if (!response.ok) throw new Error('Send key failed');
     }
 
     /**
