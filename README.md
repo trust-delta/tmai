@@ -21,7 +21,7 @@
 - **Web Remote Control** - Control agents from your smartphone via QR code
 - **Agent Teams** - Visualize Claude Code Agent Teams structure and task progress
 - **Mode detection** - Detect Plan/Delegate/Auto-approve modes from terminal title icons
-- **Auto-approve** - AI-powered automatic approval of safe agent actions
+- **Auto-approve** - Automatic approval of safe actions with 4 modes: Rules (instant), AI, Hybrid, or Off
 
 ## Documentation
 

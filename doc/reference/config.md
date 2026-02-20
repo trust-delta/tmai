@@ -26,8 +26,12 @@ enabled = true
 scan_interval = 5
 
 [auto_approve]
-enabled = true
+mode = "hybrid"
 model = "haiku"
+
+[auto_approve.rules]
+allow_read = true
+allow_tests = true
 ```
 
 ## Sections
@@ -109,35 +113,59 @@ scan_interval = 2
 
 ### [auto_approve]
 
-AI-powered automatic approval of safe agent actions. Requires the `claude` CLI.
+Automatic approval of safe agent actions. Supports 4 modes: Off, Rules, AI, Hybrid.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | bool | `false` | Enable/disable auto-approve |
-| `provider` | string | `"claude_haiku"` | Judgment provider |
-| `model` | string | `"haiku"` | Model passed to `claude --model` |
-| `timeout_secs` | integer | `30` | Timeout for each judgment in seconds |
+| `mode` | string | — | Operating mode: `"off"`, `"rules"`, `"ai"`, `"hybrid"` |
+| `enabled` | bool | `false` | Legacy toggle (`mode` takes precedence) |
+| `model` | string | `"haiku"` | Model passed to `claude --model` (AI/Hybrid modes) |
+| `timeout_secs` | integer | `30` | Timeout for each AI judgment in seconds |
 | `cooldown_secs` | integer | `10` | Cooldown before re-evaluating the same agent |
 | `check_interval_ms` | integer | `1000` | Interval between candidate scans in ms |
-| `max_concurrent` | integer | `3` | Maximum parallel judgments |
+| `max_concurrent` | integer | `3` | Maximum parallel AI judgments |
 | `allowed_types` | string[] | `[]` | Approval types to auto-approve (empty = all except genuine user questions) |
 | `custom_command` | string | `null` | Custom command instead of `claude` |
 
+### [auto_approve.rules]
+
+Rule engine settings for Rules and Hybrid modes.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `allow_read` | bool | `true` | Auto-approve Read tool and read-only shell commands |
+| `allow_tests` | bool | `true` | Auto-approve test execution |
+| `allow_fetch` | bool | `true` | Auto-approve WebFetch, WebSearch, curl GET |
+| `allow_git_readonly` | bool | `true` | Auto-approve read-only git commands |
+| `allow_format_lint` | bool | `true` | Auto-approve format/lint commands |
+| `allow_patterns` | string[] | `[]` | Additional regex patterns to allow |
+
 #### Examples
 
-Enable with defaults:
+Hybrid mode (recommended):
 
 ```toml
 [auto_approve]
-enabled = true
+mode = "hybrid"
+model = "haiku"
+
+[auto_approve.rules]
+allow_read = true
+allow_tests = true
 ```
 
-Only auto-approve file operations:
+Rules only (no AI, instant):
 
 ```toml
 [auto_approve]
-enabled = true
-allowed_types = ["file_edit", "file_create"]
+mode = "rules"
+```
+
+Legacy compatible:
+
+```toml
+[auto_approve]
+enabled = true  # Equivalent to mode = "ai"
 ```
 
 For detailed usage, see [Auto-Approve](../features/auto-approve.md).
@@ -206,6 +234,7 @@ tmai wrap gemini
 | `exfil_detection.additional_commands` | `[]` |
 | `teams.enabled` | `true` |
 | `teams.scan_interval` | `5` |
+| `auto_approve.mode` | — (use `enabled` fallback) |
 | `auto_approve.enabled` | `false` |
 | `auto_approve.model` | `"haiku"` |
 | `auto_approve.timeout_secs` | `30` |
@@ -213,6 +242,12 @@ tmai wrap gemini
 | `auto_approve.check_interval_ms` | `1000` |
 | `auto_approve.max_concurrent` | `3` |
 | `auto_approve.allowed_types` | `[]` |
+| `auto_approve.rules.allow_read` | `true` |
+| `auto_approve.rules.allow_tests` | `true` |
+| `auto_approve.rules.allow_fetch` | `true` |
+| `auto_approve.rules.allow_git_readonly` | `true` |
+| `auto_approve.rules.allow_format_lint` | `true` |
+| `auto_approve.rules.allow_patterns` | `[]` |
 
 ## Config File Format
 
