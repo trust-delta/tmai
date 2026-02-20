@@ -3,7 +3,7 @@
 //! Generates human-readable session names by combining a nature/weather adjective
 //! with an animal/nature noun (e.g., "amber-falcon", "misty-wolf").
 
-use rand::Rng;
+use rand::RngExt;
 
 /// Nature and weather themed adjectives (~100 entries).
 const ADJECTIVES: &[&str] = &[
