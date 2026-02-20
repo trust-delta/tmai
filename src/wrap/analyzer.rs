@@ -86,6 +86,16 @@ impl Default for AnalyzerPatterns {
     }
 }
 
+/// Strip box-drawing characters (U+2500-U+257F) and everything after them from choice text.
+/// Handles preview box borders like │, ┌, ┐, └, ┘, etc.
+fn strip_box_drawing(text: &str) -> &str {
+    if let Some(pos) = text.find(|c: char| ('\u{2500}'..='\u{257F}').contains(&c)) {
+        text[..pos].trim()
+    } else {
+        text
+    }
+}
+
 impl Analyzer {
     /// Create a new analyzer
     pub fn new(pid: u32) -> Self {
@@ -496,9 +506,8 @@ impl Analyzer {
             if let Some(cap) = self.patterns.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
                     if num == expected_num {
-                        // Strip preview box content (│...) before extracting label
-                        let raw_text = cap[2].trim();
-                        let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(cap[2].trim());
                         // Strip Japanese description in parentheses
                         let label = choice_text
                             .split('（')
@@ -521,9 +530,8 @@ impl Analyzer {
                     } else if num == 1 {
                         // New choice set, start over
                         choices.clear();
-                        // Strip preview box content (│...) before extracting label
-                        let raw_text = cap[2].trim();
-                        let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(cap[2].trim());
                         let label = choice_text
                             .split('（')
                             .next()

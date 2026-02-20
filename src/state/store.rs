@@ -1349,8 +1349,16 @@ fn build_directory_items(
     if !unique_known.is_empty() {
         items.push(DirItem::Header("Known".to_string()));
         for dir in unique_known {
-            let display = if dir.len() > 40 {
-                format!("...{}", &dir[dir.len() - 37..])
+            let display = if dir.chars().count() > 40 {
+                let tail: String = dir
+                    .chars()
+                    .rev()
+                    .take(37)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                format!("...{}", tail)
             } else {
                 dir.clone()
             };

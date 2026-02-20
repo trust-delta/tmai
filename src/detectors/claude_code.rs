@@ -251,6 +251,16 @@ pub struct ClaudeCodeDetector {
     error_pattern: Regex,
 }
 
+/// Strip box-drawing characters (U+2500-U+257F) and everything after them from choice text.
+/// Handles preview box borders like │, ┌, ┐, └, ┘, etc.
+fn strip_box_drawing(text: &str) -> &str {
+    if let Some(pos) = text.find(|c: char| ('\u{2500}'..='\u{257F}').contains(&c)) {
+        text[..pos].trim()
+    } else {
+        text
+    }
+}
+
 impl ClaudeCodeDetector {
     pub fn new() -> Self {
         Self {
@@ -417,9 +427,8 @@ impl ClaudeCodeDetector {
             // Check for numbered choices (e.g., "1. Option text" or "> 1. Option text")
             if let Some(cap) = self.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
-                    // Strip preview box content (│...) before extracting label
-                    let raw_text = cap[2].trim();
-                    let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
+                    // Strip preview box content (box-drawing chars) before extracting label
+                    let choice_text = strip_box_drawing(cap[2].trim());
                     if num as usize == choices.len() + 1 {
                         let label = choice_text
                             .split('（')
@@ -603,9 +612,8 @@ impl ClaudeCodeDetector {
             if let Some(dot_pos) = clean.find(". ") {
                 if let Ok(num) = clean[..dot_pos].trim().parse::<usize>() {
                     if num == choices.len() + 1 {
-                        // Strip preview box content (│...) before extracting label
-                        let raw_text = clean[dot_pos + 2..].trim();
-                        let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(clean[dot_pos + 2..].trim());
                         let label = choice_text
                             .split('（')
                             .next()
