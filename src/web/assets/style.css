@@ -396,6 +396,11 @@ main {
     color: var(--warning);
 }
 
+.git-badge.git-worktree {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+}
+
 /* ===== Agent Info ===== */
 
 .agent-info {

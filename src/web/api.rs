@@ -70,6 +70,9 @@ pub struct AgentInfo {
     /// Whether the git working tree has uncommitted changes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_dirty: Option<bool>,
+    /// Whether this directory is a git worktree (not the main repo)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_worktree: Option<bool>,
     /// Auto-approve judgment phase: "judging", "approved", or "manual_required"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_phase: Option<String>,
@@ -242,6 +245,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         mode,
         git_branch: agent.git_branch.clone(),
         git_dirty: agent.git_dirty,
+        is_worktree: agent.is_worktree,
         auto_approve_phase,
     }
 }

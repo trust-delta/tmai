@@ -559,7 +559,7 @@ class TmaiRemote {
             : '';
 
         const gitBadgeHtml = agent.git_branch
-            ? `<span class="git-badge ${agent.git_dirty ? 'git-dirty' : ''}">${this.escapeHtml(agent.git_branch)}</span>`
+            ? `<span class="git-badge ${agent.git_dirty ? 'git-dirty' : ''} ${agent.is_worktree ? 'git-worktree' : ''}">${agent.is_worktree ? 'WT: ' : ''}${this.escapeHtml(agent.git_branch)}</span>`
             : '';
 
         return `

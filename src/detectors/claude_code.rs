@@ -905,7 +905,7 @@ impl ClaudeCodeDetector {
     ///
     /// This is critical for detecting processing when the title still shows ✳ (idle),
     /// e.g. during /compact or title update lag.
-    fn detect_content_spinner(content: &str) -> Option<(String, bool)> {
+    fn detect_content_spinner(content: &str, context: &DetectionContext) -> Option<(String, bool)> {
         // If idle prompt ❯ is near the end (last 5 non-empty lines), any spinner above is a past residual
         let has_idle_prompt = content
             .lines()
@@ -953,12 +953,23 @@ impl ClaudeCodeDetector {
             let has_ellipsis = rest.contains('…') || rest.contains("...");
 
             if starts_upper && has_ellipsis {
-                // Extract the verb (first word) and check against builtin list
+                // Extract the verb (first word) and check against builtin/custom lists
                 let verb = rest.split_whitespace().next().unwrap_or("");
                 // Strip trailing ellipsis from verb if present (e.g., "Spinning…")
                 let verb_clean = verb.trim_end_matches('…').trim_end_matches("...");
                 let is_builtin = BUILTIN_SPINNER_VERBS.contains(&verb_clean);
-                return Some((trimmed.to_string(), is_builtin));
+                // Also check custom spinnerVerbs from Claude Code settings
+                let is_custom = if !is_builtin {
+                    context
+                        .settings_cache
+                        .and_then(|cache| cache.get_settings(context.cwd))
+                        .and_then(|s| s.spinner_verbs)
+                        .map(|config| config.verbs.iter().any(|v| v == verb_clean))
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+                return Some((trimmed.to_string(), is_builtin || is_custom));
             }
         }
         None
@@ -1133,7 +1144,7 @@ impl StatusDetector for ClaudeCodeDetector {
         // 6. Content-based spinner detection (overrides title idle)
         //    Catches cases where title still shows ✳ but content has active spinner
         //    e.g. during /compact, or title update lag
-        if let Some((activity, is_builtin)) = Self::detect_content_spinner(content) {
+        if let Some((activity, is_builtin)) = Self::detect_content_spinner(content, context) {
             let confidence = if is_builtin {
                 DetectionConfidence::High
             } else {

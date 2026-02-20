@@ -526,17 +526,17 @@ impl SessionList {
             ));
         }
 
-        // 6) Git branch badge
+        // 6) Git branch badge (with worktree indicator)
         if let Some(ref branch) = agent.git_branch {
-            let branch_color = if agent.git_dirty.unwrap_or(false) {
-                Color::Yellow
+            let is_wt = agent.is_worktree.unwrap_or(false);
+            let (label, color) = if is_wt {
+                (format!("  [WT: {}]", branch), Color::Magenta)
+            } else if agent.git_dirty.unwrap_or(false) {
+                (format!("  [{}]", branch), Color::Yellow)
             } else {
-                Color::Cyan
+                (format!("  [{}]", branch), Color::Cyan)
             };
-            line1_spans.push(Span::styled(
-                format!("  [{}]", branch),
-                Style::default().fg(branch_color),
-            ));
+            line1_spans.push(Span::styled(label, Style::default().fg(color)));
         }
 
         let line1 = Line::from(line1_spans);
@@ -803,17 +803,17 @@ impl SessionList {
             ));
         }
 
-        // Add git branch badge if available
+        // Add git branch badge if available (with worktree indicator)
         if let Some(ref branch) = agent.git_branch {
-            let branch_color = if agent.git_dirty.unwrap_or(false) {
-                Color::Yellow
+            let is_wt = agent.is_worktree.unwrap_or(false);
+            let (label, color) = if is_wt {
+                (format!(" [WT: {}]", branch), Color::Magenta)
+            } else if agent.git_dirty.unwrap_or(false) {
+                (format!(" [{}]", branch), Color::Yellow)
             } else {
-                Color::Cyan
+                (format!(" [{}]", branch), Color::Cyan)
             };
-            spans.push(Span::styled(
-                format!(" [{}]", branch),
-                Style::default().fg(branch_color).bg(bg_color),
-            ));
+            spans.push(Span::styled(label, Style::default().fg(color).bg(bg_color)));
         }
 
         ListItem::new(Line::from(spans))
