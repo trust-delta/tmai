@@ -61,7 +61,7 @@ struct AnalyzerPatterns {
 impl Default for AnalyzerPatterns {
     fn default() -> Self {
         Self {
-            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$")
+            choice_pattern: Regex::new(r"^\s*(?:[>❯›]\s*)?(\d+)\.\s+(.+)$")
                 .expect("Invalid choice_pattern"),
             yes_no_pattern: Regex::new(r"(?i)\b(Yes|No)\b")
                 .expect("Invalid yes_no_pattern"),
@@ -307,14 +307,19 @@ impl Analyzer {
 
                         // Check for cursor marker
                         let trimmed = line.trim();
-                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
+                        {
                             has_cursor = true;
                         }
                     } else if num == 1 {
                         // New choice set
                         consecutive_choices = 1;
                         expected_num = 2;
-                        has_cursor = line.trim().starts_with('❯') || line.trim().starts_with('>');
+                        has_cursor = line.trim().starts_with('❯')
+                            || line.trim().starts_with('›')
+                            || line.trim().starts_with('>');
                     }
                 }
             }
@@ -503,7 +508,10 @@ impl Analyzer {
 
                         // Check for cursor
                         let trimmed = line.trim();
-                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
+                        {
                             cursor_position = num as usize;
                         }
 
@@ -519,12 +527,14 @@ impl Analyzer {
                             .trim()
                             .to_string();
                         choices.push(label);
-                        cursor_position =
-                            if line.trim().starts_with('❯') || line.trim().starts_with('>') {
-                                1
-                            } else {
-                                0
-                            };
+                        cursor_position = if line.trim().starts_with('❯')
+                            || line.trim().starts_with('›')
+                            || line.trim().starts_with('>')
+                        {
+                            1
+                        } else {
+                            0
+                        };
                         expected_num = 2;
                     }
                 }
