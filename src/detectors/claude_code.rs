@@ -509,6 +509,20 @@ impl ClaudeCodeDetector {
         }
 
         if choices.len() >= 2 {
+            // Filter out Claude Code settings menus (model selection, etc.)
+            // These show "Enter to confirm" footer instead of "Esc to cancel · Tab to amend"
+            let tail_lines: Vec<&str> = lines
+                .iter()
+                .rev()
+                .filter(|l| !l.trim().is_empty())
+                .take(8)
+                .copied()
+                .collect();
+            let tail_text = tail_lines.join(" ");
+            if tail_text.contains("Enter to confirm") {
+                return None;
+            }
+
             // Default cursor to 1 if not detected
             let cursor = if cursor_position == 0 {
                 1
