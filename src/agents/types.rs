@@ -474,6 +474,8 @@ pub struct MonitoredAgent {
     pub git_branch: Option<String>,
     /// Whether the git working tree has uncommitted changes
     pub git_dirty: Option<bool>,
+    /// Whether this directory is a git worktree (not the main repo)
+    pub is_worktree: Option<bool>,
     /// Auto-approve judgment phase (set by AutoApproveService)
     pub auto_approve_phase: Option<AutoApprovePhase>,
 }
@@ -516,6 +518,7 @@ impl MonitoredAgent {
             mode: AgentMode::Default,
             git_branch: None,
             git_dirty: None,
+            is_worktree: None,
             auto_approve_phase: None,
         }
     }

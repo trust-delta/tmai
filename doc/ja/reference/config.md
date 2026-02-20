@@ -109,35 +109,59 @@ scan_interval = 2
 
 ### [auto_approve]
 
-AIを使って安全なエージェント操作を自動承認する機能。`claude` CLIが必要。
+安全なエージェント操作を自動承認する機能。Off / Rules / AI / Hybrid の4モード対応。
 
 | キー | 型 | デフォルト | 説明 |
 |-----|-----|---------|------|
-| `enabled` | bool | `false` | Auto-approveの有効/無効 |
-| `provider` | string | `"claude_haiku"` | 判定プロバイダー |
-| `model` | string | `"haiku"` | `claude --model` に渡すモデル名 |
-| `timeout_secs` | integer | `30` | 各判定のタイムアウト秒数 |
+| `mode` | string | — | 動作モード: `"off"`, `"rules"`, `"ai"`, `"hybrid"` |
+| `enabled` | bool | `false` | レガシートグル（`mode` が優先） |
+| `model` | string | `"haiku"` | `claude --model` に渡すモデル名（AI/Hybridモード） |
+| `timeout_secs` | integer | `30` | 各AI判定のタイムアウト秒数 |
 | `cooldown_secs` | integer | `10` | 同一エージェントの再評価までの待ち時間 |
 | `check_interval_ms` | integer | `1000` | 候補スキャンの間隔（ms） |
-| `max_concurrent` | integer | `3` | 最大並列判定数 |
+| `max_concurrent` | integer | `3` | 最大並列AI判定数 |
 | `allowed_types` | string[] | `[]` | 自動承認する承認タイプ（空 = 本物のユーザー質問以外すべて） |
 | `custom_command` | string | `null` | `claude` の代わりに使うカスタムコマンド |
 
+### [auto_approve.rules]
+
+RulesモードとHybridモード用のルールエンジン設定。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `allow_read` | bool | `true` | Readツールと読み取り専用シェルコマンドを自動承認 |
+| `allow_tests` | bool | `true` | テスト実行を自動承認 |
+| `allow_fetch` | bool | `true` | WebFetch, WebSearch, curl GETを自動承認 |
+| `allow_git_readonly` | bool | `true` | 読み取り専用gitコマンドを自動承認 |
+| `allow_format_lint` | bool | `true` | フォーマット/リントコマンドを自動承認 |
+| `allow_patterns` | string[] | `[]` | 追加のAllow正規表現パターン |
+
 #### 例
 
-デフォルトで有効化：
+ハイブリッドモード（推奨）：
 
 ```toml
 [auto_approve]
-enabled = true
+mode = "hybrid"
+model = "haiku"
+
+[auto_approve.rules]
+allow_read = true
+allow_tests = true
 ```
 
-ファイル操作のみ自動承認：
+ルールのみ（AI不使用、即時）：
 
 ```toml
 [auto_approve]
-enabled = true
-allowed_types = ["file_edit", "file_create"]
+mode = "rules"
+```
+
+レガシー互換：
+
+```toml
+[auto_approve]
+enabled = true  # mode = "ai" と同等
 ```
 
 詳細は [Auto-Approve](../features/auto-approve.md) を参照。
@@ -206,6 +230,7 @@ tmai wrap gemini
 | `exfil_detection.additional_commands` | `[]` |
 | `teams.enabled` | `true` |
 | `teams.scan_interval` | `5` |
+| `auto_approve.mode` | — (`enabled`でフォールバック) |
 | `auto_approve.enabled` | `false` |
 | `auto_approve.model` | `"haiku"` |
 | `auto_approve.timeout_secs` | `30` |
@@ -213,6 +238,12 @@ tmai wrap gemini
 | `auto_approve.check_interval_ms` | `1000` |
 | `auto_approve.max_concurrent` | `3` |
 | `auto_approve.allowed_types` | `[]` |
+| `auto_approve.rules.allow_read` | `true` |
+| `auto_approve.rules.allow_tests` | `true` |
+| `auto_approve.rules.allow_fetch` | `true` |
+| `auto_approve.rules.allow_git_readonly` | `true` |
+| `auto_approve.rules.allow_format_lint` | `true` |
+| `auto_approve.rules.allow_patterns` | `[]` |
 
 ## 設定ファイル形式
 

@@ -2,16 +2,33 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+/// Auto-approve operating mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoApproveMode {
+    /// Auto-approve is disabled (default)
+    #[default]
+    Off,
+    /// Rule-based only (instant, no AI)
+    Rules,
+    /// AI-based only (Claude Haiku via CLI)
+    Ai,
+    /// Rules first, AI fallback for abstain cases
+    Hybrid,
+}
+
 /// Phase of the auto-approve judgment lifecycle.
 ///
 /// Written by `AutoApproveService` into `MonitoredAgent.auto_approve_phase`
 /// so the UI can distinguish "wait for auto-approve" from "needs manual action".
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum AutoApprovePhase {
-    /// AI judgment is in progress (wait and it will resolve automatically)
+    /// Judgment is in progress (wait and it will resolve automatically)
     Judging,
-    /// Judgment complete: approved (keys sent, agent will transition soon)
-    Approved,
+    /// Approved by rule engine (keys sent, agent will transition soon)
+    ApprovedByRule,
+    /// Approved by AI judgment (keys sent, agent will transition soon)
+    ApprovedByAi,
     /// Manual user action required (reason provided)
     ManualRequired(String),
 }

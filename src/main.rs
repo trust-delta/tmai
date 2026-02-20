@@ -82,8 +82,8 @@ async fn main() -> Result<()> {
         web_server.start();
     }
 
-    // Start auto-approve service if enabled
-    if settings.auto_approve.enabled {
+    // Start auto-approve service if mode is not Off
+    if settings.auto_approve.effective_mode() != tmai::auto_approve::types::AutoApproveMode::Off {
         let service = tmai::auto_approve::AutoApproveService::new(
             settings.auto_approve.clone(),
             app.shared_state(),

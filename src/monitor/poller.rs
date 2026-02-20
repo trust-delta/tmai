@@ -1047,6 +1047,7 @@ impl Poller {
             if let Some(info) = self.git_cache.get_info(&agent.cwd).await {
                 agent.git_branch = Some(info.branch);
                 agent.git_dirty = Some(info.dirty);
+                agent.is_worktree = Some(info.is_worktree);
             }
         }
     }
@@ -1060,6 +1061,7 @@ impl Poller {
             if let Some(info) = self.git_cache.get_cached(&agent.cwd) {
                 agent.git_branch = Some(info.branch);
                 agent.git_dirty = Some(info.dirty);
+                agent.is_worktree = Some(info.is_worktree);
             }
         }
     }

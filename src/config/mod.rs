@@ -4,4 +4,6 @@ mod settings;
 pub use claude_settings::{
     ClaudeSettings, ClaudeSettingsCache, SpinnerVerbsConfig, SpinnerVerbsMode,
 };
-pub use settings::{AutoApproveSettings, Config, ExfilDetectionSettings, Settings, TeamSettings};
+pub use settings::{
+    AutoApproveSettings, Config, ExfilDetectionSettings, RuleSettings, Settings, TeamSettings,
+};

@@ -421,9 +421,10 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 ("\u{27F3}".to_string(), Color::Cyan) // ⟳
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                ("\u{2713}".to_string(), Color::Green) // ✓
-            }
+            (
+                AgentStatus::AwaitingApproval { .. },
+                Some(AutoApprovePhase::ApprovedByRule | AutoApprovePhase::ApprovedByAi),
+            ) => ("\u{2713}".to_string(), Color::Green), // ✓
             (AgentStatus::Processing { .. }, _) => {
                 (spinner_char.to_string(), Self::status_color(&agent.status))
             }
@@ -498,9 +499,15 @@ impl SessionList {
             }
             (
                 AgentStatus::AwaitingApproval { approval_type, .. },
-                Some(AutoApprovePhase::Approved),
+                Some(AutoApprovePhase::ApprovedByRule),
             ) => {
-                format!("Approved: {}", approval_type)
+                format!("Rule-Approved: {}", approval_type)
+            }
+            (
+                AgentStatus::AwaitingApproval { approval_type, .. },
+                Some(AutoApprovePhase::ApprovedByAi),
+            ) => {
+                format!("AI-Approved: {}", approval_type)
             }
             (AgentStatus::Idle, _) => "Idle".to_string(),
             (AgentStatus::Processing { activity }, _) => {
@@ -526,17 +533,17 @@ impl SessionList {
             ));
         }
 
-        // 6) Git branch badge
+        // 6) Git branch badge (with worktree indicator)
         if let Some(ref branch) = agent.git_branch {
-            let branch_color = if agent.git_dirty.unwrap_or(false) {
-                Color::Yellow
+            let is_wt = agent.is_worktree.unwrap_or(false);
+            let (label, color) = if is_wt {
+                (format!("  [WT: {}]", branch), Color::Magenta)
+            } else if agent.git_dirty.unwrap_or(false) {
+                (format!("  [{}]", branch), Color::Yellow)
             } else {
-                Color::Cyan
+                (format!("  [{}]", branch), Color::Cyan)
             };
-            line1_spans.push(Span::styled(
-                format!("  [{}]", branch),
-                Style::default().fg(branch_color),
-            ));
+            line1_spans.push(Span::styled(label, Style::default().fg(color)));
         }
 
         let line1 = Line::from(line1_spans);
@@ -678,9 +685,10 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 ("\u{27F3}".to_string(), Color::Cyan) // ⟳
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                ("\u{2713}".to_string(), Color::Green) // ✓
-            }
+            (
+                AgentStatus::AwaitingApproval { .. },
+                Some(AutoApprovePhase::ApprovedByRule | AutoApprovePhase::ApprovedByAi),
+            ) => ("\u{2713}".to_string(), Color::Green), // ✓
             (AgentStatus::Processing { .. }, _) => {
                 (spinner_char.to_string(), Self::status_color(&agent.status))
             }
@@ -725,8 +733,11 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 "Judging".to_string()
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                "Approved".to_string()
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::ApprovedByRule)) => {
+                "RuleOK".to_string()
+            }
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::ApprovedByAi)) => {
+                "AI-OK".to_string()
             }
             (AgentStatus::Idle, _) => "Idle".to_string(),
             (AgentStatus::Processing { activity }, _) => {
@@ -803,17 +814,17 @@ impl SessionList {
             ));
         }
 
-        // Add git branch badge if available
+        // Add git branch badge if available (with worktree indicator)
         if let Some(ref branch) = agent.git_branch {
-            let branch_color = if agent.git_dirty.unwrap_or(false) {
-                Color::Yellow
+            let is_wt = agent.is_worktree.unwrap_or(false);
+            let (label, color) = if is_wt {
+                (format!(" [WT: {}]", branch), Color::Magenta)
+            } else if agent.git_dirty.unwrap_or(false) {
+                (format!(" [{}]", branch), Color::Yellow)
             } else {
-                Color::Cyan
+                (format!(" [{}]", branch), Color::Cyan)
             };
-            spans.push(Span::styled(
-                format!(" [{}]", branch),
-                Style::default().fg(branch_color).bg(bg_color),
-            ));
+            spans.push(Span::styled(label, Style::default().fg(color).bg(bg_color)));
         }
 
         ListItem::new(Line::from(spans))

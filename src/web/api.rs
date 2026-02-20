@@ -70,7 +70,10 @@ pub struct AgentInfo {
     /// Whether the git working tree has uncommitted changes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_dirty: Option<bool>,
-    /// Auto-approve judgment phase: "judging", "approved", or "manual_required"
+    /// Whether this directory is a git worktree (not the main repo)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_worktree: Option<bool>,
+    /// Auto-approve judgment phase: "judging", "approved_rule", "approved_ai", or "manual_required"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_phase: Option<String>,
 }
@@ -226,7 +229,8 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
     let mode = agent.mode.to_string();
     let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
         AutoApprovePhase::Judging => "judging".to_string(),
-        AutoApprovePhase::Approved => "approved".to_string(),
+        AutoApprovePhase::ApprovedByRule => "approved_rule".to_string(),
+        AutoApprovePhase::ApprovedByAi => "approved_ai".to_string(),
         AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
     });
     AgentInfo {
@@ -242,6 +246,7 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
         mode,
         git_branch: agent.git_branch.clone(),
         git_dirty: agent.git_dirty,
+        is_worktree: agent.is_worktree,
         auto_approve_phase,
     }
 }

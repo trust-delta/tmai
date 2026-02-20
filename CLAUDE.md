@@ -15,7 +15,7 @@ AIエージェントのターミナル監視ツールとして、以下の機能
 - **Agent Teams対応**: Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **モード検出**: Plan/Delegate/AutoApproveモードをタイトルアイコンから自動検出・表示
 - **検出監査ログ**: 判定理由付きndjsonログで検出精度を検証可能（`--audit` フラグで有効化）
-- **Auto-approve**: AIモデル（Claude Haiku）を使って安全な操作を自動承認
+- **Auto-approve**: ルール/AI/ハイブリッドの4モードで安全な操作を自動承認
 
 ## ディレクトリ構成
 
@@ -34,10 +34,11 @@ tmai/
 │   │   ├── mod.rs
 │   │   ├── events.rs           # AuditEvent enum
 │   │   └── logger.rs           # ndjsonロガー + ローテーション
-│   ├── auto_approve/           # AI自動承認
+│   ├── auto_approve/           # 自動承認（Off/Rules/AI/Hybrid 4モード）
 │   │   ├── mod.rs
-│   │   ├── types.rs            # AutoApprovePhase, JudgmentRequest/Result
-│   │   ├── service.rs          # AutoApproveService（メインループ）
+│   │   ├── types.rs            # AutoApproveMode, AutoApprovePhase, JudgmentRequest/Result
+│   │   ├── service.rs          # AutoApproveService（メインループ、モード分岐）
+│   │   ├── rules.rs            # RuleEngine（パターンベース即時判定）
 │   │   └── judge.rs            # ClaudeHaikuJudge（AI判定プロバイダー）
 │   ├── detectors/              # 状態検出
 │   │   ├── mod.rs              # StatusDetector trait, DetectionResult/Reason
@@ -214,13 +215,22 @@ max_size_bytes = 10485760     # ログファイル最大サイズ（デフォル
 log_source_disagreement = false  # IPC/capture-pane不一致イベントの記録
 
 [auto_approve]
-enabled = false              # AI自動承認（デフォルト: false）
-model = "haiku"              # 判定モデル（デフォルト: "haiku"）
+mode = "hybrid"              # 動作モード: off/rules/ai/hybrid（デフォルト: mode未設定時はenabledで判定）
+# enabled = false            # レガシートグル（mode未設定時: true→ai, false→off）
+model = "haiku"              # 判定モデル（AI/Hybridモード用、デフォルト: "haiku"）
 timeout_secs = 30            # 判定タイムアウト（デフォルト: 30秒）
 cooldown_secs = 10           # 同一ターゲットの再評価待ち（デフォルト: 10秒）
 check_interval_ms = 1000     # チェック間隔（デフォルト: 1000ms）
 max_concurrent = 3           # 最大同時判定数（デフォルト: 3）
 allowed_types = []           # 承認タイプフィルタ（空=全タイプ、例: ["file_edit", "shell_command"]）
+
+[auto_approve.rules]
+allow_read = true            # 読み取り操作を自動承認（デフォルト: true）
+allow_tests = true           # テスト実行を自動承認（デフォルト: true）
+allow_fetch = true           # WebFetch/WebSearchを自動承認（デフォルト: true）
+allow_git_readonly = true    # 読み取り専用gitコマンドを自動承認（デフォルト: true）
+allow_format_lint = true     # フォーマット/リントを自動承認（デフォルト: true）
+allow_patterns = []          # 追加のAllowパターン（正規表現）
 ```
 
 ### 使用方法
@@ -507,20 +517,33 @@ cat $STATE_DIR/audit/detection.ndjson | jq 'select(.pane_id == "5")'
 cat $STATE_DIR/audit/detection.ndjson | jq 'select(.event == "UserInputDuringProcessing")'
 ```
 
-## Auto-approve（AI自動承認）
+## Auto-approve（自動承認）
 
-AIモデル（デフォルト: Claude Haiku）を使って、承認待ちプロンプトの安全性を自動判定し、低リスクな操作を自動承認する機能。
+4つの動作モード（Off / Rules / AI / Hybrid）で承認待ちプロンプトの安全性を判定し、低リスクな操作を自動承認する機能。
+
+### 動作モード
+
+| モード | 説明 | 速度 | `claude` CLI必要 |
+|--------|------|------|-----------------|
+| **Off** | 自動承認なし（デフォルト） | — | 不要 |
+| **Rules** | パターンベースの即時承認 | サブミリ秒 | 不要 |
+| **AI** | AIモデルが各プロンプトを判定 | 約2-15秒 | 必要 |
+| **Hybrid** | ルール優先、不明時にAIフォールバック | 一般操作は高速 | 必要 |
 
 ### アーキテクチャ
 
 ```
 Agent → AwaitingApproval
-  ↓ (~1秒間隔)
-AutoApproveService が候補を検出
-  ↓ 画面コンテキスト（末尾30行）をAIに送信
-  ├─ Approve   → 承認キー自動送信 → Agent → Processing
-  ├─ Reject    → ManualRequired（ユーザー操作必要）
-  └─ Uncertain → ManualRequired（ユーザー操作必要）
+  ↓
+Mode dispatch:
+  Rules  → RuleEngine.judge()（即時）
+  AI     → ClaudeHaikuJudge.judge()（API呼び出し）
+  Hybrid → Rules → Uncertain時にAIフォールバック
+  ↓
+  ├─ Approve (Rule) → ApprovedByRule → 承認キー自動送信
+  ├─ Approve (AI)   → ApprovedByAi  → 承認キー自動送信
+  ├─ Reject          → ManualRequired
+  └─ Uncertain       → ManualRequired（Rulesモード）/ AIフォールバック（Hybridモード）
 ```
 
 ### 判定フェーズ（AutoApprovePhase）
@@ -530,8 +553,20 @@ AutoApproveService が候補を検出
 | フェーズ | 意味 | TUIインジケータ |
 |---------|------|---------------|
 | `Judging` | AI判定中（待てば自動処理される） | `⟳` Cyan |
-| `Approved` | 承認済み（キー送信済み、まもなく遷移） | `✓` Green |
+| `ApprovedByRule` | ルール承認済み（キー送信済み） | `✓` Green + "Rule-Approved" |
+| `ApprovedByAi` | AI承認済み（キー送信済み） | `✓` Green + "AI-Approved" |
 | `ManualRequired(reason)` | ユーザー操作が必要 | `⚠` Magenta |
+
+### 組み込みAllowルール（Rules/Hybridモード）
+
+| ルール | 設定 | マッチ対象 |
+|--------|------|-----------|
+| 読み取り操作 | `allow_read` | Read, cat, head, tail, ls, find, grep, wc |
+| テスト実行 | `allow_tests` | cargo test, npm test, pytest, go test 等 |
+| フェッチ/検索 | `allow_fetch` | WebFetch, WebSearch, curl GET |
+| Git読み取り専用 | `allow_git_readonly` | git status/log/diff/branch/show/blame 等 |
+| フォーマット/リント | `allow_format_lint` | cargo fmt/clippy, prettier, eslint 等 |
+| カスタム | `allow_patterns` | ユーザー定義正規表現 |
 
 ### スキップされるケース
 - 本物のAskUserQuestion（カスタム選択肢、multi_select）
@@ -539,10 +574,9 @@ AutoApproveService が候補を検出
 - `allowed_types` フィルターに含まれない承認タイプ
 - 仮想エージェント（ペインなし）
 
-### 安全性ルール
-- **Approve**: 読み取り専用/低リスク操作、ビルド破壊なし、権限昇格なし、データ流出リスクなし
-- **Reject**: 破壊的操作、システムファイル変更、外部への機密データ送信、権限昇格
-- **Uncertain**: 判断できない場合（手動にフォールバック）
+### 安全性
+- **ルールエンジン**: Allowルールのみ（Denyなし）。マッチしない操作は手動承認またはAIフォールバック
+- **AIジャッジ**: Approve（低リスク）/ Reject（破壊的操作）/ Uncertain（手動フォールバック）
 
 ## 課題・TODO
 

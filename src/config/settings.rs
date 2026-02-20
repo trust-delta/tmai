@@ -297,9 +297,18 @@ impl Default for AuditSettings {
 /// Auto-approve settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoApproveSettings {
-    /// Enable auto-approve feature
+    /// Enable auto-approve feature (legacy; prefer `mode`)
     #[serde(default)]
     pub enabled: bool,
+
+    /// Operating mode: "off", "rules", "ai", "hybrid"
+    /// When set, takes precedence over `enabled`.
+    #[serde(default)]
+    pub mode: Option<crate::auto_approve::types::AutoApproveMode>,
+
+    /// Rule-based auto-approve settings
+    #[serde(default)]
+    pub rules: RuleSettings,
 
     /// Judgment provider (currently only "claude_haiku")
     #[serde(default = "default_aa_provider")]
@@ -334,6 +343,52 @@ pub struct AutoApproveSettings {
     pub custom_command: Option<String>,
 }
 
+/// Rule-based auto-approve settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuleSettings {
+    /// Auto-approve Read operations (file reads, cat, head, ls, find, grep)
+    #[serde(default = "default_true")]
+    pub allow_read: bool,
+
+    /// Auto-approve test execution (cargo test, npm test, pytest, go test)
+    #[serde(default = "default_true")]
+    pub allow_tests: bool,
+
+    /// Auto-approve WebFetch/Search (curl GET without POST/data)
+    #[serde(default = "default_true")]
+    pub allow_fetch: bool,
+
+    /// Auto-approve read-only git commands (status, log, diff, branch, show, blame)
+    #[serde(default = "default_true")]
+    pub allow_git_readonly: bool,
+
+    /// Auto-approve format/lint commands (cargo fmt/clippy, prettier, eslint)
+    #[serde(default = "default_true")]
+    pub allow_format_lint: bool,
+
+    /// Additional allow patterns (regex, matched against screen context)
+    #[serde(default)]
+    pub allow_patterns: Vec<String>,
+}
+
+/// Helper for serde default = true
+fn default_true() -> bool {
+    true
+}
+
+impl Default for RuleSettings {
+    fn default() -> Self {
+        Self {
+            allow_read: true,
+            allow_tests: true,
+            allow_fetch: true,
+            allow_git_readonly: true,
+            allow_format_lint: true,
+            allow_patterns: Vec::new(),
+        }
+    }
+}
+
 fn default_aa_provider() -> String {
     "claude_haiku".to_string()
 }
@@ -358,10 +413,33 @@ fn default_aa_max_concurrent() -> usize {
     3
 }
 
+impl AutoApproveSettings {
+    /// Resolve the effective operating mode.
+    ///
+    /// - If `mode` is explicitly set, use it directly.
+    /// - Otherwise fall back to `enabled` for backward compatibility:
+    ///   `enabled: true` → `Ai`, `enabled: false` → `Off`.
+    pub fn effective_mode(&self) -> crate::auto_approve::types::AutoApproveMode {
+        use crate::auto_approve::types::AutoApproveMode;
+        match self.mode {
+            Some(m) => m,
+            None => {
+                if self.enabled {
+                    AutoApproveMode::Ai
+                } else {
+                    AutoApproveMode::Off
+                }
+            }
+        }
+    }
+}
+
 impl Default for AutoApproveSettings {
     fn default() -> Self {
         Self {
             enabled: false,
+            mode: None,
+            rules: RuleSettings::default(),
             provider: default_aa_provider(),
             model: default_aa_model(),
             timeout_secs: default_aa_timeout(),
