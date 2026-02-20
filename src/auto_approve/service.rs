@@ -13,7 +13,10 @@ use crate::detectors;
 use crate::state::SharedState;
 
 use super::judge::{ClaudeHaikuJudge, JudgmentProvider};
-use super::types::{AutoApprovePhase, JudgmentDecision, JudgmentRequest, JudgmentResult};
+use super::rules::RuleEngine;
+use super::types::{
+    AutoApproveMode, AutoApprovePhase, JudgmentDecision, JudgmentRequest, JudgmentResult,
+};
 
 /// Number of screen context lines to capture for judgment
 const SCREEN_CONTEXT_LINES: usize = 30;
@@ -83,11 +86,37 @@ impl AutoApproveService {
 
     /// Main loop
     async fn run(self) {
-        let judge = Arc::new(ClaudeHaikuJudge::new(
-            self.settings.model.clone(),
-            self.settings.timeout_secs,
-            self.settings.custom_command.clone(),
-        ));
+        let mode = self.settings.effective_mode();
+
+        // Initialize providers based on mode
+        let rule_engine: Option<Arc<RuleEngine>> =
+            if mode == AutoApproveMode::Rules || mode == AutoApproveMode::Hybrid {
+                Some(Arc::new(RuleEngine::new(self.settings.rules.clone())))
+            } else {
+                None
+            };
+
+        let ai_judge: Option<Arc<ClaudeHaikuJudge>> =
+            if mode == AutoApproveMode::Ai || mode == AutoApproveMode::Hybrid {
+                Some(Arc::new(ClaudeHaikuJudge::new(
+                    self.settings.model.clone(),
+                    self.settings.timeout_secs,
+                    self.settings.custom_command.clone(),
+                )))
+            } else {
+                None
+            };
+
+        // Legacy compatibility: if mode is Ai but no ai_judge, fall back
+        let judge = ai_judge.clone().unwrap_or_else(|| {
+            Arc::new(ClaudeHaikuJudge::new(
+                self.settings.model.clone(),
+                self.settings.timeout_secs,
+                self.settings.custom_command.clone(),
+            ))
+        });
+        // Suppress unused variable warning for `judge` when not in Ai mode
+        let _ = &judge;
 
         let flight_tracker: Arc<Mutex<HashMap<String, FlightStatus>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -96,7 +125,8 @@ impl AutoApproveService {
         let cooldown_duration = Duration::from_secs(self.settings.cooldown_secs);
 
         tracing::info!(
-            "Auto-approve service started (model={}, interval={}ms, max_concurrent={})",
+            "Auto-approve service started (mode={:?}, model={}, interval={}ms, max_concurrent={})",
+            mode,
             self.settings.model,
             self.settings.check_interval_ms,
             self.settings.max_concurrent,
@@ -230,7 +260,8 @@ impl AutoApproveService {
                     agent_type: agent_type.short_name().to_string(),
                 };
 
-                let judge_ref = judge.clone();
+                let rule_engine_ref = rule_engine.clone();
+                let ai_judge_ref = ai_judge.clone();
                 let flight_tracker = flight_tracker.clone();
                 let app_state = self.app_state.clone();
                 let command_sender = self.command_sender.clone();
@@ -238,7 +269,43 @@ impl AutoApproveService {
                 let agent_type_clone = agent_type.clone();
 
                 tokio::spawn(async move {
-                    let result = judge_ref.judge(&request).await;
+                    // Dispatch based on mode
+                    let result = match mode {
+                        AutoApproveMode::Rules => {
+                            rule_engine_ref
+                                .as_ref()
+                                .expect("rule engine initialized")
+                                .judge(&request)
+                                .await
+                        }
+                        AutoApproveMode::Ai => {
+                            ai_judge_ref
+                                .as_ref()
+                                .expect("ai judge initialized")
+                                .judge(&request)
+                                .await
+                        }
+                        AutoApproveMode::Hybrid => {
+                            let rule_result = rule_engine_ref
+                                .as_ref()
+                                .expect("rule engine initialized")
+                                .judge(&request)
+                                .await;
+                            match rule_result {
+                                Ok(ref r) if r.decision == JudgmentDecision::Uncertain => {
+                                    // Rules abstained → escalate to AI
+                                    ai_judge_ref
+                                        .as_ref()
+                                        .expect("ai judge initialized")
+                                        .judge(&request)
+                                        .await
+                                }
+                                other => other,
+                            }
+                        }
+                        AutoApproveMode::Off => unreachable!("Off mode should not reach here"),
+                    };
+
                     let _permit = permit; // Keep permit alive until task completes
 
                     match result {
@@ -251,18 +318,25 @@ impl AutoApproveService {
                                 &agent_type_clone,
                             );
 
-                            // Update phase based on judgment result
+                            // Determine phase: rule-based vs AI-based approval
+                            let phase = if approval_sent {
+                                if result.model.starts_with("rules:") {
+                                    Some(AutoApprovePhase::ApprovedByRule)
+                                } else {
+                                    Some(AutoApprovePhase::ApprovedByAi)
+                                }
+                            } else {
+                                Some(AutoApprovePhase::ManualRequired(format!(
+                                    "{}: {}",
+                                    result.decision, result.reasoning
+                                )))
+                            };
+
+                            // Update phase
                             {
                                 let mut state = app_state.write();
                                 if let Some(agent) = state.agents.get_mut(&request.target) {
-                                    agent.auto_approve_phase = if approval_sent {
-                                        Some(AutoApprovePhase::Approved)
-                                    } else {
-                                        Some(AutoApprovePhase::ManualRequired(format!(
-                                            "{}: {}",
-                                            result.decision, result.reasoning
-                                        )))
-                                    };
+                                    agent.auto_approve_phase = phase;
                                 }
                             }
 
@@ -272,6 +346,7 @@ impl AutoApproveService {
                             tracing::info!(
                                 target = %request.target,
                                 decision = %result.decision,
+                                model = %result.model,
                                 elapsed_ms = result.elapsed_ms,
                                 approval_sent = approval_sent,
                                 "Auto-approve judgment: {}",

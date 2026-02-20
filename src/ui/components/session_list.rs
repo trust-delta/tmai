@@ -421,9 +421,10 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 ("\u{27F3}".to_string(), Color::Cyan) // ⟳
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                ("\u{2713}".to_string(), Color::Green) // ✓
-            }
+            (
+                AgentStatus::AwaitingApproval { .. },
+                Some(AutoApprovePhase::ApprovedByRule | AutoApprovePhase::ApprovedByAi),
+            ) => ("\u{2713}".to_string(), Color::Green), // ✓
             (AgentStatus::Processing { .. }, _) => {
                 (spinner_char.to_string(), Self::status_color(&agent.status))
             }
@@ -498,9 +499,15 @@ impl SessionList {
             }
             (
                 AgentStatus::AwaitingApproval { approval_type, .. },
-                Some(AutoApprovePhase::Approved),
+                Some(AutoApprovePhase::ApprovedByRule),
             ) => {
-                format!("Approved: {}", approval_type)
+                format!("Rule-Approved: {}", approval_type)
+            }
+            (
+                AgentStatus::AwaitingApproval { approval_type, .. },
+                Some(AutoApprovePhase::ApprovedByAi),
+            ) => {
+                format!("AI-Approved: {}", approval_type)
             }
             (AgentStatus::Idle, _) => "Idle".to_string(),
             (AgentStatus::Processing { activity }, _) => {
@@ -678,9 +685,10 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 ("\u{27F3}".to_string(), Color::Cyan) // ⟳
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                ("\u{2713}".to_string(), Color::Green) // ✓
-            }
+            (
+                AgentStatus::AwaitingApproval { .. },
+                Some(AutoApprovePhase::ApprovedByRule | AutoApprovePhase::ApprovedByAi),
+            ) => ("\u{2713}".to_string(), Color::Green), // ✓
             (AgentStatus::Processing { .. }, _) => {
                 (spinner_char.to_string(), Self::status_color(&agent.status))
             }
@@ -725,8 +733,11 @@ impl SessionList {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
                 "Judging".to_string()
             }
-            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Approved)) => {
-                "Approved".to_string()
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::ApprovedByRule)) => {
+                "RuleOK".to_string()
+            }
+            (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::ApprovedByAi)) => {
+                "AI-OK".to_string()
             }
             (AgentStatus::Idle, _) => "Idle".to_string(),
             (AgentStatus::Processing { activity }, _) => {

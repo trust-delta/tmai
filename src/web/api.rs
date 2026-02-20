@@ -229,7 +229,8 @@ pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentIn
     let mode = agent.mode.to_string();
     let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
         AutoApprovePhase::Judging => "judging".to_string(),
-        AutoApprovePhase::Approved => "approved".to_string(),
+        AutoApprovePhase::ApprovedByRule => "approved_rule".to_string(),
+        AutoApprovePhase::ApprovedByAi => "approved_ai".to_string(),
         AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
     });
     AgentInfo {

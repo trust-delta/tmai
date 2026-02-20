@@ -500,8 +500,10 @@ class TmaiRemote {
             const phase = agent.auto_approve_phase;
             if (phase === 'judging') {
                 detailsHtml += `<div class="auto-approve-badge judging">\u{1F504} AI judging...</div>`;
-            } else if (phase === 'approved') {
-                detailsHtml += `<div class="auto-approve-badge approved">\u{2713} Approved</div>`;
+            } else if (phase === 'approved_rule') {
+                detailsHtml += `<div class="auto-approve-badge approved">\u{2713} Rule-Approved</div>`;
+            } else if (phase === 'approved_ai') {
+                detailsHtml += `<div class="auto-approve-badge approved">\u{2713} AI-Approved</div>`;
             }
 
             if (agent.status.approval_type === 'user_question' && agent.status.choices) {
