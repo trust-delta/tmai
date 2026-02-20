@@ -314,7 +314,7 @@ impl ClaudeCodeDetector {
         let last_prompt_idx = lines.iter().rposition(|line| {
             let trimmed = line.trim();
             // Only count ❯/› as prompt if it's alone or followed by space (not "❯ 1." pattern)
-            if trimmed == "❯" || trimmed == "❯ " || trimmed == "›" || trimmed == "› " {
+            if trimmed == "❯" || trimmed == "›" {
                 return true;
             }
             // Check if ❯/› is followed by a number (selection cursor)
@@ -951,7 +951,7 @@ impl ClaudeCodeDetector {
             .take(5)
             .any(|line| {
                 let trimmed = line.trim();
-                trimmed == "❯" || trimmed == "❯ "
+                trimmed == "❯" || trimmed == "›"
             });
         if has_idle_prompt {
             return None;

@@ -1214,13 +1214,16 @@ impl AppState {
                 state.cursor -= 1;
                 // Skip headers when in directory selection step
                 if state.step == CreateProcessStep::SelectDirectory {
+                    let len = state.directory_items.len();
+                    if len == 0 {
+                        state.cursor = 0;
+                        return;
+                    }
                     while state.cursor > 0 && !state.directory_items[state.cursor].is_selectable() {
                         state.cursor -= 1;
                     }
                     // If we landed on a header at position 0, move forward
                     if !state.directory_items[state.cursor].is_selectable() {
-                        // Find next selectable item
-                        let len = state.directory_items.len();
                         while state.cursor < len
                             && !state.directory_items[state.cursor].is_selectable()
                         {
