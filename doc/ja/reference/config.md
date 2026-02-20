@@ -230,6 +230,7 @@ tmai wrap gemini
 | `exfil_detection.additional_commands` | `[]` |
 | `teams.enabled` | `true` |
 | `teams.scan_interval` | `5` |
+| `auto_approve.mode` | — (`enabled`でフォールバック) |
 | `auto_approve.enabled` | `false` |
 | `auto_approve.model` | `"haiku"` |
 | `auto_approve.timeout_secs` | `30` |
@@ -237,6 +238,12 @@ tmai wrap gemini
 | `auto_approve.check_interval_ms` | `1000` |
 | `auto_approve.max_concurrent` | `3` |
 | `auto_approve.allowed_types` | `[]` |
+| `auto_approve.rules.allow_read` | `true` |
+| `auto_approve.rules.allow_tests` | `true` |
+| `auto_approve.rules.allow_fetch` | `true` |
+| `auto_approve.rules.allow_git_readonly` | `true` |
+| `auto_approve.rules.allow_format_lint` | `true` |
+| `auto_approve.rules.allow_patterns` | `[]` |
 
 ## 設定ファイル形式
 
