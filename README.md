@@ -139,7 +139,9 @@ Control your AI agents from your smartphone:
 3. Approve or select options from the web interface
 
 <p align="center">
-  <img src="assets/mobile-screenshot.jpg" alt="Web Remote - Mobile" width="280">
+  <img src="assets/mobile-screenshot.jpg" alt="Web Remote - Agent List" width="280">
+  &nbsp;&nbsp;
+  <img src="assets/mobile-ask-user-question.jpg" alt="Web Remote - AskUserQuestion" width="280">
 </p>
 
 ```toml

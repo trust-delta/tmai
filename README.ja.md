@@ -136,7 +136,9 @@ tmai UIから新規AIプロセスを作成すると、自動的にラップさ�
 3. Webインターフェースで承認/拒否、選択肢の選択
 
 <p align="center">
-  <img src="assets/mobile-screenshot.jpg" alt="Web Remote - Mobile" width="280">
+  <img src="assets/mobile-screenshot.jpg" alt="Web Remote - エージェント一覧" width="280">
+  &nbsp;&nbsp;
+  <img src="assets/mobile-ask-user-question.jpg" alt="Web Remote - AskUserQuestion" width="280">
 </p>
 
 ### WSL2での設定

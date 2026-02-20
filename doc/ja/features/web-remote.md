@@ -7,7 +7,9 @@ QRコードでスマホからAIエージェントを操作。
 Web Remote Controlは、Webブラウザを持つ任意のデバイスからAIエージェントのリクエストを監視・承認できます。QRコードをスキャンして即座に接続。
 
 <p align="center">
-  <img src="../../assets/mobile-screenshot.jpg" alt="Web Remote - Mobile" width="280">
+  <img src="../../assets/mobile-screenshot.jpg" alt="Web Remote - エージェント一覧" width="280">
+  &nbsp;&nbsp;
+  <img src="../../assets/mobile-ask-user-question.jpg" alt="Web Remote - AskUserQuestion" width="280">
 </p>
 
 ## 機能
