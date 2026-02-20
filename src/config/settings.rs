@@ -124,6 +124,10 @@ pub struct Settings {
     /// Auto-approve settings
     #[serde(default)]
     pub auto_approve: AutoApproveSettings,
+
+    /// Create process popup settings
+    #[serde(default)]
+    pub create_process: CreateProcessSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -434,6 +438,18 @@ impl AutoApproveSettings {
     }
 }
 
+/// Settings for the create process popup
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CreateProcessSettings {
+    /// Base directories - subdirectories are automatically listed
+    #[serde(default)]
+    pub base_directories: Vec<String>,
+
+    /// Pinned directories - always shown as-is
+    #[serde(default)]
+    pub pinned: Vec<String>,
+}
+
 impl Default for AutoApproveSettings {
     fn default() -> Self {
         Self {
@@ -493,6 +509,7 @@ impl Default for Settings {
             teams: TeamSettings::default(),
             audit: AuditSettings::default(),
             auto_approve: AutoApproveSettings::default(),
+            create_process: CreateProcessSettings::default(),
         }
     }
 }

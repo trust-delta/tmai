@@ -15,7 +15,7 @@ use crate::demo::poller::{DemoAction, DemoPoller};
 use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
 use crate::state::{
-    AppState, ConfirmAction, CreateProcessStep, PlacementType, SharedState, TreeEntry,
+    AppState, ConfirmAction, CreateProcessStep, DirItem, PlacementType, SharedState, TreeEntry,
 };
 use crate::tmux::TmuxClient;
 
@@ -442,7 +442,7 @@ impl App {
                             .tmux_client()
                             .list_all_panes()
                             .unwrap_or_default();
-                        state.start_create_process(key, panes);
+                        state.start_create_process(key, panes, &self.settings.create_process);
                     } else {
                         state.toggle_group_collapse(&key);
                     }
@@ -1190,25 +1190,22 @@ impl App {
             }
 
             CreateProcessStep::SelectDirectory => {
-                let (cursor, known_dirs) = {
+                // Read the current DirItem at cursor position
+                let dir_item = {
                     let state = self.state.read();
-                    let cs = state.create_process.as_ref();
-                    (
-                        cs.map(|s| s.cursor).unwrap_or(0),
-                        cs.map(|s| s.known_directories.clone()).unwrap_or_default(),
-                    )
+                    let cs = state.create_process.as_ref().unwrap();
+                    cs.directory_items.get(cs.cursor).cloned()
                 };
 
-                match cursor {
-                    0 => {
-                        // "Enter path" - switch to input mode
+                match dir_item {
+                    Some(DirItem::EnterPath) => {
+                        // Switch to input mode
                         let mut state = self.state.write();
                         if let Some(ref mut cs) = state.create_process {
                             cs.is_input_mode = true;
                         }
                     }
-                    1 => {
-                        // Home directory
+                    Some(DirItem::Home) => {
                         let home = dirs::home_dir()
                             .map(|p| p.to_string_lossy().to_string())
                             .unwrap_or_else(|| "~".to_string());
@@ -1219,8 +1216,7 @@ impl App {
                             cs.cursor = 0;
                         }
                     }
-                    2 => {
-                        // Current directory
+                    Some(DirItem::Current) => {
                         let cwd = std::env::current_dir()
                             .map(|p| p.to_string_lossy().to_string())
                             .unwrap_or_else(|_| ".".to_string());
@@ -1231,20 +1227,17 @@ impl App {
                             cs.cursor = 0;
                         }
                     }
-                    n if n >= 3 => {
-                        // Known directory from agents
-                        let dir_idx = n - 3;
-                        if let Some(dir) = known_dirs.get(dir_idx) {
-                            let dir = dir.clone();
-                            let mut state = self.state.write();
-                            if let Some(ref mut cs) = state.create_process {
-                                cs.directory = Some(dir);
-                                cs.step = CreateProcessStep::SelectAgent;
-                                cs.cursor = 0;
-                            }
+                    Some(DirItem::Directory { path, .. }) => {
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.directory = Some(path);
+                            cs.step = CreateProcessStep::SelectAgent;
+                            cs.cursor = 0;
                         }
                     }
-                    _ => {}
+                    Some(DirItem::Header(_)) | None => {
+                        // Header or out-of-bounds: do nothing
+                    }
                 }
             }
 
