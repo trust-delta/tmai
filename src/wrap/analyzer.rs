@@ -496,7 +496,9 @@ impl Analyzer {
             if let Some(cap) = self.patterns.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
                     if num == expected_num {
-                        let choice_text = cap[2].trim();
+                        // Strip preview box content (│...) before extracting label
+                        let raw_text = cap[2].trim();
+                        let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
                         // Strip Japanese description in parentheses
                         let label = choice_text
                             .split('（')
@@ -519,7 +521,9 @@ impl Analyzer {
                     } else if num == 1 {
                         // New choice set, start over
                         choices.clear();
-                        let choice_text = cap[2].trim();
+                        // Strip preview box content (│...) before extracting label
+                        let raw_text = cap[2].trim();
+                        let choice_text = raw_text.split('│').next().unwrap_or(raw_text).trim();
                         let label = choice_text
                             .split('（')
                             .next()
