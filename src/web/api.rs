@@ -73,7 +73,7 @@ pub struct AgentInfo {
     /// Whether this directory is a git worktree (not the main repo)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_worktree: Option<bool>,
-    /// Auto-approve judgment phase: "judging", "approved", or "manual_required"
+    /// Auto-approve judgment phase: "judging", "approved_rule", "approved_ai", or "manual_required"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_phase: Option<String>,
 }

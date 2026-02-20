@@ -32,7 +32,7 @@ For detailed guides and workflows, see [doc/](./doc/README.md):
 - [Worktree Parallel Development](./doc/workflows/worktree-parallel.md) - Git worktree workflow
 - [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
 - [Agent Teams](./doc/features/agent-teams.md) - Claude Code team monitoring
-- [Auto-Approve](./doc/features/auto-approve.md) - AI-powered automatic approval
+- [Auto-Approve](./doc/features/auto-approve.md) - Automatic approval with 4 modes (Rules/AI/Hybrid/Off)
 
 ## Installation
 

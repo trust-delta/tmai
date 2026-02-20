@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-02-20
+
+### Added
+- **4-mode auto-approve**: Rule-based instant approval (Off/Rules/AI/Hybrid modes) with configurable allow patterns for read, test, fetch, git, and format/lint operations
+- **Worktree badge display**: Show git worktree indicators and detect custom spinner verbs in content
+
+### Fixed
+- **Settings menu filter**: Filter out Claude Code settings menu from approval detection to prevent false positives
+
+### Deps
+- Bump rand 0.9.2 → 0.10.0, clap 4.5.57 → 4.5.58, toml 0.9.11 → 1.0.1, uuid 1.20.0 → 1.21.0
+
+### Docs
+- Update auto-approve documentation for 4-mode system (EN/JA feature docs, config reference, README)
+
 ## [0.4.1] - 2026-02-19
 
 ### Changed
