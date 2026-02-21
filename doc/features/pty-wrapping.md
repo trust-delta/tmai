@@ -113,6 +113,20 @@ State files are written to `/tmp/tmai/{pane_id}.state`:
 3. **Exfil detection**: External transmission monitoring enabled
 4. **No polling lag**: Instant response to state transitions
 
+## Upgrading Existing Sessions to IPC
+
+Manually started Claude Code agents (non-IPC) can be upgraded to PTY wrapping without losing conversation context:
+
+1. Select the non-IPC agent in tmai
+2. Press `W` (Shift+W)
+3. tmai identifies the session ID from `.jsonl` files
+4. Confirm the restart — the agent is restarted with `claude --resume` via `tmai wrap`
+
+Session ID identification uses a two-phase approach:
+- **Phase 1**: Match capture-pane content against JSONL files (non-invasive)
+- **Phase 2**: Send a probe marker to identify the session (leaves 1 turn in conversation history)
+- **Both fail**: An error message is displayed. You can retry or use passthrough mode to manually exit and restart.
+
 ## Fallback Behavior
 
 - If state file doesn't exist: Falls back to capture-pane

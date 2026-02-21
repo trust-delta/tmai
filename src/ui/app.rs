@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::agents::AgentType;
+use crate::agents::{AgentType, DetectionSource};
 use crate::audit::helper::AuditHelper;
 use crate::audit::{AuditEvent, AuditEventSender};
 use crate::command_sender::CommandSender;
@@ -14,6 +14,7 @@ use crate::config::Settings;
 use crate::demo::poller::{DemoAction, DemoPoller};
 use crate::ipc::server::IpcServer;
 use crate::monitor::{PollMessage, Poller};
+use crate::session_lookup::{self, LookupResult};
 use crate::state::{
     AppState, ConfirmAction, CreateProcessStep, DirItem, PlacementType, SharedState, TreeEntry,
 };
@@ -555,6 +556,11 @@ impl App {
                 }
             }
 
+            // Restart as IPC-wrapped (Shift+W)
+            KeyCode::Char('W') => {
+                self.handle_restart_as_wrapped();
+            }
+
             // Team overview (Shift+T)
             KeyCode::Char('T') => {
                 let mut state = self.state.write();
@@ -759,6 +765,12 @@ impl App {
                                 state.set_error(format!("Failed to kill pane: {}", e));
                             }
                         }
+                        ConfirmAction::RestartAsWrapped { target, session_id } => {
+                            self.execute_restart_as_wrapped(&target, &session_id);
+                        }
+                        ConfirmAction::ProbeAndRestartAsWrapped { target, cwd } => {
+                            self.execute_probe_and_restart(&target, &cwd);
+                        }
                     }
                 }
             }
@@ -773,6 +785,213 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Initiate "restart as IPC-wrapped" flow for the selected agent.
+    ///
+    /// Checks preconditions (ClaudeCode, CapturePane, non-virtual), then
+    /// attempts Phase 1 session lookup. Shows appropriate confirmation dialog.
+    fn handle_restart_as_wrapped(&self) {
+        let state = self.state.read();
+        let agent = match state.selected_agent() {
+            Some(a) => a,
+            None => return,
+        };
+
+        // Precondition checks
+        if agent.agent_type != AgentType::ClaudeCode {
+            drop(state);
+            self.state
+                .write()
+                .set_error("IPC restart is only supported for Claude Code".to_string());
+            return;
+        }
+        if agent.detection_source != DetectionSource::CapturePane {
+            drop(state);
+            self.state
+                .write()
+                .set_error("Agent is already IPC-wrapped".to_string());
+            return;
+        }
+        if agent.is_virtual {
+            return;
+        }
+
+        let target = agent.target.clone();
+        let cwd = agent.cwd.clone();
+        let capture_content = agent.last_content.clone();
+        drop(state);
+
+        // Phase 1: Try to find session ID from capture-pane content
+        let result = session_lookup::find_session_id(&cwd, &capture_content);
+        let mut state = self.state.write();
+        match result {
+            LookupResult::Found(session_id) => {
+                let msg = format!(
+                    "Restart as IPC-wrapped? (session: {}...)",
+                    &session_id[..8.min(session_id.len())]
+                );
+                state
+                    .show_confirmation(ConfirmAction::RestartAsWrapped { target, session_id }, msg);
+            }
+            LookupResult::NotFound => {
+                state.show_confirmation(
+                    ConfirmAction::ProbeAndRestartAsWrapped { target, cwd },
+                    "Session not found. Send probe marker?\n(会話に1ターン分の痕跡が残ります)"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    /// Execute the restart-as-wrapped flow (Phase 1 success path).
+    ///
+    /// Sends Ctrl+D to exit Claude, waits briefly, then runs wrapped command with --resume.
+    fn execute_restart_as_wrapped(&self, target: &str, session_id: &str) {
+        {
+            let mut state = self.state.write();
+            state.set_error("Restarting as IPC-wrapped...".to_string());
+        }
+
+        // Spawn background task to exit Claude Code and restart wrapped
+        let tmux_client = self.command_sender.tmux_client().clone();
+        let shared_state = self.state.clone();
+        let target = target.to_string();
+        let resume_command = format!("claude --resume {}", session_id);
+
+        tokio::spawn(async move {
+            // Exit Claude Code with Ctrl+C (twice for reliability)
+            let _ = tmux_client.send_keys(&target, "C-c");
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let _ = tmux_client.send_keys(&target, "C-c");
+
+            // Poll until Claude process exits (check pane command changes to shell)
+            let max_wait = Duration::from_secs(10);
+            let start = std::time::Instant::now();
+            loop {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                if start.elapsed() > max_wait {
+                    let mut state = shared_state.write();
+                    state.set_error("Timeout: Claude Code did not exit. Try manually.".to_string());
+                    return;
+                }
+                // Check if pane command is no longer claude
+                if let Ok(panes) = tmux_client.list_panes() {
+                    if let Some(pane) = panes.iter().find(|p| p.target == target) {
+                        if pane.command != "claude" && pane.command != "node" {
+                            break; // Claude has exited, shell is back
+                        }
+                    } else {
+                        // Pane disappeared
+                        let mut state = shared_state.write();
+                        state.set_error("Pane disappeared during restart".to_string());
+                        return;
+                    }
+                }
+            }
+
+            // Run wrapped command with --resume
+            if let Err(e) = tmux_client.run_command_wrapped(&target, &resume_command) {
+                let mut state = shared_state.write();
+                state.set_error(format!("Failed to restart: {}", e));
+            } else {
+                let mut state = shared_state.write();
+                state.clear_error();
+            }
+        });
+    }
+
+    /// Execute the probe-and-restart flow (Phase 2 fallback).
+    ///
+    /// Sends a unique marker string to the pane, searches JSONL files for it,
+    /// then restarts if found.
+    fn execute_probe_and_restart(&self, target: &str, cwd: &str) {
+        let marker_uuid = uuid::Uuid::new_v4().to_string();
+        let marker_text = format!("tmai-probe:{}", marker_uuid);
+
+        {
+            let mut state = self.state.write();
+            state.set_error("Sending probe marker...".to_string());
+        }
+
+        // Interrupt current operation and send probe marker
+        let _ = self.command_sender.send_keys(target, "C-c");
+
+        // Brief pause then send the marker as user input
+        let tmux_client = self.command_sender.tmux_client().clone();
+        let shared_state = self.state.clone();
+        let target = target.to_string();
+        let cwd = cwd.to_string();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            // Send probe marker text (single message only to minimize conversation pollution)
+            let _ = tmux_client.send_keys_literal(&target, &marker_text);
+            let _ = tmux_client.send_keys(&target, "Enter");
+
+            // Wait for JSONL to be written
+            tokio::time::sleep(Duration::from_secs(3)).await;
+
+            // Search for the marker in JSONL files
+            let result = session_lookup::probe_session_id(&cwd, &marker_text);
+            match result {
+                LookupResult::Found(session_id) => {
+                    {
+                        let mut state = shared_state.write();
+                        state.set_error("Session found! Restarting...".to_string());
+                    }
+
+                    // Exit Claude Code with Ctrl+C
+                    let _ = tmux_client.send_keys(&target, "C-c");
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    let _ = tmux_client.send_keys(&target, "C-c");
+
+                    // Poll until Claude exits
+                    let max_wait = Duration::from_secs(10);
+                    let start = std::time::Instant::now();
+                    let exited = loop {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        if start.elapsed() > max_wait {
+                            break false;
+                        }
+                        if let Ok(panes) = tmux_client.list_panes() {
+                            if let Some(pane) = panes.iter().find(|p| p.target == target) {
+                                if pane.command != "claude" && pane.command != "node" {
+                                    break true;
+                                }
+                            } else {
+                                break false; // Pane gone
+                            }
+                        }
+                    };
+
+                    if !exited {
+                        let mut state = shared_state.write();
+                        state.set_error(
+                            "Timeout: Claude did not exit after probe. Try manually.".to_string(),
+                        );
+                        return;
+                    }
+
+                    // Run wrapped command with --resume
+                    let resume_command = format!("claude --resume {}", session_id);
+                    if let Err(e) = tmux_client.run_command_wrapped(&target, &resume_command) {
+                        let mut state = shared_state.write();
+                        state.set_error(format!("Failed to restart: {}", e));
+                    } else {
+                        let mut state = shared_state.write();
+                        state.clear_error();
+                    }
+                }
+                LookupResult::NotFound => {
+                    let mut state = shared_state.write();
+                    state.set_error(
+                        "Failed: Could not identify session ID from probe marker".to_string(),
+                    );
+                }
+            }
+        });
     }
 
     /// Handle keys in QR code screen

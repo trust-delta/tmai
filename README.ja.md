@@ -94,6 +94,7 @@ model = "haiku"
 | `t` | タスクオーバーレイ（チームメンバー選択時） |
 | `T` | チーム一覧画面 |
 | `r` | Web RemoteのQRコード表示 |
+| `W` | 非IPCエージェントをIPC化再起動（Claude Codeのみ） |
 | `?` | ヘルプ |
 | `Esc` / `q` | 終了 |
 | `Ctrl+d` / `Ctrl+u` | プレビュースクロール |

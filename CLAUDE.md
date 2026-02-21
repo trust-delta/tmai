@@ -78,6 +78,10 @@ tmai/
 │   │   ├── config.rs           # チーム設定読み込み
 │   │   ├── task.rs             # タスク読み込み
 │   │   └── scanner.rs          # チームスキャナー
+│   ├── session_lookup/         # セッションID逆引き（IPC化再起動用）
+│   │   ├── mod.rs              # LookupResult enum
+│   │   ├── lookup.rs           # JSONL逆引き・マーカープローブ
+│   │   └── phrase.rs           # capture-paneフレーズ抽出
 │   ├── config/
 │   │   ├── mod.rs
 │   │   └── settings.rs
@@ -141,6 +145,7 @@ cargo build --release  # リリースビルド
 | p / → | パススルーモード（直接キー入力） |
 | f | ペインにフォーカス |
 | x | ペインを終了（確認あり） |
+| W | 非IPCエージェントをIPC化再起動（Claude Codeのみ） |
 | Tab | ビューモード切り替え (Split/List/Preview) |
 | l | 分割方向切り替え (Horizontal/Vertical) |
 | s | ソート切り替え (現在無効) |

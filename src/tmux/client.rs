@@ -19,6 +19,7 @@ fn validate_target(target: &str) -> Result<()> {
 }
 
 /// Client for interacting with tmux
+#[derive(Clone)]
 pub struct TmuxClient {
     /// Number of lines to capture from pane
     capture_lines: u32,

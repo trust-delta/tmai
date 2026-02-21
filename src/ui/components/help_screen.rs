@@ -97,6 +97,10 @@ impl HelpScreen {
             Self::description_line("  Switches tmux to show the selected agent's pane"),
             Self::key_line("x", "Kill the selected pane (with confirmation)"),
             Self::description_line("  Terminates the agent process and closes the pane"),
+            Self::key_line("W", "Restart as IPC-wrapped (non-IPC Claude Code only)"),
+            Self::description_line(
+                "  Resumes the session with PTY wrapping for high-precision detection",
+            ),
             Line::from(""),
             Self::section_header("Approval"),
             Self::key_line("y", "Approve / select Yes"),
