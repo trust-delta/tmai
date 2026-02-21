@@ -251,6 +251,16 @@ pub struct ClaudeCodeDetector {
     error_pattern: Regex,
 }
 
+/// Strip box-drawing characters (U+2500-U+257F) and everything after them from choice text.
+/// Handles preview box borders like │, ┌, ┐, └, ┘, etc.
+fn strip_box_drawing(text: &str) -> &str {
+    if let Some(pos) = text.find(|c: char| ('\u{2500}'..='\u{257F}').contains(&c)) {
+        text[..pos].trim()
+    } else {
+        text
+    }
+}
+
 impl ClaudeCodeDetector {
     pub fn new() -> Self {
         Self {
@@ -276,8 +286,8 @@ impl ClaudeCodeDetector {
                 r"(?i)\[y/n\]|\[Y/n\]|\[yes/no\]|\(Y\)es\s*/\s*\(N\)o|Yes\s*/\s*No|y/n|Allow\?|Do you want to (allow|proceed|continue|run|execute)",
             )
             .expect("Invalid general_approval_pattern regex"),
-            // Choice pattern: handles "> 1. Option" or "  1. Option" or "❯ 1. Option"
-            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$")
+            // Choice pattern: handles "> 1. Option" or "  1. Option" or "❯ 1. Option" or "› 1. Option"
+            choice_pattern: Regex::new(r"^\s*(?:[>❯›]\s*)?(\d+)\.\s+(.+)$")
                 .expect("Invalid choice_pattern regex"),
             error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)")
                 .expect("Invalid error_pattern regex"),
@@ -299,17 +309,20 @@ impl ClaudeCodeDetector {
             .unwrap_or(lines.len());
         let lines = &lines[..effective_len];
 
-        // Find the last prompt marker (❯) - choices should be BEFORE it
-        // Note: ❯ followed by number is a selection cursor, not a prompt
+        // Find the last prompt marker (❯ or ›) - choices should be BEFORE it
+        // Note: ❯/› followed by number is a selection cursor, not a prompt
         let last_prompt_idx = lines.iter().rposition(|line| {
             let trimmed = line.trim();
-            // Only count ❯ as prompt if it's alone or followed by space (not "❯ 1." pattern)
-            if trimmed == "❯" || trimmed == "❯ " {
+            // Only count ❯/› as prompt if it's alone or followed by space (not "❯ 1." pattern)
+            if trimmed == "❯" || trimmed == "›" {
                 return true;
             }
-            // Check if ❯ is followed by a number (selection cursor)
-            if trimmed.starts_with('❯') {
-                let after_marker = trimmed.trim_start_matches('❯').trim_start();
+            // Check if ❯/› is followed by a number (selection cursor)
+            if trimmed.starts_with('❯') || trimmed.starts_with('›') {
+                let after_marker = trimmed
+                    .trim_start_matches('❯')
+                    .trim_start_matches('›')
+                    .trim_start();
                 // If followed by digit, it's a selection cursor, not a prompt
                 if after_marker
                     .chars()
@@ -319,7 +332,7 @@ impl ClaudeCodeDetector {
                 {
                     return false;
                 }
-                // Very short ❯ line could be prompt
+                // Very short ❯/› line could be prompt
                 return trimmed.len() < 3;
             }
             false
@@ -381,7 +394,9 @@ impl ClaudeCodeDetector {
         if !is_multi_select {
             for line in check_lines.iter() {
                 let lower = line.to_lowercase();
-                if lower.contains("複数選択") || lower.contains("enter to select") {
+                // "Enter to select" in preview-mode footer is NOT multi-select
+                // Multi-select footer uses "space to toggle" (already detected above)
+                if lower.contains("複数選択") {
                     is_multi_select = true;
                     break;
                 }
@@ -412,7 +427,8 @@ impl ClaudeCodeDetector {
             // Check for numbered choices (e.g., "1. Option text" or "> 1. Option text")
             if let Some(cap) = self.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
-                    let choice_text = cap[2].trim();
+                    // Strip preview box content (box-drawing chars) before extracting label
+                    let choice_text = strip_box_drawing(cap[2].trim());
                     if num as usize == choices.len() + 1 {
                         let label = choice_text
                             .split('（')
@@ -426,8 +442,11 @@ impl ClaudeCodeDetector {
                         }
                         last_choice_idx = Some(i);
 
-                        // Check if this line has cursor marker (❯ or >)
-                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        // Check if this line has cursor marker (❯, ›, or >)
+                        if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
+                        {
                             cursor_position = num as usize;
                         }
                     } else if num == 1 {
@@ -449,7 +468,9 @@ impl ClaudeCodeDetector {
                         choices.push(label);
                         first_choice_idx = Some(i);
                         last_choice_idx = Some(i);
-                        cursor_position = if trimmed.starts_with('❯') || trimmed.starts_with('>')
+                        cursor_position = if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
                         {
                             1
                         } else {
@@ -585,12 +606,14 @@ impl ClaudeCodeDetector {
             let clean = line
                 .trim()
                 .trim_start_matches('❯')
+                .trim_start_matches('›')
                 .trim_start_matches('>')
                 .trim();
             if let Some(dot_pos) = clean.find(". ") {
                 if let Ok(num) = clean[..dot_pos].trim().parse::<usize>() {
                     if num == choices.len() + 1 {
-                        let choice_text = clean[dot_pos + 2..].trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(clean[dot_pos + 2..].trim());
                         let label = choice_text
                             .split('（')
                             .next()
@@ -928,7 +951,7 @@ impl ClaudeCodeDetector {
             .take(5)
             .any(|line| {
                 let trimmed = line.trim();
-                trimmed == "❯" || trimmed == "❯ "
+                trimmed == "❯" || trimmed == "›"
             });
         if has_idle_prompt {
             return None;
@@ -2359,6 +2382,52 @@ Which option?
                     assert!(
                         !multi_select,
                         "Expected multi_select=false for (*) radio buttons (single-select)"
+                    );
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_preview_format_with_single_right_angle() {
+        let detector = ClaudeCodeDetector::new();
+        // AskUserQuestion with preview panel: › cursor marker + right-side │ box
+        let content = r#"
+Which approach do you prefer?
+
+  1. Base directories          ┌──────────────────────┐
+› 2. Bookmark style            │ # config.toml        │
+  3. Both                      │ [create_process]     │
+  4. Default input             │ directories = [...]  │
+                               └──────────────────────┘
+
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
+"#;
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    cursor_position,
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
+                    assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
+                    assert!(
+                        !multi_select,
+                        "Preview format should not be detected as multi-select"
+                    );
+                    // Verify preview box content is stripped from choice text
+                    assert!(
+                        !choices[0].contains('│'),
+                        "Choice text should not contain box chars: {:?}",
+                        choices[0]
                     );
                 } else {
                     panic!("Expected UserQuestion, got {:?}", approval_type);

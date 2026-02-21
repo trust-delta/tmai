@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::agents::AgentType;
-use crate::state::{AppState, CreateProcessStep, TreeEntry};
+use crate::state::{AppState, CreateProcessStep, DirItem, TreeEntry};
 
 /// Popup for creating a new AI process
 pub struct CreateProcessPopup;
@@ -175,33 +175,37 @@ impl CreateProcessPopup {
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
         let title = "Create New Process";
 
-        let mut items = vec![
-            ListItem::new(Line::from(vec![Span::styled(
-                "Enter path...",
-                Style::default().fg(Color::Yellow),
-            )])),
-            ListItem::new(Line::from(vec![Span::styled(
-                "~ (Home directory)",
-                Style::default().fg(Color::White),
-            )])),
-            ListItem::new(Line::from(vec![Span::styled(
-                ". (Current directory)",
-                Style::default().fg(Color::White),
-            )])),
-        ];
-
-        // Add known directories from current agents
-        for dir in &create_state.known_directories {
-            let display = if dir.len() > 40 {
-                format!("...{}", &dir[dir.len() - 37..])
-            } else {
-                dir.clone()
-            };
-            items.push(ListItem::new(Line::from(vec![Span::styled(
-                display,
-                Style::default().fg(Color::Cyan),
-            )])));
-        }
+        let items: Vec<ListItem> = create_state
+            .directory_items
+            .iter()
+            .map(|item| match item {
+                DirItem::Header(label) => ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("── {} ", label),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled("─".repeat(20), Style::default().fg(Color::DarkGray)),
+                ])),
+                DirItem::EnterPath => ListItem::new(Line::from(vec![Span::styled(
+                    "Enter path...",
+                    Style::default().fg(Color::Yellow),
+                )])),
+                DirItem::Home => ListItem::new(Line::from(vec![Span::styled(
+                    "~ (Home directory)",
+                    Style::default().fg(Color::White),
+                )])),
+                DirItem::Current => ListItem::new(Line::from(vec![Span::styled(
+                    ". (Current directory)",
+                    Style::default().fg(Color::White),
+                )])),
+                DirItem::Directory { display, .. } => {
+                    ListItem::new(Line::from(vec![Span::styled(
+                        format!("  {}", display),
+                        Style::default().fg(Color::Cyan),
+                    )]))
+                }
+            })
+            .collect();
 
         let help = if create_state.is_input_mode {
             "Enter: Confirm  Esc: Back"
@@ -249,7 +253,7 @@ impl CreateProcessPopup {
 
         match create_state.step {
             CreateProcessStep::SelectTarget => create_state.tree_entries.len(),
-            CreateProcessStep::SelectDirectory => 3 + create_state.known_directories.len(), // Input, home, current + known dirs
+            CreateProcessStep::SelectDirectory => create_state.directory_items.len(),
             CreateProcessStep::SelectAgent => AgentType::all_variants().len(),
         }
     }

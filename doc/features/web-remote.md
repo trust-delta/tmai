@@ -7,7 +7,9 @@ Operate AI agents from your smartphone via QR code.
 Web Remote Control lets you monitor and approve AI agent requests from any device with a web browser. Scan a QR code to connect instantly.
 
 <p align="center">
-  <img src="../../assets/mobile-screenshot.jpg" alt="Web Remote - Mobile" width="280">
+  <img src="../../assets/mobile-screenshot.jpg" alt="Web Remote - Agent List" width="280">
+  &nbsp;&nbsp;
+  <img src="../../assets/mobile-ask-user-question.jpg" alt="Web Remote - AskUserQuestion" width="280">
 </p>
 
 ## Features

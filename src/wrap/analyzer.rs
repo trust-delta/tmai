@@ -61,7 +61,7 @@ struct AnalyzerPatterns {
 impl Default for AnalyzerPatterns {
     fn default() -> Self {
         Self {
-            choice_pattern: Regex::new(r"^\s*(?:[>❯]\s*)?(\d+)\.\s+(.+)$")
+            choice_pattern: Regex::new(r"^\s*(?:[>❯›]\s*)?(\d+)\.\s+(.+)$")
                 .expect("Invalid choice_pattern"),
             yes_no_pattern: Regex::new(r"(?i)\b(Yes|No)\b")
                 .expect("Invalid yes_no_pattern"),
@@ -83,6 +83,16 @@ impl Default for AnalyzerPatterns {
             mcp_tool: Regex::new(r"(?i)MCP\s+tool|Do you want to use.*?MCP|Allow.*?MCP")
                 .expect("Invalid mcp_tool"),
         }
+    }
+}
+
+/// Strip box-drawing characters (U+2500-U+257F) and everything after them from choice text.
+/// Handles preview box borders like │, ┌, ┐, └, ┘, etc.
+fn strip_box_drawing(text: &str) -> &str {
+    if let Some(pos) = text.find(|c: char| ('\u{2500}'..='\u{257F}').contains(&c)) {
+        text[..pos].trim()
+    } else {
+        text
     }
 }
 
@@ -307,14 +317,19 @@ impl Analyzer {
 
                         // Check for cursor marker
                         let trimmed = line.trim();
-                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
+                        {
                             has_cursor = true;
                         }
                     } else if num == 1 {
                         // New choice set
                         consecutive_choices = 1;
                         expected_num = 2;
-                        has_cursor = line.trim().starts_with('❯') || line.trim().starts_with('>');
+                        has_cursor = line.trim().starts_with('❯')
+                            || line.trim().starts_with('›')
+                            || line.trim().starts_with('>');
                     }
                 }
             }
@@ -491,7 +506,8 @@ impl Analyzer {
             if let Some(cap) = self.patterns.choice_pattern.captures(line) {
                 if let Ok(num) = cap[1].parse::<u32>() {
                     if num == expected_num {
-                        let choice_text = cap[2].trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(cap[2].trim());
                         // Strip Japanese description in parentheses
                         let label = choice_text
                             .split('（')
@@ -503,7 +519,10 @@ impl Analyzer {
 
                         // Check for cursor
                         let trimmed = line.trim();
-                        if trimmed.starts_with('❯') || trimmed.starts_with('>') {
+                        if trimmed.starts_with('❯')
+                            || trimmed.starts_with('›')
+                            || trimmed.starts_with('>')
+                        {
                             cursor_position = num as usize;
                         }
 
@@ -511,7 +530,8 @@ impl Analyzer {
                     } else if num == 1 {
                         // New choice set, start over
                         choices.clear();
-                        let choice_text = cap[2].trim();
+                        // Strip preview box content (box-drawing chars) before extracting label
+                        let choice_text = strip_box_drawing(cap[2].trim());
                         let label = choice_text
                             .split('（')
                             .next()
@@ -519,12 +539,14 @@ impl Analyzer {
                             .trim()
                             .to_string();
                         choices.push(label);
-                        cursor_position =
-                            if line.trim().starts_with('❯') || line.trim().starts_with('>') {
-                                1
-                            } else {
-                                0
-                            };
+                        cursor_position = if line.trim().starts_with('❯')
+                            || line.trim().starts_with('›')
+                            || line.trim().starts_with('>')
+                        {
+                            1
+                        } else {
+                            0
+                        };
                         expected_num = 2;
                     }
                 }

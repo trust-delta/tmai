@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::agents::MonitoredAgent;
+use crate::config::CreateProcessSettings;
 use crate::teams::{TeamConfig, TeamTask};
 use crate::tmux::PaneInfo;
 
@@ -171,6 +172,28 @@ pub struct ConfirmationState {
     pub message: String,
 }
 
+/// An item in the directory selection list
+#[derive(Debug, Clone)]
+pub enum DirItem {
+    /// Section header (not selectable, cursor skips)
+    Header(String),
+    /// "Enter path..." action
+    EnterPath,
+    /// Home directory
+    Home,
+    /// Current directory
+    Current,
+    /// A selectable directory with display name and full path
+    Directory { display: String, path: String },
+}
+
+impl DirItem {
+    /// Whether this item is selectable (non-header)
+    pub fn is_selectable(&self) -> bool {
+        !matches!(self, DirItem::Header(_))
+    }
+}
+
 /// Step in the create process flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreateProcessStep {
@@ -207,8 +230,8 @@ pub struct CreateProcessState {
     pub collapsed_nodes: HashSet<String>,
     /// Tree entries (cached, rebuilt when collapsed_nodes changes)
     pub tree_entries: Vec<TreeEntry>,
-    /// Known directories from current agents
-    pub known_directories: Vec<String>,
+    /// Directory selection items (includes headers, pinned, base, known)
+    pub directory_items: Vec<DirItem>,
     /// Whether in path input mode
     pub is_input_mode: bool,
 }
@@ -1014,9 +1037,17 @@ impl AppState {
     // =========================================
 
     /// Start create process flow from a group
-    pub fn start_create_process(&mut self, group_key: String, panes: Vec<PaneInfo>) {
+    pub fn start_create_process(
+        &mut self,
+        group_key: String,
+        panes: Vec<PaneInfo>,
+        config: &CreateProcessSettings,
+    ) {
         // Get known directories from current agents
         let known_directories = self.get_known_directories();
+
+        // Build directory items from config + known dirs
+        let directory_items = build_directory_items(config, known_directories);
 
         // Pre-select directory if sorted by Directory
         let directory = if self.sort_by == SortBy::Directory {
@@ -1058,7 +1089,7 @@ impl AppState {
             available_panes: panes,
             collapsed_nodes,
             tree_entries,
-            known_directories,
+            directory_items,
             is_input_mode: false,
         });
     }
@@ -1176,20 +1207,57 @@ impl AppState {
         self.confirmation_state.as_ref().map(|s| s.action.clone())
     }
 
-    /// Move cursor up in create process popup
+    /// Move cursor up in create process popup (skips headers in directory step)
     pub fn create_process_cursor_up(&mut self) {
         if let Some(ref mut state) = self.create_process {
             if state.cursor > 0 {
                 state.cursor -= 1;
+                // Skip headers when in directory selection step
+                if state.step == CreateProcessStep::SelectDirectory {
+                    let len = state.directory_items.len();
+                    if len == 0 {
+                        state.cursor = 0;
+                        return;
+                    }
+                    while state.cursor > 0 && !state.directory_items[state.cursor].is_selectable() {
+                        state.cursor -= 1;
+                    }
+                    // If we landed on a header at position 0, move forward
+                    if !state.directory_items[state.cursor].is_selectable() {
+                        while state.cursor < len
+                            && !state.directory_items[state.cursor].is_selectable()
+                        {
+                            state.cursor += 1;
+                        }
+                    }
+                }
             }
         }
     }
 
-    /// Move cursor down in create process popup
+    /// Move cursor down in create process popup (skips headers in directory step)
     pub fn create_process_cursor_down(&mut self, max: usize) {
         if let Some(ref mut state) = self.create_process {
             if state.cursor < max.saturating_sub(1) {
                 state.cursor += 1;
+                // Skip headers when in directory selection step
+                if state.step == CreateProcessStep::SelectDirectory {
+                    let len = state.directory_items.len();
+                    while state.cursor < len && !state.directory_items[state.cursor].is_selectable()
+                    {
+                        state.cursor += 1;
+                    }
+                    // Clamp to last valid item
+                    if state.cursor >= len {
+                        // Find last selectable item
+                        state.cursor = len.saturating_sub(1);
+                        while state.cursor > 0
+                            && !state.directory_items[state.cursor].is_selectable()
+                        {
+                            state.cursor -= 1;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1204,6 +1272,104 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Expand `~` prefix to the user's home directory
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") || path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return path.replacen('~', &home.to_string_lossy(), 1);
+        }
+    }
+    path.to_string()
+}
+
+/// Build the directory selection items list from config and known directories
+fn build_directory_items(
+    config: &CreateProcessSettings,
+    known_directories: Vec<String>,
+) -> Vec<DirItem> {
+    let mut items = vec![DirItem::EnterPath, DirItem::Home, DirItem::Current];
+
+    // Pinned directories
+    if !config.pinned.is_empty() {
+        let mut pinned_items: Vec<DirItem> = Vec::new();
+        for dir in &config.pinned {
+            let expanded = expand_tilde(dir);
+            if std::path::Path::new(&expanded).is_dir() {
+                pinned_items.push(DirItem::Directory {
+                    display: dir.to_string(),
+                    path: expanded,
+                });
+            }
+        }
+        if !pinned_items.is_empty() {
+            items.push(DirItem::Header("Pinned".to_string()));
+            items.extend(pinned_items);
+        }
+    }
+
+    // Base directories (scan subdirectories)
+    for base in &config.base_directories {
+        let expanded = expand_tilde(base);
+        if let Ok(entries) = std::fs::read_dir(&expanded) {
+            let mut subdirs: Vec<(String, String)> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                .map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let path = e.path().to_string_lossy().to_string();
+                    (name, path)
+                })
+                .collect();
+            subdirs.sort_by(|a, b| a.0.cmp(&b.0));
+
+            if !subdirs.is_empty() {
+                items.push(DirItem::Header(base.to_string()));
+                for (name, path) in subdirs {
+                    items.push(DirItem::Directory {
+                        display: name,
+                        path,
+                    });
+                }
+            }
+        }
+    }
+
+    // Known directories (from running agents), excluding already-listed paths
+    let existing_paths: HashSet<String> = items
+        .iter()
+        .filter_map(|item| match item {
+            DirItem::Directory { path, .. } => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    let unique_known: Vec<String> = known_directories
+        .into_iter()
+        .filter(|d| !existing_paths.contains(d))
+        .collect();
+    if !unique_known.is_empty() {
+        items.push(DirItem::Header("Known".to_string()));
+        for dir in unique_known {
+            let display = if dir.chars().count() > 40 {
+                let tail: String = dir
+                    .chars()
+                    .rev()
+                    .take(37)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                format!("...{}", tail)
+            } else {
+                dir.clone()
+            };
+            items.push(DirItem::Directory { display, path: dir });
+        }
+    }
+
+    items
 }
 
 /// Detect if running in WSL and return the appropriate external IP

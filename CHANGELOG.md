@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-02-21
+
+### Added
+- **Directory selection presets**: `base_directories` (auto-expand subdirs) and `pinned` (fixed paths) settings for NewProcess creation popup
+
+### Fixed
+- **AskUserQuestion preview format**: Detect new side-by-side layout with `›` cursor marker in both capture-pane and PTY wrap analyzers
+- **Choice text cleanup**: Strip preview box content (`│`) from choice labels to prevent garbage in web remote buttons
+
 ## [0.4.2] - 2026-02-20
 
 ### Added
