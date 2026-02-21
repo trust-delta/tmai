@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::agents::ApprovalType;
+use tmai_core::agents::ApprovalType;
 
 /// Selection popup widget for AskUserQuestion
 pub struct SelectionPopup;

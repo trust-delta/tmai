@@ -8,11 +8,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::agents::{AgentStatus, ApprovalType};
-use crate::audit::helper::AuditHelper;
-use crate::command_sender::CommandSender;
-use crate::detectors::get_detector;
-use crate::state::SharedState;
+use tmai_core::agents::{AgentStatus, ApprovalType};
+use tmai_core::audit::helper::AuditHelper;
+use tmai_core::command_sender::CommandSender;
+use tmai_core::detectors::get_detector;
+use tmai_core::state::SharedState;
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
@@ -204,7 +204,7 @@ impl From<&AgentStatus> for StatusInfo {
 }
 
 /// Convert agent team info to API response format
-fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoResponse {
+fn convert_team_info(team_info: &tmai_core::agents::AgentTeamInfo) -> AgentTeamInfoResponse {
     AgentTeamInfoResponse {
         team_name: team_info.team_name.clone(),
         member_name: team_info.member_name.clone(),
@@ -223,8 +223,8 @@ fn convert_team_info(team_info: &crate::agents::AgentTeamInfo) -> AgentTeamInfoR
 /// Build AgentInfo from a MonitoredAgent
 ///
 /// Shared helper used by both the REST API and SSE events.
-pub(super) fn build_agent_info(agent: &crate::agents::MonitoredAgent) -> AgentInfo {
-    use crate::auto_approve::AutoApprovePhase;
+pub(super) fn build_agent_info(agent: &tmai_core::agents::MonitoredAgent) -> AgentInfo {
+    use tmai_core::auto_approve::AutoApprovePhase;
 
     let mode = agent.mode.to_string();
     let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
@@ -639,8 +639,8 @@ pub async fn get_preview(
 ///
 /// Shared helper used by both the REST API and SSE events.
 pub(super) fn build_team_info(
-    snapshot: &crate::state::TeamSnapshot,
-    app_state: &crate::state::AppState,
+    snapshot: &tmai_core::state::TeamSnapshot,
+    app_state: &tmai_core::state::AppState,
 ) -> TeamInfoResponse {
     let total = snapshot.task_total;
     let completed = snapshot.task_done;
@@ -767,7 +767,7 @@ mod tests {
 
     /// Create a fresh shared AppState for tests
     fn test_app_state() -> SharedState {
-        crate::state::AppState::shared()
+        tmai_core::state::AppState::shared()
     }
 
     /// Build a Router with all API routes but NO auth middleware
@@ -775,7 +775,7 @@ mod tests {
         let api_state = Arc::new(ApiState {
             command_sender: CommandSender::new(
                 None,
-                crate::tmux::TmuxClient::new(),
+                tmai_core::tmux::TmuxClient::new(),
                 app_state.clone(),
             ),
             audit_helper: AuditHelper::new(None, app_state.clone()),
@@ -802,9 +802,9 @@ mod tests {
     /// Add an idle agent to the shared state
     fn add_idle_agent(state: &SharedState, id: &str) {
         let mut s = state.write();
-        let mut agent = crate::agents::MonitoredAgent::new(
+        let mut agent = tmai_core::agents::MonitoredAgent::new(
             id.to_string(),
-            crate::agents::AgentType::ClaudeCode,
+            tmai_core::agents::AgentType::ClaudeCode,
             "Test".to_string(),
             "/tmp".to_string(),
             1234,

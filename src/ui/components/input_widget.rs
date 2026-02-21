@@ -7,7 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::state::AppState;
+use tmai_core::state::AppState;
 
 /// Input widget for text entry
 pub struct InputWidget;

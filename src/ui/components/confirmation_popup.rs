@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::ConfirmationState;
+use tmai_core::state::ConfirmationState;
 
 /// Confirmation popup widget for destructive actions
 pub struct ConfirmationPopup;
@@ -57,7 +57,7 @@ impl ConfirmationPopup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::ConfirmAction;
+    use tmai_core::state::ConfirmAction;
 
     #[test]
     fn test_confirmation_state_creation() {

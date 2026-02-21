@@ -7,8 +7,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::agents::AgentStatus;
-use crate::state::AppState;
+use tmai_core::agents::AgentStatus;
+use tmai_core::state::AppState;
 
 /// Widget for previewing the selected pane content
 pub struct PanePreview;

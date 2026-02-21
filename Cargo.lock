@@ -2927,7 +2927,7 @@ checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "tmai"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -2956,6 +2956,7 @@ dependencies = [
  "serde_json",
  "temp-env",
  "tempfile",
+ "tmai-core",
  "tokio",
  "tokio-stream",
  "toml",
@@ -2964,6 +2965,33 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-width",
+ "uuid",
+]
+
+[[package]]
+name = "tmai-core"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "dirs",
+ "libc",
+ "local-ip-address",
+ "nix 0.31.1",
+ "once_cell",
+ "parking_lot",
+ "portable-pty",
+ "pretty_assertions",
+ "rand 0.10.0",
+ "regex",
+ "serde",
+ "serde_json",
+ "temp-env",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
  "uuid",
 ]
 

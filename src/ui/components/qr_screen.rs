@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
+use tmai_core::state::AppState;
 
 /// QR code display screen
 pub struct QrScreen;

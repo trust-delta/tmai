@@ -24,21 +24,35 @@ tmai (TUI/Web)
 
 ## ディレクトリ構成
 
+Cargo workspace: `tmai-core` (lib) + `tmai` (bin)
+
 ```
-src/
-├── agents/          # AgentType, AgentStatus, ApprovalType, DetectionSource
-├── audit/           # 検出監査ログ（ndjson形式）
-├── auto_approve/    # 自動承認（Off/Rules/AI/Hybrid 4モード）
-├── config/          # ~/.config/tmai/config.toml パーサー
-├── detectors/       # 状態検出器（Claude Code/Codex/Gemini/Default）
-├── monitor/         # 非同期ポーリング
-├── session_lookup/  # セッションID逆引き（IPC化再起動用）
-├── state/           # AppState（SharedState = Arc<RwLock<AppState>>）
-├── teams/           # Agent Teams検出（~/.claude/teams/）
-├── tmux/            # tmux CLI wrapper
-├── ui/              # TUI（app.rs + components/）
-├── web/             # Web Remote Control（axum + SSE）
-└── wrap/            # PTYラッピング（入出力プロキシ + 状態解析）
+tmai/                          # workspace root
+├── Cargo.toml                 # [workspace] + bin crate
+├── crates/
+│   └── tmai-core/             # コアライブラリ（ビジネスロジック）
+│       └── src/
+│           ├── agents/        # AgentType, AgentStatus, ApprovalType, DetectionSource
+│           ├── audit/         # 検出監査ログ（ndjson形式）
+│           ├── auto_approve/  # 自動承認（Off/Rules/AI/Hybrid 4モード）
+│           ├── command_sender.rs
+│           ├── config/        # ~/.config/tmai/config.toml パーサー
+│           ├── detectors/     # 状態検出器（Claude Code/Codex/Gemini/Default）
+│           ├── git/           # Git情報
+│           ├── ipc/           # IPC通信
+│           ├── monitor/       # 非同期ポーリング
+│           ├── session_lookup/# セッションID逆引き（IPC化再起動用）
+│           ├── state/         # AppState（SharedState = Arc<RwLock<AppState>>）
+│           ├── teams/         # Agent Teams検出（~/.claude/teams/）
+│           ├── tmux/          # tmux CLI wrapper
+│           ├── utils/
+│           └── wrap/          # PTYラッピング（入出力プロキシ + 状態解析）
+└── src/                       # bin crate（フロントエンド）
+    ├── main.rs
+    ├── lib.rs                 # demo, ui, web のみ
+    ├── demo/
+    ├── ui/                    # TUI（app.rs + components/）
+    └── web/                   # Web Remote Control（axum + SSE）
 ```
 
 ## 開発コマンド

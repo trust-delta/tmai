@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentMode, AgentStatus, AgentType, DetectionSource, MonitoredAgent};
-use crate::monitor::PollMessage;
-use crate::state::SharedState;
+use tmai_core::agents::{AgentMode, AgentStatus, AgentType, DetectionSource, MonitoredAgent};
+use tmai_core::monitor::PollMessage;
+use tmai_core::state::SharedState;
 
 use super::content;
 use super::scenario::{self, DemoScenario};

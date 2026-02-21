@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
-use crate::teams::TaskStatus;
+use tmai_core::state::AppState;
+use tmai_core::teams::TaskStatus;
 
 /// Full-screen overlay showing all teams, their members, and task progress
 pub struct TeamOverview;

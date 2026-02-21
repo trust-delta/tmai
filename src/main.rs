@@ -3,11 +3,11 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use tmai::config::{Config, Settings};
-use tmai::ipc::server::IpcServer;
 use tmai::ui::App;
 use tmai::web::WebServer;
-use tmai::wrap::{
+use tmai_core::config::{Config, Settings};
+use tmai_core::ipc::server::IpcServer;
+use tmai_core::wrap::{
     runner::{get_pane_id, PtyRunnerConfig},
     PtyRunner,
 };
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     // Check for demo subcommand (no tmux, IPC, or web required)
     if cli.is_demo_mode() {
         setup_logging(cli.debug, true);
-        let settings = tmai::config::Settings::default();
+        let settings = tmai_core::config::Settings::default();
         let mut app = App::new(settings, None, None, None);
         return app.run_demo().await;
     }
@@ -83,13 +83,15 @@ async fn main() -> Result<()> {
     }
 
     // Start auto-approve service if mode is not Off
-    if settings.auto_approve.effective_mode() != tmai::auto_approve::types::AutoApproveMode::Off {
-        let service = tmai::auto_approve::AutoApproveService::new(
+    if settings.auto_approve.effective_mode()
+        != tmai_core::auto_approve::types::AutoApproveMode::Off
+    {
+        let service = tmai_core::auto_approve::AutoApproveService::new(
             settings.auto_approve.clone(),
             app.shared_state(),
-            tmai::command_sender::CommandSender::new(
+            tmai_core::command_sender::CommandSender::new(
                 Some(ipc_server.clone()),
-                tmai::tmux::TmuxClient::with_capture_lines(settings.capture_lines),
+                tmai_core::tmux::TmuxClient::with_capture_lines(settings.capture_lines),
                 app.shared_state(),
             ),
             audit_tx,
@@ -176,14 +178,14 @@ impl Drop for RawModeGuard {
 /// - `log_to_file`: TUIモード時はファイル出力（画面崩れ防止）、wrapモード時はstderr出力。
 fn setup_logging(debug: bool, log_to_file: bool) {
     let filter = if debug {
-        EnvFilter::new("tmai=debug")
+        EnvFilter::new("tmai=debug,tmai_core=debug")
     } else {
-        EnvFilter::new("tmai=info")
+        EnvFilter::new("tmai=info,tmai_core=info")
     };
 
     if log_to_file {
         // TUIモード: ファイルに出力（$STATE_DIR/tmai.log）
-        let log_dir = tmai::ipc::protocol::state_dir();
+        let log_dir = tmai_core::ipc::protocol::state_dir();
         let _ = std::fs::create_dir_all(&log_dir);
         let log_file =
             std::fs::File::create(log_dir.join("tmai.log")).expect("Failed to create log file");

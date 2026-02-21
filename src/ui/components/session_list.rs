@@ -7,10 +7,10 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::agents::{AgentMode, AgentStatus, MonitoredAgent};
-use crate::auto_approve::AutoApprovePhase;
-use crate::state::{AppState, SortBy};
 use crate::ui::SplitDirection;
+use tmai_core::agents::{AgentMode, AgentStatus, MonitoredAgent};
+use tmai_core::auto_approve::AutoApprovePhase;
+use tmai_core::state::{AppState, SortBy};
 
 /// Optional task summary for team group headers
 #[derive(Debug, Clone, Default)]
@@ -436,8 +436,8 @@ impl SessionList {
 
         // Detection source color
         let detection_color = match agent.detection_source {
-            crate::agents::DetectionSource::IpcSocket => Color::Green,
-            crate::agents::DetectionSource::CapturePane => Color::DarkGray,
+            tmai_core::agents::DetectionSource::IpcSocket => Color::Green,
+            tmai_core::agents::DetectionSource::CapturePane => Color::DarkGray,
         };
 
         // Line 1: identification info in a single line
