@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
+use tmai_core::state::AppState;
 
 /// Full-screen help widget
 pub struct HelpScreen;

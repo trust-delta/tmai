@@ -11,13 +11,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::audit::helper::AuditHelper;
-use crate::audit::AuditEventSender;
-use crate::command_sender::CommandSender;
-use crate::config::Settings;
-use crate::ipc::server::IpcServer;
-use crate::state::SharedState;
-use crate::tmux::TmuxClient;
+use tmai_core::audit::helper::AuditHelper;
+use tmai_core::audit::AuditEventSender;
+use tmai_core::command_sender::CommandSender;
+use tmai_core::config::Settings;
+use tmai_core::ipc::server::IpcServer;
+use tmai_core::state::SharedState;
+use tmai_core::tmux::TmuxClient;
 
 use super::api::{self, ApiState};
 use super::auth::{self, AuthState};

@@ -8,9 +8,9 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 // MonitorScope and SortBy temporarily unused (scope/sort cycling disabled)
-#[allow(unused_imports)]
-use crate::state::{AppState, MonitorScope, SortBy};
 use crate::ui::{SplitDirection, ViewMode};
+#[allow(unused_imports)]
+use tmai_core::state::{AppState, MonitorScope, SortBy};
 
 /// Status bar widget
 pub struct StatusBar;
@@ -277,8 +277,8 @@ impl StatusBar {
                 // Show detection source
                 let detection_label = agent.detection_source.label();
                 let detection_color = match agent.detection_source {
-                    crate::agents::DetectionSource::IpcSocket => Color::Green,
-                    crate::agents::DetectionSource::CapturePane => Color::DarkGray,
+                    tmai_core::agents::DetectionSource::IpcSocket => Color::Green,
+                    tmai_core::agents::DetectionSource::CapturePane => Color::DarkGray,
                 };
                 spans.push(Span::styled(
                     format!("[{}] ", detection_label),

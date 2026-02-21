@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
-use crate::teams::TaskStatus;
+use tmai_core::state::AppState;
+use tmai_core::teams::TaskStatus;
 
 /// Popup overlay showing team tasks for the selected agent's team
 pub struct TaskOverlay;

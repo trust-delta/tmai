@@ -1,6 +1,10 @@
+[workspace]
+members = ["crates/tmai-core", "."]
+resolver = "2"
+
 [package]
 name = "tmai"
-version = "0.4.5"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.91"
 authors = ["TrustDelta"]
@@ -21,6 +25,7 @@ exclude = [
 ]
 
 [dependencies]
+tmai-core = { path = "crates/tmai-core" }
 ratatui = "0.30"
 crossterm = "0.29"
 tokio = { version = "1", features = ["full"] }

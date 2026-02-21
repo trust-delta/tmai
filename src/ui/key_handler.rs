@@ -6,9 +6,9 @@
 
 use crossterm::event::KeyCode;
 
-use crate::agents::{AgentStatus, ApprovalType};
-use crate::detectors::get_detector;
-use crate::state::AppState;
+use tmai_core::agents::{AgentStatus, ApprovalType};
+use tmai_core::detectors::get_detector;
+use tmai_core::state::AppState;
 
 /// Normalize full-width ASCII characters in KeyCode to half-width equivalents.
 ///

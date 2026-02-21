@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::agents::AgentType;
-use crate::state::{AppState, CreateProcessStep, DirItem, TreeEntry};
+use tmai_core::agents::AgentType;
+use tmai_core::state::{AppState, CreateProcessStep, DirItem, TreeEntry};
 
 /// Popup for creating a new AI process
 pub struct CreateProcessPopup;
@@ -106,7 +106,7 @@ impl CreateProcessPopup {
 
     /// Render content for selecting target from tree
     fn render_select_target(
-        create_state: &crate::state::CreateProcessState,
+        create_state: &tmai_core::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
         let title = "Create New Process";
 
@@ -171,7 +171,7 @@ impl CreateProcessPopup {
 
     /// Render content for selecting directory
     fn render_select_directory(
-        create_state: &crate::state::CreateProcessState,
+        create_state: &tmai_core::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
         let title = "Create New Process";
 
@@ -218,7 +218,7 @@ impl CreateProcessPopup {
 
     /// Render content for selecting agent type
     fn render_select_agent(
-        _create_state: &crate::state::CreateProcessState,
+        _create_state: &tmai_core::state::CreateProcessState,
     ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
         let title = "Create New Process";
 

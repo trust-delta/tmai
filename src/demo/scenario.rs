@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use tmai_core::agents::{AgentStatus, AgentType, ApprovalType};
 
 /// A demo agent definition
 pub struct DemoAgent {

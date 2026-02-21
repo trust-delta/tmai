@@ -6,19 +6,19 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentType, DetectionSource};
-use crate::audit::helper::AuditHelper;
-use crate::audit::{AuditEvent, AuditEventSender};
-use crate::command_sender::CommandSender;
-use crate::config::Settings;
 use crate::demo::poller::{DemoAction, DemoPoller};
-use crate::ipc::server::IpcServer;
-use crate::monitor::{PollMessage, Poller};
-use crate::session_lookup::{self, LookupResult};
-use crate::state::{
+use tmai_core::agents::{AgentType, DetectionSource};
+use tmai_core::audit::helper::AuditHelper;
+use tmai_core::audit::{AuditEvent, AuditEventSender};
+use tmai_core::command_sender::CommandSender;
+use tmai_core::config::Settings;
+use tmai_core::ipc::server::IpcServer;
+use tmai_core::monitor::{PollMessage, Poller};
+use tmai_core::session_lookup::{self, LookupResult};
+use tmai_core::state::{
     AppState, ConfirmAction, CreateProcessStep, DirItem, PlacementType, SharedState, TreeEntry,
 };
-use crate::tmux::TmuxClient;
+use tmai_core::tmux::TmuxClient;
 
 use super::key_handler::{self, KeyAction};
 
@@ -1502,7 +1502,8 @@ impl App {
                     .tmux_client()
                     .list_sessions()
                     .unwrap_or_default();
-                let session_name = crate::utils::namegen::generate_unique_name(&existing_sessions);
+                let session_name =
+                    tmai_core::utils::namegen::generate_unique_name(&existing_sessions);
                 if let Err(e) = self.command_sender.tmux_client().create_session(
                     &session_name,
                     &directory,

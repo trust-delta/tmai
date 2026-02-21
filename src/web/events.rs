@@ -11,7 +11,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::state::SharedState;
+use tmai_core::state::SharedState;
 
 use super::api::{build_agent_info, build_team_info, AgentInfo, TeamInfoResponse};
 
@@ -21,7 +21,7 @@ pub struct SseState {
 }
 
 /// Build agents JSON string for SSE
-fn build_agents_json_str(app_state: &crate::state::AppState) -> String {
+fn build_agents_json_str(app_state: &tmai_core::state::AppState) -> String {
     let agents: Vec<AgentInfo> = app_state
         .agent_order
         .iter()
@@ -33,7 +33,7 @@ fn build_agents_json_str(app_state: &crate::state::AppState) -> String {
 }
 
 /// Build teams JSON string for SSE
-fn build_teams_json_str(app_state: &crate::state::AppState) -> String {
+fn build_teams_json_str(app_state: &tmai_core::state::AppState) -> String {
     let teams: Vec<TeamInfoResponse> = app_state
         .teams
         .values()
