@@ -548,7 +548,7 @@ class TmaiRemote {
                        enterkeyhint="send"
                        placeholder="Send message..."
                        data-agent-id="${this.escapeAttr(agent.id)}">
-                ${this.speechSupported ? `<button type="button" class="btn btn-mic" data-action="voice" data-id="${this.escapeAttr(agent.id)}">🎤</button>` : ''}
+                ${this.speechSupported ? `<button type="button" class="btn btn-mic" data-action="voice" data-id="${this.escapeAttr(agent.id)}" aria-label="Start voice input">🎤</button>` : ''}
                 <button type="submit" class="btn btn-send">Send</button>
             </form>
         `;
@@ -1062,6 +1062,14 @@ class TmaiRemote {
         document.getElementById('voice-cancel').addEventListener('click', () => this.cancelVoiceInput());
         document.getElementById('voice-stop').addEventListener('click', () => this.stopVoiceRecording());
         document.getElementById('voice-send').addEventListener('click', () => this.sendVoiceText());
+
+        // Close modal on Escape key
+        this.elements.voiceModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                this.cancelVoiceInput();
+            }
+        });
     }
 
     /**
@@ -1074,6 +1082,9 @@ class TmaiRemote {
         this.voiceAgentId = agentId;
         this.isVoiceStopping = false;
 
+        // Save focused element for restoration on close
+        this.prevActiveElement = document.activeElement;
+
         // Reset modal state
         this.elements.voiceResult.value = '';
         this.elements.voiceInterim.textContent = '';
@@ -1085,8 +1096,9 @@ class TmaiRemote {
         const dot = this.elements.voiceModal.querySelector('.voice-recording-dot');
         if (dot) dot.style.display = '';
 
-        // Show modal
+        // Show modal and move focus
         this.elements.voiceModal.hidden = false;
+        this.elements.voiceStop.focus();
 
         // Start recognition
         try {
@@ -1126,11 +1138,11 @@ class TmaiRemote {
         try {
             await this.sendText(this.voiceAgentId, text);
             this.showToast('Voice text sent', 'success');
+            this.closeVoiceModal();
         } catch (_error) {
+            // Keep modal open so user can retry
             this.showToast('Failed to send voice text', 'error');
         }
-
-        this.closeVoiceModal();
     }
 
     /**
@@ -1158,6 +1170,12 @@ class TmaiRemote {
         this.elements.voiceModal.hidden = true;
         this.elements.voiceResult.value = '';
         this.elements.voiceInterim.textContent = '';
+
+        // Restore focus to the element that triggered the modal
+        if (this.prevActiveElement) {
+            this.prevActiveElement.focus();
+            this.prevActiveElement = null;
+        }
     }
 
     /**

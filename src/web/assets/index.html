@@ -45,13 +45,14 @@
         </div>
     </main>
 
-    <div id="voice-modal" class="voice-modal-backdrop" hidden>
+    <div id="voice-modal" class="voice-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="voice-status-text" hidden>
         <div class="voice-modal">
             <div class="voice-modal-status">
                 <span class="voice-recording-dot"></span>
                 <span id="voice-status-text">Recording...</span>
             </div>
-            <div id="voice-interim" class="voice-interim"></div>
+            <div id="voice-interim" class="voice-interim" aria-live="polite"></div>
+            <label for="voice-result" class="sr-only">Recognized text</label>
             <textarea id="voice-result" class="voice-result" rows="3" placeholder="Recognized text appears here..."></textarea>
             <div class="voice-modal-actions">
                 <button id="voice-cancel" class="btn btn-reject">Cancel</button>
