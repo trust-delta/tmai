@@ -18,6 +18,21 @@ class TmaiRemote {
 
         this.attentionScrollIndex = 0;
 
+        // Speech Recognition setup
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.speechSupported = !!SpeechRecognition;
+        this.recognition = null;
+        this.voiceAgentId = null;
+        this.isVoiceStopping = false;
+
+        if (this.speechSupported) {
+            this.recognition = new SpeechRecognition();
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+            this.recognition.lang = navigator.language || 'ja-JP';
+            this.setupRecognitionHandlers();
+        }
+
         this.elements = {
             agentList: document.getElementById('agent-list'),
             connectionStatus: document.getElementById('connection-status'),
@@ -25,7 +40,13 @@ class TmaiRemote {
             themeBtn: document.getElementById('theme-btn'),
             agentSummary: document.getElementById('agent-summary'),
             scrollFab: document.getElementById('scroll-to-attention'),
-            attentionCount: document.getElementById('attention-count')
+            attentionCount: document.getElementById('attention-count'),
+            voiceModal: document.getElementById('voice-modal'),
+            voiceInterim: document.getElementById('voice-interim'),
+            voiceResult: document.getElementById('voice-result'),
+            voiceStatusText: document.getElementById('voice-status-text'),
+            voiceSend: document.getElementById('voice-send'),
+            voiceStop: document.getElementById('voice-stop')
         };
 
         if (!this.token) {
@@ -50,6 +71,7 @@ class TmaiRemote {
     async init() {
         this.loadTheme();
         this.setupHeaderButtons();
+        this.setupVoiceModalButtons();
         await this.loadAgents();
         this.connectSSE();
     }
@@ -526,6 +548,7 @@ class TmaiRemote {
                        enterkeyhint="send"
                        placeholder="Send message..."
                        data-agent-id="${this.escapeAttr(agent.id)}">
+                ${this.speechSupported ? `<button type="button" class="btn btn-mic" data-action="voice" data-id="${this.escapeAttr(agent.id)}" aria-label="Start voice input">🎤</button>` : ''}
                 <button type="submit" class="btn btn-send">Send</button>
             </form>
         `;
@@ -702,6 +725,9 @@ class TmaiRemote {
                     const key = btn.dataset.key;
                     await this.sendKey(id, key);
                     this.showToast(`Sent ${key}`, 'success');
+                    break;
+                case 'voice':
+                    this.startVoiceInput(id);
                     break;
                 case 'toggle-preview':
                     await this.handleTogglePreview(id);
@@ -967,6 +993,189 @@ class TmaiRemote {
      */
     escapeAttr(text) {
         return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /**
+     * Setup SpeechRecognition event handlers
+     */
+    setupRecognitionHandlers() {
+        this.recognition.onresult = (event) => {
+            let interim = '';
+            let final = '';
+
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    final += transcript;
+                } else {
+                    interim += transcript;
+                }
+            }
+
+            if (final) {
+                const current = this.elements.voiceResult.value;
+                this.elements.voiceResult.value = current ? current + final : final;
+                this.elements.voiceSend.disabled = false;
+            }
+
+            this.elements.voiceInterim.textContent = interim;
+        };
+
+        this.recognition.onend = () => {
+            if (!this.isVoiceStopping && this.voiceAgentId) {
+                // Auto-restart when recognition stops unexpectedly (e.g., silence timeout)
+                try {
+                    this.recognition.start();
+                } catch (_e) {
+                    // Ignore if already started
+                }
+            }
+        };
+
+        this.recognition.onerror = (event) => {
+            switch (event.error) {
+                case 'not-allowed':
+                    this.showToast('Microphone access denied', 'error');
+                    this.cancelVoiceInput();
+                    break;
+                case 'no-speech':
+                    // Ignore - recognition will auto-restart via onend
+                    break;
+                case 'network':
+                    this.showToast('Network error during recognition', 'error');
+                    this.cancelVoiceInput();
+                    break;
+                default:
+                    this.showToast(`Voice error: ${event.error}`, 'error');
+                    this.cancelVoiceInput();
+                    break;
+            }
+        };
+    }
+
+    /**
+     * Setup voice modal button event listeners
+     */
+    setupVoiceModalButtons() {
+        if (!this.speechSupported) return;
+
+        document.getElementById('voice-cancel').addEventListener('click', () => this.cancelVoiceInput());
+        document.getElementById('voice-stop').addEventListener('click', () => this.stopVoiceRecording());
+        document.getElementById('voice-send').addEventListener('click', () => this.sendVoiceText());
+
+        // Close modal on Escape key
+        this.elements.voiceModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                this.cancelVoiceInput();
+            }
+        });
+    }
+
+    /**
+     * Start voice input for the specified agent
+     * @param {string} agentId
+     */
+    startVoiceInput(agentId) {
+        if (!this.speechSupported) return;
+
+        this.voiceAgentId = agentId;
+        this.isVoiceStopping = false;
+
+        // Save focused element for restoration on close
+        this.prevActiveElement = document.activeElement;
+
+        // Reset modal state
+        this.elements.voiceResult.value = '';
+        this.elements.voiceInterim.textContent = '';
+        this.elements.voiceSend.disabled = true;
+        this.elements.voiceStatusText.textContent = 'Recording...';
+        this.elements.voiceStop.disabled = false;
+
+        // Show recording dot animation
+        const dot = this.elements.voiceModal.querySelector('.voice-recording-dot');
+        if (dot) dot.style.display = '';
+
+        // Show modal and move focus
+        this.elements.voiceModal.hidden = false;
+        this.elements.voiceStop.focus();
+
+        // Start recognition
+        try {
+            this.recognition.start();
+        } catch (_e) {
+            // Ignore if already started
+        }
+    }
+
+    /**
+     * Stop voice recording (keep modal open for editing/sending)
+     */
+    stopVoiceRecording() {
+        this.isVoiceStopping = true;
+        this.recognition.stop();
+
+        this.elements.voiceStatusText.textContent = 'Stopped';
+        this.elements.voiceStop.disabled = true;
+
+        // Hide recording dot animation
+        const dot = this.elements.voiceModal.querySelector('.voice-recording-dot');
+        if (dot) dot.style.display = 'none';
+
+        // Enable send if there is text
+        if (this.elements.voiceResult.value.trim()) {
+            this.elements.voiceSend.disabled = false;
+        }
+    }
+
+    /**
+     * Send recognized text to the target agent
+     */
+    async sendVoiceText() {
+        const text = this.elements.voiceResult.value.trim();
+        if (!text || !this.voiceAgentId) return;
+
+        try {
+            await this.sendText(this.voiceAgentId, text);
+            this.showToast('Voice text sent', 'success');
+            this.closeVoiceModal();
+        } catch (_error) {
+            // Keep modal open so user can retry
+            this.showToast('Failed to send voice text', 'error');
+        }
+    }
+
+    /**
+     * Cancel voice input and close modal
+     */
+    cancelVoiceInput() {
+        this.closeVoiceModal();
+    }
+
+    /**
+     * Close voice modal and stop recognition
+     */
+    closeVoiceModal() {
+        this.isVoiceStopping = true;
+        this.voiceAgentId = null;
+
+        if (this.recognition) {
+            try {
+                this.recognition.stop();
+            } catch (_e) {
+                // Ignore
+            }
+        }
+
+        this.elements.voiceModal.hidden = true;
+        this.elements.voiceResult.value = '';
+        this.elements.voiceInterim.textContent = '';
+
+        // Restore focus to the element that triggered the modal
+        if (this.prevActiveElement) {
+            this.prevActiveElement.focus();
+            this.prevActiveElement = null;
+        }
     }
 
     /**
