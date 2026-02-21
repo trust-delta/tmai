@@ -81,14 +81,14 @@ cargo fmt                     # フォーマット
 | 機能 | ドキュメント | ソース |
 |------|------------|--------|
 | キーバインド | `doc/reference/keybindings.md` | `src/ui/components/help_screen.rs` |
-| 設定リファレンス | `doc/reference/config.md` | `src/config/settings.rs` |
+| 設定リファレンス | `doc/reference/config.md` | `crates/tmai-core/src/config/settings.rs` |
 | Web API | `doc/reference/web-api.md` | `src/web/api.rs` |
-| PTYラッピング | `doc/features/pty-wrapping.md` | `src/wrap/` |
+| PTYラッピング | `doc/features/pty-wrapping.md` | `crates/tmai-core/src/wrap/` |
 | Web Remote | `doc/features/web-remote.md` | `src/web/` |
-| Auto-approve | `doc/features/auto-approve.md` | `src/auto_approve/` |
-| Agent Teams | `doc/features/agent-teams.md` | `src/teams/` |
-| Exfil Detection | `doc/features/exfil-detection.md` | `src/wrap/exfil_detector.rs` |
-| AskUserQuestion | `doc/features/ask-user-question.md` | `src/detectors/claude_code.rs` |
+| Auto-approve | `doc/features/auto-approve.md` | `crates/tmai-core/src/auto_approve/` |
+| Agent Teams | `doc/features/agent-teams.md` | `crates/tmai-core/src/teams/` |
+| Exfil Detection | `doc/features/exfil-detection.md` | `crates/tmai-core/src/wrap/exfil_detector.rs` |
+| AskUserQuestion | `doc/features/ask-user-question.md` | `crates/tmai-core/src/detectors/claude_code.rs` |
 
 ## ドメイン知識
 
