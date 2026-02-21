@@ -926,9 +926,8 @@ impl App {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
-            // Send probe marker text
-            let full_marker = format!("{}\nこの送信は管理用のため返信不要です", marker_text);
-            let _ = tmux_client.send_keys_literal(&target, &full_marker);
+            // Send probe marker text (single message only to minimize conversation pollution)
+            let _ = tmux_client.send_keys_literal(&target, &marker_text);
             let _ = tmux_client.send_keys(&target, "Enter");
 
             // Wait for JSONL to be written

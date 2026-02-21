@@ -225,7 +225,11 @@ mod tests {
         // The phrase should be valid UTF-8 and not empty
         assert!(!phrases.is_empty());
         for phrase in &phrases {
-            assert!(phrase.len() <= 80 || phrase.is_char_boundary(phrase.len()));
+            assert!(
+                phrase.len() <= 80,
+                "phrase should be at most 80 bytes, got {}",
+                phrase.len()
+            );
         }
     }
 }

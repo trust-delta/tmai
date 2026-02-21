@@ -125,6 +125,7 @@ Manually started Claude Code agents (non-IPC) can be upgraded to PTY wrapping wi
 Session ID identification uses a two-phase approach:
 - **Phase 1**: Match capture-pane content against JSONL files (non-invasive)
 - **Phase 2**: Send a probe marker to identify the session (leaves 1 turn in conversation history)
+- **Both fail**: An error message is displayed. You can retry or use passthrough mode to manually exit and restart.
 
 ## Fallback Behavior
 

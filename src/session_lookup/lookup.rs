@@ -68,6 +68,8 @@ fn list_recent_jsonl_files(project_dir: &PathBuf, max_count: usize) -> Vec<(Path
 }
 
 /// Read the tail of a file (last `max_bytes` bytes).
+///
+/// Uses `from_utf8_lossy` to handle seeking into the middle of multi-byte characters.
 fn read_tail(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = fs::File::open(path).ok()?;
     let file_size = file.metadata().ok()?.len();
@@ -76,18 +78,24 @@ fn read_tail(path: &Path, max_bytes: u64) -> Option<String> {
         file.seek(SeekFrom::End(-(max_bytes as i64))).ok()?;
     }
 
-    let mut content = String::new();
-    file.read_to_string(&mut content).ok()?;
-    Some(content)
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// Extract session ID (UUID) from a JSONL file path.
 ///
 /// `/path/to/abcd1234-5678-abcd-efgh-ijklmnop.jsonl` → `"abcd1234-5678-abcd-efgh-ijklmnop"`
+///
+/// Only returns IDs that match UUID-like format (alphanumeric + hyphens) to prevent
+/// shell injection when used in `claude --resume <id>`.
 fn extract_session_id(path: &Path) -> Option<String> {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string())
+    let stem = path.file_stem()?.to_str()?;
+    // Validate: only allow alphanumeric chars and hyphens (UUID format)
+    if stem.is_empty() || !stem.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    Some(stem.to_string())
 }
 
 /// Phase 1: Find session ID by matching capture-pane content against JSONL files.
@@ -156,6 +164,10 @@ pub fn find_session_id(cwd: &str, capture_content: &str) -> LookupResult {
 /// * `LookupResult::Found(session_id)` if the marker was found
 /// * `LookupResult::NotFound` if not found (caller should show error)
 pub fn probe_session_id(cwd: &str, marker: &str) -> LookupResult {
+    if marker.is_empty() {
+        return LookupResult::NotFound;
+    }
+
     let projects_dir = match claude_projects_dir() {
         Some(dir) => dir,
         None => return LookupResult::NotFound,
