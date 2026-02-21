@@ -45,6 +45,22 @@
         </div>
     </main>
 
+    <div id="voice-modal" class="voice-modal-backdrop" hidden>
+        <div class="voice-modal">
+            <div class="voice-modal-status">
+                <span class="voice-recording-dot"></span>
+                <span id="voice-status-text">Recording...</span>
+            </div>
+            <div id="voice-interim" class="voice-interim"></div>
+            <textarea id="voice-result" class="voice-result" rows="3" placeholder="Recognized text appears here..."></textarea>
+            <div class="voice-modal-actions">
+                <button id="voice-cancel" class="btn btn-reject">Cancel</button>
+                <button id="voice-stop" class="btn btn-select">■ Stop</button>
+                <button id="voice-send" class="btn btn-approve" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
 
     <script src="app.js"></script>

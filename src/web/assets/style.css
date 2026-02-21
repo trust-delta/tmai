@@ -845,6 +845,122 @@ main {
     border-left: 3px solid var(--warning);
 }
 
+/* ===== Voice Input ===== */
+
+.btn-mic {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    flex-shrink: 0;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    line-height: 1;
+}
+
+.btn-mic:hover {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+.btn-mic:active {
+    transform: scale(0.95);
+}
+
+.voice-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.voice-modal-backdrop[hidden] {
+    display: none;
+}
+
+.voice-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.voice-modal-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.voice-recording-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--error);
+    animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.voice-interim {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    min-height: 1.2em;
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+
+.voice-result {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+    margin-bottom: 12px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    line-height: 1.5;
+}
+
+.voice-result:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--ring);
+}
+
+.voice-result::placeholder {
+    color: var(--text-muted);
+}
+
+.voice-modal-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.voice-modal-actions .btn {
+    flex: 1;
+}
+
 /* ===== Scrollbar ===== */
 
 ::-webkit-scrollbar {
