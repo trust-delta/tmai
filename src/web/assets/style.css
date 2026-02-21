@@ -821,7 +821,7 @@ main {
     border-radius: var(--radius);
     border: 1px solid var(--border);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
+    z-index: 1100;
     font-size: 0.8rem;
     font-weight: 500;
     transition: opacity 0.2s ease, transform 0.2s ease;
@@ -970,7 +970,7 @@ main {
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
 }
