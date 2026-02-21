@@ -161,6 +161,10 @@ pub enum TreeEntry {
 pub enum ConfirmAction {
     /// Kill a tmux pane
     KillPane { target: String },
+    /// Restart a non-IPC agent as PTY-wrapped (session ID already known)
+    RestartAsWrapped { target: String, session_id: String },
+    /// Send a probe marker to identify session, then restart as wrapped
+    ProbeAndRestartAsWrapped { target: String, cwd: String },
 }
 
 /// State for confirmation dialog

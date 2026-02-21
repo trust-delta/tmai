@@ -98,6 +98,7 @@ model = "haiku"
 | `→` | Enter passthrough mode |
 | `t` | Task overlay (team member selected) |
 | `T` | Team overview |
+| `W` | Restart as IPC-wrapped (non-IPC Claude Code) |
 | `Esc` | Exit mode / Quit |
 | `?` | Help |
 

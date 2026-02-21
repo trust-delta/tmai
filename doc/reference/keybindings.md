@@ -35,6 +35,7 @@
 |-----|--------|
 | `f` | Focus pane |
 | `x` | Terminate pane (with confirmation) |
+| `W` | Restart as IPC-wrapped (non-IPC Claude Code only) |
 
 ## Preview
 
