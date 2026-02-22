@@ -427,13 +427,8 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
     KeyAction::None
 }
 
-/// Check if choices use checkbox format ([ ], [x], [X], [✔])
-fn has_checkbox_format(choices: &[String]) -> bool {
-    choices.iter().any(|c| {
-        let t = c.trim();
-        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
-    })
-}
+// Re-export from core for use in key_handler
+use tmai_core::api::has_checkbox_format;
 
 /// Check if a choice starts with the given word (case-insensitive, word-boundary aware).
 ///

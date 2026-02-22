@@ -20,6 +20,7 @@
 //! let mut rx = core.subscribe();
 //! ```
 
+pub mod actions;
 mod builder;
 mod core;
 pub mod events;
@@ -30,3 +31,6 @@ pub use builder::TmaiCoreBuilder;
 pub use core::TmaiCore;
 pub use events::CoreEvent;
 pub use types::{AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
+
+// Re-export for web/api.rs usage
+pub use actions::has_checkbox_format;

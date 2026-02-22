@@ -1,8 +1,10 @@
 //! Core event system for push-based change notification.
 //!
-//! Phase 4 will add a poll bridge that converts `PollMessage` into `CoreEvent`
-//! and emits them via the broadcast channel. For now, only the types and
-//! `subscribe()` method are defined.
+//! The event system supports two modes:
+//! - **Bridge mode**: `start_monitoring()` spawns a Poller internally and
+//!   bridges `PollMessage` → `CoreEvent` automatically (for headless/web-only).
+//! - **External mode**: The consumer (TUI) runs its own Poller and calls
+//!   `notify_agents_updated()` / `notify_teams_updated()` to emit events.
 
 use tokio::sync::broadcast;
 
@@ -51,6 +53,21 @@ impl TmaiCore {
     pub fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {
         self.event_sender().subscribe()
     }
+
+    /// Notify subscribers that the agent list was updated.
+    ///
+    /// Called by external consumers (e.g. TUI main loop) after processing
+    /// `PollMessage::AgentsUpdated`. Ignored if no subscribers are listening.
+    pub fn notify_agents_updated(&self) {
+        let _ = self.event_sender().send(CoreEvent::AgentsUpdated);
+    }
+
+    /// Notify subscribers that team data was updated.
+    ///
+    /// Called by external consumers after team scan completes.
+    pub fn notify_teams_updated(&self) {
+        let _ = self.event_sender().send(CoreEvent::TeamsUpdated);
+    }
 }
 
 #[cfg(test)]
@@ -85,5 +102,35 @@ mod tests {
         let e2 = rx2.recv().await.unwrap();
         assert!(matches!(e1, CoreEvent::TeamsUpdated));
         assert!(matches!(e2, CoreEvent::TeamsUpdated));
+    }
+
+    #[tokio::test]
+    async fn test_notify_agents_updated() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let mut rx = core.subscribe();
+
+        core.notify_agents_updated();
+
+        let event = rx.recv().await.unwrap();
+        assert!(matches!(event, CoreEvent::AgentsUpdated));
+    }
+
+    #[tokio::test]
+    async fn test_notify_teams_updated() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let mut rx = core.subscribe();
+
+        core.notify_teams_updated();
+
+        let event = rx.recv().await.unwrap();
+        assert!(matches!(event, CoreEvent::TeamsUpdated));
+    }
+
+    #[test]
+    fn test_notify_no_subscribers() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        // Should not panic even with no subscribers
+        core.notify_agents_updated();
+        core.notify_teams_updated();
     }
 }

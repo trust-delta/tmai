@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::demo::poller::{DemoAction, DemoPoller};
 use tmai_core::agents::{AgentType, DetectionSource};
+use tmai_core::api::TmaiCore;
 use tmai_core::audit::helper::AuditHelper;
 use tmai_core::audit::{AuditEvent, AuditEventSender};
 use tmai_core::command_sender::CommandSender;
@@ -42,6 +43,8 @@ pub struct App {
     audit_last_passthrough: std::collections::HashMap<String, std::time::Instant>,
     /// Sender for demo actions (only set in demo mode)
     demo_action_tx: Option<mpsc::Sender<DemoAction>>,
+    /// Core facade for event broadcasting (optional, set when web is enabled)
+    core: Option<Arc<TmaiCore>>,
 }
 
 impl App {
@@ -71,7 +74,13 @@ impl App {
             audit_event_rx,
             audit_last_passthrough: std::collections::HashMap::new(),
             demo_action_tx: None,
+            core: None,
         }
+    }
+
+    /// Set the core facade for event broadcasting
+    pub fn set_core(&mut self, core: Arc<TmaiCore>) {
+        self.core = Some(core);
     }
 
     /// Get a clone of the shared state
@@ -298,6 +307,11 @@ impl App {
                         let mut state = self.state.write();
                         state.update_agents(agents);
                         state.clear_error();
+                        // Notify SSE subscribers via core event system
+                        drop(state);
+                        if let Some(ref core) = self.core {
+                            core.notify_agents_updated();
+                        }
                     }
                     PollMessage::Error(error) => {
                         let mut state = self.state.write();

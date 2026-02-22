@@ -5,8 +5,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use tmai::ui::App;
 use tmai::web::WebServer;
+use tmai_core::api::TmaiCoreBuilder;
+use tmai_core::command_sender::CommandSender;
 use tmai_core::config::{Config, Settings};
 use tmai_core::ipc::server::IpcServer;
+use tmai_core::tmux::TmuxClient;
 use tmai_core::wrap::{
     runner::{get_pane_id, PtyRunnerConfig},
     PtyRunner,
@@ -68,25 +71,40 @@ async fn main() -> Result<()> {
         audit_rx,
     );
 
+    // Build TmaiCore facade (shared between Web and TUI for event broadcasting)
+    let app_state = app.shared_state();
+    let core_cmd_sender = Arc::new(CommandSender::new(
+        Some(ipc_server.clone()),
+        TmuxClient::with_capture_lines(settings.capture_lines),
+        app_state.clone(),
+    ));
+
+    let mut core_builder = TmaiCoreBuilder::new(settings.clone())
+        .with_state(app_state.clone())
+        .with_ipc_server(ipc_server.clone())
+        .with_command_sender(core_cmd_sender);
+
+    if let Some(ref tx) = audit_tx {
+        core_builder = core_builder.with_audit_sender(tx.clone());
+    }
+
+    let core = Arc::new(core_builder.build());
+
+    // Share core with App for event broadcasting
+    app.set_core(core.clone());
+
     // Start web server if enabled
     if settings.web.enabled {
         let token = tmai::web::auth::generate_token();
-        let state = app.shared_state();
 
         // Initialize web settings in app state
         {
-            let mut app_state = state.write();
+            let mut app_state = app_state.write();
             app_state.init_web(token.clone(), settings.web.port);
         }
 
         // Start web server in background
-        let web_server = WebServer::new(
-            settings.clone(),
-            state,
-            token,
-            Some(ipc_server.clone()),
-            audit_tx.clone(),
-        );
+        let web_server = WebServer::new(settings.clone(), core.clone(), token);
         web_server.start();
     }
 
@@ -97,9 +115,9 @@ async fn main() -> Result<()> {
         let service = tmai_core::auto_approve::AutoApproveService::new(
             settings.auto_approve.clone(),
             app.shared_state(),
-            tmai_core::command_sender::CommandSender::new(
+            CommandSender::new(
                 Some(ipc_server.clone()),
-                tmai_core::tmux::TmuxClient::with_capture_lines(settings.capture_lines),
+                TmuxClient::with_capture_lines(settings.capture_lines),
                 app.shared_state(),
             ),
             audit_tx,

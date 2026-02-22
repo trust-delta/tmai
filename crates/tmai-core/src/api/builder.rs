@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use crate::audit::AuditEventSender;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::ipc::server::IpcServer;
@@ -23,6 +24,7 @@ pub struct TmaiCoreBuilder {
     state: Option<SharedState>,
     command_sender: Option<Arc<CommandSender>>,
     ipc_server: Option<Arc<IpcServer>>,
+    audit_tx: Option<AuditEventSender>,
 }
 
 impl TmaiCoreBuilder {
@@ -33,6 +35,7 @@ impl TmaiCoreBuilder {
             state: None,
             command_sender: None,
             ipc_server: None,
+            audit_tx: None,
         }
     }
 
@@ -43,6 +46,7 @@ impl TmaiCoreBuilder {
             state: None,
             command_sender: None,
             ipc_server: None,
+            audit_tx: None,
         }
     }
 
@@ -64,13 +68,25 @@ impl TmaiCoreBuilder {
         self
     }
 
+    /// Set the audit event sender for emitting audit events
+    pub fn with_audit_sender(mut self, tx: AuditEventSender) -> Self {
+        self.audit_tx = Some(tx);
+        self
+    }
+
     /// Build the `TmaiCore` instance
     ///
     /// If no state was provided, a fresh `AppState::shared()` is created.
     pub fn build(self) -> TmaiCore {
         let state = self.state.unwrap_or_else(AppState::shared);
 
-        TmaiCore::new(state, self.command_sender, self.settings, self.ipc_server)
+        TmaiCore::new(
+            state,
+            self.command_sender,
+            self.settings,
+            self.ipc_server,
+            self.audit_tx,
+        )
     }
 }
 

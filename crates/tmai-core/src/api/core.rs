@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use tokio::sync::broadcast;
 
+use crate::audit::helper::AuditHelper;
+use crate::audit::AuditEventSender;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::ipc::server::IpcServer;
@@ -31,6 +33,8 @@ pub struct TmaiCore {
     ipc_server: Option<Arc<IpcServer>>,
     /// Broadcast sender for core events
     event_tx: broadcast::Sender<CoreEvent>,
+    /// Audit helper for emitting user-input-during-processing events
+    audit_helper: AuditHelper,
 }
 
 impl TmaiCore {
@@ -40,14 +44,17 @@ impl TmaiCore {
         command_sender: Option<Arc<CommandSender>>,
         settings: Arc<Settings>,
         ipc_server: Option<Arc<IpcServer>>,
+        audit_tx: Option<AuditEventSender>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        let audit_helper = AuditHelper::new(audit_tx, state.clone());
         Self {
             state,
             command_sender,
             settings,
             ipc_server,
             event_tx,
+            audit_helper,
         }
     }
 
@@ -99,10 +106,14 @@ impl TmaiCore {
         &self.state
     }
 
-    /// Borrow the command sender (for action modules in Phase 3)
-    #[allow(dead_code)]
+    /// Borrow the command sender (for action modules)
     pub(crate) fn command_sender_ref(&self) -> Option<&Arc<CommandSender>> {
         self.command_sender.as_ref()
+    }
+
+    /// Borrow the audit helper (for action modules)
+    pub(crate) fn audit_helper(&self) -> &AuditHelper {
+        &self.audit_helper
     }
 }
 
@@ -115,7 +126,7 @@ mod tests {
     fn test_tmai_core_creation() {
         let state = AppState::shared();
         let settings = Arc::new(Settings::default());
-        let core = TmaiCore::new(state, None, settings.clone(), None);
+        let core = TmaiCore::new(state, None, settings.clone(), None, None);
 
         assert_eq!(core.settings().poll_interval_ms, 500);
         assert!(core.ipc_server().is_none());
@@ -127,7 +138,7 @@ mod tests {
     fn test_escape_hatches() {
         let state = AppState::shared();
         let settings = Arc::new(Settings::default());
-        let core = TmaiCore::new(state.clone(), None, settings, None);
+        let core = TmaiCore::new(state.clone(), None, settings, None, None);
 
         // raw_state should return the same Arc
         let raw = core.raw_state();

@@ -29,6 +29,14 @@ pub enum ApiError {
     #[error("command sender not available")]
     NoCommandSender,
 
+    /// The target is a virtual agent (cannot send keys)
+    #[error("cannot interact with virtual agent: {target}")]
+    VirtualAgent { target: String },
+
+    /// Invalid input (e.g. text too long, invalid key)
+    #[error("invalid input: {message}")]
+    InvalidInput { message: String },
+
     /// A tmux or IPC operation failed
     #[error("command failed: {0}")]
     CommandError(#[from] anyhow::Error),
