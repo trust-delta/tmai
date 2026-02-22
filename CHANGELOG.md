@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-23
+
+### Added
+- **Facade API action methods**: `approve()`, `select_choice()`, `submit_selection()`, `send_text()`, `send_key()`, `focus_pane()`, `kill_pane()` をTmaiCoreに集約し、TUI/Web間の重複ロジックを一本化
+- **CoreEvent broadcast system**: `subscribe()` によるプッシュ型イベント配信。SSEをポーリングからbroadcastベースに置換
+- **`tmai audit` subcommand**: detection logの分析サブコマンドを追加
+
+### Changed
+- **Web API migration**: `ApiState`/`SseState` を `Arc<TmaiCore>` に置換し、全ハンドラをFacade経由に移行
+- **SSE push-based delivery**: `core.subscribe()` ベースのリアルタイムイベント配信に変更（teams用500msフォールバック維持）
+- **`has_checkbox_format()` unification**: TUI key_handlerとWeb APIで重複していた関数をtmai-coreに一本化
+
+### Fixed
+- doc-test内のcrate名修正 (`tmai` → `tmai_core`)
+
+### Dependencies
+- Bump anyhow from 1.0.101 to 1.0.102
+- Bump clap from 4.5.59 to 4.5.60
+
 ## [0.5.0] - 2026-02-21
 
 ### Changed
