@@ -73,20 +73,20 @@ impl fmt::Display for JudgmentDecision {
 }
 
 /// Token usage from a single judgment call
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct JudgmentUsage {
     /// Direct input tokens (non-cached)
     pub input_tokens: u64,
     /// Output tokens generated
     pub output_tokens: u64,
     /// Tokens read from cache
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub cache_read_input_tokens: u64,
     /// Tokens written to cache
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub cache_creation_input_tokens: u64,
     /// Cost in USD (as reported by claude CLI)
-    #[serde(skip_serializing_if = "is_zero_f64")]
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub cost_usd: f64,
 }
 

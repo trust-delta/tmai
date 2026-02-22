@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod api;
 pub mod audit;
 pub mod auto_approve;
 pub mod command_sender;

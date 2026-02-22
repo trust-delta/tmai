@@ -47,6 +47,34 @@ pub enum Command {
     },
     /// Run interactive demo mode (no tmux required)
     Demo,
+    /// Analyze audit detection logs
+    Audit {
+        #[command(subcommand)]
+        subcommand: AuditCommand,
+    },
+}
+
+/// Audit analysis subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum AuditCommand {
+    /// Show aggregate statistics from detection logs
+    Stats {
+        /// Number of top rules to display
+        #[arg(long, default_value = "20")]
+        top: usize,
+    },
+    /// Analyze potential misdetections (UserInputDuringProcessing events)
+    Misdetections {
+        /// Maximum number of individual records to display
+        #[arg(long, short = 'n', default_value = "50")]
+        limit: usize,
+    },
+    /// Analyze IPC/capture-pane disagreements
+    Disagreements {
+        /// Maximum number of individual records to display
+        #[arg(long, short = 'n', default_value = "50")]
+        limit: usize,
+    },
 }
 
 impl Config {
@@ -63,6 +91,19 @@ impl Config {
     /// Check if running in demo mode
     pub fn is_demo_mode(&self) -> bool {
         matches!(self.command, Some(Command::Demo))
+    }
+
+    /// Check if running in audit mode
+    pub fn is_audit_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Audit { .. }))
+    }
+
+    /// Get audit subcommand
+    pub fn get_audit_command(&self) -> Option<&AuditCommand> {
+        match &self.command {
+            Some(Command::Audit { subcommand }) => Some(subcommand),
+            _ => None,
+        }
     }
 
     /// Get wrap command and arguments

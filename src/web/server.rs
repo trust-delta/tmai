@@ -11,43 +11,28 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
-use tmai_core::audit::helper::AuditHelper;
-use tmai_core::audit::AuditEventSender;
-use tmai_core::command_sender::CommandSender;
+use tmai_core::api::TmaiCore;
 use tmai_core::config::Settings;
-use tmai_core::ipc::server::IpcServer;
-use tmai_core::state::SharedState;
-use tmai_core::tmux::TmuxClient;
 
-use super::api::{self, ApiState};
+use super::api;
 use super::auth::{self, AuthState};
-use super::events::{self, SseState};
+use super::events;
 use super::static_files;
 
 /// Web server for remote control
 pub struct WebServer {
     settings: Settings,
-    app_state: SharedState,
+    core: Arc<TmaiCore>,
     token: String,
-    ipc_server: Option<Arc<IpcServer>>,
-    audit_tx: Option<AuditEventSender>,
 }
 
 impl WebServer {
     /// Create a new web server
-    pub fn new(
-        settings: Settings,
-        app_state: SharedState,
-        token: String,
-        ipc_server: Option<Arc<IpcServer>>,
-        audit_tx: Option<AuditEventSender>,
-    ) -> Self {
+    pub fn new(settings: Settings, core: Arc<TmaiCore>, token: String) -> Self {
         Self {
             settings,
-            app_state,
+            core,
             token,
-            ipc_server,
-            audit_tx,
         }
     }
 
@@ -66,19 +51,8 @@ impl WebServer {
             token: self.token.clone(),
         });
 
-        let api_state = Arc::new(ApiState {
-            command_sender: CommandSender::new(
-                self.ipc_server.clone(),
-                TmuxClient::new(),
-                self.app_state.clone(),
-            ),
-            audit_helper: AuditHelper::new(self.audit_tx.clone(), self.app_state.clone()),
-            app_state: self.app_state.clone(),
-        });
-
-        let sse_state = Arc::new(SseState {
-            app_state: self.app_state.clone(),
-        });
+        let api_state = self.core.clone();
+        let sse_state = self.core.clone();
 
         // Security: Token authentication in URL is the primary defense.
         // CORS is restricted as defense-in-depth but allow_origin(Any) is
@@ -92,7 +66,6 @@ impl WebServer {
             ]);
 
         // API routes (require authentication)
-        // Note: reject endpoint removed - use select with option number instead
         let api_routes = Router::new()
             .route("/agents", get(api::get_agents))
             .route("/agents/{id}/approve", post(api::approve_agent))

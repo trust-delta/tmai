@@ -9,14 +9,23 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use tmai_core::agents::{AgentStatus, ApprovalType};
-use tmai_core::audit::helper::AuditHelper;
-use tmai_core::command_sender::CommandSender;
-use tmai_core::detectors::get_detector;
-use tmai_core::state::SharedState;
+use tmai_core::api::{ApiError, TmaiCore};
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
     (status, Json(serde_json::json!({"error": message})))
+}
+
+/// Convert ApiError to HTTP status + JSON error
+fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
+    let status = match &err {
+        ApiError::AgentNotFound { .. } | ApiError::TeamNotFound { .. } => StatusCode::NOT_FOUND,
+        ApiError::NoCommandSender | ApiError::CommandError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
+            StatusCode::BAD_REQUEST
+        }
+    };
+    json_error(status, &err.to_string())
 }
 
 /// Text input request body
@@ -31,23 +40,11 @@ pub struct KeyRequest {
     pub key: String,
 }
 
-/// Allowed special key names (whitelist)
-const ALLOWED_KEYS: &[&str] = &[
-    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BSpace",
-];
-
 /// Preview response
 #[derive(Debug, Serialize)]
 pub struct PreviewResponse {
     pub content: String,
     pub lines: usize,
-}
-
-/// Shared application state for API handlers
-pub struct ApiState {
-    pub app_state: SharedState,
-    pub command_sender: CommandSender,
-    pub audit_helper: AuditHelper,
 }
 
 /// Agent information for API response
@@ -220,418 +217,34 @@ fn convert_team_info(team_info: &tmai_core::agents::AgentTeamInfo) -> AgentTeamI
     }
 }
 
-/// Build AgentInfo from a MonitoredAgent
+/// Build AgentInfo from an AgentSnapshot
 ///
 /// Shared helper used by both the REST API and SSE events.
-pub(super) fn build_agent_info(agent: &tmai_core::agents::MonitoredAgent) -> AgentInfo {
+pub(super) fn build_agent_info(snapshot: &tmai_core::api::AgentSnapshot) -> AgentInfo {
     use tmai_core::auto_approve::AutoApprovePhase;
 
-    let mode = agent.mode.to_string();
-    let auto_approve_phase = agent.auto_approve_phase.as_ref().map(|p| match p {
+    let mode = snapshot.mode.to_string();
+    let auto_approve_phase = snapshot.auto_approve_phase.as_ref().map(|p| match p {
         AutoApprovePhase::Judging => "judging".to_string(),
         AutoApprovePhase::ApprovedByRule => "approved_rule".to_string(),
         AutoApprovePhase::ApprovedByAi => "approved_ai".to_string(),
         AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
     });
     AgentInfo {
-        id: agent.id.clone(),
-        agent_type: agent.agent_type.short_name().to_string(),
-        status: StatusInfo::from(&agent.status),
-        cwd: agent.display_cwd(),
-        session: agent.session.clone(),
-        window_name: agent.window_name.clone(),
-        needs_attention: agent.status.needs_attention(),
-        is_virtual: agent.is_virtual,
-        team: agent.team_info.as_ref().map(convert_team_info),
+        id: snapshot.id.clone(),
+        agent_type: snapshot.agent_type.short_name().to_string(),
+        status: StatusInfo::from(&snapshot.status),
+        cwd: snapshot.display_cwd.clone(),
+        session: snapshot.session.clone(),
+        window_name: snapshot.window_name.clone(),
+        needs_attention: snapshot.needs_attention(),
+        is_virtual: snapshot.is_virtual,
+        team: snapshot.team_info.as_ref().map(convert_team_info),
         mode,
-        git_branch: agent.git_branch.clone(),
-        git_dirty: agent.git_dirty,
-        is_worktree: agent.is_worktree,
+        git_branch: snapshot.git_branch.clone(),
+        git_dirty: snapshot.git_dirty,
+        is_worktree: snapshot.is_worktree,
         auto_approve_phase,
-    }
-}
-
-/// Get all agents
-pub async fn get_agents(State(state): State<Arc<ApiState>>) -> Json<Vec<AgentInfo>> {
-    let app_state = state.app_state.read();
-    let agents: Vec<AgentInfo> = app_state
-        .agent_order
-        .iter()
-        .filter_map(|id| app_state.agents.get(id))
-        .map(build_agent_info)
-        .collect();
-
-    Json(agents)
-}
-
-/// Selection request body
-#[derive(Debug, Deserialize)]
-pub struct SelectRequest {
-    pub choice: usize,
-}
-
-/// Submit multi-select request body
-#[derive(Debug, Deserialize)]
-pub struct SubmitRequest {
-    #[serde(default)]
-    pub selected_choices: Vec<usize>,
-}
-
-/// Check if choices use checkbox format ([ ], [x], [X], [✔])
-fn has_checkbox_format(choices: &[String]) -> bool {
-    choices.iter().any(|c| {
-        let t = c.trim();
-        t.starts_with("[ ]")
-            || t.starts_with("[x]")
-            || t.starts_with("[X]")
-            || t.starts_with("[×]")
-            || t.starts_with("[✔]")
-    })
-}
-
-/// Approve an agent action (send 'y')
-pub async fn approve_agent(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: approve agent_id={}", id);
-    let agent_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).map(|a| {
-            (
-                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                a.agent_type.clone(),
-                a.is_virtual,
-            )
-        })
-    };
-
-    match agent_info {
-        Some((_, _, true)) => {
-            tracing::warn!("API: approve failed - virtual agent agent_id={}", id);
-            Err(json_error(
-                StatusCode::BAD_REQUEST,
-                "Cannot approve virtual agent",
-            ))
-        }
-        Some((true, agent_type, false)) => {
-            let detector = get_detector(&agent_type);
-            match state
-                .command_sender
-                .send_keys(&id, detector.approval_keys())
-            {
-                Ok(_) => Ok(Json(serde_json::json!({"status": "ok"}))),
-                Err(_) => {
-                    tracing::warn!("API: approve failed - send_keys error agent_id={}", id);
-                    Err(json_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to send approval",
-                    ))
-                }
-            }
-        }
-        Some((false, _, false)) => {
-            tracing::warn!(
-                "API: approve failed - not awaiting approval agent_id={}",
-                id
-            );
-            Err(json_error(
-                StatusCode::BAD_REQUEST,
-                "Agent is not awaiting approval",
-            ))
-        }
-        None => {
-            tracing::warn!("API: approve failed - not found agent_id={}", id);
-            Err(json_error(StatusCode::NOT_FOUND, "Agent not found"))
-        }
-    }
-}
-
-// Note: reject_agent removed - use select_choice with option number instead
-
-/// Select a choice for UserQuestion
-pub async fn select_choice(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-    Json(req): Json<SelectRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: select choice={} agent_id={}", req.choice, id);
-    let question_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).and_then(|agent| {
-            if let AgentStatus::AwaitingApproval {
-                approval_type:
-                    ApprovalType::UserQuestion {
-                        choices,
-                        multi_select,
-                        cursor_position,
-                    },
-                ..
-            } = &agent.status
-            {
-                Some((choices.clone(), *multi_select, *cursor_position))
-            } else {
-                None
-            }
-        })
-    };
-
-    match question_info {
-        Some((choices, multi_select, cursor_pos))
-            if req.choice >= 1 && req.choice <= choices.len() + 1 =>
-        {
-            let cursor = if cursor_pos == 0 { 1 } else { cursor_pos };
-            let steps = req.choice as i32 - cursor as i32;
-            let key = if steps > 0 { "Down" } else { "Up" };
-            for _ in 0..steps.unsigned_abs() {
-                if state.command_sender.send_keys(&id, key).is_err() {
-                    return Err(json_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to navigate",
-                    ));
-                }
-            }
-
-            // Confirm: single-select always, multi-select only for checkbox toggle
-            if (!multi_select || has_checkbox_format(&choices))
-                && state.command_sender.send_keys(&id, "Enter").is_err()
-            {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to confirm selection",
-                ));
-            }
-
-            Ok(Json(serde_json::json!({"status": "ok"})))
-        }
-        Some(_) => Err(json_error(StatusCode::BAD_REQUEST, "Invalid choice number")),
-        None => Err(json_error(
-            StatusCode::NOT_FOUND,
-            "Agent not found or not in question state",
-        )),
-    }
-}
-
-/// Submit multi-select choices
-pub async fn submit_selection(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-    body: Option<Json<SubmitRequest>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: submit agent_id={}", id);
-    let multi_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).and_then(|agent| {
-            if let AgentStatus::AwaitingApproval {
-                approval_type:
-                    ApprovalType::UserQuestion {
-                        choices,
-                        multi_select: true,
-                        cursor_position,
-                    },
-                ..
-            } = &agent.status
-            {
-                Some((choices.clone(), *cursor_position))
-            } else {
-                None
-            }
-        })
-    };
-
-    match multi_info {
-        Some((choices, cursor_pos)) => {
-            let is_checkbox = has_checkbox_format(&choices);
-            let selected = body.map(|b| b.0.selected_choices).unwrap_or_default();
-
-            if is_checkbox && !selected.is_empty() {
-                // Checkbox format: toggle each selected choice then submit
-                let mut sorted = selected.clone();
-                sorted.retain(|&c| c >= 1 && c <= choices.len());
-                if sorted.is_empty() {
-                    return Err(json_error(StatusCode::BAD_REQUEST, "No valid choices"));
-                }
-                sorted.sort();
-                let mut current_pos = if cursor_pos == 0 { 1 } else { cursor_pos };
-
-                for &choice in &sorted {
-                    let steps = choice as i32 - current_pos as i32;
-                    let key = if steps > 0 { "Down" } else { "Up" };
-                    for _ in 0..steps.unsigned_abs() {
-                        if state.command_sender.send_keys(&id, key).is_err() {
-                            return Err(json_error(
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "Failed to navigate",
-                            ));
-                        }
-                    }
-                    // Enter to toggle checkbox
-                    if state.command_sender.send_keys(&id, "Enter").is_err() {
-                        return Err(json_error(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to toggle",
-                        ));
-                    }
-                    current_pos = choice;
-                }
-                // Right + Enter to submit
-                if state.command_sender.send_keys(&id, "Right").is_err() {
-                    return Err(json_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to submit",
-                    ));
-                }
-                if state.command_sender.send_keys(&id, "Enter").is_err() {
-                    return Err(json_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to submit",
-                    ));
-                }
-            } else {
-                // Legacy format: Down × N + Enter
-                let downs_needed = choices.len().saturating_sub(cursor_pos.saturating_sub(1));
-                for _ in 0..downs_needed {
-                    if state.command_sender.send_keys(&id, "Down").is_err() {
-                        return Err(json_error(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to navigate",
-                        ));
-                    }
-                }
-                if state.command_sender.send_keys(&id, "Enter").is_err() {
-                    return Err(json_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to submit",
-                    ));
-                }
-            }
-            Ok(Json(serde_json::json!({"status": "ok"})))
-        }
-        None => Err(json_error(
-            StatusCode::NOT_FOUND,
-            "Agent not found or not in multi-select state",
-        )),
-    }
-}
-
-/// Send text input to an agent
-pub async fn send_text(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-    Json(req): Json<TextInputRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: input agent_id={}", id);
-    // Text length limit
-    if req.text.len() > 1024 {
-        return Err(json_error(
-            StatusCode::BAD_REQUEST,
-            "Text exceeds maximum length of 1024 characters",
-        ));
-    }
-
-    // Check if agent exists and is not virtual
-    let agent_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).map(|a| a.is_virtual)
-    };
-
-    match agent_info {
-        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
-        Some(true) => Err(json_error(
-            StatusCode::BAD_REQUEST,
-            "Cannot send text to virtual agent",
-        )),
-        Some(false) => {
-            // Send text literally, then Enter after a short delay.
-            // Without the delay, text + Enter arrive in a single PTY read() and
-            // Claude Code (ink) treats the burst as pasted text where Enter = newline.
-            if state
-                .command_sender
-                .send_keys_literal(&id, &req.text)
-                .is_err()
-            {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send text",
-                ));
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            if state.command_sender.send_keys(&id, "Enter").is_err() {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send Enter",
-                ));
-            }
-            state
-                .audit_helper
-                .maybe_emit_input(&id, "input_text", "web_api_input", None);
-            Ok(Json(serde_json::json!({"status": "ok"})))
-        }
-    }
-}
-
-/// Send a special key to an agent
-pub async fn send_key(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-    Json(req): Json<KeyRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: send_key key={} agent_id={}", req.key, id);
-
-    // Validate key against whitelist
-    if !ALLOWED_KEYS.contains(&req.key.as_str()) {
-        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid key name"));
-    }
-
-    // Check if agent exists and is not virtual
-    let agent_info = {
-        let app_state = state.app_state.read();
-        app_state.agents.get(&id).map(|a| a.is_virtual)
-    };
-
-    match agent_info {
-        None => Err(json_error(StatusCode::NOT_FOUND, "Agent not found")),
-        Some(true) => Err(json_error(
-            StatusCode::BAD_REQUEST,
-            "Cannot send key to virtual agent",
-        )),
-        Some(false) => {
-            if state.command_sender.send_keys(&id, &req.key).is_err() {
-                return Err(json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send key",
-                ));
-            }
-            state
-                .audit_helper
-                .maybe_emit_input(&id, "special_key", "web_api_input", None);
-            Ok(Json(serde_json::json!({"status": "ok"})))
-        }
-    }
-}
-
-/// Get preview content (pane capture) for an agent
-pub async fn get_preview(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-) -> Result<Json<PreviewResponse>, StatusCode> {
-    // Check if agent exists
-    let agent_exists = {
-        let app_state = state.app_state.read();
-        app_state.agents.contains_key(&id)
-    };
-
-    if !agent_exists {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
-    // Capture pane content
-    match state.command_sender.tmux_client().capture_pane_plain(&id) {
-        Ok(content) => {
-            let lines = content.lines().count();
-            Ok(Json(PreviewResponse { content, lines }))
-        }
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
@@ -697,14 +310,135 @@ pub(super) fn build_team_info(
     }
 }
 
-/// Get all teams with their task summaries and member info
-pub async fn get_teams(State(state): State<Arc<ApiState>>) -> Json<Vec<TeamInfoResponse>> {
-    let app_state = state.app_state.read();
+/// Selection request body
+#[derive(Debug, Deserialize)]
+pub struct SelectRequest {
+    pub choice: usize,
+}
 
-    let teams: Vec<TeamInfoResponse> = app_state
+/// Submit multi-select request body
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    #[serde(default)]
+    pub selected_choices: Vec<usize>,
+}
+
+/// Get all agents
+pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentInfo>> {
+    let agents: Vec<AgentInfo> = core.list_agents().iter().map(build_agent_info).collect();
+    Json(agents)
+}
+
+/// Approve an agent action (send approval keys)
+pub async fn approve_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: approve agent_id={}", id);
+    core.approve(&id)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: approve failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Select a choice for UserQuestion
+pub async fn select_choice(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<SelectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: select choice={} agent_id={}", req.choice, id);
+    core.select_choice(&id, req.choice)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: select failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Submit multi-select choices
+pub async fn submit_selection(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    body: Option<Json<SubmitRequest>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: submit agent_id={}", id);
+    let selected = body.map(|b| b.0.selected_choices).unwrap_or_default();
+    core.submit_selection(&id, &selected)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: submit failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Send text input to an agent
+pub async fn send_text(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<TextInputRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: input agent_id={}", id);
+    core.send_text(&id, &req.text)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: input failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Send a special key to an agent
+pub async fn send_key(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<KeyRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: send_key key={} agent_id={}", req.key, id);
+    core.send_key(&id, &req.key)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: send_key failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Get preview content (pane capture) for an agent
+#[allow(deprecated)]
+pub async fn get_preview(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<PreviewResponse>, StatusCode> {
+    // Check if agent exists
+    if core.get_agent(&id).is_err() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Capture pane content via command sender
+    let cmd = core
+        .raw_command_sender()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match cmd.tmux_client().capture_pane_plain(&id) {
+        Ok(content) => {
+            let lines = content.lines().count();
+            Ok(Json(PreviewResponse { content, lines }))
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// Get all teams with their task summaries and member info
+#[allow(deprecated)]
+pub async fn get_teams(State(core): State<Arc<TmaiCore>>) -> Json<Vec<TeamInfoResponse>> {
+    let state = core.raw_state().read();
+
+    let teams: Vec<TeamInfoResponse> = state
         .teams
         .values()
-        .map(|snapshot| build_team_info(snapshot, &app_state))
+        .map(|snapshot| build_team_info(snapshot, &state))
         .collect();
 
     Json(teams)
@@ -721,8 +455,9 @@ fn is_valid_team_name(name: &str) -> bool {
 }
 
 /// Get tasks for a specific team
+#[allow(deprecated)]
 pub async fn get_team_tasks(
-    State(state): State<Arc<ApiState>>,
+    State(core): State<Arc<TmaiCore>>,
     Path(name): Path<String>,
 ) -> Result<Json<Vec<TeamTaskResponse>>, (StatusCode, Json<serde_json::Value>)> {
     // Validate team name to prevent path traversal
@@ -730,9 +465,9 @@ pub async fn get_team_tasks(
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid team name"));
     }
 
-    let app_state = state.app_state.read();
+    let state = core.raw_state().read();
 
-    let snapshot = app_state
+    let snapshot = state
         .teams
         .get(&name)
         .ok_or_else(|| json_error(StatusCode::NOT_FOUND, "Team not found"))?;
@@ -763,6 +498,9 @@ mod tests {
     use axum::Router;
     use http::Request;
     use http_body_util::BodyExt;
+    use tmai_core::api::{has_checkbox_format, TmaiCoreBuilder};
+    use tmai_core::command_sender::CommandSender;
+    use tmai_core::state::SharedState;
     use tower::ServiceExt;
 
     /// Create a fresh shared AppState for tests
@@ -772,15 +510,13 @@ mod tests {
 
     /// Build a Router with all API routes but NO auth middleware
     fn test_router_with_state(app_state: SharedState) -> Router {
-        let api_state = Arc::new(ApiState {
-            command_sender: CommandSender::new(
-                None,
-                tmai_core::tmux::TmuxClient::new(),
-                app_state.clone(),
-            ),
-            audit_helper: AuditHelper::new(None, app_state.clone()),
-            app_state,
-        });
+        let cmd = CommandSender::new(None, tmai_core::tmux::TmuxClient::new(), app_state.clone());
+        let core = Arc::new(
+            TmaiCoreBuilder::new(tmai_core::config::Settings::default())
+                .with_state(app_state)
+                .with_command_sender(Arc::new(cmd))
+                .build(),
+        );
         Router::new()
             .route("/agents", get(get_agents))
             .route("/agents/{id}/approve", post(approve_agent))
@@ -791,7 +527,7 @@ mod tests {
             .route("/agents/{id}/preview", get(get_preview))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
-            .with_state(api_state)
+            .with_state(core)
     }
 
     /// Build a Router with default empty state
@@ -966,7 +702,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_approve_idle_agent_returns_bad_request() {
+    async fn test_approve_idle_agent_returns_ok() {
+        // With the new Facade, approving an idle agent returns Ok (idempotent)
         let state = test_app_state();
         add_idle_agent(&state, "main:0.0");
         let app = test_router_with_state(state);
@@ -981,7 +718,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -1053,5 +790,17 @@ mod tests {
         assert!(!is_valid_team_name("../evil"));
         assert!(!is_valid_team_name("team/name"));
         assert!(!is_valid_team_name("team name"));
+    }
+
+    #[test]
+    fn test_has_checkbox_format() {
+        assert!(has_checkbox_format(&[
+            "[ ] Option A".to_string(),
+            "[ ] Option B".to_string(),
+        ]));
+        assert!(!has_checkbox_format(&[
+            "Option A".to_string(),
+            "Option B".to_string(),
+        ]));
     }
 }

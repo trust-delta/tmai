@@ -400,7 +400,7 @@ impl fmt::Display for AgentStatus {
 }
 
 /// Team information associated with an agent
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AgentTeamInfo {
     /// Team name
     pub team_name: String,
@@ -413,7 +413,7 @@ pub struct AgentTeamInfo {
 }
 
 /// Summary of a task for display purposes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TeamTaskSummaryItem {
     /// Task ID
     pub id: String,

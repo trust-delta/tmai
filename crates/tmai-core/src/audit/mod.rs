@@ -1,6 +1,8 @@
+pub mod analyze;
 pub mod events;
 pub mod helper;
 pub mod logger;
+pub mod reader;
 
 pub use events::AuditEvent;
 pub use logger::AuditLogger;

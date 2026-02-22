@@ -7,6 +7,7 @@
 use crossterm::event::KeyCode;
 
 use tmai_core::agents::{AgentStatus, ApprovalType};
+use tmai_core::api::has_checkbox_format;
 use tmai_core::detectors::get_detector;
 use tmai_core::state::AppState;
 
@@ -425,14 +426,6 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
         }
     }
     KeyAction::None
-}
-
-/// Check if choices use checkbox format ([ ], [x], [X], [✔])
-fn has_checkbox_format(choices: &[String]) -> bool {
-    choices.iter().any(|c| {
-        let t = c.trim();
-        t.starts_with("[ ]") || t.starts_with("[x]") || t.starts_with("[X]") || t.starts_with("[✔]")
-    })
 }
 
 /// Check if a choice starts with the given word (case-insensitive, word-boundary aware).
