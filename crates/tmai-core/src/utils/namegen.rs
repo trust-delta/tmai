@@ -225,7 +225,7 @@ const NOUNS: &[&str] = &[
 /// # Examples
 ///
 /// ```
-/// let name = tmai::utils::namegen::generate_session_name();
+/// let name = tmai_core::utils::namegen::generate_session_name();
 /// assert!(name.contains('-'));
 /// ```
 pub fn generate_session_name() -> String {
@@ -253,7 +253,7 @@ pub fn generate_session_name() -> String {
 ///
 /// ```
 /// let existing = vec!["amber-falcon".to_string()];
-/// let name = tmai::utils::namegen::generate_unique_name(&existing);
+/// let name = tmai_core::utils::namegen::generate_unique_name(&existing);
 /// assert!(!existing.contains(&name));
 /// ```
 pub fn generate_unique_name(existing: &[String]) -> String {
