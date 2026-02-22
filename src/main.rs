@@ -23,6 +23,14 @@ async fn main() -> Result<()> {
         return run_wrap_mode(&cli);
     }
 
+    // Check for audit subcommand (non-async, no TUI/Web)
+    if cli.is_audit_mode() {
+        if let Some(subcommand) = cli.get_audit_command() {
+            tmai::audit::run(subcommand);
+            return Ok(());
+        }
+    }
+
     // Check for demo subcommand (no tmux, IPC, or web required)
     if cli.is_demo_mode() {
         setup_logging(cli.debug, true);

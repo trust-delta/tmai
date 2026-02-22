@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::auto_approve::types::JudgmentUsage;
 use crate::detectors::DetectionReason;
 
 /// Audit event types for detection logging
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum AuditEvent {
     /// Agent status changed
@@ -17,11 +17,11 @@ pub enum AuditEvent {
         new_status: String,
         reason: DetectionReason,
         screen_context: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         prev_state_duration_ms: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         approval_type: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         approval_details: Option<String>,
     },
     /// IPC and capture-pane disagree on status
@@ -69,10 +69,10 @@ pub enum AuditEvent {
         /// Whether approval keys were actually sent
         approval_sent: bool,
         /// Token usage and cost (if available from claude CLI)
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         usage: Option<JudgmentUsage>,
         /// Screen context (included for approve/reject decisions)
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
     },
     /// User sent input while agent was detected as Processing

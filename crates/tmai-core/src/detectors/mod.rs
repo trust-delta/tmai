@@ -17,7 +17,7 @@ use crate::agents::{AgentStatus, AgentType};
 use crate::config::ClaudeSettingsCache;
 
 /// Detection confidence level
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DetectionConfidence {
     /// Explicit pattern match
     High,
