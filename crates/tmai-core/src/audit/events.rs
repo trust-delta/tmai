@@ -32,6 +32,7 @@ pub enum AuditEvent {
         ipc_status: String,
         capture_status: String,
         capture_reason: DetectionReason,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
     },
     /// New agent appeared
@@ -88,10 +89,12 @@ pub enum AuditEvent {
         /// Current detected status at the time of input (always "processing")
         current_status: String,
         /// Detection reason at the time of input
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         detection_reason: Option<DetectionReason>,
         /// Detection source: "ipc_socket" or "capture_pane"
         detection_source: String,
         /// Last ~20 lines of pane content for post-hoc analysis
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
     },
 }

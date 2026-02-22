@@ -6,98 +6,161 @@ use tmai_core::audit::analyze::{
 use tmai_core::config::AuditCommand;
 use tmai_core::detectors::DetectionConfidence;
 
-// ANSI color codes
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const RESET: &str = "\x1b[0m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const RED: &str = "\x1b[31m";
-const CYAN: &str = "\x1b[36m";
-const MAGENTA: &str = "\x1b[35m";
+/// Whether color output is enabled (TTY + NO_COLOR not set)
+fn use_color() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// ANSI color codes container (empty strings when color is disabled)
+struct Colors {
+    bold: &'static str,
+    dim: &'static str,
+    reset: &'static str,
+    green: &'static str,
+    yellow: &'static str,
+    red: &'static str,
+    cyan: &'static str,
+    magenta: &'static str,
+}
+
+impl Colors {
+    fn new() -> Self {
+        if use_color() {
+            Self {
+                bold: "\x1b[1m",
+                dim: "\x1b[2m",
+                reset: "\x1b[0m",
+                green: "\x1b[32m",
+                yellow: "\x1b[33m",
+                red: "\x1b[31m",
+                cyan: "\x1b[36m",
+                magenta: "\x1b[35m",
+            }
+        } else {
+            Self {
+                bold: "",
+                dim: "",
+                reset: "",
+                green: "",
+                yellow: "",
+                red: "",
+                cyan: "",
+                magenta: "",
+            }
+        }
+    }
+
+    /// Get color for a confidence level
+    fn confidence(&self, confidence: &DetectionConfidence) -> &str {
+        match confidence {
+            DetectionConfidence::High => self.green,
+            DetectionConfidence::Medium => self.yellow,
+            DetectionConfidence::Low => self.red,
+        }
+    }
+}
 
 /// Run the audit subcommand (non-async, no TUI/Web)
 pub fn run(subcommand: &AuditCommand) {
     let events = tmai_core::audit::reader::read_all_events();
+    let c = Colors::new();
 
     if events.is_empty() {
-        print_no_data_message();
+        print_no_data_message(&c);
         return;
     }
 
     match subcommand {
         AuditCommand::Stats { top } => {
             let stats = tmai_core::audit::analyze::compute_stats(&events);
-            print_stats(&stats, *top);
+            print_stats(&c, &stats, *top);
         }
         AuditCommand::Misdetections { limit } => {
             let summary = tmai_core::audit::analyze::compute_misdetections(&events, *limit);
-            print_misdetections(&summary);
+            print_misdetections(&c, &summary);
         }
         AuditCommand::Disagreements { limit } => {
             let summary = tmai_core::audit::analyze::compute_disagreements(&events, *limit);
-            print_disagreements(&summary);
+            print_disagreements(&c, &summary);
         }
     }
 }
 
 /// Print a helpful message when no audit data is found
-fn print_no_data_message() {
-    println!("{BOLD}No audit data found.{RESET}");
+fn print_no_data_message(c: &Colors) {
+    let audit_file = tmai_core::ipc::protocol::state_dir().join("audit/detection.ndjson");
+    let audit_path = audit_file.display();
+    println!("{}No audit data found.{}", c.bold, c.reset);
     println!();
     println!("To enable audit logging, use one of:");
-    println!("  {CYAN}tmai --audit{RESET}              (CLI flag)");
-    println!("  {CYAN}[audit]{RESET}");
-    println!("  {CYAN}enabled = true{RESET}           (in ~/.config/tmai/config.toml)");
+    println!(
+        "  {}tmai --audit{}              (CLI flag)",
+        c.cyan, c.reset
+    );
+    println!("  {}[audit]{}", c.cyan, c.reset);
+    println!(
+        "  {}enabled = true{}           (in ~/.config/tmai/config.toml)",
+        c.cyan, c.reset
+    );
     println!();
-    println!("Audit logs are written to: {DIM}/tmp/tmai/audit/detection.ndjson{RESET}");
+    println!(
+        "Audit logs are written to: {}{}{}",
+        c.dim, audit_path, c.reset
+    );
 }
 
 /// Print aggregate statistics
-fn print_stats(stats: &AuditStats, top: usize) {
-    // Header
-    println!("{BOLD}=== Audit Statistics ==={RESET}");
+fn print_stats(c: &Colors, stats: &AuditStats, top: usize) {
+    println!("{}=== Audit Statistics ==={}", c.bold, c.reset);
     println!();
 
     // Time range
     if let (Some(ts_min), Some(ts_max)) = (stats.ts_min, stats.ts_max) {
         let min_time = format_timestamp(ts_min);
         let max_time = format_timestamp(ts_max);
-        println!("  {DIM}Time range:{RESET} {min_time}  →  {max_time}");
+        println!(
+            "  {}Time range:{} {min_time}  →  {max_time}",
+            c.dim, c.reset
+        );
         let duration_secs = (ts_max - ts_min) / 1000;
         let hours = duration_secs / 3600;
         let mins = (duration_secs % 3600) / 60;
-        println!("  {DIM}Duration:{RESET}   {hours}h {mins}m");
+        println!("  {}Duration:{}   {hours}h {mins}m", c.dim, c.reset);
         println!();
     }
 
-    println!("  {BOLD}Total events:{RESET} {}", stats.total_events);
+    println!(
+        "  {}Total events:{} {}",
+        c.bold, c.reset, stats.total_events
+    );
     println!();
 
     // Event type breakdown
-    println!("  {BOLD}By event type:{RESET}");
+    println!("  {}By event type:{}", c.bold, c.reset);
     let mut event_types: Vec<(&String, &usize)> = stats.by_event_type.iter().collect();
     event_types.sort_by(|a, b| b.1.cmp(a.1));
-    let max_count = event_types.first().map(|(_, c)| **c).unwrap_or(1);
+    let max_count = event_types.first().map(|(_, n)| **n).unwrap_or(1);
     for (event_type, count) in &event_types {
-        let bar = make_bar(**count, max_count, 30);
+        let bar = make_bar(c, **count, max_count, 30);
         println!("    {:<30} {:>6}  {bar}", event_type, count);
     }
     println!();
 
     // Confidence breakdown
     if !stats.by_confidence.is_empty() {
-        println!("  {BOLD}By confidence:{RESET}");
+        println!("  {}By confidence:{}", c.bold, c.reset);
         for confidence in &[
             DetectionConfidence::High,
             DetectionConfidence::Medium,
             DetectionConfidence::Low,
         ] {
             if let Some(count) = stats.by_confidence.get(confidence) {
-                let color = confidence_color(confidence);
+                let clr = c.confidence(confidence);
                 println!(
-                    "    {color}{:<10}{RESET} {:>6}",
+                    "    {clr}{:<10}{} {:>6}",
                     format!("{confidence:?}"),
+                    c.reset,
                     count
                 );
             }
@@ -107,7 +170,7 @@ fn print_stats(stats: &AuditStats, top: usize) {
 
     // Agent type breakdown
     if !stats.by_agent_type.is_empty() {
-        println!("  {BOLD}By agent type:{RESET}");
+        println!("  {}By agent type:{}", c.bold, c.reset);
         let mut agent_types: Vec<(&String, &usize)> = stats.by_agent_type.iter().collect();
         agent_types.sort_by(|a, b| b.1.cmp(a.1));
         for (agent_type, count) in &agent_types {
@@ -119,33 +182,39 @@ fn print_stats(stats: &AuditStats, top: usize) {
     // Top rules
     if !stats.rule_hits.is_empty() {
         let display_count = top.min(stats.rule_hits.len());
-        println!("  {BOLD}Top {display_count} detection rules:{RESET}");
-        let rule_max = stats.rule_hits.first().map(|(_, c)| *c).unwrap_or(1);
+        println!(
+            "  {}Top {display_count} detection rules:{}",
+            c.bold, c.reset
+        );
+        let rule_max = stats.rule_hits.first().map(|(_, n)| *n).unwrap_or(1);
         for (rule, count) in stats.rule_hits.iter().take(top) {
-            let bar = make_bar(*count, rule_max, 30);
+            let bar = make_bar(c, *count, rule_max, 30);
             println!("    {:<40} {:>6}  {bar}", rule, count);
         }
     }
 }
 
 /// Print misdetection analysis
-fn print_misdetections(summary: &MisdetectionSummary) {
-    println!("{BOLD}=== Misdetection Analysis ==={RESET}");
-    println!("  {DIM}(UserInputDuringProcessing events — user input while agent detected as Processing){RESET}");
+fn print_misdetections(c: &Colors, summary: &MisdetectionSummary) {
+    println!("{}=== Misdetection Analysis ==={}", c.bold, c.reset);
+    println!(
+        "  {}(UserInputDuringProcessing events — user input while agent detected as Processing){}",
+        c.dim, c.reset
+    );
     println!();
-    println!("  {BOLD}Total events:{RESET} {}", summary.total);
+    println!("  {}Total events:{} {}", c.bold, c.reset, summary.total);
     println!();
 
     if summary.total == 0 {
-        println!("  {GREEN}No misdetection signals found.{RESET}");
+        println!("  {}No misdetection signals found.{}", c.green, c.reset);
         return;
     }
 
     // By rule
-    println!("  {BOLD}By detection rule at time of input:{RESET}");
-    let rule_max = summary.by_rule.first().map(|(_, c)| *c).unwrap_or(1);
+    println!("  {}By detection rule at time of input:{}", c.bold, c.reset);
+    let rule_max = summary.by_rule.first().map(|(_, n)| *n).unwrap_or(1);
     for (rule, count) in &summary.by_rule {
-        let bar = make_bar(*count, rule_max, 30);
+        let bar = make_bar(c, *count, rule_max, 30);
         println!("    {:<40} {:>6}  {bar}", rule, count);
     }
     println!();
@@ -153,56 +222,70 @@ fn print_misdetections(summary: &MisdetectionSummary) {
     // Individual records
     if !summary.records.is_empty() {
         println!(
-            "  {BOLD}Recent records (newest first, showing {}):{RESET}",
-            summary.records.len()
+            "  {}Recent records (newest first, showing {}):{}",
+            c.bold,
+            summary.records.len(),
+            c.reset
         );
         println!(
-            "  {DIM}{:<22} {:<10} {:<15} {:<20} {:<15} {:<15}{RESET}",
-            "Timestamp", "Pane", "Agent", "Rule", "Action", "Source"
+            "  {}{:<22} {:<10} {:<15} {:<20} {:<15} {:<15}{}",
+            c.dim, "Timestamp", "Pane", "Agent", "Rule", "Action", "Source", c.reset
         );
         for record in &summary.records {
-            print_misdetection_record(record);
+            print_misdetection_record(c, record);
         }
     }
 }
 
 /// Print a single misdetection record
-fn print_misdetection_record(record: &MisdetectionRecord) {
+fn print_misdetection_record(c: &Colors, record: &MisdetectionRecord) {
     let ts = format_timestamp(record.ts);
     println!(
-        "  {:<22} {:<10} {:<15} {YELLOW}{:<20}{RESET} {:<15} {DIM}{:<15}{RESET}",
-        ts, record.pane_id, record.agent_type, record.rule, record.action, record.input_source,
+        "  {:<22} {:<10} {:<15} {}{:<20}{} {:<15} {}{:<15}{}",
+        ts,
+        record.pane_id,
+        record.agent_type,
+        c.yellow,
+        record.rule,
+        c.reset,
+        record.action,
+        c.dim,
+        record.input_source,
+        c.reset,
     );
 }
 
 /// Print disagreement analysis
-fn print_disagreements(summary: &DisagreementSummary) {
-    println!("{BOLD}=== Source Disagreement Analysis ==={RESET}");
-    println!("  {DIM}(IPC and capture-pane detected different statuses){RESET}");
+fn print_disagreements(c: &Colors, summary: &DisagreementSummary) {
+    println!("{}=== Source Disagreement Analysis ==={}", c.bold, c.reset);
+    println!(
+        "  {}(IPC and capture-pane detected different statuses){}",
+        c.dim, c.reset
+    );
     println!();
-    println!("  {BOLD}Total events:{RESET} {}", summary.total);
+    println!("  {}Total events:{} {}", c.bold, c.reset, summary.total);
     println!();
 
     if summary.total == 0 {
-        println!("  {GREEN}No source disagreements found.{RESET}");
+        println!("  {}No source disagreements found.{}", c.green, c.reset);
         return;
     }
 
     // By capture rule
-    println!("  {BOLD}By capture-pane rule:{RESET}");
+    println!("  {}By capture-pane rule:{}", c.bold, c.reset);
     let rule_max = summary
         .by_capture_rule
         .first()
-        .map(|(_, c)| *c)
+        .map(|(_, n)| *n)
         .unwrap_or(1);
     for (rule, count) in &summary.by_capture_rule {
-        let bar = make_bar(*count, rule_max, 30);
+        let bar = make_bar(c, *count, rule_max, 30);
         println!("    {:<40} {:>6}  {bar}", rule, count);
     }
     println!();
 
     // By pane
-    println!("  {BOLD}By pane:{RESET}");
+    println!("  {}By pane:{}", c.bold, c.reset);
     for (pane, count) in &summary.by_pane {
         println!("    {:<20} {:>6}", pane, count);
     }
@@ -211,59 +294,59 @@ fn print_disagreements(summary: &DisagreementSummary) {
     // Individual records
     if !summary.records.is_empty() {
         println!(
-            "  {BOLD}Recent records (newest first, showing {}):{RESET}",
-            summary.records.len()
+            "  {}Recent records (newest first, showing {}):{}",
+            c.bold,
+            summary.records.len(),
+            c.reset
         );
         println!(
-            "  {DIM}{:<22} {:<10} {:<15} {:<15} {:<15} {:<25}{RESET}",
-            "Timestamp", "Pane", "Agent", "IPC", "Capture", "Capture Rule"
+            "  {}{:<22} {:<10} {:<15} {:<15} {:<15} {:<25}{}",
+            c.dim, "Timestamp", "Pane", "Agent", "IPC", "Capture", "Capture Rule", c.reset
         );
         for record in &summary.records {
-            print_disagreement_record(record);
+            print_disagreement_record(c, record);
         }
     }
 }
 
 /// Print a single disagreement record
-fn print_disagreement_record(record: &DisagreementRecord) {
+fn print_disagreement_record(c: &Colors, record: &DisagreementRecord) {
     let ts = format_timestamp(record.ts);
     println!(
-        "  {:<22} {:<10} {:<15} {CYAN}{:<15}{RESET} {RED}{:<15}{RESET} {MAGENTA}{:<25}{RESET}",
+        "  {:<22} {:<10} {:<15} {}{:<15}{} {}{:<15}{} {}{:<25}{}",
         ts,
         record.pane_id,
         record.agent_type,
+        c.cyan,
         record.ipc_status,
+        c.reset,
+        c.red,
         record.capture_status,
+        c.reset,
+        c.magenta,
         record.capture_rule,
+        c.reset,
     );
 }
 
 /// Format a millisecond timestamp to local time string
 fn format_timestamp(ts_ms: u64) -> String {
-    use chrono::{Local, TimeZone};
-    let secs = (ts_ms / 1000) as i64;
-    let nanos = ((ts_ms % 1000) * 1_000_000) as u32;
-    match Local.timestamp_opt(secs, nanos) {
-        chrono::LocalResult::Single(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-        _ => format!("{}ms", ts_ms),
-    }
+    use chrono::{DateTime, Local};
+    DateTime::from_timestamp_millis(ts_ms as i64)
+        .map(|dt| {
+            dt.with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_else(|| format!("{}ms", ts_ms))
 }
 
 /// Create a simple bar chart
-fn make_bar(value: usize, max: usize, width: usize) -> String {
+fn make_bar(c: &Colors, value: usize, max: usize, width: usize) -> String {
     if max == 0 {
         return String::new();
     }
     let filled = (value * width) / max;
     let filled = filled.max(1); // at least 1 char for non-zero values
-    format!("{DIM}{}{RESET}", "█".repeat(filled))
-}
-
-/// Get ANSI color for a confidence level
-fn confidence_color(confidence: &DetectionConfidence) -> &'static str {
-    match confidence {
-        DetectionConfidence::High => GREEN,
-        DetectionConfidence::Medium => YELLOW,
-        DetectionConfidence::Low => RED,
-    }
+    format!("{}{}{}", c.dim, "█".repeat(filled), c.reset)
 }

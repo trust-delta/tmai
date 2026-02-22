@@ -86,6 +86,24 @@ impl TmaiCore {
     ///
     /// `choice` is 1-indexed (1 = first option, N+1 = "Other").
     pub fn select_choice(&self, target: &str, choice: usize) -> Result<(), ApiError> {
+        // Virtual agents cannot receive key input
+        {
+            let state = self.state().read();
+            match state.agents.get(target) {
+                Some(a) if a.is_virtual => {
+                    return Err(ApiError::VirtualAgent {
+                        target: target.to_string(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    return Err(ApiError::AgentNotFound {
+                        target: target.to_string(),
+                    });
+                }
+            }
+        }
+
         let question_info = {
             let state = self.state().read();
             state.agents.get(target).and_then(|agent| {
@@ -128,9 +146,8 @@ impl TmaiCore {
             Some(_) => Err(ApiError::InvalidInput {
                 message: "Invalid choice number".to_string(),
             }),
-            None => Err(ApiError::AgentNotFound {
-                target: target.to_string(),
-            }),
+            // Agent exists but not in UserQuestion state — idempotent Ok
+            None => Ok(()),
         }
     }
 
@@ -142,6 +159,24 @@ impl TmaiCore {
         target: &str,
         selected_choices: &[usize],
     ) -> Result<(), ApiError> {
+        // Virtual agents cannot receive key input
+        {
+            let state = self.state().read();
+            match state.agents.get(target) {
+                Some(a) if a.is_virtual => {
+                    return Err(ApiError::VirtualAgent {
+                        target: target.to_string(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    return Err(ApiError::AgentNotFound {
+                        target: target.to_string(),
+                    });
+                }
+            }
+        }
+
         let multi_info = {
             let state = self.state().read();
             state.agents.get(target).and_then(|agent| {
@@ -205,9 +240,8 @@ impl TmaiCore {
                 }
                 Ok(())
             }
-            None => Err(ApiError::AgentNotFound {
-                target: target.to_string(),
-            }),
+            // Agent exists but not in multi-select UserQuestion state — idempotent Ok
+            None => Ok(()),
         }
     }
 
@@ -215,7 +249,7 @@ impl TmaiCore {
     ///
     /// Includes a 50ms delay between text and Enter to prevent paste-burst issues.
     pub async fn send_text(&self, target: &str, text: &str) -> Result<(), ApiError> {
-        if text.len() > MAX_TEXT_LENGTH {
+        if text.chars().count() > MAX_TEXT_LENGTH {
             return Err(ApiError::InvalidInput {
                 message: format!(
                     "Text exceeds maximum length of {} characters",
@@ -290,6 +324,24 @@ impl TmaiCore {
 
     /// Focus on a specific pane in tmux
     pub fn focus_pane(&self, target: &str) -> Result<(), ApiError> {
+        // Validate agent exists and is not virtual
+        {
+            let state = self.state().read();
+            match state.agents.get(target) {
+                Some(a) if a.is_virtual => {
+                    return Err(ApiError::VirtualAgent {
+                        target: target.to_string(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    return Err(ApiError::AgentNotFound {
+                        target: target.to_string(),
+                    });
+                }
+            }
+        }
+
         let cmd = self.require_command_sender()?;
         cmd.tmux_client().focus_pane(target)?;
         Ok(())
@@ -297,6 +349,24 @@ impl TmaiCore {
 
     /// Kill a specific pane in tmux
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
+        // Validate agent exists and is not virtual
+        {
+            let state = self.state().read();
+            match state.agents.get(target) {
+                Some(a) if a.is_virtual => {
+                    return Err(ApiError::VirtualAgent {
+                        target: target.to_string(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    return Err(ApiError::AgentNotFound {
+                        target: target.to_string(),
+                    });
+                }
+            }
+        }
+
         let cmd = self.require_command_sender()?;
         cmd.tmux_client().kill_pane(target)?;
         Ok(())
@@ -432,8 +502,25 @@ mod tests {
     fn test_select_choice_not_in_question() {
         let agent = test_agent("main:0.0", AgentStatus::Idle);
         let core = make_core_with_agents(vec![agent]);
+        // Agent exists but not in UserQuestion state — idempotent Ok
         let result = core.select_choice("main:0.0", 1);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_select_choice_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.select_choice("nonexistent", 1);
         assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_select_choice_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.select_choice("main:0.0", 1);
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
     }
 
     #[test]
@@ -481,5 +568,72 @@ mod tests {
         let core = make_core_with_agents(vec![agent]);
         let result = core.send_text("main:0.0", "hello").await;
         assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_send_text_at_max_length() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        // MAX_TEXT_LENGTH chars exactly should pass validation (fail at NoCommandSender)
+        let text = "x".repeat(MAX_TEXT_LENGTH);
+        let result = core.send_text("main:0.0", &text).await;
+        assert!(!matches!(result, Err(ApiError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn test_focus_pane_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.focus_pane("nonexistent");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_focus_pane_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.focus_pane("main:0.0");
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[test]
+    fn test_kill_pane_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.kill_pane("nonexistent");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_kill_pane_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.kill_pane("main:0.0");
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[test]
+    fn test_submit_selection_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.submit_selection("nonexistent", &[1]);
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_submit_selection_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.submit_selection("main:0.0", &[1]);
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[test]
+    fn test_submit_selection_not_in_multiselect() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        // Agent exists but not in multi-select state — idempotent Ok
+        let result = core.submit_selection("main:0.0", &[1]);
+        assert!(result.is_ok());
     }
 }

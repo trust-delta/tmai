@@ -7,6 +7,7 @@
 use crossterm::event::KeyCode;
 
 use tmai_core::agents::{AgentStatus, ApprovalType};
+use tmai_core::api::has_checkbox_format;
 use tmai_core::detectors::get_detector;
 use tmai_core::state::AppState;
 
@@ -426,9 +427,6 @@ pub fn resolve_focus_pane(state: &AppState) -> KeyAction {
     }
     KeyAction::None
 }
-
-// Re-export from core for use in key_handler
-use tmai_core::api::has_checkbox_format;
 
 /// Check if a choice starts with the given word (case-insensitive, word-boundary aware).
 ///

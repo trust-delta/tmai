@@ -28,9 +28,17 @@ async fn main() -> Result<()> {
 
     // Check for audit subcommand (non-async, no TUI/Web)
     if cli.is_audit_mode() {
-        if let Some(subcommand) = cli.get_audit_command() {
-            tmai::audit::run(subcommand);
-            return Ok(());
+        match cli.get_audit_command() {
+            Some(subcommand) => {
+                tmai::audit::run(subcommand);
+                return Ok(());
+            }
+            None => {
+                anyhow::bail!(
+                    "Usage: tmai audit <stats|misdetections|disagreements>\n\
+                     Run `tmai audit --help` for details."
+                );
+            }
         }
     }
 
