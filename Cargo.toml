@@ -25,7 +25,7 @@ exclude = [
 ]
 
 [dependencies]
-tmai-core = { path = "crates/tmai-core" }
+tmai-core = { version = "0.6.0", path = "crates/tmai-core" }
 ratatui = "0.30"
 crossterm = "0.29"
 tokio = { version = "1", features = ["full"] }

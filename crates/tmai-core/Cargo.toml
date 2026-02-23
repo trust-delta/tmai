@@ -7,7 +7,8 @@ authors = ["TrustDelta"]
 description = "Core library for tmai - agent detection, state management, and monitoring"
 repository = "https://github.com/trust-delta/tmai"
 license = "MIT"
-publish = false
+keywords = ["tmux", "ai", "agent", "monitoring"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
