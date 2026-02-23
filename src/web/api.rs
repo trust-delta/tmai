@@ -73,6 +73,12 @@ pub struct AgentInfo {
     /// Auto-approve judgment phase: "judging", "approved_rule", "approved_ai", or "manual_required"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_phase: Option<String>,
+    /// Absolute path to the shared git common directory (for repository grouping)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_common_dir: Option<String>,
+    /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_name: Option<String>,
 }
 
 /// Team information associated with an agent for API response
@@ -245,6 +251,8 @@ pub(super) fn build_agent_info(snapshot: &tmai_core::api::AgentSnapshot) -> Agen
         git_dirty: snapshot.git_dirty,
         is_worktree: snapshot.is_worktree,
         auto_approve_phase,
+        git_common_dir: snapshot.git_common_dir.clone(),
+        worktree_name: snapshot.worktree_name.clone(),
     }
 }
 

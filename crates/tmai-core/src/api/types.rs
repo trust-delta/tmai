@@ -104,6 +104,12 @@ pub struct AgentSnapshot {
     /// Auto-approve judgment phase
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_phase: Option<AutoApprovePhase>,
+    /// Absolute path to the shared git common directory (for repository grouping)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_common_dir: Option<String>,
+    /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_name: Option<String>,
     /// Display name (e.g., "main:0.1")
     pub display_name: String,
 }
@@ -137,6 +143,8 @@ impl AgentSnapshot {
             git_dirty: agent.git_dirty,
             is_worktree: agent.is_worktree,
             auto_approve_phase: agent.auto_approve_phase.clone(),
+            git_common_dir: agent.git_common_dir.clone(),
+            worktree_name: agent.worktree_name.clone(),
             display_name: agent.display_name(),
         }
     }

@@ -38,6 +38,8 @@ pub enum SortBy {
     LastUpdate,
     /// Sort by team
     Team,
+    /// Sort by git repository (groups main + worktrees together)
+    Repository,
 }
 
 impl SortBy {
@@ -49,7 +51,8 @@ impl SortBy {
             SortBy::AgentType => SortBy::Status,
             SortBy::Status => SortBy::LastUpdate,
             SortBy::LastUpdate => SortBy::Team,
-            SortBy::Team => SortBy::Directory,
+            SortBy::Team => SortBy::Repository,
+            SortBy::Repository => SortBy::Directory,
         }
     }
 
@@ -62,6 +65,7 @@ impl SortBy {
             SortBy::Status => "Status",
             SortBy::LastUpdate => "Updated",
             SortBy::Team => "Team",
+            SortBy::Repository => "Repository",
         }
     }
 }
@@ -512,6 +516,12 @@ impl AppState {
                 existing.team_info = agent.team_info;
                 existing.is_virtual = agent.is_virtual;
                 existing.detection_source = agent.detection_source;
+                // Git info (set by poller's update_git_info / apply_cached_git_info)
+                existing.git_branch = agent.git_branch;
+                existing.git_dirty = agent.git_dirty;
+                existing.is_worktree = agent.is_worktree;
+                existing.git_common_dir = agent.git_common_dir;
+                existing.worktree_name = agent.worktree_name;
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)
                 if !matches!(
@@ -607,6 +617,18 @@ impl AppState {
                             .map(|t| t.team_name.as_str())
                             .unwrap_or("\u{ffff}");
                         team_a.cmp(team_b).then_with(|| a.id.cmp(&b.id))
+                    }
+                    SortBy::Repository => {
+                        // Sort by git common_dir (groups main + worktrees together)
+                        // Non-git agents fall back to cwd
+                        let key_a = a.git_common_dir.as_deref().unwrap_or(&a.cwd);
+                        let key_b = b.git_common_dir.as_deref().unwrap_or(&b.cwd);
+                        key_a.cmp(key_b).then_with(|| {
+                            // Within same repo: main first, then worktrees alphabetically
+                            let wt_a = a.is_worktree.unwrap_or(false);
+                            let wt_b = b.is_worktree.unwrap_or(false);
+                            wt_a.cmp(&wt_b).then_with(|| a.cwd.cmp(&b.cwd))
+                        })
                     }
                 },
                 (Some(_), None) => std::cmp::Ordering::Less,
@@ -728,6 +750,13 @@ impl AppState {
                     .as_ref()
                     .map(|t| format!("Team: {}", t.team_name))
                     .unwrap_or_else(|| "(No Team)".to_string()),
+            ),
+            SortBy::Repository => Some(
+                agent
+                    .git_common_dir
+                    .as_deref()
+                    .map(crate::git::repo_name_from_common_dir)
+                    .unwrap_or_else(|| agent.display_cwd()),
             ),
             _ => None,
         }

@@ -138,7 +138,7 @@ impl HelpScreen {
             Self::description_line("  Split → List only → Preview only"),
             Self::key_line("l", "Toggle split direction (layout)"),
             Self::description_line("  Horizontal (left/right) ↔ Vertical (top/bottom)"),
-            Self::disabled_key_line("s", "Cycle sort method (temporarily disabled)"),
+            Self::key_line("s", "Cycle sort method (Team → Repository → Directory)"),
             Self::disabled_key_line("m", "Cycle monitor scope (temporarily disabled)"),
             Line::from(""),
             Self::section_header("Agent Teams"),
