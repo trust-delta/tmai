@@ -14,6 +14,8 @@ pub struct GitInfo {
     pub dirty: bool,
     /// Whether this directory is a git worktree (not the main repo)
     pub is_worktree: bool,
+    /// Absolute path to the shared git common directory (same as .git dir for main repo)
+    pub common_dir: Option<String>,
 }
 
 /// Cache for git information with TTL
@@ -76,11 +78,13 @@ impl GitCache {
 async fn fetch_git_info(dir: &str) -> Option<GitInfo> {
     let branch = fetch_branch(dir).await?;
     // Run dirty and worktree checks in parallel
-    let (dirty, is_worktree) = tokio::join!(fetch_dirty(dir), fetch_is_worktree(dir));
+    let (dirty, (is_worktree, common_dir)) =
+        tokio::join!(fetch_dirty(dir), fetch_worktree_info(dir));
     Some(GitInfo {
         branch,
         dirty,
         is_worktree,
+        common_dir,
     })
 }
 
@@ -117,8 +121,12 @@ async fn fetch_dirty(dir: &str) -> bool {
     }
 }
 
-/// Check if the directory is a git worktree (not the main repo)
-async fn fetch_is_worktree(dir: &str) -> bool {
+/// Check if the directory is a git worktree and return the common dir
+///
+/// Returns `(is_worktree, common_dir)` where `common_dir` is the absolute
+/// path to the shared git directory. For worktrees this differs from git-dir;
+/// for the main repo they are the same.
+async fn fetch_worktree_info(dir: &str) -> (bool, Option<String>) {
     let results = tokio::join!(
         tokio::time::timeout(
             GIT_TIMEOUT,
@@ -137,8 +145,102 @@ async fn fetch_is_worktree(dir: &str) -> bool {
         (Ok(Ok(gd)), Ok(Ok(cd))) => {
             let gd_str = String::from_utf8_lossy(&gd.stdout).trim().to_string();
             let cd_str = String::from_utf8_lossy(&cd.stdout).trim().to_string();
-            gd_str != cd_str
+            let is_worktree = gd_str != cd_str;
+
+            // Resolve common_dir to absolute path (git may return relative like ".")
+            let common_dir_path = std::path::Path::new(dir).join(&cd_str);
+            let common_dir = common_dir_path
+                .canonicalize()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string());
+
+            (is_worktree, common_dir)
         }
-        _ => false,
+        _ => (false, None),
+    }
+}
+
+/// Extract worktree name from a `.claude/worktrees/{name}` path segment
+///
+/// Claude Code creates worktrees under `<repo>/.claude/worktrees/<name>/`.
+/// This function extracts `<name>` if the cwd contains that pattern.
+pub fn extract_claude_worktree_name(cwd: &str) -> Option<String> {
+    let marker = "/.claude/worktrees/";
+    let idx = cwd.find(marker)?;
+    let after = &cwd[idx + marker.len()..];
+    // Take up to the next '/' or end of string
+    let name = after.split('/').next().filter(|s| !s.is_empty())?;
+    Some(name.to_string())
+}
+
+/// Extract repository name from a git common directory path
+///
+/// Strips the trailing `/.git` suffix and returns the last path component.
+/// Falls back to the full path if parsing fails.
+pub fn repo_name_from_common_dir(common_dir: &str) -> String {
+    let stripped = common_dir
+        .strip_suffix("/.git")
+        .or_else(|| common_dir.strip_suffix("/.git/"))
+        .unwrap_or(common_dir);
+    let trimmed = stripped.trim_end_matches('/');
+    trimmed
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(trimmed)
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_claude_worktree_name_valid() {
+        assert_eq!(
+            extract_claude_worktree_name("/home/user/my-app/.claude/worktrees/feature-a"),
+            Some("feature-a".to_string())
+        );
+        assert_eq!(
+            extract_claude_worktree_name("/home/user/my-app/.claude/worktrees/feature-a/src"),
+            Some("feature-a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_claude_worktree_name_invalid() {
+        assert_eq!(extract_claude_worktree_name("/home/user/my-app"), None);
+        assert_eq!(
+            extract_claude_worktree_name("/home/user/my-app/.claude/"),
+            None
+        );
+        // Trailing slash with nothing after name marker
+        assert_eq!(
+            extract_claude_worktree_name("/home/user/my-app/.claude/worktrees/"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_repo_name_from_common_dir() {
+        assert_eq!(
+            repo_name_from_common_dir("/home/user/my-app/.git"),
+            "my-app"
+        );
+        assert_eq!(
+            repo_name_from_common_dir("/home/user/my-app/.git/"),
+            "my-app"
+        );
+    }
+
+    #[test]
+    fn test_repo_name_from_common_dir_no_git_suffix() {
+        // Fallback: just take last component
+        assert_eq!(repo_name_from_common_dir("/home/user/my-app"), "my-app");
+    }
+
+    #[test]
+    fn test_repo_name_from_common_dir_bare() {
+        assert_eq!(repo_name_from_common_dir("my-repo/.git"), "my-repo");
     }
 }

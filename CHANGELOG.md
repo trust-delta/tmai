@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-24
+
+### Added
+- **Worktree monitoring**: Detect git worktree info (git_common_dir, worktree_name) and display enhanced badges `[WT: name @ branch]`
+- **SortBy::Repository**: Group agents by git repository, keeping main and worktrees together
+- **Sort key enabled**: `s` key now cycles sort mode (Team → Repository → Directory)
+- **Team overview worktree info**: Show worktree badges for mapped team members
+- **Web API worktree fields**: Add `git_common_dir` and `worktree_name` to agent API responses
+
+### Fixed
+- Git field propagation bug in `update_agents()` where git_branch, git_dirty, is_worktree were not copied to existing agents
+
+### Improved
+- crates.io publishing: Enable publishing for tmai-core
+
 ## [0.6.0] - 2026-02-23
 
 ### Added

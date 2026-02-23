@@ -32,6 +32,8 @@ pub enum ListEntry {
         collapsed: bool,
         /// Task summary (only populated when sorted by Team)
         task_summary: Option<GroupTaskSummary>,
+        /// Number of worktree agents in the group (only populated for Repository sort)
+        worktree_count: Option<usize>,
     },
     CreateNew {
         group_key: String,
@@ -95,6 +97,7 @@ impl SessionList {
                         attention_count,
                         collapsed,
                         task_summary,
+                        worktree_count,
                     } => Self::create_group_header(
                         key,
                         *agent_count,
@@ -103,6 +106,7 @@ impl SessionList {
                         is_selected,
                         marquee_offset,
                         task_summary.as_ref(),
+                        *worktree_count,
                     ),
                     ListEntry::CreateNew { .. } => Self::create_new_item(),
                 }
@@ -184,6 +188,7 @@ impl SessionList {
                         attention_count,
                         collapsed,
                         task_summary,
+                        worktree_count,
                     } => Self::create_compact_group_header(
                         key,
                         inner_width,
@@ -193,6 +198,7 @@ impl SessionList {
                         is_selected,
                         marquee_offset,
                         task_summary.as_ref(),
+                        *worktree_count,
                     ),
                     ListEntry::CreateNew { .. } => {
                         Self::create_compact_new_item(inner_width, is_selected)
@@ -240,16 +246,19 @@ impl SessionList {
         let mut ui_entry_index = 0; // Index in the full entries list for highlighting
         let mut selected_agent_index: Option<usize> = None;
 
-        // First pass: collect group statistics
-        let mut group_stats: std::collections::HashMap<String, (usize, usize)> =
+        // First pass: collect group statistics (agent_count, attention_count, worktree_count)
+        let mut group_stats: std::collections::HashMap<String, (usize, usize, usize)> =
             std::collections::HashMap::new();
         for id in &state.agent_order {
             if let Some(agent) = state.agents.get(id) {
                 if let Some(group_key) = state.get_group_key(agent) {
-                    let entry = group_stats.entry(group_key).or_insert((0, 0));
+                    let entry = group_stats.entry(group_key).or_insert((0, 0, 0));
                     entry.0 += 1; // agent_count
                     if agent.status.needs_attention() {
                         entry.1 += 1; // attention_count
+                    }
+                    if agent.is_worktree.unwrap_or(false) {
+                        entry.2 += 1; // worktree_count
                     }
                 }
             }
@@ -266,8 +275,8 @@ impl SessionList {
                 if let Some(group_key) = state.get_group_key(agent) {
                     if current_group.as_ref() != Some(&group_key) && !is_nested_member {
                         let collapsed = state.is_group_collapsed(&group_key);
-                        let (agent_count, attention_count) =
-                            group_stats.get(&group_key).copied().unwrap_or((0, 0));
+                        let (agent_count, attention_count, wt_count) =
+                            group_stats.get(&group_key).copied().unwrap_or((0, 0, 0));
 
                         // Track the entry index for the selected entry (group header is now selectable)
                         if selectable_index == state.selection.selected_entry_index {
@@ -288,12 +297,21 @@ impl SessionList {
                             None
                         };
 
+                        // Worktree count (only meaningful for Repository sort)
+                        let worktree_count = if state.sort_by == SortBy::Repository && wt_count > 0
+                        {
+                            Some(wt_count)
+                        } else {
+                            None
+                        };
+
                         entries.push(ListEntry::GroupHeader {
                             key: group_key.clone(),
                             agent_count,
                             attention_count,
                             collapsed,
                             task_summary,
+                            worktree_count,
                         });
                         selectable_index += 1; // GroupHeader is now selectable
                         current_group = Some(group_key.clone());
@@ -345,6 +363,8 @@ impl SessionList {
     /// Create a group header item
     ///
     /// When `task_summary` is provided (Team sort mode), displays task progress info.
+    /// When `worktree_count` is provided (Repository sort mode), shows WT count.
+    #[allow(clippy::too_many_arguments)]
     fn create_group_header(
         header: &str,
         agent_count: usize,
@@ -353,6 +373,7 @@ impl SessionList {
         is_selected: bool,
         marquee_offset: usize,
         task_summary: Option<&GroupTaskSummary>,
+        worktree_count: Option<usize>,
     ) -> ListItem<'static> {
         // Collapse icon: \u{25B8} (collapsed) or \u{25BE} (expanded)
         let icon = if collapsed { "\u{25B8}" } else { "\u{25BE}" };
@@ -368,9 +389,13 @@ impl SessionList {
                 .add_modifier(Modifier::BOLD),
         )];
 
-        // Show agent count
+        // Show agent count with optional worktree count
+        let count_text = match worktree_count {
+            Some(wt) if wt > 0 => format!("({}, {} WT)", agent_count, wt),
+            _ => format!("({})", agent_count),
+        };
         spans.push(Span::styled(
-            format!("({})", agent_count),
+            count_text,
             Style::default().fg(Color::DarkGray),
         ));
 
@@ -537,7 +562,12 @@ impl SessionList {
         if let Some(ref branch) = agent.git_branch {
             let is_wt = agent.is_worktree.unwrap_or(false);
             let (label, color) = if is_wt {
-                (format!("  [WT: {}]", branch), Color::Magenta)
+                // Show worktree name if available: [WT: name @ branch]
+                if let Some(ref wt_name) = agent.worktree_name {
+                    (format!("  [WT: {} @ {}]", wt_name, branch), Color::Magenta)
+                } else {
+                    (format!("  [WT: {}]", branch), Color::Magenta)
+                }
             } else if agent.git_dirty.unwrap_or(false) {
                 (format!("  [{}]", branch), Color::Yellow)
             } else {
@@ -818,7 +848,11 @@ impl SessionList {
         if let Some(ref branch) = agent.git_branch {
             let is_wt = agent.is_worktree.unwrap_or(false);
             let (label, color) = if is_wt {
-                (format!(" [WT: {}]", branch), Color::Magenta)
+                if let Some(ref wt_name) = agent.worktree_name {
+                    (format!(" [WT: {} @ {}]", wt_name, branch), Color::Magenta)
+                } else {
+                    (format!(" [WT: {}]", branch), Color::Magenta)
+                }
             } else if agent.git_dirty.unwrap_or(false) {
                 (format!(" [{}]", branch), Color::Yellow)
             } else {
@@ -833,6 +867,7 @@ impl SessionList {
     /// Create a compact group header for horizontal layout
     ///
     /// When `task_summary` is provided (Team sort mode), displays task progress info.
+    /// When `worktree_count` is provided (Repository sort mode), shows WT count.
     #[allow(clippy::too_many_arguments)]
     fn create_compact_group_header(
         header: &str,
@@ -843,6 +878,7 @@ impl SessionList {
         is_selected: bool,
         marquee_offset: usize,
         task_summary: Option<&GroupTaskSummary>,
+        worktree_count: Option<usize>,
     ) -> ListItem<'static> {
         // Collapse icon: \u{25B8} (collapsed) or \u{25BE} (expanded)
         let icon = if collapsed { "\u{25B8}" } else { "\u{25BE}" };
@@ -873,9 +909,13 @@ impl SessionList {
                 .add_modifier(Modifier::BOLD),
         )];
 
-        // Show agent count
+        // Show agent count with optional worktree count
+        let count_text = match worktree_count {
+            Some(wt) if wt > 0 => format!("({}, {} WT)", agent_count, wt),
+            _ => format!("({})", agent_count),
+        };
         spans.push(Span::styled(
-            format!("({})", agent_count),
+            count_text,
             Style::default().fg(Color::DarkGray).bg(bg_color),
         ));
 

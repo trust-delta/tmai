@@ -74,11 +74,15 @@ questions: [
 ### 1-4. ファイル更新
 
 1. `Cargo.toml` と `crates/tmai-core/Cargo.toml` の `version` フィールドを両方更新
-2. `CHANGELOG.md` の先頭（`## [前バージョン]` の直前）にエントリを追加
-3. ドキュメント確認:
+2. `Cargo.toml` の `tmai-core` 依存の version 指定も新バージョンに更新:
+   ```toml
+   tmai-core = { version = "{version}", path = "crates/tmai-core" }
+   ```
+3. `CHANGELOG.md` の先頭（`## [前バージョン]` の直前）にエントリを追加
+4. ドキュメント確認:
    - `README.md`、`README.ja.md` にバージョン固有の記述があれば更新
    - `doc/` 配下に更新が必要なファイルがあれば更新
-4. `cargo build` で `Cargo.lock` を更新:
+5. `cargo build` で `Cargo.lock` を更新:
    ```bash
    cargo build 2>&1 | tail -5
    ```
@@ -188,21 +192,51 @@ questions: [
    ```bash
    gh pr merge {pr_number} --squash --delete-branch
    ```
-2. main を pull:
+2. main を同期（squash merge後はローカルとリモートがdivergenceするため `reset --hard` を使用）:
    ```bash
-   git checkout main && git pull origin main
+   git checkout main && git fetch origin main && git reset --hard origin/main
    ```
 3. タグ打ち:
    ```bash
    git tag v{version} && git push origin v{version}
    ```
 
-### 3-3. 完了報告
+## Phase 4: crates.io 公開
+
+### 4-1. 公開実行
+
+`tmai-core` → `tmai` の順に公開（依存関係の順序）:
+
+```bash
+cargo publish -p tmai-core
+```
+
+`tmai-core` が crates.io に反映されたら:
+
+```bash
+cargo publish -p tmai
+```
+
+### 4-2. 公開確認
+
+```bash
+cargo search tmai
+```
+
+両方のバージョンが `{version}` であることを確認。
+
+### 4-3. エラー時
+
+- **403 Forbidden (token権限不足)**: crates.io の API トークンに `tmai-core` / `tmai` の publish 権限があるか確認。ユーザにトークン更新を依頼。
+- **依存解決エラー**: `tmai-core` が先に公開されているか確認。インデックス反映に数秒かかるため、`cargo publish` が `--wait` で自動待機する。
+
+### 4-4. 完了報告
 
 以下を報告:
 - リリースバージョン: `v{version}`
 - PR URL
 - タグ URL: `https://github.com/trust-delta/tmai/releases/tag/v{version}`
+- crates.io: `https://crates.io/crates/tmai`
 - CHANGELOGエントリの概要
 
 ## エラーハンドリング
@@ -211,18 +245,20 @@ questions: [
 - `git push` 失敗 → リモートの状態を確認し対処
 - `gh pr create` 失敗 → 既存PRの有無を確認
 - `gh pr merge` 失敗 → マージ可能な状態か確認（CI, review, conflict）
+- `cargo publish` 失敗 → トークン権限・依存解決を確認
 - Phase 2 で3回以上ループした場合 → ユーザに状況を報告し続行するか確認
 
 ## 使用例
 
 ```
 ユーザー: /version-up
-→ 現在: v0.4.4, 前回タグ: v0.4.4
+→ 現在: v0.5.0, 前回タグ: v0.5.0
 → 変更一覧を表示
-→ バージョン選択: 0.4.5 (patch)
+→ バージョン選択: 0.6.0 (minor)
 → CHANGELOG自動生成・確認
-→ Cargo.toml更新、ブランチ作成、PR作成
+→ Cargo.toml更新（version + tmai-core依存version）、ブランチ作成、PR作成
 → CI監視 → CodeRabbit確認 → 修正（必要なら）
-→ マージ確認 → squashマージ → v0.4.5タグ
+→ マージ確認 → squashマージ → v0.6.0タグ
+→ cargo publish -p tmai-core → cargo publish -p tmai
 → 完了報告
 ```

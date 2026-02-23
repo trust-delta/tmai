@@ -180,6 +180,26 @@ impl TeamOverview {
                     ));
                 }
 
+                // Show worktree info if the member has a mapped pane
+                if let Some(pane_target) = snapshot.member_panes.get(&member.name) {
+                    if let Some(agent) = state.agents.get(pane_target) {
+                        if let Some(ref wt_name) = agent.worktree_name {
+                            let branch = agent.git_branch.as_deref().unwrap_or("?");
+                            spans.push(Span::styled(
+                                format!(" [WT: {} @ {}]", wt_name, branch),
+                                Style::default().fg(Color::Magenta),
+                            ));
+                        } else if agent.is_worktree == Some(true) {
+                            if let Some(ref branch) = agent.git_branch {
+                                spans.push(Span::styled(
+                                    format!(" [WT: {}]", branch),
+                                    Style::default().fg(Color::Magenta),
+                                ));
+                            }
+                        }
+                    }
+                }
+
                 // Show current task if the member owns one that's in progress
                 let current_task = tasks.iter().find(|t| {
                     t.owner.as_deref() == Some(&member.name) && t.status == TaskStatus::InProgress

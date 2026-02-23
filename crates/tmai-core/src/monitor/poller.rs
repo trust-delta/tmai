@@ -1048,6 +1048,8 @@ impl Poller {
                 agent.git_branch = Some(info.branch);
                 agent.git_dirty = Some(info.dirty);
                 agent.is_worktree = Some(info.is_worktree);
+                agent.git_common_dir = info.common_dir.clone();
+                agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
             }
         }
     }
@@ -1062,6 +1064,8 @@ impl Poller {
                 agent.git_branch = Some(info.branch);
                 agent.git_dirty = Some(info.dirty);
                 agent.is_worktree = Some(info.is_worktree);
+                agent.git_common_dir = info.common_dir.clone();
+                agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
             }
         }
     }

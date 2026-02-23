@@ -521,8 +521,14 @@ impl App {
             // Toggle split direction (Horizontal <-> Vertical)
             KeyCode::Char('l') => self.layout.toggle_split_direction(),
 
-            // Sort/scope cycling temporarily disabled
-            KeyCode::Char('s') | KeyCode::Char('m') => {}
+            // Cycle sort method
+            KeyCode::Char('s') => {
+                let mut state = self.state.write();
+                state.cycle_sort();
+            }
+
+            // Scope cycling temporarily disabled
+            KeyCode::Char('m') => {}
 
             // Enter passthrough mode (requires a real agent selected)
             KeyCode::Char('p') | KeyCode::Right => {

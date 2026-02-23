@@ -478,6 +478,10 @@ pub struct MonitoredAgent {
     pub is_worktree: Option<bool>,
     /// Auto-approve judgment phase (set by AutoApproveService)
     pub auto_approve_phase: Option<AutoApprovePhase>,
+    /// Absolute path to the shared git common directory (for repository grouping)
+    pub git_common_dir: Option<String>,
+    /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
+    pub worktree_name: Option<String>,
 }
 
 impl MonitoredAgent {
@@ -520,6 +524,8 @@ impl MonitoredAgent {
             git_dirty: None,
             is_worktree: None,
             auto_approve_phase: None,
+            git_common_dir: None,
+            worktree_name: None,
         }
     }
 
