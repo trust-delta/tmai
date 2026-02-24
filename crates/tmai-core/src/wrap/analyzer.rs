@@ -300,9 +300,28 @@ impl Analyzer {
             return false;
         }
 
-        // Look for numbered choices with cursor marker in recent lines
-        let check_start = lines.len().saturating_sub(25);
-        let check_lines = &lines[check_start..];
+        // Use horizontal separator lines (───) as boundaries when available.
+        // Claude Code's TUI encloses the input area between two ─── separators.
+        let separator_indices: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, line)| {
+                let trimmed = line.trim();
+                trimmed.len() >= 10 && trimmed.chars().all(|c| c == '─')
+            })
+            .map(|(i, _)| i)
+            .take(2)
+            .collect();
+
+        let check_lines =
+            if separator_indices.len() == 2 && separator_indices[0] > separator_indices[1] + 1 {
+                &lines[separator_indices[1] + 1..separator_indices[0]]
+            } else {
+                // Fallback: window-based approach
+                let check_start = lines.len().saturating_sub(25);
+                &lines[check_start..]
+            };
 
         let mut consecutive_choices = 0;
         let mut has_cursor = false;

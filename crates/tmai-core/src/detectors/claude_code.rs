@@ -1,4 +1,5 @@
 use regex::Regex;
+use tracing::trace;
 
 use crate::agents::{AgentMode, AgentStatus, AgentType, ApprovalType};
 use crate::config::SpinnerVerbsMode;
@@ -294,6 +295,14 @@ impl ClaudeCodeDetector {
         }
     }
 
+    /// Check if a line is a horizontal separator (─── pattern)
+    /// Claude Code's TUI uses these to delimit the input area.
+    fn is_horizontal_separator(line: &str) -> bool {
+        let trimmed = line.trim();
+        // Must be long enough to be a real separator (not a short dash)
+        trimmed.len() >= 10 && trimmed.chars().all(|c| c == '─')
+    }
+
     /// Detect AskUserQuestion with numbered choices
     fn detect_user_question(&self, content: &str) -> Option<(ApprovalType, String)> {
         let lines: Vec<&str> = content.lines().collect();
@@ -309,45 +318,61 @@ impl ClaudeCodeDetector {
             .unwrap_or(lines.len());
         let lines = &lines[..effective_len];
 
-        // Find the last prompt marker (❯ or ›) - choices should be BEFORE it
-        // Note: ❯/› followed by number is a selection cursor, not a prompt
-        let last_prompt_idx = lines.iter().rposition(|line| {
-            let trimmed = line.trim();
-            // Only count ❯/› as prompt if it's alone or followed by space (not "❯ 1." pattern)
-            if trimmed == "❯" || trimmed == "›" {
-                return true;
-            }
-            // Check if ❯/› is followed by a number (selection cursor)
-            if trimmed.starts_with('❯') || trimmed.starts_with('›') {
-                let after_marker = trimmed
-                    .trim_start_matches('❯')
-                    .trim_start_matches('›')
-                    .trim_start();
-                // If followed by digit, it's a selection cursor, not a prompt
-                if after_marker
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_digit())
-                    .unwrap_or(false)
-                {
-                    return false;
-                }
-                // Very short ❯/› line could be prompt
-                return trimmed.len() < 3;
-            }
-            false
-        });
+        // Strategy: Use horizontal separator lines (───) as boundaries.
+        // Claude Code's TUI encloses the input area between two ─── separators.
+        // When AskUserQuestion is displayed, choices appear between these separators.
+        // This is robust regardless of preview box size.
+        let separator_indices: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, line)| Self::is_horizontal_separator(line))
+            .map(|(i, _)| i)
+            .take(2)
+            .collect();
 
-        // If no prompt found, search entire content; otherwise search before prompt
-        let search_end = last_prompt_idx.unwrap_or(lines.len());
-        // Also search the entire content if prompt is at the very end
-        // Narrowed window (was 30/25) reduces false positives from conversation history
-        let search_start = if search_end == lines.len() {
-            lines.len().saturating_sub(15)
+        let check_lines = if separator_indices.len() == 2 {
+            // 1st from bottom = lower separator, 2nd from bottom = upper separator
+            let lower_sep = separator_indices[0];
+            let upper_sep = separator_indices[1];
+            if lower_sep > upper_sep + 1 {
+                &lines[upper_sep + 1..lower_sep]
+            } else {
+                &lines[lines.len().saturating_sub(25)..lines.len()]
+            }
         } else {
-            search_end.saturating_sub(15)
+            // Fallback: no separators found (e.g. wrap mode output without TUI chrome).
+            // Use window-based approach with prompt detection.
+            let last_prompt_idx = lines.iter().rposition(|line| {
+                let trimmed = line.trim();
+                if trimmed == "❯" || trimmed == "›" {
+                    return true;
+                }
+                if trimmed.starts_with('❯') || trimmed.starts_with('›') {
+                    let after_marker = trimmed
+                        .trim_start_matches('❯')
+                        .trim_start_matches('›')
+                        .trim_start();
+                    if after_marker
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                    {
+                        return false;
+                    }
+                    return trimmed.len() < 3;
+                }
+                false
+            });
+            let search_end = last_prompt_idx.unwrap_or(lines.len());
+            let search_start = if search_end == lines.len() {
+                lines.len().saturating_sub(25)
+            } else {
+                search_end.saturating_sub(25)
+            };
+            &lines[search_start..search_end]
         };
-        let check_lines = &lines[search_start..search_end];
 
         if check_lines.is_empty() {
             return None;
@@ -495,16 +520,25 @@ impl ClaudeCodeDetector {
         last_choice_idx = best_last_idx;
         cursor_position = best_cursor_position;
 
-        // Choices must be near the end (allow for UI hints like "Enter to select")
-        // Use the last non-empty line as the effective end, since tmux capture-pane
-        // pads output with trailing empty lines to fill the terminal height.
+        // Choices must be near the end (allow for UI hints like "Enter to select").
+        // When separator-bounded, the region is already precise so distance is measured
+        // within that bounded area. For fallback (no separators), use a tighter threshold.
+        let used_separators = separator_indices.len() == 2;
+        let max_distance: usize = if used_separators {
+            // Separator-bounded: the entire region is the input area, so large
+            // preview boxes are expected. Allow generous distance.
+            check_lines.len()
+        } else {
+            // Fallback: use the last non-empty line as effective end
+            20
+        };
         if let Some(last_idx) = last_choice_idx {
             let effective_end = check_lines
                 .iter()
                 .rposition(|line| !line.trim().is_empty())
                 .map(|i| i + 1)
                 .unwrap_or(check_lines.len());
-            if effective_end - last_idx > 15 {
+            if effective_end - last_idx > max_distance {
                 return None;
             }
         }
@@ -729,6 +763,10 @@ impl ClaudeCodeDetector {
         let has_text_approval = self.general_approval_pattern.is_match(&last_text);
 
         if !has_proceed_prompt && !has_yes_no_buttons && !has_text_approval {
+            trace!(
+                "detect_approval: no approval pattern found (user_question=None, proceed={}, buttons={}, text={})",
+                has_proceed_prompt, has_yes_no_buttons, has_text_approval
+            );
             return None;
         }
 
@@ -954,6 +992,7 @@ impl ClaudeCodeDetector {
                 trimmed == "❯" || trimmed == "›"
             });
         if has_idle_prompt {
+            trace!("detect_content_spinner: skipped due to idle prompt (❯/›) in last 5 non-empty lines");
             return None;
         }
 
@@ -1081,6 +1120,7 @@ impl StatusDetector for ClaudeCodeDetector {
     ) -> DetectionResult {
         // 1. Check for AskUserQuestion or approval (highest priority)
         if let Some((approval_type, details, rule)) = self.detect_approval(content) {
+            trace!(rule, "detect_status: approval detected");
             let matched = safe_tail(content, 200);
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
@@ -1092,6 +1132,7 @@ impl StatusDetector for ClaudeCodeDetector {
             )
             .with_matched_text(matched);
         }
+        trace!("detect_status: no approval detected, continuing to title/content checks");
 
         // 1.5 Fast path: Braille spinner in title → Processing (skip content parsing)
         //     Any character in the Braille Patterns block (U+2800..=U+28FF) indicates
@@ -1211,6 +1252,10 @@ impl StatusDetector for ClaudeCodeDetector {
 
         // 8. Title-based detection: ✳ in title = Idle
         if title.contains(IDLE_INDICATOR) {
+            trace!(
+                title,
+                "detect_status: title_idle_indicator (approval was not detected)"
+            );
             return DetectionResult::new(
                 AgentStatus::Idle,
                 "title_idle_indicator",
@@ -2434,6 +2479,149 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
                 }
             }
             _ => panic!("Expected AwaitingApproval, got {:?}", status),
+        }
+    }
+
+    #[test]
+    fn test_preview_format_large_box() {
+        let detector = ClaudeCodeDetector::new();
+        // AskUserQuestion with a large preview panel (10+ lines)
+        // Enclosed between horizontal separators like real tmux capture-pane output
+        let content = r#"
+Previous conversation...
+
+────────────────────────────────────────────────────────────────────────
+Which configuration format do you prefer?
+
+  1. TOML format              ┌──────────────────────────────┐
+› 2. YAML format              │ # Example YAML config        │
+  3. JSON format              │ server:                      │
+                              │   host: localhost             │
+                              │   port: 8080                 │
+                              │   workers: 4                 │
+                              │ database:                    │
+                              │   url: postgres://localhost   │
+                              │   pool_size: 10              │
+                              │   timeout: 30s               │
+                              │ logging:                     │
+                              │   level: info                │
+                              │   format: json               │
+                              └──────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
+"#;
+        // Simulate tmux padding: add trailing empty lines
+        let mut padded = content.to_string();
+        for _ in 0..30 {
+            padded.push('\n');
+        }
+
+        let status = detector.detect_status("✳ Claude Code", &padded);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    multi_select,
+                    cursor_position,
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                    assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
+                    assert!(
+                        !multi_select,
+                        "Preview format should not be detected as multi-select"
+                    );
+                    assert!(
+                        !choices[0].contains('│'),
+                        "Choice text should not contain box chars: {:?}",
+                        choices[0]
+                    );
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!(
+                "Expected AwaitingApproval for large preview box, got {:?}",
+                status
+            ),
+        }
+    }
+
+    #[test]
+    fn test_preview_format_very_large_box_real_capture() {
+        let detector = ClaudeCodeDetector::new();
+        // Real-world capture: AskUserQuestion with a very large preview (25+ lines)
+        // where choices are far above the preview box in the content.
+        // This simulates the actual tmux capture-pane output structure.
+        // Simulates real tmux capture-pane: previous conversation above,
+        // then two ─── separators enclosing the input area with choices + preview.
+        let content = "\
+Previous conversation output here...
+
+✻ Worked for 30s
+
+────────────────────────────────────────────────────────────────────────────────
+  Capture Feedback
+
+伝えたいことを教えてください。大きいプレビューにカーソルを合わせて確認してください。
+
+  1. Option A                   ┌──────────────────────────────────────────┐
+› 2. Option B                   │ # Large Preview B                        │
+  3. Option C                   │                                          │
+                                │ ## Database Schema                       │
+                                │                                          │
+                                │ ```sql                                   │
+                                │ CREATE TABLE users (                     │
+                                │   id UUID PRIMARY KEY,                   │
+                                │   email TEXT UNIQUE,                     │
+                                │   name TEXT,                             │
+                                │   created_at TIMESTAMPTZ                 │
+                                │ );                                       │
+                                │                                          │
+                                │ CREATE TABLE teams (                     │
+                                │   id UUID PRIMARY KEY,                   │
+                                │   name TEXT,                             │
+                                │   owner_id UUID REFERENCES users         │
+                                │ );                                       │
+                                │                                          │
+                                │ CREATE TABLE members (                   │
+                                │   team_id UUID REFERENCES teams,         │
+                                │   user_id UUID REFERENCES users,         │
+                                │   role TEXT DEFAULT 'member',            │
+                                │   PRIMARY KEY (team_id, user_id)         │
+                                │ );                                       │
+                                │ ```                                      │
+                                └──────────────────────────────────────────┘
+
+                                Notes: press n to add notes
+
+────────────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
+";
+        let status = detector.detect_status("✳ Claude Code", content);
+        match status {
+            AgentStatus::AwaitingApproval { approval_type, .. } => {
+                if let ApprovalType::UserQuestion {
+                    choices,
+                    cursor_position,
+                    ..
+                } = approval_type
+                {
+                    assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
+                    assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
+                } else {
+                    panic!("Expected UserQuestion, got {:?}", approval_type);
+                }
+            }
+            _ => panic!(
+                "Expected AwaitingApproval for very large preview box, got {:?}",
+                status
+            ),
         }
     }
 }
