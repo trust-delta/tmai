@@ -22,6 +22,7 @@
 - **Agent Teams** - Visualize Claude Code Agent Teams structure and task progress
 - **Mode detection** - Detect Plan/Delegate/Auto-approve modes from terminal title icons
 - **Auto-approve** - Automatic approval of safe actions with 4 modes: Rules (instant), AI, Hybrid, or Off
+- **Usage monitoring** - Check Claude subscription usage (5h session / weekly limits) with `U` key
 
 ## Documentation
 
@@ -99,6 +100,7 @@ model = "haiku"
 | `t` | Task overlay (team member selected) |
 | `T` | Team overview |
 | `W` | Restart as IPC-wrapped (non-IPC Claude Code) |
+| `U` | Fetch subscription usage (Claude Max/Pro) |
 | `Esc` | Exit mode / Quit |
 | `?` | Help |
 
@@ -171,6 +173,14 @@ For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for po
 | OpenCode | ✅ Supported | ✅ |
 | Codex CLI | ✅ Supported | ✅ |
 | Gemini CLI | ✅ Supported | ✅ |
+
+## Usage Monitoring
+
+Press `U` to check your Claude subscription usage (session / weekly limits). tmai spawns a temporary Claude Code instance in the background, runs `/usage`, and displays the results.
+
+<p align="center">
+  <img src="assets/usage-view.png" alt="Usage monitoring" width="600">
+</p>
 
 ## Screenshots
 

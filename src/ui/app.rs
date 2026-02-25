@@ -1076,8 +1076,46 @@ impl App {
         });
     }
 
-    /// Trigger a background usage fetch from Claude Code
+    /// Trigger a background usage fetch from Claude Code.
+    /// Set TMAI_USAGE_DEMO=1 to inject dummy values instead of fetching.
     fn trigger_usage_fetch(&self) {
+        // Demo mode: inject dummy values instantly (for screenshots)
+        if std::env::var("TMAI_USAGE_DEMO").is_ok() {
+            let mut state = self.state.write();
+            state.usage = tmai_core::usage::UsageSnapshot {
+                meters: vec![
+                    tmai_core::usage::UsageMeter {
+                        label: "Current session".to_string(),
+                        percent: 74,
+                        reset_info: Some("Resets 1am (Asia/Tokyo)".to_string()),
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Current week (all models)".to_string(),
+                        percent: 53,
+                        reset_info: Some("Resets Mar 3, 12am (Asia/Tokyo)".to_string()),
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Current week (Sonnet only)".to_string(),
+                        percent: 26,
+                        reset_info: None,
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Extra usage".to_string(),
+                        percent: 81,
+                        reset_info: Some("Resets Mar 1 (Asia/Tokyo)".to_string()),
+                        spending: Some("$40.50 / $50.00 spent".to_string()),
+                    },
+                ],
+                fetched_at: Some(chrono::Utc::now()),
+                fetching: false,
+                error: None,
+            };
+            return;
+        }
+
         // Check if already fetching
         {
             let state = self.state.read();
