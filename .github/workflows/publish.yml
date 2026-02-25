@@ -14,11 +14,13 @@ jobs:
 
       - name: Publish tmai-core
         run: |
+          set -o pipefail
           cargo publish -p tmai-core 2>&1 | tee /tmp/publish-core.log || {
             if grep -q "already exists\|already uploaded" /tmp/publish-core.log; then
               echo "::notice::tmai-core already published, skipping"
             else
               echo "::error::tmai-core publish failed"
+              cat /tmp/publish-core.log
               exit 1
             fi
           }
@@ -30,11 +32,13 @@ jobs:
 
       - name: Publish tmai
         run: |
+          set -o pipefail
           cargo publish -p tmai 2>&1 | tee /tmp/publish-tmai.log || {
             if grep -q "already exists\|already uploaded" /tmp/publish-tmai.log; then
               echo "::notice::tmai already published, skipping"
             else
               echo "::error::tmai publish failed"
+              cat /tmp/publish-tmai.log
               exit 1
             fi
           }
