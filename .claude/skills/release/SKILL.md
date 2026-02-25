@@ -201,42 +201,16 @@ questions: [
    git tag v{version} && git push origin v{version}
    ```
 
-## Phase 4: crates.io 公開
+## Phase 4: 完了報告
 
-### 4-1. 公開実行
-
-`tmai-core` → `tmai` の順に公開（依存関係の順序）:
-
-```bash
-cargo publish -p tmai-core
-```
-
-`tmai-core` が crates.io に反映されたら:
-
-```bash
-cargo publish -p tmai
-```
-
-### 4-2. 公開確認
-
-```bash
-cargo search tmai
-```
-
-両方のバージョンが `{version}` であることを確認。
-
-### 4-3. エラー時
-
-- **403 Forbidden (token権限不足)**: crates.io の API トークンに `tmai-core` / `tmai` の publish 権限があるか確認。ユーザにトークン更新を依頼。
-- **依存解決エラー**: `tmai-core` が先に公開されているか確認。インデックス反映に数秒かかるため、`cargo publish` が `--wait` で自動待機する。
-
-### 4-4. 完了報告
+crates.io への公開はタグpush時に CI（`.github/workflows/publish.yml`）が自動実行する。
+スキルでは手動publishは行わない。
 
 以下を報告:
 - リリースバージョン: `v{version}`
 - PR URL
 - タグ URL: `https://github.com/trust-delta/tmai/releases/tag/v{version}`
-- crates.io: `https://crates.io/crates/tmai`
+- crates.io公開: CIが自動実行（`Publish to crates.io` ワークフロー）
 - CHANGELOGエントリの概要
 
 ## エラーハンドリング
@@ -245,7 +219,7 @@ cargo search tmai
 - `git push` 失敗 → リモートの状態を確認し対処
 - `gh pr create` 失敗 → 既存PRの有無を確認
 - `gh pr merge` 失敗 → マージ可能な状態か確認（CI, review, conflict）
-- `cargo publish` 失敗 → トークン権限・依存解決を確認
+- `Publish to crates.io` CI失敗 → `gh run view` でログを確認。already exists 以外のエラーなら対処
 - Phase 2 で3回以上ループした場合 → ユーザに状況を報告し続行するか確認
 
 ## 使用例
@@ -259,6 +233,6 @@ cargo search tmai
 → Cargo.toml更新（version + tmai-core依存version）、ブランチ作成、PR作成
 → CI監視 → CodeRabbit確認 → 修正（必要なら）
 → マージ確認 → squashマージ → v0.6.0タグ
-→ cargo publish -p tmai-core → cargo publish -p tmai
+→ crates.io公開はCIが自動実行
 → 完了報告
 ```

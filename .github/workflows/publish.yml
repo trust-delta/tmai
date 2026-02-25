@@ -13,7 +13,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Publish tmai-core
-        run: cargo publish -p tmai-core
+        run: |
+          cargo publish -p tmai-core 2>&1 | tee /tmp/publish-core.log || {
+            if grep -q "already exists\|already uploaded" /tmp/publish-core.log; then
+              echo "::notice::tmai-core already published, skipping"
+            else
+              echo "::error::tmai-core publish failed"
+              exit 1
+            fi
+          }
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -21,6 +29,14 @@ jobs:
         run: sleep 30
 
       - name: Publish tmai
-        run: cargo publish -p tmai
+        run: |
+          cargo publish -p tmai 2>&1 | tee /tmp/publish-tmai.log || {
+            if grep -q "already exists\|already uploaded" /tmp/publish-tmai.log; then
+              echo "::notice::tmai already published, skipping"
+            else
+              echo "::error::tmai publish failed"
+              exit 1
+            fi
+          }
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
