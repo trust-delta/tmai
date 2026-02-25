@@ -149,7 +149,7 @@ impl TmaiCore {
     // Miscellaneous queries
     // =========================================================
 
-    /// Match an agent to its definition by team member name or agent type.
+    /// Match an agent to its definition by configured agent_type or member name.
     fn match_agent_definition(
         agent: &crate::agents::MonitoredAgent,
         defs: &[crate::teams::AgentDefinition],
@@ -157,9 +157,14 @@ impl TmaiCore {
         if defs.is_empty() {
             return None;
         }
-        // Try matching by team member's agent_type (which corresponds to agent definition name)
         if let Some(ref team_info) = agent.team_info {
-            // First try member_name as agent definition name
+            // 1) Try configured agent_type (explicit mapping from team config)
+            if let Some(ref agent_type) = team_info.agent_type {
+                if let Some(def) = defs.iter().find(|d| d.name == *agent_type) {
+                    return Some(AgentDefinitionInfo::from_definition(def));
+                }
+            }
+            // 2) Fallback: try member_name as agent definition name
             if let Some(def) = defs.iter().find(|d| d.name == team_info.member_name) {
                 return Some(AgentDefinitionInfo::from_definition(def));
             }

@@ -575,14 +575,20 @@ impl Poller {
 
             // Apply team info to matching agents and detect out-of-scope panes
             for (member_name, pane_target) in &final_mapping {
+                let member_cfg = team_config.members.iter().find(|m| &m.name == member_name);
                 let is_lead = team_config
                     .members
                     .first()
                     .map(|m| &m.name == member_name)
                     .unwrap_or(false);
 
-                let team_info =
-                    build_member_team_info(&team_config.team_name, member_name, is_lead, &tasks);
+                let team_info = build_member_team_info(
+                    &team_config.team_name,
+                    member_name,
+                    member_cfg.and_then(|m| m.agent_type.as_deref()),
+                    is_lead,
+                    &tasks,
+                );
 
                 if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
                     // Agent already in list — apply team info
@@ -625,6 +631,7 @@ impl Poller {
                     let team_info = build_member_team_info(
                         &team_config.team_name,
                         &member.name,
+                        member.agent_type.as_deref(),
                         is_lead,
                         &tasks,
                     );
@@ -639,7 +646,7 @@ impl Poller {
 
             // Collect worktree names from mapped agents
             let mut worktree_names = Vec::new();
-            for (member_name, pane_target) in &final_mapping {
+            for pane_target in final_mapping.values() {
                 if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
                     // Check if the member's cwd is within a worktree path
                     let wt_name = agent
@@ -660,12 +667,13 @@ impl Poller {
                         }
                     }
                 }
-                // Also check member config cwd for unmapped members
-                if let Some(member) = team_config.members.iter().find(|m| &m.name == member_name) {
-                    if let Some(wt_name) = member.worktree_name() {
-                        if !worktree_names.contains(&wt_name) {
-                            worktree_names.push(wt_name);
-                        }
+            }
+
+            // Also include worktree names from team config (including unmapped members)
+            for member in &team_config.members {
+                if let Some(wt_name) = member.worktree_name() {
+                    if !worktree_names.contains(&wt_name) {
+                        worktree_names.push(wt_name);
                     }
                 }
             }
@@ -763,6 +771,11 @@ impl Poller {
 
         for snapshot in state.teams.values() {
             for (member_name, pane_target) in &snapshot.member_panes {
+                let member_cfg = snapshot
+                    .config
+                    .members
+                    .iter()
+                    .find(|m| &m.name == member_name);
                 let is_lead = snapshot
                     .config
                     .members
@@ -773,6 +786,7 @@ impl Poller {
                 let team_info = build_member_team_info(
                     &snapshot.config.team_name,
                     member_name,
+                    member_cfg.and_then(|m| m.agent_type.as_deref()),
                     is_lead,
                     &snapshot.tasks,
                 );
@@ -803,6 +817,7 @@ impl Poller {
                     let team_info = build_member_team_info(
                         &snapshot.config.team_name,
                         &member.name,
+                        member.agent_type.as_deref(),
                         is_lead,
                         &snapshot.tasks,
                     );
@@ -1238,6 +1253,7 @@ fn strip_ansi(input: &str) -> String {
 fn build_member_team_info(
     team_name: &str,
     member_name: &str,
+    agent_type: Option<&str>,
     is_lead: bool,
     tasks: &[teams::TeamTask],
 ) -> AgentTeamInfo {
@@ -1254,6 +1270,7 @@ fn build_member_team_info(
     AgentTeamInfo {
         team_name: team_name.to_string(),
         member_name: member_name.to_string(),
+        agent_type: agent_type.map(|s| s.to_string()),
         is_lead,
         current_task,
     }

@@ -406,6 +406,8 @@ pub struct AgentTeamInfo {
     pub team_name: String,
     /// Member name within the team
     pub member_name: String,
+    /// Agent type from team config (e.g., agent definition name)
+    pub agent_type: Option<String>,
     /// Whether this agent is the team lead
     pub is_lead: bool,
     /// Currently assigned task (if any)
