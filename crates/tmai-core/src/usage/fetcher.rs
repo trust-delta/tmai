@@ -31,7 +31,8 @@ pub async fn fetch_usage(session: &str) -> Result<UsageSnapshot> {
     let tmux = TmuxClient::new();
 
     // Use home directory (trusted by Claude Code, avoids "trust this folder?" prompt)
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = std::env::var("HOME")
+        .context("HOME environment variable is not set; cannot determine trusted directory")?;
 
     // Create a detached window for the usage fetch
     let target = tmux
