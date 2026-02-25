@@ -92,8 +92,9 @@ impl TmaiCore {
 
     /// Get a clone of the broadcast event sender.
     ///
-    /// Used internally by the poll bridge to emit events.
-    pub(crate) fn event_sender(&self) -> broadcast::Sender<CoreEvent> {
+    /// Used by the Poller to emit TeammateIdle/TaskCompleted events,
+    /// and by the SSE handler to subscribe to events.
+    pub fn event_sender(&self) -> broadcast::Sender<CoreEvent> {
         self.event_tx.clone()
     }
 

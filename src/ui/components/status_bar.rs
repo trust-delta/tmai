@@ -211,6 +211,17 @@ impl StatusBar {
             ));
         }
 
+        // Notification message (task completed, teammate idle, etc.)
+        if let Some(notification) = state.active_notification() {
+            spans.push(Span::styled(
+                format!(" {} ", notification),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         // Error message
         if let Some(error) = &state.error_message {
             spans.push(Span::styled(

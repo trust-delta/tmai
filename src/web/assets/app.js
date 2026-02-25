@@ -236,6 +236,24 @@ class TmaiRemote {
             }
         });
 
+        this.eventSource.addEventListener('teammate_idle', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this.showToast(`Team ${data.team_name}: ${data.member_name} is idle`, 'info');
+            } catch (error) {
+                console.error('Error parsing teammate_idle SSE data:', error);
+            }
+        });
+
+        this.eventSource.addEventListener('task_completed', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this.showToast(`Task completed: ${data.task_subject} [${data.team_name}]`, 'success');
+            } catch (error) {
+                console.error('Error parsing task_completed SSE data:', error);
+            }
+        });
+
         this.eventSource.onopen = () => {
             this.setConnected(true);
             this.reconnectDelay = 1000;

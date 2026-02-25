@@ -4,7 +4,7 @@
 //! and releases the lock before returning. Callers never hold a lock.
 
 use super::core::TmaiCore;
-use super::types::{AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
+use super::types::{AgentDefinitionInfo, AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
 
 impl TmaiCore {
     // =========================================================
@@ -14,21 +14,31 @@ impl TmaiCore {
     /// List all monitored agents as owned snapshots, in current display order.
     pub fn list_agents(&self) -> Vec<AgentSnapshot> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .agent_order
             .iter()
             .filter_map(|id| state.agents.get(id))
-            .map(AgentSnapshot::from_agent)
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap
+            })
             .collect()
     }
 
     /// Get a single agent snapshot by target ID.
     pub fn get_agent(&self, target: &str) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .agents
             .get(target)
-            .map(AgentSnapshot::from_agent)
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap
+            })
             .ok_or_else(|| ApiError::AgentNotFound {
                 target: target.to_string(),
             })
@@ -138,6 +148,24 @@ impl TmaiCore {
     // =========================================================
     // Miscellaneous queries
     // =========================================================
+
+    /// Match an agent to its definition by team member name or agent type.
+    fn match_agent_definition(
+        agent: &crate::agents::MonitoredAgent,
+        defs: &[crate::teams::AgentDefinition],
+    ) -> Option<AgentDefinitionInfo> {
+        if defs.is_empty() {
+            return None;
+        }
+        // Try matching by team member's agent_type (which corresponds to agent definition name)
+        if let Some(ref team_info) = agent.team_info {
+            // First try member_name as agent definition name
+            if let Some(def) = defs.iter().find(|d| d.name == team_info.member_name) {
+                return Some(AgentDefinitionInfo::from_definition(def));
+            }
+        }
+        None
+    }
 
     /// Check if the application is still running.
     pub fn is_running(&self) -> bool {

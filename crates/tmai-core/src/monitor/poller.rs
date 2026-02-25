@@ -10,6 +10,7 @@ use crate::agents::{
     AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
     TeamTaskSummaryItem,
 };
+use crate::api::CoreEvent;
 use crate::audit::{AuditEvent, AuditLogger};
 use crate::config::{ClaudeSettingsCache, Settings};
 use crate::detectors::ClaudeCodeDetector;
@@ -99,6 +100,8 @@ pub struct Poller {
     grace_periods: HashMap<String, Instant>,
     /// Git branch/dirty cache for agent cwd directories
     git_cache: GitCache,
+    /// Core event sender for pushing TeammateIdle/TaskCompleted events
+    event_tx: Option<tokio::sync::broadcast::Sender<CoreEvent>>,
 }
 
 impl Poller {
@@ -135,7 +138,14 @@ impl Poller {
             previous_agent_ids: HashSet::new(),
             grace_periods: HashMap::new(),
             git_cache: GitCache::new(),
+            event_tx: None,
         }
+    }
+
+    /// Set the core event sender for TeammateIdle/TaskCompleted notifications
+    pub fn with_event_tx(mut self, tx: tokio::sync::broadcast::Sender<CoreEvent>) -> Self {
+        self.event_tx = Some(tx);
+        self
     }
 
     /// Start polling in a background task
@@ -627,6 +637,39 @@ impl Poller {
                 }
             }
 
+            // Collect worktree names from mapped agents
+            let mut worktree_names = Vec::new();
+            for (member_name, pane_target) in &final_mapping {
+                if let Some(agent) = agents.iter_mut().find(|a| &a.target == pane_target) {
+                    // Check if the member's cwd is within a worktree path
+                    let wt_name = agent
+                        .worktree_name
+                        .clone()
+                        .or_else(|| crate::git::extract_claude_worktree_name(&agent.cwd));
+
+                    if let Some(ref name) = wt_name {
+                        // Set worktree info on the agent if not already set
+                        if agent.worktree_name.is_none() {
+                            agent.worktree_name = Some(name.clone());
+                        }
+                        if agent.is_worktree != Some(true) {
+                            agent.is_worktree = Some(true);
+                        }
+                        if !worktree_names.contains(name) {
+                            worktree_names.push(name.clone());
+                        }
+                    }
+                }
+                // Also check member config cwd for unmapped members
+                if let Some(member) = team_config.members.iter().find(|m| &m.name == member_name) {
+                    if let Some(wt_name) = member.worktree_name() {
+                        if !worktree_names.contains(&wt_name) {
+                            worktree_names.push(wt_name);
+                        }
+                    }
+                }
+            }
+
             let task_done = tasks
                 .iter()
                 .filter(|t| t.status == TaskStatus::Completed)
@@ -652,13 +695,59 @@ impl Poller {
                     task_total,
                     task_in_progress,
                     task_pending,
+                    worktree_names,
                 },
             );
         }
 
-        // Update state with team snapshots
+        // Detect newly completed tasks by comparing with previous snapshots
+        {
+            let prev_state = self.state.read();
+            for (team_name, new_snapshot) in &snapshots {
+                if let Some(prev_snapshot) = prev_state.teams.get(team_name) {
+                    let prev_completed: HashSet<&str> = prev_snapshot
+                        .tasks
+                        .iter()
+                        .filter(|t| t.status == TaskStatus::Completed)
+                        .map(|t| t.id.as_str())
+                        .collect();
+
+                    for task in &new_snapshot.tasks {
+                        if task.status == TaskStatus::Completed
+                            && !prev_completed.contains(task.id.as_str())
+                        {
+                            if let Some(ref tx) = self.event_tx {
+                                let _ = tx.send(CoreEvent::TaskCompleted {
+                                    team_name: team_name.clone(),
+                                    task_id: task.id.clone(),
+                                    task_subject: task.subject.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Scan agent definitions from project directories
+        let project_dir = self.detect_project_dir(agents);
+        let agent_defs =
+            crate::teams::agents_scanner::scan_agent_definitions(project_dir.as_deref());
+
+        // Update state with team snapshots and agent definitions
         let mut state = self.state.write();
         state.teams = snapshots;
+        state.agent_definitions = agent_defs;
+    }
+
+    /// Detect project directory from agent cwds
+    ///
+    /// Uses the first non-virtual agent's cwd as a heuristic for the project root.
+    fn detect_project_dir(&self, agents: &[MonitoredAgent]) -> Option<std::path::PathBuf> {
+        agents
+            .iter()
+            .find(|a| !a.is_virtual && !a.cwd.is_empty())
+            .map(|a| std::path::PathBuf::from(&a.cwd))
     }
 
     /// Re-apply cached team info from stored snapshots on non-scan polls
@@ -867,6 +956,12 @@ impl Poller {
                     approval_type,
                     approval_details,
                 });
+
+                // Emit TeammateIdle when a team member transitions to idle
+                if current_status_name == "idle" && committed_status != "idle" {
+                    self.emit_teammate_idle(agent);
+                }
+
                 self.previous_statuses.insert(
                     agent.target.clone(),
                     CommittedAgentState {
@@ -913,6 +1008,12 @@ impl Poller {
                             approval_type,
                             approval_details,
                         });
+
+                        // Emit TeammateIdle when a team member transitions to idle
+                        if current_status_name == "idle" && committed_status != "idle" {
+                            self.emit_teammate_idle(agent);
+                        }
+
                         self.previous_statuses.insert(
                             agent.target.clone(),
                             CommittedAgentState {
@@ -980,6 +1081,19 @@ impl Poller {
         }
 
         self.previous_agent_ids = current_ids;
+    }
+
+    /// Emit a TeammateIdle event if the agent belongs to a team
+    fn emit_teammate_idle(&self, agent: &MonitoredAgent) {
+        if let Some(ref team_info) = agent.team_info {
+            if let Some(ref tx) = self.event_tx {
+                let _ = tx.send(CoreEvent::TeammateIdle {
+                    target: agent.target.clone(),
+                    team_name: team_info.team_name.clone(),
+                    member_name: team_info.member_name.clone(),
+                });
+            }
+        }
     }
 
     /// Apply spinner grace period to prevent Processing→Idle flicker.
