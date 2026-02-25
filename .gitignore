@@ -1,9 +1,35 @@
+# Build
 /target
 
-# Claude Code
+# AI assistants
 CLAUDE.md
 .claude/
 knowledge/
+.codex/
+.gemini/
+.cursor/
+.aider*
 
-# Windows Zone.Identifier streams
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+
+# OS
+.DS_Store
+Thumbs.db
 *:Zone.Identifier
+
+# Environment / Secrets
+.env
+.env.*
+
+# Profiling / Debug
+perf.data
+perf.data.old
+flamegraph.svg
+*.profraw
