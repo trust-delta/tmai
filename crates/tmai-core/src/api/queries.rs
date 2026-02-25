@@ -47,9 +47,14 @@ impl TmaiCore {
     /// Get the currently selected agent snapshot.
     pub fn selected_agent(&self) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .selected_agent()
-            .map(AgentSnapshot::from_agent)
+            .map(|agent| {
+                let mut snapshot = AgentSnapshot::from_agent(agent);
+                snapshot.agent_definition = Self::match_agent_definition(agent, defs);
+                snapshot
+            })
             .ok_or(ApiError::NoSelection)
     }
 
