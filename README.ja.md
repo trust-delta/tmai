@@ -20,6 +20,7 @@
 - **Agent Teams** - Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **モード検出** - Plan/Delegate/Auto-approveモードをタイトルアイコンから自動検出・表示
 - **Auto-approve** - Off/ルールベース/AI/ハイブリッドの4モードで安全な操作を自動承認
+- **使用量モニタリング** - `U`キーでClaudeサブスクリプションの使用状況（5時間セッション/週次制限）を確認
 
 ## インストール
 
@@ -95,6 +96,7 @@ model = "haiku"
 | `T` | チーム一覧画面 |
 | `r` | Web RemoteのQRコード表示 |
 | `W` | 非IPCエージェントをIPC化再起動（Claude Codeのみ） |
+| `U` | 使用量確認（Claude Max/Pro） |
 | `?` | ヘルプ |
 | `Esc` / `q` | 終了 |
 | `Ctrl+d` / `Ctrl+u` | プレビュースクロール |
@@ -175,6 +177,14 @@ mirrored modeを使用していない場合、ポートフォワーディング�
 | OpenCode | ✅ 対応 | ✅ |
 | Codex CLI | ✅ 対応 | ✅ |
 | Gemini CLI | ✅ 対応 | ✅ |
+
+## 使用量モニタリング
+
+`U`キーでClaudeサブスクリプションの使用状況を確認できます。バックグラウンドで一時的なClaude Codeインスタンスを起動し、`/usage`コマンドを実行して結果を表示します。
+
+<p align="center">
+  <img src="assets/usage-view.png" alt="使用量モニタリング" width="600">
+</p>
 
 ## スクリーンショット
 

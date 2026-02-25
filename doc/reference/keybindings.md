@@ -36,6 +36,7 @@
 | `f` | Focus pane |
 | `x` | Terminate pane (with confirmation) |
 | `W` | Restart as IPC-wrapped (non-IPC Claude Code only) |
+| `U` | Fetch subscription usage (Claude Max/Pro) |
 
 ## Preview
 
