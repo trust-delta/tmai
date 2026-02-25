@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::agents::MonitoredAgent;
 use crate::config::CreateProcessSettings;
-use crate::teams::{TeamConfig, TeamTask};
+use crate::teams::{AgentDefinition, TeamConfig, TeamTask};
 use crate::tmux::PaneInfo;
 
 /// Shared state type alias
@@ -263,6 +263,8 @@ pub struct TeamSnapshot {
     pub task_in_progress: usize,
     /// Pre-computed pending task count
     pub task_pending: usize,
+    /// Worktree names used by this team's members
+    pub worktree_names: Vec<String>,
 }
 
 /// Input-related state
@@ -373,6 +375,9 @@ pub struct AppState {
     pub current_window: Option<u32>,
     /// Team snapshots by team name
     pub teams: HashMap<String, TeamSnapshot>,
+    /// Agent definitions from `.claude/agents/*.md`
+    #[allow(dead_code)]
+    pub agent_definitions: Vec<AgentDefinition>,
     /// Mapping of tmux target (e.g. "main:0.1") to pane_id (e.g. "5") for IPC
     pub target_to_pane_id: HashMap<String, String>,
 
@@ -390,6 +395,9 @@ pub struct AppState {
 
     /// Show activity name (tool/verb) during Processing instead of generic "Processing"
     pub show_activity_name: bool,
+
+    /// Temporary notification message (auto-expires)
+    pub notification: Option<(String, std::time::Instant)>,
 }
 
 impl AppState {
@@ -410,6 +418,7 @@ impl AppState {
             current_session: None,
             current_window: None,
             teams: HashMap::new(),
+            agent_definitions: Vec::new(),
             target_to_pane_id: HashMap::new(),
             create_process: None,
             confirmation_state: None,
@@ -417,6 +426,7 @@ impl AppState {
             last_poll: None,
             running: true,
             show_activity_name: true,
+            notification: None,
         }
     }
 
@@ -460,6 +470,22 @@ impl AppState {
     /// Create a shared state
     pub fn shared() -> SharedState {
         Arc::new(RwLock::new(Self::new()))
+    }
+
+    /// Set a temporary notification message (auto-expires after 3 seconds)
+    pub fn set_notification(&mut self, message: String) {
+        self.notification = Some((message, std::time::Instant::now()));
+    }
+
+    /// Get the current notification message if it hasn't expired (3 second TTL)
+    pub fn active_notification(&self) -> Option<&str> {
+        self.notification.as_ref().and_then(|(msg, ts)| {
+            if ts.elapsed().as_secs() < 3 {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        })
     }
 
     /// Get the currently selected agent

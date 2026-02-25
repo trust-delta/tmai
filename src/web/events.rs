@@ -99,6 +99,31 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 last_teams_json = teams_json;
                             }
                         }
+                        Ok(CoreEvent::TeammateIdle { team_name, member_name, .. }) => {
+                            let data = serde_json::json!({
+                                "team_name": team_name,
+                                "member_name": member_name,
+                            });
+                            let event = Event::default()
+                                .event("teammate_idle")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::TaskCompleted { team_name, task_id, task_subject }) => {
+                            let data = serde_json::json!({
+                                "team_name": team_name,
+                                "task_id": task_id,
+                                "task_subject": task_subject,
+                            });
+                            let event = Event::default()
+                                .event("task_completed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Err(RecvError::Lagged(_)) => {
                             // Re-send full state on lag
                             let agents_json = build_agents_json(&core);

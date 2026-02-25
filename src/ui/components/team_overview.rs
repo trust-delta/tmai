@@ -105,6 +105,17 @@ impl TeamOverview {
                 ]));
             }
 
+            // Worktree summary (if any)
+            if !snapshot.worktree_names.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("  Worktrees: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        snapshot.worktree_names.join(", "),
+                        Style::default().fg(Color::Magenta),
+                    ),
+                ]));
+            }
+
             // Task progress bar
             let total_tasks = tasks.len();
             if total_tasks > 0 {
@@ -151,10 +162,18 @@ impl TeamOverview {
             for member in &config.members {
                 let mut spans = vec![Span::styled("    ", Style::default())];
 
-                // Check if member has a mapped pane
+                // Check if member has a mapped pane and its status
                 let has_pane = snapshot.member_panes.contains_key(&member.name);
+                let is_idle = has_pane
+                    && snapshot
+                        .member_panes
+                        .get(&member.name)
+                        .and_then(|target| state.agents.get(target))
+                        .is_some_and(|a| matches!(a.status, tmai_core::agents::AgentStatus::Idle));
                 let status_icon = if has_pane { "\u{25CF}" } else { "\u{25CB}" };
-                let status_color = if has_pane {
+                let status_color = if is_idle {
+                    Color::Yellow
+                } else if has_pane {
                     Color::Green
                 } else {
                     Color::DarkGray
@@ -177,6 +196,16 @@ impl TeamOverview {
                     spans.push(Span::styled(
                         format!(" ({})", agent_type),
                         Style::default().fg(Color::DarkGray),
+                    ));
+                }
+
+                // Show idle indicator for team members
+                if is_idle {
+                    spans.push(Span::styled(
+                        " idle",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::ITALIC),
                     ));
                 }
 

@@ -122,12 +122,16 @@ impl App {
             .unwrap_or_else(|| {
                 Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()))
             });
-        let poller = Poller::new(
+        let mut poller = Poller::new(
             self.settings.clone(),
             self.state.clone(),
             ipc_registry,
             self.audit_event_rx.take(),
         );
+        // Pass event sender for TeammateIdle/TaskCompleted notifications
+        if let Some(ref core) = self.core {
+            poller = poller.with_event_tx(core.event_sender().clone());
+        }
         let mut poll_rx = poller.start();
 
         // Main loop
@@ -192,6 +196,9 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
         poll_rx: &mut mpsc::Receiver<PollMessage>,
     ) -> Result<()> {
+        // Subscribe to core events for TeammateIdle/TaskCompleted notifications
+        let mut event_rx = self.core.as_ref().map(|c| c.subscribe());
+
         loop {
             // Check if we should quit
             {
@@ -316,6 +323,37 @@ impl App {
                     PollMessage::Error(error) => {
                         let mut state = self.state.write();
                         state.set_error(error);
+                    }
+                }
+            }
+
+            // Process core events for TUI notifications
+            if let Some(ref mut rx) = event_rx {
+                while let Ok(event) = rx.try_recv() {
+                    match event {
+                        tmai_core::api::CoreEvent::TeammateIdle {
+                            team_name,
+                            member_name,
+                            ..
+                        } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!(
+                                "Team {}: {} is idle",
+                                team_name, member_name
+                            ));
+                        }
+                        tmai_core::api::CoreEvent::TaskCompleted {
+                            team_name,
+                            task_subject,
+                            ..
+                        } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!(
+                                "Task completed: {} [{}]",
+                                task_subject, team_name
+                            ));
+                        }
+                        _ => {} // Other events handled elsewhere
                     }
                 }
             }

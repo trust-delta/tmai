@@ -27,7 +27,7 @@ pub struct Config {
     #[arg(long, action = clap::ArgAction::Set)]
     pub attached_only: Option<bool>,
 
-    /// Enable detection audit log (/tmp/tmai/audit/detection.ndjson)
+    /// Enable detection audit log (~/.local/share/tmai/audit/detection.ndjson)
     #[arg(long)]
     pub audit: bool,
 

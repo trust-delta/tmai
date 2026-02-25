@@ -4,7 +4,7 @@
 //! and releases the lock before returning. Callers never hold a lock.
 
 use super::core::TmaiCore;
-use super::types::{AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
+use super::types::{AgentDefinitionInfo, AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
 
 impl TmaiCore {
     // =========================================================
@@ -14,21 +14,31 @@ impl TmaiCore {
     /// List all monitored agents as owned snapshots, in current display order.
     pub fn list_agents(&self) -> Vec<AgentSnapshot> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .agent_order
             .iter()
             .filter_map(|id| state.agents.get(id))
-            .map(AgentSnapshot::from_agent)
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap
+            })
             .collect()
     }
 
     /// Get a single agent snapshot by target ID.
     pub fn get_agent(&self, target: &str) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .agents
             .get(target)
-            .map(AgentSnapshot::from_agent)
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap
+            })
             .ok_or_else(|| ApiError::AgentNotFound {
                 target: target.to_string(),
             })
@@ -37,9 +47,14 @@ impl TmaiCore {
     /// Get the currently selected agent snapshot.
     pub fn selected_agent(&self) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
+        let defs = &state.agent_definitions;
         state
             .selected_agent()
-            .map(AgentSnapshot::from_agent)
+            .map(|agent| {
+                let mut snapshot = AgentSnapshot::from_agent(agent);
+                snapshot.agent_definition = Self::match_agent_definition(agent, defs);
+                snapshot
+            })
             .ok_or(ApiError::NoSelection)
     }
 
@@ -138,6 +153,29 @@ impl TmaiCore {
     // =========================================================
     // Miscellaneous queries
     // =========================================================
+
+    /// Match an agent to its definition by configured agent_type or member name.
+    fn match_agent_definition(
+        agent: &crate::agents::MonitoredAgent,
+        defs: &[crate::teams::AgentDefinition],
+    ) -> Option<AgentDefinitionInfo> {
+        if defs.is_empty() {
+            return None;
+        }
+        if let Some(ref team_info) = agent.team_info {
+            // 1) Try configured agent_type (explicit mapping from team config)
+            if let Some(ref agent_type) = team_info.agent_type {
+                if let Some(def) = defs.iter().find(|d| d.name == *agent_type) {
+                    return Some(AgentDefinitionInfo::from_definition(def));
+                }
+            }
+            // 2) Fallback: try member_name as agent definition name
+            if let Some(def) = defs.iter().find(|d| d.name == team_info.member_name) {
+                return Some(AgentDefinitionInfo::from_definition(def));
+            }
+        }
+        None
+    }
 
     /// Check if the application is still running.
     pub fn is_running(&self) -> bool {

@@ -43,6 +43,26 @@ pub enum CoreEvent {
 
     /// Team data was refreshed
     TeamsUpdated,
+
+    /// A team member became idle (waiting for next task)
+    TeammateIdle {
+        /// Agent target ID
+        target: String,
+        /// Team name
+        team_name: String,
+        /// Member name
+        member_name: String,
+    },
+
+    /// A task was completed
+    TaskCompleted {
+        /// Team name
+        team_name: String,
+        /// Task ID
+        task_id: String,
+        /// Task subject
+        task_subject: String,
+    },
 }
 
 impl TmaiCore {

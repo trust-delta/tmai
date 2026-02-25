@@ -105,6 +105,9 @@ pub(crate) struct TeamInfoResponse {
     description: Option<String>,
     task_summary: TaskSummaryOverview,
     members: Vec<TeamMemberResponse>,
+    /// Worktree names used by this team's members
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    worktree_names: Vec<String>,
 }
 
 /// Task progress summary for API response
@@ -124,6 +127,12 @@ pub(crate) struct TeamMemberResponse {
     is_lead: bool,
     pane_target: Option<String>,
     current_task: Option<TaskSummaryResponse>,
+    /// Agent definition description (from `.claude/agents/*.md`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    /// Agent definition model (from `.claude/agents/*.md`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
 }
 
 /// Detailed team task information for API response
@@ -295,12 +304,20 @@ pub(super) fn build_team_info(
                 .map(|first| first.name == member.name)
                 .unwrap_or(false);
 
+            // Look up agent definition for description/model
+            let agent_def = app_state
+                .agent_definitions
+                .iter()
+                .find(|d| d.name == member.name);
+
             TeamMemberResponse {
                 name: member.name.clone(),
                 agent_type: member.agent_type.clone(),
                 is_lead,
                 pane_target,
                 current_task,
+                description: agent_def.and_then(|d| d.description.clone()),
+                model: agent_def.and_then(|d| d.model.clone()),
             }
         })
         .collect();
@@ -315,6 +332,7 @@ pub(super) fn build_team_info(
             pending,
         },
         members,
+        worktree_names: snapshot.worktree_names.clone(),
     }
 }
 

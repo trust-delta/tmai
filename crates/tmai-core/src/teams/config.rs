@@ -35,6 +35,15 @@ pub struct TeamMember {
     pub cwd: Option<String>,
 }
 
+impl TeamMember {
+    /// Extract worktree name from cwd if it's within a `.claude/worktrees/{name}` path
+    pub fn worktree_name(&self) -> Option<String> {
+        self.cwd
+            .as_ref()
+            .and_then(|cwd| crate::git::extract_claude_worktree_name(cwd))
+    }
+}
+
 /// Read a team config from a config.json file
 ///
 /// # Arguments

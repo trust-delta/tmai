@@ -9,6 +9,7 @@ use thiserror::Error;
 use crate::agents::{AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource};
 use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
+use crate::teams::AgentDefinition;
 
 /// Error type for Facade API operations
 #[derive(Debug, Error)]
@@ -112,6 +113,37 @@ pub struct AgentSnapshot {
     pub worktree_name: Option<String>,
     /// Display name (e.g., "main:0.1")
     pub display_name: String,
+    /// Agent definition info from `.claude/agents/*.md`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_definition: Option<AgentDefinitionInfo>,
+}
+
+/// Summary of an agent definition for API consumers
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentDefinitionInfo {
+    /// Agent name
+    pub name: String,
+    /// Human-readable description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Model (e.g., "sonnet", "opus")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Isolation mode (e.g., "worktree")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<String>,
+}
+
+impl AgentDefinitionInfo {
+    /// Create from an AgentDefinition
+    pub fn from_definition(def: &AgentDefinition) -> Self {
+        Self {
+            name: def.name.clone(),
+            description: def.description.clone(),
+            model: def.model.clone(),
+            isolation: def.isolation.clone(),
+        }
+    }
 }
 
 impl AgentSnapshot {
@@ -146,6 +178,7 @@ impl AgentSnapshot {
             git_common_dir: agent.git_common_dir.clone(),
             worktree_name: agent.worktree_name.clone(),
             display_name: agent.display_name(),
+            agent_definition: None,
         }
     }
 
@@ -176,6 +209,8 @@ pub struct TeamSummary {
     pub last_scan: chrono::DateTime<chrono::Utc>,
     /// Member names
     pub member_names: Vec<String>,
+    /// Worktree names used by this team's members
+    pub worktree_names: Vec<String>,
 }
 
 impl TeamSummary {
@@ -196,6 +231,7 @@ impl TeamSummary {
                 .iter()
                 .map(|m| m.name.clone())
                 .collect(),
+            worktree_names: snapshot.worktree_names.clone(),
         }
     }
 }

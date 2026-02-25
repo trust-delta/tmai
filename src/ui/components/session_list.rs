@@ -79,6 +79,21 @@ impl SessionList {
                             .and_then(|id| state.agents.get(id))
                         {
                             let tree_prefix = Self::get_tree_prefix(agent, state, *agent_idx);
+                            // Look up agent definition description for virtual agents
+                            let agent_def_desc = if agent.status == AgentStatus::Offline {
+                                state
+                                    .agent_definitions
+                                    .iter()
+                                    .find(|d| {
+                                        agent
+                                            .team_info
+                                            .as_ref()
+                                            .is_some_and(|ti| ti.member_name == d.name)
+                                    })
+                                    .and_then(|d| d.description.as_deref())
+                            } else {
+                                None
+                            };
                             Self::create_list_item(
                                 agent,
                                 spinner_char,
@@ -86,6 +101,7 @@ impl SessionList {
                                 marquee_offset,
                                 &tree_prefix,
                                 show_activity_name,
+                                agent_def_desc,
                             )
                         } else {
                             ListItem::new(Line::from(""))
@@ -441,6 +457,7 @@ impl SessionList {
         marquee_offset: usize,
         tree_prefix: &str,
         show_activity_name: bool,
+        agent_def_description: Option<&str>,
     ) -> ListItem<'static> {
         let (status_indicator, status_color) = match (&agent.status, &agent.auto_approve_phase) {
             (AgentStatus::AwaitingApproval { .. }, Some(AutoApprovePhase::Judging)) => {
@@ -581,13 +598,21 @@ impl SessionList {
         // Line 2: title + other meta (detection icon, pid, window/pane)
         const DETAIL_MAX_WIDTH: usize = 40;
 
-        // Resolve title source: prefer active_form from team task, fallback to title
+        // Resolve title source: prefer active_form from team task, then agent title,
+        // then agent definition description for virtual/offline agents
         let title_source = agent
             .team_info
             .as_ref()
             .and_then(|ti| ti.current_task.as_ref())
             .and_then(|task| task.active_form.as_ref())
             .cloned()
+            .or_else(|| {
+                if agent.title.is_empty() {
+                    agent_def_description.map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| agent.title.clone());
 
         let title_text = if title_source.is_empty() {

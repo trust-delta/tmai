@@ -10,12 +10,30 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// Get the base state directory, preferring XDG_RUNTIME_DIR for security
+///
+/// Used for runtime state (IPC socket, etc.) that does NOT need to persist
+/// across reboots. On WSL/Linux this is typically tmpfs.
 pub fn state_dir() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(xdg).join("tmai")
     } else {
         let uid = unsafe { libc::getuid() };
         PathBuf::from(format!("/tmp/tmai-{}", uid))
+    }
+}
+
+/// Get the persistent data directory for tmai
+///
+/// Used for data that should survive reboots (audit logs, etc.).
+/// Uses `XDG_DATA_HOME/tmai` (defaults to `~/.local/share/tmai`).
+pub fn data_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        PathBuf::from(xdg).join("tmai")
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".local").join("share").join("tmai")
+    } else {
+        // Fallback to state_dir if home is unavailable
+        state_dir()
     }
 }
 

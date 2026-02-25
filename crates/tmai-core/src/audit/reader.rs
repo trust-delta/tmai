@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use crate::ipc::protocol::state_dir;
+use crate::ipc::protocol::data_dir;
 
 use super::events::AuditEvent;
 
@@ -13,7 +13,7 @@ const ROTATED_FILE: &str = "detection.ndjson.1";
 
 /// Returns paths to the audit log files (rotated first, then current) for time-order reading
 pub fn audit_log_paths() -> Vec<PathBuf> {
-    let audit_dir = state_dir().join("audit");
+    let audit_dir = data_dir().join("audit");
     let mut paths = Vec::new();
 
     // Rotated file first (older events)
