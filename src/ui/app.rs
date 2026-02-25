@@ -346,6 +346,28 @@ impl App {
                 }
             }
 
+            // Auto-refresh usage data if configured
+            {
+                let interval_min = self.settings.usage.auto_refresh_min;
+                if interval_min > 0 {
+                    let should_fetch = {
+                        let state = self.state.read();
+                        !state.usage.fetching
+                            && state
+                                .usage
+                                .fetched_at
+                                .map(|t| {
+                                    let elapsed = chrono::Utc::now() - t;
+                                    elapsed.num_minutes() >= i64::from(interval_min)
+                                })
+                                .unwrap_or(false)
+                    };
+                    if should_fetch {
+                        self.trigger_usage_fetch();
+                    }
+                }
+            }
+
             // Process core events for TUI notifications
             if let Some(ref mut rx) = event_rx {
                 while let Ok(event) = rx.try_recv() {

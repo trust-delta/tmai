@@ -72,6 +72,9 @@ port = 9876
 enabled = true
 scan_interval = 5
 
+[usage]
+auto_refresh_min = 15       # 0 = 手動のみ（デフォルト）
+
 [auto_approve]
 mode = "hybrid"             # off/rules/ai/hybrid
 model = "haiku"

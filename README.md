@@ -81,6 +81,9 @@ color = true
 enabled = true
 scan_interval = 5
 
+[usage]
+auto_refresh_min = 15  # 0 = manual only (default)
+
 [auto_approve]
 enabled = true
 model = "haiku"
