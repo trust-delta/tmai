@@ -166,7 +166,19 @@ For WSL2 with mirrored networking mode, allow the port through Windows Firewall:
 New-NetFirewallRule -DisplayName "tmai Web Remote" -Direction Inbound -Protocol TCP -LocalPort 9876 -Action Allow
 ```
 
-For NAT mode (legacy), see [CLAUDE.md](./CLAUDE.md#wsl環境での利用) for port forwarding setup.
+#### NAT mode (legacy)
+
+If you are not using mirrored mode, port forwarding is required:
+
+```powershell
+# Run as Administrator
+.\scripts\setup-wsl-portforward.ps1
+
+# To remove
+.\scripts\setup-wsl-portforward.ps1 -Remove
+```
+
+**Note**: In NAT mode, the WSL IP address changes on reboot. Re-run the script if the connection stops working.
 
 ## Supported Agents
 
