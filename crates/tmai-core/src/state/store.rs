@@ -6,6 +6,7 @@ use crate::agents::MonitoredAgent;
 use crate::config::CreateProcessSettings;
 use crate::teams::{AgentDefinition, TeamConfig, TeamTask};
 use crate::tmux::PaneInfo;
+use crate::usage::UsageSnapshot;
 
 /// Shared state type alias
 pub type SharedState = Arc<RwLock<AppState>>;
@@ -398,6 +399,9 @@ pub struct AppState {
 
     /// Temporary notification message (auto-expires)
     pub notification: Option<(String, std::time::Instant)>,
+
+    /// Claude Code subscription usage snapshot
+    pub usage: UsageSnapshot,
 }
 
 impl AppState {
@@ -427,6 +431,7 @@ impl AppState {
             running: true,
             show_activity_name: true,
             notification: None,
+            usage: UsageSnapshot::default(),
         }
     }
 

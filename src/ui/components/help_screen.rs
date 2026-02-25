@@ -101,6 +101,10 @@ impl HelpScreen {
             Self::description_line(
                 "  Resumes the session with PTY wrapping for high-precision detection",
             ),
+            Self::key_line("U", "Fetch subscription usage from Claude Code"),
+            Self::description_line(
+                "  Spawns a temporary Claude Code to run /usage, displays below agent list",
+            ),
             Line::from(""),
             Self::section_header("Approval"),
             Self::key_line("y", "Approve / select Yes"),

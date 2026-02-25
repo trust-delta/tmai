@@ -25,7 +25,7 @@ use super::key_handler::{self, KeyAction};
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    QrScreen, SessionList, StatusBar, TaskOverlay, TeamOverview,
+    QrScreen, SessionList, StatusBar, TaskOverlay, TeamOverview, UsageBar,
 };
 use super::Layout;
 
@@ -244,9 +244,28 @@ impl App {
                 let show_input = state.is_input_mode();
                 let areas = self.layout.calculate_with_input(frame.area(), show_input);
 
-                // Render main components
+                // Render main components (session list + optional usage bar)
                 if let Some(session_list_area) = areas.session_list {
-                    SessionList::render(frame, session_list_area, &state, areas.split_direction);
+                    let usage_height = UsageBar::height(&state.usage);
+                    if usage_height > 0 && session_list_area.height > usage_height + 5 {
+                        // Split session list area to accommodate usage bar at bottom
+                        let chunks = ratatui::layout::Layout::default()
+                            .direction(ratatui::layout::Direction::Vertical)
+                            .constraints([
+                                ratatui::layout::Constraint::Min(5),
+                                ratatui::layout::Constraint::Length(usage_height),
+                            ])
+                            .split(session_list_area);
+                        SessionList::render(frame, chunks[0], &state, areas.split_direction);
+                        UsageBar::render(frame, chunks[1], &state.usage);
+                    } else {
+                        SessionList::render(
+                            frame,
+                            session_list_area,
+                            &state,
+                            areas.split_direction,
+                        );
+                    }
                 }
 
                 if let Some(preview_area) = areas.preview {
@@ -626,6 +645,11 @@ impl App {
                 if state.view.show_team_overview {
                     state.view.team_overview_scroll = 0;
                 }
+            }
+
+            // Fetch usage (Shift+U)
+            KeyCode::Char('U') => {
+                self.trigger_usage_fetch();
             }
 
             _ => {}
@@ -1047,6 +1071,89 @@ impl App {
                     state.set_error(
                         "Failed: Could not identify session ID from probe marker".to_string(),
                     );
+                }
+            }
+        });
+    }
+
+    /// Trigger a background usage fetch from Claude Code.
+    /// Set TMAI_USAGE_DEMO=1 to inject dummy values instead of fetching.
+    fn trigger_usage_fetch(&self) {
+        // Demo mode: inject dummy values instantly (for screenshots)
+        if std::env::var("TMAI_USAGE_DEMO").is_ok() {
+            let mut state = self.state.write();
+            state.usage = tmai_core::usage::UsageSnapshot {
+                meters: vec![
+                    tmai_core::usage::UsageMeter {
+                        label: "Current session".to_string(),
+                        percent: 74,
+                        reset_info: Some("Resets 1am (Asia/Tokyo)".to_string()),
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Current week (all models)".to_string(),
+                        percent: 53,
+                        reset_info: Some("Resets Mar 3, 12am (Asia/Tokyo)".to_string()),
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Current week (Sonnet only)".to_string(),
+                        percent: 26,
+                        reset_info: None,
+                        spending: None,
+                    },
+                    tmai_core::usage::UsageMeter {
+                        label: "Extra usage".to_string(),
+                        percent: 81,
+                        reset_info: Some("Resets Mar 1 (Asia/Tokyo)".to_string()),
+                        spending: Some("$40.50 / $50.00 spent".to_string()),
+                    },
+                ],
+                fetched_at: Some(chrono::Utc::now()),
+                fetching: false,
+                error: None,
+            };
+            return;
+        }
+
+        // Check if already fetching
+        {
+            let state = self.state.read();
+            if state.usage.fetching {
+                return;
+            }
+        }
+
+        // Get current session name
+        let session = {
+            let state = self.state.read();
+            match state.current_session.clone() {
+                Some(s) => s,
+                None => return,
+            }
+        };
+
+        // Mark as fetching
+        {
+            let mut state = self.state.write();
+            state.usage.fetching = true;
+            state.usage.error = None;
+            state.set_notification("Fetching usage...".to_string());
+        }
+
+        let shared_state = self.state.clone();
+        tokio::spawn(async move {
+            match tmai_core::usage::fetch_usage(&session).await {
+                Ok(snapshot) => {
+                    let mut state = shared_state.write();
+                    state.usage = snapshot;
+                    state.set_notification("Usage updated".to_string());
+                }
+                Err(e) => {
+                    let mut state = shared_state.write();
+                    state.usage.fetching = false;
+                    state.usage.error = Some(e.to_string());
+                    state.set_notification(format!("Usage fetch failed: {}", e));
                 }
             }
         });
