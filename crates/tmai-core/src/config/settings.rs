@@ -169,6 +169,10 @@ pub struct Settings {
     /// Create process popup settings
     #[serde(default)]
     pub create_process: CreateProcessSettings,
+
+    /// Usage monitoring settings
+    #[serde(default)]
+    pub usage: UsageSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -479,6 +483,14 @@ impl AutoApproveSettings {
     }
 }
 
+/// Usage monitoring settings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UsageSettings {
+    /// Auto-refresh interval in minutes (0 = disabled, manual `U` key only)
+    #[serde(default)]
+    pub auto_refresh_min: u32,
+}
+
 /// Settings for the create process popup
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateProcessSettings {
@@ -551,6 +563,7 @@ impl Default for Settings {
             audit: AuditSettings::default(),
             auto_approve: AutoApproveSettings::default(),
             create_process: CreateProcessSettings::default(),
+            usage: UsageSettings::default(),
         }
     }
 }
