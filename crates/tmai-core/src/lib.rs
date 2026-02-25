@@ -12,5 +12,6 @@ pub mod session_lookup;
 pub mod state;
 pub mod teams;
 pub mod tmux;
+pub mod usage;
 pub mod utils;
 pub mod wrap;
