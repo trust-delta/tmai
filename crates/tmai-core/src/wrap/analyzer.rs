@@ -86,15 +86,7 @@ impl Default for AnalyzerPatterns {
     }
 }
 
-/// Strip box-drawing characters (U+2500-U+257F) and everything after them from choice text.
-/// Handles preview box borders like │, ┌, ┐, └, ┘, etc.
-fn strip_box_drawing(text: &str) -> &str {
-    if let Some(pos) = text.find(|c: char| ('\u{2500}'..='\u{257F}').contains(&c)) {
-        text[..pos].trim()
-    } else {
-        text
-    }
-}
+use crate::detectors::common::strip_box_drawing;
 
 impl Analyzer {
     /// Create a new analyzer

@@ -7,7 +7,6 @@ use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetect
 /// Detector for Codex CLI
 pub struct CodexDetector {
     approval_pattern: Regex,
-    error_pattern: Regex,
     working_elapsed_pattern: Regex,
     context_left_pattern: Regex,
 }
@@ -21,7 +20,6 @@ impl CodexDetector {
                 r"(?i)\[y/n\]|\[Y/n\]|\[yes/no\]|^\s*Yes\s*/\s*No\s*$|\[Approve\]|\[Confirm\]|\[Allow\]|\[Proceed\]",
             )
             .unwrap(),
-            error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
             working_elapsed_pattern: Regex::new(r"Working.*\(\d+[smh]").unwrap(),
             context_left_pattern: Regex::new(r"(\d+)% context left").unwrap(),
         }
@@ -215,19 +213,7 @@ impl CodexDetector {
     }
 
     fn detect_error(&self, content: &str) -> Option<String> {
-        let lines: Vec<&str> = content.lines().collect();
-        let check_start = lines.len().saturating_sub(10);
-        let recent = lines[check_start..].join("\n");
-
-        if self.error_pattern.is_match(&recent) {
-            for line in lines.iter().rev().take(10) {
-                if line.to_lowercase().contains("error") {
-                    return Some(line.trim().to_string());
-                }
-            }
-            return Some("Error detected".to_string());
-        }
-        None
+        super::common::detect_error_common(content, 500)
     }
 }
 

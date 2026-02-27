@@ -1,5 +1,6 @@
 mod claude_code;
 mod codex;
+pub(crate) mod common;
 mod default;
 mod gemini;
 

@@ -28,7 +28,6 @@ const WAITING_SPINNER: char = '⠏';
 /// Gemini CLI uses specific Unicode icons in the terminal title to indicate
 /// its current state, and radio-button-style selection in content for approvals.
 pub struct GeminiDetector {
-    error_pattern: Regex,
     radio_selected_pattern: Regex,
     radio_unselected_pattern: Regex,
 }
@@ -37,7 +36,6 @@ impl GeminiDetector {
     /// Create a new GeminiDetector with compiled regex patterns
     pub fn new() -> Self {
         Self {
-            error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
             // Selected radio item: ● followed by number, dot, space, text
             radio_selected_pattern: Regex::new(r"^●\s*(\d+)\.\s+(.+)$").unwrap(),
             // Unselected radio item: number, dot, space, text (no bullet prefix)
@@ -276,19 +274,7 @@ impl GeminiDetector {
 
     /// Detect error patterns in recent content lines
     fn detect_error(&self, content: &str) -> Option<String> {
-        let lines: Vec<&str> = content.lines().collect();
-        let check_start = lines.len().saturating_sub(10);
-        let recent = lines[check_start..].join("\n");
-
-        if self.error_pattern.is_match(&recent) {
-            for line in lines.iter().rev().take(10) {
-                if line.to_lowercase().contains("error") {
-                    return Some(line.trim().to_string());
-                }
-            }
-            return Some("Error detected".to_string());
-        }
-        None
+        super::common::detect_error_common(content, 500)
     }
 
     /// Detect braille spinner characters in content (Processing indicator)

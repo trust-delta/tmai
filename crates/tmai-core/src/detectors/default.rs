@@ -8,7 +8,6 @@ use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetect
 pub struct DefaultDetector {
     agent_type: AgentType,
     approval_pattern: Regex,
-    error_pattern: Regex,
 }
 
 impl DefaultDetector {
@@ -19,7 +18,6 @@ impl DefaultDetector {
                 r"(?i)\[y/n\]|\[Y/n\]|Yes\s*/\s*No|approve|confirm|allow|proceed\?",
             )
             .unwrap(),
-            error_pattern: Regex::new(r"(?i)(?:^|\n)\s*(?:Error|ERROR|error:|✗|❌)").unwrap(),
         }
     }
 
@@ -39,19 +37,7 @@ impl DefaultDetector {
     }
 
     fn detect_error(&self, content: &str) -> Option<String> {
-        let lines: Vec<&str> = content.lines().collect();
-        let check_start = lines.len().saturating_sub(10);
-        let recent = lines[check_start..].join("\n");
-
-        if self.error_pattern.is_match(&recent) {
-            for line in lines.iter().rev().take(10) {
-                if line.to_lowercase().contains("error") {
-                    return Some(line.trim().to_string());
-                }
-            }
-            return Some("Error detected".to_string());
-        }
-        None
+        super::common::detect_error_common(content, 500)
     }
 }
 
