@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tmai"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 rust-version = "1.91"
 authors = ["TrustDelta"]
@@ -25,7 +25,7 @@ exclude = [
 ]
 
 [dependencies]
-tmai-core = { version = "0.8.1", path = "crates/tmai-core" }
+tmai-core = { version = "0.8.2", path = "crates/tmai-core" }
 ratatui = "0.30"
 crossterm = "0.29"
 tokio = { version = "1", features = ["full"] }
