@@ -90,6 +90,7 @@ impl JudgmentProvider for ClaudeHaikuJudge {
         let mut child = tokio::process::Command::new(command)
             .args([
                 "-p",
+                "--no-session-persistence",
                 "--model",
                 &self.model,
                 "--output-format",
