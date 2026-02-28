@@ -17,30 +17,30 @@ impl SecurityScanner {
         let mut risks = Vec::new();
         let mut files_scanned = 0;
 
-        // 1) User-level settings
-        let claude_home = Self::claude_home();
+        // 1) User-level settings (skip if home dir not available)
+        if let Some(claude_home) = Self::claude_home() {
+            files_scanned += Self::scan_settings_file(
+                &claude_home.join("settings.json"),
+                &SettingsSource::UserGlobal,
+                &mut risks,
+            );
+            files_scanned += Self::scan_settings_file(
+                &claude_home.join("settings.local.json"),
+                &SettingsSource::UserLocal,
+                &mut risks,
+            );
 
-        files_scanned += Self::scan_settings_file(
-            &claude_home.join("settings.json"),
-            &SettingsSource::UserGlobal,
-            &mut risks,
-        );
-        files_scanned += Self::scan_settings_file(
-            &claude_home.join("settings.local.json"),
-            &SettingsSource::UserLocal,
-            &mut risks,
-        );
+            // 2) User-level MCP config
+            files_scanned += Self::scan_mcp_file(
+                &claude_home.join("mcp.json"),
+                &SettingsSource::UserMcp,
+                &mut risks,
+            );
 
-        // 2) User-level MCP config
-        files_scanned += Self::scan_mcp_file(
-            &claude_home.join("mcp.json"),
-            &SettingsSource::UserMcp,
-            &mut risks,
-        );
-
-        // 3) User-level hook scripts
-        let hooks_dir = claude_home.join("hooks");
-        files_scanned += Self::scan_hooks_dir(&hooks_dir, &mut risks);
+            // 3) User-level hook scripts
+            let hooks_dir = claude_home.join("hooks");
+            files_scanned += Self::scan_hooks_dir(&hooks_dir, &mut risks);
+        }
 
         // 4) Deduplicate project directories
         let unique_projects: Vec<PathBuf> = Self::deduplicate_dirs(project_dirs);
@@ -84,11 +84,9 @@ impl SecurityScanner {
         }
     }
 
-    /// Get the Claude home directory (~/.claude)
-    fn claude_home() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(".claude")
+    /// Get the Claude home directory (~/.claude), if available
+    fn claude_home() -> Option<PathBuf> {
+        dirs::home_dir().map(|h| h.join(".claude"))
     }
 
     /// Scan a settings.json file. Returns 1 if file was scanned, 0 otherwise.

@@ -127,7 +127,7 @@ impl SecurityOverlay {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "Press S or Esc to close",
+                "  Press S or Esc to close",
                 Style::default().fg(Color::DarkGray),
             )));
             return lines;
@@ -138,7 +138,7 @@ impl SecurityOverlay {
 
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Press R to rescan, S or Esc to close",
+            "  Press R to rescan, S or Esc to close",
             Style::default().fg(Color::DarkGray),
         )));
 
