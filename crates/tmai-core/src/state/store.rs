@@ -296,6 +296,10 @@ pub struct ViewState {
     pub task_overlay_scroll: u16,
     /// Team overview scroll offset
     pub team_overview_scroll: u16,
+    /// Whether the security overlay is shown
+    pub show_security_overlay: bool,
+    /// Security overlay scroll offset
+    pub security_overlay_scroll: u16,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Spinner animation frame counter
@@ -314,8 +318,10 @@ impl Default for ViewState {
             show_qr: false,
             show_team_overview: false,
             show_task_overlay: false,
+            show_security_overlay: false,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
+            security_overlay_scroll: 0,
             preview_scroll: 0,
             spinner_frame: 0,
             last_spinner_update: std::time::Instant::now(),
@@ -402,6 +408,9 @@ pub struct AppState {
 
     /// Claude Code subscription usage snapshot
     pub usage: UsageSnapshot,
+
+    /// Last security scan result (None if never scanned)
+    pub security_scan: Option<crate::security::ScanResult>,
 }
 
 impl AppState {
@@ -432,6 +441,7 @@ impl AppState {
             show_activity_name: true,
             notification: None,
             usage: UsageSnapshot::default(),
+            security_scan: None,
         }
     }
 
@@ -897,6 +907,14 @@ impl AppState {
         self.view.show_help = !self.view.show_help;
         if self.view.show_help {
             self.view.help_scroll = 0;
+        }
+    }
+
+    /// Toggle security overlay
+    pub fn toggle_security(&mut self) {
+        self.view.show_security_overlay = !self.view.show_security_overlay;
+        if self.view.show_security_overlay {
+            self.view.security_overlay_scroll = 0;
         }
     }
 

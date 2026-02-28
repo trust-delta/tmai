@@ -25,7 +25,7 @@ use super::key_handler::{self, KeyAction};
 
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
-    QrScreen, SessionList, StatusBar, TaskOverlay, TeamOverview, UsageBar,
+    QrScreen, SecurityOverlay, SessionList, StatusBar, TaskOverlay, TeamOverview, UsageBar,
 };
 use super::Layout;
 
@@ -241,6 +241,12 @@ impl App {
                     return;
                 }
 
+                // Security overlay (full-screen, like help)
+                if state.view.show_security_overlay {
+                    SecurityOverlay::render(frame, frame.area(), &state);
+                    return;
+                }
+
                 let show_input = state.is_input_mode();
                 let areas = self.layout.calculate_with_input(frame.area(), show_input);
 
@@ -410,6 +416,7 @@ impl App {
             show_qr,
             show_task_overlay,
             show_team_overview,
+            show_security_overlay,
             is_input_mode,
             is_passthrough_mode,
             is_create_process_mode,
@@ -421,6 +428,7 @@ impl App {
                 state.view.show_qr,
                 state.view.show_task_overlay,
                 state.view.show_team_overview,
+                state.view.show_security_overlay,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
@@ -459,6 +467,11 @@ impl App {
         // Handle team overview
         if show_team_overview {
             return self.handle_team_overview_key(code, modifiers);
+        }
+
+        // Handle security overlay
+        if show_security_overlay {
+            return self.handle_security_overlay_key(code, modifiers);
         }
 
         // Handle create process mode
@@ -666,6 +679,21 @@ impl App {
                 state.view.show_team_overview = !state.view.show_team_overview;
                 if state.view.show_team_overview {
                     state.view.team_overview_scroll = 0;
+                }
+            }
+
+            // Security monitor (Shift+S)
+            KeyCode::Char('S') => {
+                // Toggle security overlay; on first open, trigger a scan
+                let needs_scan = {
+                    let mut state = self.state.write();
+                    state.toggle_security();
+                    state.view.show_security_overlay && state.security_scan.is_none()
+                };
+                if needs_scan {
+                    if let Some(ref core) = self.core {
+                        core.security_scan();
+                    }
                 }
             }
 
@@ -1318,6 +1346,73 @@ impl App {
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle keys when security overlay is shown
+    fn handle_security_overlay_key(
+        &mut self,
+        code: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> Result<()> {
+        match code {
+            // Close security overlay
+            KeyCode::Char('S') | KeyCode::Esc => {
+                let mut state = self.state.write();
+                state.view.show_security_overlay = false;
+            }
+            // Rescan
+            KeyCode::Char('R') => {
+                if let Some(ref core) = self.core {
+                    core.security_scan();
+                }
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_sub(1);
+            }
+            // Page down
+            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_add(10);
+            }
+            KeyCode::PageDown => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_add(10);
+            }
+            // Page up
+            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_sub(10);
+            }
+            KeyCode::PageUp => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll =
+                    state.view.security_overlay_scroll.saturating_sub(10);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                let mut state = self.state.write();
+                state.view.security_overlay_scroll = u16::MAX;
+            }
+            _ => {}
+        }
         Ok(())
     }
 

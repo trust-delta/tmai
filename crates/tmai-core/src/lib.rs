@@ -8,6 +8,7 @@ pub mod detectors;
 pub mod git;
 pub mod ipc;
 pub mod monitor;
+pub mod security;
 pub mod session_lookup;
 pub mod state;
 pub mod teams;
