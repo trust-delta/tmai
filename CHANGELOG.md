@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-01
+
+### Added
+- **Security Monitor**: Scan Claude Code config files (settings.json, mcp.json, hooks) for security risks
+  - 9 rules: PERM-001–004, ENV-001–002, MCP-001, FILE-001, HOOK-001
+  - Detects dangerous allowlist entries, leaked secrets, unpinned npx, world-readable configs, background processes in hooks
+  - Full-screen TUI overlay (`S` key) with severity badges and scrollable findings
+  - Facade API: `security_scan()` / `last_security_scan()` on TmaiCore
+
 ## [0.8.3] - 2026-02-27
 
 ### Fixed
