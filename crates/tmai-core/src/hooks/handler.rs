@@ -74,11 +74,12 @@ pub fn handle_hook_event(
 
         event_names::POST_TOOL_USE => {
             // Tool completed, still processing (more tools may follow)
-            // Clear last_tool since the tool has finished
+            // Keep last_tool so the display shows which tool was last used.
+            // It will be overwritten by the next PreToolUse or cleared by
+            // UserPromptSubmit / Stop.
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Processing;
-                state.last_tool = None;
                 state.touch();
             }
             None
@@ -520,9 +521,9 @@ mod tests {
         );
     }
 
-    /// PostToolUse clears last_tool after tool completion
+    /// PostToolUse preserves last_tool for display continuity
     #[test]
-    fn test_post_tool_use_clears_last_tool() {
+    fn test_post_tool_use_preserves_last_tool() {
         let registry = new_hook_registry();
         let map = new_session_pane_map();
 
@@ -538,14 +539,15 @@ mod tests {
             assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Read"));
         }
 
-        // PostToolUse should clear the tool (tool has finished)
+        // PostToolUse keeps last_tool so display shows "Tool: Read" until next event
         handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
         let reg = registry.read();
         let state = reg.get("5").unwrap();
         assert_eq!(state.status, HookStatus::Processing);
-        assert!(
-            state.last_tool.is_none(),
-            "PostToolUse should clear last_tool"
+        assert_eq!(
+            state.last_tool.as_deref(),
+            Some("Read"),
+            "PostToolUse should preserve last_tool"
         );
     }
 
@@ -570,7 +572,7 @@ mod tests {
         assert!(state.last_tool.is_none(), "Stop should clear last_tool");
     }
 
-    /// Full lifecycle: PreToolUse sets tool, PostToolUse clears, next PreToolUse sets new tool
+    /// Full lifecycle: PreToolUse sets tool, PostToolUse preserves it, next PreToolUse overwrites
     #[test]
     fn test_tool_lifecycle_pre_post_pre() {
         let registry = new_hook_registry();
@@ -591,14 +593,18 @@ mod tests {
             assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Bash"));
         }
 
-        // Tool finishes
+        // Tool finishes — last_tool preserved for display
         handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
         {
             let reg = registry.read();
-            assert!(reg.get("5").unwrap().last_tool.is_none());
+            assert_eq!(
+                reg.get("5").unwrap().last_tool.as_deref(),
+                Some("Bash"),
+                "PostToolUse should preserve last_tool"
+            );
         }
 
-        // Second tool
+        // Second tool overwrites
         handle_hook_event(
             &make_payload_with_tool("PreToolUse", "Edit"),
             "5",
