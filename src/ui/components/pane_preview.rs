@@ -112,7 +112,9 @@ impl PanePreview {
                         }
                     })
                     .sum();
-                let scroll_offset = visual_lines.saturating_sub(available_height + scroll);
+                let scroll_offset = visual_lines
+                    .saturating_sub(available_height + scroll)
+                    .min(u16::MAX as usize) as u16;
 
                 let wrap_border_color = match &agent.status {
                     AgentStatus::AwaitingApproval { .. } => Color::Magenta,
@@ -131,7 +133,7 @@ impl PanePreview {
                 let paragraph = Paragraph::new(styled_text)
                     .block(block)
                     .wrap(Wrap { trim: false })
-                    .scroll((scroll_offset as u16, 0));
+                    .scroll((scroll_offset, 0));
 
                 frame.render_widget(paragraph, area);
                 return;
