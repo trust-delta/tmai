@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -80,12 +80,17 @@ impl PanePreview {
             let start = total_lines.saturating_sub(available_height + scroll);
             let end = total_lines.saturating_sub(scroll);
 
-            // Join visible lines and parse ANSI codes
-            let visible_content: String = content_lines[start..end.min(content_lines.len())]
-                .iter()
-                .map(|line| Self::truncate_line(line, available_width))
-                .collect::<Vec<_>>()
-                .join("\n");
+            // Join visible lines — truncate or pass through depending on line_wrap
+            let line_wrap = state.line_wrap;
+            let visible_content: String = if line_wrap {
+                content_lines[start..end.min(content_lines.len())].join("\n")
+            } else {
+                content_lines[start..end.min(content_lines.len())]
+                    .iter()
+                    .map(|line| Self::truncate_line(line, available_width))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
 
             // Parse ANSI escape sequences into styled Text
             let styled_text = match visible_content.as_str().into_text() {
@@ -123,6 +128,11 @@ impl PanePreview {
             .border_style(Style::default().fg(border_color));
 
         let paragraph = Paragraph::new(text).block(block);
+        let paragraph = if state.line_wrap {
+            paragraph.wrap(Wrap { trim: false })
+        } else {
+            paragraph
+        };
 
         frame.render_widget(paragraph, area);
     }

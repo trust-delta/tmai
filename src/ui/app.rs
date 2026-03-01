@@ -59,6 +59,7 @@ impl App {
         {
             let mut s = state.write();
             s.show_activity_name = settings.ui.show_activity_name;
+            s.line_wrap = settings.ui.line_wrap;
         }
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
         let command_sender = CommandSender::new(ipc_server, tmux_client, state.clone());
