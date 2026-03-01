@@ -339,8 +339,19 @@ GET /api/teams/my-project/tasks?token=abc123
 
 | ソース | 説明 |
 |--------|------|
+| `hook` | Claude Code HTTP Hooks（最高精度） |
 | `pty` | PTYラッピング（高精度） |
 | `capture` | tmux capture-pane（従来方式） |
+
+## Hookエンドポイント
+
+### POST /hooks/event
+
+Claude Codeのhookイベントを受信する内部エンドポイント。`tmai init` で自動的に設定され、Web APIとは別の認証トークンを使用します。
+
+**認証**: `Authorization: Bearer <hooks_token>`（Web APIトークンではない）
+
+このエンドポイントは手動で使用するものではなく、Claude Codeのhookシステムから自動的に呼び出されます。
 
 ## 例：curl
 

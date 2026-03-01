@@ -204,7 +204,20 @@ TMAI_CONFIG=/path/to/config.toml tmai
 | コマンド | 説明 |
 |---------|------|
 | `tmai` | TUIモニターを起動 |
+| `tmai init` | Claude Code Hooks連携をセットアップ（推奨） |
+| `tmai init --force` | トークンを再生成しhooksを再追加 |
+| `tmai uninit` | tmai hooksを削除しトークンを削除 |
 | `tmai wrap <command>` | PTYラッピングでエージェントを起動 |
+
+#### initの例
+
+```bash
+# 初回セットアップ: hooksを設定
+tmai init
+
+# トークンを強制再生成
+tmai init --force
+```
 
 #### wrapの例
 

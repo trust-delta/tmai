@@ -4,22 +4,27 @@ tmaiを効果的に使うためのおすすめの方法。
 
 ## ワークフローのコツ
 
-### 新規セッションにはPTYラッピングを使用
+### Claude Code Hooksをセットアップ（初回のみ）
 
-可能な限り、新しいAIエージェントはPTYラッピングで起動：
+`tmai init` を一度実行して、100%正確な状態検出のためにHTTP Hooksを有効化：
 
 ```bash
-# 推奨
-tmai wrap claude
-
-# 代わりに
-claude  # その後capture-paneで監視
+# 初回セットアップ
+tmai init
 ```
 
-メリット：
-- より正確な状態検出
-- 外部送信検知が有効
-- 状態変化への高速な応答
+これ以降、すべてのClaude Codeセッションが自動的にtmaiにイベントを送信します。ラッパー不要です。
+
+### 必要に応じてPTYラッピングを使用
+
+外部送信検知やAskUserQuestionの完全な解析が必要な場合：
+
+```bash
+# 追加機能が必要な場合
+tmai wrap claude
+
+# HooksとPTYラッピングは併用可能（ステータスはhooksが優先）
+```
 
 ### tmaiは専用ペインで実行
 
@@ -165,9 +170,10 @@ grep "Sensitive data" ~/tmai-audit.log
 
 ### 状態が誤検出される
 
-1. より正確な検出のためPTYラッピングを使用
-2. 検出ソース（ステータスバーのPTY vs CAP）を確認
-3. 再現手順とともに問題を報告
+1. `tmai init` を実行してhooksを有効化（Claude Code推奨）
+2. PTYラッピングで追加の精度向上（`tmai wrap claude`）
+3. ステータスバーの検出ソースを確認：`◈ Hook` > `PTY` > `CAP`
+4. 再現手順とともに問題を報告
 
 ### Web Remoteに接続できない
 

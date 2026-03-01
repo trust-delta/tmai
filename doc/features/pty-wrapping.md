@@ -2,6 +2,8 @@
 
 High-precision state detection through PTY proxy.
 
+> **Note**: For Claude Code, [HTTP Hooks](./hooks.md) are now the recommended primary detection method. PTY wrapping remains useful for exfil detection, full AskUserQuestion parsing, and non-Claude agents.
+
 ## Overview
 
 PTY wrapping starts AI agents through a PTY proxy, enabling direct I/O monitoring for more accurate state detection than traditional tmux capture-pane.
@@ -45,8 +47,9 @@ tmai wrap gemini
 
 | Method | Detection | Timing | Features |
 |--------|-----------|--------|----------|
+| HTTP Hooks | Claude Code events | Real-time | State only |
+| PTY wrapping | Direct I/O monitoring | Real-time | Full (exfil, AskUserQuestion) |
 | capture-pane | Parse screen text | Polling interval | Basic |
-| PTY wrapping | Direct I/O monitoring | Real-time | Full |
 
 ### Traditional Method (capture-pane)
 
@@ -137,6 +140,7 @@ Session ID identification uses a two-phase approach:
 
 tmai shows which detection method is being used in the status bar:
 
+- `◈ Hook` - HTTP Hooks (highest precision, Claude Code only)
 - `PTY` - PTY wrapping (high precision)
 - `CAP` - capture-pane (traditional)
 

@@ -5,6 +5,7 @@
 mod api;
 pub mod auth;
 mod events;
+pub mod hooks;
 mod server;
 mod static_files;
 

@@ -4,22 +4,27 @@ Recommended ways to use tmai effectively.
 
 ## Workflow Tips
 
-### Use PTY Wrapping for New Sessions
+### Set Up Claude Code Hooks (One-Time)
 
-Always start new AI agents with PTY wrapping when possible:
+Run `tmai init` once to enable HTTP hooks for 100% accurate state detection:
 
 ```bash
-# Recommended
-tmai wrap claude
-
-# Instead of
-claude  # then monitor with capture-pane
+# One-time setup
+tmai init
 ```
 
-Benefits:
-- More accurate state detection
-- Exfil detection enabled
-- Faster response to state changes
+After this, all Claude Code sessions automatically send events to tmai. No wrapper needed.
+
+### Use PTY Wrapping When Needed
+
+Add PTY wrapping for exfil detection or full AskUserQuestion parsing:
+
+```bash
+# When you need extra features
+tmai wrap claude
+
+# Hooks + PTY wrapping work together (hooks take priority for status)
+```
 
 ### Keep tmai in a Dedicated Pane
 
@@ -165,9 +170,10 @@ Split view with preview uses more resources. Switch to List view when just check
 
 ### Wrong State Detected
 
-1. Use PTY wrapping for better accuracy
-2. Check detection source (PTY vs CAP in status bar)
-3. Report persistent issues with reproduction steps
+1. Run `tmai init` to enable hooks (recommended for Claude Code)
+2. Use PTY wrapping for additional accuracy (`tmai wrap claude`)
+3. Check detection source in status bar: `◈ Hook` > `PTY` > `CAP`
+4. Report persistent issues with reproduction steps
 
 ### Web Remote Not Connecting
 

@@ -13,6 +13,7 @@ use std::sync::Arc;
 use crate::audit::AuditEventSender;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
+use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
 use crate::state::{AppState, SharedState};
 
@@ -25,6 +26,9 @@ pub struct TmaiCoreBuilder {
     command_sender: Option<Arc<CommandSender>>,
     ipc_server: Option<Arc<IpcServer>>,
     audit_tx: Option<AuditEventSender>,
+    hook_registry: Option<HookRegistry>,
+    session_pane_map: Option<SessionPaneMap>,
+    hook_token: Option<String>,
 }
 
 impl TmaiCoreBuilder {
@@ -36,6 +40,9 @@ impl TmaiCoreBuilder {
             command_sender: None,
             ipc_server: None,
             audit_tx: None,
+            hook_registry: None,
+            session_pane_map: None,
+            hook_token: None,
         }
     }
 
@@ -47,6 +54,9 @@ impl TmaiCoreBuilder {
             command_sender: None,
             ipc_server: None,
             audit_tx: None,
+            hook_registry: None,
+            session_pane_map: None,
+            hook_token: None,
         }
     }
 
@@ -74,11 +84,36 @@ impl TmaiCoreBuilder {
         self
     }
 
+    /// Set the hook registry for HTTP hook-based agent state
+    pub fn with_hook_registry(mut self, registry: HookRegistry) -> Self {
+        self.hook_registry = Some(registry);
+        self
+    }
+
+    /// Set the session → pane ID mapping for hook event routing
+    pub fn with_session_pane_map(mut self, map: SessionPaneMap) -> Self {
+        self.session_pane_map = Some(map);
+        self
+    }
+
+    /// Set the authentication token for hook endpoints
+    pub fn with_hook_token(mut self, token: String) -> Self {
+        self.hook_token = Some(token);
+        self
+    }
+
     /// Build the `TmaiCore` instance
     ///
     /// If no state was provided, a fresh `AppState::shared()` is created.
+    /// If no hook registry/session_pane_map was provided, empty ones are created.
     pub fn build(self) -> TmaiCore {
         let state = self.state.unwrap_or_else(AppState::shared);
+        let hook_registry = self
+            .hook_registry
+            .unwrap_or_else(crate::hooks::new_hook_registry);
+        let session_pane_map = self
+            .session_pane_map
+            .unwrap_or_else(crate::hooks::new_session_pane_map);
 
         TmaiCore::new(
             state,
@@ -86,6 +121,9 @@ impl TmaiCoreBuilder {
             self.settings,
             self.ipc_server,
             self.audit_tx,
+            hook_registry,
+            session_pane_map,
+            self.hook_token,
         )
     }
 }

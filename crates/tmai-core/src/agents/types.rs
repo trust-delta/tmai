@@ -34,6 +34,8 @@ impl fmt::Display for AgentMode {
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
+    /// State detected via Claude Code HTTP hook (highest fidelity)
+    HttpHook,
     /// State detected via IPC socket connection
     IpcSocket,
     /// State detected via tmux capture-pane
@@ -45,6 +47,7 @@ impl DetectionSource {
     /// Get icon for this detection source
     pub fn icon(&self) -> char {
         match self {
+            DetectionSource::HttpHook => '◈',
             DetectionSource::IpcSocket => '◉',
             DetectionSource::CapturePane => '○',
         }
@@ -53,6 +56,7 @@ impl DetectionSource {
     /// Get short label for this detection source
     pub fn label(&self) -> &'static str {
         match self {
+            DetectionSource::HttpHook => "Hook",
             DetectionSource::IpcSocket => "IPC",
             DetectionSource::CapturePane => "capture",
         }

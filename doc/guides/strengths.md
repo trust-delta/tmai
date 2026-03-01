@@ -101,29 +101,37 @@ tmai "monitors" rather than "manages", so it doesn't force any workflow.
 
 Details: [Parallel Development with Worktrees](../workflows/worktree-parallel.md)
 
-## 5. High-Precision Detection via PTY Wrapping
+## 5. 3-Tier High-Precision Detection
 
-Start with `tmai wrap claude` for direct I/O monitoring via PTY proxy.
+tmai uses a 3-tier detection strategy for maximum accuracy:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Traditional method (capture-pane)                           │
+│ Priority 1: HTTP Hooks (recommended)                        │
+│                                                             │
+│  tmai init → Claude Code sends events directly              │
+│                                                             │
+│  100% accurate, zero latency, no wrapper needed             │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ Priority 2: PTY Wrapping                                    │
+│                                                             │
+│  tmai wrap claude → Direct I/O monitoring                   │
+│                                                             │
+│  High precision + exfil detection + AskUserQuestion parsing │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ Priority 3: capture-pane (fallback)                         │
 │                                                             │
 │  tmux capture-pane → Parse screen text → Estimate state     │
 │                                                             │
-│  Problem: May miss state changes depending on timing        │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ PTY Wrapping                                                │
-│                                                             │
-│  Direct I/O monitoring → Real-time state detection          │
-│                                                             │
-│  Benefit: Never miss state transitions, more accurate       │
+│  No setup required, works with any agent                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Details: [PTY Wrapping](../features/pty-wrapping.md)
+Details: [Claude Code Hooks](../features/hooks.md) | [PTY Wrapping](../features/pty-wrapping.md)
 
 ## 6. Exfil Detection (Security)
 
@@ -187,7 +195,7 @@ Details: [Agent Teams](../features/agent-teams.md)
 | AskUserQuestion | Direct option selection with number keys |
 | Low adoption barrier | No changes to existing workflow |
 | Flexibility | Use worktrees freely |
-| High-precision detection | Real-time detection via PTY wrapping |
+| 3-tier detection | Hooks (100%) → PTY → capture-pane fallback |
 | Security | Exfil detection |
 | Remote operation | Approve from smartphone |
 | Agent Teams | Visualize team structure and task progress |

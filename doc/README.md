@@ -21,7 +21,8 @@ Use-case specific guides.
 
 Detailed feature documentation.
 
-- [PTY Wrapping](./features/pty-wrapping.md) - High-precision state detection
+- [Claude Code Hooks](./features/hooks.md) - 100% accurate state detection via HTTP hooks (recommended)
+- [PTY Wrapping](./features/pty-wrapping.md) - High-precision state detection via PTY proxy
 - [AskUserQuestion Support](./features/ask-user-question.md) - Number key selection
 - [Exfil Detection](./features/exfil-detection.md) - Security monitoring
 - [Web Remote Control](./features/web-remote.md) - Smartphone control via QR code
