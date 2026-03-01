@@ -24,7 +24,7 @@ pub fn handle_hook_event(
         map.insert(payload.session_id.clone(), pane_id.to_string());
     }
 
-    let event = payload.event.as_str();
+    let event = payload.hook_event_name.as_str();
     debug!(event, pane_id, session_id = %payload.session_id, "Processing hook event");
 
     match event {
@@ -135,7 +135,7 @@ pub fn handle_hook_event(
 
         event_names::TEAMMATE_IDLE => {
             let team_name = payload.team_name.clone().unwrap_or_default();
-            let member_name = payload.member_name.clone().unwrap_or_default();
+            let member_name = payload.teammate_name.clone().unwrap_or_default();
             if !team_name.is_empty() && !member_name.is_empty() {
                 Some(CoreEvent::TeammateIdle {
                     target: pane_id.to_string(),
@@ -250,8 +250,8 @@ mod tests {
 
     fn make_payload(event: &str) -> HookEventPayload {
         serde_json::from_value(serde_json::json!({
-            "event": event,
-            "sessionId": "test-session",
+            "hook_event_name": event,
+            "session_id": "test-session",
             "cwd": "/tmp/test"
         }))
         .unwrap()
@@ -259,9 +259,9 @@ mod tests {
 
     fn make_payload_with_tool(event: &str, tool: &str) -> HookEventPayload {
         serde_json::from_value(serde_json::json!({
-            "event": event,
-            "sessionId": "test-session",
-            "toolName": tool
+            "hook_event_name": event,
+            "session_id": "test-session",
+            "tool_name": tool
         }))
         .unwrap()
     }
@@ -320,9 +320,9 @@ mod tests {
         handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "Notification",
-            "sessionId": "test-session",
-            "notificationType": "permission_prompt"
+            "hook_event_name": "Notification",
+            "session_id": "test-session",
+            "notification_type": "permission_prompt"
         }))
         .unwrap();
 
@@ -374,10 +374,10 @@ mod tests {
         let map = new_session_pane_map();
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "TeammateIdle",
-            "sessionId": "s1",
-            "teamName": "my-team",
-            "memberName": "researcher"
+            "hook_event_name": "TeammateIdle",
+            "session_id": "s1",
+            "team_name": "my-team",
+            "teammate_name": "researcher"
         }))
         .unwrap();
 
@@ -391,11 +391,11 @@ mod tests {
         let map = new_session_pane_map();
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "TaskCompleted",
-            "sessionId": "s1",
-            "teamName": "my-team",
-            "taskId": "1",
-            "taskSubject": "Fix the bug"
+            "hook_event_name": "TaskCompleted",
+            "session_id": "s1",
+            "team_name": "my-team",
+            "task_id": "1",
+            "task_subject": "Fix the bug"
         }))
         .unwrap();
 

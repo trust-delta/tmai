@@ -50,7 +50,7 @@ pub async fn hook_event(
         Some(id) => id,
         None => {
             warn!(
-                event = %payload.event,
+                event = %payload.hook_event_name,
                 session_id = %payload.session_id,
                 "Could not resolve pane_id for hook event"
             );

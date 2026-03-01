@@ -25,14 +25,13 @@ pub mod event_names {
 
 /// POST body from a Claude Code HTTP hook
 ///
-/// Claude Code sends a JSON payload with the event name, session ID,
-/// and event-specific data. We use a flat structure with optional fields
+/// Claude Code sends a JSON payload in snake_case with `hook_event_name`
+/// as the event identifier. We use a flat structure with optional fields
 /// to support all event types.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct HookEventPayload {
     /// Event name (e.g., "PreToolUse", "Stop", "Notification")
-    pub event: String,
+    pub hook_event_name: String,
 
     /// Claude Code session ID (unique per session)
     #[serde(default)]
@@ -42,27 +41,55 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub cwd: Option<String>,
 
-    /// Tool name (for PreToolUse / PostToolUse)
+    /// Path to conversation transcript JSON
+    #[serde(default)]
+    pub transcript_path: Option<String>,
+
+    /// Current permission mode (e.g., "default", "plan", "dontAsk")
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+
+    /// Tool name (for PreToolUse / PostToolUse / PermissionRequest)
     #[serde(default)]
     pub tool_name: Option<String>,
 
-    /// Tool input parameters (for PreToolUse / PostToolUse)
+    /// Tool input parameters (for PreToolUse / PostToolUse / PermissionRequest)
     #[serde(default)]
     pub tool_input: Option<serde_json::Value>,
 
-    /// Stop reason (for Stop event)
+    /// Whether a stop hook is already active (for Stop / SubagentStop)
     #[serde(default)]
-    pub stop_reason: Option<String>,
+    pub stop_hook_active: Option<bool>,
+
+    /// Last assistant message text (for Stop / SubagentStop)
+    #[serde(default)]
+    pub last_assistant_message: Option<String>,
 
     /// Notification type (for Notification event, e.g., "permission_prompt")
     #[serde(default)]
     pub notification_type: Option<String>,
 
-    /// Subagent/teammate info (for SubagentStart/Stop, TeammateIdle)
+    /// Notification message text (for Notification)
     #[serde(default)]
-    pub agent_name: Option<String>,
+    pub message: Option<String>,
 
-    /// Task info (for TaskCompleted)
+    /// Notification title (for Notification)
+    #[serde(default)]
+    pub title: Option<String>,
+
+    /// Subagent unique ID (for SubagentStart/Stop)
+    #[serde(default)]
+    pub agent_id: Option<String>,
+
+    /// Subagent type name (for SubagentStart/Stop, e.g., "Explore", "Bash")
+    #[serde(default)]
+    pub agent_type: Option<String>,
+
+    /// Teammate name (for TeammateIdle / TaskCompleted)
+    #[serde(default)]
+    pub teammate_name: Option<String>,
+
+    /// Task ID (for TaskCompleted)
     #[serde(default)]
     pub task_id: Option<String>,
 
@@ -70,13 +97,13 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub task_subject: Option<String>,
 
-    /// Team name (for team-related events)
+    /// Task description (for TaskCompleted)
+    #[serde(default)]
+    pub task_description: Option<String>,
+
+    /// Team name (for TeammateIdle / TaskCompleted)
     #[serde(default)]
     pub team_name: Option<String>,
-
-    /// Member name (for TeammateIdle)
-    #[serde(default)]
-    pub member_name: Option<String>,
 
     /// Additional fields not explicitly modeled
     #[serde(flatten)]
@@ -149,56 +176,64 @@ mod tests {
     #[test]
     fn test_hook_event_payload_deserialize_pre_tool_use() {
         let json = r#"{
-            "event": "PreToolUse",
-            "sessionId": "sess-123",
+            "hook_event_name": "PreToolUse",
+            "session_id": "sess-123",
             "cwd": "/home/user/project",
-            "toolName": "Bash"
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm test"}
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.event, "PreToolUse");
+        assert_eq!(payload.hook_event_name, "PreToolUse");
         assert_eq!(payload.session_id, "sess-123");
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
+        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
     }
 
     #[test]
     fn test_hook_event_payload_deserialize_stop() {
         let json = r#"{
-            "event": "Stop",
-            "sessionId": "sess-123",
-            "stopReason": "end_turn"
+            "hook_event_name": "Stop",
+            "session_id": "sess-123",
+            "stop_hook_active": true,
+            "last_assistant_message": "Done."
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.event, "Stop");
-        assert_eq!(payload.stop_reason.as_deref(), Some("end_turn"));
+        assert_eq!(payload.hook_event_name, "Stop");
+        assert_eq!(payload.stop_hook_active, Some(true));
+        assert_eq!(payload.last_assistant_message.as_deref(), Some("Done."));
     }
 
     #[test]
     fn test_hook_event_payload_deserialize_notification() {
         let json = r#"{
-            "event": "Notification",
-            "sessionId": "sess-456",
-            "notificationType": "permission_prompt"
+            "hook_event_name": "Notification",
+            "session_id": "sess-456",
+            "notification_type": "permission_prompt",
+            "message": "Claude needs permission",
+            "title": "Permission needed"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.event, "Notification");
+        assert_eq!(payload.hook_event_name, "Notification");
         assert_eq!(
             payload.notification_type.as_deref(),
             Some("permission_prompt")
         );
+        assert_eq!(payload.message.as_deref(), Some("Claude needs permission"));
     }
 
     #[test]
     fn test_hook_event_payload_extra_fields() {
         let json = r#"{
-            "event": "PreToolUse",
-            "sessionId": "s1",
-            "unknownField": "value",
-            "anotherField": 42
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "unknown_field": "value",
+            "another_field": 42
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.event, "PreToolUse");
-        assert!(payload.extra.contains_key("unknownField"));
+        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert!(payload.extra.contains_key("unknown_field"));
     }
 
     #[test]
