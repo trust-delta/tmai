@@ -16,7 +16,7 @@
 - **AskUserQuestion support** - Respond to agent questions with number selection
 - **Passthrough mode** - Send keys directly to the agent pane
 - **Status detection** - Automatic detection of idle, processing, and awaiting approval states
-- **Claude Code Hooks** - 100% accurate state detection via HTTP hooks (`tmai init`)
+- **Claude Code Hooks** - Event-driven state detection via HTTP hooks (`tmai init`)
 - **PTY wrapping** - High-precision state detection via PTY proxy for real-time I/O monitoring
 - **Exfil detection** - Security monitoring for external data transmission
 - **Web Remote Control** - Control agents from your smartphone via QR code
@@ -30,7 +30,7 @@
 For detailed guides and workflows, see [doc/](./doc/README.md):
 
 - [Getting Started](./doc/getting-started.md) - Installation and first steps
-- [Claude Code Hooks](./doc/features/hooks.md) - 100% accurate detection via HTTP hooks
+- [Claude Code Hooks](./doc/features/hooks.md) - Event-driven detection via HTTP hooks
 - [Multi-agent Monitoring](./doc/workflows/multi-agent.md) - Monitor multiple agents simultaneously
 - [Worktree Parallel Development](./doc/workflows/worktree-parallel.md) - Git worktree workflow
 - [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
@@ -59,7 +59,7 @@ cargo build --release
 tmai init
 ```
 
-This configures Claude Code to send real-time events to tmai for 100% accurate state detection.
+This configures Claude Code to send real-time events to tmai for high-precision state detection.
 
 ### 2. Run tmai
 

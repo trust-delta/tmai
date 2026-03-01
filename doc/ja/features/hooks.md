@@ -4,7 +4,7 @@ Claude CodeのHTTP Hooksによる高精度な状態検出。
 
 ## 概要
 
-Claude Code HooksはClaude Codeからtmaiのウェブサーバーへ、HTTPでリアルタイムにイベント通知を送信します。画面スクレイピングを排除し、100%正確な状態検出を実現します。
+Claude Code HooksはClaude Codeからtmaiのウェブサーバーへ、HTTPでリアルタイムにイベント通知を送信します。画面スクレイピングを排除し、イベント駆動型で最高精度の状態検出を実現します。
 
 ## アーキテクチャ
 
@@ -62,7 +62,7 @@ tmaiは状態検出に3段構えのフォールバック戦略を使用します
 
 | 優先度 | 方式 | 精度 | レイテンシ | 要件 |
 |--------|------|------|-----------|------|
-| 1（最高） | **HTTP Hooks** | 100% | リアルタイム | `tmai init` + ウェブサーバー |
+| 1（最高） | **HTTP Hooks** | イベント駆動 | リアルタイム | `tmai init` + ウェブサーバー |
 | 2 | IPC Socket | 高 | リアルタイム | `tmai wrap` |
 | 3（フォールバック） | capture-pane | 中程度 | ポーリング間隔 | なし |
 
@@ -108,7 +108,7 @@ hookイベントは専用のBearerトークンで認証されます（Web Remote
 | 機能 | Hooks | PTYラッピング | capture-pane |
 |------|-------|-------------|--------------|
 | セットアップ | `tmai init` | `tmai wrap claude` | 不要 |
-| 検出精度 | 100% | 高 | 中程度 |
+| 検出精度 | イベント駆動（最高） | 高 | 中程度 |
 | レイテンシ | リアルタイム | リアルタイム | ポーリング間隔 |
 | エージェント起動 | 通常の `claude` | `tmai wrap` 経由 | 通常の `claude` |
 | 外部送信検知 | なし | あり | なし |
@@ -122,8 +122,8 @@ hookイベントは専用のBearerトークンで認証されます（Web Remote
 tmaiはステータスバーに使用中の検出方式を表示します：
 
 - `◈ Hook`（Cyan） — HTTP Hooks（最高精度）
-- `PTY` — PTYラッピング（高精度）
-- `CAP` — capture-pane（従来方式）
+- `◉ IPC` — PTYラッピング・IPCソケット（高精度）
+- `○ capture` — capture-pane（従来方式）
 
 ## パフォーマンス最適化
 
@@ -137,7 +137,9 @@ hook状態が利用可能なエージェントでは、非選択ペインの `ca
 
 1. `tmai init` が正常に実行されたか確認：
    ```bash
-   cat ~/.config/tmai/hooks_token
+   # トークンファイルの存在とパーミッションを確認
+   test -s ~/.config/tmai/hooks_token && echo "トークンファイルOK" || echo "トークンファイルなし"
+   ls -l ~/.config/tmai/hooks_token
    ```
 2. `~/.claude/settings.json` にtmaiのhookエントリがあるか確認
 3. tmaiのウェブサーバーが起動しているか確認（デフォルトポート9876）

@@ -4,7 +4,7 @@ High-precision state detection via Claude Code's HTTP hooks.
 
 ## Overview
 
-Claude Code Hooks deliver real-time event notifications directly from Claude Code to tmai's web server over HTTP. This eliminates screen-scraping and provides 100% accurate state detection.
+Claude Code Hooks deliver real-time event notifications directly from Claude Code to tmai's web server over HTTP. This eliminates screen-scraping and provides event-driven state detection with the highest precision.
 
 ## Architecture
 
@@ -62,7 +62,7 @@ tmai uses a 3-tier fallback strategy for state detection:
 
 | Priority | Method | Precision | Latency | Requirements |
 |----------|--------|-----------|---------|--------------|
-| 1 (highest) | **HTTP Hooks** | 100% | Real-time | `tmai init` + web server |
+| 1 (highest) | **HTTP Hooks** | Event-driven | Real-time | `tmai init` + web server |
 | 2 | IPC Socket | High | Real-time | `tmai wrap` |
 | 3 (fallback) | capture-pane | Moderate | Polling interval | None |
 
@@ -108,7 +108,7 @@ Hook events are authenticated with a dedicated Bearer token, separate from the W
 | Feature | Hooks | PTY Wrapping | capture-pane |
 |---------|-------|-------------|--------------|
 | Setup | `tmai init` | `tmai wrap claude` | None |
-| Detection accuracy | 100% | High | Moderate |
+| Detection accuracy | Event-driven (highest) | High | Moderate |
 | Latency | Real-time | Real-time | Polling interval |
 | Agent startup | Normal `claude` | Via `tmai wrap` | Normal `claude` |
 | Exfil detection | No | Yes | No |
@@ -122,8 +122,8 @@ Hook events are authenticated with a dedicated Bearer token, separate from the W
 tmai shows which detection method is being used in the status bar:
 
 - `◈ Hook` (Cyan) — HTTP Hooks (highest precision)
-- `PTY` — PTY wrapping (high precision)
-- `CAP` — capture-pane (traditional)
+- `◉ IPC` — PTY wrapping via IPC socket (high precision)
+- `○ capture` — capture-pane (traditional)
 
 ## Performance Optimization
 
@@ -137,7 +137,9 @@ Stale hook entries (no events for 5+ minutes) are automatically cleaned up.
 
 1. Verify `tmai init` was run successfully:
    ```bash
-   cat ~/.config/tmai/hooks_token
+   # Check the token file exists and has correct permissions
+   test -s ~/.config/tmai/hooks_token && echo "Token file OK" || echo "Token file missing"
+   ls -l ~/.config/tmai/hooks_token
    ```
 2. Check `~/.claude/settings.json` contains tmai hook entries
 3. Ensure tmai's web server is running (default port 9876)

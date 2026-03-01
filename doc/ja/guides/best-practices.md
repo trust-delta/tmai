@@ -6,7 +6,7 @@ tmaiを効果的に使うためのおすすめの方法。
 
 ### Claude Code Hooksをセットアップ（初回のみ）
 
-`tmai init` を一度実行して、100%正確な状態検出のためにHTTP Hooksを有効化：
+`tmai init` を一度実行して、イベント駆動型の高精度状態検出のためにHTTP Hooksを有効化：
 
 ```bash
 # 初回セットアップ

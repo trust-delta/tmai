@@ -6,7 +6,7 @@ Recommended ways to use tmai effectively.
 
 ### Set Up Claude Code Hooks (One-Time)
 
-Run `tmai init` once to enable HTTP hooks for 100% accurate state detection:
+Run `tmai init` once to enable HTTP hooks for event-driven state detection:
 
 ```bash
 # One-time setup

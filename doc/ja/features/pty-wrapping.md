@@ -141,8 +141,8 @@ I/O直接監視 → リアルタイム状態検出
 tmaiはステータスバーに検出方式を表示します：
 
 - `◈ Hook` - HTTP Hooks（最高精度、Claude Codeのみ）
-- `PTY` - PTYラッピング（高精度）
-- `CAP` - capture-pane（従来方式）
+- `◉ IPC` - PTYラッピング・IPCソケット（高精度）
+- `○ capture` - capture-pane（従来方式）
 
 ## 次のステップ
 
