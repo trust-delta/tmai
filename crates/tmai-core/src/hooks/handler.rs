@@ -36,13 +36,20 @@ pub fn handle_hook_event(
         }
 
         event_names::USER_PROMPT_SUBMIT => {
-            update_status(
-                hook_registry,
-                pane_id,
-                payload,
-                HookStatus::Processing,
-                None,
-            );
+            // Clear last_tool on new prompt (fresh processing cycle)
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.last_tool = None;
+                if payload.cwd.is_some() {
+                    state.cwd = payload.cwd.clone();
+                }
+                state.touch();
+            } else {
+                let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
+                state.status = HookStatus::Processing;
+                reg.insert(pane_id.to_string(), state);
+            }
             None
         }
 
@@ -60,13 +67,13 @@ pub fn handle_hook_event(
 
         event_names::POST_TOOL_USE => {
             // Tool completed, still processing (more tools may follow)
-            update_status(
-                hook_registry,
-                pane_id,
-                payload,
-                HookStatus::Processing,
-                None,
-            );
+            // Clear last_tool since the tool has finished
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.last_tool = None;
+                state.touch();
+            }
             None
         }
 
@@ -102,7 +109,13 @@ pub fn handle_hook_event(
         }
 
         event_names::STOP => {
-            update_status(hook_registry, pane_id, payload, HookStatus::Idle, None);
+            // Clear last_tool on stop (session returns to idle)
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Idle;
+                state.last_tool = None;
+                state.touch();
+            }
             None
         }
 

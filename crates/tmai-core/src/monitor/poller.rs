@@ -1442,6 +1442,7 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
             let activity = hs
                 .last_tool
                 .as_ref()
+                .filter(|t| !t.is_empty())
                 .map(|t| format!("Tool: {}", t))
                 .unwrap_or_default();
             AgentStatus::Processing { activity }
