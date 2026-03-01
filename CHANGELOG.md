@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026-03-02
+
+### Fixed
+- Fix HookEventPayload deserialization: align with Claude Code's snake_case format (`hook_event_name` instead of `event`)
+- Fix empty "Tool: " display by preserving `last_tool` on PostToolUse instead of clearing it
+- Fix `processing_label()` truncating "Tool: Bash" to "Tool:" due to space-based word splitting
+
 ## [0.10.2] - 2026-03-01
 
 ### Fixed

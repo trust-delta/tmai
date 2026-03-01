@@ -651,10 +651,18 @@ impl SessionList {
     /// Map Processing activity to a specific status label
     ///
     /// Extracts the leading verb from the activity string (e.g., "Compacting" from
-    /// "✶ Compacting…").  Returns "Processing" when the activity is empty, does
-    /// not start with an uppercase letter, or when show_activity_name is false.
+    /// "✶ Compacting…").  For hook-sourced "Tool: X" activities, returns the full
+    /// string.  Returns "Processing" when the activity is empty, does not start
+    /// with an uppercase letter, or when show_activity_name is false.
     fn processing_label(activity: &str, show_activity_name: bool) -> String {
         if !show_activity_name || activity.is_empty() {
+            return "Processing".to_string();
+        }
+        // Hook-sourced activity: "Tool: Bash" → keep as-is
+        if let Some(tool) = activity.strip_prefix("Tool: ") {
+            if !tool.is_empty() {
+                return activity.to_string();
+            }
             return "Processing".to_string();
         }
         // Strip spinner chars and whitespace prefix
@@ -1287,6 +1295,34 @@ mod tests {
         );
         assert_eq!(
             SessionList::processing_label("Cerebrating…", false),
+            "Processing"
+        );
+    }
+
+    #[test]
+    fn test_processing_label_hook_tool_name() {
+        // Hook-sourced "Tool: X" activity should be preserved as-is
+        assert_eq!(
+            SessionList::processing_label("Tool: Bash", true),
+            "Tool: Bash"
+        );
+        assert_eq!(
+            SessionList::processing_label("Tool: Read", true),
+            "Tool: Read"
+        );
+        assert_eq!(
+            SessionList::processing_label("Tool: Edit", true),
+            "Tool: Edit"
+        );
+        assert_eq!(
+            SessionList::processing_label("Tool: Agent", true),
+            "Tool: Agent"
+        );
+        // Empty tool name after prefix → fallback to Processing
+        assert_eq!(SessionList::processing_label("Tool: ", true), "Processing");
+        // show_activity_name = false → always "Processing"
+        assert_eq!(
+            SessionList::processing_label("Tool: Bash", false),
             "Processing"
         );
     }

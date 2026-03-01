@@ -24,8 +24,14 @@ pub fn handle_hook_event(
         map.insert(payload.session_id.clone(), pane_id.to_string());
     }
 
-    let event = payload.event.as_str();
-    debug!(event, pane_id, session_id = %payload.session_id, "Processing hook event");
+    let event = payload.hook_event_name.as_str();
+    debug!(
+        event,
+        pane_id,
+        session_id = %payload.session_id,
+        tool_name = ?payload.tool_name,
+        "Processing hook event"
+    );
 
     match event {
         event_names::SESSION_START => {
@@ -36,18 +42,26 @@ pub fn handle_hook_event(
         }
 
         event_names::USER_PROMPT_SUBMIT => {
-            update_status(
-                hook_registry,
-                pane_id,
-                payload,
-                HookStatus::Processing,
-                None,
-            );
+            // Clear last_tool on new prompt (fresh processing cycle)
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.last_tool = None;
+                if payload.cwd.is_some() {
+                    state.cwd = payload.cwd.clone();
+                }
+                state.touch();
+            } else {
+                let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
+                state.status = HookStatus::Processing;
+                reg.insert(pane_id.to_string(), state);
+            }
             None
         }
 
         event_names::PRE_TOOL_USE => {
-            let tool_name = payload.tool_name.clone();
+            // Filter empty tool names to prevent "Tool: " display
+            let tool_name = payload.tool_name.clone().filter(|t| !t.is_empty());
             update_status(
                 hook_registry,
                 pane_id,
@@ -60,13 +74,14 @@ pub fn handle_hook_event(
 
         event_names::POST_TOOL_USE => {
             // Tool completed, still processing (more tools may follow)
-            update_status(
-                hook_registry,
-                pane_id,
-                payload,
-                HookStatus::Processing,
-                None,
-            );
+            // Keep last_tool so the display shows which tool was last used.
+            // It will be overwritten by the next PreToolUse or cleared by
+            // UserPromptSubmit / Stop.
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.touch();
+            }
             None
         }
 
@@ -96,13 +111,19 @@ pub fn handle_hook_event(
                 pane_id,
                 payload,
                 HookStatus::AwaitingApproval,
-                payload.tool_name.clone(),
+                payload.tool_name.clone().filter(|t| !t.is_empty()),
             );
             None
         }
 
         event_names::STOP => {
-            update_status(hook_registry, pane_id, payload, HookStatus::Idle, None);
+            // Clear last_tool on stop (session returns to idle)
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Idle;
+                state.last_tool = None;
+                state.touch();
+            }
             None
         }
 
@@ -135,7 +156,7 @@ pub fn handle_hook_event(
 
         event_names::TEAMMATE_IDLE => {
             let team_name = payload.team_name.clone().unwrap_or_default();
-            let member_name = payload.member_name.clone().unwrap_or_default();
+            let member_name = payload.teammate_name.clone().unwrap_or_default();
             if !team_name.is_empty() && !member_name.is_empty() {
                 Some(CoreEvent::TeammateIdle {
                     target: pane_id.to_string(),
@@ -250,8 +271,8 @@ mod tests {
 
     fn make_payload(event: &str) -> HookEventPayload {
         serde_json::from_value(serde_json::json!({
-            "event": event,
-            "sessionId": "test-session",
+            "hook_event_name": event,
+            "session_id": "test-session",
             "cwd": "/tmp/test"
         }))
         .unwrap()
@@ -259,9 +280,9 @@ mod tests {
 
     fn make_payload_with_tool(event: &str, tool: &str) -> HookEventPayload {
         serde_json::from_value(serde_json::json!({
-            "event": event,
-            "sessionId": "test-session",
-            "toolName": tool
+            "hook_event_name": event,
+            "session_id": "test-session",
+            "tool_name": tool
         }))
         .unwrap()
     }
@@ -320,9 +341,9 @@ mod tests {
         handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "Notification",
-            "sessionId": "test-session",
-            "notificationType": "permission_prompt"
+            "hook_event_name": "Notification",
+            "session_id": "test-session",
+            "notification_type": "permission_prompt"
         }))
         .unwrap();
 
@@ -374,10 +395,10 @@ mod tests {
         let map = new_session_pane_map();
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "TeammateIdle",
-            "sessionId": "s1",
-            "teamName": "my-team",
-            "memberName": "researcher"
+            "hook_event_name": "TeammateIdle",
+            "session_id": "s1",
+            "team_name": "my-team",
+            "teammate_name": "researcher"
         }))
         .unwrap();
 
@@ -391,11 +412,11 @@ mod tests {
         let map = new_session_pane_map();
 
         let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
-            "event": "TaskCompleted",
-            "sessionId": "s1",
-            "teamName": "my-team",
-            "taskId": "1",
-            "taskSubject": "Fix the bug"
+            "hook_event_name": "TaskCompleted",
+            "session_id": "s1",
+            "team_name": "my-team",
+            "task_id": "1",
+            "task_subject": "Fix the bug"
         }))
         .unwrap();
 
@@ -468,5 +489,138 @@ mod tests {
         let state = reg.get("5").unwrap();
         assert_eq!(state.status, HookStatus::AwaitingApproval);
         assert_eq!(state.last_tool.as_deref(), Some("Bash"));
+    }
+
+    /// UserPromptSubmit clears last_tool from previous cycle
+    #[test]
+    fn test_user_prompt_submit_clears_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        // Set a tool via PreToolUse
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Bash"));
+        }
+
+        // New prompt should clear the tool
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert!(
+            state.last_tool.is_none(),
+            "UserPromptSubmit should clear last_tool"
+        );
+    }
+
+    /// PostToolUse preserves last_tool for display continuity
+    #[test]
+    fn test_post_tool_use_preserves_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Read"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Read"));
+        }
+
+        // PostToolUse keeps last_tool so display shows "Tool: Read" until next event
+        handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert_eq!(
+            state.last_tool.as_deref(),
+            Some("Read"),
+            "PostToolUse should preserve last_tool"
+        );
+    }
+
+    /// Stop clears last_tool when returning to idle
+    #[test]
+    fn test_stop_clears_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Write"),
+            "5",
+            &registry,
+            &map,
+        );
+
+        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Idle);
+        assert!(state.last_tool.is_none(), "Stop should clear last_tool");
+    }
+
+    /// Full lifecycle: PreToolUse sets tool, PostToolUse preserves it, next PreToolUse overwrites
+    #[test]
+    fn test_tool_lifecycle_pre_post_pre() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // First tool
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Bash"));
+        }
+
+        // Tool finishes — last_tool preserved for display
+        handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(
+                reg.get("5").unwrap().last_tool.as_deref(),
+                Some("Bash"),
+                "PostToolUse should preserve last_tool"
+            );
+        }
+
+        // Second tool overwrites
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Edit"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Edit"));
+        }
+
+        // Stop resets everything
+        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Idle);
+        assert!(state.last_tool.is_none());
     }
 }

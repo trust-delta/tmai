@@ -1442,6 +1442,7 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
             let activity = hs
                 .last_tool
                 .as_ref()
+                .filter(|t| !t.is_empty())
                 .map(|t| format!("Tool: {}", t))
                 .unwrap_or_default();
             AgentStatus::Processing { activity }
@@ -1557,5 +1558,76 @@ mod tests {
         assert!(
             matches!(result, AgentStatus::Processing { ref activity } if activity == "Already set")
         );
+    }
+
+    /// hook_state_to_agent_status with a tool name shows "Tool: <name>"
+    #[test]
+    fn test_hook_state_to_agent_status_with_tool() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::Processing;
+        hs.last_tool = Some("Bash".to_string());
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(
+            matches!(status, AgentStatus::Processing { ref activity } if activity == "Tool: Bash")
+        );
+    }
+
+    /// hook_state_to_agent_status with None last_tool shows empty activity
+    #[test]
+    fn test_hook_state_to_agent_status_no_tool() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::Processing;
+        hs.last_tool = None;
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(matches!(status, AgentStatus::Processing { ref activity } if activity.is_empty()));
+    }
+
+    /// hook_state_to_agent_status filters empty string tool name
+    #[test]
+    fn test_hook_state_to_agent_status_empty_tool_name_filtered() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::Processing;
+        hs.last_tool = Some(String::new()); // empty string
+
+        let status = hook_state_to_agent_status(&hs);
+        // Should NOT produce "Tool: ", should be empty activity
+        assert!(
+            matches!(status, AgentStatus::Processing { ref activity } if activity.is_empty()),
+            "Empty tool name should be filtered, not displayed as 'Tool: '"
+        );
+    }
+
+    /// hook_state_to_agent_status for Idle status
+    #[test]
+    fn test_hook_state_to_agent_status_idle() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let hs = HookState::new("s1".into(), None);
+        assert_eq!(hs.status, HookStatus::Idle);
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(matches!(status, AgentStatus::Idle));
+    }
+
+    /// hook_state_to_agent_status for AwaitingApproval status
+    #[test]
+    fn test_hook_state_to_agent_status_awaiting_approval() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::AwaitingApproval;
+        hs.last_tool = Some("Bash".to_string());
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(matches!(
+            status,
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::Other(_),
+                details,
+            } if details == "Bash"
+        ));
     }
 }
