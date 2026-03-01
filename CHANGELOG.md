@@ -5,13 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-03-01
+
+### Fixed
+- Fix constant-time token validation leaking length via early return
+- Fix token file permission race condition (write-then-chmod → atomic OpenOptions with mode 0600)
+- Fix `tmai uninit` skipping token deletion when no hook entries found
+- Fix `tmai init` using hardcoded port instead of configured web.port
+- Fix log message not reflecting web.enabled state when hook token loaded
+
+### Changed
+- Soften "100% accurate" claims to "event-driven" / "highest precision" across all docs (EN/JA)
+- Fix detection source labels in docs to match implementation (◉ IPC, ○ capture)
+- Replace `cat` token exposure in troubleshooting docs with `test -s` + `ls -l`
+- Add `text` language tag to code fences in docs
+
 ## [0.10.0] - 2026-03-01
 
 ### Added
-- **Claude Code Hooks integration**: 100% accurate agent state detection via HTTP hooks
+- **Claude Code Hooks integration**: Event-driven agent state detection via HTTP hooks
   - `tmai init` command: configure Claude Code to send hook events to tmai's web server
   - `tmai uninit` command: remove tmai hooks and delete token
-  - 3-tier detection priority: Hooks (100%) → IPC Socket → capture-pane fallback
+  - 3-tier detection priority: Hooks → IPC Socket → capture-pane fallback
   - `POST /hooks/event` endpoint with dedicated Bearer token authentication
   - HookRegistry for tracking agent state from 12 Claude Code events
   - Session-to-pane mapping with 3-tier pane ID resolution (header → session map → cwd match)

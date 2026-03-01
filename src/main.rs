@@ -110,7 +110,13 @@ async fn main() -> Result<()> {
         .with_session_pane_map(session_pane_map);
 
     if let Some(token) = hook_token {
-        tracing::info!("Hook token loaded, HTTP hook endpoint enabled");
+        if settings.web.enabled {
+            tracing::info!("Hook token loaded, HTTP hook endpoint enabled");
+        } else {
+            tracing::info!(
+                "Hook token loaded, but web server is disabled — hooks will not receive events"
+            );
+        }
         core_builder = core_builder.with_hook_token(token);
     }
 

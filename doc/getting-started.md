@@ -70,7 +70,7 @@ tmai automatically detects AI agents running in tmux and starts monitoring.
 
 ## Claude Code Hooks (Recommended)
 
-For 100% accurate state detection, set up Claude Code Hooks:
+For the highest precision state detection, set up Claude Code Hooks:
 
 ```bash
 # One-time setup: configure hooks in Claude Code
@@ -80,7 +80,7 @@ tmai init
 This registers tmai as an HTTP hook receiver in `~/.claude/settings.json`. After setup, all Claude Code sessions automatically send state events to tmai — no special agent startup required.
 
 Benefits:
-- 100% accurate state detection
+- Event-driven state detection (highest precision)
 - Works with normal `claude` command (no wrapper needed)
 - Zero-latency event delivery
 - Works with existing sessions

@@ -29,7 +29,7 @@ tmai allows you to operate multiple agents **without attaching** to each pane.
 
 ### Recommended: Set up hooks first
 
-Run `tmai init` once to enable HTTP hooks for 100% accurate detection:
+Run `tmai init` once to enable HTTP hooks for event-driven detection:
 
 ```bash
 tmai init  # one-time setup
@@ -37,7 +37,7 @@ tmai init  # one-time setup
 
 ### Method 1: Monitor existing agents
 
-If multiple agents are already running in tmux, tmai auto-detects them. With hooks enabled, status detection is 100% accurate.
+If multiple agents are already running in tmux, tmai auto-detects them. With hooks enabled, status detection is event-driven and highly accurate.
 
 ```bash
 # Window 1: Claude

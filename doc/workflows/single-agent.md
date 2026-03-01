@@ -68,7 +68,7 @@ p key → Passthrough mode → Type → Esc to return
 
 ## Claude Code Hooks (Recommended)
 
-For 100% accurate state detection, run `tmai init` once to set up hooks:
+For the highest precision state detection, run `tmai init` once to set up hooks:
 
 ```bash
 # One-time setup

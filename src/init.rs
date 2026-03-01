@@ -12,9 +12,6 @@ use serde_json::{json, Value};
 /// Marker used to identify tmai-generated hook entries
 const TMAI_STATUS_PREFIX: &str = "tmai: ";
 
-/// Default web server port
-const DEFAULT_PORT: u16 = 9876;
-
 /// Get the hooks token file path
 fn hooks_token_path() -> Result<PathBuf> {
     let config_dir = dirs::config_dir()
@@ -41,16 +38,27 @@ fn ensure_hook_token(force: bool) -> Result<String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, &token)
-        .with_context(|| format!("Failed to write hooks token to {}", path.display()))?;
 
-    // Restrict token file permissions to owner-only (0600)
+    // Write token file with restricted permissions from the start (no race window)
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(&path, perms)
-            .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .with_context(|| format!("Failed to write hooks token to {}", path.display()))?;
+        file.write_all(token.as_bytes())
+            .with_context(|| format!("Failed to write hooks token to {}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&path, &token)
+            .with_context(|| format!("Failed to write hooks token to {}", path.display()))?;
     }
 
     println!("Generated hook token: {}", path.display());
@@ -202,23 +210,22 @@ pub fn run_uninit() -> Result<()> {
     // Remove tmai hooks
     let removed = remove_tmai_hooks(&mut settings);
 
-    if removed == 0 {
+    if removed > 0 {
+        // Write back settings only if hooks were removed
+        let formatted = serde_json::to_string_pretty(&settings)?;
+        fs::write(&settings_path, formatted)
+            .with_context(|| format!("Failed to write {}", settings_path.display()))?;
+
+        println!(
+            "Removed {} tmai hook entries from {}",
+            removed,
+            settings_path.display()
+        );
+    } else {
         println!("No tmai hook entries found in {}", settings_path.display());
-        return Ok(());
     }
 
-    // Write back settings
-    let formatted = serde_json::to_string_pretty(&settings)?;
-    fs::write(&settings_path, formatted)
-        .with_context(|| format!("Failed to write {}", settings_path.display()))?;
-
-    println!(
-        "Removed {} tmai hook entries from {}",
-        removed,
-        settings_path.display()
-    );
-
-    // Optionally remove the token file
+    // Always attempt to remove the token file, even if no hook entries were found
     if let Ok(token_path) = hooks_token_path() {
         if token_path.exists() {
             fs::remove_file(&token_path)
@@ -235,6 +242,11 @@ pub fn run_uninit() -> Result<()> {
 pub fn run(force: bool) -> Result<()> {
     println!("tmai init — Setting up Claude Code hooks integration\n");
 
+    // Load tmai settings to get the configured web port
+    let tmai_settings =
+        tmai_core::config::Settings::load(None::<&std::path::PathBuf>).unwrap_or_default();
+    let port = tmai_settings.web.port;
+
     // Step 1: Ensure hook token
     let token = ensure_hook_token(force)?;
 
@@ -250,7 +262,7 @@ pub fn run(force: bool) -> Result<()> {
     };
 
     // Step 3: Merge tmai hooks
-    let count = merge_hooks(&mut settings, &token, DEFAULT_PORT);
+    let count = merge_hooks(&mut settings, &token, port);
 
     // Step 4: Write back settings
     if let Some(parent) = settings_path.parent() {
@@ -267,8 +279,8 @@ pub fn run(force: bool) -> Result<()> {
     );
     println!("\nSetup complete! tmai will now receive hook events from Claude Code.");
     println!(
-        "Make sure to start tmai with web server enabled (default: port {}).",
-        DEFAULT_PORT
+        "Make sure to start tmai with web server enabled (port {}).",
+        port
     );
 
     Ok(())

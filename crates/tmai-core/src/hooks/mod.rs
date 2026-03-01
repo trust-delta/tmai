@@ -4,7 +4,7 @@
 //! providing the highest-fidelity agent state detection.
 //!
 //! Detection priority (3-tier):
-//! 1. HTTP Hooks — direct event notification from Claude Code (100% accuracy)
+//! 1. HTTP Hooks — direct event notification from Claude Code (highest accuracy)
 //! 2. IPC Socket — PTY wrapper state reporting (high accuracy)
 //! 3. capture-pane — screen scraping fallback
 

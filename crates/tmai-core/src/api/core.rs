@@ -149,15 +149,20 @@ impl TmaiCore {
     pub fn validate_hook_token(&self, token: &str) -> bool {
         match &self.hook_token {
             Some(expected) => {
-                // Constant-time comparison to prevent timing side-channel attacks
+                // Constant-time comparison to prevent timing side-channel attacks.
+                // We always iterate over the expected token length to avoid
+                // leaking length information via timing.
                 let expected_bytes = expected.as_bytes();
                 let token_bytes = token.as_bytes();
-                if expected_bytes.len() != token_bytes.len() {
-                    return false;
-                }
-                let mut result = 0u8;
-                for (a, b) in expected_bytes.iter().zip(token_bytes.iter()) {
-                    result |= a ^ b;
+                let mut result = (expected_bytes.len() ^ token_bytes.len()) as u8;
+                for i in 0..expected_bytes.len() {
+                    let token_byte = if i < token_bytes.len() {
+                        token_bytes[i]
+                    } else {
+                        // Use a value that will never match to avoid short-circuit
+                        0xFF
+                    };
+                    result |= expected_bytes[i] ^ token_byte;
                 }
                 result == 0
             }

@@ -105,13 +105,13 @@ Details: [Parallel Development with Worktrees](../workflows/worktree-parallel.md
 
 tmai uses a 3-tier detection strategy for maximum accuracy:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Priority 1: HTTP Hooks (recommended)                        │
 │                                                             │
 │  tmai init → Claude Code sends events directly              │
 │                                                             │
-│  100% accurate, zero latency, no wrapper needed             │
+│  Event-driven, highest precision, zero latency, no wrapper  │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -195,7 +195,7 @@ Details: [Agent Teams](../features/agent-teams.md)
 | AskUserQuestion | Direct option selection with number keys |
 | Low adoption barrier | No changes to existing workflow |
 | Flexibility | Use worktrees freely |
-| 3-tier detection | Hooks (100%) → PTY → capture-pane fallback |
+| 3-tier detection | Hooks → IPC → capture-pane fallback |
 | Security | Exfil detection |
 | Remote operation | Approve from smartphone |
 | Agent Teams | Visualize team structure and task progress |
