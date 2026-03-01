@@ -11,6 +11,7 @@ use crate::audit::helper::AuditHelper;
 use crate::audit::AuditEventSender;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
+use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
 use crate::state::SharedState;
 
@@ -35,16 +36,26 @@ pub struct TmaiCore {
     event_tx: broadcast::Sender<CoreEvent>,
     /// Audit helper for emitting user-input-during-processing events
     audit_helper: AuditHelper,
+    /// Hook registry for HTTP hook-based agent state
+    hook_registry: HookRegistry,
+    /// Session ID → pane ID mapping for hook event routing
+    session_pane_map: SessionPaneMap,
+    /// Authentication token for hook endpoints
+    hook_token: Option<String>,
 }
 
 impl TmaiCore {
     /// Create a new TmaiCore instance (prefer `TmaiCoreBuilder`)
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         state: SharedState,
         command_sender: Option<Arc<CommandSender>>,
         settings: Arc<Settings>,
         ipc_server: Option<Arc<IpcServer>>,
         audit_tx: Option<AuditEventSender>,
+        hook_registry: HookRegistry,
+        session_pane_map: SessionPaneMap,
+        hook_token: Option<String>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -55,6 +66,9 @@ impl TmaiCore {
             ipc_server,
             event_tx,
             audit_helper,
+            hook_registry,
+            session_pane_map,
+            hook_token,
         }
     }
 
@@ -116,6 +130,40 @@ impl TmaiCore {
     pub(crate) fn audit_helper(&self) -> &AuditHelper {
         &self.audit_helper
     }
+
+    // =========================================================
+    // Hook accessors
+    // =========================================================
+
+    /// Access the hook registry for HTTP hook-based agent state
+    pub fn hook_registry(&self) -> &HookRegistry {
+        &self.hook_registry
+    }
+
+    /// Access the session → pane ID mapping
+    pub fn session_pane_map(&self) -> &SessionPaneMap {
+        &self.session_pane_map
+    }
+
+    /// Validate a hook authentication token (constant-time comparison)
+    pub fn validate_hook_token(&self, token: &str) -> bool {
+        match &self.hook_token {
+            Some(expected) => {
+                // Constant-time comparison to prevent timing side-channel attacks
+                let expected_bytes = expected.as_bytes();
+                let token_bytes = token.as_bytes();
+                if expected_bytes.len() != token_bytes.len() {
+                    return false;
+                }
+                let mut result = 0u8;
+                for (a, b) in expected_bytes.iter().zip(token_bytes.iter()) {
+                    result |= a ^ b;
+                }
+                result == 0
+            }
+            None => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -127,7 +175,18 @@ mod tests {
     fn test_tmai_core_creation() {
         let state = AppState::shared();
         let settings = Arc::new(Settings::default());
-        let core = TmaiCore::new(state, None, settings.clone(), None, None);
+        let hook_registry = crate::hooks::new_hook_registry();
+        let session_pane_map = crate::hooks::new_session_pane_map();
+        let core = TmaiCore::new(
+            state,
+            None,
+            settings.clone(),
+            None,
+            None,
+            hook_registry,
+            session_pane_map,
+            None,
+        );
 
         assert_eq!(core.settings().poll_interval_ms, 500);
         assert!(core.ipc_server().is_none());
@@ -139,7 +198,18 @@ mod tests {
     fn test_escape_hatches() {
         let state = AppState::shared();
         let settings = Arc::new(Settings::default());
-        let core = TmaiCore::new(state.clone(), None, settings, None, None);
+        let hook_registry = crate::hooks::new_hook_registry();
+        let session_pane_map = crate::hooks::new_session_pane_map();
+        let core = TmaiCore::new(
+            state.clone(),
+            None,
+            settings,
+            None,
+            None,
+            hook_registry,
+            session_pane_map,
+            None,
+        );
 
         // raw_state should return the same Arc
         let raw = core.raw_state();
@@ -147,5 +217,26 @@ mod tests {
 
         // raw_command_sender should be None
         assert!(core.raw_command_sender().is_none());
+    }
+
+    #[test]
+    fn test_hook_token_validation() {
+        let state = AppState::shared();
+        let settings = Arc::new(Settings::default());
+        let hook_registry = crate::hooks::new_hook_registry();
+        let session_pane_map = crate::hooks::new_session_pane_map();
+        let core = TmaiCore::new(
+            state,
+            None,
+            settings,
+            None,
+            None,
+            hook_registry,
+            session_pane_map,
+            Some("test-token-123".to_string()),
+        );
+
+        assert!(core.validate_hook_token("test-token-123"));
+        assert!(!core.validate_hook_token("wrong-token"));
     }
 }

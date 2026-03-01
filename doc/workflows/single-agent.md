@@ -66,19 +66,33 @@ p key → Passthrough mode → Type → Esc to return
 | `Ctrl+d` | Scroll down |
 | `Ctrl+u` | Scroll up |
 
-## PTY Wrapping Mode (Recommended)
+## Claude Code Hooks (Recommended)
 
-For more accurate state detection:
+For 100% accurate state detection, run `tmai init` once to set up hooks:
+
+```bash
+# One-time setup
+tmai init
+
+# Then just use claude normally
+claude
+```
+
+No special wrapper needed — hooks deliver events directly to tmai.
+
+## PTY Wrapping Mode (Optional)
+
+For additional features like exfil detection:
 
 ```bash
 # Instead of claude
 tmai wrap claude
 ```
 
-Benefits:
-- Real-time state detection
-- Accurate AskUserQuestion recognition
+Additional benefits:
 - Exfil detection enabled
+- Full AskUserQuestion option parsing
+- Direct I/O monitoring
 
 ## Next Steps
 

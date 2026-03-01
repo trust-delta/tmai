@@ -16,6 +16,7 @@
 - **AskUserQuestion support** - Respond to agent questions with number selection
 - **Passthrough mode** - Send keys directly to the agent pane
 - **Status detection** - Automatic detection of idle, processing, and awaiting approval states
+- **Claude Code Hooks** - 100% accurate state detection via HTTP hooks (`tmai init`)
 - **PTY wrapping** - High-precision state detection via PTY proxy for real-time I/O monitoring
 - **Exfil detection** - Security monitoring for external data transmission
 - **Web Remote Control** - Control agents from your smartphone via QR code
@@ -29,6 +30,7 @@
 For detailed guides and workflows, see [doc/](./doc/README.md):
 
 - [Getting Started](./doc/getting-started.md) - Installation and first steps
+- [Claude Code Hooks](./doc/features/hooks.md) - 100% accurate detection via HTTP hooks
 - [Multi-agent Monitoring](./doc/workflows/multi-agent.md) - Monitor multiple agents simultaneously
 - [Worktree Parallel Development](./doc/workflows/worktree-parallel.md) - Git worktree workflow
 - [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
@@ -49,9 +51,19 @@ cd tmai
 cargo build --release
 ```
 
-## Usage
+## Quick Start
 
-Run `tmai` in a tmux session:
+### 1. Set up hooks (recommended, one-time)
+
+```bash
+tmai init
+```
+
+This configures Claude Code to send real-time events to tmai for 100% accurate state detection.
+
+### 2. Run tmai
+
+Start `tmai` in a tmux session:
 
 ```bash
 tmai
@@ -113,9 +125,9 @@ model = "haiku"
 - **Input mode** (`i`) - Type text to send to agent
 - **Passthrough mode** (`→`) - Keys sent directly to pane
 
-## PTY Wrapping
+## PTY Wrapping (Optional)
 
-For more accurate state detection, you can wrap AI agents with a PTY proxy:
+For additional features like exfil detection and full AskUserQuestion parsing, wrap AI agents with a PTY proxy:
 
 ```bash
 # Start Claude Code with PTY wrapping
@@ -129,10 +141,10 @@ tmai wrap codex
 tmai wrap gemini
 ```
 
-Benefits:
-- **Real-time I/O monitoring** - Detects state changes immediately
-- **No polling delay** - Faster than tmux capture-pane
-- **Accurate approval detection** - Reliable Yes/No and AskUserQuestion detection
+Additional benefits (on top of hooks):
+- **Exfil detection** - Monitor external data transmission
+- **Full AskUserQuestion parsing** - Parse option text for direct selection
+- **Real-time I/O monitoring** - Direct I/O stream analysis
 
 When creating new AI processes from tmai UI, they are automatically wrapped.
 
@@ -182,12 +194,12 @@ If you are not using mirrored mode, port forwarding is required:
 
 ## Supported Agents
 
-| Agent | Detection | PTY Wrap |
-|-------|-----------|----------|
-| Claude Code | ✅ Supported | ✅ |
-| OpenCode | ✅ Supported | ✅ |
-| Codex CLI | ✅ Supported | ✅ |
-| Gemini CLI | ✅ Supported | ✅ |
+| Agent | Detection | Hooks | PTY Wrap |
+|-------|-----------|-------|----------|
+| Claude Code | ✅ Supported | ✅ | ✅ |
+| OpenCode | ✅ Supported | — | ✅ |
+| Codex CLI | ✅ Supported | — | ✅ |
+| Gemini CLI | ✅ Supported | — | ✅ |
 
 ## Usage Monitoring
 
@@ -203,11 +215,11 @@ Press `U` to check your Claude subscription usage (session / weekly limits). tma
 ┌─────────────────┬─────────────────────────────────┐
 │ Sessions        │ Preview                         │
 │                 │                                 │
-│ [IPC] main:0.0  │ Do you want to make this edit?  │
+│ [◈Hook] main:0  │ Do you want to make this edit?  │
 │   Claude Code   │                                 │
 │   ⠋ Processing  │ ❯ 1. Yes                        │
 │                 │   2. Yes, allow all...          │
-│ [capture] 0.1   │   3. No                         │
+│ [IPC] main:0.1  │   3. No                         │
 │   Claude Code   │                                 │
 │   ✳ Idle        │                                 │
 └─────────────────┴─────────────────────────────────┘

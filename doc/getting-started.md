@@ -68,22 +68,42 @@ tmai automatically detects AI agents running in tmux and starts monitoring.
 
 > **Note**: For rejection or other options, use number keys, input mode (`i`), or passthrough mode (`p`).
 
-## PTY Wrapping Mode (Recommended)
+## Claude Code Hooks (Recommended)
 
-For more accurate state detection, start agents with PTY wrapping.
+For 100% accurate state detection, set up Claude Code Hooks:
+
+```bash
+# One-time setup: configure hooks in Claude Code
+tmai init
+```
+
+This registers tmai as an HTTP hook receiver in `~/.claude/settings.json`. After setup, all Claude Code sessions automatically send state events to tmai — no special agent startup required.
+
+Benefits:
+- 100% accurate state detection
+- Works with normal `claude` command (no wrapper needed)
+- Zero-latency event delivery
+- Works with existing sessions
+
+## PTY Wrapping Mode (Optional)
+
+For additional features like exfil detection and full AskUserQuestion parsing, start agents with PTY wrapping:
 
 ```bash
 # Start Claude with PTY wrapping
 tmai wrap claude
 ```
 
-Benefits:
-- Real-time state transition detection
-- Accurate AskUserQuestion recognition
+Additional benefits over hooks:
 - Exfil detection enabled
+- Full AskUserQuestion option parsing
+- Direct I/O monitoring
+
+> **Note**: Hooks and PTY wrapping can be used together. When both are active, hooks take priority for state detection.
 
 ## Next Steps
 
+- [Claude Code Hooks](./features/hooks.md) - Detailed hooks documentation
 - [Multi-Agent Monitoring](./workflows/multi-agent.md) - Monitor multiple agents
 - [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
 - [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Parallel development workflow

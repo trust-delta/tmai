@@ -339,8 +339,19 @@ Server error (check logs).
 
 | Source | Description |
 |--------|-------------|
+| `hook` | Claude Code HTTP Hooks (highest precision) |
 | `pty` | PTY wrapping (high precision) |
 | `capture` | tmux capture-pane (traditional) |
+
+## Hook Endpoint
+
+### POST /hooks/event
+
+Internal endpoint for receiving Claude Code hook events. This is configured automatically by `tmai init` and uses a separate authentication token from the Web API.
+
+**Authentication**: `Authorization: Bearer <hooks_token>` (not the Web API token)
+
+This endpoint is not intended for manual use — it's called automatically by Claude Code's hook system.
 
 ## Example: curl
 

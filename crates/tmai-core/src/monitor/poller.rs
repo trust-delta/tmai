@@ -17,6 +17,8 @@ use crate::detectors::ClaudeCodeDetector;
 use crate::detectors::GeminiDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::git::GitCache;
+use crate::hooks::registry::HookRegistry;
+use crate::hooks::types::HookStatus;
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
@@ -78,6 +80,8 @@ pub struct Poller {
     state: SharedState,
     /// IPC registry for reading wrapper states
     ipc_registry: IpcRegistry,
+    /// Hook registry for HTTP hook-based agent state (highest priority)
+    hook_registry: HookRegistry,
     /// Current session name (captured at startup, unused while scope is disabled)
     #[allow(dead_code)]
     current_session: Option<String>,
@@ -110,6 +114,7 @@ impl Poller {
         settings: Settings,
         state: SharedState,
         ipc_registry: IpcRegistry,
+        hook_registry: HookRegistry,
         audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     ) -> Self {
         let client = TmuxClient::with_capture_lines(settings.capture_lines);
@@ -129,6 +134,7 @@ impl Poller {
             settings,
             state,
             ipc_registry,
+            hook_registry,
             current_session,
             current_window,
             audit_logger,
@@ -201,6 +207,12 @@ impl Poller {
                         // Remove expired grace periods (> 30s old to avoid unbounded growth)
                         self.grace_periods
                             .retain(|_, ts| ts.elapsed().as_secs() < 30);
+                        // Remove stale hook entries (> 5 minutes without events)
+                        const HOOK_STALE_MS: u64 = 300_000;
+                        {
+                            let mut reg = self.hook_registry.write();
+                            reg.retain(|_, state| state.is_fresh(HOOK_STALE_MS));
+                        }
                     }
 
                     // Team scanning at configured interval, or re-apply cached info
@@ -293,25 +305,36 @@ impl Poller {
                 .or_else(|| pane.detect_agent_type_with_cmdline(direct_cmdline.as_deref()));
 
             if let Some(agent_type) = agent_type {
-                // Try to read state from IPC registry first
-                // Use pane_id (global unique ID like "5" from "%5") not pane_index (local window index)
+                // 3-tier detection: Hook → IPC → capture-pane
+                // Read state from each registry
+                let hook_state = {
+                    let registry = self.hook_registry.read();
+                    registry.get(&pane.pane_id).cloned()
+                };
                 let wrap_state = {
                     let registry = self.ipc_registry.read();
                     registry.get(&pane.pane_id).cloned()
                 };
                 let is_selected = selected_agent_id.as_ref() == Some(&pane.target);
 
-                // Optimize capture-pane based on selection and IPC state:
-                // - Selected: ANSI capture for preview
-                // - Non-selected + IPC: skip capture-pane entirely (state from IPC registry)
+                // Hook freshness threshold: 30 seconds
+                const HOOK_FRESHNESS_MS: u64 = 30_000;
+                let has_fresh_hook = hook_state
+                    .as_ref()
+                    .map(|hs| hs.is_fresh(HOOK_FRESHNESS_MS))
+                    .unwrap_or(false);
+
+                // Optimize capture-pane based on selection and detection source:
+                // - Selected: ANSI capture for preview (always needed)
+                // - Non-selected + hook/IPC: skip capture-pane entirely
                 // - Non-selected + capture-pane mode: plain capture for detection only
                 let (content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
-                } else if wrap_state.is_some() {
-                    // Non-selected + IPC mode: skip capture-pane entirely
+                } else if has_fresh_hook || wrap_state.is_some() {
+                    // Non-selected + hook/IPC mode: skip capture-pane entirely
                     (String::new(), String::new())
                 } else {
                     // Non-selected + capture-pane mode: plain capture for detection
@@ -327,10 +350,24 @@ impl Poller {
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
-                // Determine status: use IPC state if available, otherwise detect from content
+                // Determine status using 3-tier priority:
+                // 1. HTTP Hook (fresh) — highest fidelity
+                // 2. IPC Socket — high fidelity
+                // 3. capture-pane — fallback
                 let mut screen_override = false;
-                let (status, context_warning, detection_reason) = if let Some(ref ws) = wrap_state {
-                    // Convert WrapState to AgentStatus
+                let (status, context_warning, detection_reason) = if has_fresh_hook {
+                    // Tier 1: Hook-based detection
+                    let hs = hook_state.as_ref().unwrap();
+                    let status = hook_state_to_agent_status(hs);
+                    let matched_text = hs.last_tool.as_ref().map(|t| format!("tool: {}", t));
+                    let reason = DetectionReason {
+                        rule: "http_hook".to_string(),
+                        confidence: DetectionConfidence::High,
+                        matched_text,
+                    };
+                    (status, None, Some(reason))
+                } else if let Some(ref ws) = wrap_state {
+                    // Tier 2: IPC-based detection (existing logic)
                     let status = wrap_state_to_agent_status(ws);
 
                     // P1: IPC Approval lag correction — when IPC reports non-Approval,
@@ -362,7 +399,6 @@ impl Poller {
                             (result.status, context_warning, Some(result.reason))
                         } else {
                             // Enrich IPC Processing with screen-detected activity
-                            // (e.g., "Compacting..." from title or spinner verb)
                             let status = enrich_ipc_activity(status, &result.status, &title);
                             let matched_text =
                                 if let AgentStatus::Processing { ref activity } = status {
@@ -390,13 +426,12 @@ impl Poller {
                         (status, None, Some(reason))
                     }
                 } else {
-                    // Build detection context for this pane
+                    // Tier 3: capture-pane fallback
                     let detection_context = DetectionContext {
                         cwd: Some(pane.cwd.as_str()),
                         settings_cache: Some(&self.claude_settings_cache),
                     };
 
-                    // Detect status using appropriate detector with reason
                     let detector = get_detector(&agent_type);
                     let result =
                         detector.detect_status_with_reason(&title, &content, &detection_context);
@@ -426,7 +461,9 @@ impl Poller {
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
-                agent.detection_source = if screen_override {
+                agent.detection_source = if has_fresh_hook {
+                    DetectionSource::HttpHook
+                } else if screen_override {
                     DetectionSource::CapturePane
                 } else if wrap_state.is_some() {
                     DetectionSource::IpcSocket
@@ -1398,6 +1435,29 @@ fn enrich_ipc_activity(
 }
 
 /// Convert WrapState from state file to AgentStatus
+/// Convert HookState to AgentStatus
+fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatus {
+    match hs.status {
+        HookStatus::Processing => {
+            let activity = hs
+                .last_tool
+                .as_ref()
+                .map(|t| format!("Tool: {}", t))
+                .unwrap_or_default();
+            AgentStatus::Processing { activity }
+        }
+        HookStatus::Idle => AgentStatus::Idle,
+        HookStatus::AwaitingApproval => {
+            let tool_info = hs.last_tool.clone().unwrap_or_default();
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::Other("Approval".to_string()),
+                details: tool_info,
+            }
+        }
+    }
+}
+
+/// Convert WrapState to AgentStatus
 fn wrap_state_to_agent_status(ws: &WrapState) -> AgentStatus {
     match ws.status {
         WrapStatus::Processing => AgentStatus::Processing {
@@ -1437,7 +1497,8 @@ mod tests {
         let settings = Settings::default();
         let state = AppState::shared();
         let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
-        let _poller = Poller::new(settings, state, ipc_registry, None);
+        let hook_registry = crate::hooks::new_hook_registry();
+        let _poller = Poller::new(settings, state, ipc_registry, hook_registry, None);
     }
 
     #[test]

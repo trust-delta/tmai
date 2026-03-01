@@ -122,10 +122,16 @@ impl App {
             .unwrap_or_else(|| {
                 Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()))
             });
+        let hook_registry = self
+            .core
+            .as_ref()
+            .map(|c| c.hook_registry().clone())
+            .unwrap_or_else(tmai_core::hooks::new_hook_registry);
         let mut poller = Poller::new(
             self.settings.clone(),
             self.state.clone(),
             ipc_registry,
+            hook_registry,
             self.audit_event_rx.take(),
         );
         // Pass event sender for TeammateIdle/TaskCompleted notifications

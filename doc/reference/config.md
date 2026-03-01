@@ -208,7 +208,20 @@ TMAI_CONFIG=/path/to/config.toml tmai
 | Command | Description |
 |---------|-------------|
 | `tmai` | Start TUI monitor |
+| `tmai init` | Set up Claude Code hooks integration (recommended) |
+| `tmai init --force` | Force-regenerate token and re-add hooks |
+| `tmai uninit` | Remove tmai hooks and delete token |
 | `tmai wrap <command>` | Start agent with PTY wrapping |
+
+#### init Examples
+
+```bash
+# One-time setup: configure hooks
+tmai init
+
+# Force regenerate token
+tmai init --force
+```
 
 #### wrap Examples
 

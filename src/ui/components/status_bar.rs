@@ -288,6 +288,7 @@ impl StatusBar {
                 // Show detection source
                 let detection_label = agent.detection_source.label();
                 let detection_color = match agent.detection_source {
+                    tmai_core::agents::DetectionSource::HttpHook => Color::Cyan,
                     tmai_core::agents::DetectionSource::IpcSocket => Color::Green,
                     tmai_core::agents::DetectionSource::CapturePane => Color::DarkGray,
                 };

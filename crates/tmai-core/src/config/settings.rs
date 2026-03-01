@@ -52,6 +52,14 @@ pub enum Command {
         #[command(subcommand)]
         subcommand: AuditCommand,
     },
+    /// Initialize Claude Code hooks integration
+    Init {
+        /// Force overwrite existing tmai hook entries
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove tmai hooks from Claude Code settings
+    Uninit,
 }
 
 /// Audit analysis subcommands
@@ -96,6 +104,24 @@ impl Config {
     /// Check if running in audit mode
     pub fn is_audit_mode(&self) -> bool {
         matches!(self.command, Some(Command::Audit { .. }))
+    }
+
+    /// Check if running in init mode
+    pub fn is_init_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Init { .. }))
+    }
+
+    /// Get init command force flag
+    pub fn get_init_force(&self) -> bool {
+        match &self.command {
+            Some(Command::Init { force }) => *force,
+            _ => false,
+        }
+    }
+
+    /// Check if running in uninit mode
+    pub fn is_uninit_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Uninit))
     }
 
     /// Get audit subcommand

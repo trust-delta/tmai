@@ -2,6 +2,8 @@
 
 PTYプロキシによる高精度な状態検出。
 
+> **Note**: Claude Codeの場合、[HTTP Hooks連携](./hooks.md)が推奨される主要な検出方法になりました。PTYラッピングは外部送信検知、AskUserQuestionの完全な解析、Claude Code以外のエージェントで引き続き有用です。
+
 ## 概要
 
 PTYラッピングは、AIエージェントをPTYプロキシ経由で起動し、入出力を直接監視することで、従来のtmux capture-paneより正確な状態検知を実現します。
@@ -45,8 +47,9 @@ tmai wrap gemini
 
 | 方式 | 検出方法 | タイミング | 機能 |
 |------|----------|------------|------|
+| HTTP Hooks | Claude Codeイベント | リアルタイム | ステータスのみ |
+| PTYラッピング | I/O直接監視 | リアルタイム | フル（外部送信検知、AskUserQuestion） |
 | capture-pane | 画面テキスト解析 | ポーリング間隔 | 基本 |
-| PTYラッピング | I/O直接監視 | リアルタイム | フル |
 
 ### 従来方式（capture-pane）
 
@@ -137,6 +140,7 @@ I/O直接監視 → リアルタイム状態検出
 
 tmaiはステータスバーに検出方式を表示します：
 
+- `◈ Hook` - HTTP Hooks（最高精度、Claude Codeのみ）
 - `PTY` - PTYラッピング（高精度）
 - `CAP` - capture-pane（従来方式）
 

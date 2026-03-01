@@ -17,6 +17,7 @@ use tmai_core::config::Settings;
 use super::api;
 use super::auth::{self, AuthState};
 use super::events;
+use super::hooks;
 use super::static_files;
 
 /// Web server for remote control
@@ -96,10 +97,16 @@ impl WebServer {
             .route("/", get(static_files::index))
             .route("/{*path}", get(static_files::asset));
 
+        // Hook routes (separate auth via hook token, not web API token)
+        let hook_routes = Router::new()
+            .route("/event", post(hooks::hook_event))
+            .with_state(self.core.clone());
+
         // Combine all routes
         let app = Router::new()
             .nest("/api", api_routes)
             .nest("/api", events_routes)
+            .nest("/hooks", hook_routes)
             .merge(static_routes)
             .layer(cors);
 

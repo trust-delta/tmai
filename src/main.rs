@@ -42,6 +42,16 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Check for init subcommand
+    if cli.is_init_mode() {
+        return tmai::init::run(cli.get_init_force());
+    }
+
+    // Check for uninit subcommand
+    if cli.is_uninit_mode() {
+        return tmai::init::run_uninit();
+    }
+
     // Check for demo subcommand (no tmux, IPC, or web required)
     if cli.is_demo_mode() {
         setup_logging(cli.debug, true);
@@ -87,10 +97,22 @@ async fn main() -> Result<()> {
         app_state.clone(),
     ));
 
+    // Create hook registry and load hook token
+    let hook_registry = tmai_core::hooks::new_hook_registry();
+    let session_pane_map = tmai_core::hooks::new_session_pane_map();
+    let hook_token = tmai::init::load_hook_token();
+
     let mut core_builder = TmaiCoreBuilder::new(settings.clone())
         .with_state(app_state.clone())
         .with_ipc_server(ipc_server.clone())
-        .with_command_sender(core_cmd_sender);
+        .with_command_sender(core_cmd_sender)
+        .with_hook_registry(hook_registry)
+        .with_session_pane_map(session_pane_map);
+
+    if let Some(token) = hook_token {
+        tracing::info!("Hook token loaded, HTTP hook endpoint enabled");
+        core_builder = core_builder.with_hook_token(token);
+    }
 
     if let Some(ref tx) = audit_tx {
         core_builder = core_builder.with_audit_sender(tx.clone());
