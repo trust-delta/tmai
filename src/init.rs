@@ -80,18 +80,41 @@ fn claude_settings_path() -> Result<PathBuf> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
-/// Build a tmai hook entry for a given event
+/// Build a tmai hook entry for a given event (new wrapper format)
 fn build_hook_entry(event: &str, token: &str, port: u16) -> Value {
     json!({
-        "type": "http",
-        "url": format!("http://localhost:{}/hooks/event", port),
-        "headers": {
-            "Authorization": format!("Bearer {}", token),
-            "X-Tmai-Pane-Id": "$TMUX_PANE"
-        },
-        "allowedEnvVars": ["TMUX_PANE"],
-        "statusMessage": format!("{}{}", TMAI_STATUS_PREFIX, event)
+        "hooks": [{
+            "type": "http",
+            "url": format!("http://localhost:{}/hooks/event", port),
+            "headers": {
+                "Authorization": format!("Bearer {}", token),
+                "X-Tmai-Pane-Id": "$TMUX_PANE"
+            },
+            "allowedEnvVars": ["TMUX_PANE"],
+            "statusMessage": format!("{}{}", TMAI_STATUS_PREFIX, event)
+        }]
     })
+}
+
+/// Check if a hook entry belongs to tmai (supports both old and new format)
+fn is_tmai_entry(entry: &Value) -> bool {
+    // Old format: entry.statusMessage
+    if let Some(s) = entry.get("statusMessage").and_then(|v| v.as_str()) {
+        if s.starts_with(TMAI_STATUS_PREFIX) {
+            return true;
+        }
+    }
+    // New format: entry.hooks[*].statusMessage
+    if let Some(hooks) = entry.get("hooks").and_then(|v| v.as_array()) {
+        for h in hooks {
+            if let Some(s) = h.get("statusMessage").and_then(|v| v.as_str()) {
+                if s.starts_with(TMAI_STATUS_PREFIX) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Hook events that tmai subscribes to
@@ -146,15 +169,8 @@ fn merge_hooks(settings: &mut Value, token: &str, port: u16) -> usize {
         }
         let event_hooks = event_entry.as_array_mut().unwrap();
 
-        // Remove existing tmai entries (identified by statusMessage prefix)
-        event_hooks.retain(|entry| {
-            let is_tmai = entry
-                .get("statusMessage")
-                .and_then(|v| v.as_str())
-                .map(|s| s.starts_with(TMAI_STATUS_PREFIX))
-                .unwrap_or(false);
-            !is_tmai
-        });
+        // Remove existing tmai entries (old and new format)
+        event_hooks.retain(|entry| !is_tmai_entry(entry));
 
         // Add new tmai entry
         event_hooks.push(build_hook_entry(event, token, port));
@@ -175,14 +191,7 @@ fn remove_tmai_hooks(settings: &mut Value) -> usize {
     for (_event, entries) in hooks.iter_mut() {
         if let Some(arr) = entries.as_array_mut() {
             let before = arr.len();
-            arr.retain(|entry| {
-                let is_tmai = entry
-                    .get("statusMessage")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.starts_with(TMAI_STATUS_PREFIX))
-                    .unwrap_or(false);
-                !is_tmai
-            });
+            arr.retain(|entry| !is_tmai_entry(entry));
             removed += before - arr.len();
         }
     }
@@ -293,11 +302,14 @@ mod tests {
     #[test]
     fn test_build_hook_entry() {
         let entry = build_hook_entry("PreToolUse", "test-token", 9876);
-        assert_eq!(entry["type"], "http");
-        assert_eq!(entry["url"], "http://localhost:9876/hooks/event");
-        assert_eq!(entry["headers"]["Authorization"], "Bearer test-token");
-        assert_eq!(entry["headers"]["X-Tmai-Pane-Id"], "$TMUX_PANE");
-        assert_eq!(entry["statusMessage"], "tmai: PreToolUse");
+        // New format: wrapper with hooks array
+        let hooks = entry["hooks"].as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0]["type"], "http");
+        assert_eq!(hooks[0]["url"], "http://localhost:9876/hooks/event");
+        assert_eq!(hooks[0]["headers"]["Authorization"], "Bearer test-token");
+        assert_eq!(hooks[0]["headers"]["X-Tmai-Pane-Id"], "$TMUX_PANE");
+        assert_eq!(hooks[0]["statusMessage"], "tmai: PreToolUse");
     }
 
     #[test]
@@ -306,12 +318,15 @@ mod tests {
         let count = merge_hooks(&mut settings, "token-123", 9876);
         assert_eq!(count, target_events().len());
 
-        // Verify hooks structure
+        // Verify hooks structure (new wrapper format)
         let hooks = settings["hooks"].as_object().unwrap();
         for event in target_events() {
             let entries = hooks[*event].as_array().unwrap();
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0]["statusMessage"], format!("tmai: {}", event));
+            assert_eq!(
+                entries[0]["hooks"][0]["statusMessage"],
+                format!("tmai: {}", event)
+            );
         }
     }
 
@@ -335,14 +350,16 @@ mod tests {
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre_tool.len(), 2);
         assert_eq!(pre_tool[0]["statusMessage"], "user: pre-tool");
-        assert!(pre_tool[1]["statusMessage"]
+        // New tmai entry is in wrapper format
+        assert!(pre_tool[1]["hooks"][0]["statusMessage"]
             .as_str()
             .unwrap()
             .starts_with("tmai: "));
     }
 
     #[test]
-    fn test_merge_hooks_replaces_existing_tmai() {
+    fn test_merge_hooks_replaces_existing_tmai_old_format() {
+        // Old format tmai entry (statusMessage at top level)
         let mut settings = json!({
             "hooks": {
                 "PreToolUse": [
@@ -366,11 +383,51 @@ mod tests {
         // Should have 2: the "other" one + the new tmai one (old tmai replaced)
         assert_eq!(pre_tool.len(), 2);
         assert_eq!(pre_tool[0]["statusMessage"], "other: test");
-        assert_eq!(pre_tool[1]["headers"]["Authorization"], "Bearer new-token");
+        // New entry uses wrapper format
+        assert_eq!(
+            pre_tool[1]["hooks"][0]["headers"]["Authorization"],
+            "Bearer new-token"
+        );
     }
 
     #[test]
-    fn test_remove_tmai_hooks() {
+    fn test_merge_hooks_replaces_existing_tmai_new_format() {
+        // New format tmai entry (statusMessage inside hooks array)
+        let mut settings = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "hooks": [{
+                            "type": "http",
+                            "url": "http://localhost:9876/hooks/event",
+                            "statusMessage": "tmai: PreToolUse"
+                        }]
+                    },
+                    {
+                        "hooks": [{
+                            "type": "command",
+                            "command": "echo other",
+                            "statusMessage": "other: test"
+                        }]
+                    }
+                ]
+            }
+        });
+
+        merge_hooks(&mut settings, "new-token", 9876);
+
+        let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+        // Should have 2: the non-tmai wrapper + the new tmai wrapper
+        assert_eq!(pre_tool.len(), 2);
+        assert_eq!(pre_tool[0]["hooks"][0]["statusMessage"], "other: test");
+        assert_eq!(
+            pre_tool[1]["hooks"][0]["headers"]["Authorization"],
+            "Bearer new-token"
+        );
+    }
+
+    #[test]
+    fn test_remove_tmai_hooks_old_format() {
         let mut settings = json!({
             "hooks": {
                 "PreToolUse": [
@@ -395,6 +452,52 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_tmai_hooks_new_format() {
+        let mut settings = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {"hooks": [{"statusMessage": "tmai: PreToolUse"}]},
+                    {"hooks": [{"statusMessage": "other: test"}]}
+                ],
+                "Stop": [
+                    {"hooks": [{"statusMessage": "tmai: Stop"}]}
+                ]
+            }
+        });
+
+        let removed = remove_tmai_hooks(&mut settings);
+        assert_eq!(removed, 2);
+
+        let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(pre_tool[0]["hooks"][0]["statusMessage"], "other: test");
+
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_tmai_hooks_mixed_formats() {
+        // Settings with both old and new format tmai entries
+        let mut settings = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {"statusMessage": "tmai: PreToolUse"},
+                    {"hooks": [{"statusMessage": "tmai: PreToolUse"}]},
+                    {"statusMessage": "other: test"}
+                ]
+            }
+        });
+
+        let removed = remove_tmai_hooks(&mut settings);
+        assert_eq!(removed, 2);
+
+        let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(pre_tool[0]["statusMessage"], "other: test");
+    }
+
+    #[test]
     fn test_target_events_count() {
         // Should have 12 target events
         assert_eq!(target_events().len(), 12);
@@ -412,5 +515,81 @@ mod tests {
         let mut settings = json!({ "hooks": {} });
         let removed = remove_tmai_hooks(&mut settings);
         assert_eq!(removed, 0);
+    }
+
+    #[test]
+    fn test_is_tmai_entry_old_format() {
+        let entry = json!({"type": "http", "statusMessage": "tmai: PreToolUse"});
+        assert!(is_tmai_entry(&entry));
+    }
+
+    #[test]
+    fn test_is_tmai_entry_new_format() {
+        let entry = json!({"hooks": [{"type": "http", "statusMessage": "tmai: PreToolUse"}]});
+        assert!(is_tmai_entry(&entry));
+    }
+
+    #[test]
+    fn test_is_tmai_entry_non_tmai() {
+        let entry = json!({"type": "command", "statusMessage": "other: test"});
+        assert!(!is_tmai_entry(&entry));
+
+        let entry = json!({"hooks": [{"statusMessage": "other: test"}]});
+        assert!(!is_tmai_entry(&entry));
+
+        let entry = json!({"hooks": []});
+        assert!(!is_tmai_entry(&entry));
+    }
+
+    #[test]
+    fn test_migration_old_to_new_format() {
+        // Simulate settings with old-format tmai entries
+        let mut settings = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "type": "http",
+                        "url": "http://localhost:9876/hooks/event",
+                        "headers": {"Authorization": "Bearer old-token"},
+                        "statusMessage": "tmai: PreToolUse"
+                    }
+                ],
+                "Stop": [
+                    {
+                        "type": "http",
+                        "url": "http://localhost:9876/hooks/event",
+                        "headers": {"Authorization": "Bearer old-token"},
+                        "statusMessage": "tmai: Stop"
+                    },
+                    {
+                        "type": "command",
+                        "command": "echo user-hook",
+                        "statusMessage": "user: stop-hook"
+                    }
+                ]
+            }
+        });
+
+        // Merge with new token — should replace old-format entries with new-format
+        merge_hooks(&mut settings, "new-token", 9876);
+
+        // PreToolUse: old entry removed, new wrapper entry added
+        let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(
+            pre_tool[0]["hooks"][0]["headers"]["Authorization"],
+            "Bearer new-token"
+        );
+        // No top-level statusMessage (that was old format)
+        assert!(pre_tool[0].get("statusMessage").is_none());
+
+        // Stop: user entry preserved, old tmai replaced with new format
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+        assert_eq!(stop[0]["statusMessage"], "user: stop-hook");
+        assert_eq!(
+            stop[1]["hooks"][0]["headers"]["Authorization"],
+            "Bearer new-token"
+        );
     }
 }
