@@ -243,8 +243,8 @@ pub fn run(force: bool) -> Result<()> {
     println!("tmai init — Setting up Claude Code hooks integration\n");
 
     // Load tmai settings to get the configured web port
-    let tmai_settings =
-        tmai_core::config::Settings::load(None::<&std::path::PathBuf>).unwrap_or_default();
+    let tmai_settings = tmai_core::config::Settings::load(None::<&std::path::PathBuf>)
+        .context("Failed to load tmai settings for hook setup")?;
     let port = tmai_settings.web.port;
 
     // Step 1: Ensure hook token

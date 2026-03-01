@@ -115,9 +115,9 @@ tmai uses a 3-tier detection strategy for maximum accuracy:
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│ Priority 2: PTY Wrapping                                    │
+│ Priority 2: IPC (PTY Wrapping)                              │
 │                                                             │
-│  tmai wrap claude → Direct I/O monitoring                   │
+│  tmai wrap claude → Direct I/O → reports via IPC socket     │
 │                                                             │
 │  High precision + exfil detection + AskUserQuestion parsing │
 └─────────────────────────────────────────────────────────────┘

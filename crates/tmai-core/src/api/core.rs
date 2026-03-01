@@ -154,7 +154,7 @@ impl TmaiCore {
                 // leaking length information via timing.
                 let expected_bytes = expected.as_bytes();
                 let token_bytes = token.as_bytes();
-                let mut result = (expected_bytes.len() ^ token_bytes.len()) as u8;
+                let mut result: usize = expected_bytes.len() ^ token_bytes.len();
                 for i in 0..expected_bytes.len() {
                     let token_byte = if i < token_bytes.len() {
                         token_bytes[i]
@@ -162,7 +162,7 @@ impl TmaiCore {
                         // Use a value that will never match to avoid short-circuit
                         0xFF
                     };
-                    result |= expected_bytes[i] ^ token_byte;
+                    result |= (expected_bytes[i] ^ token_byte) as usize;
                 }
                 result == 0
             }
