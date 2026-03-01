@@ -255,4 +255,140 @@ mod tests {
         state.last_event_at = 0;
         assert!(!state.is_fresh(1000));
     }
+
+    /// Claude Code sends payloads with all common fields in snake_case
+    #[test]
+    fn test_hook_event_payload_deserialize_full_common_fields() {
+        let json = r#"{
+            "hook_event_name": "PreToolUse",
+            "session_id": "abc123",
+            "transcript_path": "/home/user/.claude/projects/proj/transcript.jsonl",
+            "cwd": "/home/user/project",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test"}
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert_eq!(payload.session_id, "abc123");
+        assert_eq!(
+            payload.transcript_path.as_deref(),
+            Some("/home/user/.claude/projects/proj/transcript.jsonl")
+        );
+        assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
+        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
+        assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
+        assert!(payload.tool_input.is_some());
+    }
+
+    /// Old camelCase format must fail deserialization (missing required field)
+    #[test]
+    fn test_hook_event_payload_rejects_camel_case() {
+        let json = r#"{
+            "event": "PreToolUse",
+            "sessionId": "sess-123",
+            "toolName": "Bash"
+        }"#;
+        let result = serde_json::from_str::<HookEventPayload>(json);
+        assert!(
+            result.is_err(),
+            "camelCase format should fail: hook_event_name is required"
+        );
+    }
+
+    /// SubagentStart payload with agent_id and agent_type
+    #[test]
+    fn test_hook_event_payload_deserialize_subagent_start() {
+        let json = r#"{
+            "hook_event_name": "SubagentStart",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "agent_id": "agent-abc123",
+            "agent_type": "Explore"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "SubagentStart");
+        assert_eq!(payload.agent_id.as_deref(), Some("agent-abc123"));
+        assert_eq!(payload.agent_type.as_deref(), Some("Explore"));
+    }
+
+    /// TeammateIdle payload with teammate_name and team_name
+    #[test]
+    fn test_hook_event_payload_deserialize_teammate_idle() {
+        let json = r#"{
+            "hook_event_name": "TeammateIdle",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "teammate_name": "researcher",
+            "team_name": "my-project"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "TeammateIdle");
+        assert_eq!(payload.teammate_name.as_deref(), Some("researcher"));
+        assert_eq!(payload.team_name.as_deref(), Some("my-project"));
+    }
+
+    /// TaskCompleted payload with task_description
+    #[test]
+    fn test_hook_event_payload_deserialize_task_completed() {
+        let json = r#"{
+            "hook_event_name": "TaskCompleted",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "task_id": "task-001",
+            "task_subject": "Implement auth",
+            "task_description": "Add login and signup endpoints",
+            "teammate_name": "implementer",
+            "team_name": "my-project"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "TaskCompleted");
+        assert_eq!(payload.task_id.as_deref(), Some("task-001"));
+        assert_eq!(payload.task_subject.as_deref(), Some("Implement auth"));
+        assert_eq!(
+            payload.task_description.as_deref(),
+            Some("Add login and signup endpoints")
+        );
+        assert_eq!(payload.teammate_name.as_deref(), Some("implementer"));
+    }
+
+    /// SessionStart payload (minimal — only common fields)
+    #[test]
+    fn test_hook_event_payload_deserialize_session_start() {
+        let json = r#"{
+            "hook_event_name": "SessionStart",
+            "session_id": "new-session",
+            "cwd": "/home/user/project",
+            "permission_mode": "plan"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "SessionStart");
+        assert_eq!(payload.session_id, "new-session");
+        assert_eq!(payload.permission_mode.as_deref(), Some("plan"));
+        // All optional event-specific fields should be None
+        assert!(payload.tool_name.is_none());
+        assert!(payload.stop_hook_active.is_none());
+        assert!(payload.teammate_name.is_none());
+    }
+
+    /// PermissionRequest payload with tool_name and tool_input
+    #[test]
+    fn test_hook_event_payload_deserialize_permission_request() {
+        let json = r#"{
+            "hook_event_name": "PermissionRequest",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf /tmp/build"}
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "PermissionRequest");
+        assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
+        let tool_input = payload.tool_input.unwrap();
+        assert_eq!(tool_input["command"], "rm -rf /tmp/build");
+    }
 }

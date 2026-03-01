@@ -25,7 +25,13 @@ pub fn handle_hook_event(
     }
 
     let event = payload.hook_event_name.as_str();
-    debug!(event, pane_id, session_id = %payload.session_id, "Processing hook event");
+    debug!(
+        event,
+        pane_id,
+        session_id = %payload.session_id,
+        tool_name = ?payload.tool_name,
+        "Processing hook event"
+    );
 
     match event {
         event_names::SESSION_START => {
@@ -54,7 +60,8 @@ pub fn handle_hook_event(
         }
 
         event_names::PRE_TOOL_USE => {
-            let tool_name = payload.tool_name.clone();
+            // Filter empty tool names to prevent "Tool: " display
+            let tool_name = payload.tool_name.clone().filter(|t| !t.is_empty());
             update_status(
                 hook_registry,
                 pane_id,
@@ -103,7 +110,7 @@ pub fn handle_hook_event(
                 pane_id,
                 payload,
                 HookStatus::AwaitingApproval,
-                payload.tool_name.clone(),
+                payload.tool_name.clone().filter(|t| !t.is_empty()),
             );
             None
         }
@@ -481,5 +488,133 @@ mod tests {
         let state = reg.get("5").unwrap();
         assert_eq!(state.status, HookStatus::AwaitingApproval);
         assert_eq!(state.last_tool.as_deref(), Some("Bash"));
+    }
+
+    /// UserPromptSubmit clears last_tool from previous cycle
+    #[test]
+    fn test_user_prompt_submit_clears_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        // Set a tool via PreToolUse
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Bash"));
+        }
+
+        // New prompt should clear the tool
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert!(
+            state.last_tool.is_none(),
+            "UserPromptSubmit should clear last_tool"
+        );
+    }
+
+    /// PostToolUse clears last_tool after tool completion
+    #[test]
+    fn test_post_tool_use_clears_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Read"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Read"));
+        }
+
+        // PostToolUse should clear the tool (tool has finished)
+        handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert!(
+            state.last_tool.is_none(),
+            "PostToolUse should clear last_tool"
+        );
+    }
+
+    /// Stop clears last_tool when returning to idle
+    #[test]
+    fn test_stop_clears_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Write"),
+            "5",
+            &registry,
+            &map,
+        );
+
+        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Idle);
+        assert!(state.last_tool.is_none(), "Stop should clear last_tool");
+    }
+
+    /// Full lifecycle: PreToolUse sets tool, PostToolUse clears, next PreToolUse sets new tool
+    #[test]
+    fn test_tool_lifecycle_pre_post_pre() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // First tool
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Bash"));
+        }
+
+        // Tool finishes
+        handle_hook_event(&make_payload("PostToolUse"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert!(reg.get("5").unwrap().last_tool.is_none());
+        }
+
+        // Second tool
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Edit"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_tool.as_deref(), Some("Edit"));
+        }
+
+        // Stop resets everything
+        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Idle);
+        assert!(state.last_tool.is_none());
     }
 }
