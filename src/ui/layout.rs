@@ -87,10 +87,11 @@ impl Layout {
         }
     }
 
-    /// Create a layout with custom preview height (now used as session list width)
-    pub fn with_preview_height(mut self, _height_pct: u16) -> Self {
-        // Keep default width for now
-        self.session_list_width_pct = 35;
+    /// Create a layout with custom preview size (percentage of space for the preview panel)
+    pub fn with_preview_height(mut self, preview_pct: u16) -> Self {
+        let preview_pct = preview_pct.clamp(10, 90);
+        self.session_list_width_pct = 100 - preview_pct;
+        self.session_list_height_pct = 100 - preview_pct;
         self
     }
 
