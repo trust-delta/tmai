@@ -220,6 +220,10 @@ cargo fmt              # フォーマット
 
 [tmuxcc](https://github.com/nyanko3141592/tmuxcc) にインスピレーションを受けました。
 
+## コントリビューション
+
+[CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md) をご覧ください。
+
 ## ライセンス
 
 MIT
