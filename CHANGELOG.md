@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-02
+
+### Added
+- Hook-as-Teacher detection validation: use hook events as ground truth to measure IPC/capture-pane detection accuracy
+  - `DetectionValidation` audit event logged on disagreement between hook and IPC/capture-pane results
+  - `HookContext` preserves rich event context (event_name, tool_input, permission_mode) for analysis
+  - `compute_validation_stats()` for accuracy analysis by rule and status
+  - Non-selected panes run capture-pane for validation when audit is enabled
+
+### Dependencies
+- Bump chrono from 0.4.43 to 0.4.44
+- Bump nix from 0.31.1 to 0.31.2
+
 ## [0.10.3] - 2026-03-02
 
 ### Fixed
