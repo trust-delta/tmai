@@ -500,6 +500,12 @@ fn is_genuine_user_question(approval_type: &ApprovalType) -> bool {
                 return true;
             }
 
+            // Empty choices = hook-based detection without choice info → genuine
+            // Hook detection only knows tool_name, not the actual choices
+            if choices.is_empty() {
+                return true;
+            }
+
             // Standard permission prompts have choices that are all variations of Yes/No
             // e.g., ["Yes", "Yes, and always allow...", "No"]
             // Genuine questions have choices like ["Option A", "Option B", "Other"]
@@ -649,6 +655,17 @@ mod tests {
         // Non-UserQuestion types are never genuine user questions
         assert!(!is_genuine_user_question(&ApprovalType::FileEdit));
         assert!(!is_genuine_user_question(&ApprovalType::ShellCommand));
+    }
+
+    #[test]
+    fn test_is_genuine_user_question_empty_choices() {
+        // Empty choices from hook-based detection → genuine (requires human judgment)
+        let approval = ApprovalType::UserQuestion {
+            choices: vec![],
+            multi_select: false,
+            cursor_position: 0,
+        };
+        assert!(is_genuine_user_question(&approval));
     }
 
     #[test]
