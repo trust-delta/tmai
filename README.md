@@ -230,6 +230,10 @@ Press `U` to check your Claude subscription usage (session / weekly limits). tma
 
 Inspired by [tmuxcc](https://github.com/nyanko3141592/tmuxcc).
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
 ## License
 
 MIT
