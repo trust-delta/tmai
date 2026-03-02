@@ -326,13 +326,22 @@ impl Poller {
 
                 // Optimize capture-pane based on selection and detection source:
                 // - Selected: ANSI capture for preview (always needed)
-                // - Non-selected + hook/IPC: skip capture-pane entirely
+                // - Non-selected + audit + hook: plain capture for validation
+                // - Non-selected + hook/IPC (no audit): skip capture-pane entirely
                 // - Non-selected + capture-pane mode: plain capture for detection only
+                let audit_enabled = self.settings.audit.enabled;
                 let (content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
+                } else if audit_enabled && has_fresh_hook {
+                    // Non-selected + audit + hook: plain capture for validation
+                    let plain = self
+                        .client
+                        .capture_pane_plain(&pane.target)
+                        .unwrap_or_default();
+                    (String::new(), plain)
                 } else if has_fresh_hook || wrap_state.is_some() {
                     // Non-selected + hook/IPC mode: skip capture-pane entirely
                     (String::new(), String::new())
@@ -365,6 +374,94 @@ impl Poller {
                         confidence: DetectionConfidence::High,
                         matched_text,
                     };
+
+                    // Validation: compare IPC/capture-pane against hook ground truth
+                    if audit_enabled {
+                        let hook_status_str = status_name(&status).to_string();
+                        let hook_event = hs.last_context.event_name.clone();
+
+                        // IPC validation
+                        let ipc_status_str = wrap_state
+                            .as_ref()
+                            .map(|ws| status_name(&wrap_state_to_agent_status(ws)).to_string());
+                        let ipc_agrees = ipc_status_str.as_ref().map(|s| *s == hook_status_str);
+
+                        // capture-pane validation
+                        let (capture_status_str, capture_reason) = if !content.is_empty() {
+                            let detection_context = DetectionContext {
+                                cwd: Some(pane.cwd.as_str()),
+                                settings_cache: Some(&self.claude_settings_cache),
+                            };
+                            let detector = get_detector(&agent_type);
+                            let result = detector.detect_status_with_reason(
+                                &title,
+                                &content,
+                                &detection_context,
+                            );
+                            (status_name(&result.status).to_string(), result.reason)
+                        } else {
+                            (
+                                "unknown".to_string(),
+                                DetectionReason {
+                                    rule: "no_capture".to_string(),
+                                    confidence: DetectionConfidence::Low,
+                                    matched_text: None,
+                                },
+                            )
+                        };
+                        let capture_agrees = capture_status_str == hook_status_str;
+
+                        // Log only on disagreement
+                        if !capture_agrees || ipc_agrees == Some(false) {
+                            let screen_context = if !content.is_empty() {
+                                let lines: Vec<&str> = content.lines().collect();
+                                let start = lines.len().saturating_sub(10);
+                                let tail = lines[start..].join("\n");
+                                let truncated = if tail.len() > 1000 {
+                                    tail[..tail.floor_char_boundary(1000)].to_string()
+                                } else {
+                                    tail
+                                };
+                                Some(truncated)
+                            } else {
+                                None
+                            };
+
+                            // Truncate tool_input to max 500 chars
+                            let hook_tool_input = hs.last_context.tool_input.as_ref().map(|v| {
+                                let s = v.to_string();
+                                if s.len() > 500 {
+                                    serde_json::Value::String(
+                                        s[..s.floor_char_boundary(500)].to_string(),
+                                    )
+                                } else {
+                                    v.clone()
+                                }
+                            });
+
+                            let ts = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+
+                            self.audit_logger.log(&AuditEvent::DetectionValidation {
+                                ts,
+                                pane_id: pane.pane_id.clone(),
+                                agent_type: agent_type.short_name().to_string(),
+                                hook_status: hook_status_str,
+                                hook_event,
+                                ipc_status: ipc_status_str,
+                                capture_status: capture_status_str,
+                                capture_reason,
+                                ipc_agrees,
+                                capture_agrees,
+                                hook_tool_input,
+                                hook_permission_mode: hs.last_context.permission_mode.clone(),
+                                screen_context,
+                            });
+                        }
+                    }
+
                     (status, None, Some(reason))
                 } else if let Some(ref ws) = wrap_state {
                     // Tier 2: IPC-based detection (existing logic)

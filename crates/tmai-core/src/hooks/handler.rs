@@ -7,7 +7,7 @@ use crate::api::CoreEvent;
 use crate::state::SharedState;
 
 use super::registry::{HookRegistry, SessionPaneMap};
-use super::types::{event_names, HookEventPayload, HookState, HookStatus};
+use super::types::{event_names, HookContext, HookEventPayload, HookState, HookStatus};
 
 /// Process an incoming hook event and update the registry
 ///
@@ -35,7 +35,8 @@ pub fn handle_hook_event(
 
     match event {
         event_names::SESSION_START => {
-            let state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
+            let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
+            state.last_context = build_context(payload);
             let mut reg = hook_registry.write();
             reg.insert(pane_id.to_string(), state);
             None
@@ -43,6 +44,7 @@ pub fn handle_hook_event(
 
         event_names::USER_PROMPT_SUBMIT => {
             // Clear last_tool on new prompt (fresh processing cycle)
+            let ctx = build_context(payload);
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Processing;
@@ -50,10 +52,12 @@ pub fn handle_hook_event(
                 if payload.cwd.is_some() {
                     state.cwd = payload.cwd.clone();
                 }
+                state.last_context = ctx;
                 state.touch();
             } else {
                 let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
                 state.status = HookStatus::Processing;
+                state.last_context = ctx;
                 reg.insert(pane_id.to_string(), state);
             }
             None
@@ -77,9 +81,11 @@ pub fn handle_hook_event(
             // Keep last_tool so the display shows which tool was last used.
             // It will be overwritten by the next PreToolUse or cleared by
             // UserPromptSubmit / Stop.
+            let ctx = build_context(payload);
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Processing;
+                state.last_context = ctx;
                 state.touch();
             }
             None
@@ -118,10 +124,12 @@ pub fn handle_hook_event(
 
         event_names::STOP => {
             // Clear last_tool on stop (session returns to idle)
+            let ctx = build_context(payload);
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Idle;
                 state.last_tool = None;
+                state.last_context = ctx;
                 state.touch();
             }
             None
@@ -237,6 +245,15 @@ pub fn resolve_pane_id(
     None
 }
 
+/// Build a HookContext from a hook event payload
+fn build_context(payload: &HookEventPayload) -> HookContext {
+    HookContext {
+        event_name: payload.hook_event_name.clone(),
+        tool_input: payload.tool_input.clone(),
+        permission_mode: payload.permission_mode.clone(),
+    }
+}
+
 /// Update hook state for a pane, creating entry if needed
 fn update_status(
     registry: &HookRegistry,
@@ -254,12 +271,14 @@ fn update_status(
         if payload.cwd.is_some() {
             state.cwd = payload.cwd.clone();
         }
+        state.last_context = build_context(payload);
         state.touch();
     } else {
         // Auto-create entry if not registered via SessionStart
         let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
         state.status = status;
         state.last_tool = tool_name;
+        state.last_context = build_context(payload);
         reg.insert(pane_id.to_string(), state);
     }
 }
@@ -622,5 +641,88 @@ mod tests {
         let state = reg.get("5").unwrap();
         assert_eq!(state.status, HookStatus::Idle);
         assert!(state.last_tool.is_none());
+    }
+
+    #[test]
+    fn test_last_context_set_on_pre_tool_use() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "test-session",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test"},
+            "permission_mode": "default"
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.last_context.event_name, "PreToolUse");
+        assert!(state.last_context.tool_input.is_some());
+        assert_eq!(
+            state.last_context.permission_mode.as_deref(),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn test_last_context_updated_across_events() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(
+                reg.get("5").unwrap().last_context.event_name,
+                "SessionStart"
+            );
+        }
+
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(
+                reg.get("5").unwrap().last_context.event_name,
+                "UserPromptSubmit"
+            );
+        }
+
+        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().last_context.event_name, "Stop");
+        }
+    }
+
+    #[test]
+    fn test_last_context_set_on_post_tool_use() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "test-session",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm test"},
+            "permission_mode": "dontAsk"
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.last_context.event_name, "PostToolUse");
+        assert_eq!(
+            state.last_context.permission_mode.as_deref(),
+            Some("dontAsk")
+        );
     }
 }
