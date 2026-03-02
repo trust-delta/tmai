@@ -1547,9 +1547,22 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
         HookStatus::Idle => AgentStatus::Idle,
         HookStatus::AwaitingApproval => {
             let tool_info = hs.last_tool.clone().unwrap_or_default();
-            AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::Other("Approval".to_string()),
-                details: tool_info,
+            // AskUserQuestion requires human judgment — map to UserQuestion type
+            // so auto_approve's is_genuine_user_question filter can block it
+            if tool_info == "AskUserQuestion" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::UserQuestion {
+                        choices: vec![],
+                        multi_select: false,
+                        cursor_position: 0,
+                    },
+                    details: String::new(),
+                }
+            } else {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::Other("Approval".to_string()),
+                    details: tool_info,
+                }
             }
         }
     }
@@ -1725,6 +1738,27 @@ mod tests {
                 approval_type: ApprovalType::Other(_),
                 details,
             } if details == "Bash"
+        ));
+    }
+
+    #[test]
+    fn test_hook_state_to_agent_status_awaiting_approval_ask_user_question() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::AwaitingApproval;
+        hs.last_tool = Some("AskUserQuestion".to_string());
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(matches!(
+            status,
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::UserQuestion {
+                    ref choices,
+                    multi_select: false,
+                    cursor_position: 0,
+                },
+                ref details,
+            } if choices.is_empty() && details.is_empty()
         ));
     }
 }
