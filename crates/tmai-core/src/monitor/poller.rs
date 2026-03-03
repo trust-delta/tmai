@@ -232,6 +232,11 @@ impl Poller {
                         self.apply_cached_git_info(&mut agents);
                     }
 
+                    // Worktree scan (every 30 polls, offset from git scan)
+                    if poll_count % 30 == 5 {
+                        self.scan_worktrees(&agents).await;
+                    }
+
                     // Audit: track state transitions
                     self.emit_audit_events(&mut agents);
 
@@ -1331,6 +1336,98 @@ impl Poller {
                 agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
             }
         }
+    }
+
+    /// Scan all known git repositories for worktrees and update AppState
+    async fn scan_worktrees(&self, agents: &[MonitoredAgent]) {
+        use crate::git;
+        use crate::state::{RepoWorktreeInfo, WorktreeDetail};
+        use std::collections::HashMap;
+
+        // Collect unique git common dirs → list of agents in that repo
+        let mut repo_agents: HashMap<String, Vec<&MonitoredAgent>> = HashMap::new();
+        for agent in agents {
+            if agent.is_virtual {
+                continue;
+            }
+            if let Some(ref common_dir) = agent.git_common_dir {
+                repo_agents
+                    .entry(common_dir.clone())
+                    .or_default()
+                    .push(agent);
+            }
+        }
+
+        if repo_agents.is_empty() {
+            let mut state = self.state.write();
+            state.worktree_info.clear();
+            return;
+        }
+
+        let mut result: Vec<RepoWorktreeInfo> = Vec::new();
+
+        for (common_dir, repo_agents_list) in &repo_agents {
+            // Derive the repo root from the common_dir (strip /.git suffix)
+            let repo_root = common_dir
+                .strip_suffix("/.git")
+                .unwrap_or(common_dir)
+                .to_string();
+            let repo_name = git::repo_name_from_common_dir(common_dir);
+
+            let entries = git::list_worktrees(&repo_root).await;
+            if entries.is_empty() {
+                continue;
+            }
+
+            let worktrees: Vec<WorktreeDetail> = entries
+                .into_iter()
+                .map(|entry| {
+                    // Determine worktree name
+                    let name = if entry.is_main {
+                        "main".to_string()
+                    } else {
+                        git::extract_claude_worktree_name(&entry.path).unwrap_or_else(|| {
+                            // Fallback: use last path component
+                            entry
+                                .path
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or("unknown")
+                                .to_string()
+                        })
+                    };
+
+                    // Find agent working in this worktree path
+                    // Use Path::starts_with for component-level matching
+                    // (avoids false positives like "/app-v2" matching "/app")
+                    let linked_agent = repo_agents_list
+                        .iter()
+                        .find(|a| std::path::Path::new(&a.cwd).starts_with(&entry.path));
+
+                    WorktreeDetail {
+                        name,
+                        path: entry.path,
+                        branch: entry.branch,
+                        is_main: entry.is_main,
+                        agent_target: linked_agent.map(|a| a.target.clone()),
+                        agent_status: linked_agent.map(|a| a.status.clone()),
+                        is_dirty: linked_agent.and_then(|a| a.git_dirty),
+                    }
+                })
+                .collect();
+
+            result.push(RepoWorktreeInfo {
+                repo_name,
+                repo_path: common_dir.clone(),
+                worktrees,
+            });
+        }
+
+        // Sort by repo name for consistent display
+        result.sort_by(|a, b| a.repo_name.cmp(&b.repo_name));
+
+        let mut state = self.state.write();
+        state.worktree_info = result;
     }
 
     /// Cleanup the process cache

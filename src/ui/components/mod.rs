@@ -10,6 +10,7 @@ mod status_bar;
 mod task_overlay;
 mod team_overview;
 mod usage_bar;
+mod worktree_overview;
 
 pub use confirmation_popup::ConfirmationPopup;
 pub use create_process_popup::CreateProcessPopup;
@@ -23,3 +24,4 @@ pub use status_bar::StatusBar;
 pub use task_overlay::TaskOverlay;
 pub use team_overview::TeamOverview;
 pub use usage_bar::UsageBar;
+pub use worktree_overview::WorktreeOverview;

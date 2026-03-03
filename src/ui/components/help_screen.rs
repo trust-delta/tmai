@@ -148,6 +148,7 @@ impl HelpScreen {
             Self::section_header("Agent Teams"),
             Self::key_line("t", "Show task overlay for selected team member"),
             Self::key_line("T", "Show team overview (all teams and members)"),
+            Self::key_line("w", "Show worktree overview (all repos and worktrees)"),
             Line::from(""),
             Self::section_header("Security"),
             Self::key_line("S", "Security monitor (scan Claude Code configs)"),
