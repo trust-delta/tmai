@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-03-04
+
+### Added
+- Worktree management: scan, list, and create git worktrees
+- Worktree Overview screen (`w` key): display worktrees grouped by repository with agent status, branch, and dirty indicators
+- Support Claude Code `--worktree` flag in session creation wizard
+- Periodic worktree scanning in Poller (every 30 polls)
+
+### Security
+- Add worktree name validation to prevent command injection via shell metacharacters
+
+### Fixed
+- Fix agent-to-worktree linking using `Path::starts_with` instead of `String::starts_with` to avoid false prefix matches
+
 ## [0.11.1] - 2026-03-03
 
 ### Fixed
