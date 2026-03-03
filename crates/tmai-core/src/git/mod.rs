@@ -240,6 +240,15 @@ fn parse_worktree_list(output: &str) -> Vec<WorktreeEntry> {
     entries
 }
 
+/// Validate a worktree name (alphanumeric, hyphens, and underscores only, max 64 chars)
+pub fn is_valid_worktree_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 /// Extract worktree name from a `.claude/worktrees/{name}` path segment
 ///
 /// Claude Code creates worktrees under `<repo>/.claude/worktrees/<name>/`.
@@ -402,5 +411,37 @@ branch refs/heads/main
         assert_eq!(entries.len(), 1);
         assert!(entries[0].is_main);
         assert_eq!(entries[0].branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn test_is_valid_worktree_name() {
+        // Valid names
+        assert!(is_valid_worktree_name("feature-auth"));
+        assert!(is_valid_worktree_name("fix_bug_123"));
+        assert!(is_valid_worktree_name("a"));
+        assert!(is_valid_worktree_name("my-worktree"));
+
+        // Invalid: empty
+        assert!(!is_valid_worktree_name(""));
+
+        // Invalid: special characters (command injection vectors)
+        assert!(!is_valid_worktree_name("foo; rm -rf /"));
+        assert!(!is_valid_worktree_name("$(evil)"));
+        assert!(!is_valid_worktree_name("foo`whoami`"));
+        assert!(!is_valid_worktree_name("a|b"));
+        assert!(!is_valid_worktree_name("a&b"));
+
+        // Invalid: path traversal
+        assert!(!is_valid_worktree_name("../../../etc"));
+        assert!(!is_valid_worktree_name("foo/bar"));
+
+        // Invalid: spaces
+        assert!(!is_valid_worktree_name("foo bar"));
+
+        // Invalid: too long (>64 chars)
+        assert!(!is_valid_worktree_name(&"a".repeat(65)));
+
+        // Valid: exactly 64 chars
+        assert!(is_valid_worktree_name(&"a".repeat(64)));
     }
 }

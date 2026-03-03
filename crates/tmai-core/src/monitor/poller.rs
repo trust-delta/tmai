@@ -1398,9 +1398,11 @@ impl Poller {
                     };
 
                     // Find agent working in this worktree path
+                    // Use Path::starts_with for component-level matching
+                    // (avoids false positives like "/app-v2" matching "/app")
                     let linked_agent = repo_agents_list
                         .iter()
-                        .find(|a| a.cwd.starts_with(&entry.path));
+                        .find(|a| std::path::Path::new(&a.cwd).starts_with(&entry.path));
 
                     WorktreeDetail {
                         name,

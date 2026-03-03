@@ -1851,6 +1851,15 @@ impl App {
                             .unwrap_or_default()
                     };
                     if !name.is_empty() {
+                        // Validate worktree name (alphanumeric, hyphens, underscores only)
+                        if !tmai_core::git::is_valid_worktree_name(&name) {
+                            let mut state = self.state.write();
+                            state.set_error(
+                                "Invalid worktree name: use only a-z, 0-9, hyphens, underscores"
+                                    .to_string(),
+                            );
+                            return Ok(());
+                        }
                         let mut state = self.state.write();
                         if let Some(ref mut cs) = state.create_process {
                             cs.worktree_name = Some(name);
@@ -1961,7 +1970,9 @@ impl App {
         // Append --worktree flag if worktree name is specified (Claude Code only)
         let base_command = agent_type.command();
         let command = match worktree_name {
-            Some(ref wt) if !wt.is_empty() => format!("{} --worktree {}", base_command, wt),
+            Some(ref wt) if !wt.is_empty() && tmai_core::git::is_valid_worktree_name(wt) => {
+                format!("{} --worktree {}", base_command, wt)
+            }
             _ => base_command.to_string(),
         };
         if !command.is_empty() {
