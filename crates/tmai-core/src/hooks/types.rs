@@ -21,6 +21,11 @@ pub mod event_names {
     pub const TEAMMATE_IDLE: &str = "TeammateIdle";
     pub const TASK_COMPLETED: &str = "TaskCompleted";
     pub const SESSION_END: &str = "SessionEnd";
+    pub const CONFIG_CHANGE: &str = "ConfigChange";
+    pub const WORKTREE_CREATE: &str = "WorktreeCreate";
+    pub const WORKTREE_REMOVE: &str = "WorktreeRemove";
+    pub const PRE_COMPACT: &str = "PreCompact";
+    pub const POST_TOOL_USE_FAILURE: &str = "PostToolUseFailure";
 }
 
 /// POST body from a Claude Code HTTP hook
@@ -104,6 +109,14 @@ pub struct HookEventPayload {
     /// Team name (for TeammateIdle / TaskCompleted)
     #[serde(default)]
     pub team_name: Option<String>,
+
+    /// Config change source (for ConfigChange, e.g., "user_settings", "project_settings")
+    #[serde(default)]
+    pub source: Option<String>,
+
+    /// Changed file path (for ConfigChange)
+    #[serde(default)]
+    pub file_path: Option<String>,
 
     /// Additional fields not explicitly modeled
     #[serde(flatten)]

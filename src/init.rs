@@ -132,6 +132,11 @@ fn target_events() -> &'static [&'static str] {
         "TeammateIdle",
         "TaskCompleted",
         "SessionEnd",
+        "ConfigChange",
+        "WorktreeCreate",
+        "WorktreeRemove",
+        "PreCompact",
+        "PostToolUseFailure",
     ]
 }
 
@@ -499,8 +504,8 @@ mod tests {
 
     #[test]
     fn test_target_events_count() {
-        // Should have 12 target events
-        assert_eq!(target_events().len(), 12);
+        // Should have 17 target events
+        assert_eq!(target_events().len(), 17);
     }
 
     #[test]
