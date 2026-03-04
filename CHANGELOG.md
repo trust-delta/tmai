@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-03-05
+
+### Added
+
+- Support new Claude Code hook events: ConfigChange, WorktreeCreate, WorktreeRemove, PreCompact, PostToolUseFailure
+- Add ConfigChanged, WorktreeCreated, WorktreeRemoved variants to CoreEvent
+- Extend `tmai init` to register 17 hook events (up from 12)
+
+## [0.12.1] - 2026-03-04
+
+### Changed
+
+- Sync README.ja.md with English version: hooks-first detection strategy, add documentation section, quick start with `tmai init`, and detection source icons
+
+## [0.12.0] - 2026-03-04
+
+### Added
+- Worktree management: scan, list, and create git worktrees
+- Worktree Overview screen (`w` key): display worktrees grouped by repository with agent status, branch, and dirty indicators
+- Support Claude Code `--worktree` flag in session creation wizard
+- Periodic worktree scanning in Poller (every 30 polls)
+
+### Security
+- Add worktree name validation to prevent command injection via shell metacharacters
+
+### Fixed
+- Fix agent-to-worktree linking using `Path::starts_with` instead of `String::starts_with` to avoid false prefix matches
+
+## [0.11.1] - 2026-03-03
+
+### Fixed
+- Fix AskUserQuestion being auto-approved: hook detection now correctly maps AskUserQuestion to UserQuestion type with multi-layer defense
+
+### Changed
+- Remove `.claude/` directory from git tracking
+- Simplify release flow — version bump directly on main
+
+### Added
+- Add CONTRIBUTING.md (EN + JA) with README links
+
+## [0.11.0] - 2026-03-02
+
+### Added
+- Hook-as-Teacher detection validation: use hook events as ground truth to measure IPC/capture-pane detection accuracy
+  - `DetectionValidation` audit event logged on disagreement between hook and IPC/capture-pane results
+  - `HookContext` preserves rich event context (event_name, tool_input, permission_mode) for analysis
+  - `compute_validation_stats()` for accuracy analysis by rule and status
+  - Non-selected panes run capture-pane for validation when audit is enabled
+
+### Dependencies
+- Bump chrono from 0.4.43 to 0.4.44
+- Bump nix from 0.31.1 to 0.31.2
+
 ## [0.10.3] - 2026-03-02
 
 ### Fixed

@@ -232,6 +232,11 @@ impl Poller {
                         self.apply_cached_git_info(&mut agents);
                     }
 
+                    // Worktree scan (every 30 polls, offset from git scan)
+                    if poll_count % 30 == 5 {
+                        self.scan_worktrees(&agents).await;
+                    }
+
                     // Audit: track state transitions
                     self.emit_audit_events(&mut agents);
 
@@ -326,13 +331,22 @@ impl Poller {
 
                 // Optimize capture-pane based on selection and detection source:
                 // - Selected: ANSI capture for preview (always needed)
-                // - Non-selected + hook/IPC: skip capture-pane entirely
+                // - Non-selected + audit + hook: plain capture for validation
+                // - Non-selected + hook/IPC (no audit): skip capture-pane entirely
                 // - Non-selected + capture-pane mode: plain capture for detection only
+                let audit_enabled = self.settings.audit.enabled;
                 let (content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
+                } else if audit_enabled && has_fresh_hook {
+                    // Non-selected + audit + hook: plain capture for validation
+                    let plain = self
+                        .client
+                        .capture_pane_plain(&pane.target)
+                        .unwrap_or_default();
+                    (String::new(), plain)
                 } else if has_fresh_hook || wrap_state.is_some() {
                     // Non-selected + hook/IPC mode: skip capture-pane entirely
                     (String::new(), String::new())
@@ -365,6 +379,94 @@ impl Poller {
                         confidence: DetectionConfidence::High,
                         matched_text,
                     };
+
+                    // Validation: compare IPC/capture-pane against hook ground truth
+                    if audit_enabled {
+                        let hook_status_str = status_name(&status).to_string();
+                        let hook_event = hs.last_context.event_name.clone();
+
+                        // IPC validation
+                        let ipc_status_str = wrap_state
+                            .as_ref()
+                            .map(|ws| status_name(&wrap_state_to_agent_status(ws)).to_string());
+                        let ipc_agrees = ipc_status_str.as_ref().map(|s| *s == hook_status_str);
+
+                        // capture-pane validation
+                        let (capture_status_str, capture_reason) = if !content.is_empty() {
+                            let detection_context = DetectionContext {
+                                cwd: Some(pane.cwd.as_str()),
+                                settings_cache: Some(&self.claude_settings_cache),
+                            };
+                            let detector = get_detector(&agent_type);
+                            let result = detector.detect_status_with_reason(
+                                &title,
+                                &content,
+                                &detection_context,
+                            );
+                            (status_name(&result.status).to_string(), result.reason)
+                        } else {
+                            (
+                                "unknown".to_string(),
+                                DetectionReason {
+                                    rule: "no_capture".to_string(),
+                                    confidence: DetectionConfidence::Low,
+                                    matched_text: None,
+                                },
+                            )
+                        };
+                        let capture_agrees = capture_status_str == hook_status_str;
+
+                        // Log only on disagreement
+                        if !capture_agrees || ipc_agrees == Some(false) {
+                            let screen_context = if !content.is_empty() {
+                                let lines: Vec<&str> = content.lines().collect();
+                                let start = lines.len().saturating_sub(10);
+                                let tail = lines[start..].join("\n");
+                                let truncated = if tail.len() > 1000 {
+                                    tail[..tail.floor_char_boundary(1000)].to_string()
+                                } else {
+                                    tail
+                                };
+                                Some(truncated)
+                            } else {
+                                None
+                            };
+
+                            // Truncate tool_input to max 500 chars
+                            let hook_tool_input = hs.last_context.tool_input.as_ref().map(|v| {
+                                let s = v.to_string();
+                                if s.len() > 500 {
+                                    serde_json::Value::String(
+                                        s[..s.floor_char_boundary(500)].to_string(),
+                                    )
+                                } else {
+                                    v.clone()
+                                }
+                            });
+
+                            let ts = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+
+                            self.audit_logger.log(&AuditEvent::DetectionValidation {
+                                ts,
+                                pane_id: pane.pane_id.clone(),
+                                agent_type: agent_type.short_name().to_string(),
+                                hook_status: hook_status_str,
+                                hook_event,
+                                ipc_status: ipc_status_str,
+                                capture_status: capture_status_str,
+                                capture_reason,
+                                ipc_agrees,
+                                capture_agrees,
+                                hook_tool_input,
+                                hook_permission_mode: hs.last_context.permission_mode.clone(),
+                                screen_context,
+                            });
+                        }
+                    }
+
                     (status, None, Some(reason))
                 } else if let Some(ref ws) = wrap_state {
                     // Tier 2: IPC-based detection (existing logic)
@@ -1236,6 +1338,98 @@ impl Poller {
         }
     }
 
+    /// Scan all known git repositories for worktrees and update AppState
+    async fn scan_worktrees(&self, agents: &[MonitoredAgent]) {
+        use crate::git;
+        use crate::state::{RepoWorktreeInfo, WorktreeDetail};
+        use std::collections::HashMap;
+
+        // Collect unique git common dirs → list of agents in that repo
+        let mut repo_agents: HashMap<String, Vec<&MonitoredAgent>> = HashMap::new();
+        for agent in agents {
+            if agent.is_virtual {
+                continue;
+            }
+            if let Some(ref common_dir) = agent.git_common_dir {
+                repo_agents
+                    .entry(common_dir.clone())
+                    .or_default()
+                    .push(agent);
+            }
+        }
+
+        if repo_agents.is_empty() {
+            let mut state = self.state.write();
+            state.worktree_info.clear();
+            return;
+        }
+
+        let mut result: Vec<RepoWorktreeInfo> = Vec::new();
+
+        for (common_dir, repo_agents_list) in &repo_agents {
+            // Derive the repo root from the common_dir (strip /.git suffix)
+            let repo_root = common_dir
+                .strip_suffix("/.git")
+                .unwrap_or(common_dir)
+                .to_string();
+            let repo_name = git::repo_name_from_common_dir(common_dir);
+
+            let entries = git::list_worktrees(&repo_root).await;
+            if entries.is_empty() {
+                continue;
+            }
+
+            let worktrees: Vec<WorktreeDetail> = entries
+                .into_iter()
+                .map(|entry| {
+                    // Determine worktree name
+                    let name = if entry.is_main {
+                        "main".to_string()
+                    } else {
+                        git::extract_claude_worktree_name(&entry.path).unwrap_or_else(|| {
+                            // Fallback: use last path component
+                            entry
+                                .path
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or("unknown")
+                                .to_string()
+                        })
+                    };
+
+                    // Find agent working in this worktree path
+                    // Use Path::starts_with for component-level matching
+                    // (avoids false positives like "/app-v2" matching "/app")
+                    let linked_agent = repo_agents_list
+                        .iter()
+                        .find(|a| std::path::Path::new(&a.cwd).starts_with(&entry.path));
+
+                    WorktreeDetail {
+                        name,
+                        path: entry.path,
+                        branch: entry.branch,
+                        is_main: entry.is_main,
+                        agent_target: linked_agent.map(|a| a.target.clone()),
+                        agent_status: linked_agent.map(|a| a.status.clone()),
+                        is_dirty: linked_agent.and_then(|a| a.git_dirty),
+                    }
+                })
+                .collect();
+
+            result.push(RepoWorktreeInfo {
+                repo_name,
+                repo_path: common_dir.clone(),
+                worktrees,
+            });
+        }
+
+        // Sort by repo name for consistent display
+        result.sort_by(|a, b| a.repo_name.cmp(&b.repo_name));
+
+        let mut state = self.state.write();
+        state.worktree_info = result;
+    }
+
     /// Cleanup the process cache
     pub fn cleanup_cache(&self) {
         self.process_cache.cleanup();
@@ -1450,9 +1644,22 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
         HookStatus::Idle => AgentStatus::Idle,
         HookStatus::AwaitingApproval => {
             let tool_info = hs.last_tool.clone().unwrap_or_default();
-            AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::Other("Approval".to_string()),
-                details: tool_info,
+            // AskUserQuestion requires human judgment — map to UserQuestion type
+            // so auto_approve's is_genuine_user_question filter can block it
+            if tool_info == "AskUserQuestion" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::UserQuestion {
+                        choices: vec![],
+                        multi_select: false,
+                        cursor_position: 0,
+                    },
+                    details: String::new(),
+                }
+            } else {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::Other("Approval".to_string()),
+                    details: tool_info,
+                }
             }
         }
     }
@@ -1628,6 +1835,27 @@ mod tests {
                 approval_type: ApprovalType::Other(_),
                 details,
             } if details == "Bash"
+        ));
+    }
+
+    #[test]
+    fn test_hook_state_to_agent_status_awaiting_approval_ask_user_question() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::AwaitingApproval;
+        hs.last_tool = Some("AskUserQuestion".to_string());
+
+        let status = hook_state_to_agent_status(&hs);
+        assert!(matches!(
+            status,
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::UserQuestion {
+                    ref choices,
+                    multi_select: false,
+                    cursor_position: 0,
+                },
+                ref details,
+            } if choices.is_empty() && details.is_empty()
         ));
     }
 }

@@ -220,6 +220,87 @@ pub fn compute_disagreements(events: &[AuditEvent], limit: usize) -> Disagreemen
     summary
 }
 
+/// Accuracy stats per hook status (e.g., "processing", "idle")
+#[derive(Debug, Default)]
+pub struct StatusAccuracy {
+    /// Total validation events for this hook status
+    pub total: usize,
+    /// Number of IPC agreements
+    pub ipc_agree: usize,
+    /// Total IPC comparisons (excluding None)
+    pub ipc_total: usize,
+    /// Number of capture-pane agreements
+    pub capture_agree: usize,
+}
+
+/// Summary of DetectionValidation events (hook vs IPC/capture-pane accuracy)
+#[derive(Debug, Default)]
+pub struct ValidationSummary {
+    /// Total validation events (disagreements only)
+    pub total: usize,
+    /// Number of IPC agreements
+    pub ipc_agreement_count: usize,
+    /// Total IPC comparisons (excluding None)
+    pub ipc_total: usize,
+    /// Number of capture-pane agreements
+    pub capture_agreement_count: usize,
+    /// Capture-pane disagreement frequency by rule name
+    pub capture_disagreements_by_rule: Vec<(String, usize)>,
+    /// Accuracy breakdown by hook status
+    pub by_hook_status: HashMap<String, StatusAccuracy>,
+}
+
+/// Compute validation statistics from DetectionValidation events
+pub fn compute_validation_stats(events: &[AuditEvent]) -> ValidationSummary {
+    let mut summary = ValidationSummary::default();
+    let mut rule_map: HashMap<String, usize> = HashMap::new();
+
+    for event in events {
+        if let AuditEvent::DetectionValidation {
+            hook_status,
+            capture_reason,
+            ipc_agrees,
+            capture_agrees,
+            ..
+        } = event
+        {
+            summary.total += 1;
+
+            let entry = summary
+                .by_hook_status
+                .entry(hook_status.clone())
+                .or_default();
+            entry.total += 1;
+
+            // IPC stats
+            if let Some(agrees) = ipc_agrees {
+                summary.ipc_total += 1;
+                entry.ipc_total += 1;
+                if *agrees {
+                    summary.ipc_agreement_count += 1;
+                    entry.ipc_agree += 1;
+                }
+            }
+
+            // capture-pane stats
+            if *capture_agrees {
+                summary.capture_agreement_count += 1;
+                entry.capture_agree += 1;
+            } else {
+                // Track which capture rules disagree
+                *rule_map.entry(capture_reason.rule.clone()).or_default() += 1;
+            }
+        }
+    }
+
+    // Sort rules by frequency descending
+    let mut by_rule: Vec<(String, usize)> = rule_map.into_iter().collect();
+    by_rule.sort_by(|a, b| b.1.cmp(&a.1));
+    summary.capture_disagreements_by_rule = by_rule;
+
+    summary
+}
+
 /// Extract timestamp from any event variant
 fn event_ts(event: &AuditEvent) -> u64 {
     match event {
@@ -228,6 +309,7 @@ fn event_ts(event: &AuditEvent) -> u64 {
         | AuditEvent::AgentAppeared { ts, .. }
         | AuditEvent::AgentDisappeared { ts, .. }
         | AuditEvent::AutoApproveJudgment { ts, .. }
+        | AuditEvent::DetectionValidation { ts, .. }
         | AuditEvent::UserInputDuringProcessing { ts, .. } => *ts,
     }
 }
@@ -240,6 +322,7 @@ fn event_type_name(event: &AuditEvent) -> &'static str {
         AuditEvent::AgentAppeared { .. } => "AgentAppeared",
         AuditEvent::AgentDisappeared { .. } => "AgentDisappeared",
         AuditEvent::AutoApproveJudgment { .. } => "AutoApproveJudgment",
+        AuditEvent::DetectionValidation { .. } => "DetectionValidation",
         AuditEvent::UserInputDuringProcessing { .. } => "UserInputDuringProcessing",
     }
 }
@@ -252,6 +335,7 @@ fn event_agent_type(event: &AuditEvent) -> &str {
         | AuditEvent::AgentAppeared { agent_type, .. }
         | AuditEvent::AgentDisappeared { agent_type, .. }
         | AuditEvent::AutoApproveJudgment { agent_type, .. }
+        | AuditEvent::DetectionValidation { agent_type, .. }
         | AuditEvent::UserInputDuringProcessing { agent_type, .. } => agent_type,
     }
 }
@@ -261,6 +345,7 @@ fn event_reason(event: &AuditEvent) -> Option<&crate::detectors::DetectionReason
     match event {
         AuditEvent::StateChanged { reason, .. } => Some(reason),
         AuditEvent::SourceDisagreement { capture_reason, .. } => Some(capture_reason),
+        AuditEvent::DetectionValidation { capture_reason, .. } => Some(capture_reason),
         AuditEvent::UserInputDuringProcessing {
             detection_reason, ..
         } => detection_reason.as_ref(),
@@ -414,5 +499,124 @@ mod tests {
         assert_eq!(summary.by_capture_rule[0], ("no_spinner".to_string(), 1));
         assert_eq!(summary.by_pane[0], ("1".to_string(), 1));
         assert_eq!(summary.records.len(), 1);
+    }
+
+    /// Helper to build a DetectionValidation event
+    fn validation_event(
+        hook_status: &str,
+        ipc_status: Option<&str>,
+        capture_status: &str,
+        capture_rule: &str,
+    ) -> AuditEvent {
+        let ipc_agrees = ipc_status.map(|s| s == hook_status);
+        let capture_agrees = capture_status == hook_status;
+        AuditEvent::DetectionValidation {
+            ts: 1000,
+            pane_id: "1".to_string(),
+            agent_type: "ClaudeCode".to_string(),
+            hook_status: hook_status.to_string(),
+            hook_event: "PreToolUse".to_string(),
+            ipc_status: ipc_status.map(|s| s.to_string()),
+            capture_status: capture_status.to_string(),
+            capture_reason: DetectionReason {
+                rule: capture_rule.to_string(),
+                confidence: DetectionConfidence::Medium,
+                matched_text: None,
+            },
+            ipc_agrees,
+            capture_agrees,
+            hook_tool_input: None,
+            hook_permission_mode: None,
+            screen_context: None,
+        }
+    }
+
+    #[test]
+    fn test_compute_validation_stats_empty() {
+        let summary = compute_validation_stats(&[]);
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.ipc_total, 0);
+        assert_eq!(summary.capture_agreement_count, 0);
+    }
+
+    #[test]
+    fn test_compute_validation_stats_capture_disagree() {
+        let events = vec![
+            // capture disagrees: hook=processing, capture=idle
+            validation_event("processing", None, "idle", "no_spinner"),
+            // capture disagrees again: hook=idle, capture=processing
+            validation_event("idle", None, "processing", "spinner_verb"),
+        ];
+
+        let summary = compute_validation_stats(&events);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.capture_agreement_count, 0);
+        assert_eq!(summary.ipc_total, 0);
+        assert_eq!(summary.ipc_agreement_count, 0);
+
+        // Both rules should appear in disagreements
+        assert_eq!(summary.capture_disagreements_by_rule.len(), 2);
+
+        // By hook status
+        assert_eq!(summary.by_hook_status["processing"].total, 1);
+        assert_eq!(summary.by_hook_status["processing"].capture_agree, 0);
+        assert_eq!(summary.by_hook_status["idle"].total, 1);
+        assert_eq!(summary.by_hook_status["idle"].capture_agree, 0);
+    }
+
+    #[test]
+    fn test_compute_validation_stats_with_ipc() {
+        let events = vec![
+            // IPC agrees, capture disagrees
+            validation_event("processing", Some("processing"), "idle", "no_spinner"),
+            // IPC disagrees, capture disagrees
+            validation_event("processing", Some("idle"), "idle", "fallback_no_indicator"),
+        ];
+
+        let summary = compute_validation_stats(&events);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.ipc_total, 2);
+        assert_eq!(summary.ipc_agreement_count, 1);
+        assert_eq!(summary.capture_agreement_count, 0);
+
+        let status_acc = &summary.by_hook_status["processing"];
+        assert_eq!(status_acc.total, 2);
+        assert_eq!(status_acc.ipc_total, 2);
+        assert_eq!(status_acc.ipc_agree, 1);
+        assert_eq!(status_acc.capture_agree, 0);
+    }
+
+    #[test]
+    fn test_compute_validation_stats_mixed_events() {
+        // Mix validation events with other event types
+        let events = vec![
+            state_changed(1000, "rule_a", DetectionConfidence::High),
+            validation_event("processing", Some("processing"), "idle", "no_spinner"),
+            AuditEvent::AgentAppeared {
+                ts: 500,
+                pane_id: "1".to_string(),
+                agent_type: "ClaudeCode".to_string(),
+                source: "capture_pane".to_string(),
+                initial_status: "idle".to_string(),
+            },
+        ];
+
+        let summary = compute_validation_stats(&events);
+        // Only 1 validation event
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.ipc_total, 1);
+        assert_eq!(summary.ipc_agreement_count, 1);
+    }
+
+    #[test]
+    fn test_compute_stats_includes_validation() {
+        let events = vec![validation_event("processing", None, "idle", "no_spinner")];
+
+        let stats = compute_stats(&events);
+        assert_eq!(stats.total_events, 1);
+        assert_eq!(stats.by_event_type["DetectionValidation"], 1);
+        // capture_reason should be counted
+        assert_eq!(stats.by_confidence[&DetectionConfidence::Medium], 1);
+        assert_eq!(stats.rule_hits[0], ("no_spinner".to_string(), 1));
     }
 }

@@ -27,6 +27,7 @@ impl CreateProcessPopup {
             CreateProcessStep::SelectTarget => Self::render_select_target(create_state),
             CreateProcessStep::SelectDirectory => Self::render_select_directory(create_state),
             CreateProcessStep::SelectAgent => Self::render_select_agent(create_state),
+            CreateProcessStep::EnterWorktreeName => Self::render_worktree_name(create_state),
         };
 
         // Layout: title, list, help
@@ -72,12 +73,22 @@ impl CreateProcessPopup {
                 }
             }
             CreateProcessStep::SelectAgent => "Select AI agent:",
+            CreateProcessStep::EnterWorktreeName => {
+                if create_state.is_input_mode {
+                    "Enter worktree name:"
+                } else {
+                    "Worktree (optional):"
+                }
+            }
         };
         let header_widget = Paragraph::new(header).style(Style::default().fg(Color::Yellow));
         frame.render_widget(header_widget, inner_chunks[0]);
 
-        // Input mode for directory
-        if create_state.step == CreateProcessStep::SelectDirectory && create_state.is_input_mode {
+        // Input mode for directory or worktree name
+        let is_text_input = create_state.is_input_mode
+            && (create_state.step == CreateProcessStep::SelectDirectory
+                || create_state.step == CreateProcessStep::EnterWorktreeName);
+        if is_text_input {
             let input_text = format!("> {}_", &create_state.input_buffer);
             let input_widget = Paragraph::new(input_text).style(Style::default().fg(Color::White));
             frame.render_widget(input_widget, inner_chunks[1]);
@@ -119,7 +130,7 @@ impl CreateProcessPopup {
                     Span::styled("New Session", Style::default().fg(Color::Green)),
                 ])),
                 TreeEntry::Session { name, collapsed } => {
-                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let arrow = if *collapsed { "\u{25b8}" } else { "\u{25be}" };
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("{} ", arrow), Style::default().fg(Color::Blue)),
                         Span::styled(
@@ -141,7 +152,7 @@ impl CreateProcessPopup {
                     collapsed,
                     ..
                 } => {
-                    let arrow = if *collapsed { "▸" } else { "▾" };
+                    let arrow = if *collapsed { "\u{25b8}" } else { "\u{25be}" };
                     let display_name = if name.is_empty() || name == "bash" || name == "zsh" {
                         format!("window-{}", index)
                     } else {
@@ -164,7 +175,7 @@ impl CreateProcessPopup {
             })
             .collect();
 
-        let help = "↑/↓: Select  Enter: Confirm/Toggle  Esc: Cancel";
+        let help = "\u{2191}/\u{2193}: Select  Enter: Confirm/Toggle  Esc: Cancel";
 
         (title, items, help)
     }
@@ -181,10 +192,10 @@ impl CreateProcessPopup {
             .map(|item| match item {
                 DirItem::Header(label) => ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("── {} ", label),
+                        format!("\u{2500}\u{2500} {} ", label),
                         Style::default().fg(Color::DarkGray),
                     ),
-                    Span::styled("─".repeat(20), Style::default().fg(Color::DarkGray)),
+                    Span::styled("\u{2500}".repeat(20), Style::default().fg(Color::DarkGray)),
                 ])),
                 DirItem::EnterPath => ListItem::new(Line::from(vec![Span::styled(
                     "Enter path...",
@@ -210,7 +221,7 @@ impl CreateProcessPopup {
         let help = if create_state.is_input_mode {
             "Enter: Confirm  Esc: Back"
         } else {
-            "↑/↓: Select  Enter: Confirm  Esc: Back"
+            "\u{2191}/\u{2193}: Select  Enter: Confirm  Esc: Back"
         };
 
         (title, items, help)
@@ -240,7 +251,29 @@ impl CreateProcessPopup {
             })
             .collect();
 
-        let help = "↑/↓: Select  Enter: Launch  Esc: Back";
+        let help = "\u{2191}/\u{2193}: Select  Enter: Launch  Esc: Back";
+
+        (title, items, help)
+    }
+
+    /// Render content for worktree name entry (Claude Code only)
+    fn render_worktree_name(
+        _create_state: &tmai_core::state::CreateProcessState,
+    ) -> (&'static str, Vec<ListItem<'static>>, &'static str) {
+        let title = "Create New Process";
+
+        let items = vec![
+            ListItem::new(Line::from(vec![Span::styled(
+                "Skip (normal session)",
+                Style::default().fg(Color::White),
+            )])),
+            ListItem::new(Line::from(vec![Span::styled(
+                "Enter worktree name...",
+                Style::default().fg(Color::Yellow),
+            )])),
+        ];
+
+        let help = "\u{2191}/\u{2193}: Select  Enter: Confirm  Esc: Back";
 
         (title, items, help)
     }
@@ -255,6 +288,13 @@ impl CreateProcessPopup {
             CreateProcessStep::SelectTarget => create_state.tree_entries.len(),
             CreateProcessStep::SelectDirectory => create_state.directory_items.len(),
             CreateProcessStep::SelectAgent => AgentType::all_variants().len(),
+            CreateProcessStep::EnterWorktreeName => {
+                if create_state.is_input_mode {
+                    0
+                } else {
+                    2
+                }
+            }
         }
     }
 }

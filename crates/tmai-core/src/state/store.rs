@@ -2,7 +2,7 @@ use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::agents::MonitoredAgent;
+use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::config::CreateProcessSettings;
 use crate::teams::{AgentDefinition, TeamConfig, TeamTask};
 use crate::tmux::PaneInfo;
@@ -212,6 +212,8 @@ pub enum CreateProcessStep {
     SelectDirectory,
     /// Select AI agent type
     SelectAgent,
+    /// Enter worktree name (Claude Code only, optional)
+    EnterWorktreeName,
 }
 
 /// State for the create process flow
@@ -243,6 +245,8 @@ pub struct CreateProcessState {
     pub directory_items: Vec<DirItem>,
     /// Whether in path input mode
     pub is_input_mode: bool,
+    /// Worktree name for Claude Code (None = no worktree)
+    pub worktree_name: Option<String>,
 }
 
 /// Snapshot of a team's state at a point in time
@@ -266,6 +270,36 @@ pub struct TeamSnapshot {
     pub task_pending: usize,
     /// Worktree names used by this team's members
     pub worktree_names: Vec<String>,
+}
+
+/// Discovered worktree info for a single git repository
+#[derive(Debug, Clone)]
+pub struct RepoWorktreeInfo {
+    /// Repository name (from git common dir)
+    pub repo_name: String,
+    /// Absolute path to the git common directory
+    pub repo_path: String,
+    /// All worktrees in this repository
+    pub worktrees: Vec<WorktreeDetail>,
+}
+
+/// Detail of a single worktree within a repository
+#[derive(Debug, Clone)]
+pub struct WorktreeDetail {
+    /// Worktree name (from .claude/worktrees/{name}) or "main"
+    pub name: String,
+    /// Absolute path to the worktree
+    pub path: String,
+    /// Branch name
+    pub branch: Option<String>,
+    /// Whether this is the main working tree
+    pub is_main: bool,
+    /// Linked agent target (session:window.pane), if any
+    pub agent_target: Option<String>,
+    /// Status of the linked agent
+    pub agent_status: Option<AgentStatus>,
+    /// Whether this worktree has uncommitted changes
+    pub is_dirty: Option<bool>,
 }
 
 /// Input-related state
@@ -300,6 +334,10 @@ pub struct ViewState {
     pub show_security_overlay: bool,
     /// Security overlay scroll offset
     pub security_overlay_scroll: u16,
+    /// Whether the worktree overview is shown
+    pub show_worktree_overview: bool,
+    /// Worktree overview scroll offset
+    pub worktree_overview_scroll: u16,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Spinner animation frame counter
@@ -319,9 +357,11 @@ impl Default for ViewState {
             show_team_overview: false,
             show_task_overlay: false,
             show_security_overlay: false,
+            show_worktree_overview: false,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
             security_overlay_scroll: 0,
+            worktree_overview_scroll: 0,
             preview_scroll: 0,
             spinner_frame: 0,
             last_spinner_update: std::time::Instant::now(),
@@ -414,6 +454,9 @@ pub struct AppState {
 
     /// Last security scan result (None if never scanned)
     pub security_scan: Option<crate::security::ScanResult>,
+
+    /// Discovered worktree info per repository (populated by poller scan)
+    pub worktree_info: Vec<RepoWorktreeInfo>,
 }
 
 impl AppState {
@@ -446,6 +489,7 @@ impl AppState {
             notification: None,
             usage: UsageSnapshot::default(),
             security_scan: None,
+            worktree_info: Vec::new(),
         }
     }
 
@@ -1177,6 +1221,7 @@ impl AppState {
             tree_entries,
             directory_items,
             is_input_mode: false,
+            worktree_name: None,
         });
     }
 

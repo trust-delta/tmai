@@ -63,6 +63,28 @@ pub enum CoreEvent {
         /// Task subject
         task_subject: String,
     },
+
+    /// Claude Code configuration file was changed
+    ConfigChanged {
+        /// Agent target ID
+        target: String,
+        /// Config source (e.g., "user_settings", "project_settings")
+        source: String,
+        /// Changed file path
+        file_path: String,
+    },
+
+    /// A git worktree was created
+    WorktreeCreated {
+        /// Agent target ID
+        target: String,
+    },
+
+    /// A git worktree was removed
+    WorktreeRemoved {
+        /// Agent target ID
+        target: String,
+    },
 }
 
 impl TmaiCore {

@@ -26,6 +26,7 @@ use super::key_handler::{self, KeyAction};
 use super::components::{
     ConfirmationPopup, CreateProcessPopup, HelpScreen, InputWidget, ListEntry, PanePreview,
     QrScreen, SecurityOverlay, SessionList, StatusBar, TaskOverlay, TeamOverview, UsageBar,
+    WorktreeOverview,
 };
 use super::Layout;
 
@@ -248,6 +249,12 @@ impl App {
                     return;
                 }
 
+                // Worktree overview (full-screen, like help)
+                if state.view.show_worktree_overview {
+                    WorktreeOverview::render(frame, frame.area(), &state);
+                    return;
+                }
+
                 // Security overlay (full-screen, like help)
                 if state.view.show_security_overlay {
                     SecurityOverlay::render(frame, frame.area(), &state);
@@ -423,6 +430,7 @@ impl App {
             show_qr,
             show_task_overlay,
             show_team_overview,
+            show_worktree_overview,
             show_security_overlay,
             is_input_mode,
             is_passthrough_mode,
@@ -435,6 +443,7 @@ impl App {
                 state.view.show_qr,
                 state.view.show_task_overlay,
                 state.view.show_team_overview,
+                state.view.show_worktree_overview,
                 state.view.show_security_overlay,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
@@ -474,6 +483,11 @@ impl App {
         // Handle team overview
         if show_team_overview {
             return self.handle_team_overview_key(code, modifiers);
+        }
+
+        // Handle worktree overview
+        if show_worktree_overview {
+            return self.handle_worktree_overview_key(code);
         }
 
         // Handle security overlay
@@ -686,6 +700,15 @@ impl App {
                 state.view.show_team_overview = !state.view.show_team_overview;
                 if state.view.show_team_overview {
                     state.view.team_overview_scroll = 0;
+                }
+            }
+
+            // Worktree overview
+            KeyCode::Char('w') => {
+                let mut state = self.state.write();
+                state.view.show_worktree_overview = !state.view.show_worktree_overview;
+                if state.view.show_worktree_overview {
+                    state.view.worktree_overview_scroll = 0;
                 }
             }
 
@@ -1356,6 +1379,39 @@ impl App {
         Ok(())
     }
 
+    /// Handle keys in worktree overview mode
+    fn handle_worktree_overview_key(&mut self, code: KeyCode) -> Result<()> {
+        let mut state = self.state.write();
+
+        match code {
+            // Close worktree overview
+            KeyCode::Char('w') | KeyCode::Esc => {
+                state.view.show_worktree_overview = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                state.view.worktree_overview_scroll =
+                    state.view.worktree_overview_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                state.view.worktree_overview_scroll =
+                    state.view.worktree_overview_scroll.saturating_sub(1);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                state.view.worktree_overview_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                state.view.worktree_overview_scroll = u16::MAX;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
     /// Handle keys when security overlay is shown
     fn handle_security_overlay_key(
         &mut self,
@@ -1510,7 +1566,7 @@ impl App {
             (step, is_input, count)
         };
 
-        // Handle input mode for directory entry
+        // Handle input mode for directory entry or worktree name
         if is_input_mode {
             match code {
                 KeyCode::Esc => {
@@ -1521,6 +1577,12 @@ impl App {
                     }
                 }
                 KeyCode::Enter => {
+                    if step == CreateProcessStep::EnterWorktreeName {
+                        // Worktree name: delegate to select handler
+                        self.handle_create_process_select(step)?;
+                        return Ok(());
+                    }
+                    // Directory path entry
                     let path = {
                         let state = self.state.read();
                         state
@@ -1608,6 +1670,7 @@ impl App {
                             CreateProcessStep::SelectTarget => CreateProcessStep::SelectTarget,
                             CreateProcessStep::SelectDirectory => CreateProcessStep::SelectTarget,
                             CreateProcessStep::SelectAgent => CreateProcessStep::SelectDirectory,
+                            CreateProcessStep::EnterWorktreeName => CreateProcessStep::SelectAgent,
                         };
                         cs.step = prev_step;
                         cs.cursor = 0;
@@ -1757,7 +1820,72 @@ impl App {
 
                 let agents = AgentType::all_variants();
                 if let Some(agent_type) = agents.get(cursor) {
-                    self.execute_create_process(agent_type.clone())?;
+                    if *agent_type == AgentType::ClaudeCode {
+                        // Claude Code: proceed to worktree name step
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.step = CreateProcessStep::EnterWorktreeName;
+                            cs.cursor = 0;
+                            cs.is_input_mode = false;
+                        }
+                    } else {
+                        self.execute_create_process(agent_type.clone())?;
+                    }
+                }
+            }
+
+            CreateProcessStep::EnterWorktreeName => {
+                let (cursor, is_input_mode) = {
+                    let state = self.state.read();
+                    let cs = state.create_process.as_ref().unwrap();
+                    (cs.cursor, cs.is_input_mode)
+                };
+
+                if is_input_mode {
+                    // Input mode: Enter confirms the worktree name
+                    let name = {
+                        let state = self.state.read();
+                        state
+                            .create_process
+                            .as_ref()
+                            .map(|s| s.input_buffer.clone())
+                            .unwrap_or_default()
+                    };
+                    if !name.is_empty() {
+                        // Validate worktree name (alphanumeric, hyphens, underscores only)
+                        if !tmai_core::git::is_valid_worktree_name(&name) {
+                            let mut state = self.state.write();
+                            state.set_error(
+                                "Invalid worktree name: use only a-z, 0-9, hyphens, underscores"
+                                    .to_string(),
+                            );
+                            return Ok(());
+                        }
+                        let mut state = self.state.write();
+                        if let Some(ref mut cs) = state.create_process {
+                            cs.worktree_name = Some(name);
+                            cs.is_input_mode = false;
+                            cs.input_buffer.clear();
+                        }
+                        drop(state);
+                        self.execute_create_process(AgentType::ClaudeCode)?;
+                    }
+                } else {
+                    match cursor {
+                        0 => {
+                            // Skip (normal session)
+                            self.execute_create_process(AgentType::ClaudeCode)?;
+                        }
+                        1 => {
+                            // Enter worktree name...
+                            let mut state = self.state.write();
+                            if let Some(ref mut cs) = state.create_process {
+                                cs.is_input_mode = true;
+                                cs.input_buffer.clear();
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -1767,7 +1895,7 @@ impl App {
 
     /// Execute the process creation with the selected parameters
     fn execute_create_process(&mut self, agent_type: AgentType) -> Result<()> {
-        let (placement_type, session, target_pane, directory) = {
+        let (placement_type, session, target_pane, directory, worktree_name) = {
             let state = self.state.read();
             let cs = state.create_process.as_ref().unwrap();
             (
@@ -1777,6 +1905,7 @@ impl App {
                     .unwrap_or_else(|| "main".to_string()),
                 cs.target_pane.clone(),
                 cs.directory.clone().unwrap_or_else(|| ".".to_string()),
+                cs.worktree_name.clone(),
             )
         };
 
@@ -1839,13 +1968,20 @@ impl App {
         };
 
         // Run the agent command (wrapped with tmai wrap for PTY monitoring)
-        let command = agent_type.command();
+        // Append --worktree flag if worktree name is specified (Claude Code only)
+        let base_command = agent_type.command();
+        let command = match worktree_name {
+            Some(ref wt) if !wt.is_empty() && tmai_core::git::is_valid_worktree_name(wt) => {
+                format!("{} --worktree {}", base_command, wt)
+            }
+            _ => base_command.to_string(),
+        };
         if !command.is_empty() {
             // Use wrapped command for better state detection via PTY monitoring
             if let Err(e) = self
                 .command_sender
                 .tmux_client()
-                .run_command_wrapped(&target, command)
+                .run_command_wrapped(&target, &command)
             {
                 let mut state = self.state.write();
                 state.set_error(format!("Failed to start agent: {}", e));
