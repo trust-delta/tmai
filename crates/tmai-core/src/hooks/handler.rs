@@ -191,6 +191,74 @@ pub fn handle_hook_event(
             }
         }
 
+        event_names::CONFIG_CHANGE => {
+            // Config file changed — emit event for security/audit, touch timestamp only
+            let ctx = build_context(payload);
+            let source = payload.source.clone().unwrap_or_default();
+            let file_path = payload.file_path.clone().unwrap_or_default();
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.last_context = ctx;
+                state.touch();
+            }
+            Some(CoreEvent::ConfigChanged {
+                target: pane_id.to_string(),
+                source,
+                file_path,
+            })
+        }
+
+        event_names::WORKTREE_CREATE => {
+            // Worktree created — set Processing, emit event
+            update_status(
+                hook_registry,
+                pane_id,
+                payload,
+                HookStatus::Processing,
+                None,
+            );
+            Some(CoreEvent::WorktreeCreated {
+                target: pane_id.to_string(),
+            })
+        }
+
+        event_names::WORKTREE_REMOVE => {
+            // Worktree removed — touch timestamp, emit event
+            let ctx = build_context(payload);
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.last_context = ctx;
+                state.touch();
+            }
+            Some(CoreEvent::WorktreeRemoved {
+                target: pane_id.to_string(),
+            })
+        }
+
+        event_names::PRE_COMPACT => {
+            // Context compaction starting — maintain Processing, touch timestamp
+            let ctx = build_context(payload);
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.last_context = ctx;
+                state.touch();
+            }
+            None
+        }
+
+        event_names::POST_TOOL_USE_FAILURE => {
+            // Tool failed — same as PostToolUse (Processing continues, keep last_tool)
+            let ctx = build_context(payload);
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.status = HookStatus::Processing;
+                state.last_context = ctx;
+                state.touch();
+            }
+            None
+        }
+
         _ => {
             warn!(event, "Unknown hook event type, ignoring");
             None
@@ -698,6 +766,132 @@ mod tests {
             let reg = registry.read();
             assert_eq!(reg.get("5").unwrap().last_context.event_name, "Stop");
         }
+    }
+
+    #[test]
+    fn test_config_change_emits_event_and_touches() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "ConfigChange",
+            "session_id": "test-session",
+            "source": "user_settings",
+            "file_path": "/home/user/.claude/settings.json"
+        }))
+        .unwrap();
+
+        let event = handle_hook_event(&payload, "5", &registry, &map);
+        assert!(matches!(event, Some(CoreEvent::ConfigChanged { .. })));
+        if let Some(CoreEvent::ConfigChanged {
+            target,
+            source,
+            file_path,
+        }) = event
+        {
+            assert_eq!(target, "5");
+            assert_eq!(source, "user_settings");
+            assert_eq!(file_path, "/home/user/.claude/settings.json");
+        }
+
+        // Status should remain Idle (no state change)
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Idle);
+    }
+
+    #[test]
+    fn test_config_change_missing_fields_defaults_to_empty() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        // ConfigChange without source/file_path fields
+        let event = handle_hook_event(&make_payload("ConfigChange"), "5", &registry, &map);
+        if let Some(CoreEvent::ConfigChanged {
+            source, file_path, ..
+        }) = event
+        {
+            assert_eq!(source, "", "Missing source should default to empty string");
+            assert_eq!(
+                file_path, "",
+                "Missing file_path should default to empty string"
+            );
+        } else {
+            panic!("Expected ConfigChanged event");
+        }
+    }
+
+    #[test]
+    fn test_worktree_create_sets_processing_and_emits() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let event = handle_hook_event(&make_payload("WorktreeCreate"), "5", &registry, &map);
+        assert!(matches!(event, Some(CoreEvent::WorktreeCreated { .. })));
+
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Processing);
+    }
+
+    #[test]
+    fn test_worktree_remove_emits_event() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let event = handle_hook_event(&make_payload("WorktreeRemove"), "5", &registry, &map);
+        assert!(matches!(event, Some(CoreEvent::WorktreeRemoved { .. })));
+
+        // Status should remain Idle (no state change)
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Idle);
+    }
+
+    #[test]
+    fn test_pre_compact_maintains_processing() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        let event = handle_hook_event(&make_payload("PreCompact"), "5", &registry, &map);
+        assert!(event.is_none());
+
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Processing);
+    }
+
+    #[test]
+    fn test_post_tool_use_failure_keeps_processing_and_last_tool() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(
+            &make_payload_with_tool("PreToolUse", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+
+        let event = handle_hook_event(&make_payload("PostToolUseFailure"), "5", &registry, &map);
+        assert!(event.is_none());
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert_eq!(
+            state.last_tool.as_deref(),
+            Some("Bash"),
+            "PostToolUseFailure should preserve last_tool"
+        );
     }
 
     #[test]

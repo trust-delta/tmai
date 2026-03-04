@@ -124,6 +124,11 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::ConfigChanged { .. })
+                        | Ok(CoreEvent::WorktreeCreated { .. })
+                        | Ok(CoreEvent::WorktreeRemoved { .. }) => {
+                            // Future: forward to SSE subscribers if needed
+                        }
                         Err(RecvError::Lagged(_)) => {
                             // Re-send full state on lag
                             let agents_json = build_agents_json(&core);
