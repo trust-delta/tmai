@@ -802,6 +802,29 @@ mod tests {
     }
 
     #[test]
+    fn test_config_change_missing_fields_defaults_to_empty() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        // ConfigChange without source/file_path fields
+        let event = handle_hook_event(&make_payload("ConfigChange"), "5", &registry, &map);
+        if let Some(CoreEvent::ConfigChanged {
+            source, file_path, ..
+        }) = event
+        {
+            assert_eq!(source, "", "Missing source should default to empty string");
+            assert_eq!(
+                file_path, "",
+                "Missing file_path should default to empty string"
+            );
+        } else {
+            panic!("Expected ConfigChanged event");
+        }
+    }
+
+    #[test]
     fn test_worktree_create_sets_processing_and_emits() {
         let registry = new_hook_registry();
         let map = new_session_pane_map();
