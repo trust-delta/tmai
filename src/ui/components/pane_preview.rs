@@ -116,19 +116,11 @@ impl PanePreview {
                     .saturating_sub(available_height + scroll)
                     .min(u16::MAX as usize) as u16;
 
-                let wrap_border_color = match &agent.status {
-                    AgentStatus::AwaitingApproval { .. } => Color::Magenta,
-                    AgentStatus::Error { .. } => Color::Red,
-                    AgentStatus::Processing { .. } => Color::Yellow,
-                    AgentStatus::Offline => Color::DarkGray,
-                    _ => Color::Gray,
-                };
-
                 let block = Block::default()
                     .title(title)
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(wrap_border_color));
+                    .border_style(Style::default().fg(Self::border_color(&agent.status)));
 
                 let paragraph = Paragraph::new(styled_text)
                     .block(block)
@@ -166,17 +158,9 @@ impl PanePreview {
             )
         };
 
-        let border_color = if let Some(agent) = agent {
-            match &agent.status {
-                AgentStatus::AwaitingApproval { .. } => Color::Magenta,
-                AgentStatus::Error { .. } => Color::Red,
-                AgentStatus::Processing { .. } => Color::Yellow,
-                AgentStatus::Offline => Color::DarkGray,
-                _ => Color::Gray,
-            }
-        } else {
-            Color::Gray
-        };
+        let border_color = agent
+            .map(|a| Self::border_color(&a.status))
+            .unwrap_or(Color::Gray);
 
         let block = Block::default()
             .title(title)
@@ -186,6 +170,17 @@ impl PanePreview {
 
         let paragraph = Paragraph::new(text).block(block);
         frame.render_widget(paragraph, area);
+    }
+
+    /// Map agent status to a border color.
+    fn border_color(status: &AgentStatus) -> Color {
+        match status {
+            AgentStatus::AwaitingApproval { .. } => Color::Magenta,
+            AgentStatus::Error { .. } => Color::Red,
+            AgentStatus::Processing { .. } => Color::Yellow,
+            AgentStatus::Offline => Color::DarkGray,
+            _ => Color::Gray,
+        }
     }
 
     /// Truncate a string to fit within max_width (considering Unicode width and ANSI codes)
