@@ -20,6 +20,19 @@ use super::types::ReviewRequest;
 /// Shared set of targets currently under review (prevents duplicate reviews)
 type ActiveReviews = Arc<RwLock<HashSet<String>>>;
 
+/// RAII guard that removes a target from the active reviews set on drop.
+/// Prevents leaking entries if the review task panics.
+struct ActiveReviewGuard {
+    active: ActiveReviews,
+    target: String,
+}
+
+impl Drop for ActiveReviewGuard {
+    fn drop(&mut self) {
+        self.active.write().remove(&self.target);
+    }
+}
+
 /// Service that manages fresh-session code reviews
 pub struct ReviewService;
 
@@ -99,6 +112,12 @@ impl ReviewService {
 
                 // Launch review in a separate blocking task
                 tokio::task::spawn_blocking(move || {
+                    // Guard ensures target is removed from active set even on panic
+                    let _guard = ActiveReviewGuard {
+                        active: active.clone(),
+                        target: request.target.clone(),
+                    };
+
                     let result = launch_review(&request, &review_settings);
 
                     match result {
@@ -122,10 +141,6 @@ impl ReviewService {
                             );
                         }
                     }
-
-                    // Remove from active set
-                    let mut reviews = active.write();
-                    reviews.remove(&request.target);
                 });
             }
         })
@@ -139,6 +154,10 @@ pub fn launch_review(
     request: &ReviewRequest,
     settings: &ReviewSettings,
 ) -> Result<(String, std::path::PathBuf)> {
+    if request.cwd.is_empty() {
+        anyhow::bail!("Cannot launch review: working directory is empty");
+    }
+
     let tmux = TmuxClient::new();
 
     // Collect git diff
@@ -154,12 +173,8 @@ pub fn launch_review(
     // Write prompt to a temp file (avoids shell escaping issues with large diffs)
     let prompt_file = write_prompt_file(&prompt)?;
 
-    // Output file for review results (sanitize branch name for filesystem)
-    let safe_branch = request
-        .branch
-        .as_deref()
-        .unwrap_or("unknown")
-        .replace('/', "-");
+    // Output file for review results (sanitize branch name for filesystem/shell safety)
+    let safe_branch = sanitize_name(request.branch.as_deref().unwrap_or("unknown"));
     let output_file = review_output_dir()?.join(format!("{safe_branch}.md"));
 
     // Extract session name from the source target (e.g., "main:0.1" → "main")
@@ -236,9 +251,10 @@ fn collect_git_diff(cwd: &str, base_branch: &str) -> Result<String> {
 fn truncate_diff(diff: String) -> String {
     const MAX_DIFF_BYTES: usize = 100_000; // ~100KB, well within Claude's context
     if diff.len() > MAX_DIFF_BYTES {
-        let truncated = &diff[..MAX_DIFF_BYTES];
-        // Find the last newline to avoid cutting mid-line
-        let cut_point = truncated.rfind('\n').unwrap_or(MAX_DIFF_BYTES);
+        // Find a UTF-8 safe boundary (walk back from MAX to find a char boundary)
+        let safe_end = floor_char_boundary(&diff, MAX_DIFF_BYTES);
+        // Then find the last newline to avoid cutting mid-line
+        let cut_point = diff[..safe_end].rfind('\n').unwrap_or(safe_end);
         format!(
             "{}\n\n... [diff truncated at {}KB, {} total bytes]",
             &diff[..cut_point],
@@ -248,6 +264,19 @@ fn truncate_diff(diff: String) -> String {
     } else {
         diff
     }
+}
+
+/// Find the largest byte index <= `max` that is on a UTF-8 char boundary.
+/// Equivalent to `str::floor_char_boundary` (nightly-only as of stable 1.80).
+fn floor_char_boundary(s: &str, max: usize) -> usize {
+    if max >= s.len() {
+        return s.len();
+    }
+    let mut i = max;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }
 
 /// Build the review prompt from request context and diff
@@ -314,13 +343,28 @@ fn write_prompt_file(prompt: &str) -> Result<std::path::PathBuf> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let path = dir.join(format!("review-{}.txt", timestamp));
+    let pid = std::process::id();
+    let path = dir.join(format!("review-{}-{}.txt", timestamp, pid));
 
     let mut file = std::fs::File::create(&path).context("Failed to create review prompt file")?;
     file.write_all(prompt.as_bytes())
         .context("Failed to write review prompt")?;
 
     Ok(path)
+}
+
+/// Sanitize a name for use in file paths and shell commands.
+/// Keeps only alphanumeric, hyphen, underscore, and dot characters.
+fn sanitize_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -401,5 +445,46 @@ mod tests {
         assert_eq!(content, "test prompt content");
         // Cleanup
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_sanitize_name_basic() {
+        assert_eq!(sanitize_name("feat/auth"), "feat-auth");
+        assert_eq!(sanitize_name("simple"), "simple");
+    }
+
+    #[test]
+    fn test_sanitize_name_removes_shell_metacharacters() {
+        assert_eq!(sanitize_name("feat/$(rm -rf /)"), "feat---rm--rf---");
+        assert_eq!(sanitize_name("branch`whoami`"), "branch-whoami-");
+        // All shell metacharacters are replaced with hyphens
+        assert_eq!(sanitize_name("name;echo hi"), "name-echo-hi");
+    }
+
+    #[test]
+    fn test_floor_char_boundary_ascii() {
+        let s = "hello world";
+        assert_eq!(floor_char_boundary(s, 5), 5);
+        assert_eq!(floor_char_boundary(s, 100), s.len());
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        // "あいう" = 3 chars × 3 bytes = 9 bytes
+        let s = "あいう";
+        assert_eq!(floor_char_boundary(s, 9), 9); // exact boundary
+        assert_eq!(floor_char_boundary(s, 7), 6); // mid-char → back to boundary
+        assert_eq!(floor_char_boundary(s, 4), 3); // mid-char → back to boundary
+        assert_eq!(floor_char_boundary(s, 1), 0); // mid-char → back to 0
+    }
+
+    #[test]
+    fn test_truncate_diff_with_multibyte() {
+        // Ensure no panic with multibyte content near the truncation boundary
+        let line = "日本語コメント含むdiff行\n";
+        let repeat_count = 100_000 / line.len() + 1;
+        let diff = line.repeat(repeat_count);
+        let result = truncate_diff(diff);
+        assert!(result.contains("[diff truncated"));
     }
 }

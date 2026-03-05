@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,16 +37,16 @@ impl ReviewAgent {
         output_file: &std::path::Path,
         feedback: Option<&FeedbackTarget>,
     ) -> String {
-        let prompt = prompt_file.display();
-        let output = output_file.display();
+        let prompt = shell_escape(prompt_file);
+        let output = shell_escape(output_file);
 
-        // Core review command per agent
+        // Core review command per agent (use stdin pipe to avoid ARG_MAX with large prompts)
         let review_cmd = match self {
             ReviewAgent::ClaudeCode => {
-                format!("claude -p \"$(cat {prompt})\" | tee {output}")
+                format!("cat {prompt} | claude -p - | tee {output}")
             }
             ReviewAgent::Codex => {
-                format!("codex -q \"$(cat {prompt})\" | tee {output}")
+                format!("cat {prompt} | codex -q - | tee {output}")
             }
             ReviewAgent::Gemini => {
                 format!("gemini < {prompt} | tee {output}")
@@ -54,8 +55,8 @@ impl ReviewAgent {
 
         // Post-review feedback: send review file path to original session
         let feedback_cmd = if let Some(fb) = feedback {
-            let fb_target = &fb.target;
-            let fb_output = fb.output_file.display();
+            let fb_target = shell_escape_str(&fb.target);
+            let fb_output = shell_escape(&fb.output_file);
             format!(
                 " && tmux send-keys -t {fb_target} -l 'Read the code review at {fb_output} and fix Critical/Warning issues' && tmux send-keys -t {fb_target} Enter"
             )
@@ -119,6 +120,17 @@ pub enum ReviewStatus {
     },
 }
 
+/// Shell-escape a path by wrapping in single quotes with proper escaping.
+/// e.g., `/tmp/foo's bar` → `'/tmp/foo'\''s bar'`
+fn shell_escape(path: &Path) -> String {
+    shell_escape_str(&path.display().to_string())
+}
+
+/// Shell-escape a string by wrapping in single quotes with proper escaping.
+fn shell_escape_str(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,16 +163,16 @@ mod tests {
         let output = PathBuf::from("/tmp/output.md");
 
         let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, None);
-        assert!(cmd.starts_with("claude -p"));
+        assert!(cmd.contains("claude -p"));
         assert!(cmd.contains("/tmp/review.txt"));
-        assert!(cmd.contains("tee /tmp/output.md"));
+        assert!(cmd.contains("/tmp/output.md"));
         assert!(!cmd.contains("send-keys"));
 
         let cmd = ReviewAgent::Codex.build_command(&prompt, &output, None);
-        assert!(cmd.starts_with("codex -q"));
+        assert!(cmd.contains("codex -q"));
 
         let cmd = ReviewAgent::Gemini.build_command(&prompt, &output, None);
-        assert!(cmd.starts_with("gemini <"));
+        assert!(cmd.contains("gemini <"));
     }
 
     #[test]
@@ -173,9 +185,29 @@ mod tests {
         };
 
         let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, Some(&feedback));
-        assert!(cmd.contains("send-keys -t main:0.1"));
+        assert!(cmd.contains("send-keys -t"));
+        assert!(cmd.contains("main:0.1"));
         assert!(cmd.contains("/tmp/output.md"));
         assert!(cmd.contains("fix Critical/Warning"));
+    }
+
+    #[test]
+    fn test_shell_escape_simple_path() {
+        let path = PathBuf::from("/tmp/review.txt");
+        assert_eq!(shell_escape(&path), "'/tmp/review.txt'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_single_quote() {
+        let path = PathBuf::from("/tmp/it's a file.txt");
+        assert_eq!(shell_escape(&path), "'/tmp/it'\\''s a file.txt'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_special_chars() {
+        // Paths with shell metacharacters should be safely quoted
+        let escaped = shell_escape_str("feat-$(rm -rf /)");
+        assert_eq!(escaped, "'feat-$(rm -rf /)'");
     }
 
     #[test]
