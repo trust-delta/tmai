@@ -101,12 +101,10 @@ impl PanePreview {
                         let w: usize = line
                             .spans
                             .iter()
-                            .map(|s| {
-                                unicode_width::UnicodeWidthStr::width(s.content.as_ref())
-                            })
+                            .map(|s| unicode_width::UnicodeWidthStr::width(s.content.as_ref()))
                             .sum();
                         if available_width > 0 && w > available_width {
-                            (w + available_width - 1) / available_width
+                            w.div_ceil(available_width)
                         } else {
                             1
                         }
