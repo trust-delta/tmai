@@ -9,6 +9,7 @@ pub mod git;
 pub mod hooks;
 pub mod ipc;
 pub mod monitor;
+pub mod review;
 pub mod security;
 pub mod session_lookup;
 pub mod state;

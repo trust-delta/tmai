@@ -125,14 +125,26 @@ pub fn handle_hook_event(
         event_names::STOP => {
             // Clear last_tool on stop (session returns to idle)
             let ctx = build_context(payload);
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
-                state.status = HookStatus::Idle;
-                state.last_tool = None;
-                state.last_context = ctx;
-                state.touch();
-            }
-            None
+            let cwd = {
+                let mut reg = hook_registry.write();
+                let cwd = if let Some(state) = reg.get_mut(pane_id) {
+                    state.status = HookStatus::Idle;
+                    state.last_tool = None;
+                    state.last_context = ctx;
+                    state.touch();
+                    state.cwd.clone()
+                } else {
+                    None
+                };
+                cwd
+            };
+
+            // Emit AgentStopped event for review service and other listeners
+            Some(CoreEvent::AgentStopped {
+                target: pane_id.to_string(),
+                cwd: cwd.unwrap_or_default(),
+                last_assistant_message: payload.last_assistant_message.clone(),
+            })
         }
 
         event_names::SESSION_END => {
@@ -441,16 +453,23 @@ mod tests {
     }
 
     #[test]
-    fn test_stop_sets_idle() {
+    fn test_stop_sets_idle_and_emits_agent_stopped() {
         let registry = new_hook_registry();
         let map = new_session_pane_map();
 
         handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
         handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
-        handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
+        let event = handle_hook_event(&make_payload("Stop"), "5", &registry, &map);
 
         let reg = registry.read();
         assert_eq!(reg.get("5").unwrap().status, HookStatus::Idle);
+
+        // Stop should emit AgentStopped event
+        assert!(matches!(event, Some(CoreEvent::AgentStopped { .. })));
+        if let Some(CoreEvent::AgentStopped { target, cwd, .. }) = event {
+            assert_eq!(target, "5");
+            assert_eq!(cwd, "/tmp/test");
+        }
     }
 
     #[test]
