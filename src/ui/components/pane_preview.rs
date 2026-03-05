@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -77,10 +77,64 @@ impl PanePreview {
                 .map(|i| i + 1)
                 .unwrap_or(0);
             let scroll = state.view.preview_scroll as usize;
+
+            let line_wrap = state.line_wrap;
+
+            if line_wrap {
+                // When wrapping, raw lines expand to multiple visual lines, so we
+                // can't slice by available_height. Instead, pass all trimmed content
+                // to ratatui and use Paragraph::scroll to pin to the bottom.
+                let trimmed_content: String =
+                    content_lines[..total_lines.min(content_lines.len())].join("\n");
+
+                let styled_text = match trimmed_content.as_str().into_text() {
+                    Ok(text) => text,
+                    Err(_) => Text::raw(trimmed_content),
+                };
+
+                // Estimate wrapped visual line count using styled text (ANSI stripped)
+                // so escape codes don't inflate width measurements
+                let visual_lines: usize = styled_text
+                    .lines
+                    .iter()
+                    .map(|line| {
+                        let w: usize = line
+                            .spans
+                            .iter()
+                            .map(|s| {
+                                unicode_width::UnicodeWidthStr::width(s.content.as_ref())
+                            })
+                            .sum();
+                        if available_width > 0 && w > available_width {
+                            (w + available_width - 1) / available_width
+                        } else {
+                            1
+                        }
+                    })
+                    .sum();
+                let scroll_offset = visual_lines
+                    .saturating_sub(available_height + scroll)
+                    .min(u16::MAX as usize) as u16;
+
+                let block = Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Self::border_color(&agent.status)));
+
+                let paragraph = Paragraph::new(styled_text)
+                    .block(block)
+                    .wrap(Wrap { trim: false })
+                    .scroll((scroll_offset, 0));
+
+                frame.render_widget(paragraph, area);
+                return;
+            }
+
+            // No wrap: slice raw lines by available_height and truncate
             let start = total_lines.saturating_sub(available_height + scroll);
             let end = total_lines.saturating_sub(scroll);
 
-            // Join visible lines and parse ANSI codes
             let visible_content: String = content_lines[start..end.min(content_lines.len())]
                 .iter()
                 .map(|line| Self::truncate_line(line, available_width))
@@ -104,17 +158,9 @@ impl PanePreview {
             )
         };
 
-        let border_color = if let Some(agent) = agent {
-            match &agent.status {
-                AgentStatus::AwaitingApproval { .. } => Color::Magenta,
-                AgentStatus::Error { .. } => Color::Red,
-                AgentStatus::Processing { .. } => Color::Yellow,
-                AgentStatus::Offline => Color::DarkGray,
-                _ => Color::Gray,
-            }
-        } else {
-            Color::Gray
-        };
+        let border_color = agent
+            .map(|a| Self::border_color(&a.status))
+            .unwrap_or(Color::Gray);
 
         let block = Block::default()
             .title(title)
@@ -123,8 +169,18 @@ impl PanePreview {
             .border_style(Style::default().fg(border_color));
 
         let paragraph = Paragraph::new(text).block(block);
-
         frame.render_widget(paragraph, area);
+    }
+
+    /// Map agent status to a border color.
+    fn border_color(status: &AgentStatus) -> Color {
+        match status {
+            AgentStatus::AwaitingApproval { .. } => Color::Magenta,
+            AgentStatus::Error { .. } => Color::Red,
+            AgentStatus::Processing { .. } => Color::Yellow,
+            AgentStatus::Offline => Color::DarkGray,
+            _ => Color::Gray,
+        }
     }
 
     /// Truncate a string to fit within max_width (considering Unicode width and ANSI codes)

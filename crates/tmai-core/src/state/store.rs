@@ -443,6 +443,9 @@ pub struct AppState {
     /// Show activity name (tool/verb) during Processing instead of generic "Processing"
     pub show_activity_name: bool,
 
+    /// Wrap long lines in preview pane instead of truncating
+    pub line_wrap: bool,
+
     /// Temporary notification message (auto-expires)
     pub notification: Option<(String, std::time::Instant)>,
 
@@ -482,6 +485,7 @@ impl AppState {
             last_poll: None,
             running: true,
             show_activity_name: true,
+            line_wrap: false,
             notification: None,
             usage: UsageSnapshot::default(),
             security_scan: None,

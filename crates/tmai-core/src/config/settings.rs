@@ -250,6 +250,10 @@ pub struct UiSettings {
     /// When false: always shows "Processing"
     #[serde(default = "default_show_activity_name")]
     pub show_activity_name: bool,
+
+    /// Wrap long lines in preview pane instead of truncating with …
+    #[serde(default)]
+    pub line_wrap: bool,
 }
 
 /// Web server settings
@@ -620,6 +624,7 @@ impl Default for UiSettings {
             preview_height: default_preview_height(),
             color: default_color(),
             show_activity_name: default_show_activity_name(),
+            line_wrap: false,
         }
     }
 }
