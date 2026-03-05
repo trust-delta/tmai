@@ -126,8 +126,22 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::WorktreeCreated { .. })
-                        | Ok(CoreEvent::WorktreeRemoved { .. }) => {
+                        | Ok(CoreEvent::WorktreeRemoved { .. })
+                        | Ok(CoreEvent::AgentStopped { .. })
+                        | Ok(CoreEvent::ReviewReady { .. }) => {
                             // Future: forward to SSE subscribers if needed
+                        }
+                        Ok(CoreEvent::ReviewLaunched { source_target, review_target }) => {
+                            let data = serde_json::json!({
+                                "source_target": source_target,
+                                "review_target": review_target,
+                            });
+                            let event = Event::default()
+                                .event("review_launched")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
                         }
                         Err(RecvError::Lagged(_)) => {
                             // Re-send full state on lag

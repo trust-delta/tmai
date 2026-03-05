@@ -6,5 +6,5 @@ pub use claude_settings::{
 };
 pub use settings::{
     AuditCommand, AutoApproveSettings, Config, CreateProcessSettings, ExfilDetectionSettings,
-    RuleSettings, Settings, TeamSettings,
+    ReviewSettings, RuleSettings, Settings, TeamSettings,
 };

@@ -144,6 +144,16 @@ async fn main() -> Result<()> {
         web_server.start();
     }
 
+    // Start review service if enabled
+    if settings.review.enabled {
+        tmai_core::review::ReviewService::spawn(
+            std::sync::Arc::new(settings.review.clone()),
+            app.shared_state(),
+            core.subscribe(),
+            core.event_sender(),
+        );
+    }
+
     // Start auto-approve service if mode is not Off
     if settings.auto_approve.effective_mode()
         != tmai_core::auto_approve::types::AutoApproveMode::Off

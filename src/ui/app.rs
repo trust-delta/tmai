@@ -731,6 +731,29 @@ impl App {
                 self.trigger_usage_fetch();
             }
 
+            // Request fresh-session review for selected agent (Shift+R)
+            KeyCode::Char('R') => {
+                tracing::debug!("Shift+R pressed: requesting review");
+                if let Some(ref core) = self.core {
+                    let target = {
+                        let state = self.state.read();
+                        state
+                            .selected_agent()
+                            .filter(|a| !a.is_virtual)
+                            .map(|a| a.target.clone())
+                    };
+                    tracing::debug!(?target, "Review target resolved");
+                    if let Some(target) = target {
+                        match core.request_review(&target) {
+                            Ok(()) => tracing::info!(target, "Review requested"),
+                            Err(e) => tracing::warn!(target, %e, "Review request failed"),
+                        }
+                    }
+                } else {
+                    tracing::debug!("No core available for review");
+                }
+            }
+
             _ => {}
         }
 

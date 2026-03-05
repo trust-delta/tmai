@@ -23,6 +23,7 @@
 - **Agent Teams** - Visualize Claude Code Agent Teams structure and task progress
 - **Mode detection** - Detect Plan/Delegate/Auto-approve modes from terminal title icons
 - **Auto-approve** - Automatic approval of safe actions with 4 modes: Rules (instant), AI, Hybrid, or Off
+- **Fresh Session Review** - Automatic context-free code review when an agent completes work (hook-driven, not prompt-dependent)
 - **Usage monitoring** - Check Claude subscription usage (5h session / weekly limits) with `U` key
 
 ## Documentation
@@ -36,6 +37,7 @@ For detailed guides and workflows, see [doc/](./doc/README.md):
 - [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
 - [Agent Teams](./doc/features/agent-teams.md) - Claude Code team monitoring
 - [Auto-Approve](./doc/features/auto-approve.md) - Automatic approval with 4 modes (Rules/AI/Hybrid/Off)
+- [Fresh Session Review](./doc/features/fresh-session-review.md) - Automatic code review by a separate agent
 
 ## Installation
 
@@ -99,6 +101,13 @@ auto_refresh_min = 15  # 0 = manual only (default)
 [auto_approve]
 enabled = true
 model = "haiku"
+
+[review]
+enabled = true
+agent = "claude_code"       # claude_code / codex / gemini
+auto_launch = true          # auto-review on agent completion
+auto_feedback = true        # send review results back to original session
+base_branch = "main"
 ```
 
 ### Keybindings
@@ -115,6 +124,7 @@ model = "haiku"
 | `t` | Task overlay (team member selected) |
 | `T` | Team overview |
 | `W` | Restart as IPC-wrapped (non-IPC Claude Code) |
+| `R` | Launch fresh-session code review |
 | `U` | Fetch subscription usage (Claude Max/Pro) |
 | `Esc` | Exit mode / Quit |
 | `?` | Help |

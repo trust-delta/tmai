@@ -22,6 +22,7 @@
 - **Agent Teams** - Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **モード検出** - Plan/Delegate/Auto-approveモードをタイトルアイコンから自動検出・表示
 - **Auto-approve** - Off/ルールベース/AI/ハイブリッドの4モードで安全な操作を自動承認
+- **Fresh Session Review** - エージェント完了時にコンテキストフリーなコードレビューを自動起動（hookイベント駆動、プロンプト指示に依存しない確実な実行）
 - **使用量モニタリング** - `U`キーでClaudeサブスクリプションの使用状況（5時間セッション/週次制限）を確認
 
 ## ドキュメント
@@ -35,6 +36,7 @@
 - [tmaiの強み](./doc/ja/guides/strengths.md) - tmaiのユニークな特徴
 - [Agent Teams](./doc/ja/features/agent-teams.md) - Claude Codeチームの監視
 - [Auto-Approve](./doc/ja/features/auto-approve.md) - 4モードの自動承認（Rules/AI/Hybrid/Off）
+- [Fresh Session Review](./doc/ja/features/fresh-session-review.md) - 別セッションによる自動コードレビュー
 
 ## インストール
 
@@ -102,6 +104,13 @@ auto_refresh_min = 15       # 0 = 手動のみ（デフォルト）
 [auto_approve]
 mode = "hybrid"             # off/rules/ai/hybrid
 model = "haiku"
+
+[review]
+enabled = true
+agent = "claude_code"       # claude_code / codex / gemini
+auto_launch = true          # エージェント完了時に自動レビュー
+auto_feedback = true        # レビュー結果を元セッションに送信
+base_branch = "main"
 ```
 
 ### キーバインド
@@ -123,6 +132,7 @@ model = "haiku"
 | `T` | チーム一覧画面 |
 | `r` | Web RemoteのQRコード表示 |
 | `W` | 非IPCエージェントをIPC化再起動（Claude Codeのみ） |
+| `R` | Fresh Session Reviewを起動 |
 | `U` | 使用量確認（Claude Max/Pro） |
 | `?` | ヘルプ |
 | `Esc` / `q` | 終了 |

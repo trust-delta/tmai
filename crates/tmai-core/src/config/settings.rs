@@ -199,6 +199,10 @@ pub struct Settings {
     /// Usage monitoring settings
     #[serde(default)]
     pub usage: UsageSettings,
+
+    /// Fresh Session Review settings
+    #[serde(default)]
+    pub review: ReviewSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -517,6 +521,52 @@ pub struct UsageSettings {
     pub auto_refresh_min: u32,
 }
 
+/// Fresh Session Review settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewSettings {
+    /// Enable automatic review on agent Stop events
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Agent to use for review (default: claude_code, options: claude_code, codex, gemini)
+    #[serde(default)]
+    pub agent: crate::review::types::ReviewAgent,
+
+    /// Base branch to diff against (default: "main")
+    #[serde(default = "default_review_base_branch")]
+    pub base_branch: String,
+
+    /// Custom review instructions appended to the review prompt
+    #[serde(default)]
+    pub custom_instructions: String,
+
+    /// Auto-launch review when hook-detected agent completes (vs manual `R` key only)
+    #[serde(default)]
+    pub auto_launch: bool,
+
+    /// Automatically send review results back to the original agent session
+    #[serde(default = "default_true")]
+    pub auto_feedback: bool,
+}
+
+/// Default base branch for review diff
+fn default_review_base_branch() -> String {
+    "main".to_string()
+}
+
+impl Default for ReviewSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            agent: crate::review::types::ReviewAgent::default(),
+            base_branch: default_review_base_branch(),
+            custom_instructions: String::new(),
+            auto_launch: false,
+            auto_feedback: true,
+        }
+    }
+}
+
 /// Settings for the create process popup
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateProcessSettings {
@@ -590,6 +640,7 @@ impl Default for Settings {
             auto_approve: AutoApproveSettings::default(),
             create_process: CreateProcessSettings::default(),
             usage: UsageSettings::default(),
+            review: ReviewSettings::default(),
         }
     }
 }

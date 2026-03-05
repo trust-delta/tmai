@@ -8,6 +8,8 @@
 
 use tokio::sync::broadcast;
 
+use crate::review::ReviewRequest;
+
 use super::core::TmaiCore;
 
 /// Events emitted by the core when state changes occur.
@@ -84,6 +86,30 @@ pub enum CoreEvent {
     WorktreeRemoved {
         /// Agent target ID
         target: String,
+    },
+
+    /// An agent stopped (completed or paused), emitted by hook handler
+    AgentStopped {
+        /// Agent target ID
+        target: String,
+        /// Working directory
+        cwd: String,
+        /// Last assistant message (if available)
+        last_assistant_message: Option<String>,
+    },
+
+    /// An agent completed work and is ready for fresh-session review
+    ReviewReady {
+        /// Review request with context for launching a review session
+        request: ReviewRequest,
+    },
+
+    /// A review session was successfully launched
+    ReviewLaunched {
+        /// Original agent target that was reviewed
+        source_target: String,
+        /// tmux target of the review pane
+        review_target: String,
     },
 }
 
