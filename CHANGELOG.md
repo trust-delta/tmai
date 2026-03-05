@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-03-06
+
+### Added
+
+- Fresh Session Review: hook-driven automatic code review by a context-free agent on completion (#65)
+  - Configurable review agent (claude_code / codex / gemini)
+  - Auto-feedback sends review results back to original session
+  - Manual trigger via `R` key in TUI
+  - Shell injection hardening and UTF-8 safe diff truncation
+- `line_wrap` config option for preview pane word wrapping (#57)
+
+### Fixed
+
+- `preview_height` config was silently ignored in `with_preview_height()` (#64)
+- Clippy `manual_div_ceil` warning in preview pane
+
 ## [0.13.0] - 2026-03-05
 
 ### Added
