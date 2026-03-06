@@ -143,6 +143,18 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::ReviewCompleted { source_target, summary }) => {
+                            let data = serde_json::json!({
+                                "source_target": source_target,
+                                "summary": summary,
+                            });
+                            let event = Event::default()
+                                .event("review_completed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Err(RecvError::Lagged(_)) => {
                             // Re-send full state on lag
                             let agents_json = build_agents_json(&core);

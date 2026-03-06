@@ -1,6 +1,8 @@
-//! Hook event endpoint for receiving Claude Code HTTP hook notifications.
+//! Hook event endpoints for receiving Claude Code HTTP hook notifications
+//! and review completion notifications.
 //!
 //! `POST /hooks/event` — receives hook events and updates HookRegistry.
+//! `POST /hooks/review-complete` — receives review completion from split pane.
 //! Uses a separate auth token from the main web API (hooks_token).
 
 use axum::{
@@ -9,10 +11,11 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde::Deserialize;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
-use tmai_core::api::TmaiCore;
+use tmai_core::api::{CoreEvent, TmaiCore};
 use tmai_core::hooks::handler::{handle_hook_event, resolve_pane_id};
 use tmai_core::hooks::HookEventPayload;
 
@@ -74,6 +77,48 @@ pub async fn hook_event(
 
     // Notify subscribers that agent state may have changed
     core.notify_agents_updated();
+
+    StatusCode::OK
+}
+
+/// Payload for review completion notification
+#[derive(Debug, Deserialize)]
+pub struct ReviewCompletePayload {
+    /// Original agent target that was reviewed
+    pub source_target: String,
+    /// One-line summary (first line of review output)
+    pub summary: String,
+}
+
+/// POST /hooks/review-complete — receive review completion from split pane
+pub async fn review_complete(
+    State(core): State<Arc<TmaiCore>>,
+    headers: HeaderMap,
+    Json(payload): Json<ReviewCompletePayload>,
+) -> impl IntoResponse {
+    // Validate hook token
+    let token_valid = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|token| core.validate_hook_token(token))
+        .unwrap_or(false);
+
+    if !token_valid {
+        debug!("Review complete rejected: invalid or missing token");
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    info!(
+        source_target = %payload.source_target,
+        summary = %payload.summary,
+        "Review completed"
+    );
+
+    let _ = core.event_sender().send(CoreEvent::ReviewCompleted {
+        source_target: payload.source_target,
+        summary: payload.summary,
+    });
 
     StatusCode::OK
 }

@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
                 "Hook token loaded, but web server is disabled — hooks will not receive events"
             );
         }
-        core_builder = core_builder.with_hook_token(token);
+        core_builder = core_builder.with_hook_token(token.clone());
     }
 
     if let Some(ref tx) = audit_tx {
@@ -146,11 +146,25 @@ async fn main() -> Result<()> {
 
     // Start review service if enabled
     if settings.review.enabled {
+        // Build notification info for review completion reporting
+        let review_notification = if settings.web.enabled {
+            core.hook_token().map(|token| {
+                std::sync::Arc::new(tmai_core::review::types::ReviewNotification {
+                    port: settings.web.port,
+                    token: token.to_string(),
+                    source_target: String::new(), // filled per-request
+                })
+            })
+        } else {
+            None
+        };
+
         tmai_core::review::ReviewService::spawn(
             std::sync::Arc::new(settings.review.clone()),
             app.shared_state(),
             core.subscribe(),
             core.event_sender(),
+            review_notification,
         );
     }
 

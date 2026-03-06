@@ -111,6 +111,14 @@ pub enum CoreEvent {
         /// tmux target of the review pane
         review_target: String,
     },
+
+    /// A review session completed and produced results
+    ReviewCompleted {
+        /// Original agent target that was reviewed
+        source_target: String,
+        /// One-line summary (first line of review output)
+        summary: String,
+    },
 }
 
 impl TmaiCore {

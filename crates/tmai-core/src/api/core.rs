@@ -145,6 +145,11 @@ impl TmaiCore {
         &self.session_pane_map
     }
 
+    /// Get the hook token (if configured)
+    pub fn hook_token(&self) -> Option<&str> {
+        self.hook_token.as_deref()
+    }
+
     /// Validate a hook authentication token (constant-time comparison)
     pub fn validate_hook_token(&self, token: &str) -> bool {
         match &self.hook_token {
