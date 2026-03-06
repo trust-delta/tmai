@@ -325,13 +325,14 @@ impl TmuxClient {
             None => return,
         };
 
-        // Spawn a new wezterm tab (in current window) attached to the tmux session
+        // Spawn a new wezterm tab attached to the tmux session
         let _ = Command::new("wezterm")
             .args([
                 "cli",
                 "spawn",
                 "--window-id",
                 &window_id,
+                "--new-window",
                 "--",
                 "tmux",
                 "attach",
