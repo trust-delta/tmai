@@ -92,19 +92,8 @@ cargo fmt --check             # フォーマットチェック（CI同等）
 10. ReviewService起動（設定有効時、AgentStopped → 自動レビュー）
 11. `app.run()` でTUIイベントループ開始
 
-## Issues / TODO
+## Known Limitations
 
 ### Passthrough Mode Cursor Position
 
-tmuxペインとプレビューの幅が異なり、折り返し位置がずれてカーソル位置が一致しない。
-
-### Focus to Another Session (`f` key)
-
-`switch-client`を使うとtmai自体のクライアントが切り替わる問題（SSH経由で顕著）。
-
-## Known Bugs
-
-### wezTerm SSH Domain: New AI Session Creation
-
-`wezterm cli spawn`が2ペイン構成になる。回避策: 空シェルペインを手動で閉じる。
-該当: `crates/tmai-core/src/tmux/client.rs` の `open_session_in_wezterm_tab()`
+プレビューペインはボーダー分（2列）実tmuxペインより狭いため、折り返し位置がずれてカーソル位置が一致しない。設計上の制約。緩和策: Tab/Shift+Tabで分割比率を調整、または`line_wrap = true`を設定。
