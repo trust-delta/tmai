@@ -65,7 +65,7 @@ impl App {
         let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
         let command_sender = CommandSender::new(ipc_server, tmux_client, state.clone());
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
-        let layout = Layout::new().with_preview_height(settings.ui.preview_height);
+        let layout = Layout::new().with_split_offset(settings.ui.preview_height);
 
         Self {
             state,
@@ -302,6 +302,7 @@ impl App {
                     areas.status_bar,
                     &state,
                     self.layout.view_mode(),
+                    self.layout.split_offset,
                     self.layout.split_direction(),
                 );
 
@@ -431,6 +432,13 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Persist split offset to config file (non-blocking)
+    fn save_split_offset(&self, offset: u16) {
+        std::thread::spawn(move || {
+            Settings::save_value("ui", "preview_height", offset as i64);
+        });
     }
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
@@ -638,8 +646,15 @@ impl App {
                 self.state.write().scroll_preview_up(10);
             }
 
-            // Cycle view mode (Both -> AgentsOnly -> PreviewOnly)
-            KeyCode::Tab => self.layout.cycle_view_mode(),
+            // Tab: expand list / Shift+Tab (BackTab): expand preview
+            KeyCode::BackTab => {
+                let new_offset = self.layout.step_split_offset_up();
+                self.save_split_offset(new_offset);
+            }
+            KeyCode::Tab => {
+                let new_offset = self.layout.step_split_offset_down();
+                self.save_split_offset(new_offset);
+            }
 
             // Toggle split direction (Horizontal <-> Vertical)
             KeyCode::Char('l') => self.layout.toggle_split_direction(),

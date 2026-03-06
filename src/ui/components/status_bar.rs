@@ -22,13 +22,18 @@ impl StatusBar {
         area: Rect,
         state: &AppState,
         view_mode: ViewMode,
+        split_offset: u16,
         split_direction: SplitDirection,
     ) {
         let mut spans = vec![];
 
-        // Show view mode and split direction
+        // Show view mode, split offset%, and split direction
+        let mode_label = match view_mode {
+            ViewMode::Both => format!(" {}% ", split_offset),
+            _ => format!(" {} ", view_mode.display_name()),
+        };
         spans.push(Span::styled(
-            format!(" {} ", view_mode.display_name()),
+            mode_label,
             Style::default().fg(Color::White).bg(Color::DarkGray),
         ));
         if view_mode == ViewMode::Both {

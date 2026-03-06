@@ -699,6 +699,58 @@ impl Settings {
         }
     }
 
+    /// Resolve the config file path (first existing, or default location).
+    pub fn config_path() -> Option<std::path::PathBuf> {
+        let candidates = [
+            dirs::config_dir().map(|p| p.join("tmai/config.toml")),
+            dirs::home_dir().map(|p| p.join(".config/tmai/config.toml")),
+            dirs::home_dir().map(|p| p.join(".tmai.toml")),
+        ];
+        for path in candidates.iter().flatten() {
+            if path.exists() {
+                return Some(path.clone());
+            }
+        }
+        // Default to XDG config dir (create on first save)
+        dirs::config_dir().map(|p| p.join("tmai/config.toml"))
+    }
+
+    /// Update a single key within a TOML section, preserving comments/formatting.
+    /// Creates the file and section if they don't exist.
+    pub fn save_value(section: &str, key: &str, value: i64) {
+        let Some(path) = Self::config_path() else {
+            tracing::debug!("No config path available, skipping save");
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            tracing::debug!(?path, %e, "Could not read config, starting fresh");
+            String::new()
+        });
+        let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(?path, %e, "Failed to parse config, starting fresh");
+                toml_edit::DocumentMut::default()
+            }
+        };
+
+        // Ensure section exists
+        if !doc.contains_table(section) {
+            doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        doc[section][key] = toml_edit::value(value);
+
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!(?path, %e, "Failed to create config directory");
+                return;
+            }
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
     /// Validate and normalize settings values
     ///
     /// Ensures poll intervals have a minimum value to prevent CPU exhaustion.
