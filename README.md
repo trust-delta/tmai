@@ -9,35 +9,15 @@
 
 ## Features
 
-- **Multi-agent monitoring** - Track multiple AI coding agents (Claude Code, OpenCode, etc.) across tmux panes
-- **Single-pane operation** - Approve without attaching to agent panes
-- **Real-time preview** - See agent output without switching panes (with ANSI color support)
-- **Quick approval** - Approve tool calls with single keystroke (`y`)
-- **AskUserQuestion support** - Respond to agent questions with number selection
-- **Passthrough mode** - Send keys directly to the agent pane
-- **Status detection** - Automatic detection of idle, processing, and awaiting approval states
-- **Claude Code Hooks** - Event-driven state detection via HTTP hooks (`tmai init`)
-- **PTY wrapping** - High-precision state detection via PTY proxy for real-time I/O monitoring
-- **Exfil detection** - Security monitoring for external data transmission
-- **Web Remote Control** - Control agents from your smartphone via QR code
-- **Agent Teams** - Visualize Claude Code Agent Teams structure and task progress
-- **Mode detection** - Detect Plan/Delegate/Auto-approve modes from terminal title icons
-- **Auto-approve** - Automatic approval of safe actions with 4 modes: Rules (instant), AI, Hybrid, or Off
-- **Fresh Session Review** - Automatic context-free code review when an agent completes work (hook-driven, not prompt-dependent)
-- **Usage monitoring** - Check Claude subscription usage (5h session / weekly limits) with `U` key
-
-## Documentation
-
-For detailed guides and workflows, see [doc/](./doc/README.md):
-
-- [Getting Started](./doc/getting-started.md) - Installation and first steps
-- [Claude Code Hooks](./doc/features/hooks.md) - Event-driven detection via HTTP hooks
-- [Multi-agent Monitoring](./doc/workflows/multi-agent.md) - Monitor multiple agents simultaneously
-- [Worktree Parallel Development](./doc/workflows/worktree-parallel.md) - Git worktree workflow
-- [tmai's Strengths](./doc/guides/strengths.md) - What makes tmai unique
-- [Agent Teams](./doc/features/agent-teams.md) - Claude Code team monitoring
-- [Auto-Approve](./doc/features/auto-approve.md) - Automatic approval with 4 modes (Rules/AI/Hybrid/Off)
-- [Fresh Session Review](./doc/features/fresh-session-review.md) - Automatic code review by a separate agent
+- **Multi-agent monitoring** - Track Claude Code, OpenCode, Codex CLI, Gemini CLI across tmux panes
+- **Single-pane operation** - Approve, respond, and interact without switching panes
+- **Real-time preview** - See agent output with ANSI color support
+- **3-tier state detection** - Hooks (HTTP) > IPC (PTY wrap) > capture-pane, automatic fallback
+- **Web remote control** - Control agents from your smartphone via QR code
+- **Agent Teams** - Visualize Claude Code Agent Teams and task progress
+- **Auto-approve** - Automatic approval with 4 modes: Rules / AI / Hybrid / Off
+- **Fresh Session Review** - Automatic context-free code review on agent completion
+- **Security monitoring** - Exfil detection for external data transmission
 
 ## Installation
 
@@ -45,196 +25,57 @@ For detailed guides and workflows, see [doc/](./doc/README.md):
 cargo install tmai
 ```
 
-Or build from source:
-
-```bash
-git clone https://github.com/trust-delta/tmai
-cd tmai
-cargo build --release
-```
-
 ## Quick Start
 
-### 1. Set up hooks (recommended, one-time)
-
 ```bash
+# Set up hooks for high-precision detection (one-time)
 tmai init
-```
 
-This configures Claude Code to send real-time events to tmai for high-precision state detection.
-
-### 2. Run tmai
-
-Start `tmai` in a tmux session:
-
-```bash
+# Run tmai in a tmux session
 tmai
 ```
 
-### Configuration
-
-Create a config file in one of these locations (first found wins):
-
-- `~/.config/tmai/config.toml`
-- `~/.tmai.toml`
-
-Example:
-
-```toml
-poll_interval_ms = 500
-passthrough_poll_interval_ms = 10
-capture_lines = 100
-attached_only = true
-
-[ui]
-show_preview = true
-preview_height = 40
-color = true
-
-[teams]
-enabled = true
-scan_interval = 5
-
-[usage]
-auto_refresh_min = 15  # 0 = manual only (default)
-
-[auto_approve]
-enabled = true
-model = "haiku"
-
-[review]
-enabled = true
-agent = "claude_code"       # claude_code / codex / gemini
-auto_launch = true          # auto-review on agent completion
-auto_feedback = true        # send review results back to original session
-base_branch = "main"
-```
-
-### Keybindings
+## Keybindings
 
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate agents |
-| `y` | Approve / select Yes |
-| `n` | Select No (UserQuestion) |
-| `1-9` | Select option by number |
-| `Space` | Toggle (multi-select) |
-| `i` | Enter input mode |
-| `→` | Enter passthrough mode |
-| `t` | Task overlay (team member selected) |
-| `T` | Team overview |
-| `W` | Restart as IPC-wrapped (non-IPC Claude Code) |
-| `R` | Launch fresh-session code review |
-| `U` | Fetch subscription usage (Claude Max/Pro) |
-| `Esc` | Exit mode / Quit |
+| `y` | Approve / Yes |
+| `n` | No |
+| `1-9` | Select option |
+| `i` | Input mode |
+| `->` | Passthrough mode |
+| `R` | Launch code review |
+| `U` | Subscription usage |
 | `?` | Help |
 
-### Modes
+## Documentation
 
-- **Normal mode** - Navigate and quick actions
-- **Input mode** (`i`) - Type text to send to agent
-- **Passthrough mode** (`→`) - Keys sent directly to pane
+Detailed guides, configuration reference, and workflows are available in [doc/](./doc/README.md).
 
-## PTY Wrapping (Optional)
+| Category | Links |
+|----------|-------|
+| **Getting Started** | [Installation & First Steps](./doc/getting-started.md) |
+| **Features** | [Hooks](./doc/features/hooks.md) - [Auto-Approve](./doc/features/auto-approve.md) - [Agent Teams](./doc/features/agent-teams.md) - [Web Remote](./doc/features/web-remote.md) - [PTY Wrapping](./doc/features/pty-wrapping.md) - [Fresh Session Review](./doc/features/fresh-session-review.md) |
+| **Workflows** | [Multi-agent](./doc/workflows/multi-agent.md) - [Worktree Parallel](./doc/workflows/worktree-parallel.md) - [Remote Approval](./doc/workflows/remote-approval.md) |
+| **Reference** | [Config](./doc/reference/config.md) - [Keybindings](./doc/reference/keybindings.md) - [Web API](./doc/reference/web-api.md) |
 
-For additional features like exfil detection and full AskUserQuestion parsing, wrap AI agents with a PTY proxy:
+## Supported Agents
 
-```bash
-# Start Claude Code with PTY wrapping
-tmai wrap claude
+| Agent | Detection | Hooks | PTY Wrap |
+|-------|-----------|-------|----------|
+| Claude Code | Yes | Yes | Yes |
+| OpenCode | Yes | - | Yes |
+| Codex CLI | Yes | - | Yes |
+| Gemini CLI | Yes | - | Yes |
 
-# With arguments
-tmai wrap claude --dangerously-skip-permissions
-
-# Other agents
-tmai wrap codex
-tmai wrap gemini
-```
-
-Additional benefits (on top of hooks):
-- **Exfil detection** - Monitor external data transmission
-- **Full AskUserQuestion parsing** - Parse option text for direct selection
-- **Real-time I/O monitoring** - Direct I/O stream analysis
-
-When creating new AI processes from tmai UI, they are automatically wrapped.
-
-## Web Remote Control
-
-Control your AI agents from your smartphone:
-
-1. Press `r` to display QR code
-2. Scan with your phone
-3. Approve or select options from the web interface
+## Web Remote
 
 <p align="center">
   <img src="assets/mobile-screenshot.jpg" alt="Web Remote - Agent List" width="280">
   &nbsp;&nbsp;
   <img src="assets/mobile-ask-user-question.jpg" alt="Web Remote - AskUserQuestion" width="280">
 </p>
-
-```toml
-# config.toml
-[web]
-enabled = true
-port = 9876
-```
-
-### WSL2 Setup
-
-For WSL2 with mirrored networking mode, allow the port through Windows Firewall:
-
-```powershell
-# Run as Administrator
-New-NetFirewallRule -DisplayName "tmai Web Remote" -Direction Inbound -Protocol TCP -LocalPort 9876 -Action Allow
-```
-
-#### NAT mode (legacy)
-
-If you are not using mirrored mode, port forwarding is required:
-
-```powershell
-# Run as Administrator
-.\scripts\setup-wsl-portforward.ps1
-
-# To remove
-.\scripts\setup-wsl-portforward.ps1 -Remove
-```
-
-**Note**: In NAT mode, the WSL IP address changes on reboot. Re-run the script if the connection stops working.
-
-## Supported Agents
-
-| Agent | Detection | Hooks | PTY Wrap |
-|-------|-----------|-------|----------|
-| Claude Code | ✅ Supported | ✅ | ✅ |
-| OpenCode | ✅ Supported | — | ✅ |
-| Codex CLI | ✅ Supported | — | ✅ |
-| Gemini CLI | ✅ Supported | — | ✅ |
-
-## Usage Monitoring
-
-Press `U` to check your Claude subscription usage (session / weekly limits). tmai spawns a temporary Claude Code instance in the background, runs `/usage`, and displays the results.
-
-<p align="center">
-  <img src="assets/usage-view.png" alt="Usage monitoring" width="600">
-</p>
-
-## Screenshots
-
-```
-┌─────────────────┬─────────────────────────────────┐
-│ Sessions        │ Preview                         │
-│                 │                                 │
-│ [◈Hook] main:0  │ Do you want to make this edit?  │
-│   Claude Code   │                                 │
-│   ⠋ Processing  │ ❯ 1. Yes                        │
-│                 │   2. Yes, allow all...          │
-│ [IPC] main:0.1  │   3. No                         │
-│   Claude Code   │                                 │
-│   ✳ Idle        │                                 │
-└─────────────────┴─────────────────────────────────┘
- j/k:Nav 1-9:Select i:Input →:Direct ?:Help q:Quit
-```
 
 ## Acknowledgments
 

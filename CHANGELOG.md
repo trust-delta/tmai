@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-03-07
+
+### Added
+
+- Stepwise preview split offset with Tab/Shift+Tab and auto-save to config (#67)
+- Review pane auto-close with TUI notification on completion (#66)
+
+### Improved
+
+- README simplified: details moved to doc/, concise feature list and categorized doc links
+
 ## [0.14.0] - 2026-03-06
 
 ### Added
