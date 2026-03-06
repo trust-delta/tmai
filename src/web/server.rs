@@ -100,6 +100,7 @@ impl WebServer {
         // Hook routes (separate auth via hook token, not web API token)
         let hook_routes = Router::new()
             .route("/event", post(hooks::hook_event))
+            .route("/review-complete", post(hooks::review_complete))
             .with_state(self.core.clone());
 
         // Combine all routes

@@ -377,7 +377,7 @@ impl TmaiCore {
         let req_target = request.target.clone();
 
         tokio::task::spawn_blocking(move || {
-            match crate::review::service::launch_review(&request, &settings) {
+            match crate::review::service::launch_review(&request, &settings, None) {
                 Ok((review_target, output_file)) => {
                     tracing::info!(
                         source_target = %req_target,

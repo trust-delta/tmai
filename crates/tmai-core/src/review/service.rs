@@ -15,7 +15,7 @@ use crate::config::ReviewSettings;
 use crate::state::SharedState;
 use crate::tmux::TmuxClient;
 
-use super::types::ReviewRequest;
+use super::types::{ReviewNotification, ReviewRequest};
 
 /// Shared set of targets currently under review (prevents duplicate reviews)
 type ActiveReviews = Arc<RwLock<HashSet<String>>>;
@@ -41,11 +41,13 @@ impl ReviewService {
     ///
     /// Listens for `CoreEvent::AgentStopped` events (auto_launch) and
     /// `CoreEvent::ReviewReady` events (manual trigger) to launch review sessions.
+    /// If `notification` is provided, review completion is reported to the TUI.
     pub fn spawn(
         settings: Arc<ReviewSettings>,
         state: SharedState,
         mut event_rx: broadcast::Receiver<CoreEvent>,
         event_tx: broadcast::Sender<CoreEvent>,
+        notification: Option<Arc<ReviewNotification>>,
     ) -> tokio::task::JoinHandle<()> {
         let active_reviews: ActiveReviews = Arc::new(RwLock::new(HashSet::new()));
 
@@ -109,6 +111,7 @@ impl ReviewService {
                 let review_settings = settings.clone();
                 let active = active_reviews.clone();
                 let tx = event_tx.clone();
+                let notif = notification.clone();
 
                 // Launch review in a separate blocking task
                 tokio::task::spawn_blocking(move || {
@@ -118,7 +121,14 @@ impl ReviewService {
                         target: request.target.clone(),
                     };
 
-                    let result = launch_review(&request, &review_settings);
+                    // Build per-request notification with source_target
+                    let req_notif = notif.as_ref().map(|n| ReviewNotification {
+                        port: n.port,
+                        token: n.token.clone(),
+                        source_target: request.target.clone(),
+                    });
+
+                    let result = launch_review(&request, &review_settings, req_notif.as_ref());
 
                     match result {
                         Ok((review_target, output_file)) => {
@@ -147,12 +157,15 @@ impl ReviewService {
     }
 }
 
-/// Collect git diff and launch a review session in a new tmux window.
+/// Collect git diff and launch a review session in a split pane.
 ///
+/// The review pane auto-closes when the review completes.
+/// If `notification` is provided, tmai is notified via HTTP on completion.
 /// Returns `(review_target, output_file_path)`.
 pub fn launch_review(
     request: &ReviewRequest,
     settings: &ReviewSettings,
+    notification: Option<&ReviewNotification>,
 ) -> Result<(String, std::path::PathBuf)> {
     if request.cwd.is_empty() {
         anyhow::bail!("Cannot launch review: working directory is empty");
@@ -177,14 +190,10 @@ pub fn launch_review(
     let safe_branch = sanitize_name(request.branch.as_deref().unwrap_or("unknown"));
     let output_file = review_output_dir()?.join(format!("{safe_branch}.md"));
 
-    // Extract session name from the source target (e.g., "main:0.1" → "main")
-    let session_name = request.target.split(':').next().unwrap_or("main");
-
-    // Create new tmux window for the review
-    let window_name = format!("review-{}", request.branch.as_deref().unwrap_or("unknown"));
+    // Split the source agent's pane for the review (auto-closes when done)
     let review_target = tmux
-        .new_window(session_name, &request.cwd, Some(&window_name))
-        .context("Failed to create review window")?;
+        .split_window(&request.target, &request.cwd)
+        .context("Failed to split pane for review")?;
 
     // Build feedback target if auto_feedback is enabled
     let feedback = if settings.auto_feedback {
@@ -197,9 +206,10 @@ pub fn launch_review(
     };
 
     // Launch review agent with the prompt (output tee'd to file)
-    let review_cmd = settings
-        .agent
-        .build_command(&prompt_file, &output_file, feedback.as_ref());
+    let review_cmd =
+        settings
+            .agent
+            .build_command(&prompt_file, &output_file, feedback.as_ref(), notification);
     tmux.send_text_and_enter(&review_target, &review_cmd)
         .context("Failed to send review command")?;
 

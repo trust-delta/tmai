@@ -414,6 +414,16 @@ impl App {
                                 task_subject, team_name
                             ));
                         }
+                        tmai_core::api::CoreEvent::ReviewCompleted {
+                            source_target,
+                            summary,
+                        } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!(
+                                "Review [{}]: {}",
+                                source_target, summary
+                            ));
+                        }
                         _ => {} // Other events handled elsewhere
                     }
                 }

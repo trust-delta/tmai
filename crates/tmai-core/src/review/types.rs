@@ -25,17 +25,30 @@ pub struct FeedbackTarget {
     pub output_file: std::path::PathBuf,
 }
 
+/// Options for notifying tmai when review completes
+#[derive(Debug, Clone)]
+pub struct ReviewNotification {
+    /// tmai web server port
+    pub port: u16,
+    /// Hook authentication token
+    pub token: String,
+    /// Original agent target being reviewed
+    pub source_target: String,
+}
+
 impl ReviewAgent {
     /// Build the shell command to run the review with this agent.
     ///
     /// Output is tee'd to `output_file` so tmai can read the result.
     /// If `feedback` is provided, the review result file path is sent to the
     /// original session as a prompt after the review completes.
+    /// If `notification` is provided, tmai is notified via HTTP on completion.
     pub fn build_command(
         &self,
         prompt_file: &std::path::Path,
         output_file: &std::path::Path,
         feedback: Option<&FeedbackTarget>,
+        notification: Option<&ReviewNotification>,
     ) -> String {
         let prompt = shell_escape(prompt_file);
         let output = shell_escape(output_file);
@@ -64,11 +77,27 @@ impl ReviewAgent {
             String::new()
         };
 
+        // Notify tmai via HTTP when review completes (sends first line as summary)
+        let notify_cmd = if let Some(n) = notification {
+            let source = shell_escape_str(&n.source_target);
+            format!(
+                " && curl -sf -X POST -H 'Authorization: Bearer {token}' \
+                 -H 'Content-Type: application/json' \
+                 -d \"{{\\\"source_target\\\":$(printf %s {source} | jq -Rs .),\
+\\\"summary\\\":$(head -n1 {output} | tr -d '\\r\\n' | jq -Rs .)}}\" \
+                 http://127.0.0.1:{port}/hooks/review-complete >/dev/null 2>&1 || true",
+                token = n.token,
+                port = n.port,
+            )
+        } else {
+            String::new()
+        };
+
         let cleanup = format!("rm -f {prompt}");
 
         format!(
-            "{review_cmd}{feedback_cmd} ; \
-             echo '\\n[Review complete. Press Enter to close.]' ; read ; {cleanup}"
+            "{review_cmd}{feedback_cmd}{notify_cmd} && {{ {cleanup} ; exit ; }} || \
+             {{ echo '\\n[Review failed. Closing in 10s...]' ; sleep 10 ; {cleanup} ; exit ; }}"
         )
     }
 }
@@ -162,16 +191,16 @@ mod tests {
         let prompt = PathBuf::from("/tmp/review.txt");
         let output = PathBuf::from("/tmp/output.md");
 
-        let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, None);
+        let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, None, None);
         assert!(cmd.contains("claude -p"));
         assert!(cmd.contains("/tmp/review.txt"));
         assert!(cmd.contains("/tmp/output.md"));
         assert!(!cmd.contains("send-keys"));
 
-        let cmd = ReviewAgent::Codex.build_command(&prompt, &output, None);
+        let cmd = ReviewAgent::Codex.build_command(&prompt, &output, None, None);
         assert!(cmd.contains("codex -q"));
 
-        let cmd = ReviewAgent::Gemini.build_command(&prompt, &output, None);
+        let cmd = ReviewAgent::Gemini.build_command(&prompt, &output, None, None);
         assert!(cmd.contains("gemini <"));
     }
 
@@ -184,11 +213,29 @@ mod tests {
             output_file: output.clone(),
         };
 
-        let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, Some(&feedback));
+        let cmd = ReviewAgent::ClaudeCode.build_command(&prompt, &output, Some(&feedback), None);
         assert!(cmd.contains("send-keys -t"));
         assert!(cmd.contains("main:0.1"));
         assert!(cmd.contains("/tmp/output.md"));
         assert!(cmd.contains("fix Critical/Warning"));
+    }
+
+    #[test]
+    fn test_review_agent_build_command_with_notification() {
+        let prompt = PathBuf::from("/tmp/review.txt");
+        let output = PathBuf::from("/tmp/output.md");
+        let notification = ReviewNotification {
+            port: 9876,
+            token: "test-token".to_string(),
+            source_target: "main:0.1".to_string(),
+        };
+
+        let cmd =
+            ReviewAgent::ClaudeCode.build_command(&prompt, &output, None, Some(&notification));
+        assert!(cmd.contains("curl"));
+        assert!(cmd.contains("9876"));
+        assert!(cmd.contains("test-token"));
+        assert!(cmd.contains("review-complete"));
     }
 
     #[test]
