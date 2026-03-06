@@ -83,8 +83,8 @@ impl ReviewAgent {
             format!(
                 " && curl -sf -X POST -H 'Authorization: Bearer {token}' \
                  -H 'Content-Type: application/json' \
-                 -d \"{{\\\"source_target\\\":$(echo {source} | jq -Rs .),\
-\\\"summary\\\":$(head -1 {output} | jq -Rs .)}}\" \
+                 -d \"{{\\\"source_target\\\":$(printf %s {source} | jq -Rs .),\
+\\\"summary\\\":$(head -n1 {output} | tr -d '\\r\\n' | jq -Rs .)}}\" \
                  http://127.0.0.1:{port}/hooks/review-complete >/dev/null 2>&1 || true",
                 token = n.token,
                 port = n.port,
