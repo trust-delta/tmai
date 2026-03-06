@@ -42,15 +42,6 @@ pub enum ViewMode {
 }
 
 impl ViewMode {
-    /// Cycle to next view mode
-    pub fn next(self) -> Self {
-        match self {
-            ViewMode::Both => ViewMode::AgentsOnly,
-            ViewMode::AgentsOnly => ViewMode::PreviewOnly,
-            ViewMode::PreviewOnly => ViewMode::Both,
-        }
-    }
-
     /// Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -61,14 +52,14 @@ impl ViewMode {
     }
 }
 
+/// Step size for split offset adjustment
+const SPLIT_STEP: u16 = 10;
+
 /// Layout configuration for the UI
 pub struct Layout {
-    /// Width percentage for the session list (left panel in horizontal split)
-    pub session_list_width_pct: u16,
-    /// Height percentage for the session list (top panel in vertical split)
-    pub session_list_height_pct: u16,
-    /// Current view mode
-    pub view_mode: ViewMode,
+    /// Split offset: 0=list only, 100=preview only, 10-90=split view
+    /// Direction-agnostic — applies as width% in horizontal, height% in vertical.
+    pub split_offset: u16,
     /// Current split direction
     pub split_direction: SplitDirection,
     /// Height for input area
@@ -79,25 +70,49 @@ impl Layout {
     /// Create a new layout with default settings
     pub fn new() -> Self {
         Self {
-            session_list_width_pct: 35,
-            session_list_height_pct: 25,
-            view_mode: ViewMode::default(),
+            split_offset: 60,
             split_direction: SplitDirection::default(),
             input_height: INPUT_HEIGHT,
         }
     }
 
-    /// Create a layout with custom preview size (percentage of space for the preview panel)
-    pub fn with_preview_height(mut self, preview_pct: u16) -> Self {
-        let preview_pct = preview_pct.clamp(10, 90);
-        self.session_list_width_pct = 100 - preview_pct;
-        self.session_list_height_pct = 100 - preview_pct;
+    /// Create a layout with custom split offset
+    pub fn with_split_offset(mut self, offset: u16) -> Self {
+        self.split_offset = offset.clamp(0, 100);
         self
     }
 
-    /// Cycle view mode (Both -> AgentsOnly -> PreviewOnly -> Both)
-    pub fn cycle_view_mode(&mut self) {
-        self.view_mode = self.view_mode.next();
+    /// Step split offset by -10 (shrinks preview, expands list).
+    /// Wraps: ...10 → 0 → 100 → 90...
+    /// Returns the new split_offset for config saving.
+    pub fn step_split_offset_down(&mut self) -> u16 {
+        self.split_offset = if self.split_offset == 0 {
+            100
+        } else {
+            self.split_offset.saturating_sub(SPLIT_STEP)
+        };
+        self.split_offset
+    }
+
+    /// Step split offset by +10 (expands preview, shrinks list).
+    /// Wraps: ...90 → 100 → 0 → 10...
+    /// Returns the new split_offset for config saving.
+    pub fn step_split_offset_up(&mut self) -> u16 {
+        self.split_offset = if self.split_offset >= 100 {
+            0
+        } else {
+            (self.split_offset + SPLIT_STEP).min(100)
+        };
+        self.split_offset
+    }
+
+    /// Derive ViewMode from split_offset
+    pub fn view_mode(&self) -> ViewMode {
+        match self.split_offset {
+            0 => ViewMode::AgentsOnly,
+            100 => ViewMode::PreviewOnly,
+            _ => ViewMode::Both,
+        }
     }
 
     /// Toggle split direction (Horizontal <-> Vertical)
@@ -105,14 +120,14 @@ impl Layout {
         self.split_direction = self.split_direction.toggle();
     }
 
-    /// Get current view mode
-    pub fn view_mode(&self) -> ViewMode {
-        self.view_mode
-    }
-
     /// Get current split direction
     pub fn split_direction(&self) -> SplitDirection {
         self.split_direction
+    }
+
+    /// Get the list panel percentage (inverse of split_offset)
+    fn list_pct(&self) -> u16 {
+        100 - self.split_offset
     }
 
     /// Set input area height
@@ -142,15 +157,15 @@ impl Layout {
         let main_area = main_and_status[0];
         let status_bar = main_and_status[1];
 
-        match self.view_mode {
+        match self.view_mode() {
             ViewMode::Both => match self.split_direction {
                 SplitDirection::Horizontal => {
                     // Split horizontally: session list (left), preview+input (right)
                     let horizontal = ratatui::layout::Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(self.session_list_width_pct),
-                            Constraint::Percentage(100 - self.session_list_width_pct),
+                            Constraint::Percentage(self.list_pct()),
+                            Constraint::Percentage(self.split_offset),
                         ])
                         .split(main_area);
 
@@ -186,8 +201,8 @@ impl Layout {
                     let vertical = ratatui::layout::Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Percentage(self.session_list_height_pct),
-                            Constraint::Percentage(100 - self.session_list_height_pct),
+                            Constraint::Percentage(self.list_pct()),
+                            Constraint::Percentage(self.split_offset),
                         ])
                         .split(main_area);
 
@@ -329,8 +344,7 @@ mod tests {
 
     #[test]
     fn test_layout_agents_only() {
-        let mut layout = Layout::new();
-        layout.view_mode = ViewMode::AgentsOnly;
+        let layout = Layout::new().with_split_offset(0);
         let area = Rect::new(0, 0, 100, 50);
         let areas = layout.calculate(area);
 
@@ -340,8 +354,7 @@ mod tests {
 
     #[test]
     fn test_layout_preview_only() {
-        let mut layout = Layout::new();
-        layout.view_mode = ViewMode::PreviewOnly;
+        let layout = Layout::new().with_split_offset(100);
         let area = Rect::new(0, 0, 100, 50);
         let areas = layout.calculate(area);
 
@@ -350,18 +363,46 @@ mod tests {
     }
 
     #[test]
-    fn test_view_mode_cycle() {
-        let mut layout = Layout::new();
-        assert_eq!(layout.view_mode, ViewMode::Both);
+    fn test_step_split_offset_down() {
+        let mut layout = Layout::new().with_split_offset(60);
+        assert_eq!(layout.view_mode(), ViewMode::Both);
 
-        layout.cycle_view_mode();
-        assert_eq!(layout.view_mode, ViewMode::AgentsOnly);
+        // Tab shrinks preview (expands list)
+        layout.step_split_offset_down();
+        assert_eq!(layout.split_offset, 50);
 
-        layout.cycle_view_mode();
-        assert_eq!(layout.view_mode, ViewMode::PreviewOnly);
+        // Keep stepping down to 0 (agents only)
+        for _ in 0..5 {
+            layout.step_split_offset_down();
+        }
+        assert_eq!(layout.split_offset, 0);
+        assert_eq!(layout.view_mode(), ViewMode::AgentsOnly);
 
-        layout.cycle_view_mode();
-        assert_eq!(layout.view_mode, ViewMode::Both);
+        // Wrap around to 100 (preview only)
+        layout.step_split_offset_down();
+        assert_eq!(layout.split_offset, 100);
+        assert_eq!(layout.view_mode(), ViewMode::PreviewOnly);
+    }
+
+    #[test]
+    fn test_step_split_offset_up() {
+        let mut layout = Layout::new().with_split_offset(40);
+
+        // Shift+Tab expands preview
+        layout.step_split_offset_up();
+        assert_eq!(layout.split_offset, 50);
+
+        // Keep stepping up to 100 (preview only)
+        for _ in 0..5 {
+            layout.step_split_offset_up();
+        }
+        assert_eq!(layout.split_offset, 100);
+        assert_eq!(layout.view_mode(), ViewMode::PreviewOnly);
+
+        // Wrap around to 0 (agents only)
+        layout.step_split_offset_up();
+        assert_eq!(layout.split_offset, 0);
+        assert_eq!(layout.view_mode(), ViewMode::AgentsOnly);
     }
 
     #[test]
@@ -404,5 +445,14 @@ mod tests {
         let session_area = areas.session_list.unwrap();
         let preview_area = areas.preview.unwrap();
         assert!(session_area.y < preview_area.y);
+    }
+
+    #[test]
+    fn test_with_split_offset_clamp() {
+        let layout = Layout::new().with_split_offset(150);
+        assert_eq!(layout.split_offset, 100);
+
+        let layout = Layout::new().with_split_offset(0);
+        assert_eq!(layout.split_offset, 0);
     }
 }
