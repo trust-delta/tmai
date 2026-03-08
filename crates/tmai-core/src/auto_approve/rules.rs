@@ -165,6 +165,18 @@ impl RuleEngine {
         let tool_lower = tool_name.to_lowercase();
         let cmd_lower = command.to_lowercase();
 
+        // Reject Bash commands with shell metacharacters (compound commands,
+        // pipes, redirects, subshells). These could chain safe commands with
+        // dangerous ones (e.g., "cargo test && rm -rf /"). Fall through to
+        // "ask" for manual review.
+        if tool_lower == "bash"
+            && ["&&", "||", ";", "\n", "`", "$(", ">", "<", "|"]
+                .iter()
+                .any(|token| command.contains(token))
+        {
+            return None;
+        }
+
         // Read operations
         if self.settings.allow_read {
             if tool_lower == "read" || tool_lower == "glob" || tool_lower == "grep" {
@@ -175,14 +187,14 @@ impl RuleEngine {
                     "cat ", "head ", "tail ", "less ", "ls ", "find ", "grep ", "wc ",
                 ];
                 for cmd in &read_commands {
-                    if cmd_lower.starts_with(cmd) || cmd_lower.contains(&format!(" | {}", cmd)) {
+                    if cmd_lower.starts_with(cmd) {
                         return Some(format!("allow_read: {}", cmd.trim()));
                     }
                 }
             }
         }
 
-        // Test execution
+        // Test execution (compound commands already rejected by metacharacter guard)
         if self.settings.allow_tests && tool_lower == "bash" {
             let test_commands = [
                 "cargo test",
@@ -198,7 +210,7 @@ impl RuleEngine {
                 "gradle test",
             ];
             for cmd in &test_commands {
-                if cmd_lower.starts_with(cmd) || cmd_lower.contains(&format!("&& {}", cmd)) {
+                if cmd_lower.starts_with(cmd) {
                     return Some(format!("allow_tests: {}", cmd));
                 }
             }
@@ -260,7 +272,7 @@ impl RuleEngine {
                 "deno lint",
             ];
             for cmd in &fmt_commands {
-                if cmd_lower.starts_with(cmd) || cmd_lower.contains(&format!("npx {}", cmd)) {
+                if cmd_lower.starts_with(cmd) || cmd_lower.starts_with(&format!("npx {}", cmd)) {
                     return Some(format!("allow_format_lint: {}", cmd.trim()));
                 }
             }
