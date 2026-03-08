@@ -21,6 +21,7 @@
 //! ```
 
 pub mod actions;
+mod auto_approve;
 mod builder;
 mod core;
 pub mod events;

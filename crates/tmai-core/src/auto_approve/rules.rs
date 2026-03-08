@@ -1,9 +1,13 @@
 /// Rule-based auto-approve engine.
 ///
-/// Evaluates screen context against allow rules to make instant
+/// Evaluates tool calls against allow rules to make instant
 /// (sub-millisecond) approval decisions without AI.
 /// If no allow rule matches, the decision is Uncertain — which becomes
 /// ManualRequired in Rules mode, or escalates to AI in Hybrid mode.
+///
+/// Supports two modes:
+/// - **Structured** (PreToolUse hook): receives `tool_name` + `tool_input` directly
+/// - **Legacy** (screen scraping): parses "Allow X access to Y" from terminal text
 use std::time::Instant;
 
 use anyhow::Result;
@@ -83,6 +87,198 @@ impl RuleEngine {
             operation: None,
             target: None,
         }
+    }
+
+    /// Evaluate allow rules against structured tool data from PreToolUse hook.
+    ///
+    /// This is the fast path for Claude Code agents with hooks enabled.
+    /// Takes structured `tool_name` + `tool_input` instead of screen text.
+    /// Returns Approve if an allow rule matches, Uncertain otherwise.
+    pub fn judge_structured(
+        &self,
+        tool_name: &str,
+        tool_input: Option<&serde_json::Value>,
+    ) -> JudgmentResult {
+        let start = Instant::now();
+
+        // Extract command string from Bash tool input
+        let command = tool_input
+            .and_then(|v| v.get("command"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Extract file_path from Read/Edit/Write tool input
+        let file_path = tool_input
+            .and_then(|v| v.get("file_path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Extract URL from WebFetch tool input
+        let url = tool_input
+            .and_then(|v| v.get("url"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Build a synthetic context string for user-defined pattern matching
+        let context_for_patterns = format!("{} {} {} {}", tool_name, command, file_path, url);
+
+        if let Some(rule) =
+            self.check_allow_structured(tool_name, command, file_path, url, &context_for_patterns)
+        {
+            JudgmentResult {
+                decision: JudgmentDecision::Approve,
+                reasoning: format!("Allowed by rule: {}", rule),
+                model: format!("rules:{}", rule.split(':').next().unwrap_or("allow")),
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                usage: None,
+            }
+        } else {
+            JudgmentResult {
+                decision: JudgmentDecision::Uncertain,
+                reasoning: format!("No matching allow rule for tool: {}", tool_name),
+                model: "rules:abstain".to_string(),
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                usage: None,
+            }
+        }
+    }
+
+    /// Check allow rules against structured tool data; returns matching rule name
+    fn check_allow_structured(
+        &self,
+        tool_name: &str,
+        command: &str,
+        _file_path: &str,
+        _url: &str,
+        context_for_patterns: &str,
+    ) -> Option<String> {
+        // User-defined allow patterns (highest priority)
+        for (i, pattern) in self.allow_patterns.iter().enumerate() {
+            if pattern.is_match(context_for_patterns) {
+                return Some(format!(
+                    "allow_pattern[{}]: {}",
+                    i, self.settings.allow_patterns[i]
+                ));
+            }
+        }
+
+        let tool_lower = tool_name.to_lowercase();
+        let cmd_lower = command.to_lowercase();
+
+        // Reject Bash commands with shell metacharacters (compound commands,
+        // pipes, redirects, subshells). These could chain safe commands with
+        // dangerous ones (e.g., "cargo test && rm -rf /"). Fall through to
+        // "ask" for manual review.
+        if tool_lower == "bash"
+            && ["&&", "||", ";", "\n", "`", "$(", ">", "<", "|"]
+                .iter()
+                .any(|token| command.contains(token))
+        {
+            return None;
+        }
+
+        // Read operations
+        if self.settings.allow_read {
+            if tool_lower == "read" || tool_lower == "glob" || tool_lower == "grep" {
+                return Some(format!("allow_read: {} tool", tool_name));
+            }
+            if tool_lower == "bash" {
+                let read_commands = [
+                    "cat ", "head ", "tail ", "less ", "ls ", "find ", "grep ", "wc ",
+                ];
+                for cmd in &read_commands {
+                    if cmd_lower.starts_with(cmd) {
+                        return Some(format!("allow_read: {}", cmd.trim()));
+                    }
+                }
+            }
+        }
+
+        // Test execution (compound commands already rejected by metacharacter guard)
+        if self.settings.allow_tests && tool_lower == "bash" {
+            let test_commands = [
+                "cargo test",
+                "npm test",
+                "npm run test",
+                "npx jest",
+                "npx vitest",
+                "pytest",
+                "python -m pytest",
+                "go test",
+                "dotnet test",
+                "mvn test",
+                "gradle test",
+            ];
+            for cmd in &test_commands {
+                if cmd_lower.starts_with(cmd) {
+                    return Some(format!("allow_tests: {}", cmd));
+                }
+            }
+        }
+
+        // Fetch/search operations
+        if self.settings.allow_fetch {
+            if tool_lower == "webfetch" || tool_lower == "websearch" {
+                return Some(format!("allow_fetch: {}", tool_name));
+            }
+            // curl GET (no -X POST, no --data, no -d)
+            if tool_lower == "bash"
+                && cmd_lower.starts_with("curl ")
+                && !cmd_lower.contains("-x post")
+                && !cmd_lower.contains("--data")
+                && !cmd_lower.contains(" -d ")
+            {
+                return Some("allow_fetch: curl GET".to_string());
+            }
+        }
+
+        // Git read-only commands
+        if self.settings.allow_git_readonly && tool_lower == "bash" {
+            let git_readonly = [
+                "git status",
+                "git log",
+                "git diff",
+                "git branch",
+                "git show",
+                "git blame",
+                "git stash list",
+                "git remote -v",
+                "git tag",
+                "git rev-parse",
+                "git ls-files",
+                "git ls-tree",
+            ];
+            for cmd in &git_readonly {
+                if cmd_lower.starts_with(cmd) {
+                    return Some(format!("allow_git_readonly: {}", cmd));
+                }
+            }
+        }
+
+        // Format/lint commands
+        if self.settings.allow_format_lint && tool_lower == "bash" {
+            let fmt_commands = [
+                "cargo fmt",
+                "cargo clippy",
+                "prettier",
+                "eslint",
+                "rustfmt",
+                "black ",
+                "isort ",
+                "gofmt",
+                "go fmt",
+                "biome ",
+                "deno fmt",
+                "deno lint",
+            ];
+            for cmd in &fmt_commands {
+                if cmd_lower.starts_with(cmd) || cmd_lower.starts_with(&format!("npx {}", cmd)) {
+                    return Some(format!("allow_format_lint: {}", cmd.trim()));
+                }
+            }
+        }
+
+        None
     }
 
     /// Check allow rules; returns the matching rule name if allowed

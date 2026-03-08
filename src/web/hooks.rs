@@ -36,8 +36,10 @@ struct HookEventResponse {
 
 /// POST /hooks/event — receive a hook event from Claude Code
 ///
-/// Returns 200 OK for most events. For TeammateIdle/TaskCompleted events,
-/// returns a JSON body that can control whether the teammate continues.
+/// Returns structured JSON responses for events that support it:
+/// - **PreToolUse**: `hookSpecificOutput.permissionDecision` for auto-approval
+/// - **TeammateIdle/TaskCompleted**: `continue` + `stopReason` for stop control
+/// - Other events: empty 200 OK
 pub async fn hook_event(
     State(core): State<Arc<TmaiCore>>,
     headers: HeaderMap,
@@ -55,6 +57,15 @@ pub async fn hook_event(
         debug!("Hook event rejected: invalid or missing token");
         return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null));
     }
+
+    // For PreToolUse: evaluate auto-approve BEFORE processing the event.
+    // This allows returning a permissionDecision in the response body,
+    // preventing the permission prompt from appearing at all.
+    let pre_tool_use_response = if payload.hook_event_name == "PreToolUse" {
+        core.evaluate_pre_tool_use(&payload)
+    } else {
+        None
+    };
 
     // Extract pane_id from X-Tmai-Pane-Id header
     let header_pane_id = headers.get("x-tmai-pane-id").and_then(|v| v.to_str().ok());
@@ -80,10 +91,9 @@ pub async fn hook_event(
         }
     };
 
-    // Check if this is a teammate event that supports stop control
     let event_name = payload.hook_event_name.clone();
 
-    // Process the hook event
+    // Process the hook event (update HookRegistry, emit CoreEvent)
     let core_event = handle_hook_event(
         &payload,
         &pane_id,
@@ -99,19 +109,46 @@ pub async fn hook_event(
     // Notify subscribers that agent state may have changed
     core.notify_agents_updated();
 
-    // For TeammateIdle/TaskCompleted, return JSON body for stop control.
-    // Default: continue=true (don't stop). Future: configurable stop logic.
-    if event_name == "TeammateIdle" || event_name == "TaskCompleted" {
-        let response = HookEventResponse {
-            should_continue: true,
-            stop_reason: None,
-        };
-        (
-            StatusCode::OK,
-            Json(serde_json::to_value(response).unwrap_or(serde_json::Value::Null)),
-        )
-    } else {
-        (StatusCode::OK, Json(serde_json::Value::Null))
+    // Build event-specific response body
+    match event_name.as_str() {
+        // PreToolUse: return permissionDecision for instant auto-approval
+        "PreToolUse" => {
+            if let Some(decision) = pre_tool_use_response {
+                let response = serde_json::json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": decision.decision.as_str(),
+                        "permissionDecisionReason": decision.reason
+                    }
+                });
+                info!(
+                    pane_id = %pane_id,
+                    tool = ?payload.tool_name,
+                    decision = decision.decision.as_str(),
+                    model = %decision.model,
+                    elapsed_ms = decision.elapsed_ms,
+                    "PreToolUse auto-approve"
+                );
+                (StatusCode::OK, Json(response))
+            } else {
+                (StatusCode::OK, Json(serde_json::Value::Null))
+            }
+        }
+
+        // TeammateIdle/TaskCompleted: return stop control response
+        "TeammateIdle" | "TaskCompleted" => {
+            let response = HookEventResponse {
+                should_continue: true,
+                stop_reason: None,
+            };
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(response).unwrap_or(serde_json::Value::Null)),
+            )
+        }
+
+        // All other events: empty response
+        _ => (StatusCode::OK, Json(serde_json::Value::Null)),
     }
 }
 
