@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-03-08
+
+### Added
+
+- PreToolUse hook-based auto-approve: ルールエンジンによる即時権限判定（18.5秒→<1ms）
+- Claude Code v2.1.69+ hook新フィールド対応: InstructionsLoadedイベント、WorktreeInfo、TeammateIdle/TaskCompleted停止制御
+- シェルメタ文字ガード: 複合Bashコマンドの自動承認を防止
+
+### Dependencies
+
+- tokio 1.49→1.50, uuid 1.21→1.22, libc 0.2.182→0.2.183
+- toml 1.0.3→1.0.6, toml_edit 0.22→0.25
+
 ## [0.15.1] - 2026-03-07
 
 ### Fixed
