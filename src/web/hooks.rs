@@ -11,7 +11,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -19,7 +19,25 @@ use tmai_core::api::{CoreEvent, TmaiCore};
 use tmai_core::hooks::handler::{handle_hook_event, resolve_pane_id};
 use tmai_core::hooks::HookEventPayload;
 
+/// Response body for hook events that support stop control
+///
+/// Claude Code v2.1.69+ supports `{"continue": false, "stopReason": "..."}` responses
+/// for TeammateIdle and TaskCompleted events, allowing tmai to stop teammates.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HookEventResponse {
+    /// Whether the teammate should continue (true) or stop (false)
+    #[serde(rename = "continue")]
+    should_continue: bool,
+    /// Reason for stopping (only meaningful when should_continue is false)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_reason: Option<String>,
+}
+
 /// POST /hooks/event — receive a hook event from Claude Code
+///
+/// Returns 200 OK for most events. For TeammateIdle/TaskCompleted events,
+/// returns a JSON body that can control whether the teammate continues.
 pub async fn hook_event(
     State(core): State<Arc<TmaiCore>>,
     headers: HeaderMap,
@@ -35,7 +53,7 @@ pub async fn hook_event(
 
     if !token_valid {
         debug!("Hook event rejected: invalid or missing token");
-        return StatusCode::UNAUTHORIZED;
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null));
     }
 
     // Extract pane_id from X-Tmai-Pane-Id header
@@ -58,9 +76,12 @@ pub async fn hook_event(
                 "Could not resolve pane_id for hook event"
             );
             // Still return 200 to not block Claude Code
-            return StatusCode::OK;
+            return (StatusCode::OK, Json(serde_json::Value::Null));
         }
     };
+
+    // Check if this is a teammate event that supports stop control
+    let event_name = payload.hook_event_name.clone();
 
     // Process the hook event
     let core_event = handle_hook_event(
@@ -78,7 +99,20 @@ pub async fn hook_event(
     // Notify subscribers that agent state may have changed
     core.notify_agents_updated();
 
-    StatusCode::OK
+    // For TeammateIdle/TaskCompleted, return JSON body for stop control.
+    // Default: continue=true (don't stop). Future: configurable stop logic.
+    if event_name == "TeammateIdle" || event_name == "TaskCompleted" {
+        let response = HookEventResponse {
+            should_continue: true,
+            stop_reason: None,
+        };
+        (
+            StatusCode::OK,
+            Json(serde_json::to_value(response).unwrap_or(serde_json::Value::Null)),
+        )
+    } else {
+        (StatusCode::OK, Json(serde_json::Value::Null))
+    }
 }
 
 /// Payload for review completion notification

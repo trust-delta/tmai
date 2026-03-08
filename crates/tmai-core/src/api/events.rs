@@ -8,6 +8,7 @@
 
 use tokio::sync::broadcast;
 
+use crate::hooks::WorktreeInfo;
 use crate::review::ReviewRequest;
 
 use super::core::TmaiCore;
@@ -80,10 +81,22 @@ pub enum CoreEvent {
     WorktreeCreated {
         /// Agent target ID
         target: String,
+        /// Worktree details (name, path, branch, original_repo)
+        worktree: Option<WorktreeInfo>,
     },
 
     /// A git worktree was removed
     WorktreeRemoved {
+        /// Agent target ID
+        target: String,
+        /// Worktree details (name, path, branch, original_repo)
+        worktree: Option<WorktreeInfo>,
+    },
+
+    /// CLAUDE.md or `.claude/rules/*.md` files were loaded into context
+    ///
+    /// Added in Claude Code v2.1.69. Fires when instruction files are loaded.
+    InstructionsLoaded {
         /// Agent target ID
         target: String,
     },

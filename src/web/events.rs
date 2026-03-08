@@ -128,6 +128,7 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         | Ok(CoreEvent::WorktreeCreated { .. })
                         | Ok(CoreEvent::WorktreeRemoved { .. })
                         | Ok(CoreEvent::AgentStopped { .. })
+                        | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. }) => {
                             // Future: forward to SSE subscribers if needed
                         }
