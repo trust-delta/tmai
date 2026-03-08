@@ -37,6 +37,7 @@ pub fn handle_hook_event(
         event_names::SESSION_START => {
             let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
             state.last_context = build_context(payload);
+            state.worktree = payload.worktree.clone();
             let mut reg = hook_registry.write();
             reg.insert(pane_id.to_string(), state);
             None
@@ -221,7 +222,8 @@ pub fn handle_hook_event(
         }
 
         event_names::WORKTREE_CREATE => {
-            // Worktree created — set Processing, emit event
+            // Worktree created — set Processing, store worktree info, emit event
+            let worktree_info = payload.worktree.clone();
             update_status(
                 hook_registry,
                 pane_id,
@@ -229,21 +231,33 @@ pub fn handle_hook_event(
                 HookStatus::Processing,
                 None,
             );
+            // Store worktree info in HookState
+            if worktree_info.is_some() {
+                let mut reg = hook_registry.write();
+                if let Some(state) = reg.get_mut(pane_id) {
+                    state.worktree = worktree_info.clone();
+                }
+            }
             Some(CoreEvent::WorktreeCreated {
                 target: pane_id.to_string(),
+                worktree: worktree_info,
             })
         }
 
         event_names::WORKTREE_REMOVE => {
-            // Worktree removed — touch timestamp, emit event
+            // Worktree removed — touch timestamp, emit event with worktree info
+            let worktree_info = payload.worktree.clone();
             let ctx = build_context(payload);
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.last_context = ctx;
                 state.touch();
+                // Clear worktree info on removal
+                state.worktree = None;
             }
             Some(CoreEvent::WorktreeRemoved {
                 target: pane_id.to_string(),
+                worktree: worktree_info,
             })
         }
 
@@ -257,6 +271,19 @@ pub fn handle_hook_event(
                 state.touch();
             }
             None
+        }
+
+        event_names::INSTRUCTIONS_LOADED => {
+            // CLAUDE.md or rules files loaded — touch timestamp, emit event
+            let ctx = build_context(payload);
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.last_context = ctx;
+                state.touch();
+            }
+            Some(CoreEvent::InstructionsLoaded {
+                target: pane_id.to_string(),
+            })
         }
 
         event_names::POST_TOOL_USE_FAILURE => {
@@ -351,6 +378,10 @@ fn update_status(
         if payload.cwd.is_some() {
             state.cwd = payload.cwd.clone();
         }
+        // Update worktree info if provided (first event with worktree in non-SessionStart path)
+        if payload.worktree.is_some() && state.worktree.is_none() {
+            state.worktree = payload.worktree.clone();
+        }
         state.last_context = build_context(payload);
         state.touch();
     } else {
@@ -358,6 +389,7 @@ fn update_status(
         let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
         state.status = status;
         state.last_tool = tool_name;
+        state.worktree = payload.worktree.clone();
         state.last_context = build_context(payload);
         reg.insert(pane_id.to_string(), state);
     }
@@ -936,6 +968,121 @@ mod tests {
         assert_eq!(
             state.last_context.permission_mode.as_deref(),
             Some("dontAsk")
+        );
+    }
+
+    #[test]
+    fn test_instructions_loaded_emits_event_and_touches() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let event = handle_hook_event(&make_payload("InstructionsLoaded"), "5", &registry, &map);
+        assert!(matches!(event, Some(CoreEvent::InstructionsLoaded { .. })));
+        if let Some(CoreEvent::InstructionsLoaded { target }) = event {
+            assert_eq!(target, "5");
+        }
+
+        // Status should remain Idle (no state change)
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Idle);
+    }
+
+    #[test]
+    fn test_session_start_stores_worktree_info() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "wt-session",
+            "cwd": "/home/user/worktrees/feat-auth",
+            "worktree": {
+                "name": "feat-auth",
+                "path": "/home/user/worktrees/feat-auth",
+                "branch": "feat/auth",
+                "original_repo": "/home/user/project"
+            }
+        }))
+        .unwrap();
+
+        handle_hook_event(&payload, "10", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("10").unwrap();
+        let wt = state.worktree.as_ref().unwrap();
+        assert_eq!(wt.name.as_deref(), Some("feat-auth"));
+        assert_eq!(wt.branch.as_deref(), Some("feat/auth"));
+        assert_eq!(wt.original_repo.as_deref(), Some("/home/user/project"));
+    }
+
+    #[test]
+    fn test_worktree_create_includes_worktree_info_in_event() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "WorktreeCreate",
+            "session_id": "test-session",
+            "cwd": "/home/user/worktrees/fix-bug",
+            "worktree": {
+                "name": "fix-bug",
+                "path": "/home/user/worktrees/fix-bug",
+                "branch": "fix/bug-123"
+            }
+        }))
+        .unwrap();
+
+        let event = handle_hook_event(&payload, "5", &registry, &map);
+        if let Some(CoreEvent::WorktreeCreated { target, worktree }) = event {
+            assert_eq!(target, "5");
+            let wt = worktree.unwrap();
+            assert_eq!(wt.name.as_deref(), Some("fix-bug"));
+            assert_eq!(wt.branch.as_deref(), Some("fix/bug-123"));
+        } else {
+            panic!("Expected WorktreeCreated event");
+        }
+
+        // Verify worktree info stored in HookState
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert!(state.worktree.is_some());
+    }
+
+    #[test]
+    fn test_worktree_remove_clears_worktree_info() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        // Start with worktree info
+        let start_payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "wt-session",
+            "cwd": "/home/user/worktrees/feat",
+            "worktree": {
+                "name": "feat",
+                "path": "/home/user/worktrees/feat",
+                "branch": "feat/x"
+            }
+        }))
+        .unwrap();
+        handle_hook_event(&start_payload, "5", &registry, &map);
+
+        {
+            let reg = registry.read();
+            assert!(reg.get("5").unwrap().worktree.is_some());
+        }
+
+        // Remove worktree
+        handle_hook_event(&make_payload("WorktreeRemove"), "5", &registry, &map);
+
+        let reg = registry.read();
+        assert!(
+            reg.get("5").unwrap().worktree.is_none(),
+            "WorktreeRemove should clear worktree info"
         );
     }
 }

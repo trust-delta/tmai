@@ -26,6 +26,27 @@ pub mod event_names {
     pub const WORKTREE_REMOVE: &str = "WorktreeRemove";
     pub const PRE_COMPACT: &str = "PreCompact";
     pub const POST_TOOL_USE_FAILURE: &str = "PostToolUseFailure";
+    pub const INSTRUCTIONS_LOADED: &str = "InstructionsLoaded";
+}
+
+/// Worktree information attached to hook events in `--worktree` sessions
+///
+/// Contains name, path, branch, and the original repo directory.
+/// Added in Claude Code v2.1.69.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct WorktreeInfo {
+    /// Worktree name (e.g., "feat-auth")
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Worktree filesystem path
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Branch checked out in the worktree
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// Original (main) repository directory
+    #[serde(default)]
+    pub original_repo: Option<String>,
 }
 
 /// POST body from a Claude Code HTTP hook
@@ -118,6 +139,11 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub file_path: Option<String>,
 
+    /// Worktree information (present when running in `--worktree` session)
+    /// Added in Claude Code v2.1.69.
+    #[serde(default)]
+    pub worktree: Option<WorktreeInfo>,
+
     /// Additional fields not explicitly modeled
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -160,6 +186,8 @@ pub struct HookState {
     pub last_event_at: u64,
     /// Rich context from the last hook event (for audit validation)
     pub last_context: HookContext,
+    /// Worktree information (if running in `--worktree` session)
+    pub worktree: Option<WorktreeInfo>,
 }
 
 impl HookState {
@@ -172,6 +200,7 @@ impl HookState {
             cwd,
             last_event_at: current_time_millis(),
             last_context: HookContext::default(),
+            worktree: None,
         }
     }
 
@@ -399,6 +428,55 @@ mod tests {
         assert!(payload.tool_name.is_none());
         assert!(payload.stop_hook_active.is_none());
         assert!(payload.teammate_name.is_none());
+    }
+
+    /// InstructionsLoaded payload (fires when CLAUDE.md or rules files are loaded)
+    #[test]
+    fn test_hook_event_payload_deserialize_instructions_loaded() {
+        let json = r#"{
+            "hook_event_name": "InstructionsLoaded",
+            "session_id": "sess-1",
+            "cwd": "/home/user/project"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "InstructionsLoaded");
+        assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
+    }
+
+    /// Payload with worktree info (present in --worktree sessions)
+    #[test]
+    fn test_hook_event_payload_deserialize_with_worktree() {
+        let json = r#"{
+            "hook_event_name": "PreToolUse",
+            "session_id": "sess-1",
+            "cwd": "/home/user/worktrees/feat-auth",
+            "tool_name": "Bash",
+            "worktree": {
+                "name": "feat-auth",
+                "path": "/home/user/worktrees/feat-auth",
+                "branch": "feat/auth",
+                "original_repo": "/home/user/project"
+            }
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "PreToolUse");
+        let wt = payload.worktree.as_ref().unwrap();
+        assert_eq!(wt.name.as_deref(), Some("feat-auth"));
+        assert_eq!(wt.path.as_deref(), Some("/home/user/worktrees/feat-auth"));
+        assert_eq!(wt.branch.as_deref(), Some("feat/auth"));
+        assert_eq!(wt.original_repo.as_deref(), Some("/home/user/project"));
+    }
+
+    /// Payload without worktree field (non-worktree session)
+    #[test]
+    fn test_hook_event_payload_deserialize_without_worktree() {
+        let json = r#"{
+            "hook_event_name": "PreToolUse",
+            "session_id": "sess-1",
+            "tool_name": "Bash"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert!(payload.worktree.is_none());
     }
 
     /// PermissionRequest payload with tool_name and tool_input
