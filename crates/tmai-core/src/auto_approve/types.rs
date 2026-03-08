@@ -115,6 +115,44 @@ pub struct JudgmentResult {
     pub usage: Option<JudgmentUsage>,
 }
 
+/// Permission decision for PreToolUse hook response.
+///
+/// Claude Code v2.1.69+ supports returning permission decisions from
+/// PreToolUse hooks, enabling instant auto-approval without screen scraping.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PermissionDecision {
+    /// Proceed without permission prompt
+    Allow,
+    /// Cancel tool call, reason fed back to Claude
+    Deny,
+    /// Show normal permission prompt to user (fallback)
+    Ask,
+}
+
+impl PermissionDecision {
+    /// Convert to the string value expected by Claude Code's hook response
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PermissionDecision::Allow => "allow",
+            PermissionDecision::Deny => "deny",
+            PermissionDecision::Ask => "ask",
+        }
+    }
+}
+
+/// Result of evaluating a PreToolUse hook event for auto-approval
+#[derive(Debug, Clone)]
+pub struct PreToolUseDecision {
+    /// The permission decision to return to Claude Code
+    pub decision: PermissionDecision,
+    /// Reason for the decision (shown to user or Claude)
+    pub reason: String,
+    /// Which rule matched (for audit)
+    pub model: String,
+    /// Time taken in milliseconds
+    pub elapsed_ms: u64,
+}
+
 /// JSON output schema expected from claude CLI
 #[derive(Debug, Deserialize)]
 pub struct JudgmentOutput {
