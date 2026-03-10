@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-03-11
+
+### Added
+
+- Effort level detection from Claude Code v2.1.72+ title icons (○=low, ◐=medium, ●=high)
+- Display effort level in TUI session list (normal and compact views)
+- `effort_level` field in AgentSnapshot Web API response
+- `InstructionsLoaded` event registration in `tmai init`
+
+### Fixed
+
+- Remove circle spinners (◐◓◑◒) from PROCESSING_SPINNERS to prevent false-positive Processing detection when ◐ is used as effort level icon
+- Return empty JSON object `{}` instead of `null` from hook endpoint to fix Claude Code "JSON validation failed" errors
+
 ## [0.16.0] - 2026-03-08
 
 ### Added
