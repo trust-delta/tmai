@@ -9,12 +9,15 @@ use crate::teams::TaskStatus;
 /// Claude Code effort level detected from title icon (v2.1.72+)
 ///
 /// Displayed as: ○=low, ◐=medium, ●=high
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Note: ○ (Low) shares the same glyph as `DetectionSource::CapturePane` icon,
+/// but they appear in different UI positions (effort is next to mode, detection
+/// source is in the status column) so there is no visual ambiguity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EffortLevel {
     /// Low effort (○)
     Low,
     /// Medium effort (◐) — default since v2.1.68 for Opus
-    #[default]
     Medium,
     /// High effort (●)
     High,

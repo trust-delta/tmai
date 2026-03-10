@@ -232,8 +232,7 @@ impl ClaudeCodeDetector {
     ///
     /// Returns None if no effort icon is found in the title.
     pub fn detect_effort_level(title: &str) -> Option<EffortLevel> {
-        // Check for effort level icons in order of specificity
-        // ◐ must be checked before ○ since both are circle variants
+        // Each icon is a distinct Unicode codepoint, so check order doesn't matter
         if title.contains('\u{25D0}') {
             Some(EffortLevel::Medium)
         } else if title.contains('\u{25CF}') {
