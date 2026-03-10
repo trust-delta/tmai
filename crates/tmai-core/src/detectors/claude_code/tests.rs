@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::agents::{AgentMode, ApprovalType};
+use crate::agents::{AgentMode, ApprovalType, EffortLevel};
 
 #[test]
 fn test_idle_with_asterisk() {
@@ -1236,4 +1236,74 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
             status
         ),
     }
+}
+
+// ============================================================
+// Effort level detection tests (Claude Code v2.1.72+)
+// ============================================================
+
+#[test]
+fn test_effort_level_low() {
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("○ ✳ Claude Code"),
+        Some(EffortLevel::Low)
+    );
+}
+
+#[test]
+fn test_effort_level_medium() {
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("◐ ✳ Claude Code"),
+        Some(EffortLevel::Medium)
+    );
+    // Medium effort with processing spinner
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("◐ ⠂ Working on task"),
+        Some(EffortLevel::Medium)
+    );
+}
+
+#[test]
+fn test_effort_level_high() {
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("● ✳ Claude Code"),
+        Some(EffortLevel::High)
+    );
+}
+
+#[test]
+fn test_effort_level_none() {
+    // No effort icon present
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("✳ Claude Code"),
+        None
+    );
+    assert_eq!(ClaudeCodeDetector::detect_effort_level("⠂ Working"), None);
+}
+
+#[test]
+fn test_effort_level_with_mode_icons() {
+    // Mode + effort combo
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("⏸ ◐ ✳ Claude Code"),
+        Some(EffortLevel::Medium)
+    );
+    assert_eq!(
+        ClaudeCodeDetector::detect_effort_level("⏵⏵ ● ⠂ Processing"),
+        Some(EffortLevel::High)
+    );
+}
+
+/// Verify that ◐ (medium effort icon) in title does NOT trigger spinner detection
+#[test]
+fn test_effort_icon_not_misdetected_as_spinner() {
+    let detector = ClaudeCodeDetector::new();
+    // Title with ◐ effort icon and ✳ idle indicator
+    let status = detector.detect_status("◐ ✳ Claude Code", "some content");
+    // Should be Idle, NOT Processing (◐ was removed from PROCESSING_SPINNERS)
+    assert!(
+        matches!(status, AgentStatus::Idle),
+        "◐ effort icon should not trigger Processing detection, got: {:?}",
+        status
+    );
 }

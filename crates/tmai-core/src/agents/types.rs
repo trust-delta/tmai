@@ -6,6 +6,30 @@ use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
 use crate::teams::TaskStatus;
 
+/// Claude Code effort level detected from title icon (v2.1.72+)
+///
+/// Displayed as: ○=low, ◐=medium, ●=high
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffortLevel {
+    /// Low effort (○)
+    Low,
+    /// Medium effort (◐) — default since v2.1.68 for Opus
+    #[default]
+    Medium,
+    /// High effort (●)
+    High,
+}
+
+impl fmt::Display for EffortLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EffortLevel::Low => write!(f, "○"),
+            EffortLevel::Medium => write!(f, "◐"),
+            EffortLevel::High => write!(f, "●"),
+        }
+    }
+}
+
 /// Claude Code permission mode detected from title icon
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentMode {
@@ -482,6 +506,8 @@ pub struct MonitoredAgent {
     pub git_dirty: Option<bool>,
     /// Whether this directory is a git worktree (not the main repo)
     pub is_worktree: Option<bool>,
+    /// Effort level (Low/Medium/High, from Claude Code v2.1.72+ title icons)
+    pub effort_level: Option<EffortLevel>,
     /// Auto-approve judgment phase (set by AutoApproveService)
     pub auto_approve_phase: Option<AutoApprovePhase>,
     /// Absolute path to the shared git common directory (for repository grouping)
@@ -529,6 +555,7 @@ impl MonitoredAgent {
             git_branch: None,
             git_dirty: None,
             is_worktree: None,
+            effort_level: None,
             auto_approve_phase: None,
             git_common_dir: None,
             worktree_name: None,

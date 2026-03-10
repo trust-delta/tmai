@@ -4,14 +4,17 @@ pub(super) const IDLE_INDICATOR: char = '✳';
 /// Processing spinner characters used in terminal title
 ///
 /// Claude Code uses only ⠂ (U+2802) and ⠐ (U+2810) as title spinners.
-/// The remaining Braille/circle patterns are kept for compatibility with
+/// The remaining Braille patterns are kept for compatibility with
 /// other agents or future changes, but are not used by Claude Code v2.1.39.
+///
+/// Note: Circle spinners (◐◓◑◒) were removed because ◐ (U+25D0) is now
+/// used as the effort level "medium" icon in Claude Code v2.1.72+, which
+/// would cause false-positive Processing detection on idle agents.
 pub(super) const PROCESSING_SPINNERS: &[char] = &[
     // Claude Code actual spinners (2 frames, 960ms interval)
     '⠂', '⠐', // Legacy Braille patterns (kept for other agents / future compatibility)
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠻', '⠟', '⠯', '⠷', '⠳', '⠱',
-    '⠰', // Circle spinners
-    '◐', '◓', '◑', '◒',
+    '⠰',
 ];
 
 /// Past-tense verbs used in turn duration display (e.g., "✻ Cooked for 1m 6s")
