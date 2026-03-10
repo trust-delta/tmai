@@ -573,10 +573,11 @@ impl Poller {
                     DetectionSource::CapturePane
                 };
 
-                // Detect permission mode from title/content
+                // Detect permission mode and effort level from title/content
                 match agent.agent_type {
                     AgentType::ClaudeCode => {
                         agent.mode = ClaudeCodeDetector::detect_mode(&agent.title);
+                        agent.effort_level = ClaudeCodeDetector::detect_effort_level(&agent.title);
                     }
                     AgentType::GeminiCli => {
                         agent.mode = GeminiDetector::detect_mode(&agent.last_content);

@@ -1,6 +1,6 @@
 use tracing::trace;
 
-use crate::agents::AgentMode;
+use crate::agents::{AgentMode, EffortLevel};
 use crate::config::SpinnerVerbsMode;
 
 use super::constants::{BUILTIN_SPINNER_VERBS, CONTENT_SPINNER_CHARS, TURN_DURATION_VERBS};
@@ -220,6 +220,27 @@ impl ClaudeCodeDetector {
             AgentMode::AutoApprove
         } else {
             AgentMode::Default
+        }
+    }
+
+    /// Detect effort level from title icon (Claude Code v2.1.72+)
+    ///
+    /// Claude Code displays effort level icons in the terminal title:
+    /// - ○ (U+25CB) = Low effort
+    /// - ◐ (U+25D0) = Medium effort (default for Opus since v2.1.68)
+    /// - ● (U+25CF) = High effort
+    ///
+    /// Returns None if no effort icon is found in the title.
+    pub fn detect_effort_level(title: &str) -> Option<EffortLevel> {
+        // Each icon is a distinct Unicode codepoint, so check order doesn't matter
+        if title.contains('\u{25D0}') {
+            Some(EffortLevel::Medium)
+        } else if title.contains('\u{25CF}') {
+            Some(EffortLevel::High)
+        } else if title.contains('\u{25CB}') {
+            Some(EffortLevel::Low)
+        } else {
+            None
         }
     }
 

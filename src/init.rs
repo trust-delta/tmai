@@ -137,6 +137,7 @@ fn target_events() -> &'static [&'static str] {
         "WorktreeRemove",
         "PreCompact",
         "PostToolUseFailure",
+        "InstructionsLoaded",
     ]
 }
 
@@ -504,8 +505,8 @@ mod tests {
 
     #[test]
     fn test_target_events_count() {
-        // Should have 17 target events
-        assert_eq!(target_events().len(), 17);
+        // Should have 18 target events
+        assert_eq!(target_events().len(), 18);
     }
 
     #[test]

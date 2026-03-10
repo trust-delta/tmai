@@ -6,7 +6,9 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::agents::{AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource};
+use crate::agents::{
+    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel,
+};
 use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
 use crate::teams::AgentDefinition;
@@ -93,6 +95,9 @@ pub struct AgentSnapshot {
     pub detection_reason: Option<DetectionReason>,
     /// Permission mode
     pub mode: AgentMode,
+    /// Effort level (Low/Medium/High, Claude Code v2.1.72+)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort_level: Option<EffortLevel>,
     /// Git branch name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
@@ -171,6 +176,7 @@ impl AgentSnapshot {
             is_virtual: agent.is_virtual,
             detection_reason: agent.detection_reason.clone(),
             mode: agent.mode.clone(),
+            effort_level: agent.effort_level.clone(),
             git_branch: agent.git_branch.clone(),
             git_dirty: agent.git_dirty,
             is_worktree: agent.is_worktree,

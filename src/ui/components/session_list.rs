@@ -568,11 +568,17 @@ impl SessionList {
             Style::default().fg(status_color),
         ));
 
-        // 5) Mode icon (Plan/Delegate/AutoApprove)
+        // 5) Mode icon (Plan/Delegate/AutoApprove) + Effort level
         if agent.mode != AgentMode::Default {
             line1_spans.push(Span::styled(
                 format!("  {}", agent.mode),
                 Style::default().fg(Color::Cyan),
+            ));
+        }
+        if let Some(ref effort) = agent.effort_level {
+            line1_spans.push(Span::styled(
+                format!("  {}", effort),
+                Style::default().fg(Color::DarkGray),
             ));
         }
 
@@ -867,6 +873,12 @@ impl SessionList {
             spans.push(Span::styled(
                 format!(" {}", agent.mode),
                 Style::default().fg(Color::Cyan).bg(bg_color),
+            ));
+        }
+        if let Some(ref effort) = agent.effort_level {
+            spans.push(Span::styled(
+                format!(" {}", effort),
+                Style::default().fg(Color::DarkGray).bg(bg_color),
             ));
         }
 
