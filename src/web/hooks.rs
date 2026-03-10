@@ -55,7 +55,7 @@ pub async fn hook_event(
 
     if !token_valid {
         debug!("Hook event rejected: invalid or missing token");
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null));
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({})));
     }
 
     // For PreToolUse: evaluate auto-approve BEFORE processing the event.
@@ -87,7 +87,7 @@ pub async fn hook_event(
                 "Could not resolve pane_id for hook event"
             );
             // Still return 200 to not block Claude Code
-            return (StatusCode::OK, Json(serde_json::Value::Null));
+            return (StatusCode::OK, Json(serde_json::json!({})));
         }
     };
 
@@ -131,7 +131,7 @@ pub async fn hook_event(
                 );
                 (StatusCode::OK, Json(response))
             } else {
-                (StatusCode::OK, Json(serde_json::Value::Null))
+                (StatusCode::OK, Json(serde_json::json!({})))
             }
         }
 
@@ -148,7 +148,7 @@ pub async fn hook_event(
         }
 
         // All other events: empty response
-        _ => (StatusCode::OK, Json(serde_json::Value::Null)),
+        _ => (StatusCode::OK, Json(serde_json::json!({}))),
     }
 }
 
