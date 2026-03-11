@@ -147,10 +147,16 @@ pub fn run(port: u16, token: &str) -> Result<()> {
     // POST to loopback endpoint
     let url = format!("http://localhost:{}/hooks/event", port);
     let body_str = payload.to_string();
-    let response = ureq::post(&url)
+    let mut req = ureq::post(&url)
         .header("Authorization", &format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .send(body_str.as_bytes());
+        .header("Content-Type", "application/json");
+
+    // Forward $TMUX_PANE for direct pane_id resolution (avoids CWD fallback)
+    if let Ok(pane_id) = std::env::var("TMUX_PANE") {
+        req = req.header("X-Tmai-Pane-Id", &pane_id);
+    }
+
+    let response = req.send(body_str.as_bytes());
 
     match response {
         Ok(resp) => {
