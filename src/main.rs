@@ -42,9 +42,20 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Check for codex-hook bridge subcommand (no logging, fast path)
+    if cli.is_codex_hook_mode() {
+        let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
+        let token = tmai::init::load_hook_token().unwrap_or_default();
+        return tmai::codex_hook::run(settings.web.port, &token);
+    }
+
     // Check for init subcommand
     if cli.is_init_mode() {
-        return tmai::init::run(cli.get_init_force());
+        tmai::init::run(cli.get_init_force())?;
+        if cli.get_init_codex() {
+            tmai::init::run_codex_init()?;
+        }
+        return Ok(());
     }
 
     // Check for uninit subcommand

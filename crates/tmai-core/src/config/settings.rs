@@ -57,9 +57,15 @@ pub enum Command {
         /// Force overwrite existing tmai hook entries
         #[arg(long)]
         force: bool,
+        /// Also configure Codex CLI hooks
+        #[arg(long)]
+        codex: bool,
     },
     /// Remove tmai hooks from Claude Code settings
     Uninit,
+    /// Bridge Codex CLI hook events to tmai (called by Codex, not by users)
+    #[command(name = "codex-hook")]
+    CodexHook,
 }
 
 /// Audit analysis subcommands
@@ -114,7 +120,15 @@ impl Config {
     /// Get init command force flag
     pub fn get_init_force(&self) -> bool {
         match &self.command {
-            Some(Command::Init { force }) => *force,
+            Some(Command::Init { force, .. }) => *force,
+            _ => false,
+        }
+    }
+
+    /// Get init command codex flag
+    pub fn get_init_codex(&self) -> bool {
+        match &self.command {
+            Some(Command::Init { codex, .. }) => *codex,
             _ => false,
         }
     }
@@ -122,6 +136,11 @@ impl Config {
     /// Check if running in uninit mode
     pub fn is_uninit_mode(&self) -> bool {
         matches!(self.command, Some(Command::Uninit))
+    }
+
+    /// Check if running in codex-hook bridge mode
+    pub fn is_codex_hook_mode(&self) -> bool {
+        matches!(self.command, Some(Command::CodexHook))
     }
 
     /// Get audit subcommand
