@@ -62,7 +62,11 @@ pub enum Command {
         codex: bool,
     },
     /// Remove tmai hooks from Claude Code settings
-    Uninit,
+    Uninit {
+        /// Also remove Codex CLI hooks
+        #[arg(long)]
+        codex: bool,
+    },
     /// Bridge Codex CLI hook events to tmai (called by Codex, not by users)
     #[command(name = "codex-hook")]
     CodexHook,
@@ -135,7 +139,15 @@ impl Config {
 
     /// Check if running in uninit mode
     pub fn is_uninit_mode(&self) -> bool {
-        matches!(self.command, Some(Command::Uninit))
+        matches!(self.command, Some(Command::Uninit { .. }))
+    }
+
+    /// Get uninit command codex flag
+    pub fn get_uninit_codex(&self) -> bool {
+        match &self.command {
+            Some(Command::Uninit { codex }) => *codex,
+            _ => false,
+        }
     }
 
     /// Check if running in codex-hook bridge mode

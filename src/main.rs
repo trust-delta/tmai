@@ -53,14 +53,18 @@ async fn main() -> Result<()> {
     if cli.is_init_mode() {
         tmai::init::run(cli.get_init_force())?;
         if cli.get_init_codex() {
-            tmai::init::run_codex_init()?;
+            tmai::init::run_codex_init(cli.get_init_force())?;
         }
         return Ok(());
     }
 
     // Check for uninit subcommand
     if cli.is_uninit_mode() {
-        return tmai::init::run_uninit();
+        tmai::init::run_uninit()?;
+        if cli.get_uninit_codex() {
+            tmai::init::run_codex_uninit()?;
+        }
+        return Ok(());
     }
 
     // Check for demo subcommand (no tmux, IPC, or web required)

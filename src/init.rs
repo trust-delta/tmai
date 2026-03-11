@@ -315,8 +315,16 @@ fn codex_target_events() -> &'static [&'static str] {
 /// Marker comment used to identify tmai-generated hook entries in Codex config
 const TMAI_CODEX_MARKER: &str = "# tmai-managed";
 
+/// Check if an existing Codex hook entry was created by tmai
+fn is_tmai_codex_entry(item: &toml_edit::Item) -> bool {
+    item.as_value()
+        .and_then(|val| val.decor().suffix())
+        .and_then(|s| s.as_str())
+        .is_some_and(|s| s.contains(TMAI_CODEX_MARKER))
+}
+
 /// Run the `tmai init --codex` command — configure Codex CLI hooks
-pub fn run_codex_init() -> Result<()> {
+pub fn run_codex_init(force: bool) -> Result<()> {
     println!("\nConfiguring Codex CLI hooks integration...\n");
 
     let config_path = codex_config_path()?;
@@ -330,9 +338,15 @@ pub fn run_codex_init() -> Result<()> {
     };
 
     // Parse as TOML document (preserving formatting)
+    // Bail on parse error to avoid silently wiping user's config
     let mut doc = existing
         .parse::<toml_edit::DocumentMut>()
-        .unwrap_or_default();
+        .with_context(|| {
+            format!(
+                "Failed to parse {} — fix the TOML syntax and retry",
+                config_path.display()
+            )
+        })?;
 
     // Find the tmai binary path
     let tmai_bin = std::env::current_exe()
@@ -356,6 +370,17 @@ pub fn run_codex_init() -> Result<()> {
     let mut count = 0;
 
     for event in codex_target_events() {
+        // Skip existing non-tmai entries unless --force is passed
+        if let Some(existing_item) = hooks.get(event) {
+            if !is_tmai_codex_entry(existing_item) && !force {
+                println!(
+                    "  Skipping {} — existing user-managed hook (use --force to overwrite)",
+                    event
+                );
+                continue;
+            }
+        }
+
         // Set the hook command with a tmai marker comment
         let mut value = toml_edit::value(hook_command.clone());
         value
@@ -391,20 +416,19 @@ pub fn run_codex_uninit() -> Result<()> {
     let content = fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read {}", config_path.display()))?;
 
-    let mut doc: toml_edit::DocumentMut = content.parse().unwrap_or_default();
+    let mut doc: toml_edit::DocumentMut = content.parse().with_context(|| {
+        format!(
+            "Failed to parse {} — fix the TOML syntax and retry",
+            config_path.display()
+        )
+    })?;
 
     if let Some(hooks) = doc.get_mut("hooks").and_then(|h| h.as_table_mut()) {
         let mut removed = 0;
         for event in codex_target_events() {
-            if let Some(item) = hooks.get(event) {
-                // Check if this entry was managed by tmai (has our marker in suffix)
-                if let Some(val) = item.as_value() {
-                    let suffix = val.decor().suffix().map(|s| s.as_str().unwrap_or(""));
-                    if suffix.is_some_and(|s| s.contains(TMAI_CODEX_MARKER)) {
-                        hooks.remove(event);
-                        removed += 1;
-                    }
-                }
+            if hooks.get(event).is_some_and(is_tmai_codex_entry) {
+                hooks.remove(event);
+                removed += 1;
             }
         }
 
