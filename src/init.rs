@@ -315,12 +315,25 @@ fn codex_target_events() -> &'static [&'static str] {
 /// Marker comment used to identify tmai-generated hook entries in Codex config
 const TMAI_CODEX_MARKER: &str = "# tmai-managed";
 
-/// Check if an existing Codex hook entry was created by tmai
+/// Check if an existing Codex hook entry was created by tmai.
+///
+/// Uses two heuristics (either is sufficient):
+/// 1. TOML comment suffix contains the marker `# tmai-managed`
+/// 2. Command string ends with `codex-hook` (survives comment stripping by formatters)
 fn is_tmai_codex_entry(item: &toml_edit::Item) -> bool {
-    item.as_value()
+    // Check marker comment in TOML suffix
+    let has_marker = item
+        .as_value()
         .and_then(|val| val.decor().suffix())
         .and_then(|s| s.as_str())
-        .is_some_and(|s| s.contains(TMAI_CODEX_MARKER))
+        .is_some_and(|s| s.contains(TMAI_CODEX_MARKER));
+    if has_marker {
+        return true;
+    }
+
+    // Fallback: check if the command string itself points to tmai codex-hook
+    item.as_str()
+        .is_some_and(|s| s.trim_end().ends_with("codex-hook"))
 }
 
 /// Run the `tmai init --codex` command — configure Codex CLI hooks
@@ -366,7 +379,13 @@ pub fn run_codex_init(force: bool) -> Result<()> {
     }
 
     let hooks = doc["hooks"].as_table_mut().unwrap();
-    let hook_command = format!("{} codex-hook", tmai_bin);
+    // Quote the binary path for shell safety (Codex spawns hooks via shell)
+    let hook_command = if tmai_bin.contains(' ') || tmai_bin.contains('\'') {
+        // Use double quotes; escape any existing double quotes in the path
+        format!("\"{}\" codex-hook", tmai_bin.replace('"', "\\\""))
+    } else {
+        format!("{} codex-hook", tmai_bin)
+    };
     let mut count = 0;
 
     for event in codex_target_events() {
