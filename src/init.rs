@@ -301,6 +301,172 @@ pub fn run(force: bool) -> Result<()> {
     Ok(())
 }
 
+/// Get the Codex CLI config.toml path
+fn codex_config_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("Cannot determine home directory")?;
+    Ok(home.join(".codex").join("config.toml"))
+}
+
+/// Codex hook events that tmai subscribes to
+fn codex_target_events() -> &'static [&'static str] {
+    &["SessionStart", "Stop", "AfterAgent", "AfterToolUse"]
+}
+
+/// Marker comment used to identify tmai-generated hook entries in Codex config
+const TMAI_CODEX_MARKER: &str = "# tmai-managed";
+
+/// Check if an existing Codex hook entry was created by tmai.
+///
+/// Uses two heuristics (either is sufficient):
+/// 1. TOML comment suffix contains the marker `# tmai-managed`
+/// 2. Command string ends with `codex-hook` (survives comment stripping by formatters)
+fn is_tmai_codex_entry(item: &toml_edit::Item) -> bool {
+    // Check marker comment in TOML suffix
+    let has_marker = item
+        .as_value()
+        .and_then(|val| val.decor().suffix())
+        .and_then(|s| s.as_str())
+        .is_some_and(|s| s.contains(TMAI_CODEX_MARKER));
+    if has_marker {
+        return true;
+    }
+
+    // Fallback: check if the command string itself points to tmai codex-hook
+    item.as_str()
+        .is_some_and(|s| s.trim_end().ends_with("codex-hook"))
+}
+
+/// Run the `tmai init --codex` command — configure Codex CLI hooks
+pub fn run_codex_init(force: bool) -> Result<()> {
+    println!("\nConfiguring Codex CLI hooks integration...\n");
+
+    let config_path = codex_config_path()?;
+
+    // Read existing config or start fresh
+    let existing = if config_path.exists() {
+        fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read {}", config_path.display()))?
+    } else {
+        String::new()
+    };
+
+    // Parse as TOML document (preserving formatting)
+    // Bail on parse error to avoid silently wiping user's config
+    let mut doc = existing
+        .parse::<toml_edit::DocumentMut>()
+        .with_context(|| {
+            format!(
+                "Failed to parse {} — fix the TOML syntax and retry",
+                config_path.display()
+            )
+        })?;
+
+    // Find the tmai binary path
+    let tmai_bin = std::env::current_exe()
+        .context("Cannot determine tmai binary path")?
+        .to_string_lossy()
+        .to_string();
+
+    // Build hook entries for each target event
+    // Codex hooks format in config.toml:
+    //   [hooks]
+    //   SessionStart = "tmai codex-hook"
+    //   Stop = "tmai codex-hook"
+    //   AfterAgent = "tmai codex-hook"
+    //   AfterToolUse = "tmai codex-hook"
+    if !doc.contains_table("hooks") {
+        doc["hooks"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+
+    let hooks = doc["hooks"].as_table_mut().unwrap();
+    // Quote the binary path for shell safety (Codex spawns hooks via shell)
+    let hook_command = if tmai_bin.contains(' ') || tmai_bin.contains('\'') {
+        // Use double quotes; escape any existing double quotes in the path
+        format!("\"{}\" codex-hook", tmai_bin.replace('"', "\\\""))
+    } else {
+        format!("{} codex-hook", tmai_bin)
+    };
+    let mut count = 0;
+
+    for event in codex_target_events() {
+        // Skip existing non-tmai entries unless --force is passed
+        if let Some(existing_item) = hooks.get(event) {
+            if !is_tmai_codex_entry(existing_item) && !force {
+                println!(
+                    "  Skipping {} — existing user-managed hook (use --force to overwrite)",
+                    event
+                );
+                continue;
+            }
+        }
+
+        // Set the hook command with a tmai marker comment
+        let mut value = toml_edit::value(hook_command.clone());
+        value
+            .as_value_mut()
+            .unwrap()
+            .decor_mut()
+            .set_suffix(format!(" {}", TMAI_CODEX_MARKER));
+        hooks[event] = value;
+        count += 1;
+    }
+
+    // Write back
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&config_path, doc.to_string())
+        .with_context(|| format!("Failed to write {}", config_path.display()))?;
+
+    println!("Added {} hook entries to {}", count, config_path.display());
+    println!("Codex CLI will now forward hook events to tmai via `tmai codex-hook`.");
+
+    Ok(())
+}
+
+/// Run the `tmai uninit --codex` command — remove tmai hooks from Codex config
+pub fn run_codex_uninit() -> Result<()> {
+    let config_path = codex_config_path()?;
+    if !config_path.exists() {
+        println!("No Codex config found at {}", config_path.display());
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read {}", config_path.display()))?;
+
+    let mut doc: toml_edit::DocumentMut = content.parse().with_context(|| {
+        format!(
+            "Failed to parse {} — fix the TOML syntax and retry",
+            config_path.display()
+        )
+    })?;
+
+    if let Some(hooks) = doc.get_mut("hooks").and_then(|h| h.as_table_mut()) {
+        let mut removed = 0;
+        for event in codex_target_events() {
+            if hooks.get(event).is_some_and(is_tmai_codex_entry) {
+                hooks.remove(event);
+                removed += 1;
+            }
+        }
+
+        if removed > 0 {
+            fs::write(&config_path, doc.to_string())
+                .with_context(|| format!("Failed to write {}", config_path.display()))?;
+            println!(
+                "Removed {} tmai hook entries from {}",
+                removed,
+                config_path.display()
+            );
+        } else {
+            println!("No tmai hook entries found in {}", config_path.display());
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
