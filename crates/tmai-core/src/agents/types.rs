@@ -521,6 +521,10 @@ pub struct MonitoredAgent {
     pub git_common_dir: Option<String>,
     /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
     pub worktree_name: Option<String>,
+    /// Number of active subagents (from hook SubagentStart/Stop tracking)
+    pub active_subagents: u32,
+    /// Number of context compactions in this session (from hook PreCompact tracking)
+    pub compaction_count: u32,
 }
 
 impl MonitoredAgent {
@@ -566,6 +570,8 @@ impl MonitoredAgent {
             auto_approve_phase: None,
             git_common_dir: None,
             worktree_name: None,
+            active_subagents: 0,
+            compaction_count: 0,
         }
     }
 

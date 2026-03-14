@@ -111,6 +111,14 @@ pub enum CoreEvent {
         last_assistant_message: Option<String>,
     },
 
+    /// Context compaction started (PreCompact hook event)
+    ContextCompacting {
+        /// Agent target ID
+        target: String,
+        /// How many compactions have occurred in this session
+        compaction_count: u32,
+    },
+
     /// An agent completed work and is ready for fresh-session review
     ReviewReady {
         /// Review request with context for launching a review session

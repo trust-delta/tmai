@@ -121,6 +121,17 @@ pub struct AgentSnapshot {
     /// Agent definition info from `.claude/agents/*.md`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_definition: Option<AgentDefinitionInfo>,
+    /// Number of active subagents (from hook SubagentStart/Stop tracking)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub active_subagents: u32,
+    /// Number of context compactions in this session (from hook PreCompact tracking)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub compaction_count: u32,
+}
+
+/// Helper for skip_serializing_if on u32
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 /// Summary of an agent definition for API consumers
@@ -185,6 +196,8 @@ impl AgentSnapshot {
             worktree_name: agent.worktree_name.clone(),
             display_name: agent.display_name(),
             agent_definition: None,
+            active_subagents: agent.active_subagents,
+            compaction_count: agent.compaction_count,
         }
     }
 

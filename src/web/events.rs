@@ -124,6 +124,18 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::ContextCompacting { target, compaction_count }) => {
+                            let data = serde_json::json!({
+                                "target": target,
+                                "compaction_count": compaction_count,
+                            });
+                            let event = Event::default()
+                                .event("context_compacting")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::WorktreeCreated { .. })
                         | Ok(CoreEvent::WorktreeRemoved { .. })

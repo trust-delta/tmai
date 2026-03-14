@@ -611,6 +611,9 @@ impl AppState {
                 existing.is_worktree = agent.is_worktree;
                 existing.git_common_dir = agent.git_common_dir;
                 existing.worktree_name = agent.worktree_name;
+                // Hook-tracked metrics
+                existing.active_subagents = agent.active_subagents;
+                existing.compaction_count = agent.compaction_count;
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)
                 if !matches!(
