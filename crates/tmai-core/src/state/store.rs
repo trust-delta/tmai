@@ -21,6 +21,8 @@ pub enum InputMode {
     Input,
     /// Passthrough mode - keys are sent directly to the target pane
     Passthrough,
+    /// Worktree creation input mode (entering branch name)
+    WorktreeCreate,
 }
 
 /// Sort method for agent list
@@ -170,6 +172,11 @@ pub enum ConfirmAction {
     RestartAsWrapped { target: String, session_id: String },
     /// Send a probe marker to identify session, then restart as wrapped
     ProbeAndRestartAsWrapped { target: String, cwd: String },
+    /// Delete a git worktree
+    DeleteWorktree {
+        repo_path: String,
+        worktree_name: String,
+    },
 }
 
 /// State for confirmation dialog
@@ -300,6 +307,8 @@ pub struct WorktreeDetail {
     pub agent_status: Option<AgentStatus>,
     /// Whether this worktree has uncommitted changes
     pub is_dirty: Option<bool>,
+    /// Diff statistics vs base branch (files changed, insertions, deletions)
+    pub diff_summary: Option<crate::git::DiffSummary>,
 }
 
 /// Input-related state
@@ -338,6 +347,12 @@ pub struct ViewState {
     pub show_worktree_overview: bool,
     /// Worktree overview scroll offset
     pub worktree_overview_scroll: u16,
+    /// Selected worktree index in overview (flattened across repos)
+    pub worktree_selected_index: Option<usize>,
+    /// Whether the diff viewer is shown
+    pub show_diff_viewer: bool,
+    /// Diff viewer scroll offset
+    pub diff_viewer_scroll: u16,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Spinner animation frame counter
@@ -358,6 +373,9 @@ impl Default for ViewState {
             show_task_overlay: false,
             show_security_overlay: false,
             show_worktree_overview: false,
+            show_diff_viewer: false,
+            diff_viewer_scroll: 0,
+            worktree_selected_index: None,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
             security_overlay_scroll: 0,
@@ -457,6 +475,14 @@ pub struct AppState {
 
     /// Discovered worktree info per repository (populated by poller scan)
     pub worktree_info: Vec<RepoWorktreeInfo>,
+
+    /// Temporary storage for worktree creation: repo path during WorktreeCreate input mode
+    pub worktree_create_repo_path: Option<String>,
+
+    /// Full diff content for the diff viewer overlay (loaded on demand)
+    pub worktree_diff_content: Option<String>,
+    /// Whether a diff is currently being loaded
+    pub worktree_diff_loading: bool,
 }
 
 impl AppState {
@@ -490,6 +516,9 @@ impl AppState {
             usage: UsageSnapshot::default(),
             security_scan: None,
             worktree_info: Vec::new(),
+            worktree_create_repo_path: None,
+            worktree_diff_content: None,
+            worktree_diff_loading: false,
         }
     }
 
@@ -1074,6 +1103,7 @@ impl AppState {
         self.input.mode = InputMode::Normal;
         self.input.buffer.clear();
         self.input.cursor_position = 0;
+        self.worktree_create_repo_path = None;
     }
 
     /// Check if in input mode

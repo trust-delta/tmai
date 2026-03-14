@@ -240,6 +240,112 @@ fn parse_worktree_list(output: &str) -> Vec<WorktreeEntry> {
     entries
 }
 
+/// Diff statistics summary (files changed, insertions, deletions)
+#[derive(Debug, Clone, Default)]
+pub struct DiffSummary {
+    /// Number of files changed
+    pub files_changed: usize,
+    /// Number of lines inserted
+    pub insertions: usize,
+    /// Number of lines deleted
+    pub deletions: usize,
+}
+
+/// Fetch lightweight diff statistics between base branch and HEAD
+///
+/// Runs `git diff --shortstat <base>...HEAD` and parses the output.
+/// Returns None if the command fails or no diff exists.
+pub async fn fetch_diff_stat(dir: &str, base_branch: &str) -> Option<DiffSummary> {
+    if !is_safe_git_ref(base_branch) {
+        return None;
+    }
+    let diff_spec = format!("{}...HEAD", base_branch);
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", dir, "diff", "--shortstat", &diff_spec])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_shortstat(&text)
+}
+
+/// Parse `git diff --shortstat` output into DiffSummary
+///
+/// Example input: " 3 files changed, 45 insertions(+), 12 deletions(-)\n"
+fn parse_shortstat(text: &str) -> Option<DiffSummary> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    let mut summary = DiffSummary::default();
+
+    for part in text.split(',') {
+        let part = part.trim();
+        // Extract the leading number
+        let num_str: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let num: usize = num_str.parse().unwrap_or(0);
+
+        if part.contains("file") {
+            summary.files_changed = num;
+        } else if part.contains("insertion") {
+            summary.insertions = num;
+        } else if part.contains("deletion") {
+            summary.deletions = num;
+        }
+    }
+
+    Some(summary)
+}
+
+/// Fetch full diff content between base branch and HEAD (on-demand)
+///
+/// Runs `git diff <base>...HEAD --stat --patch` and truncates at 100KB.
+/// Returns None if the command fails or produces no output.
+pub async fn fetch_full_diff(dir: &str, base_branch: &str) -> Option<String> {
+    if !is_safe_git_ref(base_branch) {
+        return None;
+    }
+    let diff_spec = format!("{}...HEAD", base_branch);
+    let output = tokio::time::timeout(
+        Duration::from_secs(10),
+        Command::new("git")
+            .args(["-C", dir, "diff", &diff_spec, "--stat", "--patch"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    if text.trim().is_empty() {
+        return None;
+    }
+
+    // Truncate at 100KB to prevent memory issues with large diffs
+    const MAX_DIFF_SIZE: usize = 100 * 1024;
+    if text.len() > MAX_DIFF_SIZE {
+        let mut truncated = text[..MAX_DIFF_SIZE].to_string();
+        truncated.push_str("\n\n... (diff truncated at 100KB) ...\n");
+        Some(truncated)
+    } else {
+        Some(text)
+    }
+}
+
 /// Validate a worktree name (alphanumeric, hyphens, and underscores only, max 64 chars)
 pub fn is_valid_worktree_name(name: &str) -> bool {
     !name.is_empty()
@@ -260,6 +366,23 @@ pub fn extract_claude_worktree_name(cwd: &str) -> Option<String> {
     // Take up to the next '/' or end of string
     let name = after.split('/').next().filter(|s| !s.is_empty())?;
     Some(name.to_string())
+}
+
+/// Strip `/.git` or `/.git/` suffix from a path to get the repository root
+///
+/// Returns the original path if no `.git` suffix is found.
+pub fn strip_git_suffix(path: &str) -> &str {
+    path.strip_suffix("/.git")
+        .or_else(|| path.strip_suffix("/.git/"))
+        .unwrap_or(path)
+}
+
+/// Validate a git ref name (branch/tag) for safe use as a command argument
+///
+/// Rejects refs starting with `-` (could be misinterpreted as CLI flags)
+/// and empty strings.
+pub fn is_safe_git_ref(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('-')
 }
 
 /// Extract repository name from a git common directory path
@@ -414,6 +537,39 @@ branch refs/heads/main
     }
 
     #[test]
+    fn test_parse_shortstat_normal() {
+        let input = " 3 files changed, 45 insertions(+), 12 deletions(-)\n";
+        let summary = parse_shortstat(input).unwrap();
+        assert_eq!(summary.files_changed, 3);
+        assert_eq!(summary.insertions, 45);
+        assert_eq!(summary.deletions, 12);
+    }
+
+    #[test]
+    fn test_parse_shortstat_insertions_only() {
+        let input = " 1 file changed, 10 insertions(+)\n";
+        let summary = parse_shortstat(input).unwrap();
+        assert_eq!(summary.files_changed, 1);
+        assert_eq!(summary.insertions, 10);
+        assert_eq!(summary.deletions, 0);
+    }
+
+    #[test]
+    fn test_parse_shortstat_deletions_only() {
+        let input = " 2 files changed, 5 deletions(-)\n";
+        let summary = parse_shortstat(input).unwrap();
+        assert_eq!(summary.files_changed, 2);
+        assert_eq!(summary.insertions, 0);
+        assert_eq!(summary.deletions, 5);
+    }
+
+    #[test]
+    fn test_parse_shortstat_empty() {
+        assert!(parse_shortstat("").is_none());
+        assert!(parse_shortstat("  \n").is_none());
+    }
+
+    #[test]
     fn test_is_valid_worktree_name() {
         // Valid names
         assert!(is_valid_worktree_name("feature-auth"));
@@ -443,5 +599,29 @@ branch refs/heads/main
 
         // Valid: exactly 64 chars
         assert!(is_valid_worktree_name(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn test_strip_git_suffix() {
+        assert_eq!(
+            strip_git_suffix("/home/user/my-app/.git"),
+            "/home/user/my-app"
+        );
+        assert_eq!(
+            strip_git_suffix("/home/user/my-app/.git/"),
+            "/home/user/my-app"
+        );
+        assert_eq!(strip_git_suffix("/home/user/my-app"), "/home/user/my-app");
+        assert_eq!(strip_git_suffix(""), "");
+    }
+
+    #[test]
+    fn test_is_safe_git_ref() {
+        assert!(is_safe_git_ref("main"));
+        assert!(is_safe_git_ref("feature/auth"));
+        assert!(is_safe_git_ref("v1.0"));
+        assert!(!is_safe_git_ref(""));
+        assert!(!is_safe_git_ref("-flag"));
+        assert!(!is_safe_git_ref("--exec=evil"));
     }
 }

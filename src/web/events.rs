@@ -141,7 +141,9 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         | Ok(CoreEvent::WorktreeRemoved { .. })
                         | Ok(CoreEvent::AgentStopped { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
-                        | Ok(CoreEvent::ReviewReady { .. }) => {
+                        | Ok(CoreEvent::ReviewReady { .. })
+                        | Ok(CoreEvent::WorktreeSetupCompleted { .. })
+                        | Ok(CoreEvent::WorktreeSetupFailed { .. }) => {
                             // Future: forward to SSE subscribers if needed
                         }
                         Ok(CoreEvent::ReviewLaunched { source_target, review_target }) => {

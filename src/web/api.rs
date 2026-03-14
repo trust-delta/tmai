@@ -24,6 +24,16 @@ fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
         ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
             StatusCode::BAD_REQUEST
         }
+        ApiError::WorktreeError(e) => match e {
+            tmai_core::worktree::WorktreeOpsError::NotFound(_) => StatusCode::NOT_FOUND,
+            tmai_core::worktree::WorktreeOpsError::AlreadyExists(_)
+            | tmai_core::worktree::WorktreeOpsError::InvalidName(_)
+            | tmai_core::worktree::WorktreeOpsError::UncommittedChanges(_)
+            | tmai_core::worktree::WorktreeOpsError::AgentStillRunning(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            tmai_core::worktree::WorktreeOpsError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        },
     };
     json_error(status, &err.to_string())
 }
@@ -514,6 +524,219 @@ pub async fn get_team_tasks(
         .collect();
 
     Ok(Json(tasks))
+}
+
+// =========================================================
+// Worktree endpoints
+// =========================================================
+
+/// Worktree creation request body
+#[derive(Debug, Deserialize)]
+pub struct WorktreeCreateRequestBody {
+    pub repo_path: String,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+}
+
+/// Default agent type for launch
+fn default_agent_type() -> String {
+    "claude".to_string()
+}
+
+/// Get all worktrees
+pub async fn get_worktrees(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<Vec<tmai_core::api::WorktreeSnapshot>> {
+    Json(core.list_worktrees())
+}
+
+/// Create a new worktree
+pub async fn create_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeCreateRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Verify the repo_path exists in our known worktrees (prevent arbitrary path writes)
+    let repo_exists = core.list_worktrees().iter().any(|wt| {
+        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
+    });
+    if !repo_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    let create_req = tmai_core::worktree::WorktreeCreateRequest {
+        repo_path: strip_git_suffix(&req.repo_path).to_string(),
+        branch_name: req.branch_name,
+        base_branch: req.base_branch,
+    };
+
+    match core.create_worktree(&create_req).await {
+        Ok(result) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "path": result.path,
+            "branch": result.branch,
+        }))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+/// Worktree delete request body (uses repo_path for unambiguous identification)
+#[derive(Debug, Deserialize)]
+pub struct WorktreeDeleteRequestBody {
+    pub repo_path: String,
+    pub worktree_name: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// Delete a worktree
+pub async fn delete_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeDeleteRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate worktree name to prevent path traversal
+    if !tmai_core::git::is_valid_worktree_name(&req.worktree_name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
+    }
+
+    // Verify the repo_path exists in our known worktrees
+    let repo_exists = core.list_worktrees().iter().any(|wt| {
+        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
+    });
+    if !repo_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    let del_req = tmai_core::worktree::WorktreeDeleteRequest {
+        repo_path: strip_git_suffix(&req.repo_path).to_string(),
+        worktree_name: req.worktree_name,
+        force: req.force,
+    };
+
+    core.delete_worktree(&del_req)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(api_error_to_http)
+}
+
+/// Worktree launch request body (uses repo_path for unambiguous identification)
+#[derive(Debug, Deserialize)]
+pub struct WorktreeLaunchRequestBody {
+    pub repo_path: String,
+    pub worktree_name: String,
+    #[serde(default = "default_agent_type")]
+    pub agent_type: String,
+    #[serde(default)]
+    pub session: Option<String>,
+}
+
+/// Launch an agent in a worktree
+pub async fn launch_agent_in_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeLaunchRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate worktree name
+    if !tmai_core::git::is_valid_worktree_name(&req.worktree_name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
+    }
+
+    // Find worktree path from state by repo_path + worktree_name
+    let wt_path = {
+        let worktrees = core.list_worktrees();
+        worktrees
+            .iter()
+            .find(|wt| {
+                (wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path)
+                    && wt.name == req.worktree_name
+            })
+            .map(|wt| wt.path.clone())
+    };
+
+    let wt_path = match wt_path {
+        Some(p) => p,
+        None => return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found")),
+    };
+
+    // Parse agent type
+    let agent_type = match req.agent_type.as_str() {
+        "claude" | "claude_code" => tmai_core::agents::AgentType::ClaudeCode,
+        "codex" | "codex_cli" => tmai_core::agents::AgentType::CodexCli,
+        "gemini" | "gemini_cli" => tmai_core::agents::AgentType::GeminiCli,
+        "opencode" | "open_code" => tmai_core::agents::AgentType::OpenCode,
+        other => {
+            return Err(json_error(
+                StatusCode::BAD_REQUEST,
+                &format!("Unknown agent type: {}", other),
+            ))
+        }
+    };
+
+    core.launch_agent_in_worktree(&wt_path, &agent_type, req.session.as_deref())
+        .map(|target| {
+            Json(serde_json::json!({
+                "status": "ok",
+                "target": target,
+            }))
+        })
+        .map_err(api_error_to_http)
+}
+
+/// Worktree diff request body
+#[derive(Debug, Deserialize)]
+pub struct WorktreeDiffRequestBody {
+    pub worktree_path: String,
+    #[serde(default = "default_base_branch")]
+    pub base_branch: String,
+}
+
+/// Default base branch for diff
+fn default_base_branch() -> String {
+    "main".to_string()
+}
+
+/// Get diff for a worktree
+pub async fn get_worktree_diff(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeDiffRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate base_branch
+    if !tmai_core::git::is_safe_git_ref(&req.base_branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid base branch"));
+    }
+
+    // Verify the worktree_path belongs to a known worktree
+    let known = core
+        .list_worktrees()
+        .iter()
+        .any(|wt| wt.path == req.worktree_path);
+    if !known {
+        return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found"));
+    }
+
+    match core
+        .get_worktree_diff(&req.worktree_path, &req.base_branch)
+        .await
+    {
+        Ok((diff, summary)) => {
+            let summary_json = summary.map(|s| {
+                serde_json::json!({
+                    "files_changed": s.files_changed,
+                    "insertions": s.insertions,
+                    "deletions": s.deletions,
+                })
+            });
+            Ok(Json(serde_json::json!({
+                "diff": diff,
+                "summary": summary_json,
+            })))
+        }
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+/// Re-export for convenience
+fn strip_git_suffix(path: &str) -> &str {
+    tmai_core::git::strip_git_suffix(path)
 }
 
 #[cfg(test)]

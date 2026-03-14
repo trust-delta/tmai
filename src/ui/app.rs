@@ -251,6 +251,11 @@ impl App {
 
                 // Worktree overview (full-screen, like help)
                 if state.view.show_worktree_overview {
+                    // Diff viewer overlay takes priority over worktree overview
+                    if state.view.show_diff_viewer {
+                        crate::ui::components::DiffViewer::render(frame, frame.area(), &state);
+                        return;
+                    }
                     WorktreeOverview::render(frame, frame.area(), &state);
                     return;
                 }
@@ -425,6 +430,16 @@ impl App {
                                 source_target, summary
                             ));
                         }
+                        tmai_core::api::CoreEvent::WorktreeSetupCompleted { branch, .. } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!("Worktree setup completed: {}", branch));
+                        }
+                        tmai_core::api::CoreEvent::WorktreeSetupFailed {
+                            branch, error, ..
+                        } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!("Setup failed [{}]: {}", branch, error));
+                        }
                         _ => {} // Other events handled elsewhere
                     }
                 }
@@ -503,8 +518,12 @@ impl App {
             return self.handle_team_overview_key(code, modifiers);
         }
 
-        // Handle worktree overview
+        // Handle diff viewer (on top of worktree overview)
         if show_worktree_overview {
+            let show_diff = { self.state.read().view.show_diff_viewer };
+            if show_diff {
+                return self.handle_diff_viewer_key(code);
+            }
             return self.handle_worktree_overview_key(code);
         }
 
@@ -734,6 +753,9 @@ impl App {
                 state.view.show_worktree_overview = !state.view.show_worktree_overview;
                 if state.view.show_worktree_overview {
                     state.view.worktree_overview_scroll = 0;
+                    // Initialize selection to first worktree if any
+                    let count = crate::ui::components::WorktreeOverview::selectable_count(&state);
+                    state.view.worktree_selected_index = if count > 0 { Some(0) } else { None };
                 }
             }
 
@@ -980,6 +1002,38 @@ impl App {
                         }
                         ConfirmAction::ProbeAndRestartAsWrapped { target, cwd } => {
                             self.execute_probe_and_restart(&target, &cwd);
+                        }
+                        ConfirmAction::DeleteWorktree {
+                            repo_path,
+                            worktree_name,
+                        } => {
+                            if let Some(core) = self.core.clone() {
+                                let state_ref = self.state.clone();
+                                let wt_name = worktree_name.clone();
+                                let req = tmai_core::worktree::WorktreeDeleteRequest {
+                                    repo_path,
+                                    worktree_name,
+                                    force: false,
+                                };
+                                tokio::spawn(async move {
+                                    match core.delete_worktree(&req).await {
+                                        Ok(()) => {
+                                            let mut s = state_ref.write();
+                                            s.notification = Some((
+                                                format!("Worktree '{}' deleted", wt_name),
+                                                std::time::Instant::now(),
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            let mut s = state_ref.write();
+                                            s.notification = Some((
+                                                format!("Delete failed: {}", e),
+                                                std::time::Instant::now(),
+                                            ));
+                                        }
+                                    }
+                                });
+                            }
                         }
                     }
                 }
@@ -1429,34 +1483,330 @@ impl App {
 
     /// Handle keys in worktree overview mode
     fn handle_worktree_overview_key(&mut self, code: KeyCode) -> Result<()> {
-        let mut state = self.state.write();
+        use crate::ui::components::WorktreeOverview;
+
+        // Check if we're in worktree create input mode
+        let is_wt_create = {
+            let state = self.state.read();
+            state.input.mode == tmai_core::state::InputMode::WorktreeCreate
+        };
+
+        if is_wt_create {
+            return self.handle_worktree_create_input(code);
+        }
 
         match code {
             // Close worktree overview
             KeyCode::Char('w') | KeyCode::Esc => {
+                let mut state = self.state.write();
                 state.view.show_worktree_overview = false;
             }
-            // Scroll down
+            // Move selection down
             KeyCode::Char('j') | KeyCode::Down => {
-                state.view.worktree_overview_scroll =
-                    state.view.worktree_overview_scroll.saturating_add(1);
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    let current = state.view.worktree_selected_index.unwrap_or(0);
+                    state.view.worktree_selected_index =
+                        Some((current + 1).min(count.saturating_sub(1)));
+                }
             }
-            // Scroll up
+            // Move selection up
             KeyCode::Char('k') | KeyCode::Up => {
-                state.view.worktree_overview_scroll =
-                    state.view.worktree_overview_scroll.saturating_sub(1);
+                let mut state = self.state.write();
+                if let Some(current) = state.view.worktree_selected_index {
+                    state.view.worktree_selected_index = Some(current.saturating_sub(1));
+                }
             }
             // Jump to top
             KeyCode::Char('g') => {
-                state.view.worktree_overview_scroll = 0;
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    state.view.worktree_selected_index = Some(0);
+                }
             }
             // Jump to bottom
             KeyCode::Char('G') => {
-                state.view.worktree_overview_scroll = u16::MAX;
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    state.view.worktree_selected_index = Some(count.saturating_sub(1));
+                }
+            }
+            // Delete selected worktree (with confirmation dialog)
+            KeyCode::Char('d') => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.is_main {
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot delete main worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        return Ok(());
+                    }
+                    if sel.has_agent {
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot delete: agent still running".to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        return Ok(());
+                    }
+                    // Show confirmation dialog
+                    let mut state = self.state.write();
+                    state.show_confirmation(
+                        ConfirmAction::DeleteWorktree {
+                            repo_path: sel.repo_path,
+                            worktree_name: sel.worktree_name.clone(),
+                        },
+                        format!("Delete worktree '{}'?", sel.worktree_name),
+                    );
+                }
+            }
+            // Launch agent in selected worktree
+            KeyCode::Char('l') | KeyCode::Enter => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.has_agent {
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Agent already running in this worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        return Ok(());
+                    }
+                    if let Some(core) = &self.core {
+                        let agent_type = tmai_core::agents::AgentType::ClaudeCode;
+                        match core.launch_agent_in_worktree(&sel.worktree_path, &agent_type, None) {
+                            Ok(target) => {
+                                let mut state = self.state.write();
+                                state.notification = Some((
+                                    format!("Agent launched: {}", target),
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                            Err(e) => {
+                                let mut state = self.state.write();
+                                state.notification = Some((
+                                    format!("Launch failed: {}", e),
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            // View diff for selected worktree
+            KeyCode::Char('v') => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.is_main {
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot diff main worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        return Ok(());
+                    }
+                    // Start loading diff
+                    {
+                        let mut state = self.state.write();
+                        state.worktree_diff_loading = true;
+                        state.worktree_diff_content = None;
+                        state.view.show_diff_viewer = true;
+                        state.view.diff_viewer_scroll = 0;
+                    }
+                    let state_ref = self.state.clone();
+                    let wt_path = sel.worktree_path.clone();
+                    if let Some(core) = self.core.clone() {
+                        tokio::spawn(async move {
+                            let (diff, _summary) = core
+                                .get_worktree_diff(&wt_path, "main")
+                                .await
+                                .unwrap_or((None, None));
+                            let mut s = state_ref.write();
+                            s.worktree_diff_content = diff;
+                            s.worktree_diff_loading = false;
+                        });
+                    }
+                }
+            }
+            // Create new worktree
+            KeyCode::Char('c') => {
+                // Use the selected worktree's repo, falling back to first repo
+                let repo_path = {
+                    let state = self.state.read();
+                    let selected = WorktreeOverview::selected_worktree(&state);
+                    selected.map(|s| s.repo_path).or_else(|| {
+                        state
+                            .worktree_info
+                            .first()
+                            .map(|r| tmai_core::git::strip_git_suffix(&r.repo_path).to_string())
+                    })
+                };
+                if let Some(repo_path) = repo_path {
+                    // Switch to input mode for worktree name
+                    let mut state = self.state.write();
+                    state.input.mode = tmai_core::state::InputMode::WorktreeCreate;
+                    state.input.buffer.clear();
+                    state.input.cursor_position = 0;
+                    // Store repo_path in worktree_create_repo_path
+                    state.worktree_create_repo_path = Some(repo_path);
+                }
             }
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle text input for worktree creation (branch name)
+    fn handle_worktree_create_input(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            KeyCode::Esc => {
+                // Cancel creation
+                let mut state = self.state.write();
+                state.input.mode = tmai_core::state::InputMode::Normal;
+                state.input.buffer.clear();
+                state.input.cursor_position = 0;
+                state.worktree_create_repo_path = None;
+            }
+            KeyCode::Enter => {
+                // Submit creation
+                let (branch_name, repo_path) = {
+                    let mut state = self.state.write();
+                    let name = state.input.buffer.trim().to_string();
+                    let repo = state.worktree_create_repo_path.take();
+                    state.input.mode = tmai_core::state::InputMode::Normal;
+                    state.input.buffer.clear();
+                    state.input.cursor_position = 0;
+                    (name, repo)
+                };
+                if !branch_name.is_empty() {
+                    if let Some(repo_path) = repo_path {
+                        if let Some(core) = self.core.clone() {
+                            let state_ref = self.state.clone();
+                            let name_clone = branch_name.clone();
+                            let req = tmai_core::worktree::WorktreeCreateRequest {
+                                repo_path,
+                                branch_name,
+                                base_branch: None,
+                            };
+                            tokio::spawn(async move {
+                                match core.create_worktree(&req).await {
+                                    Ok(_) => {
+                                        let mut s = state_ref.write();
+                                        s.notification = Some((
+                                            format!("Worktree '{}' created", name_clone),
+                                            std::time::Instant::now(),
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        let mut s = state_ref.write();
+                                        s.notification = Some((
+                                            format!("Create failed: {}", e),
+                                            std::time::Instant::now(),
+                                        ));
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                let mut state = self.state.write();
+                if state.input.cursor_position > 0 {
+                    let char_pos = state.input.cursor_position - 1;
+                    // Convert character index to byte index for removal
+                    if let Some((byte_idx, ch)) = state.input.buffer.char_indices().nth(char_pos) {
+                        state.input.buffer.drain(byte_idx..byte_idx + ch.len_utf8());
+                        state.input.cursor_position = char_pos;
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                let mut state = self.state.write();
+                let char_pos = state.input.cursor_position;
+                // Convert character index to byte index for insertion
+                let byte_idx = state
+                    .input
+                    .buffer
+                    .char_indices()
+                    .nth(char_pos)
+                    .map(|(i, _)| i)
+                    .unwrap_or(state.input.buffer.len());
+                state.input.buffer.insert(byte_idx, c);
+                state.input.cursor_position = char_pos + 1;
+            }
+            KeyCode::Left => {
+                let mut state = self.state.write();
+                state.input.cursor_position = state.input.cursor_position.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                let mut state = self.state.write();
+                let char_count = state.input.buffer.chars().count();
+                state.input.cursor_position = (state.input.cursor_position + 1).min(char_count);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Handle keys when diff viewer is shown
+    fn handle_diff_viewer_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            // Close diff viewer
+            KeyCode::Esc | KeyCode::Char('q') => {
+                let mut state = self.state.write();
+                state.view.show_diff_viewer = false;
+                state.worktree_diff_content = None;
+                state.worktree_diff_loading = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_sub(1);
+            }
+            // Half-page down
+            KeyCode::Char('d') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_add(20);
+            }
+            // Half-page up
+            KeyCode::Char('u') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_sub(20);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                let mut state = self.state.write();
+                // Set to a large value; render will clamp it
+                state.view.diff_viewer_scroll = u16::MAX;
+            }
+            _ => {}
+        }
         Ok(())
     }
 

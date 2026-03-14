@@ -40,6 +40,10 @@ pub enum ApiError {
     #[error("invalid input: {message}")]
     InvalidInput { message: String },
 
+    /// A worktree operation failed
+    #[error("worktree error: {0}")]
+    WorktreeError(#[from] crate::worktree::WorktreeOpsError),
+
     /// A tmux or IPC operation failed
     #[error("command failed: {0}")]
     CommandError(#[from] anyhow::Error),
@@ -283,6 +287,80 @@ impl TeamTaskInfo {
             description: task.description.clone(),
 
             active_form: task.active_form.clone(),
+        }
+    }
+}
+
+/// Owned snapshot of a worktree for API consumers
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeSnapshot {
+    /// Repository name
+    pub repo_name: String,
+    /// Absolute path to the git common directory
+    pub repo_path: String,
+    /// Worktree name
+    pub name: String,
+    /// Absolute path to the worktree
+    pub path: String,
+    /// Branch name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Whether this is the main working tree
+    pub is_main: bool,
+    /// Linked agent target
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_target: Option<String>,
+    /// Status of the linked agent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_status: Option<String>,
+    /// Whether this worktree has uncommitted changes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_dirty: Option<bool>,
+    /// Diff statistics vs base branch
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff_summary: Option<DiffSummarySnapshot>,
+}
+
+/// Diff statistics snapshot for API consumers
+#[derive(Debug, Clone, Serialize)]
+pub struct DiffSummarySnapshot {
+    /// Number of files changed
+    pub files_changed: usize,
+    /// Number of lines inserted
+    pub insertions: usize,
+    /// Number of lines deleted
+    pub deletions: usize,
+}
+
+impl WorktreeSnapshot {
+    /// Build from state types
+    pub fn from_detail(
+        repo_name: &str,
+        repo_path: &str,
+        detail: &crate::state::WorktreeDetail,
+    ) -> Self {
+        Self {
+            repo_name: repo_name.to_string(),
+            repo_path: repo_path.to_string(),
+            name: detail.name.clone(),
+            path: detail.path.clone(),
+            branch: detail.branch.clone(),
+            is_main: detail.is_main,
+            agent_target: detail.agent_target.clone(),
+            agent_status: detail.agent_status.as_ref().map(|s| match s {
+                AgentStatus::Idle => "idle".to_string(),
+                AgentStatus::Processing { .. } => "processing".to_string(),
+                AgentStatus::AwaitingApproval { .. } => "awaiting_approval".to_string(),
+                AgentStatus::Error { .. } => "error".to_string(),
+                AgentStatus::Unknown => "unknown".to_string(),
+                AgentStatus::Offline => "offline".to_string(),
+            }),
+            is_dirty: detail.is_dirty,
+            diff_summary: detail.diff_summary.as_ref().map(|ds| DiffSummarySnapshot {
+                files_changed: ds.files_changed,
+                insertions: ds.insertions,
+                deletions: ds.deletions,
+            }),
         }
     }
 }

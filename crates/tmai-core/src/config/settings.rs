@@ -238,6 +238,10 @@ pub struct Settings {
     /// Codex CLI app-server WebSocket settings
     #[serde(default)]
     pub codex_ws: CodexWsSettings,
+
+    /// Git worktree settings
+    #[serde(default)]
+    pub worktree: WorktreeSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -664,6 +668,32 @@ impl Default for UiSettings {
     }
 }
 
+/// Git worktree settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeSettings {
+    /// Commands to run after creating a new worktree (e.g., ["npm install", "cp .env.example .env"])
+    #[serde(default)]
+    pub setup_commands: Vec<String>,
+
+    /// Timeout for each setup command in seconds (default: 300 = 5 minutes)
+    #[serde(default = "default_setup_timeout")]
+    pub setup_timeout_secs: u64,
+}
+
+/// Default setup timeout (5 minutes)
+fn default_setup_timeout() -> u64 {
+    300
+}
+
+impl Default for WorktreeSettings {
+    fn default() -> Self {
+        Self {
+            setup_commands: Vec::new(),
+            setup_timeout_secs: default_setup_timeout(),
+        }
+    }
+}
+
 /// Codex CLI app-server WebSocket connection settings
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CodexWsSettings {
@@ -702,6 +732,7 @@ impl Default for Settings {
             usage: UsageSettings::default(),
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
+            worktree: WorktreeSettings::default(),
         }
     }
 }
@@ -844,6 +875,26 @@ mod tests {
         assert_eq!(settings.capture_lines, 100);
         assert!(settings.attached_only);
         assert!(settings.ui.show_preview);
+    }
+
+    #[test]
+    fn test_worktree_settings_default() {
+        let settings = WorktreeSettings::default();
+        assert!(settings.setup_commands.is_empty());
+        assert_eq!(settings.setup_timeout_secs, 300);
+    }
+
+    #[test]
+    fn test_worktree_settings_deserialization() {
+        let toml = r#"
+            [worktree]
+            setup_commands = ["npm install", "cp .env.example .env"]
+            setup_timeout_secs = 120
+        "#;
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        assert_eq!(settings.worktree.setup_commands.len(), 2);
+        assert_eq!(settings.worktree.setup_commands[0], "npm install");
+        assert_eq!(settings.worktree.setup_timeout_secs, 120);
     }
 
     #[test]
