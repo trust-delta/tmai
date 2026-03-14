@@ -109,12 +109,11 @@ impl WorktreeOverview {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  Worktrees are detected from agents in git repositories",
+                "  Worktrees are detected from agents in git repositories.",
                 Style::default().fg(Color::DarkGray),
             )));
-            lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  Press c to create a new worktree",
+                "  Start an agent in a git repo to see worktrees here.",
                 Style::default().fg(Color::DarkGray),
             )));
             return lines;
@@ -251,6 +250,18 @@ impl WorktreeOverview {
 
         // Worktree create input prompt
         if state.input.mode == InputMode::WorktreeCreate {
+            // Split buffer at cursor position (character-aware)
+            let cursor_pos = state.input.cursor_position;
+            let byte_idx = state
+                .input
+                .buffer
+                .char_indices()
+                .nth(cursor_pos)
+                .map(|(i, _)| i)
+                .unwrap_or(state.input.buffer.len());
+            let before = &state.input.buffer[..byte_idx];
+            let after = &state.input.buffer[byte_idx..];
+
             lines.push(Line::from(vec![
                 Span::styled(
                     "  Branch name: ",
@@ -258,11 +269,9 @@ impl WorktreeOverview {
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    state.input.buffer.clone(),
-                    Style::default().fg(Color::White),
-                ),
+                Span::styled(before.to_string(), Style::default().fg(Color::White)),
                 Span::styled("\u{2588}", Style::default().fg(Color::Cyan)),
+                Span::styled(after.to_string(), Style::default().fg(Color::White)),
             ]));
             lines.push(Line::from(Span::styled(
                 "  Enter to confirm, Esc to cancel",

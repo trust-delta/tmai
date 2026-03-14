@@ -1728,16 +1728,27 @@ impl App {
             KeyCode::Backspace => {
                 let mut state = self.state.write();
                 if state.input.cursor_position > 0 {
-                    let pos = state.input.cursor_position;
-                    state.input.buffer.remove(pos - 1);
-                    state.input.cursor_position = pos - 1;
+                    let char_pos = state.input.cursor_position - 1;
+                    // Convert character index to byte index for removal
+                    if let Some((byte_idx, ch)) = state.input.buffer.char_indices().nth(char_pos) {
+                        state.input.buffer.drain(byte_idx..byte_idx + ch.len_utf8());
+                        state.input.cursor_position = char_pos;
+                    }
                 }
             }
             KeyCode::Char(c) => {
                 let mut state = self.state.write();
-                let pos = state.input.cursor_position;
-                state.input.buffer.insert(pos, c);
-                state.input.cursor_position = pos + 1;
+                let char_pos = state.input.cursor_position;
+                // Convert character index to byte index for insertion
+                let byte_idx = state
+                    .input
+                    .buffer
+                    .char_indices()
+                    .nth(char_pos)
+                    .map(|(i, _)| i)
+                    .unwrap_or(state.input.buffer.len());
+                state.input.buffer.insert(byte_idx, c);
+                state.input.cursor_position = char_pos + 1;
             }
             KeyCode::Left => {
                 let mut state = self.state.write();
@@ -1745,8 +1756,8 @@ impl App {
             }
             KeyCode::Right => {
                 let mut state = self.state.write();
-                let len = state.input.buffer.len();
-                state.input.cursor_position = (state.input.cursor_position + 1).min(len);
+                let char_count = state.input.buffer.chars().count();
+                state.input.cursor_position = (state.input.cursor_position + 1).min(char_count);
             }
             _ => {}
         }

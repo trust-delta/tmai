@@ -1103,6 +1103,7 @@ impl AppState {
         self.input.mode = InputMode::Normal;
         self.input.buffer.clear();
         self.input.cursor_position = 0;
+        self.worktree_create_repo_path = None;
     }
 
     /// Check if in input mode

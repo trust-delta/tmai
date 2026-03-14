@@ -430,7 +430,7 @@ impl TmaiCore {
         let _ = self
             .event_sender()
             .send(super::events::CoreEvent::WorktreeCreated {
-                target: String::new(),
+                target: result.path.clone(),
                 worktree: Some(crate::hooks::types::WorktreeInfo {
                     name: Some(result.branch.clone()),
                     path: Some(result.path.clone()),
@@ -523,10 +523,16 @@ impl TmaiCore {
         crate::worktree::delete_worktree(req).await?;
 
         // Emit event
+        let worktree_path = std::path::Path::new(&req.repo_path)
+            .join(".claude")
+            .join("worktrees")
+            .join(&req.worktree_name)
+            .to_string_lossy()
+            .to_string();
         let _ = self
             .event_sender()
             .send(super::events::CoreEvent::WorktreeRemoved {
-                target: String::new(),
+                target: worktree_path,
                 worktree: Some(crate::hooks::types::WorktreeInfo {
                     name: Some(req.worktree_name.clone()),
                     path: None,
