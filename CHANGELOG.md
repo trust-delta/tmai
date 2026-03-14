@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-03-14
+
+### Added
+
+- Codex CLI app-server WebSocket integration (Phase 1: read-only monitoring)
+  - Connect to `codex app-server --listen ws://IP:PORT` JSON-RPC 2.0 API for high-fidelity state detection (Processing/Idle/AwaitingApproval)
+  - Reuses existing HookRegistry so Poller's 3-tier detection works without changes
+  - `DetectionSource::WebSocket` (◆) for WS-detected agents
+  - Exponential backoff reconnection (1s → 60s cap, ±25% jitter), disconnect → capture-pane fallback
+  - `[[codex_ws.connections]]` config section for specifying app-server endpoints
+
 ## [0.18.0] - 2026-03-11
 
 ### Added
