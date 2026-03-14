@@ -9,7 +9,7 @@ use tmai_core::api::TmaiCoreBuilder;
 use tmai_core::command_sender::CommandSender;
 use tmai_core::config::{Config, Settings};
 use tmai_core::ipc::server::IpcServer;
-use tmai_core::tmux::TmuxClient;
+use tmai_core::runtime::{RuntimeAdapter, TmuxAdapter};
 use tmai_core::wrap::{
     runner::{get_pane_id, PtyRunnerConfig},
     PtyRunner,
@@ -71,7 +71,9 @@ async fn main() -> Result<()> {
     if cli.is_demo_mode() {
         setup_logging(cli.debug, true);
         let settings = tmai_core::config::Settings::default();
-        let mut app = App::new(settings, None, None, None);
+        let runtime: Arc<dyn RuntimeAdapter> =
+            Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let mut app = App::new(settings, None, runtime, None, None);
         return app.run_demo().await;
     }
 
@@ -96,10 +98,14 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
+    // Create runtime adapter
+    let runtime: Arc<dyn RuntimeAdapter> = Arc::new(TmuxAdapter::new(settings.capture_lines));
+
     // Run the application with web server
     let mut app = App::new(
         settings.clone(),
         Some(ipc_server.clone()),
+        runtime.clone(),
         audit_tx.clone(),
         audit_rx,
     );
@@ -108,7 +114,7 @@ async fn main() -> Result<()> {
     let app_state = app.shared_state();
     let core_cmd_sender = Arc::new(CommandSender::new(
         Some(ipc_server.clone()),
-        TmuxClient::with_capture_lines(settings.capture_lines),
+        runtime.clone(),
         app_state.clone(),
     ));
 
@@ -203,7 +209,7 @@ async fn main() -> Result<()> {
             app.shared_state(),
             CommandSender::new(
                 Some(ipc_server.clone()),
-                TmuxClient::with_capture_lines(settings.capture_lines),
+                runtime.clone(),
                 app.shared_state(),
             ),
             audit_tx,

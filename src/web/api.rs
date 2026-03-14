@@ -457,7 +457,7 @@ pub async fn get_preview(
         .raw_command_sender()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match cmd.tmux_client().capture_pane_plain(&id) {
+    match cmd.runtime().capture_pane_plain(&id) {
         Ok(content) => {
             let lines = content.lines().count();
             Ok(Json(PreviewResponse { content, lines }))
@@ -759,7 +759,9 @@ mod tests {
 
     /// Build a Router with all API routes but NO auth middleware
     fn test_router_with_state(app_state: SharedState) -> Router {
-        let cmd = CommandSender::new(None, tmai_core::tmux::TmuxClient::new(), app_state.clone());
+        let runtime: Arc<dyn tmai_core::runtime::RuntimeAdapter> =
+            Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let cmd = CommandSender::new(None, runtime, app_state.clone());
         let core = Arc::new(
             TmaiCoreBuilder::new(tmai_core::config::Settings::default())
                 .with_state(app_state)

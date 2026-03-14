@@ -2,13 +2,13 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use crate::ipc::server::IpcServer;
+use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
-use crate::tmux::TmuxClient;
 
-/// Unified command sender that tries IPC first, falls back to tmux
+/// Unified command sender that tries IPC first, falls back to runtime adapter
 pub struct CommandSender {
     ipc_server: Option<Arc<IpcServer>>,
-    tmux_client: TmuxClient,
+    runtime: Arc<dyn RuntimeAdapter>,
     app_state: SharedState,
 }
 
@@ -16,17 +16,17 @@ impl CommandSender {
     /// Create a new CommandSender
     pub fn new(
         ipc_server: Option<Arc<IpcServer>>,
-        tmux_client: TmuxClient,
+        runtime: Arc<dyn RuntimeAdapter>,
         app_state: SharedState,
     ) -> Self {
         Self {
             ipc_server,
-            tmux_client,
+            runtime,
             app_state,
         }
     }
 
-    /// Send keys via IPC if connected, otherwise via tmux
+    /// Send keys via IPC if connected, otherwise via runtime adapter
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -35,10 +35,10 @@ impl CommandSender {
                 }
             }
         }
-        self.tmux_client.send_keys(target, keys)
+        self.runtime.send_keys(target, keys)
     }
 
-    /// Send literal keys via IPC if connected, otherwise via tmux
+    /// Send literal keys via IPC if connected, otherwise via runtime adapter
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -47,10 +47,10 @@ impl CommandSender {
                 }
             }
         }
-        self.tmux_client.send_keys_literal(target, keys)
+        self.runtime.send_keys_literal(target, keys)
     }
 
-    /// Send text + Enter via IPC if connected, otherwise via tmux
+    /// Send text + Enter via IPC if connected, otherwise via runtime adapter
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -59,12 +59,12 @@ impl CommandSender {
                 }
             }
         }
-        self.tmux_client.send_text_and_enter(target, text)
+        self.runtime.send_text_and_enter(target, text)
     }
 
-    /// Access the underlying TmuxClient for direct operations (focus_pane, kill_pane, etc.)
-    pub fn tmux_client(&self) -> &TmuxClient {
-        &self.tmux_client
+    /// Access the runtime adapter for direct operations (focus_pane, kill_pane, etc.)
+    pub fn runtime(&self) -> &Arc<dyn RuntimeAdapter> {
+        &self.runtime
     }
 
     /// Access the IPC server (needed for Poller registry)

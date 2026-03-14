@@ -343,7 +343,7 @@ impl TmaiCore {
         }
 
         let cmd = self.require_command_sender()?;
-        cmd.tmux_client().focus_pane(target)?;
+        cmd.runtime().focus_pane(target)?;
         Ok(())
     }
 
@@ -555,7 +555,7 @@ impl TmaiCore {
         session: Option<&str>,
     ) -> Result<String, ApiError> {
         let cmd = self.require_command_sender()?;
-        let tmux = cmd.tmux_client();
+        let rt = cmd.runtime();
 
         // Determine session to use (prefer first agent in display order for determinism)
         let session_name = session
@@ -572,7 +572,7 @@ impl TmaiCore {
 
         // Create a new window in the worktree directory
         let window_name = agent_type.short_name();
-        let target = tmux.new_window(&session_name, worktree_path, Some(window_name))?;
+        let target = rt.new_window(&session_name, worktree_path, Some(window_name))?;
 
         // Build the launch command based on agent type
         let launch_cmd = match agent_type {
@@ -593,7 +593,7 @@ impl TmaiCore {
         };
 
         // Run via tmai wrap for PTY monitoring
-        tmux.run_command_wrapped(&target, &launch_cmd)?;
+        rt.run_command_wrapped(&target, &launch_cmd)?;
 
         tracing::info!(
             worktree = worktree_path,
@@ -626,7 +626,7 @@ impl TmaiCore {
         }
 
         let cmd = self.require_command_sender()?;
-        cmd.tmux_client().kill_pane(target)?;
+        cmd.runtime().kill_pane(target)?;
         Ok(())
     }
 }

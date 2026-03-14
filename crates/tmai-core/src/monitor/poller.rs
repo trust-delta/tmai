@@ -23,7 +23,7 @@ use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
 use crate::teams::{self, TaskStatus};
-use crate::tmux::{PaneInfo, ProcessCache, TmuxClient};
+use crate::tmux::{PaneInfo, ProcessCache};
 
 /// Tracks the last committed (actually emitted) state for an agent
 struct CommittedAgentState {
@@ -72,7 +72,7 @@ pub enum PollMessage {
 
 /// Poller for monitoring tmux panes
 pub struct Poller {
-    client: TmuxClient,
+    runtime: Arc<dyn crate::runtime::RuntimeAdapter>,
     process_cache: Arc<ProcessCache>,
     /// Cache for Claude Code settings (spinnerVerbs)
     claude_settings_cache: Arc<ClaudeSettingsCache>,
@@ -113,14 +113,13 @@ impl Poller {
     pub fn new(
         settings: Settings,
         state: SharedState,
+        runtime: Arc<dyn crate::runtime::RuntimeAdapter>,
         ipc_registry: IpcRegistry,
         hook_registry: HookRegistry,
         audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     ) -> Self {
-        let client = TmuxClient::with_capture_lines(settings.capture_lines);
-
         // Capture current location at startup for scope filtering
-        let (current_session, current_window) = match client.get_current_location() {
+        let (current_session, current_window) = match runtime.get_current_location() {
             Ok((session, window)) => (Some(session), Some(window)),
             Err(_) => (None, None),
         };
@@ -128,7 +127,7 @@ impl Poller {
         let audit_logger = AuditLogger::new(settings.audit.enabled, settings.audit.max_size_bytes);
 
         Self {
-            client,
+            runtime,
             process_cache: Arc::new(ProcessCache::new()),
             claude_settings_cache: Arc::new(ClaudeSettingsCache::new()),
             settings,
@@ -282,7 +281,7 @@ impl Poller {
     /// for use in team scanning.
     async fn poll_once(&mut self) -> Result<(Vec<MonitoredAgent>, Vec<PaneInfo>)> {
         // Always get all panes (needed for team scanning)
-        let all_panes = self.client.list_all_panes()?;
+        let all_panes = self.runtime.list_all_panes()?;
 
         // Use all panes (scope filtering temporarily disabled — always AllSessions)
         let panes = all_panes.clone();
@@ -337,13 +336,13 @@ impl Poller {
                 let audit_enabled = self.settings.audit.enabled;
                 let (content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
-                    let ansi = self.client.capture_pane(&pane.target).unwrap_or_default();
+                    let ansi = self.runtime.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
                 } else if audit_enabled && has_fresh_hook {
                     // Non-selected + audit + hook: plain capture for validation
                     let plain = self
-                        .client
+                        .runtime
                         .capture_pane_plain(&pane.target)
                         .unwrap_or_default();
                     (String::new(), plain)
@@ -353,14 +352,14 @@ impl Poller {
                 } else {
                     // Non-selected + capture-pane mode: plain capture for detection
                     let plain = self
-                        .client
+                        .runtime
                         .capture_pane_plain(&pane.target)
                         .unwrap_or_default();
                     (String::new(), plain)
                 };
 
                 let title = self
-                    .client
+                    .runtime
                     .get_pane_title(&pane.target)
                     .unwrap_or(pane.title.clone());
 
@@ -480,7 +479,7 @@ impl Poller {
                         let plain = if !content.is_empty() {
                             content.clone()
                         } else {
-                            self.client
+                            self.runtime
                                 .capture_pane_plain(&pane.target)
                                 .unwrap_or_default()
                         };
@@ -1473,12 +1472,15 @@ impl Poller {
 
 /// Helper to detect agent from pane info
 #[allow(dead_code)]
-pub fn detect_agent_from_pane(pane: &PaneInfo, client: &TmuxClient) -> Option<MonitoredAgent> {
+pub fn detect_agent_from_pane(
+    pane: &PaneInfo,
+    runtime: &dyn crate::runtime::RuntimeAdapter,
+) -> Option<MonitoredAgent> {
     let agent_type = pane.detect_agent_type()?;
 
-    let content_ansi = client.capture_pane(&pane.target).unwrap_or_default();
+    let content_ansi = runtime.capture_pane(&pane.target).unwrap_or_default();
     let content = strip_ansi(&content_ansi);
-    let title = client
+    let title = runtime
         .get_pane_title(&pane.target)
         .unwrap_or(pane.title.clone());
 
@@ -1744,7 +1746,9 @@ mod tests {
         let state = AppState::shared();
         let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
         let hook_registry = crate::hooks::new_hook_registry();
-        let _poller = Poller::new(settings, state, ipc_registry, hook_registry, None);
+        let runtime: Arc<dyn crate::runtime::RuntimeAdapter> =
+            Arc::new(crate::runtime::StandaloneAdapter::new());
+        let _poller = Poller::new(settings, state, runtime, ipc_registry, hook_registry, None);
     }
 
     #[test]
