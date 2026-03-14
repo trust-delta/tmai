@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -79,14 +79,8 @@ impl WebServer {
             .route("/teams/{name}/tasks", get(api::get_team_tasks))
             .route("/worktrees", get(api::get_worktrees))
             .route("/worktrees", post(api::create_worktree))
-            .route(
-                "/worktrees/{repo_name}/{wt_name}",
-                delete(api::delete_worktree),
-            )
-            .route(
-                "/worktrees/{repo_name}/{wt_name}/launch",
-                post(api::launch_agent_in_worktree),
-            )
+            .route("/worktrees/delete", post(api::delete_worktree))
+            .route("/worktrees/launch", post(api::launch_agent_in_worktree))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

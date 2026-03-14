@@ -539,15 +539,6 @@ pub struct WorktreeCreateRequestBody {
     pub base_branch: Option<String>,
 }
 
-/// Worktree launch request body
-#[derive(Debug, Deserialize)]
-pub struct WorktreeLaunchRequestBody {
-    #[serde(default = "default_agent_type")]
-    pub agent_type: String,
-    #[serde(default)]
-    pub session: Option<String>,
-}
-
 /// Default agent type for launch
 fn default_agent_type() -> String {
     "claude".to_string()
@@ -581,40 +572,37 @@ pub async fn create_worktree(
     }
 }
 
+/// Worktree delete request body (uses repo_path for unambiguous identification)
+#[derive(Debug, Deserialize)]
+pub struct WorktreeDeleteRequestBody {
+    pub repo_path: String,
+    pub worktree_name: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
 /// Delete a worktree
 pub async fn delete_worktree(
     State(core): State<Arc<TmaiCore>>,
-    Path((repo_name, wt_name)): Path<(String, String)>,
+    Json(req): Json<WorktreeDeleteRequestBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Validate names to prevent path traversal
-    if !tmai_core::git::is_valid_worktree_name(&wt_name) {
+    // Validate worktree name to prevent path traversal
+    if !tmai_core::git::is_valid_worktree_name(&req.worktree_name) {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
     }
 
-    // Find repo_path from state by repo_name
-    let repo_path = {
-        let state = core.list_worktrees();
-        state
-            .iter()
-            .find(|wt| wt.repo_name == repo_name)
-            .map(|wt| wt.repo_path.clone())
-    };
-
-    let repo_path = match repo_path {
-        Some(p) => {
-            // Strip /.git suffix to get repo root
-            p.strip_suffix("/.git")
-                .or_else(|| p.strip_suffix("/.git/"))
-                .unwrap_or(&p)
-                .to_string()
-        }
-        None => return Err(json_error(StatusCode::NOT_FOUND, "Repository not found")),
-    };
+    // Verify the repo_path exists in our known worktrees
+    let repo_exists = core.list_worktrees().iter().any(|wt| {
+        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
+    });
+    if !repo_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
 
     let del_req = tmai_core::worktree::WorktreeDeleteRequest {
-        repo_path,
-        worktree_name: wt_name,
-        force: false,
+        repo_path: strip_git_suffix(&req.repo_path).to_string(),
+        worktree_name: req.worktree_name,
+        force: req.force,
     };
 
     core.delete_worktree(&del_req)
@@ -623,23 +611,36 @@ pub async fn delete_worktree(
         .map_err(api_error_to_http)
 }
 
+/// Worktree launch request body (uses repo_path for unambiguous identification)
+#[derive(Debug, Deserialize)]
+pub struct WorktreeLaunchRequestBody {
+    pub repo_path: String,
+    pub worktree_name: String,
+    #[serde(default = "default_agent_type")]
+    pub agent_type: String,
+    #[serde(default)]
+    pub session: Option<String>,
+}
+
 /// Launch an agent in a worktree
 pub async fn launch_agent_in_worktree(
     State(core): State<Arc<TmaiCore>>,
-    Path((repo_name, wt_name)): Path<(String, String)>,
     Json(req): Json<WorktreeLaunchRequestBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     // Validate worktree name
-    if !tmai_core::git::is_valid_worktree_name(&wt_name) {
+    if !tmai_core::git::is_valid_worktree_name(&req.worktree_name) {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
     }
 
-    // Find worktree path from state
+    // Find worktree path from state by repo_path + worktree_name
     let wt_path = {
         let worktrees = core.list_worktrees();
         worktrees
             .iter()
-            .find(|wt| wt.repo_name == repo_name && wt.name == wt_name)
+            .find(|wt| {
+                (wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path)
+                    && wt.name == req.worktree_name
+            })
             .map(|wt| wt.path.clone())
     };
 
@@ -669,6 +670,13 @@ pub async fn launch_agent_in_worktree(
             }))
         })
         .map_err(api_error_to_http)
+}
+
+/// Strip `/.git` or `/.git/` suffix from a repo path
+fn strip_git_suffix(path: &str) -> &str {
+    path.strip_suffix("/.git")
+        .or_else(|| path.strip_suffix("/.git/"))
+        .unwrap_or(path)
 }
 
 #[cfg(test)]

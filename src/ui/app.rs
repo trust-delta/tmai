@@ -1541,17 +1541,20 @@ impl App {
                     }
                 }
             }
-            // Create new worktree (placeholder - needs input UI)
+            // Create new worktree
             KeyCode::Char('c') => {
-                // For create, we need the repo_path. Use the first repo if available.
+                // Use the selected worktree's repo, falling back to first repo
                 let repo_path = {
                     let state = self.state.read();
-                    state.worktree_info.first().map(|r| {
-                        r.repo_path
-                            .strip_suffix("/.git")
-                            .or_else(|| r.repo_path.strip_suffix("/.git/"))
-                            .unwrap_or(&r.repo_path)
-                            .to_string()
+                    let selected = WorktreeOverview::selected_worktree(&state);
+                    selected.map(|s| s.repo_path).or_else(|| {
+                        state.worktree_info.first().map(|r| {
+                            r.repo_path
+                                .strip_suffix("/.git")
+                                .or_else(|| r.repo_path.strip_suffix("/.git/"))
+                                .unwrap_or(&r.repo_path)
+                                .to_string()
+                        })
                     })
                 };
                 if let Some(repo_path) = repo_path {
