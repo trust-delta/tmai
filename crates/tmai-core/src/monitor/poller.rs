@@ -564,7 +564,12 @@ impl Poller {
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
                 agent.detection_source = if has_fresh_hook {
-                    DetectionSource::HttpHook
+                    // Codex CLI with hook data from WebSocket gets WebSocket source
+                    if agent.agent_type == AgentType::CodexCli {
+                        DetectionSource::WebSocket
+                    } else {
+                        DetectionSource::HttpHook
+                    }
                 } else if screen_override {
                     DetectionSource::CapturePane
                 } else if wrap_state.is_some() {

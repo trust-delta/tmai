@@ -65,6 +65,8 @@ pub enum DetectionSource {
     HttpHook,
     /// State detected via IPC socket connection
     IpcSocket,
+    /// State detected via Codex CLI app-server WebSocket
+    WebSocket,
     /// State detected via tmux capture-pane
     #[default]
     CapturePane,
@@ -76,6 +78,7 @@ impl DetectionSource {
         match self {
             DetectionSource::HttpHook => '◈',
             DetectionSource::IpcSocket => '◉',
+            DetectionSource::WebSocket => '◆',
             DetectionSource::CapturePane => '○',
         }
     }
@@ -85,6 +88,7 @@ impl DetectionSource {
         match self {
             DetectionSource::HttpHook => "Hook",
             DetectionSource::IpcSocket => "IPC",
+            DetectionSource::WebSocket => "WS",
             DetectionSource::CapturePane => "capture",
         }
     }
