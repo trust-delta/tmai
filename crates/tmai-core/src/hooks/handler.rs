@@ -163,8 +163,8 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::SUBAGENT_START | event_names::SUBAGENT_STOP => {
-            // Touch the hook state to keep it fresh, agent is processing
+        event_names::SUBAGENT_START => {
+            // Increment active subagent count, agent is processing
             update_status(
                 hook_registry,
                 pane_id,
@@ -172,6 +172,26 @@ pub fn handle_hook_event(
                 HookStatus::Processing,
                 None,
             );
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.active_subagents = state.active_subagents.saturating_add(1);
+            }
+            None
+        }
+
+        event_names::SUBAGENT_STOP => {
+            // Decrement active subagent count, agent is still processing
+            update_status(
+                hook_registry,
+                pane_id,
+                payload,
+                HookStatus::Processing,
+                None,
+            );
+            let mut reg = hook_registry.write();
+            if let Some(state) = reg.get_mut(pane_id) {
+                state.active_subagents = state.active_subagents.saturating_sub(1);
+            }
             None
         }
 
@@ -262,15 +282,24 @@ pub fn handle_hook_event(
         }
 
         event_names::PRE_COMPACT => {
-            // Context compaction starting — maintain Processing, touch timestamp
+            // Context compaction starting — set Compacting status, increment counter
             let ctx = build_context(payload);
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
-                state.status = HookStatus::Processing;
-                state.last_context = ctx;
-                state.touch();
-            }
-            None
+            let count = {
+                let mut reg = hook_registry.write();
+                if let Some(state) = reg.get_mut(pane_id) {
+                    state.status = HookStatus::Compacting;
+                    state.compaction_count = state.compaction_count.saturating_add(1);
+                    state.last_context = ctx;
+                    state.touch();
+                    state.compaction_count
+                } else {
+                    1
+                }
+            };
+            Some(CoreEvent::ContextCompacting {
+                target: pane_id.to_string(),
+                compaction_count: count,
+            })
         }
 
         event_names::INSTRUCTIONS_LOADED => {
@@ -905,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pre_compact_maintains_processing() {
+    fn test_pre_compact_sets_compacting_and_emits_event() {
         let registry = new_hook_registry();
         let map = new_session_pane_map();
 
@@ -913,10 +942,49 @@ mod tests {
         handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
 
         let event = handle_hook_event(&make_payload("PreCompact"), "5", &registry, &map);
-        assert!(event.is_none());
+        assert!(matches!(
+            event,
+            Some(CoreEvent::ContextCompacting {
+                compaction_count: 1,
+                ..
+            })
+        ));
 
         let reg = registry.read();
-        assert_eq!(reg.get("5").unwrap().status, HookStatus::Processing);
+        assert_eq!(reg.get("5").unwrap().status, HookStatus::Compacting);
+        assert_eq!(reg.get("5").unwrap().compaction_count, 1);
+    }
+
+    #[test]
+    fn test_pre_compact_increments_compaction_count() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        // First compaction
+        handle_hook_event(&make_payload("PreCompact"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().compaction_count, 1);
+        }
+
+        // Resume processing
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // Second compaction
+        let event = handle_hook_event(&make_payload("PreCompact"), "5", &registry, &map);
+        if let Some(CoreEvent::ContextCompacting {
+            compaction_count, ..
+        }) = event
+        {
+            assert_eq!(compaction_count, 2);
+        } else {
+            panic!("Expected ContextCompacting event");
+        }
+
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().compaction_count, 2);
     }
 
     #[test]
@@ -1083,6 +1151,85 @@ mod tests {
         assert!(
             reg.get("5").unwrap().worktree.is_none(),
             "WorktreeRemove should clear worktree info"
+        );
+    }
+
+    #[test]
+    fn test_subagent_start_increments_count() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        // Start two subagents
+        handle_hook_event(&make_payload("SubagentStart"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().active_subagents, 1);
+        }
+
+        handle_hook_event(&make_payload("SubagentStart"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().active_subagents, 2);
+        }
+
+        // Stop one subagent
+        handle_hook_event(&make_payload("SubagentStop"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().active_subagents, 1);
+        }
+
+        // Stop the last subagent
+        handle_hook_event(&make_payload("SubagentStop"), "5", &registry, &map);
+        let reg = registry.read();
+        assert_eq!(reg.get("5").unwrap().active_subagents, 0);
+    }
+
+    #[test]
+    fn test_subagent_stop_does_not_underflow() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        // Stop without matching start should not underflow
+        handle_hook_event(&make_payload("SubagentStop"), "5", &registry, &map);
+        let reg = registry.read();
+        assert_eq!(
+            reg.get("5").unwrap().active_subagents,
+            0,
+            "SubagentStop should not underflow below 0"
+        );
+    }
+
+    #[test]
+    fn test_compaction_count_resets_on_new_session() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("PreCompact"), "5", &registry, &map);
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().compaction_count, 1);
+        }
+
+        // Session end + new session start resets counters
+        handle_hook_event(&make_payload("SessionEnd"), "5", &registry, &map);
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let reg = registry.read();
+        assert_eq!(
+            reg.get("5").unwrap().compaction_count,
+            0,
+            "New session should reset compaction count"
+        );
+        assert_eq!(
+            reg.get("5").unwrap().active_subagents,
+            0,
+            "New session should reset subagent count"
         );
     }
 }

@@ -158,6 +158,8 @@ pub enum HookStatus {
     Idle,
     /// Agent is awaiting user approval (permission prompt)
     AwaitingApproval,
+    /// Agent is compacting context (after PreCompact)
+    Compacting,
 }
 
 /// Rich context from a hook event (for audit validation)
@@ -188,6 +190,10 @@ pub struct HookState {
     pub last_context: HookContext,
     /// Worktree information (if running in `--worktree` session)
     pub worktree: Option<WorktreeInfo>,
+    /// Number of active subagents (incremented on SubagentStart, decremented on SubagentStop)
+    pub active_subagents: u32,
+    /// Number of context compactions in this session (incremented on PreCompact)
+    pub compaction_count: u32,
 }
 
 impl HookState {
@@ -201,6 +207,8 @@ impl HookState {
             last_event_at: current_time_millis(),
             last_context: HookContext::default(),
             worktree: None,
+            active_subagents: 0,
+            compaction_count: 0,
         }
     }
 

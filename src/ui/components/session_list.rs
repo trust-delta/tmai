@@ -533,6 +533,22 @@ impl SessionList {
             ));
         }
 
+        // 3b) Compaction count (shown when context has been compacted at least once)
+        if agent.compaction_count > 0 {
+            line1_spans.push(Span::styled(
+                format!("  \u{267B}\u{FE0E}{}x", agent.compaction_count),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        // 3c) Active subagent count
+        if agent.active_subagents > 0 {
+            line1_spans.push(Span::styled(
+                format!("  \u{2442}{}", agent.active_subagents),
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+
         // 4) Status label (auto-approve phase aware)
         let status_label = match (&agent.status, &agent.auto_approve_phase) {
             (

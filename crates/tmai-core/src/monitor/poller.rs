@@ -594,6 +594,12 @@ impl Poller {
                     _ => {}
                 }
 
+                // Propagate hook-tracked metrics (subagent count, compaction count)
+                if let Some(hs) = hook_state.as_ref() {
+                    agent.active_subagents = hs.active_subagents;
+                    agent.compaction_count = hs.compaction_count;
+                }
+
                 agents.push(agent);
             }
         }
@@ -1672,6 +1678,9 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
                 }
             }
         }
+        HookStatus::Compacting => AgentStatus::Processing {
+            activity: "Compacting context…".to_string(),
+        },
     }
 }
 
@@ -1867,5 +1876,25 @@ mod tests {
                 ref details,
             } if choices.is_empty() && details.is_empty()
         ));
+    }
+
+    /// hook_state_to_agent_status maps Compacting to Processing with activity
+    #[test]
+    fn test_hook_state_to_agent_status_compacting() {
+        use crate::hooks::types::{HookState, HookStatus};
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::Compacting;
+
+        let status = hook_state_to_agent_status(&hs);
+        match status {
+            AgentStatus::Processing { ref activity } => {
+                assert!(
+                    activity.contains("Compacting"),
+                    "Compacting status should produce 'Compacting' activity, got: {}",
+                    activity
+                );
+            }
+            _ => panic!("Expected Processing status, got {:?}", status),
+        }
     }
 }
