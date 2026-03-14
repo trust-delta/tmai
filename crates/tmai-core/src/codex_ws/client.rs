@@ -30,29 +30,45 @@ pub struct CodexWsClientConfig {
 ///
 /// This function runs indefinitely, reconnecting on failure with
 /// exponential backoff (1s → 2s → 4s → ... → 60s, ±25% jitter).
+/// Backoff resets to 1s after each successful connection.
 pub async fn run(
     config: CodexWsClientConfig,
     hook_registry: HookRegistry,
     event_tx: broadcast::Sender<CoreEvent>,
     state: SharedState,
 ) {
-    let mut backoff = Duration::from_secs(1);
+    let initial_backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
+    let mut backoff = initial_backoff;
 
     loop {
         info!(url = %config.url, "Connecting to Codex app-server");
 
-        match connect_and_run(&config, &hook_registry, &event_tx, &state).await {
+        // Track the resolved pane_id during this connection session
+        // so we can clean up exactly the right entry on disconnect.
+        let resolved_pane_id = std::sync::Arc::new(parking_lot::Mutex::new(None::<String>));
+
+        match connect_and_run(
+            &config,
+            &hook_registry,
+            &event_tx,
+            &state,
+            &resolved_pane_id,
+        )
+        .await
+        {
             Ok(()) => {
                 info!(url = %config.url, "Codex WS connection closed cleanly");
+                // Reset backoff on successful connection
+                backoff = initial_backoff;
             }
             Err(e) => {
                 warn!(url = %config.url, error = %e, "Codex WS connection error");
             }
         }
 
-        // On disconnect, remove hook state so poller falls back to capture-pane
-        if let Some(ref pane_id) = resolve_pane_id(&config, &state) {
+        // On disconnect, remove only the pane_id this connection was writing to
+        if let Some(ref pane_id) = *resolved_pane_id.lock() {
             let mut reg = hook_registry.write();
             reg.remove(pane_id);
             debug!(pane_id, "Removed hook state after WS disconnect");
@@ -71,12 +87,16 @@ pub async fn run(
     }
 }
 
-/// Connect to the WebSocket server, perform initialization, and process messages
+/// Connect to the WebSocket server, perform initialization, and process messages.
+///
+/// `resolved_pane_id` is set once we know which pane_id this connection maps to,
+/// so the caller can clean up exactly that entry on disconnect.
 async fn connect_and_run(
     config: &CodexWsClientConfig,
     hook_registry: &HookRegistry,
     event_tx: &broadcast::Sender<CoreEvent>,
     state: &SharedState,
+    resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
 ) -> anyhow::Result<()> {
     let (ws_stream, _response) = tokio_tungstenite::connect_async(&config.url).await?;
     let (mut write, mut read) = ws_stream.split();
@@ -129,7 +149,14 @@ async fn connect_and_run(
 
         match msg {
             Message::Text(text) => {
-                handle_text_message(&text, config, hook_registry, event_tx, state);
+                handle_text_message(
+                    &text,
+                    config,
+                    hook_registry,
+                    event_tx,
+                    state,
+                    resolved_pane_id,
+                );
             }
             Message::Ping(data) => {
                 let _ = write.send(Message::Pong(data)).await;
@@ -152,6 +179,7 @@ fn handle_text_message(
     hook_registry: &HookRegistry,
     event_tx: &broadcast::Sender<CoreEvent>,
     state: &SharedState,
+    resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
 ) {
     let msg = match CodexWsMessage::parse(text) {
         Ok(msg) => msg,
@@ -196,6 +224,14 @@ fn handle_text_message(
             }
         }
     };
+
+    // Track which pane_id this connection is writing to (for cleanup on disconnect)
+    {
+        let mut guard = resolved_pane_id.lock();
+        if guard.is_none() || guard.as_ref() != Some(&pane_id) {
+            *guard = Some(pane_id.clone());
+        }
+    }
 
     // Translate event and update hook registry
     if let Some(core_event) = translator::translate_event(&codex_event, &pane_id, hook_registry) {

@@ -564,8 +564,12 @@ impl Poller {
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
                 agent.detection_source = if has_fresh_hook {
-                    // Codex CLI with hook data from WebSocket gets WebSocket source
-                    if agent.agent_type == AgentType::CodexCli {
+                    // Codex WS entries have session_id starting with "codex-ws-"
+                    let is_ws_source = hook_state
+                        .as_ref()
+                        .map(|hs| hs.session_id.starts_with("codex-ws-"))
+                        .unwrap_or(false);
+                    if is_ws_source {
                         DetectionSource::WebSocket
                     } else {
                         DetectionSource::HttpHook
