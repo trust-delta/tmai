@@ -1,8 +1,18 @@
 #!/bin/sh
-# Pre-commit hook: run cargo fmt check and clippy with -D warnings
+# Pre-commit hook: run cargo fmt check, clippy, and gitignore guard
 # Install: git config core.hooksPath .githooks
 
 set -e
+
+# Guard: prevent files that should stay untracked from being committed
+FORBIDDEN_FILES="CLAUDE.md"
+for f in $FORBIDDEN_FILES; do
+    if git diff --cached --name-only | grep -qx "$f"; then
+        echo "ERROR: '$f' is staged for commit but should not be tracked."
+        echo "Run: git rm --cached $f"
+        exit 1
+    fi
+done
 
 echo "Running cargo fmt --check..."
 cargo fmt --check

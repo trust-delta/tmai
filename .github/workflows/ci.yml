@@ -41,3 +41,19 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  guard:
+    name: gitignore guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for files that must not be tracked
+        run: |
+          FORBIDDEN="CLAUDE.md"
+          for f in $FORBIDDEN; do
+            if [ -f "$f" ] && git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error::$f must not be committed. Run: git rm --cached $f"
+              exit 1
+            fi
+          done
+          echo "All clear — no forbidden files tracked."
