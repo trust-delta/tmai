@@ -24,6 +24,16 @@ fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
         ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
             StatusCode::BAD_REQUEST
         }
+        ApiError::WorktreeError(e) => match e {
+            tmai_core::worktree::WorktreeOpsError::NotFound(_) => StatusCode::NOT_FOUND,
+            tmai_core::worktree::WorktreeOpsError::AlreadyExists(_)
+            | tmai_core::worktree::WorktreeOpsError::InvalidName(_)
+            | tmai_core::worktree::WorktreeOpsError::UncommittedChanges(_)
+            | tmai_core::worktree::WorktreeOpsError::AgentStillRunning(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            tmai_core::worktree::WorktreeOpsError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        },
     };
     json_error(status, &err.to_string())
 }
@@ -514,6 +524,151 @@ pub async fn get_team_tasks(
         .collect();
 
     Ok(Json(tasks))
+}
+
+// =========================================================
+// Worktree endpoints
+// =========================================================
+
+/// Worktree creation request body
+#[derive(Debug, Deserialize)]
+pub struct WorktreeCreateRequestBody {
+    pub repo_path: String,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+}
+
+/// Worktree launch request body
+#[derive(Debug, Deserialize)]
+pub struct WorktreeLaunchRequestBody {
+    #[serde(default = "default_agent_type")]
+    pub agent_type: String,
+    #[serde(default)]
+    pub session: Option<String>,
+}
+
+/// Default agent type for launch
+fn default_agent_type() -> String {
+    "claude".to_string()
+}
+
+/// Get all worktrees
+pub async fn get_worktrees(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<Vec<tmai_core::api::WorktreeSnapshot>> {
+    Json(core.list_worktrees())
+}
+
+/// Create a new worktree
+pub async fn create_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeCreateRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let create_req = tmai_core::worktree::WorktreeCreateRequest {
+        repo_path: req.repo_path,
+        branch_name: req.branch_name,
+        base_branch: req.base_branch,
+    };
+
+    match core.create_worktree(&create_req).await {
+        Ok(result) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "path": result.path,
+            "branch": result.branch,
+        }))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+/// Delete a worktree
+pub async fn delete_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Path((repo_name, wt_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate names to prevent path traversal
+    if !tmai_core::git::is_valid_worktree_name(&wt_name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
+    }
+
+    // Find repo_path from state by repo_name
+    let repo_path = {
+        let state = core.list_worktrees();
+        state
+            .iter()
+            .find(|wt| wt.repo_name == repo_name)
+            .map(|wt| wt.repo_path.clone())
+    };
+
+    let repo_path = match repo_path {
+        Some(p) => {
+            // Strip /.git suffix to get repo root
+            p.strip_suffix("/.git")
+                .or_else(|| p.strip_suffix("/.git/"))
+                .unwrap_or(&p)
+                .to_string()
+        }
+        None => return Err(json_error(StatusCode::NOT_FOUND, "Repository not found")),
+    };
+
+    let del_req = tmai_core::worktree::WorktreeDeleteRequest {
+        repo_path,
+        worktree_name: wt_name,
+        force: false,
+    };
+
+    core.delete_worktree(&del_req)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(api_error_to_http)
+}
+
+/// Launch an agent in a worktree
+pub async fn launch_agent_in_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Path((repo_name, wt_name)): Path<(String, String)>,
+    Json(req): Json<WorktreeLaunchRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate worktree name
+    if !tmai_core::git::is_valid_worktree_name(&wt_name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
+    }
+
+    // Find worktree path from state
+    let wt_path = {
+        let worktrees = core.list_worktrees();
+        worktrees
+            .iter()
+            .find(|wt| wt.repo_name == repo_name && wt.name == wt_name)
+            .map(|wt| wt.path.clone())
+    };
+
+    let wt_path = match wt_path {
+        Some(p) => p,
+        None => return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found")),
+    };
+
+    // Parse agent type
+    let agent_type = match req.agent_type.as_str() {
+        "claude" | "claude_code" => tmai_core::agents::AgentType::ClaudeCode,
+        "codex" | "codex_cli" => tmai_core::agents::AgentType::CodexCli,
+        "gemini" | "gemini_cli" => tmai_core::agents::AgentType::GeminiCli,
+        other => {
+            return Err(json_error(
+                StatusCode::BAD_REQUEST,
+                &format!("Unknown agent type: {}", other),
+            ))
+        }
+    };
+
+    core.launch_agent_in_worktree(&wt_path, &agent_type, req.session.as_deref())
+        .map(|target| {
+            Json(serde_json::json!({
+                "status": "ok",
+                "target": target,
+            }))
+        })
+        .map_err(api_error_to_http)
 }
 
 #[cfg(test)]

@@ -399,6 +399,151 @@ impl TmaiCore {
         Ok(())
     }
 
+    // =========================================================
+    // Worktree actions
+    // =========================================================
+
+    /// List all worktrees from state as owned snapshots
+    pub fn list_worktrees(&self) -> Vec<super::types::WorktreeSnapshot> {
+        let state = self.state().read();
+        let mut snapshots = Vec::new();
+        for repo in &state.worktree_info {
+            for wt in &repo.worktrees {
+                snapshots.push(super::types::WorktreeSnapshot::from_detail(
+                    &repo.repo_name,
+                    &repo.repo_path,
+                    wt,
+                ));
+            }
+        }
+        snapshots
+    }
+
+    /// Create a new git worktree
+    pub async fn create_worktree(
+        &self,
+        req: &crate::worktree::WorktreeCreateRequest,
+    ) -> Result<crate::worktree::types::WorktreeCreateResult, ApiError> {
+        let result = crate::worktree::create_worktree(req).await?;
+
+        // Emit event
+        let _ = self
+            .event_sender()
+            .send(super::events::CoreEvent::WorktreeCreated {
+                target: String::new(),
+                worktree: Some(crate::hooks::types::WorktreeInfo {
+                    name: Some(result.branch.clone()),
+                    path: Some(result.path.clone()),
+                    branch: Some(result.branch.clone()),
+                    original_repo: Some(req.repo_path.clone()),
+                }),
+            });
+
+        Ok(result)
+    }
+
+    /// Delete a git worktree
+    ///
+    /// Checks for running agents and uncommitted changes before removal.
+    pub async fn delete_worktree(
+        &self,
+        req: &crate::worktree::WorktreeDeleteRequest,
+    ) -> Result<(), ApiError> {
+        // Check for running agents in this worktree
+        {
+            let state = self.state().read();
+            let worktree_path = std::path::Path::new(&req.repo_path)
+                .join(".claude")
+                .join("worktrees")
+                .join(&req.worktree_name);
+            let wt_path_str = worktree_path.to_string_lossy().to_string();
+
+            for repo in &state.worktree_info {
+                for wt in &repo.worktrees {
+                    if wt.path == wt_path_str && wt.agent_target.is_some() {
+                        return Err(ApiError::WorktreeError(
+                            crate::worktree::WorktreeOpsError::AgentStillRunning(
+                                req.worktree_name.clone(),
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+
+        crate::worktree::delete_worktree(req).await?;
+
+        // Emit event
+        let _ = self
+            .event_sender()
+            .send(super::events::CoreEvent::WorktreeRemoved {
+                target: String::new(),
+                worktree: Some(crate::hooks::types::WorktreeInfo {
+                    name: Some(req.worktree_name.clone()),
+                    path: None,
+                    branch: None,
+                    original_repo: Some(req.repo_path.clone()),
+                }),
+            });
+
+        Ok(())
+    }
+
+    /// Launch an agent in a worktree via tmux
+    ///
+    /// Creates a new tmux window in the worktree directory and starts the agent.
+    /// Returns the new pane target identifier.
+    pub fn launch_agent_in_worktree(
+        &self,
+        worktree_path: &str,
+        agent_type: &crate::agents::AgentType,
+        session: Option<&str>,
+    ) -> Result<String, ApiError> {
+        let cmd = self.require_command_sender()?;
+        let tmux = cmd.tmux_client();
+
+        // Determine session to use
+        let session_name = session
+            .map(|s| s.to_string())
+            .or_else(|| {
+                let state = self.state().read();
+                state.agents.values().next().map(|a| a.session.clone())
+            })
+            .unwrap_or_else(|| "main".to_string());
+
+        // Create a new window in the worktree directory
+        let window_name = agent_type.short_name();
+        let target = tmux.new_window(&session_name, worktree_path, Some(window_name))?;
+
+        // Build the launch command based on agent type
+        let launch_cmd = match agent_type {
+            crate::agents::AgentType::ClaudeCode => {
+                // Extract worktree name from path for --worktree flag
+                let wt_name = crate::git::extract_claude_worktree_name(worktree_path);
+                match wt_name {
+                    Some(name) => format!("claude --worktree {}", name),
+                    None => "claude".to_string(),
+                }
+            }
+            crate::agents::AgentType::CodexCli => "codex".to_string(),
+            crate::agents::AgentType::GeminiCli => "gemini".to_string(),
+            crate::agents::AgentType::OpenCode => "opencode".to_string(),
+            crate::agents::AgentType::Custom(name) => name.clone(),
+        };
+
+        // Run via tmai wrap for PTY monitoring
+        tmux.run_command_wrapped(&target, &launch_cmd)?;
+
+        tracing::info!(
+            worktree = worktree_path,
+            agent = %agent_type.short_name(),
+            target = %target,
+            "Launched agent in worktree"
+        );
+
+        Ok(target)
+    }
+
     /// Kill a specific pane in tmux
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual

@@ -21,6 +21,8 @@ pub enum InputMode {
     Input,
     /// Passthrough mode - keys are sent directly to the target pane
     Passthrough,
+    /// Worktree creation input mode (entering branch name)
+    WorktreeCreate,
 }
 
 /// Sort method for agent list
@@ -338,6 +340,8 @@ pub struct ViewState {
     pub show_worktree_overview: bool,
     /// Worktree overview scroll offset
     pub worktree_overview_scroll: u16,
+    /// Selected worktree index in overview (flattened across repos)
+    pub worktree_selected_index: Option<usize>,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Spinner animation frame counter
@@ -358,6 +362,7 @@ impl Default for ViewState {
             show_task_overlay: false,
             show_security_overlay: false,
             show_worktree_overview: false,
+            worktree_selected_index: None,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
             security_overlay_scroll: 0,
@@ -457,6 +462,9 @@ pub struct AppState {
 
     /// Discovered worktree info per repository (populated by poller scan)
     pub worktree_info: Vec<RepoWorktreeInfo>,
+
+    /// Temporary storage for worktree creation: repo path during WorktreeCreate input mode
+    pub worktree_create_repo_path: Option<String>,
 }
 
 impl AppState {
@@ -490,6 +498,7 @@ impl AppState {
             usage: UsageSnapshot::default(),
             security_scan: None,
             worktree_info: Vec::new(),
+            worktree_create_repo_path: None,
         }
     }
 

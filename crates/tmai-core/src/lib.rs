@@ -18,4 +18,5 @@ pub mod teams;
 pub mod tmux;
 pub mod usage;
 pub mod utils;
+pub mod worktree;
 pub mod wrap;

@@ -734,6 +734,9 @@ impl App {
                 state.view.show_worktree_overview = !state.view.show_worktree_overview;
                 if state.view.show_worktree_overview {
                     state.view.worktree_overview_scroll = 0;
+                    // Initialize selection to first worktree if any
+                    let count = crate::ui::components::WorktreeOverview::selectable_count(&state);
+                    state.view.worktree_selected_index = if count > 0 { Some(0) } else { None };
                 }
             }
 
@@ -1429,34 +1432,217 @@ impl App {
 
     /// Handle keys in worktree overview mode
     fn handle_worktree_overview_key(&mut self, code: KeyCode) -> Result<()> {
-        let mut state = self.state.write();
+        use crate::ui::components::WorktreeOverview;
+
+        // Check if we're in worktree create input mode
+        let is_wt_create = {
+            let state = self.state.read();
+            state.input.mode == tmai_core::state::InputMode::WorktreeCreate
+        };
+
+        if is_wt_create {
+            return self.handle_worktree_create_input(code);
+        }
 
         match code {
             // Close worktree overview
             KeyCode::Char('w') | KeyCode::Esc => {
+                let mut state = self.state.write();
                 state.view.show_worktree_overview = false;
             }
-            // Scroll down
+            // Move selection down
             KeyCode::Char('j') | KeyCode::Down => {
-                state.view.worktree_overview_scroll =
-                    state.view.worktree_overview_scroll.saturating_add(1);
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    let current = state.view.worktree_selected_index.unwrap_or(0);
+                    state.view.worktree_selected_index =
+                        Some((current + 1).min(count.saturating_sub(1)));
+                }
             }
-            // Scroll up
+            // Move selection up
             KeyCode::Char('k') | KeyCode::Up => {
-                state.view.worktree_overview_scroll =
-                    state.view.worktree_overview_scroll.saturating_sub(1);
+                let mut state = self.state.write();
+                if let Some(current) = state.view.worktree_selected_index {
+                    state.view.worktree_selected_index = Some(current.saturating_sub(1));
+                }
             }
             // Jump to top
             KeyCode::Char('g') => {
-                state.view.worktree_overview_scroll = 0;
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    state.view.worktree_selected_index = Some(0);
+                }
             }
             // Jump to bottom
             KeyCode::Char('G') => {
-                state.view.worktree_overview_scroll = u16::MAX;
+                let mut state = self.state.write();
+                let count = WorktreeOverview::selectable_count(&state);
+                if count > 0 {
+                    state.view.worktree_selected_index = Some(count.saturating_sub(1));
+                }
+            }
+            // Delete selected worktree
+            KeyCode::Char('d') => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.is_main {
+                        // Cannot delete main worktree
+                        return Ok(());
+                    }
+                    if sel.has_agent {
+                        // Cannot delete worktree with running agent
+                        return Ok(());
+                    }
+                    let core = self.core.clone();
+                    if let Some(core) = core {
+                        let req = tmai_core::worktree::WorktreeDeleteRequest {
+                            repo_path: sel.repo_path,
+                            worktree_name: sel.worktree_name,
+                            force: false,
+                        };
+                        tokio::spawn(async move {
+                            if let Err(e) = core.delete_worktree(&req).await {
+                                tracing::warn!("Failed to delete worktree: {}", e);
+                            }
+                        });
+                    }
+                }
+            }
+            // Launch agent in selected worktree
+            KeyCode::Char('l') | KeyCode::Enter => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.has_agent {
+                        // Agent already running
+                        return Ok(());
+                    }
+                    if let Some(core) = &self.core {
+                        let agent_type = tmai_core::agents::AgentType::ClaudeCode;
+                        match core.launch_agent_in_worktree(&sel.worktree_path, &agent_type, None) {
+                            Ok(target) => {
+                                tracing::info!(
+                                    worktree = %sel.worktree_name,
+                                    target = %target,
+                                    "Launched agent in worktree"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to launch agent: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            // Create new worktree (placeholder - needs input UI)
+            KeyCode::Char('c') => {
+                // For create, we need the repo_path. Use the first repo if available.
+                let repo_path = {
+                    let state = self.state.read();
+                    state.worktree_info.first().map(|r| {
+                        r.repo_path
+                            .strip_suffix("/.git")
+                            .or_else(|| r.repo_path.strip_suffix("/.git/"))
+                            .unwrap_or(&r.repo_path)
+                            .to_string()
+                    })
+                };
+                if let Some(repo_path) = repo_path {
+                    // Switch to input mode for worktree name
+                    let mut state = self.state.write();
+                    state.input.mode = tmai_core::state::InputMode::WorktreeCreate;
+                    state.input.buffer.clear();
+                    state.input.cursor_position = 0;
+                    // Store repo_path in worktree_create_repo_path
+                    state.worktree_create_repo_path = Some(repo_path);
+                }
             }
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle text input for worktree creation (branch name)
+    fn handle_worktree_create_input(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            KeyCode::Esc => {
+                // Cancel creation
+                let mut state = self.state.write();
+                state.input.mode = tmai_core::state::InputMode::Normal;
+                state.input.buffer.clear();
+                state.input.cursor_position = 0;
+                state.worktree_create_repo_path = None;
+            }
+            KeyCode::Enter => {
+                // Submit creation
+                let (branch_name, repo_path) = {
+                    let mut state = self.state.write();
+                    let name = state.input.buffer.trim().to_string();
+                    let repo = state.worktree_create_repo_path.take();
+                    state.input.mode = tmai_core::state::InputMode::Normal;
+                    state.input.buffer.clear();
+                    state.input.cursor_position = 0;
+                    (name, repo)
+                };
+                if !branch_name.is_empty() {
+                    if let Some(repo_path) = repo_path {
+                        if let Some(core) = self.core.clone() {
+                            let req = tmai_core::worktree::WorktreeCreateRequest {
+                                repo_path,
+                                branch_name,
+                                base_branch: None,
+                            };
+                            tokio::spawn(async move {
+                                match core.create_worktree(&req).await {
+                                    Ok(result) => {
+                                        tracing::info!(
+                                            branch = %result.branch,
+                                            path = %result.path,
+                                            "Worktree created"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Failed to create worktree: {}", e);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                let mut state = self.state.write();
+                if state.input.cursor_position > 0 {
+                    let pos = state.input.cursor_position;
+                    state.input.buffer.remove(pos - 1);
+                    state.input.cursor_position = pos - 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                let mut state = self.state.write();
+                let pos = state.input.cursor_position;
+                state.input.buffer.insert(pos, c);
+                state.input.cursor_position = pos + 1;
+            }
+            KeyCode::Left => {
+                let mut state = self.state.write();
+                state.input.cursor_position = state.input.cursor_position.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                let mut state = self.state.write();
+                let len = state.input.buffer.len();
+                state.input.cursor_position = (state.input.cursor_position + 1).min(len);
+            }
+            _ => {}
+        }
         Ok(())
     }
 

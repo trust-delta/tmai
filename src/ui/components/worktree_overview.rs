@@ -9,9 +9,11 @@ use ratatui::{
 };
 
 use tmai_core::agents::AgentStatus;
-use tmai_core::state::AppState;
+use tmai_core::state::{AppState, InputMode};
 
-/// Full-screen overlay showing all worktrees grouped by repository
+/// Full-screen overlay showing all worktrees grouped by repository.
+///
+/// Interactive: j/k to navigate, c to create, d to delete, l/Enter to launch agent.
 pub struct WorktreeOverview;
 
 impl WorktreeOverview {
@@ -25,7 +27,7 @@ impl WorktreeOverview {
         let scroll = (state.view.worktree_overview_scroll as usize).min(max_scroll);
 
         let block = Block::default()
-            .title(" Worktree Overview (j/k to scroll, w or Esc to close) ")
+            .title(" Worktree Overview (j/k select, c create, d delete, l launch, w/Esc close) ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Cyan));
@@ -55,9 +57,46 @@ impl WorktreeOverview {
         }
     }
 
+    /// Count total selectable worktrees (non-main, across all repos)
+    pub fn selectable_count(state: &AppState) -> usize {
+        state
+            .worktree_info
+            .iter()
+            .flat_map(|r| r.worktrees.iter())
+            .count()
+    }
+
+    /// Get the selected worktree's details (repo_path, worktree name, path)
+    pub fn selected_worktree(state: &AppState) -> Option<SelectedWorktree> {
+        let idx = state.view.worktree_selected_index?;
+        let mut flat_idx = 0;
+        for repo in &state.worktree_info {
+            for wt in &repo.worktrees {
+                if flat_idx == idx {
+                    return Some(SelectedWorktree {
+                        repo_name: repo.repo_name.clone(),
+                        repo_path: repo
+                            .repo_path
+                            .strip_suffix("/.git")
+                            .or_else(|| repo.repo_path.strip_suffix("/.git/"))
+                            .unwrap_or(&repo.repo_path)
+                            .to_string(),
+                        worktree_name: wt.name.clone(),
+                        worktree_path: wt.path.clone(),
+                        is_main: wt.is_main,
+                        has_agent: wt.agent_target.is_some(),
+                    });
+                }
+                flat_idx += 1;
+            }
+        }
+        None
+    }
+
     /// Build the content lines for the worktree overview
     fn build_content(state: &AppState) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
+        let selected_idx = state.view.worktree_selected_index;
 
         lines.push(Line::from(vec![Span::styled(
             "Worktree Overview".to_string(),
@@ -77,8 +116,15 @@ impl WorktreeOverview {
                 "  Worktrees are detected from agents in git repositories",
                 Style::default().fg(Color::DarkGray),
             )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Press c to create a new worktree",
+                Style::default().fg(Color::DarkGray),
+            )));
             return lines;
         }
+
+        let mut flat_idx = 0usize;
 
         for repo in &state.worktree_info {
             // Repository header
@@ -102,18 +148,36 @@ impl WorktreeOverview {
                 )));
             } else {
                 for wt in &repo.worktrees {
-                    let mut spans = vec![Span::styled("  ", Style::default())];
+                    let is_selected = selected_idx == Some(flat_idx);
+                    let mut spans = Vec::new();
+
+                    // Selection indicator
+                    if is_selected {
+                        spans.push(Span::styled(
+                            "\u{25b6} ",
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ));
+                    } else {
+                        spans.push(Span::styled("  ", Style::default()));
+                    }
 
                     // Worktree name
-                    let name_color = if wt.is_main {
-                        Color::White
+                    let name_style = if is_selected {
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                    } else if wt.is_main {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
                     } else {
-                        Color::Cyan
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
                     };
-                    spans.push(Span::styled(
-                        format!("{:16}", wt.name),
-                        Style::default().fg(name_color).add_modifier(Modifier::BOLD),
-                    ));
+                    spans.push(Span::styled(format!("{:16}", wt.name), name_style));
 
                     // Branch
                     let branch = wt.branch.as_deref().unwrap_or("(detached)");
@@ -163,19 +227,60 @@ impl WorktreeOverview {
                     }
 
                     lines.push(Line::from(spans));
+                    flat_idx += 1;
                 }
             }
 
             lines.push(Line::from(""));
         }
 
-        lines.push(Line::from(Span::styled(
-            "Press w or Esc to close",
-            Style::default().fg(Color::DarkGray),
-        )));
+        // Worktree create input prompt
+        if state.input.mode == InputMode::WorktreeCreate {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "  Branch name: ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    state.input.buffer.clone(),
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled("\u{2588}", Style::default().fg(Color::Cyan)),
+            ]));
+            lines.push(Line::from(Span::styled(
+                "  Enter to confirm, Esc to cancel",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(""));
+        }
+
+        // Footer with keybindings
+        lines.push(Line::from(vec![
+            Span::styled("  c", Style::default().fg(Color::Green)),
+            Span::styled(" create  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("d", Style::default().fg(Color::Red)),
+            Span::styled(" delete  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("l/Enter", Style::default().fg(Color::Yellow)),
+            Span::styled(" launch agent  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("w/Esc", Style::default().fg(Color::DarkGray)),
+            Span::styled(" close", Style::default().fg(Color::DarkGray)),
+        ]));
 
         lines
     }
+}
+
+/// Information about the currently selected worktree
+#[derive(Debug, Clone)]
+pub struct SelectedWorktree {
+    pub repo_name: String,
+    pub repo_path: String,
+    pub worktree_name: String,
+    pub worktree_path: String,
+    pub is_main: bool,
+    pub has_agent: bool,
 }
 
 /// Get status icon and color for an agent status
