@@ -556,8 +556,16 @@ pub async fn create_worktree(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<WorktreeCreateRequestBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Verify the repo_path exists in our known worktrees (prevent arbitrary path writes)
+    let repo_exists = core.list_worktrees().iter().any(|wt| {
+        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
+    });
+    if !repo_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
     let create_req = tmai_core::worktree::WorktreeCreateRequest {
-        repo_path: req.repo_path,
+        repo_path: strip_git_suffix(&req.repo_path).to_string(),
         branch_name: req.branch_name,
         base_branch: req.base_branch,
     };
@@ -654,6 +662,7 @@ pub async fn launch_agent_in_worktree(
         "claude" | "claude_code" => tmai_core::agents::AgentType::ClaudeCode,
         "codex" | "codex_cli" => tmai_core::agents::AgentType::CodexCli,
         "gemini" | "gemini_cli" => tmai_core::agents::AgentType::GeminiCli,
+        "opencode" | "open_code" => tmai_core::agents::AgentType::OpenCode,
         other => {
             return Err(json_error(
                 StatusCode::BAD_REQUEST,
@@ -672,11 +681,9 @@ pub async fn launch_agent_in_worktree(
         .map_err(api_error_to_http)
 }
 
-/// Strip `/.git` or `/.git/` suffix from a repo path
+/// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
-    path.strip_suffix("/.git")
-        .or_else(|| path.strip_suffix("/.git/"))
-        .unwrap_or(path)
+    tmai_core::git::strip_git_suffix(path)
 }
 
 #[cfg(test)]

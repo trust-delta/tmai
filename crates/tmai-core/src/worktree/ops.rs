@@ -22,20 +22,25 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 pub async fn create_worktree(
     req: &WorktreeCreateRequest,
 ) -> Result<WorktreeCreateResult, WorktreeOpsError> {
-    // Validate name
+    // Validate branch name
     if !is_valid_worktree_name(&req.branch_name) {
         return Err(WorktreeOpsError::InvalidName(req.branch_name.clone()));
+    }
+
+    // Validate base_branch if provided (reject leading `-` to prevent flag injection)
+    if let Some(ref base) = req.base_branch {
+        if !crate::git::is_safe_git_ref(base) {
+            return Err(WorktreeOpsError::InvalidName(format!(
+                "invalid base branch: {}",
+                base
+            )));
+        }
     }
 
     let worktree_dir = Path::new(&req.repo_path)
         .join(".claude")
         .join("worktrees")
         .join(&req.branch_name);
-
-    // Check if already exists
-    if worktree_dir.exists() {
-        return Err(WorktreeOpsError::AlreadyExists(req.branch_name.clone()));
-    }
 
     // Ensure parent directory exists
     let parent = worktree_dir
@@ -255,6 +260,18 @@ mod tests {
             repo_path: "/tmp/fake".to_string(),
             branch_name: "bad; rm -rf /".to_string(),
             base_branch: None,
+        };
+
+        let result = create_worktree(&req).await;
+        assert!(matches!(result, Err(WorktreeOpsError::InvalidName(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree_invalid_base_branch() {
+        let req = WorktreeCreateRequest {
+            repo_path: "/tmp/fake".to_string(),
+            branch_name: "valid-name".to_string(),
+            base_branch: Some("--exec=evil".to_string()),
         };
 
         let result = create_worktree(&req).await;

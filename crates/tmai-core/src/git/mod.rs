@@ -262,6 +262,23 @@ pub fn extract_claude_worktree_name(cwd: &str) -> Option<String> {
     Some(name.to_string())
 }
 
+/// Strip `/.git` or `/.git/` suffix from a path to get the repository root
+///
+/// Returns the original path if no `.git` suffix is found.
+pub fn strip_git_suffix(path: &str) -> &str {
+    path.strip_suffix("/.git")
+        .or_else(|| path.strip_suffix("/.git/"))
+        .unwrap_or(path)
+}
+
+/// Validate a git ref name (branch/tag) for safe use as a command argument
+///
+/// Rejects refs starting with `-` (could be misinterpreted as CLI flags)
+/// and empty strings.
+pub fn is_safe_git_ref(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('-')
+}
+
 /// Extract repository name from a git common directory path
 ///
 /// Strips the trailing `/.git` suffix and returns the last path component.
@@ -443,5 +460,29 @@ branch refs/heads/main
 
         // Valid: exactly 64 chars
         assert!(is_valid_worktree_name(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn test_strip_git_suffix() {
+        assert_eq!(
+            strip_git_suffix("/home/user/my-app/.git"),
+            "/home/user/my-app"
+        );
+        assert_eq!(
+            strip_git_suffix("/home/user/my-app/.git/"),
+            "/home/user/my-app"
+        );
+        assert_eq!(strip_git_suffix("/home/user/my-app"), "/home/user/my-app");
+        assert_eq!(strip_git_suffix(""), "");
+    }
+
+    #[test]
+    fn test_is_safe_git_ref() {
+        assert!(is_safe_git_ref("main"));
+        assert!(is_safe_git_ref("feature/auth"));
+        assert!(is_safe_git_ref("v1.0"));
+        assert!(!is_safe_git_ref(""));
+        assert!(!is_safe_git_ref("-flag"));
+        assert!(!is_safe_git_ref("--exec=evil"));
     }
 }

@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use tmai_core::agents::AgentStatus;
+use tmai_core::git::strip_git_suffix;
 use tmai_core::state::{AppState, InputMode};
 
 /// Full-screen overlay showing all worktrees grouped by repository.
@@ -75,12 +76,7 @@ impl WorktreeOverview {
                 if flat_idx == idx {
                     return Some(SelectedWorktree {
                         repo_name: repo.repo_name.clone(),
-                        repo_path: repo
-                            .repo_path
-                            .strip_suffix("/.git")
-                            .or_else(|| repo.repo_path.strip_suffix("/.git/"))
-                            .unwrap_or(&repo.repo_path)
-                            .to_string(),
+                        repo_path: strip_git_suffix(&repo.repo_path).to_string(),
                         worktree_name: wt.name.clone(),
                         worktree_path: wt.path.clone(),
                         is_main: wt.is_main,

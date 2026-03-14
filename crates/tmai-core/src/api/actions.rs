@@ -502,12 +502,16 @@ impl TmaiCore {
         let cmd = self.require_command_sender()?;
         let tmux = cmd.tmux_client();
 
-        // Determine session to use
+        // Determine session to use (prefer first agent in display order for determinism)
         let session_name = session
             .map(|s| s.to_string())
             .or_else(|| {
                 let state = self.state().read();
-                state.agents.values().next().map(|a| a.session.clone())
+                state
+                    .agent_order
+                    .first()
+                    .and_then(|key| state.agents.get(key))
+                    .map(|a| a.session.clone())
             })
             .unwrap_or_else(|| "main".to_string());
 
@@ -521,8 +525,10 @@ impl TmaiCore {
                 // Extract worktree name from path for --worktree flag
                 let wt_name = crate::git::extract_claude_worktree_name(worktree_path);
                 match wt_name {
-                    Some(name) => format!("claude --worktree {}", name),
-                    None => "claude".to_string(),
+                    Some(name) if crate::git::is_valid_worktree_name(&name) => {
+                        format!("claude --worktree {}", name)
+                    }
+                    _ => "claude".to_string(),
                 }
             }
             crate::agents::AgentType::CodexCli => "codex".to_string(),

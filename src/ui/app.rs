@@ -984,6 +984,38 @@ impl App {
                         ConfirmAction::ProbeAndRestartAsWrapped { target, cwd } => {
                             self.execute_probe_and_restart(&target, &cwd);
                         }
+                        ConfirmAction::DeleteWorktree {
+                            repo_path,
+                            worktree_name,
+                        } => {
+                            if let Some(core) = self.core.clone() {
+                                let state_ref = self.state.clone();
+                                let wt_name = worktree_name.clone();
+                                let req = tmai_core::worktree::WorktreeDeleteRequest {
+                                    repo_path,
+                                    worktree_name,
+                                    force: false,
+                                };
+                                tokio::spawn(async move {
+                                    match core.delete_worktree(&req).await {
+                                        Ok(()) => {
+                                            let mut s = state_ref.write();
+                                            s.notification = Some((
+                                                format!("Worktree '{}' deleted", wt_name),
+                                                std::time::Instant::now(),
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            let mut s = state_ref.write();
+                                            s.notification = Some((
+                                                format!("Delete failed: {}", e),
+                                                std::time::Instant::now(),
+                                            ));
+                                        }
+                                    }
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -1483,7 +1515,7 @@ impl App {
                     state.view.worktree_selected_index = Some(count.saturating_sub(1));
                 }
             }
-            // Delete selected worktree
+            // Delete selected worktree (with confirmation dialog)
             KeyCode::Char('d') => {
                 let selected = {
                     let state = self.state.read();
@@ -1491,26 +1523,30 @@ impl App {
                 };
                 if let Some(sel) = selected {
                     if sel.is_main {
-                        // Cannot delete main worktree
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot delete main worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
                         return Ok(());
                     }
                     if sel.has_agent {
-                        // Cannot delete worktree with running agent
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot delete: agent still running".to_string(),
+                            std::time::Instant::now(),
+                        ));
                         return Ok(());
                     }
-                    let core = self.core.clone();
-                    if let Some(core) = core {
-                        let req = tmai_core::worktree::WorktreeDeleteRequest {
+                    // Show confirmation dialog
+                    let mut state = self.state.write();
+                    state.show_confirmation(
+                        ConfirmAction::DeleteWorktree {
                             repo_path: sel.repo_path,
-                            worktree_name: sel.worktree_name,
-                            force: false,
-                        };
-                        tokio::spawn(async move {
-                            if let Err(e) = core.delete_worktree(&req).await {
-                                tracing::warn!("Failed to delete worktree: {}", e);
-                            }
-                        });
-                    }
+                            worktree_name: sel.worktree_name.clone(),
+                        },
+                        format!("Delete worktree '{}'?", sel.worktree_name),
+                    );
                 }
             }
             // Launch agent in selected worktree
@@ -1521,21 +1557,29 @@ impl App {
                 };
                 if let Some(sel) = selected {
                     if sel.has_agent {
-                        // Agent already running
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Agent already running in this worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
                         return Ok(());
                     }
                     if let Some(core) = &self.core {
                         let agent_type = tmai_core::agents::AgentType::ClaudeCode;
                         match core.launch_agent_in_worktree(&sel.worktree_path, &agent_type, None) {
                             Ok(target) => {
-                                tracing::info!(
-                                    worktree = %sel.worktree_name,
-                                    target = %target,
-                                    "Launched agent in worktree"
-                                );
+                                let mut state = self.state.write();
+                                state.notification = Some((
+                                    format!("Agent launched: {}", target),
+                                    std::time::Instant::now(),
+                                ));
                             }
                             Err(e) => {
-                                tracing::warn!("Failed to launch agent: {}", e);
+                                let mut state = self.state.write();
+                                state.notification = Some((
+                                    format!("Launch failed: {}", e),
+                                    std::time::Instant::now(),
+                                ));
                             }
                         }
                     }
@@ -1548,13 +1592,10 @@ impl App {
                     let state = self.state.read();
                     let selected = WorktreeOverview::selected_worktree(&state);
                     selected.map(|s| s.repo_path).or_else(|| {
-                        state.worktree_info.first().map(|r| {
-                            r.repo_path
-                                .strip_suffix("/.git")
-                                .or_else(|| r.repo_path.strip_suffix("/.git/"))
-                                .unwrap_or(&r.repo_path)
-                                .to_string()
-                        })
+                        state
+                            .worktree_info
+                            .first()
+                            .map(|r| tmai_core::git::strip_git_suffix(&r.repo_path).to_string())
                     })
                 };
                 if let Some(repo_path) = repo_path {
@@ -1598,6 +1639,8 @@ impl App {
                 if !branch_name.is_empty() {
                     if let Some(repo_path) = repo_path {
                         if let Some(core) = self.core.clone() {
+                            let state_ref = self.state.clone();
+                            let name_clone = branch_name.clone();
                             let req = tmai_core::worktree::WorktreeCreateRequest {
                                 repo_path,
                                 branch_name,
@@ -1605,15 +1648,19 @@ impl App {
                             };
                             tokio::spawn(async move {
                                 match core.create_worktree(&req).await {
-                                    Ok(result) => {
-                                        tracing::info!(
-                                            branch = %result.branch,
-                                            path = %result.path,
-                                            "Worktree created"
-                                        );
+                                    Ok(_) => {
+                                        let mut s = state_ref.write();
+                                        s.notification = Some((
+                                            format!("Worktree '{}' created", name_clone),
+                                            std::time::Instant::now(),
+                                        ));
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Failed to create worktree: {}", e);
+                                        let mut s = state_ref.write();
+                                        s.notification = Some((
+                                            format!("Create failed: {}", e),
+                                            std::time::Instant::now(),
+                                        ));
                                     }
                                 }
                             });

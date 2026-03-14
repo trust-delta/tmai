@@ -172,6 +172,11 @@ pub enum ConfirmAction {
     RestartAsWrapped { target: String, session_id: String },
     /// Send a probe marker to identify session, then restart as wrapped
     ProbeAndRestartAsWrapped { target: String, cwd: String },
+    /// Delete a git worktree
+    DeleteWorktree {
+        repo_path: String,
+        worktree_name: String,
+    },
 }
 
 /// State for confirmation dialog
