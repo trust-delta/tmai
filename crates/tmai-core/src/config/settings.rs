@@ -234,6 +234,10 @@ pub struct Settings {
     /// Fresh Session Review settings
     #[serde(default)]
     pub review: ReviewSettings,
+
+    /// Codex CLI app-server WebSocket settings
+    #[serde(default)]
+    pub codex_ws: CodexWsSettings,
 }
 
 fn default_poll_interval() -> u64 {
@@ -660,6 +664,26 @@ impl Default for UiSettings {
     }
 }
 
+/// Codex CLI app-server WebSocket connection settings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CodexWsSettings {
+    /// WebSocket connections to Codex CLI app-server instances
+    #[serde(default)]
+    pub connections: Vec<CodexWsConnection>,
+}
+
+/// A single Codex CLI app-server WebSocket connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexWsConnection {
+    /// WebSocket URL (e.g., "ws://127.0.0.1:15710")
+    pub url: String,
+
+    /// Optional tmux pane_id to associate with this connection.
+    /// If omitted, pane is resolved via cwd matching.
+    #[serde(default)]
+    pub pane_id: Option<String>,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -677,6 +701,7 @@ impl Default for Settings {
             create_process: CreateProcessSettings::default(),
             usage: UsageSettings::default(),
             review: ReviewSettings::default(),
+            codex_ws: CodexWsSettings::default(),
         }
     }
 }

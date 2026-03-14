@@ -480,6 +480,7 @@ impl SessionList {
         let detection_color = match agent.detection_source {
             tmai_core::agents::DetectionSource::HttpHook => Color::Cyan,
             tmai_core::agents::DetectionSource::IpcSocket => Color::Green,
+            tmai_core::agents::DetectionSource::WebSocket => Color::Cyan,
             tmai_core::agents::DetectionSource::CapturePane => Color::DarkGray,
         };
 

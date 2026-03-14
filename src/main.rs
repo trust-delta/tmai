@@ -183,6 +183,17 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Start Codex CLI app-server WebSocket connections if configured
+    if !settings.codex_ws.connections.is_empty() {
+        let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
+            &settings.codex_ws.connections,
+            core.hook_registry().clone(),
+            core.event_sender(),
+            app_state.clone(),
+        );
+        codex_ws_service.start();
+    }
+
     // Start auto-approve service if mode is not Off
     if settings.auto_approve.effective_mode()
         != tmai_core::auto_approve::types::AutoApproveMode::Off
