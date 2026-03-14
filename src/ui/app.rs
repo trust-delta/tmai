@@ -251,6 +251,11 @@ impl App {
 
                 // Worktree overview (full-screen, like help)
                 if state.view.show_worktree_overview {
+                    // Diff viewer overlay takes priority over worktree overview
+                    if state.view.show_diff_viewer {
+                        crate::ui::components::DiffViewer::render(frame, frame.area(), &state);
+                        return;
+                    }
                     WorktreeOverview::render(frame, frame.area(), &state);
                     return;
                 }
@@ -425,6 +430,16 @@ impl App {
                                 source_target, summary
                             ));
                         }
+                        tmai_core::api::CoreEvent::WorktreeSetupCompleted { branch, .. } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!("Worktree setup completed: {}", branch));
+                        }
+                        tmai_core::api::CoreEvent::WorktreeSetupFailed {
+                            branch, error, ..
+                        } => {
+                            let mut state = self.state.write();
+                            state.set_notification(format!("Setup failed [{}]: {}", branch, error));
+                        }
                         _ => {} // Other events handled elsewhere
                     }
                 }
@@ -503,8 +518,12 @@ impl App {
             return self.handle_team_overview_key(code, modifiers);
         }
 
-        // Handle worktree overview
+        // Handle diff viewer (on top of worktree overview)
         if show_worktree_overview {
+            let show_diff = { self.state.read().view.show_diff_viewer };
+            if show_diff {
+                return self.handle_diff_viewer_key(code);
+            }
             return self.handle_worktree_overview_key(code);
         }
 
@@ -1585,6 +1604,44 @@ impl App {
                     }
                 }
             }
+            // View diff for selected worktree
+            KeyCode::Char('v') => {
+                let selected = {
+                    let state = self.state.read();
+                    WorktreeOverview::selected_worktree(&state)
+                };
+                if let Some(sel) = selected {
+                    if sel.is_main {
+                        let mut state = self.state.write();
+                        state.notification = Some((
+                            "Cannot diff main worktree".to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        return Ok(());
+                    }
+                    // Start loading diff
+                    {
+                        let mut state = self.state.write();
+                        state.worktree_diff_loading = true;
+                        state.worktree_diff_content = None;
+                        state.view.show_diff_viewer = true;
+                        state.view.diff_viewer_scroll = 0;
+                    }
+                    let state_ref = self.state.clone();
+                    let wt_path = sel.worktree_path.clone();
+                    if let Some(core) = self.core.clone() {
+                        tokio::spawn(async move {
+                            let (diff, _summary) = core
+                                .get_worktree_diff(&wt_path, "main")
+                                .await
+                                .unwrap_or((None, None));
+                            let mut s = state_ref.write();
+                            s.worktree_diff_content = diff;
+                            s.worktree_diff_loading = false;
+                        });
+                    }
+                }
+            }
             // Create new worktree
             KeyCode::Char('c') => {
                 // Use the selected worktree's repo, falling back to first repo
@@ -1690,6 +1747,52 @@ impl App {
                 let mut state = self.state.write();
                 let len = state.input.buffer.len();
                 state.input.cursor_position = (state.input.cursor_position + 1).min(len);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Handle keys when diff viewer is shown
+    fn handle_diff_viewer_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            // Close diff viewer
+            KeyCode::Esc | KeyCode::Char('q') => {
+                let mut state = self.state.write();
+                state.view.show_diff_viewer = false;
+                state.worktree_diff_content = None;
+                state.worktree_diff_loading = false;
+            }
+            // Scroll down
+            KeyCode::Char('j') | KeyCode::Down => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_add(1);
+            }
+            // Scroll up
+            KeyCode::Char('k') | KeyCode::Up => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_sub(1);
+            }
+            // Half-page down
+            KeyCode::Char('d') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_add(20);
+            }
+            // Half-page up
+            KeyCode::Char('u') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = state.view.diff_viewer_scroll.saturating_sub(20);
+            }
+            // Jump to top
+            KeyCode::Char('g') => {
+                let mut state = self.state.write();
+                state.view.diff_viewer_scroll = 0;
+            }
+            // Jump to bottom
+            KeyCode::Char('G') => {
+                let mut state = self.state.write();
+                // Set to a large value; render will clamp it
+                state.view.diff_viewer_scroll = u16::MAX;
             }
             _ => {}
         }

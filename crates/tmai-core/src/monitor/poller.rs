@@ -1395,7 +1395,7 @@ impl Poller {
                 continue;
             }
 
-            let worktrees: Vec<WorktreeDetail> = entries
+            let mut worktrees: Vec<WorktreeDetail> = entries
                 .into_iter()
                 .map(|entry| {
                     // Determine worktree name
@@ -1428,9 +1428,28 @@ impl Poller {
                         agent_target: linked_agent.map(|a| a.target.clone()),
                         agent_status: linked_agent.map(|a| a.status.clone()),
                         is_dirty: linked_agent.and_then(|a| a.git_dirty),
+                        diff_summary: None, // populated below for non-main worktrees
                     }
                 })
                 .collect();
+
+            // Fetch diff stats for non-main worktrees (lightweight, parallel)
+            let diff_futures: Vec<_> = worktrees
+                .iter()
+                .enumerate()
+                .filter(|(_, wt)| !wt.is_main)
+                .map(|(idx, wt)| {
+                    let path = wt.path.clone();
+                    async move { (idx, git::fetch_diff_stat(&path, "main").await) }
+                })
+                .collect();
+
+            let diff_results = futures_util::future::join_all(diff_futures).await;
+            for (idx, summary) in diff_results {
+                if let Some(s) = summary {
+                    worktrees[idx].diff_summary = Some(s);
+                }
+            }
 
             result.push(RepoWorktreeInfo {
                 repo_name,

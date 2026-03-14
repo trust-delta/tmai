@@ -316,6 +316,20 @@ pub struct WorktreeSnapshot {
     /// Whether this worktree has uncommitted changes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_dirty: Option<bool>,
+    /// Diff statistics vs base branch
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff_summary: Option<DiffSummarySnapshot>,
+}
+
+/// Diff statistics snapshot for API consumers
+#[derive(Debug, Clone, Serialize)]
+pub struct DiffSummarySnapshot {
+    /// Number of files changed
+    pub files_changed: usize,
+    /// Number of lines inserted
+    pub insertions: usize,
+    /// Number of lines deleted
+    pub deletions: usize,
 }
 
 impl WorktreeSnapshot {
@@ -342,6 +356,11 @@ impl WorktreeSnapshot {
                 AgentStatus::Offline => "offline".to_string(),
             }),
             is_dirty: detail.is_dirty,
+            diff_summary: detail.diff_summary.as_ref().map(|ds| DiffSummarySnapshot {
+                files_changed: ds.files_changed,
+                insertions: ds.insertions,
+                deletions: ds.deletions,
+            }),
         }
     }
 }

@@ -14,7 +14,7 @@ use tmai_core::state::{AppState, InputMode};
 
 /// Full-screen overlay showing all worktrees grouped by repository.
 ///
-/// Interactive: j/k to navigate, c to create, d to delete, l/Enter to launch agent.
+/// Interactive: j/k to navigate, c to create, d to delete, l/Enter to launch agent, v to view diff.
 pub struct WorktreeOverview;
 
 impl WorktreeOverview {
@@ -28,7 +28,7 @@ impl WorktreeOverview {
         let scroll = (state.view.worktree_overview_scroll as usize).min(max_scroll);
 
         let block = Block::default()
-            .title(" Worktree Overview (j/k select, c create, d delete, l launch, w/Esc close) ")
+            .title(" Worktree Overview (j/k select, c create, d delete, l launch, v diff, w/Esc close) ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Cyan));
@@ -214,6 +214,25 @@ impl WorktreeOverview {
                         }
                     }
 
+                    // Diff summary (inline "+N -M")
+                    if let Some(ref ds) = wt.diff_summary {
+                        if ds.insertions > 0 || ds.deletions > 0 {
+                            spans.push(Span::styled(
+                                format!("+{}", ds.insertions),
+                                Style::default().fg(Color::Green),
+                            ));
+                            spans.push(Span::styled(" ", Style::default()));
+                            spans.push(Span::styled(
+                                format!("-{}", ds.deletions),
+                                Style::default().fg(Color::Red),
+                            ));
+                            spans.push(Span::styled(
+                                format!(" ({}f) ", ds.files_changed),
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                        }
+                    }
+
                     // Agent target
                     if let Some(ref target) = wt.agent_target {
                         spans.push(Span::styled(
@@ -259,12 +278,100 @@ impl WorktreeOverview {
             Span::styled("d", Style::default().fg(Color::Red)),
             Span::styled(" delete  ", Style::default().fg(Color::DarkGray)),
             Span::styled("l/Enter", Style::default().fg(Color::Yellow)),
-            Span::styled(" launch agent  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" launch  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("v", Style::default().fg(Color::Blue)),
+            Span::styled(" diff  ", Style::default().fg(Color::DarkGray)),
             Span::styled("w/Esc", Style::default().fg(Color::DarkGray)),
             Span::styled(" close", Style::default().fg(Color::DarkGray)),
         ]));
 
         lines
+    }
+}
+
+/// Full-screen diff viewer overlay
+pub struct DiffViewer;
+
+impl DiffViewer {
+    /// Render the diff viewer overlay
+    pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+        if state.worktree_diff_loading {
+            let block = Block::default()
+                .title(" Diff Viewer (loading...) ")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Blue));
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Loading diff...",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ])
+            .block(block);
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
+        let content = state
+            .worktree_diff_content
+            .as_deref()
+            .unwrap_or("(no diff)");
+
+        let content_lines: Vec<Line<'static>> = content
+            .lines()
+            .map(|line| {
+                let style = if line.starts_with('+') && !line.starts_with("+++") {
+                    Style::default().fg(Color::Green)
+                } else if line.starts_with('-') && !line.starts_with("---") {
+                    Style::default().fg(Color::Red)
+                } else if line.starts_with("@@") {
+                    Style::default().fg(Color::Cyan)
+                } else if line.starts_with("diff ") || line.starts_with("index ") {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(Span::styled(line.to_string(), style))
+            })
+            .collect();
+
+        let total_lines = content_lines.len();
+        let visible_height = area.height.saturating_sub(2) as usize;
+        let max_scroll = total_lines.saturating_sub(visible_height);
+        let scroll = (state.view.diff_viewer_scroll as usize).min(max_scroll);
+
+        let block = Block::default()
+            .title(" Diff Viewer (j/k scroll, Esc close) ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Blue));
+
+        let paragraph = Paragraph::new(content_lines)
+            .block(block)
+            .scroll((scroll as u16, 0));
+
+        frame.render_widget(paragraph, area);
+
+        // Render scrollbar
+        if total_lines > visible_height {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("\u{2191}"))
+                .end_symbol(Some("\u{2193}"));
+
+            let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll);
+
+            frame.render_stateful_widget(
+                scrollbar,
+                area.inner(ratatui::layout::Margin {
+                    vertical: 1,
+                    horizontal: 0,
+                }),
+                &mut scrollbar_state,
+            );
+        }
     }
 }
 

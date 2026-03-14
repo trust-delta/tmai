@@ -6,5 +6,5 @@
 pub mod ops;
 pub mod types;
 
-pub use ops::{check_worktree_clean, create_worktree, delete_worktree};
+pub use ops::{check_worktree_clean, create_worktree, delete_worktree, run_setup_commands};
 pub use types::{WorktreeCreateRequest, WorktreeDeleteRequest, WorktreeOpsError};

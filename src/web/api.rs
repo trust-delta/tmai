@@ -681,6 +681,59 @@ pub async fn launch_agent_in_worktree(
         .map_err(api_error_to_http)
 }
 
+/// Worktree diff request body
+#[derive(Debug, Deserialize)]
+pub struct WorktreeDiffRequestBody {
+    pub worktree_path: String,
+    #[serde(default = "default_base_branch")]
+    pub base_branch: String,
+}
+
+/// Default base branch for diff
+fn default_base_branch() -> String {
+    "main".to_string()
+}
+
+/// Get diff for a worktree
+pub async fn get_worktree_diff(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeDiffRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate base_branch
+    if !tmai_core::git::is_safe_git_ref(&req.base_branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid base branch"));
+    }
+
+    // Verify the worktree_path belongs to a known worktree
+    let known = core
+        .list_worktrees()
+        .iter()
+        .any(|wt| wt.path == req.worktree_path);
+    if !known {
+        return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found"));
+    }
+
+    match core
+        .get_worktree_diff(&req.worktree_path, &req.base_branch)
+        .await
+    {
+        Ok((diff, summary)) => {
+            let summary_json = summary.map(|s| {
+                serde_json::json!({
+                    "files_changed": s.files_changed,
+                    "insertions": s.insertions,
+                    "deletions": s.deletions,
+                })
+            });
+            Ok(Json(serde_json::json!({
+                "diff": diff,
+                "summary": summary_json,
+            })))
+        }
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)

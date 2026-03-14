@@ -307,6 +307,8 @@ pub struct WorktreeDetail {
     pub agent_status: Option<AgentStatus>,
     /// Whether this worktree has uncommitted changes
     pub is_dirty: Option<bool>,
+    /// Diff statistics vs base branch (files changed, insertions, deletions)
+    pub diff_summary: Option<crate::git::DiffSummary>,
 }
 
 /// Input-related state
@@ -347,6 +349,10 @@ pub struct ViewState {
     pub worktree_overview_scroll: u16,
     /// Selected worktree index in overview (flattened across repos)
     pub worktree_selected_index: Option<usize>,
+    /// Whether the diff viewer is shown
+    pub show_diff_viewer: bool,
+    /// Diff viewer scroll offset
+    pub diff_viewer_scroll: u16,
     /// Preview scroll offset
     pub preview_scroll: u16,
     /// Spinner animation frame counter
@@ -367,6 +373,8 @@ impl Default for ViewState {
             show_task_overlay: false,
             show_security_overlay: false,
             show_worktree_overview: false,
+            show_diff_viewer: false,
+            diff_viewer_scroll: 0,
             worktree_selected_index: None,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
@@ -470,6 +478,11 @@ pub struct AppState {
 
     /// Temporary storage for worktree creation: repo path during WorktreeCreate input mode
     pub worktree_create_repo_path: Option<String>,
+
+    /// Full diff content for the diff viewer overlay (loaded on demand)
+    pub worktree_diff_content: Option<String>,
+    /// Whether a diff is currently being loaded
+    pub worktree_diff_loading: bool,
 }
 
 impl AppState {
@@ -504,6 +517,8 @@ impl AppState {
             security_scan: None,
             worktree_info: Vec::new(),
             worktree_create_repo_path: None,
+            worktree_diff_content: None,
+            worktree_diff_loading: false,
         }
     }
 

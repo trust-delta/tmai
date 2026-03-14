@@ -140,6 +140,24 @@ pub enum CoreEvent {
         /// One-line summary (first line of review output)
         summary: String,
     },
+
+    /// Worktree setup commands completed successfully
+    WorktreeSetupCompleted {
+        /// Absolute path to the worktree
+        worktree_path: String,
+        /// Branch name
+        branch: String,
+    },
+
+    /// Worktree setup commands failed
+    WorktreeSetupFailed {
+        /// Absolute path to the worktree
+        worktree_path: String,
+        /// Branch name
+        branch: String,
+        /// Error message
+        error: String,
+    },
 }
 
 impl TmaiCore {

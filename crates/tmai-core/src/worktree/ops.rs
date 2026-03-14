@@ -159,6 +159,64 @@ pub async fn check_worktree_clean(worktree_path: &str) -> Option<bool> {
     }
 }
 
+/// Run setup commands sequentially in a worktree directory
+///
+/// Each command is executed via `sh -c` with a per-command timeout.
+/// Stops at the first failure (worktree is not rolled back).
+pub async fn run_setup_commands(
+    worktree_path: &str,
+    commands: &[String],
+    timeout_secs: u64,
+) -> Result<(), String> {
+    if commands.is_empty() {
+        return Ok(());
+    }
+
+    let timeout = Duration::from_secs(timeout_secs);
+
+    for cmd in commands {
+        tracing::info!(
+            worktree = worktree_path,
+            command = cmd,
+            "Running setup command"
+        );
+
+        let result = tokio::time::timeout(
+            timeout,
+            Command::new("sh")
+                .args(["-c", cmd])
+                .current_dir(worktree_path)
+                .output(),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(output)) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    return Err(format!(
+                        "command '{}' failed (exit {}): {}",
+                        cmd,
+                        output.status.code().unwrap_or(-1),
+                        stderr
+                    ));
+                }
+            }
+            Ok(Err(e)) => {
+                return Err(format!("failed to run '{}': {}", cmd, e));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "command '{}' timed out after {}s",
+                    cmd, timeout_secs
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,5 +488,56 @@ mod tests {
     async fn test_check_worktree_clean_nonexistent() {
         let result = check_worktree_clean("/nonexistent/path").await;
         assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_run_setup_commands_success() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+
+        let commands = vec!["echo hello".to_string(), "echo world".to_string()];
+        let result = run_setup_commands(&path, &commands, 30).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_run_setup_commands_failure() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+
+        let commands = vec!["echo ok".to_string(), "false".to_string()];
+        let result = run_setup_commands(&path, &commands, 30).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("false"),
+            "error should mention command: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_run_setup_commands_timeout() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+
+        let commands = vec!["sleep 60".to_string()];
+        let result = run_setup_commands(&path, &commands, 1).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("timed out"),
+            "error should mention timeout: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_run_setup_commands_empty() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+
+        let result = run_setup_commands(&path, &[], 30).await;
+        assert!(result.is_ok());
     }
 }

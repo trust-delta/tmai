@@ -24,4 +24,4 @@ pub use status_bar::StatusBar;
 pub use task_overlay::TaskOverlay;
 pub use team_overview::TeamOverview;
 pub use usage_bar::UsageBar;
-pub use worktree_overview::{SelectedWorktree, WorktreeOverview};
+pub use worktree_overview::{DiffViewer, SelectedWorktree, WorktreeOverview};

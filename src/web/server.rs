@@ -81,6 +81,7 @@ impl WebServer {
             .route("/worktrees", post(api::create_worktree))
             .route("/worktrees/delete", post(api::delete_worktree))
             .route("/worktrees/launch", post(api::launch_agent_in_worktree))
+            .route("/worktrees/diff", post(api::get_worktree_diff))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

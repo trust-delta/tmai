@@ -149,6 +149,7 @@ impl HelpScreen {
             Self::key_line("t", "Show task overlay for selected team member"),
             Self::key_line("T", "Show team overview (all teams and members)"),
             Self::key_line("w", "Show worktree overview (all repos and worktrees)"),
+            Self::description_line("  In worktree view: v=view diff, c=create, d=delete, l=launch"),
             Line::from(""),
             Self::section_header("Review & Security"),
             Self::key_line("R", "Request fresh-session code review for selected agent"),

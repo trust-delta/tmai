@@ -419,7 +419,7 @@ impl TmaiCore {
         snapshots
     }
 
-    /// Create a new git worktree
+    /// Create a new git worktree, then optionally run setup commands
     pub async fn create_worktree(
         &self,
         req: &crate::worktree::WorktreeCreateRequest,
@@ -439,7 +439,56 @@ impl TmaiCore {
                 }),
             });
 
+        // Spawn setup commands in background if configured
+        let setup_commands = self.settings().worktree.setup_commands.clone();
+        if !setup_commands.is_empty() {
+            let timeout = self.settings().worktree.setup_timeout_secs;
+            let wt_path = result.path.clone();
+            let branch = result.branch.clone();
+            let event_tx = self.event_sender();
+            tokio::spawn(async move {
+                match crate::worktree::run_setup_commands(&wt_path, &setup_commands, timeout).await
+                {
+                    Ok(()) => {
+                        tracing::info!(
+                            worktree = wt_path,
+                            branch = branch,
+                            "Worktree setup completed"
+                        );
+                        let _ = event_tx.send(super::events::CoreEvent::WorktreeSetupCompleted {
+                            worktree_path: wt_path,
+                            branch,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            worktree = wt_path,
+                            branch = branch,
+                            error = %e,
+                            "Worktree setup failed"
+                        );
+                        let _ = event_tx.send(super::events::CoreEvent::WorktreeSetupFailed {
+                            worktree_path: wt_path,
+                            branch,
+                            error: e,
+                        });
+                    }
+                }
+            });
+        }
+
         Ok(result)
+    }
+
+    /// Fetch full diff for a worktree (on-demand, for diff viewer)
+    pub async fn get_worktree_diff(
+        &self,
+        worktree_path: &str,
+        base_branch: &str,
+    ) -> Result<(Option<String>, Option<crate::git::DiffSummary>), ApiError> {
+        let diff = crate::git::fetch_full_diff(worktree_path, base_branch).await;
+        let summary = crate::git::fetch_diff_stat(worktree_path, base_branch).await;
+        Ok((diff, summary))
     }
 
     /// Delete a git worktree
