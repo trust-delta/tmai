@@ -281,7 +281,37 @@ impl Poller {
     /// for use in team scanning.
     async fn poll_once(&mut self) -> Result<(Vec<MonitoredAgent>, Vec<PaneInfo>)> {
         // Always get all panes (needed for team scanning)
-        let all_panes = self.runtime.list_all_panes()?;
+        let mut all_panes = self.runtime.list_all_panes()?;
+
+        // In standalone mode (or when panes are empty), synthesize PaneInfo
+        // from HookRegistry entries that have no matching pane.
+        // This allows hook-only agents to appear in the agent list.
+        {
+            let hook_reg = self.hook_registry.read();
+            let existing_pane_ids: HashSet<String> =
+                all_panes.iter().map(|p| p.pane_id.clone()).collect();
+
+            for (idx, (pane_id, hook_state)) in hook_reg.iter().enumerate() {
+                if !existing_pane_ids.contains(pane_id) {
+                    // Synthesize a PaneInfo for this hook-only agent
+                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
+                    let pane_idx = (idx + 1) as u32;
+                    let target = format!("hook:0.{}", pane_idx);
+                    all_panes.push(PaneInfo {
+                        target,
+                        session: "hook".to_string(),
+                        window_index: 0,
+                        pane_index: pane_idx,
+                        pane_id: pane_id.clone(),
+                        window_name: "claude".to_string(),
+                        command: "claude".to_string(),
+                        pid: 0,
+                        title: String::new(),
+                        cwd,
+                    });
+                }
+            }
+        }
 
         // Use all panes (scope filtering temporarily disabled — always AllSessions)
         let panes = all_panes.clone();
