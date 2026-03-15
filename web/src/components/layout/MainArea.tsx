@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useAgentsStore } from "../../stores/agents";
+import { projectKey } from "../../lib/groupByProject";
 import { AgentCardGrid } from "../cards/AgentCardGrid";
 import { AgentFullView } from "../agent-view/AgentFullView";
 
@@ -13,12 +14,10 @@ export function MainArea() {
     [agents, selectedAgentId],
   );
 
-  // Filter agents for the selected project
+  // Filter agents for the selected project (using normalized key)
   const projectAgents = useMemo(() => {
     if (!selectedProject) return agents;
-    return agents.filter(
-      (a) => (a.git_common_dir ?? a.cwd) === selectedProject,
-    );
+    return agents.filter((a) => projectKey(a) === selectedProject);
   }, [agents, selectedProject]);
 
   // If an agent is selected, show full view

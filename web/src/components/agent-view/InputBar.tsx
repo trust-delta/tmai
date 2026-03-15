@@ -25,10 +25,14 @@ export function InputBar({ agentId }: InputBarProps) {
   }
 
   async function handleSpecialKey(key: string) {
+    if (sending) return;
+    setSending(true);
     try {
       await sendKey(agentId, key);
     } catch (err) {
       console.error("Failed to send key:", err);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -55,7 +59,8 @@ export function InputBar({ agentId }: InputBarProps) {
       <button
         type="button"
         onClick={() => handleSpecialKey("Escape")}
-        className="rounded-md border border-neutral-300 px-3 py-2 text-xs hover:bg-neutral-200 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        disabled={sending}
+        className="rounded-md border border-neutral-300 px-3 py-2 text-xs hover:bg-neutral-200 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
         title="Send Escape key"
       >
         Esc

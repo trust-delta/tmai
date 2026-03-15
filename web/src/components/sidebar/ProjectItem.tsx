@@ -26,11 +26,14 @@ export function ProjectItem({ group }: ProjectItemProps) {
       >
         {/* Toggle expand/collapse */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(!expanded);
           }}
           className="shrink-0 px-1.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${group.displayName}`}
+          aria-expanded={expanded}
         >
           {expanded ? "▼" : "▶"}
         </button>

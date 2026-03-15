@@ -56,8 +56,8 @@ pub async fn asset(axum::extract::Path(path): axum::extract::Path<String>) -> im
                 .unwrap()
         }
         None => {
-            // SPA fallback: paths without extension go to index.html
-            if !path.contains('.') {
+            // SPA fallback: paths without file extension go to index.html
+            if std::path::Path::new(&path).extension().is_none() {
                 serve_static("index.html").await.into_response()
             } else {
                 Response::builder()

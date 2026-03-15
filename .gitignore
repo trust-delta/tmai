@@ -1,6 +1,7 @@
 # Build
 /target
 web/node_modules/
+web/tsconfig.tsbuildinfo
 
 # AI assistants
 CLAUDE.md

@@ -3,6 +3,7 @@ import {
   approveAgent,
   selectChoice,
   submitSelection,
+  sendKey,
 } from "../../api/client";
 import type { Agent } from "../../types/agent";
 
@@ -109,7 +110,7 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
             onClick={async () => {
               setSending(true);
               try {
-                await selectChoice(agent.id, -1);
+                await sendKey(agent.id, "Escape");
               } catch (e) {
                 console.error("Reject failed:", e);
               } finally {

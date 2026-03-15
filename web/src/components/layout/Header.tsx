@@ -16,8 +16,10 @@ export function Header({ connected }: HeaderProps) {
       <div className="flex items-center gap-3">
         <ConnectionIndicator connected={connected} />
         <button
+          type="button"
           onClick={toggle}
           className="rounded p-1.5 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
         >
           {theme === "dark" ? "🌙" : "☀️"}
