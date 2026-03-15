@@ -303,7 +303,7 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     let ipc_registry = ipc_server.registry();
     let mut poller = tmai_core::monitor::Poller::new(
         settings.clone(),
-        state,
+        state.clone(),
         runtime,
         ipc_registry,
         hook_registry,
@@ -314,16 +314,24 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     // Run poller in background
     let mut poll_rx = poller.start();
 
-    // Main loop: process poll messages until shutdown
+    // Main loop: process poll messages and update state until shutdown
     loop {
         tokio::select! {
             msg = poll_rx.recv() => {
                 match msg {
-                    Some(tmai_core::monitor::PollMessage::AgentsUpdated(_)) => {
+                    Some(tmai_core::monitor::PollMessage::AgentsUpdated(agents)) => {
+                        {
+                            let mut s = state.write();
+                            s.update_agents(agents);
+                            s.clear_error();
+                        }
                         core.notify_agents_updated();
                     }
+                    Some(tmai_core::monitor::PollMessage::Error(err)) => {
+                        let mut s = state.write();
+                        s.error_message = Some(err);
+                    }
                     None => break, // Poller channel closed
-                    _ => {} // Other messages (TeamsCycleReady etc.)
                 }
             }
             _ = tokio::signal::ctrl_c() => {

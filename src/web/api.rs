@@ -459,8 +459,16 @@ pub async fn get_preview(
 
     match cmd.runtime().capture_pane_plain(&id) {
         Ok(content) => {
-            let lines = content.lines().count();
-            Ok(Json(PreviewResponse { content, lines }))
+            let display_content = if content.trim().is_empty() {
+                "(output not available in web-only mode)".to_string()
+            } else {
+                content
+            };
+            let lines = display_content.lines().count();
+            Ok(Json(PreviewResponse {
+                content: display_content,
+                lines,
+            }))
         }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
