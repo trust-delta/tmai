@@ -42,6 +42,19 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci && npm run build
+      - name: Verify assets were built
+        run: test -f src/web/assets/index.html
+
   guard:
     name: gitignore guard
     runs-on: ubuntu-latest

@@ -1,0 +1,48 @@
+import { useMemo } from "react";
+import { useAgentsStore } from "../../stores/agents";
+import { projectKey } from "../../lib/groupByProject";
+import { AgentCardGrid } from "../cards/AgentCardGrid";
+import { AgentFullView } from "../agent-view/AgentFullView";
+
+export function MainArea() {
+  const agents = useAgentsStore((s) => s.agents);
+  const selectedProject = useAgentsStore((s) => s.selectedProject);
+  const selectedAgentId = useAgentsStore((s) => s.selectedAgentId);
+
+  const selectedAgent = useMemo(
+    () => agents.find((a) => a.id === selectedAgentId) ?? null,
+    [agents, selectedAgentId],
+  );
+
+  // Filter agents for the selected project (using normalized key)
+  const projectAgents = useMemo(() => {
+    if (!selectedProject) return agents;
+    return agents.filter((a) => projectKey(a) === selectedProject);
+  }, [agents, selectedProject]);
+
+  // If an agent is selected, show full view
+  if (selectedAgent) {
+    return (
+      <main className="flex-1 overflow-y-auto p-4">
+        <AgentFullView key={selectedAgent.id} agent={selectedAgent} />
+      </main>
+    );
+  }
+
+  // Otherwise show card grid
+  return (
+    <main className="flex-1 overflow-y-auto p-4">
+      {projectAgents.length === 0 ? (
+        <div className="flex h-full items-center justify-center text-neutral-500">
+          <p>
+            {agents.length === 0
+              ? "No agents detected. Start agents to see them here."
+              : "No agents in this project."}
+          </p>
+        </div>
+      ) : (
+        <AgentCardGrid agents={projectAgents} />
+      )}
+    </main>
+  );
+}
