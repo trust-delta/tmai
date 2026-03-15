@@ -305,26 +305,34 @@ impl Poller {
         // In standalone mode (or when panes are empty), synthesize PaneInfo
         // from HookRegistry entries that have no matching pane.
         // This allows hook-only agents to appear in the agent list.
-        // Dedup by session_id: if multiple registry entries share the same session_id
-        // (e.g., hook-{session_id} and discovered:{pid}), only synthesize one.
+        // Dedup by cwd: if multiple registry entries share the same cwd
+        // (e.g., hook event and auto-discovery for the same Claude Code instance),
+        // prefer the non-discovered (hook) entry. Session_id can differ even for
+        // the same process (context restart / compaction creates new session_ids).
         {
             let hook_reg = self.hook_registry.read();
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
 
-            // Track which session_ids we've already synthesized
-            let mut synthesized_sessions: HashSet<String> = HashSet::new();
+            // Track which cwds we've already synthesized
+            let mut synthesized_cwds: HashSet<String> = HashSet::new();
 
-            for (idx, (pane_id, hook_state)) in hook_reg.iter().enumerate() {
-                if !existing_pane_ids.contains(pane_id) {
-                    // Skip if we already have a PaneInfo for this session_id
-                    if synthesized_sessions.contains(&hook_state.session_id) {
+            // First pass: collect non-discovered entries (hook events have priority)
+            let mut entries: Vec<(&String, &HookState)> = hook_reg.iter().collect();
+            // Sort so that non-"discovered:" entries come first
+            entries.sort_by_key(|(k, _)| k.starts_with("discovered:"));
+
+            for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
+                if !existing_pane_ids.contains(*pane_id) {
+                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
+
+                    // Skip if we already have a PaneInfo for this cwd
+                    if synthesized_cwds.contains(&cwd) {
                         continue;
                     }
-                    synthesized_sessions.insert(hook_state.session_id.clone());
+                    synthesized_cwds.insert(cwd.clone());
 
                     // Synthesize a PaneInfo for this hook-only agent
-                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
                     let pane_idx = (idx + 1) as u32;
                     let target = format!("hook:0.{}", pane_idx);
                     all_panes.push(PaneInfo {
@@ -332,7 +340,7 @@ impl Poller {
                         session: "hook".to_string(),
                         window_index: 0,
                         pane_index: pane_idx,
-                        pane_id: pane_id.clone(),
+                        pane_id: (*pane_id).clone(),
                         window_name: "claude".to_string(),
                         command: "claude".to_string(),
                         pid: 0,
@@ -1455,7 +1463,7 @@ impl Poller {
     /// Discover Claude Code sessions from filesystem and register them in HookRegistry
     fn discover_sessions(&mut self) {
         // First, clean up discovered entries that now have a hook entry
-        // (hook event arrived after discovery)
+        // (hook event arrived after discovery for same cwd)
         {
             let reg = self.hook_registry.read();
             let discovered_keys: Vec<String> = reg
@@ -1466,10 +1474,13 @@ impl Poller {
             let mut to_remove = Vec::new();
             for key in &discovered_keys {
                 if let Some(discovered_state) = reg.get(key) {
-                    // Check if another (non-discovered) entry has the same session_id
-                    let has_hook_entry = reg
-                        .iter()
-                        .any(|(k, hs)| k != key && hs.session_id == discovered_state.session_id);
+                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
+                    // Check if another (non-discovered) entry has the same cwd
+                    let has_hook_entry = reg.iter().any(|(k, hs)| {
+                        !k.starts_with("discovered:")
+                            && hs.cwd.as_deref().unwrap_or("") == discovered_cwd
+                            && !discovered_cwd.is_empty()
+                    });
                     if has_hook_entry {
                         to_remove.push(key.clone());
                     }
@@ -1493,10 +1504,12 @@ impl Poller {
         for session in new_sessions {
             let pane_id = format!("discovered:{}", session.pid);
 
-            // Skip if this session is already known via hooks (by session_id)
+            // Skip if this cwd is already known via hooks
             let already_known = {
                 let reg = self.hook_registry.read();
-                reg.values().any(|hs| hs.session_id == session.session_id)
+                reg.iter().any(|(k, hs)| {
+                    !k.starts_with("discovered:") && hs.cwd.as_deref() == Some(session.cwd.as_str())
+                })
             };
             if already_known {
                 tracing::debug!(
