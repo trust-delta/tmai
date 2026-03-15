@@ -305,13 +305,24 @@ impl Poller {
         // In standalone mode (or when panes are empty), synthesize PaneInfo
         // from HookRegistry entries that have no matching pane.
         // This allows hook-only agents to appear in the agent list.
+        // Dedup by session_id: if multiple registry entries share the same session_id
+        // (e.g., hook-{session_id} and discovered:{pid}), only synthesize one.
         {
             let hook_reg = self.hook_registry.read();
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
 
+            // Track which session_ids we've already synthesized
+            let mut synthesized_sessions: HashSet<String> = HashSet::new();
+
             for (idx, (pane_id, hook_state)) in hook_reg.iter().enumerate() {
                 if !existing_pane_ids.contains(pane_id) {
+                    // Skip if we already have a PaneInfo for this session_id
+                    if synthesized_sessions.contains(&hook_state.session_id) {
+                        continue;
+                    }
+                    synthesized_sessions.insert(hook_state.session_id.clone());
+
                     // Synthesize a PaneInfo for this hook-only agent
                     let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
                     let pane_idx = (idx + 1) as u32;
@@ -1443,6 +1454,40 @@ impl Poller {
     /// Scan all known git repositories for worktrees and update AppState
     /// Discover Claude Code sessions from filesystem and register them in HookRegistry
     fn discover_sessions(&mut self) {
+        // First, clean up discovered entries that now have a hook entry
+        // (hook event arrived after discovery)
+        {
+            let reg = self.hook_registry.read();
+            let discovered_keys: Vec<String> = reg
+                .keys()
+                .filter(|k| k.starts_with("discovered:"))
+                .cloned()
+                .collect();
+            let mut to_remove = Vec::new();
+            for key in &discovered_keys {
+                if let Some(discovered_state) = reg.get(key) {
+                    // Check if another (non-discovered) entry has the same session_id
+                    let has_hook_entry = reg
+                        .iter()
+                        .any(|(k, hs)| k != key && hs.session_id == discovered_state.session_id);
+                    if has_hook_entry {
+                        to_remove.push(key.clone());
+                    }
+                }
+            }
+            drop(reg);
+            if !to_remove.is_empty() {
+                let mut reg = self.hook_registry.write();
+                for key in &to_remove {
+                    reg.remove(key);
+                    tracing::debug!(
+                        pane_id = %key,
+                        "Removed discovered entry superseded by hook registration"
+                    );
+                }
+            }
+        }
+
         let (new_sessions, disappeared_pids) = self.session_scanner.scan();
 
         for session in new_sessions {
