@@ -159,11 +159,14 @@ fn summarize_tool_input_json(tool_name: &str, input: Option<&serde_json::Value>)
         .unwrap_or_default()
 }
 
-/// Truncate text for preview, keeping first line
+/// Truncate text for preview, keeping first line.
+/// Uses char-based counting to avoid panicking on multi-byte UTF-8 boundaries.
 fn truncate_for_preview(s: &str, max_len: usize) -> String {
     let first_line = s.lines().next().unwrap_or(s);
-    if first_line.len() > max_len {
-        format!("{}...", &first_line[..max_len])
+    let char_count = first_line.chars().count();
+    if char_count > max_len {
+        let truncated: String = first_line.chars().take(max_len).collect();
+        format!("{}...", truncated)
     } else {
         first_line.to_string()
     }

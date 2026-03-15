@@ -503,12 +503,15 @@ fn summarize_tool_input(tool_name: &str, tool_input: Option<&serde_json::Value>)
     }
 }
 
-/// Truncate a string to max_len characters, appending "..." if truncated
+/// Truncate a string to max_len characters, appending "..." if truncated.
+/// Uses char-based counting to avoid panicking on multi-byte UTF-8 boundaries.
 fn truncate_string(s: &str, max_len: usize) -> String {
     // Take only the first line for multi-line strings
     let first_line = s.lines().next().unwrap_or(s);
-    if first_line.len() > max_len {
-        format!("{}...", &first_line[..max_len])
+    let char_count = first_line.chars().count();
+    if char_count > max_len {
+        let truncated: String = first_line.chars().take(max_len).collect();
+        format!("{}...", truncated)
     } else if first_line.len() < s.len() {
         // Multi-line: show first line with indicator
         format!("{}...", first_line)

@@ -421,7 +421,7 @@ impl Poller {
                 // Fallback chain for empty content (standalone/web-only mode):
                 // 1. transcript preview (D-2) — richest
                 // 2. activity log (D-1) — lightweight
-                if content.trim().is_empty() && is_selected {
+                if content.trim().is_empty() {
                     // Try transcript preview first
                     let transcript_preview = {
                         let t_reg = self.transcript_watcher.registry().read();

@@ -2,6 +2,16 @@
 
 use super::types::TranscriptRecord;
 
+/// Truncate a string at a char boundary, respecting UTF-8
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let truncated: String = s.chars().take(max_chars).collect();
+    if truncated.len() < s.len() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
+}
+
 /// Render transcript records into human-readable preview text
 pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String {
     let mut lines = Vec::new();
@@ -10,12 +20,7 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
         match record {
             TranscriptRecord::User { text } => {
                 let first_line = text.lines().next().unwrap_or(text);
-                let truncated = if first_line.len() > 120 {
-                    format!("{}...", &first_line[..120])
-                } else {
-                    first_line.to_string()
-                };
-                lines.push(format!("▶ User: {}", truncated));
+                lines.push(format!("▶ User: {}", truncate_chars(first_line, 120)));
             }
             TranscriptRecord::AssistantText { text } => {
                 // Show first few lines of assistant text
@@ -24,19 +29,10 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
                         lines.push("  ...".to_string());
                         break;
                     }
+                    let truncated = truncate_chars(line, 120);
                     if i == 0 {
-                        let truncated = if line.len() > 120 {
-                            format!("{}...", &line[..120])
-                        } else {
-                            line.to_string()
-                        };
                         lines.push(format!("◀ {}", truncated));
                     } else {
-                        let truncated = if line.len() > 120 {
-                            format!("{}...", &line[..120])
-                        } else {
-                            line.to_string()
-                        };
                         lines.push(format!("  {}", truncated));
                     }
                 }
@@ -53,12 +49,7 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
             }
             TranscriptRecord::ToolResult { output_summary } => {
                 let first_line = output_summary.lines().next().unwrap_or(output_summary);
-                let truncated = if first_line.len() > 100 {
-                    format!("{}...", &first_line[..100])
-                } else {
-                    first_line.to_string()
-                };
-                lines.push(format!("  ✓ {}", truncated));
+                lines.push(format!("  ✓ {}", truncate_chars(first_line, 100)));
             }
         }
     }
@@ -126,5 +117,21 @@ mod tests {
     fn test_render_preview_empty() {
         let result = render_preview(&[], 100);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_chars_multibyte() {
+        // Japanese text that would panic with byte-based truncation
+        let text = "これは日本語のテストです。とても長い文章を書いています。";
+        let result = truncate_chars(text, 10);
+        assert!(result.ends_with("..."));
+        // Should not panic
+    }
+
+    #[test]
+    fn test_truncate_chars_ascii() {
+        let text = "short";
+        let result = truncate_chars(text, 120);
+        assert_eq!(result, "short");
     }
 }
