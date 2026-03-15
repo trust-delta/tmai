@@ -594,7 +594,7 @@ class TmaiRemote {
                 </svg>
                 <span>Output</span>
             </div>
-            ${isExpanded ? `<div class="preview-content">${previewContent ? this.formatPreviewContent(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
+            ${isExpanded ? `<div class="preview-content">${previewContent != null ? this.formatPreviewContent(previewContent) : '<span class="preview-loading">Loading...</span>'}</div>` : ''}
         `;
 
         const teamBadgeHtml = agent.team

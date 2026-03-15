@@ -15,11 +15,11 @@ use tmai_core::command_sender::CommandSender;
 use tmai_core::config::Settings;
 use tmai_core::ipc::server::IpcServer;
 use tmai_core::monitor::{PollMessage, Poller};
+use tmai_core::runtime::RuntimeAdapter;
 use tmai_core::session_lookup::{self, LookupResult};
 use tmai_core::state::{
     AppState, ConfirmAction, CreateProcessStep, DirItem, PlacementType, SharedState, TreeEntry,
 };
-use tmai_core::tmux::TmuxClient;
 
 use super::key_handler::{self, KeyAction};
 
@@ -53,6 +53,7 @@ impl App {
     pub fn new(
         settings: Settings,
         ipc_server: Option<Arc<IpcServer>>,
+        runtime: Arc<dyn RuntimeAdapter>,
         audit_tx: Option<AuditEventSender>,
         audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
     ) -> Self {
@@ -62,8 +63,7 @@ impl App {
             s.show_activity_name = settings.ui.show_activity_name;
             s.line_wrap = settings.ui.line_wrap;
         }
-        let tmux_client = TmuxClient::with_capture_lines(settings.capture_lines);
-        let command_sender = CommandSender::new(ipc_server, tmux_client, state.clone());
+        let command_sender = CommandSender::new(ipc_server, runtime, state.clone());
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
         let layout = Layout::new().with_split_offset(settings.ui.preview_height);
 
@@ -93,12 +93,12 @@ impl App {
     /// Run the application
     pub async fn run(&mut self) -> Result<()> {
         // Check if tmux is available
-        if !self.command_sender.tmux_client().is_available() {
+        if !self.command_sender.runtime().is_available() {
             anyhow::bail!("tmux is not running or not available");
         }
 
         // Capture current location for scope filtering display
-        if let Ok((session, window)) = self.command_sender.tmux_client().get_current_location() {
+        if let Ok((session, window)) = self.command_sender.runtime().get_current_location() {
             let mut state = self.state.write();
             state.current_session = Some(session);
             state.current_window = Some(window);
@@ -132,6 +132,7 @@ impl App {
         let mut poller = Poller::new(
             self.settings.clone(),
             self.state.clone(),
+            self.command_sender.runtime().clone(),
             ipc_registry,
             hook_registry,
             self.audit_event_rx.take(),
@@ -604,7 +605,7 @@ impl App {
                     if is_create {
                         let panes = self
                             .command_sender
-                            .tmux_client()
+                            .runtime()
                             .list_all_panes()
                             .unwrap_or_default();
                         state.start_create_process(key, panes, &self.settings.create_process);
@@ -889,7 +890,7 @@ impl App {
                 }
             }
             KeyAction::FocusPane { target } => {
-                let _ = self.command_sender.tmux_client().focus_pane(&target);
+                let _ = self.command_sender.runtime().focus_pane(&target);
             }
             KeyAction::EmitAudit { target, action } => {
                 self.maybe_emit_normal_audit(&target, &action);
@@ -992,7 +993,7 @@ impl App {
                 if let Some(action) = action {
                     match action {
                         ConfirmAction::KillPane { target } => {
-                            if let Err(e) = self.command_sender.tmux_client().kill_pane(&target) {
+                            if let Err(e) = self.command_sender.runtime().kill_pane(&target) {
                                 let mut state = self.state.write();
                                 state.set_error(format!("Failed to kill pane: {}", e));
                             }
@@ -1118,16 +1119,16 @@ impl App {
         }
 
         // Spawn background task to exit Claude Code and restart wrapped
-        let tmux_client = self.command_sender.tmux_client().clone();
+        let rt = self.command_sender.runtime().clone();
         let shared_state = self.state.clone();
         let target = target.to_string();
         let resume_command = format!("claude --resume {}", session_id);
 
         tokio::spawn(async move {
             // Exit Claude Code with Ctrl+C (twice for reliability)
-            let _ = tmux_client.send_keys(&target, "C-c");
+            let _ = rt.send_keys(&target, "C-c");
             tokio::time::sleep(Duration::from_millis(300)).await;
-            let _ = tmux_client.send_keys(&target, "C-c");
+            let _ = rt.send_keys(&target, "C-c");
 
             // Poll until Claude process exits (check pane command changes to shell)
             let max_wait = Duration::from_secs(10);
@@ -1140,7 +1141,7 @@ impl App {
                     return;
                 }
                 // Check if pane command is no longer claude
-                if let Ok(panes) = tmux_client.list_panes() {
+                if let Ok(panes) = rt.list_panes() {
                     if let Some(pane) = panes.iter().find(|p| p.target == target) {
                         if pane.command != "claude" && pane.command != "node" {
                             break; // Claude has exited, shell is back
@@ -1155,7 +1156,7 @@ impl App {
             }
 
             // Run wrapped command with --resume
-            if let Err(e) = tmux_client.run_command_wrapped(&target, &resume_command) {
+            if let Err(e) = rt.run_command_wrapped(&target, &resume_command) {
                 let mut state = shared_state.write();
                 state.set_error(format!("Failed to restart: {}", e));
             } else {
@@ -1182,7 +1183,7 @@ impl App {
         let _ = self.command_sender.send_keys(target, "C-c");
 
         // Brief pause then send the marker as user input
-        let tmux_client = self.command_sender.tmux_client().clone();
+        let rt = self.command_sender.runtime().clone();
         let shared_state = self.state.clone();
         let target = target.to_string();
         let cwd = cwd.to_string();
@@ -1191,8 +1192,8 @@ impl App {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
             // Send probe marker text (single message only to minimize conversation pollution)
-            let _ = tmux_client.send_keys_literal(&target, &marker_text);
-            let _ = tmux_client.send_keys(&target, "Enter");
+            let _ = rt.send_keys_literal(&target, &marker_text);
+            let _ = rt.send_keys(&target, "Enter");
 
             // Wait for JSONL to be written
             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -1207,9 +1208,9 @@ impl App {
                     }
 
                     // Exit Claude Code with Ctrl+C
-                    let _ = tmux_client.send_keys(&target, "C-c");
+                    let _ = rt.send_keys(&target, "C-c");
                     tokio::time::sleep(Duration::from_millis(300)).await;
-                    let _ = tmux_client.send_keys(&target, "C-c");
+                    let _ = rt.send_keys(&target, "C-c");
 
                     // Poll until Claude exits
                     let max_wait = Duration::from_secs(10);
@@ -1219,7 +1220,7 @@ impl App {
                         if start.elapsed() > max_wait {
                             break false;
                         }
-                        if let Ok(panes) = tmux_client.list_panes() {
+                        if let Ok(panes) = rt.list_panes() {
                             if let Some(pane) = panes.iter().find(|p| p.target == target) {
                                 if pane.command != "claude" && pane.command != "node" {
                                     break true;
@@ -1240,7 +1241,7 @@ impl App {
 
                     // Run wrapped command with --resume
                     let resume_command = format!("claude --resume {}", session_id);
-                    if let Err(e) = tmux_client.run_command_wrapped(&target, &resume_command) {
+                    if let Err(e) = rt.run_command_wrapped(&target, &resume_command) {
                         let mut state = shared_state.write();
                         state.set_error(format!("Failed to restart: {}", e));
                     } else {
@@ -2315,12 +2316,12 @@ impl App {
                 // Get existing tmux session names for collision check
                 let existing_sessions = self
                     .command_sender
-                    .tmux_client()
+                    .runtime()
                     .list_sessions()
                     .unwrap_or_default();
                 let session_name =
                     tmai_core::utils::namegen::generate_unique_name(&existing_sessions);
-                if let Err(e) = self.command_sender.tmux_client().create_session(
+                if let Err(e) = self.command_sender.runtime().create_session(
                     &session_name,
                     &directory,
                     Some(window_name),
@@ -2333,7 +2334,7 @@ impl App {
                 // New session starts with window 0, pane 0
                 format!("{}:0.0", session_name)
             }
-            PlacementType::NewWindow => match self.command_sender.tmux_client().new_window(
+            PlacementType::NewWindow => match self.command_sender.runtime().new_window(
                 &session,
                 &directory,
                 Some(window_name),
@@ -2351,7 +2352,7 @@ impl App {
                 let pane = target_pane.unwrap_or_else(|| session.clone());
                 match self
                     .command_sender
-                    .tmux_client()
+                    .runtime()
                     .split_window(&pane, &directory)
                 {
                     Ok(t) => t,
@@ -2378,7 +2379,7 @@ impl App {
             // Use wrapped command for better state detection via PTY monitoring
             if let Err(e) = self
                 .command_sender
-                .tmux_client()
+                .runtime()
                 .run_command_wrapped(&target, &command)
             {
                 let mut state = self.state.write();
@@ -2427,6 +2428,8 @@ mod tests {
     #[test]
     fn test_app_creation() {
         let settings = Settings::default();
-        let _app = App::new(settings, None, None, None);
+        let runtime: std::sync::Arc<dyn tmai_core::runtime::RuntimeAdapter> =
+            std::sync::Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let _app = App::new(settings, None, runtime, None, None);
     }
 }

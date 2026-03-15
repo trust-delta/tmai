@@ -31,6 +31,10 @@ pub struct Config {
     #[arg(long)]
     pub audit: bool,
 
+    /// Web-only mode: run without tmux, using hooks/IPC only (no TUI)
+    #[arg(long)]
+    pub web_only: bool,
+
     /// Subcommand
     #[command(subcommand)]
     pub command: Option<Command>,

@@ -378,6 +378,12 @@ pub fn resolve_pane_id(
         }
     }
 
+    // Strategy 4: use session_id as synthetic pane_id (standalone mode)
+    // When no tmux is available, session_id serves as the unique identifier
+    if !session_id.is_empty() {
+        return Some(format!("hook-{}", session_id));
+    }
+
     None
 }
 
