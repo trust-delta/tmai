@@ -36,16 +36,3 @@ export function statusColor(status: StatusInfo): string {
   }
 }
 
-/** Detection source icon */
-export function detectionIcon(agentType: string): string {
-  switch (agentType) {
-    case "claude":
-      return "◈";
-    case "codex":
-      return "◉";
-    case "gemini":
-      return "○";
-    default:
-      return "●";
-  }
-}

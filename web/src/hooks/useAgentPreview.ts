@@ -1,16 +1,29 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchPreview } from "../api/client";
 import type { PreviewResponse } from "../types/agent";
 
-/** Poll preview content for a specific agent (1s interval) */
+/** Poll preview content for a specific agent (1s interval).
+ *  Pauses when the tab is hidden. */
 export function useAgentPreview(agentId: string | null) {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [visible, setVisible] = useState(!document.hidden);
+
+  // Track page visibility
+  const onVisibilityChange = useCallback(() => {
+    setVisible(!document.hidden);
+  }, []);
 
   useEffect(() => {
-    if (!agentId) {
-      setPreview(null);
-      return;
-    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [onVisibilityChange]);
+
+  useEffect(() => {
+    // Clear stale preview on agent change
+    setPreview(null);
+
+    if (!agentId || !visible) return;
 
     let cancelled = false;
 
@@ -30,7 +43,7 @@ export function useAgentPreview(agentId: string | null) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [agentId]);
+  }, [agentId, visible]);
 
   return preview;
 }

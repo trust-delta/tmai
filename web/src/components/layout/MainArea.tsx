@@ -25,7 +25,7 @@ export function MainArea() {
   if (selectedAgent) {
     return (
       <main className="flex-1 overflow-y-auto p-4">
-        <AgentFullView agent={selectedAgent} />
+        <AgentFullView key={selectedAgent.id} agent={selectedAgent} />
       </main>
     );
   }
@@ -33,9 +33,13 @@ export function MainArea() {
   // Otherwise show card grid
   return (
     <main className="flex-1 overflow-y-auto p-4">
-      {agents.length === 0 ? (
+      {projectAgents.length === 0 ? (
         <div className="flex h-full items-center justify-center text-neutral-500">
-          <p>No agents detected. Start agents to see them here.</p>
+          <p>
+            {agents.length === 0
+              ? "No agents detected. Start agents to see them here."
+              : "No agents in this project."}
+          </p>
         </div>
       ) : (
         <AgentCardGrid agents={projectAgents} />

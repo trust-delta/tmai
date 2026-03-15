@@ -106,11 +106,16 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
             Approve
           </button>
           <button
-            onClick={() =>
-              selectChoice(agent.id, -1).catch((e) =>
-                console.error("Reject failed:", e),
-              )
-            }
+            onClick={async () => {
+              setSending(true);
+              try {
+                await selectChoice(agent.id, -1);
+              } catch (e) {
+                console.error("Reject failed:", e);
+              } finally {
+                setSending(false);
+              }
+            }}
             disabled={sending}
             className="rounded-md border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/30 disabled:opacity-40"
           >
