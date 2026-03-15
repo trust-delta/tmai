@@ -447,12 +447,29 @@ pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
-    // Check if agent exists
+    // Check if agent exists and try to get content from AppState first
+    // (Poller already populates last_content with fallback chain:
+    //  capture-pane > transcript > activity log)
+    let agent_content = {
+        let state = core.raw_state().read();
+        state
+            .agents
+            .get(&id)
+            .map(|a| a.last_content.clone())
+            .filter(|c| !c.trim().is_empty())
+    };
+
+    if let Some(content) = agent_content {
+        let lines = content.lines().count();
+        return Ok(Json(PreviewResponse { content, lines }));
+    }
+
+    // Agent exists check (if not found in state, try the facade)
     if core.get_agent(&id).is_err() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Capture pane content via command sender
+    // Fallback: try capture_pane_plain directly
     let cmd = core
         .raw_command_sender()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -460,7 +477,22 @@ pub async fn get_preview(
     match cmd.runtime().capture_pane_plain(&id) {
         Ok(content) => {
             let display_content = if content.trim().is_empty() {
-                "(output not available in web-only mode)".to_string()
+                // Fallback: try activity log from hooks via pane_id mapping
+                let pane_id = {
+                    let state = core.raw_state().read();
+                    state.target_to_pane_id.get(&id).cloned()
+                };
+                let hook_reg = core.hook_registry().read();
+                let activity_content = pane_id
+                    .as_ref()
+                    .and_then(|pid| hook_reg.get(pid))
+                    .filter(|hs| !hs.activity_log.is_empty())
+                    .map(|hs| tmai_core::hooks::handler::format_activity_log(&hs.activity_log));
+                drop(hook_reg);
+
+                activity_content
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "(waiting for agent activity...)".to_string())
             } else {
                 content
             };

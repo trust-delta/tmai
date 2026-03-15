@@ -19,6 +19,7 @@ use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, Dete
 use crate::git::GitCache;
 use crate::hooks::registry::HookRegistry;
 use crate::hooks::types::HookStatus;
+use crate::hooks::HookState;
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
@@ -106,6 +107,10 @@ pub struct Poller {
     git_cache: GitCache,
     /// Core event sender for pushing TeammateIdle/TaskCompleted events
     event_tx: Option<tokio::sync::broadcast::Sender<CoreEvent>>,
+    /// Session discovery scanner for finding Claude Code instances without hooks
+    session_scanner: crate::session_discovery::SessionDiscoveryScanner,
+    /// Transcript watcher for JSONL conversation log monitoring
+    transcript_watcher: crate::transcript::TranscriptWatcher,
 }
 
 impl Poller {
@@ -144,6 +149,10 @@ impl Poller {
             grace_periods: HashMap::new(),
             git_cache: GitCache::new(),
             event_tx: None,
+            session_scanner: crate::session_discovery::SessionDiscoveryScanner::new(),
+            transcript_watcher: crate::transcript::TranscriptWatcher::new(
+                crate::transcript::watcher::new_transcript_registry(),
+            ),
         }
     }
 
@@ -236,6 +245,16 @@ impl Poller {
                         self.scan_worktrees(&agents).await;
                     }
 
+                    // Session discovery (every 10 polls ≈ 5 seconds)
+                    if poll_count.is_multiple_of(10) {
+                        self.discover_sessions();
+                    }
+
+                    // Transcript polling (every 2 polls ≈ 1 second)
+                    if poll_count.is_multiple_of(2) {
+                        self.transcript_watcher.poll_updates();
+                    }
+
                     // Audit: track state transitions
                     self.emit_audit_events(&mut agents);
 
@@ -286,15 +305,34 @@ impl Poller {
         // In standalone mode (or when panes are empty), synthesize PaneInfo
         // from HookRegistry entries that have no matching pane.
         // This allows hook-only agents to appear in the agent list.
+        // Dedup by cwd: if multiple registry entries share the same cwd
+        // (e.g., hook event and auto-discovery for the same Claude Code instance),
+        // prefer the non-discovered (hook) entry. Session_id can differ even for
+        // the same process (context restart / compaction creates new session_ids).
         {
             let hook_reg = self.hook_registry.read();
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
 
-            for (idx, (pane_id, hook_state)) in hook_reg.iter().enumerate() {
-                if !existing_pane_ids.contains(pane_id) {
-                    // Synthesize a PaneInfo for this hook-only agent
+            // Track which cwds we've already synthesized
+            let mut synthesized_cwds: HashSet<String> = HashSet::new();
+
+            // First pass: collect non-discovered entries (hook events have priority)
+            let mut entries: Vec<(&String, &HookState)> = hook_reg.iter().collect();
+            // Sort so that non-"discovered:" entries come first
+            entries.sort_by_key(|(k, _)| k.starts_with("discovered:"));
+
+            for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
+                if !existing_pane_ids.contains(*pane_id) {
                     let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
+
+                    // Skip if we already have a PaneInfo for this cwd
+                    if synthesized_cwds.contains(&cwd) {
+                        continue;
+                    }
+                    synthesized_cwds.insert(cwd.clone());
+
+                    // Synthesize a PaneInfo for this hook-only agent
                     let pane_idx = (idx + 1) as u32;
                     let target = format!("hook:0.{}", pane_idx);
                     all_panes.push(PaneInfo {
@@ -302,7 +340,7 @@ impl Poller {
                         session: "hook".to_string(),
                         window_index: 0,
                         pane_index: pane_idx,
-                        pane_id: pane_id.clone(),
+                        pane_id: (*pane_id).clone(),
                         window_name: "claude".to_string(),
                         command: "claude".to_string(),
                         pid: 0,
@@ -364,7 +402,7 @@ impl Poller {
                 // - Non-selected + hook/IPC (no audit): skip capture-pane entirely
                 // - Non-selected + capture-pane mode: plain capture for detection only
                 let audit_enabled = self.settings.audit.enabled;
-                let (content_ansi, mut content) = if is_selected {
+                let (mut content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.runtime.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
@@ -387,6 +425,44 @@ impl Poller {
                         .unwrap_or_default();
                     (String::new(), plain)
                 };
+
+                // Fallback chain for empty content (standalone/web-only mode):
+                // 1. transcript preview (D-2) — richest
+                // 2. activity log (D-1) — lightweight
+                if content.trim().is_empty() {
+                    // Try transcript preview first
+                    let transcript_preview = {
+                        let t_reg = self.transcript_watcher.registry().read();
+                        t_reg
+                            .get(&pane.pane_id)
+                            .filter(|ts| !ts.preview_text.is_empty())
+                            .map(|ts| ts.preview_text.clone())
+                    };
+
+                    if let Some(preview) = transcript_preview {
+                        content = preview.clone();
+                        content_ansi = preview;
+                    } else if let Some(ref hs) = hook_state {
+                        // Fallback to activity log
+                        if !hs.activity_log.is_empty() {
+                            let log_text =
+                                crate::hooks::handler::format_activity_log(&hs.activity_log);
+                            if !log_text.is_empty() {
+                                content = log_text.clone();
+                                content_ansi = log_text;
+                            }
+                        }
+                    }
+                }
+
+                // Start transcript watching if hook_state has transcript_path
+                if let Some(ref hs) = hook_state {
+                    if let Some(ref path) = hs.transcript_path {
+                        // Start watching if not already watched
+                        self.transcript_watcher
+                            .start_watching(&pane.pane_id, path, &hs.session_id);
+                    }
+                }
 
                 let title = self
                     .runtime
@@ -1384,6 +1460,90 @@ impl Poller {
     }
 
     /// Scan all known git repositories for worktrees and update AppState
+    /// Discover Claude Code sessions from filesystem and register them in HookRegistry
+    fn discover_sessions(&mut self) {
+        // First, clean up discovered entries that now have a hook entry
+        // (hook event arrived after discovery for same cwd)
+        {
+            let reg = self.hook_registry.read();
+            let discovered_keys: Vec<String> = reg
+                .keys()
+                .filter(|k| k.starts_with("discovered:"))
+                .cloned()
+                .collect();
+            let mut to_remove = Vec::new();
+            for key in &discovered_keys {
+                if let Some(discovered_state) = reg.get(key) {
+                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
+                    // Check if another (non-discovered) entry has the same cwd
+                    let has_hook_entry = reg.iter().any(|(k, hs)| {
+                        !k.starts_with("discovered:")
+                            && hs.cwd.as_deref().unwrap_or("") == discovered_cwd
+                            && !discovered_cwd.is_empty()
+                    });
+                    if has_hook_entry {
+                        to_remove.push(key.clone());
+                    }
+                }
+            }
+            drop(reg);
+            if !to_remove.is_empty() {
+                let mut reg = self.hook_registry.write();
+                for key in &to_remove {
+                    reg.remove(key);
+                    tracing::debug!(
+                        pane_id = %key,
+                        "Removed discovered entry superseded by hook registration"
+                    );
+                }
+            }
+        }
+
+        let (new_sessions, disappeared_pids) = self.session_scanner.scan();
+
+        for session in new_sessions {
+            let pane_id = format!("discovered:{}", session.pid);
+
+            // Skip if this cwd is already known via hooks
+            let already_known = {
+                let reg = self.hook_registry.read();
+                reg.iter().any(|(k, hs)| {
+                    !k.starts_with("discovered:") && hs.cwd.as_deref() == Some(session.cwd.as_str())
+                })
+            };
+            if already_known {
+                tracing::debug!(
+                    pid = session.pid,
+                    session_id = %session.session_id,
+                    "Session already known via hooks, skipping discovery"
+                );
+                continue;
+            }
+
+            // Register in HookRegistry so the synthesize logic picks it up
+            let mut state = HookState::new(session.session_id.clone(), Some(session.cwd.clone()));
+            state.transcript_path = session.transcript_path;
+            let mut reg = self.hook_registry.write();
+            reg.insert(pane_id.clone(), state);
+            tracing::info!(
+                pid = session.pid,
+                session_id = %session.session_id,
+                cwd = %session.cwd,
+                pane_id = %pane_id,
+                "Auto-discovered Claude Code session"
+            );
+        }
+
+        // Remove disappeared sessions
+        for pid in disappeared_pids {
+            let pane_id = format!("discovered:{}", pid);
+            let mut reg = self.hook_registry.write();
+            if reg.remove(&pane_id).is_some() {
+                tracing::info!(pid, pane_id = %pane_id, "Removed disappeared discovered session");
+            }
+        }
+    }
+
     async fn scan_worktrees(&self, agents: &[MonitoredAgent]) {
         use crate::git;
         use crate::state::{RepoWorktreeInfo, WorktreeDetail};

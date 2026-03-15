@@ -83,6 +83,10 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub tool_input: Option<serde_json::Value>,
 
+    /// Tool response/output (for PostToolUse)
+    #[serde(default)]
+    pub tool_response: Option<String>,
+
     /// Whether a stop hook is already active (for Stop / SubagentStop)
     #[serde(default)]
     pub stop_hook_active: Option<bool>,
@@ -173,6 +177,22 @@ pub struct HookContext {
     pub permission_mode: Option<String>,
 }
 
+/// Maximum number of tool activities retained per agent
+pub const MAX_ACTIVITY_LOG: usize = 20;
+
+/// A single tool execution record for activity log display
+#[derive(Debug, Clone)]
+pub struct ToolActivity {
+    /// Tool name (e.g., "Bash", "Edit", "Read")
+    pub tool_name: String,
+    /// Summarized input (e.g., "cargo test", "src/main.rs")
+    pub input_summary: String,
+    /// Summarized response/output
+    pub response_summary: String,
+    /// Timestamp (Unix millis)
+    pub timestamp: u64,
+}
+
 /// Internal state tracked per agent based on hook events
 #[derive(Debug, Clone)]
 pub struct HookState {
@@ -194,6 +214,10 @@ pub struct HookState {
     pub active_subagents: u32,
     /// Number of context compactions in this session (incremented on PreCompact)
     pub compaction_count: u32,
+    /// Path to conversation transcript JSONL file
+    pub transcript_path: Option<String>,
+    /// Recent tool activity log for preview display
+    pub activity_log: Vec<ToolActivity>,
 }
 
 impl HookState {
@@ -209,6 +233,8 @@ impl HookState {
             worktree: None,
             active_subagents: 0,
             compaction_count: 0,
+            transcript_path: None,
+            activity_log: Vec::new(),
         }
     }
 
