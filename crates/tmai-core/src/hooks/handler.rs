@@ -7,7 +7,10 @@ use crate::api::CoreEvent;
 use crate::state::SharedState;
 
 use super::registry::{HookRegistry, SessionPaneMap};
-use super::types::{event_names, HookContext, HookEventPayload, HookState, HookStatus};
+use super::types::{
+    event_names, HookContext, HookEventPayload, HookState, HookStatus, ToolActivity,
+    MAX_ACTIVITY_LOG,
+};
 
 /// Process an incoming hook event and update the registry
 ///
@@ -38,27 +41,31 @@ pub fn handle_hook_event(
             let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
             state.last_context = build_context(payload);
             state.worktree = payload.worktree.clone();
+            save_transcript_path(&mut state, payload);
             let mut reg = hook_registry.write();
             reg.insert(pane_id.to_string(), state);
             None
         }
 
         event_names::USER_PROMPT_SUBMIT => {
-            // Clear last_tool on new prompt (fresh processing cycle)
+            // Clear last_tool and activity_log on new prompt (fresh processing cycle)
             let ctx = build_context(payload);
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Processing;
                 state.last_tool = None;
+                state.activity_log.clear();
                 if payload.cwd.is_some() {
                     state.cwd = payload.cwd.clone();
                 }
                 state.last_context = ctx;
+                save_transcript_path(state, payload);
                 state.touch();
             } else {
                 let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
+                save_transcript_path(&mut state, payload);
                 reg.insert(pane_id.to_string(), state);
             }
             None
@@ -83,10 +90,31 @@ pub fn handle_hook_event(
             // It will be overwritten by the next PreToolUse or cleared by
             // UserPromptSubmit / Stop.
             let ctx = build_context(payload);
+            let tool_name = payload
+                .tool_name
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string());
+            let input_summary = summarize_tool_input(&tool_name, payload.tool_input.as_ref());
+            let response_summary = payload
+                .tool_response
+                .as_deref()
+                .map(|s| truncate_string(s, 200))
+                .unwrap_or_default();
+            let activity = ToolActivity {
+                tool_name,
+                input_summary,
+                response_summary,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            };
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
+                save_transcript_path(state, payload);
+                push_activity(state, activity);
                 state.touch();
             }
             None
@@ -132,6 +160,25 @@ pub fn handle_hook_event(
                     state.status = HookStatus::Idle;
                     state.last_tool = None;
                     state.last_context = ctx;
+                    save_transcript_path(state, payload);
+                    // Add last assistant message to activity log
+                    if let Some(ref msg) = payload.last_assistant_message {
+                        if !msg.is_empty() {
+                            push_activity(
+                                state,
+                                ToolActivity {
+                                    tool_name: "Assistant".to_string(),
+                                    input_summary: String::new(),
+                                    response_summary: truncate_string(msg, 300),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis()
+                                        as u64,
+                                },
+                            );
+                        }
+                    }
                     state.touch();
                     state.cwd.clone()
                 } else {
@@ -396,6 +443,115 @@ fn build_context(payload: &HookEventPayload) -> HookContext {
     }
 }
 
+/// Save transcript_path from payload to HookState if present
+fn save_transcript_path(state: &mut HookState, payload: &HookEventPayload) {
+    if let Some(ref path) = payload.transcript_path {
+        if !path.is_empty() && state.transcript_path.is_none() {
+            state.transcript_path = Some(path.clone());
+        }
+    }
+}
+
+/// Summarize tool input for activity log display
+fn summarize_tool_input(tool_name: &str, tool_input: Option<&serde_json::Value>) -> String {
+    let input = match tool_input {
+        Some(v) => v,
+        None => return String::new(),
+    };
+
+    match tool_name {
+        "Bash" => input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(|s| truncate_string(s, 120))
+            .unwrap_or_default(),
+        "Edit" | "Read" | "Write" => input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        "Grep" => input
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .map(|s| truncate_string(s, 80))
+            .unwrap_or_default(),
+        "Glob" => input
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        "Agent" => input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| truncate_string(s, 80))
+            .unwrap_or_default(),
+        "WebFetch" | "WebSearch" => input
+            .get("url")
+            .or_else(|| input.get("query"))
+            .and_then(|v| v.as_str())
+            .map(|s| truncate_string(s, 120))
+            .unwrap_or_default(),
+        _ => {
+            // For unknown tools, try common field names
+            for key in &["command", "file_path", "path", "query", "description"] {
+                if let Some(v) = input.get(key).and_then(|v| v.as_str()) {
+                    return truncate_string(v, 80);
+                }
+            }
+            String::new()
+        }
+    }
+}
+
+/// Truncate a string to max_len characters, appending "..." if truncated
+fn truncate_string(s: &str, max_len: usize) -> String {
+    // Take only the first line for multi-line strings
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.len() > max_len {
+        format!("{}...", &first_line[..max_len])
+    } else if first_line.len() < s.len() {
+        // Multi-line: show first line with indicator
+        format!("{}...", first_line)
+    } else {
+        first_line.to_string()
+    }
+}
+
+/// Add a ToolActivity entry to HookState, maintaining MAX_ACTIVITY_LOG limit
+fn push_activity(state: &mut HookState, activity: ToolActivity) {
+    state.activity_log.push(activity);
+    if state.activity_log.len() > MAX_ACTIVITY_LOG {
+        state.activity_log.remove(0);
+    }
+}
+
+/// Format activity log entries into human-readable preview text
+pub fn format_activity_log(activities: &[ToolActivity]) -> String {
+    if activities.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = Vec::new();
+    for activity in activities {
+        // Tool header
+        let tool_line = if activity.input_summary.is_empty() {
+            format!("⚙ {}", activity.tool_name)
+        } else {
+            format!("⚙ {}: {}", activity.tool_name, activity.input_summary)
+        };
+        lines.push(tool_line);
+
+        // Response summary (if available)
+        if !activity.response_summary.is_empty() {
+            for resp_line in activity.response_summary.lines().take(3) {
+                lines.push(format!("  {}", resp_line));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
 /// Update hook state for a pane, creating entry if needed
 fn update_status(
     registry: &HookRegistry,
@@ -417,6 +573,7 @@ fn update_status(
         if payload.worktree.is_some() && state.worktree.is_none() {
             state.worktree = payload.worktree.clone();
         }
+        save_transcript_path(state, payload);
         state.last_context = build_context(payload);
         state.touch();
     } else {
@@ -425,6 +582,7 @@ fn update_status(
         state.status = status;
         state.last_tool = tool_name;
         state.worktree = payload.worktree.clone();
+        save_transcript_path(&mut state, payload);
         state.last_context = build_context(payload);
         reg.insert(pane_id.to_string(), state);
     }
@@ -1208,6 +1366,189 @@ mod tests {
             0,
             "SubagentStop should not underflow below 0"
         );
+    }
+
+    #[test]
+    fn test_post_tool_use_accumulates_activity_log() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // PostToolUse with tool_name and tool_input
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "test-session",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test"},
+            "tool_response": "All tests passed"
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.activity_log.len(), 1);
+        assert_eq!(state.activity_log[0].tool_name, "Bash");
+        assert_eq!(state.activity_log[0].input_summary, "cargo test");
+        assert_eq!(state.activity_log[0].response_summary, "All tests passed");
+    }
+
+    #[test]
+    fn test_user_prompt_submit_clears_activity_log() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // Add some activities
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "test-session",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "src/main.rs"}
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().activity_log.len(), 1);
+        }
+
+        // New prompt clears activity log
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        let reg = registry.read();
+        assert!(
+            reg.get("5").unwrap().activity_log.is_empty(),
+            "UserPromptSubmit should clear activity_log"
+        );
+    }
+
+    #[test]
+    fn test_stop_adds_last_assistant_message() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "Stop",
+            "session_id": "test-session",
+            "last_assistant_message": "Done! All changes applied."
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.activity_log.len(), 1);
+        assert_eq!(state.activity_log[0].tool_name, "Assistant");
+        assert!(state.activity_log[0]
+            .response_summary
+            .contains("Done! All changes applied."));
+    }
+
+    #[test]
+    fn test_activity_log_max_size() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        handle_hook_event(&make_payload("UserPromptSubmit"), "5", &registry, &map);
+
+        // Add MAX_ACTIVITY_LOG + 5 entries
+        for i in 0..(super::MAX_ACTIVITY_LOG + 5) {
+            let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+                "hook_event_name": "PostToolUse",
+                "session_id": "test-session",
+                "tool_name": format!("Tool{}", i),
+            }))
+            .unwrap();
+            handle_hook_event(&payload, "5", &registry, &map);
+        }
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(
+            state.activity_log.len(),
+            super::MAX_ACTIVITY_LOG,
+            "Activity log should be capped at MAX_ACTIVITY_LOG"
+        );
+        // First entry should be Tool5 (oldest 5 were evicted)
+        assert_eq!(state.activity_log[0].tool_name, "Tool5");
+    }
+
+    #[test]
+    fn test_transcript_path_saved() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "test-session",
+            "cwd": "/tmp/test",
+            "transcript_path": "/home/user/.claude/projects/hash/session.jsonl"
+        }))
+        .unwrap();
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(
+            state.transcript_path.as_deref(),
+            Some("/home/user/.claude/projects/hash/session.jsonl")
+        );
+    }
+
+    #[test]
+    fn test_format_activity_log() {
+        let activities = vec![
+            super::ToolActivity {
+                tool_name: "Bash".to_string(),
+                input_summary: "cargo test".to_string(),
+                response_summary: "All tests passed".to_string(),
+                timestamp: 0,
+            },
+            super::ToolActivity {
+                tool_name: "Edit".to_string(),
+                input_summary: "src/main.rs".to_string(),
+                response_summary: String::new(),
+                timestamp: 0,
+            },
+        ];
+
+        let result = super::format_activity_log(&activities);
+        assert!(result.contains("⚙ Bash: cargo test"));
+        assert!(result.contains("All tests passed"));
+        assert!(result.contains("⚙ Edit: src/main.rs"));
+    }
+
+    #[test]
+    fn test_summarize_tool_input() {
+        // Bash
+        let input = serde_json::json!({"command": "npm test"});
+        assert_eq!(
+            super::summarize_tool_input("Bash", Some(&input)),
+            "npm test"
+        );
+
+        // Edit
+        let input = serde_json::json!({"file_path": "src/main.rs"});
+        assert_eq!(
+            super::summarize_tool_input("Edit", Some(&input)),
+            "src/main.rs"
+        );
+
+        // Grep
+        let input = serde_json::json!({"pattern": "TODO"});
+        assert_eq!(super::summarize_tool_input("Grep", Some(&input)), "TODO");
+
+        // None input
+        assert_eq!(super::summarize_tool_input("Bash", None), "");
     }
 
     #[test]

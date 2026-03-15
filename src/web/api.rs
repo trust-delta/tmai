@@ -460,7 +460,22 @@ pub async fn get_preview(
     match cmd.runtime().capture_pane_plain(&id) {
         Ok(content) => {
             let display_content = if content.trim().is_empty() {
-                "(output not available in web-only mode)".to_string()
+                // Fallback: try activity log from hooks
+                let hook_reg = core.hook_registry().read();
+                let activity_content = hook_reg
+                    .values()
+                    .find(|hs| {
+                        // Match by session_id pattern in the agent id
+                        id.contains(&hs.session_id) || hs.session_id.contains(&id)
+                    })
+                    .or_else(|| hook_reg.get(&id))
+                    .filter(|hs| !hs.activity_log.is_empty())
+                    .map(|hs| tmai_core::hooks::handler::format_activity_log(&hs.activity_log));
+                drop(hook_reg);
+
+                activity_content
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "(waiting for agent activity...)".to_string())
             } else {
                 content
             };
