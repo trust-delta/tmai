@@ -41,7 +41,30 @@ pub async fn index() -> impl IntoResponse {
     serve_static("index.html").await
 }
 
-/// Handler for static assets
+/// Handler for static assets with SPA fallback
+///
+/// If the requested path is not found and has no file extension,
+/// fall back to index.html for client-side routing (React Router).
 pub async fn asset(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {
-    serve_static(&path).await
+    match Assets::get(&path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime.as_ref())
+                .body(Body::from(content.data.into_owned()))
+                .unwrap()
+        }
+        None => {
+            // SPA fallback: paths without extension go to index.html
+            if !path.contains('.') {
+                serve_static("index.html").await.into_response()
+            } else {
+                Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from("Not Found"))
+                    .unwrap()
+            }
+        }
+    }
 }

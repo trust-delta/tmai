@@ -1,5 +1,6 @@
 # Build
 /target
+web/node_modules/
 
 # AI assistants
 CLAUDE.md
