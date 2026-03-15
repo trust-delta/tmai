@@ -77,12 +77,18 @@ async fn main() -> Result<()> {
         return app.run_demo().await;
     }
 
-    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
-
     // Load settings
     let mut settings = Settings::load(cli.config.as_ref())?;
     settings.merge_cli(&cli);
     settings.validate();
+
+    // Web-only mode: skip TUI, run web server + monitoring loop only
+    if cli.web_only {
+        setup_logging(cli.debug, false); // stderr output (no TUI to corrupt)
+        return run_web_only_mode(settings).await;
+    }
+
+    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
 
     // Start IPC server
     let ipc_server = IpcServer::start()
@@ -98,7 +104,7 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    // Create runtime adapter
+    // Create runtime adapter (tmux for TUI mode)
     let runtime: Arc<dyn RuntimeAdapter> = Arc::new(TmuxAdapter::new(settings.capture_lines));
 
     // Run the application with web server
@@ -218,6 +224,116 @@ async fn main() -> Result<()> {
     }
 
     app.run().await
+}
+
+/// Run in web-only mode (no tmux, no TUI — hooks/IPC + web server only)
+async fn run_web_only_mode(settings: Settings) -> Result<()> {
+    use tmai_core::runtime::StandaloneAdapter;
+
+    eprintln!("tmai: starting in web-only mode (no tmux required)");
+
+    // Start IPC server
+    let ipc_server = IpcServer::start()
+        .await
+        .context("Failed to start IPC server")?;
+    let ipc_server = Arc::new(ipc_server);
+
+    // Create standalone runtime (no tmux)
+    let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+
+    // Create shared state
+    let state = tmai_core::state::AppState::shared();
+    {
+        let mut s = state.write();
+        s.show_activity_name = settings.ui.show_activity_name;
+    }
+
+    // Create command sender (IPC-primary, runtime fallback will error in standalone)
+    let cmd_sender = Arc::new(CommandSender::new(
+        Some(ipc_server.clone()),
+        runtime.clone(),
+        state.clone(),
+    ));
+
+    // Create hook registry and load token
+    let hook_registry = tmai_core::hooks::new_hook_registry();
+    let session_pane_map = tmai_core::hooks::new_session_pane_map();
+    let hook_token = tmai::init::load_hook_token();
+
+    // Build TmaiCore facade
+    let mut core_builder = TmaiCoreBuilder::new(settings.clone())
+        .with_state(state.clone())
+        .with_ipc_server(ipc_server.clone())
+        .with_command_sender(cmd_sender)
+        .with_hook_registry(hook_registry.clone())
+        .with_session_pane_map(session_pane_map);
+
+    if let Some(token) = hook_token {
+        eprintln!("tmai: hook token loaded, hook endpoint enabled");
+        core_builder = core_builder.with_hook_token(token);
+    } else {
+        eprintln!("tmai: no hook token found — run `tmai init` to enable hooks");
+    }
+
+    let core = Arc::new(core_builder.build());
+
+    // Start web server (required for web-only mode)
+    if !settings.web.enabled {
+        anyhow::bail!("web-only mode requires web server to be enabled ([web] enabled = true)");
+    }
+
+    let token = tmai::web::auth::generate_token();
+    {
+        let mut s = state.write();
+        s.init_web(token.clone(), settings.web.port);
+    }
+
+    let port = settings.web.port;
+    let web_server = WebServer::new(settings.clone(), core.clone(), token.clone());
+    web_server.start();
+
+    eprintln!(
+        "tmai: web server running at http://localhost:{}/?token={}",
+        port, token
+    );
+    eprintln!("tmai: waiting for hook events from Claude Code...");
+    eprintln!("tmai: press Ctrl+C to stop");
+
+    // Start monitoring loop (Poller with standalone runtime)
+    let ipc_registry = ipc_server.registry();
+    let mut poller = tmai_core::monitor::Poller::new(
+        settings.clone(),
+        state,
+        runtime,
+        ipc_registry,
+        hook_registry,
+        None,
+    );
+    poller = poller.with_event_tx(core.event_sender().clone());
+
+    // Run poller in background
+    let mut poll_rx = poller.start();
+
+    // Main loop: process poll messages until shutdown
+    loop {
+        tokio::select! {
+            msg = poll_rx.recv() => {
+                match msg {
+                    Some(tmai_core::monitor::PollMessage::AgentsUpdated(_)) => {
+                        core.notify_agents_updated();
+                    }
+                    None => break, // Poller channel closed
+                    _ => {} // Other messages (TeamsCycleReady etc.)
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\ntmai: shutting down...");
+                break;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Run in wrap mode (PTY proxy for AI agent)
