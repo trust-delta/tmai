@@ -32,7 +32,7 @@ portable-pty = "0.9"
 nix = { version = "0.31", features = ["signal", "process", "term"] }
 libc = "0.2"
 local-ip-address = "0.6"
-tokio-tungstenite = { version = "0.26", features = ["connect"] }
+tokio-tungstenite = { version = "0.28", features = ["connect"] }
 futures-util = "0.3"
 notify = "7"
 
