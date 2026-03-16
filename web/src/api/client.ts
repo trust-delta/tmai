@@ -105,6 +105,36 @@ export async function spawnAgent(
   }>;
 }
 
+/** GET /api/agents/{id}/output — get PTY scrollback text */
+export async function getAgentOutput(id: string) {
+  const res = await apiFetch(
+    `/api/agents/${encodeURIComponent(id)}/output`,
+  );
+  if (!res.ok) throw new Error(`getAgentOutput: ${res.status}`);
+  return res.json() as Promise<{
+    session_id: string;
+    output: string;
+    bytes: number;
+  }>;
+}
+
+/** POST /api/agents/{from}/send-to/{to} — send text between agents */
+export async function sendToAgent(
+  from: string,
+  to: string,
+  text: string,
+) {
+  const res = await apiFetch(
+    `/api/agents/${encodeURIComponent(from)}/send-to/${encodeURIComponent(to)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    },
+  );
+  if (!res.ok) throw new Error(`sendToAgent: ${res.status}`);
+  return res.json();
+}
+
 /** Build a WebSocket URL for a PTY terminal session */
 export function buildWsUrl(sessionId: string): string {
   const token = useAuthStore.getState().token;

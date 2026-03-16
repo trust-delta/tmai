@@ -928,6 +928,108 @@ pub async fn spawn_agent(
     }
 }
 
+// =========================================================
+// Inter-agent communication endpoints
+// =========================================================
+
+/// GET /api/agents/{id}/output — get PTY scrollback output as text
+pub async fn get_agent_output(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let session = core
+        .pty_registry()
+        .get(&id)
+        .ok_or_else(|| json_error(StatusCode::NOT_FOUND, "PTY session not found"))?;
+
+    let snapshot = session.scrollback_snapshot();
+    let text = String::from_utf8_lossy(&snapshot).to_string();
+
+    Ok(Json(serde_json::json!({
+        "session_id": id,
+        "output": text,
+        "bytes": snapshot.len(),
+    })))
+}
+
+/// Request body for sending text between agents
+#[derive(Debug, Deserialize)]
+pub struct SendToRequest {
+    /// Text to send as input to the target agent
+    pub text: String,
+}
+
+/// POST /api/agents/{from}/send-to/{to} — send text from one agent to another
+pub async fn send_to_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Path((from, to)): Path<(String, String)>,
+    Json(req): Json<SendToRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate source exists (either PTY or regular agent)
+    let source_exists = core.pty_registry().get(&from).is_some() || core.get_agent(&from).is_ok();
+    if !source_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Source agent not found"));
+    }
+
+    // Validate text length
+    if req.text.len() > 10240 {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Text too long (max 10KB)",
+        ));
+    }
+
+    // Try PTY write first (for PTY-spawned targets)
+    if let Some(target_session) = core.pty_registry().get(&to) {
+        target_session
+            .write_input(req.text.as_bytes())
+            .map_err(|e| {
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("Failed to write to target PTY: {}", e),
+                )
+            })?;
+        // Send Enter after the text
+        target_session.write_input(b"\r").map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to send Enter: {}", e),
+            )
+        })?;
+
+        tracing::info!(
+            "API: sent {} bytes from {} to {} (PTY)",
+            req.text.len(),
+            from,
+            to
+        );
+        return Ok(Json(serde_json::json!({
+            "status": "ok",
+            "method": "pty",
+        })));
+    }
+
+    // Fall back to regular send_text for non-PTY agents
+    core.send_text(&to, &req.text).await.map_err(|e| {
+        let status = match &e {
+            tmai_core::api::ApiError::AgentNotFound { .. } => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        json_error(status, &e.to_string())
+    })?;
+
+    tracing::info!(
+        "API: sent {} bytes from {} to {} (command_sender)",
+        req.text.len(),
+        from,
+        to
+    );
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "method": "command_sender",
+    })))
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)
