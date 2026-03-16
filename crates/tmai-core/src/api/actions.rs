@@ -629,6 +629,43 @@ impl TmaiCore {
         cmd.runtime().kill_pane(target)?;
         Ok(())
     }
+
+    /// Sync PTY-spawned agent statuses with actual PTY session liveness.
+    ///
+    /// - Running sessions: set to `Processing` (clear "Starting..." once output observed)
+    /// - Dead sessions: set to `Offline` and clean up from registry
+    ///
+    /// Returns true if any agent status was changed.
+    pub fn sync_pty_sessions(&self) -> bool {
+        let dead_ids = self.pty_registry().cleanup_dead();
+        let mut changed = false;
+
+        let mut state = self.state().write();
+        for (id, agent) in state.agents.iter_mut() {
+            if agent.pty_session_id.is_none() {
+                continue;
+            }
+
+            if dead_ids.contains(id) {
+                // Process exited
+                agent.status = crate::agents::AgentStatus::Offline;
+                changed = true;
+            } else if matches!(
+                &agent.status,
+                crate::agents::AgentStatus::Processing { activity } if activity == "Starting..."
+            ) {
+                // Still running — upgrade from "Starting..." to "Running"
+                if self.pty_registry().get(id).is_some() {
+                    agent.status = crate::agents::AgentStatus::Processing {
+                        activity: String::new(),
+                    };
+                    changed = true;
+                }
+            }
+        }
+
+        changed
+    }
 }
 
 #[cfg(test)]

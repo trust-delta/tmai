@@ -314,6 +314,10 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     // Run poller in background
     let mut poll_rx = poller.start();
 
+    // Interval for syncing PTY session liveness with agent status
+    let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    pty_sync_interval.tick().await; // skip first tick
+
     // Main loop: process poll messages and update state until shutdown
     loop {
         tokio::select! {
@@ -332,6 +336,11 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
                         s.error_message = Some(err);
                     }
                     None => break, // Poller channel closed
+                }
+            }
+            _ = pty_sync_interval.tick() => {
+                if core.sync_pty_sessions() {
+                    core.notify_agents_updated();
                 }
             }
             _ = tokio::signal::ctrl_c() => {
