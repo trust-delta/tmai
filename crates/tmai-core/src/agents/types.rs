@@ -525,6 +525,8 @@ pub struct MonitoredAgent {
     pub active_subagents: u32,
     /// Number of context compactions in this session (from hook PreCompact tracking)
     pub compaction_count: u32,
+    /// PTY session ID if this agent was spawned via the PTY spawn API
+    pub pty_session_id: Option<String>,
 }
 
 impl MonitoredAgent {
@@ -572,6 +574,7 @@ impl MonitoredAgent {
             worktree_name: None,
             active_subagents: 0,
             compaction_count: 0,
+            pty_session_id: None,
         }
     }
 

@@ -222,6 +222,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
 dependencies = [
  "axum-core",
+ "base64",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -240,8 +241,10 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1",
  "sync_wrapper",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -3150,10 +3153,12 @@ dependencies = [
  "ansi-to-tui",
  "anyhow",
  "axum",
+ "bytes",
  "chrono",
  "clap",
  "crossterm",
  "dirs",
+ "futures-util",
  "http",
  "http-body-util",
  "image",
@@ -3193,6 +3198,7 @@ name = "tmai-core"
 version = "0.20.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "chrono",
  "clap",
  "dirs",

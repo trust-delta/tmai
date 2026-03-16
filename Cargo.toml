@@ -44,7 +44,7 @@ chrono = "0.4"
 parking_lot = "0.12"
 ansi-to-tui = "8"
 unicode-width = "0.2"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tokio-stream = "0.1"
 qrcode = { version = "0.14", features = ["image"] }
@@ -58,6 +58,8 @@ nix = { version = "0.31", features = ["signal", "process", "term"] }
 libc = "0.2"
 ureq = "3"
 toml_edit = "0.25"
+bytes = "1"
+futures-util = "0.3"
 
 [dev-dependencies]
 pretty_assertions = "1"

@@ -131,6 +131,9 @@ pub struct AgentSnapshot {
     /// Number of context compactions in this session (from hook PreCompact tracking)
     #[serde(skip_serializing_if = "is_zero")]
     pub compaction_count: u32,
+    /// PTY session ID if this agent was spawned via the PTY spawn API
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pty_session_id: Option<String>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -202,6 +205,7 @@ impl AgentSnapshot {
             agent_definition: None,
             active_subagents: agent.active_subagents,
             compaction_count: agent.compaction_count,
+            pty_session_id: agent.pty_session_id.clone(),
         }
     }
 

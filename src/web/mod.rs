@@ -8,5 +8,6 @@ mod events;
 pub mod hooks;
 mod server;
 mod static_files;
+mod ws;
 
 pub use server::WebServer;

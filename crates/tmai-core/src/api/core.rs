@@ -13,6 +13,7 @@ use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
+use crate::pty::PtyRegistry;
 use crate::state::SharedState;
 
 use super::events::CoreEvent;
@@ -42,6 +43,8 @@ pub struct TmaiCore {
     session_pane_map: SessionPaneMap,
     /// Authentication token for hook endpoints
     hook_token: Option<String>,
+    /// PTY session registry for spawned agents
+    pty_registry: Arc<PtyRegistry>,
 }
 
 impl TmaiCore {
@@ -56,6 +59,7 @@ impl TmaiCore {
         hook_registry: HookRegistry,
         session_pane_map: SessionPaneMap,
         hook_token: Option<String>,
+        pty_registry: Arc<PtyRegistry>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -69,6 +73,7 @@ impl TmaiCore {
             hook_registry,
             session_pane_map,
             hook_token,
+            pty_registry,
         }
     }
 
@@ -150,6 +155,11 @@ impl TmaiCore {
         self.hook_token.as_deref()
     }
 
+    /// Access the PTY session registry
+    pub fn pty_registry(&self) -> &Arc<PtyRegistry> {
+        &self.pty_registry
+    }
+
     /// Validate a hook authentication token (constant-time comparison)
     pub fn validate_hook_token(&self, token: &str) -> bool {
         match &self.hook_token {
@@ -196,6 +206,7 @@ mod tests {
             hook_registry,
             session_pane_map,
             None,
+            crate::pty::PtyRegistry::new(),
         );
 
         assert_eq!(core.settings().poll_interval_ms, 500);
@@ -219,6 +230,7 @@ mod tests {
             hook_registry,
             session_pane_map,
             None,
+            crate::pty::PtyRegistry::new(),
         );
 
         // raw_state should return the same Arc
@@ -244,6 +256,7 @@ mod tests {
             hook_registry,
             session_pane_map,
             Some("test-token-123".to_string()),
+            crate::pty::PtyRegistry::new(),
         );
 
         assert!(core.validate_hook_token("test-token-123"));

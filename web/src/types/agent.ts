@@ -39,6 +39,8 @@ export interface Agent {
   auto_approve_phase?: string;
   git_common_dir?: string;
   worktree_name?: string;
+  /** PTY session ID if this agent was spawned via the spawn API */
+  pty_session_id?: string;
 }
 
 /** Preview response from GET /api/agents/{id}/preview */
