@@ -1,6 +1,7 @@
 //! PTY session — spawns a command in a pseudo-terminal and provides
 //! broadcast-based output streaming and input injection.
 
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,10 +15,56 @@ use tokio::sync::broadcast;
 /// Broadcast channel capacity for PTY output
 const OUTPUT_CHANNEL_CAPACITY: usize = 256;
 
+/// Maximum scrollback buffer size (bytes). Roughly 256KB — enough to
+/// reconstruct several screens of terminal content on reconnect.
+const SCROLLBACK_MAX_BYTES: usize = 256 * 1024;
+
+/// Scrollback buffer that accumulates raw PTY output for replay on reconnect.
+struct ScrollbackBuffer {
+    chunks: VecDeque<Bytes>,
+    total_bytes: usize,
+}
+
+impl ScrollbackBuffer {
+    fn new() -> Self {
+        Self {
+            chunks: VecDeque::new(),
+            total_bytes: 0,
+        }
+    }
+
+    /// Append a chunk, evicting old data if over the limit
+    fn push(&mut self, data: Bytes) {
+        self.total_bytes += data.len();
+        self.chunks.push_back(data);
+        while self.total_bytes > SCROLLBACK_MAX_BYTES {
+            if let Some(old) = self.chunks.pop_front() {
+                self.total_bytes -= old.len();
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Return all buffered chunks as a single contiguous Bytes
+    fn snapshot(&self) -> Bytes {
+        if self.chunks.is_empty() {
+            return Bytes::new();
+        }
+        let mut buf = Vec::with_capacity(self.total_bytes);
+        for chunk in &self.chunks {
+            buf.extend_from_slice(chunk);
+        }
+        Bytes::from(buf)
+    }
+}
+
 /// PTY session wrapping a spawned command.
 ///
 /// Output is streamed via a `broadcast::Sender<Bytes>` so that multiple
 /// consumers (WebSocket connections, analyzers) can subscribe independently.
+/// A scrollback buffer is maintained so that late-joining consumers can
+/// replay past output (e.g. when switching between agents in the UI).
 pub struct PtySession {
     /// Unique session identifier
     pub id: String,
@@ -27,6 +74,8 @@ pub struct PtySession {
     master: parking_lot::Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     /// Broadcast sender for raw PTY output
     output_tx: broadcast::Sender<Bytes>,
+    /// Scrollback buffer for replay on reconnect
+    scrollback: parking_lot::Mutex<ScrollbackBuffer>,
     /// Whether the child process is still running
     running: Arc<AtomicBool>,
     /// Working directory the command was started in
@@ -96,16 +145,18 @@ impl PtySession {
             writer: parking_lot::Mutex::new(master_writer),
             master: parking_lot::Mutex::new(pair.master),
             output_tx: output_tx.clone(),
+            scrollback: parking_lot::Mutex::new(ScrollbackBuffer::new()),
             running: running.clone(),
             cwd: cwd.to_string(),
             command: command.to_string(),
             pid: child_pid,
         });
 
-        // Background thread: read PTY output → broadcast
+        // Background thread: read PTY output → broadcast + scrollback
         let running_out = running.clone();
+        let session_for_output = session.clone();
         thread::spawn(move || {
-            Self::output_loop(master_reader, output_tx, running_out);
+            Self::output_loop(master_reader, output_tx, running_out, session_for_output);
         });
 
         // Background thread: wait for child exit
@@ -117,11 +168,12 @@ impl PtySession {
         Ok(session)
     }
 
-    /// Read loop: PTY master → broadcast channel
+    /// Read loop: PTY master → broadcast channel + scrollback buffer
     fn output_loop(
         mut reader: Box<dyn Read + Send>,
         tx: broadcast::Sender<Bytes>,
         running: Arc<AtomicBool>,
+        session: Arc<PtySession>,
     ) {
         let mut buf = [0u8; 4096];
         while running.load(Ordering::Relaxed) {
@@ -129,7 +181,9 @@ impl PtySession {
                 Ok(0) => break, // EOF
                 Ok(n) => {
                     let data = Bytes::copy_from_slice(&buf[..n]);
-                    // Ignore send errors (no active subscribers is fine)
+                    // Append to scrollback buffer
+                    session.scrollback.lock().push(data.clone());
+                    // Broadcast to live subscribers (ignore errors if none)
                     let _ = tx.send(data);
                 }
                 Err(e) => {
@@ -167,6 +221,15 @@ impl PtySession {
     /// Subscribe to the raw PTY output stream
     pub fn subscribe(&self) -> broadcast::Receiver<Bytes> {
         self.output_tx.subscribe()
+    }
+
+    /// Get the accumulated scrollback buffer for replay on reconnect.
+    ///
+    /// Returns a single `Bytes` containing all buffered output (up to
+    /// SCROLLBACK_MAX_BYTES). The caller should send this before
+    /// forwarding live broadcast messages.
+    pub fn scrollback_snapshot(&self) -> Bytes {
+        self.scrollback.lock().snapshot()
     }
 
     /// Write input bytes to the PTY
@@ -261,6 +324,23 @@ mod tests {
         assert!(!session.is_running());
     }
 
+    #[tokio::test]
+    async fn test_scrollback_snapshot() {
+        let session = PtySession::spawn("echo", &["hello world"], "/tmp", 24, 80)
+            .expect("Failed to spawn echo");
+
+        // Wait for output to be buffered
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let snapshot = session.scrollback_snapshot();
+        let text = String::from_utf8_lossy(&snapshot);
+        assert!(
+            text.contains("hello world"),
+            "Expected 'hello world' in scrollback: {}",
+            text
+        );
+    }
+
     #[test]
     fn test_write_input() {
         // Spawn cat which echoes input
@@ -282,5 +362,18 @@ mod tests {
         // Resize should not error
         session.resize(40, 120).expect("resize failed");
         session.kill();
+    }
+
+    #[test]
+    fn test_scrollback_buffer_eviction() {
+        let mut buf = ScrollbackBuffer::new();
+        // Push more than SCROLLBACK_MAX_BYTES
+        let chunk = Bytes::from(vec![b'A'; 64 * 1024]); // 64KB each
+        for _ in 0..8 {
+            buf.push(chunk.clone()); // 512KB total
+        }
+        // Should be capped at ~256KB
+        assert!(buf.total_bytes <= SCROLLBACK_MAX_BYTES);
+        assert!(buf.total_bytes > 0);
     }
 }

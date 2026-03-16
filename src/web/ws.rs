@@ -43,10 +43,29 @@ async fn handle_ws(socket: WebSocket, session_id: String, core: Arc<TmaiCore>) {
 
     tracing::debug!("WS: connected to PTY session {}", session_id);
 
+    // Subscribe BEFORE taking the snapshot so we don't miss output
+    // that arrives between snapshot and first recv().
     let mut output_rx = session.subscribe();
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     use futures_util::{SinkExt, StreamExt};
+
+    // Replay scrollback buffer so the client sees past output
+    let snapshot = session.scrollback_snapshot();
+    if !snapshot.is_empty() {
+        tracing::debug!(
+            "WS: replaying {} bytes of scrollback for session {}",
+            snapshot.len(),
+            session_id
+        );
+        if ws_tx
+            .send(Message::Binary(snapshot.to_vec().into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
 
     // Bidirectional bridge: PTY output ↔ WebSocket
     loop {
