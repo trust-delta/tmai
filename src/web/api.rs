@@ -870,6 +870,9 @@ pub async fn spawn_agent(
                 command: session.command.clone(),
             };
 
+            // Fetch git info for the cwd so spawned agent groups with same-repo agents
+            let git_info = tmai_core::git::GitCache::new().get_info(&req.cwd).await;
+
             // Register as a MonitoredAgent in AppState so the Poller won't discard it
             {
                 #[allow(deprecated)]
@@ -896,6 +899,13 @@ pub async fn spawn_agent(
                     activity: "Starting...".to_string(),
                 };
                 agent.pty_session_id = Some(session_id.clone());
+                if let Some(ref info) = git_info {
+                    agent.git_branch = Some(info.branch.clone());
+                    agent.git_dirty = Some(info.dirty);
+                    agent.is_worktree = Some(info.is_worktree);
+                    agent.git_common_dir = info.common_dir.clone();
+                    agent.worktree_name = tmai_core::git::extract_claude_worktree_name(&req.cwd);
+                }
                 s.agents.insert(session_id.clone(), agent);
                 s.agent_order.push(session_id);
             }
