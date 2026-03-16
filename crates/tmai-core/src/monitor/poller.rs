@@ -18,7 +18,6 @@ use crate::detectors::GeminiDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::git::GitCache;
 use crate::hooks::registry::HookRegistry;
-use crate::hooks::types::HookStatus;
 use crate::hooks::HookState;
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
@@ -316,6 +315,17 @@ impl Poller {
 
             // Track which cwds we've already synthesized
             let mut synthesized_cwds: HashSet<String> = HashSet::new();
+
+            // Collect cwds of PTY-spawned agents — these are managed separately
+            // and should not get duplicate synthesized PaneInfo entries
+            {
+                let app_state = self.state.read();
+                for agent in app_state.agents.values() {
+                    if agent.pty_session_id.is_some() {
+                        synthesized_cwds.insert(agent.cwd.clone());
+                    }
+                }
+            }
 
             // First pass: collect non-discovered entries (hook events have priority)
             let mut entries: Vec<(&String, &HookState)> = hook_reg.iter().collect();
@@ -1856,44 +1866,9 @@ fn enrich_ipc_activity(
     ipc_status
 }
 
-/// Convert WrapState from state file to AgentStatus
-/// Convert HookState to AgentStatus
+/// Convert HookState to AgentStatus (delegates to handler module)
 fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatus {
-    match hs.status {
-        HookStatus::Processing => {
-            let activity = hs
-                .last_tool
-                .as_ref()
-                .filter(|t| !t.is_empty())
-                .map(|t| format!("Tool: {}", t))
-                .unwrap_or_default();
-            AgentStatus::Processing { activity }
-        }
-        HookStatus::Idle => AgentStatus::Idle,
-        HookStatus::AwaitingApproval => {
-            let tool_info = hs.last_tool.clone().unwrap_or_default();
-            // AskUserQuestion requires human judgment — map to UserQuestion type
-            // so auto_approve's is_genuine_user_question filter can block it
-            if tool_info == "AskUserQuestion" {
-                AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::UserQuestion {
-                        choices: vec![],
-                        multi_select: false,
-                        cursor_position: 0,
-                    },
-                    details: String::new(),
-                }
-            } else {
-                AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::Other("Approval".to_string()),
-                    details: tool_info,
-                }
-            }
-        }
-        HookStatus::Compacting => AgentStatus::Processing {
-            activity: "Compacting context…".to_string(),
-        },
-    }
+    crate::hooks::handler::hook_status_to_agent_status(hs)
 }
 
 /// Convert WrapState to AgentStatus
