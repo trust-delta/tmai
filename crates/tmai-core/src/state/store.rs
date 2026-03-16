@@ -611,7 +611,9 @@ impl AppState {
         let new_order: Vec<String> = agents.iter().map(|a| a.id.clone()).collect();
 
         // Remove agents that no longer exist (O(n) instead of O(n²))
-        self.agents.retain(|id, _| new_ids.contains(id));
+        // Keep PTY-spawned agents — they are managed by PtyRegistry, not the Poller
+        self.agents
+            .retain(|id, a| new_ids.contains(id) || a.pty_session_id.is_some());
 
         // Update or add new agents
         for agent in agents {
@@ -658,7 +660,14 @@ impl AppState {
 
         // Update order, preserving selection if possible
         let old_selected = self.selected_target().map(|s| s.to_string());
-        self.agent_order = new_order;
+        // Append PTY-spawned agents that aren't in the poller results
+        let mut final_order = new_order;
+        for (id, agent) in &self.agents {
+            if agent.pty_session_id.is_some() && !final_order.contains(id) {
+                final_order.push(id.clone());
+            }
+        }
+        self.agent_order = final_order;
 
         // Apply current sort
         self.sort_agents();

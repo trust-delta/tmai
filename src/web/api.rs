@@ -863,11 +863,44 @@ pub async fn spawn_agent(
         .spawn_session(&req.command, &args, &req.cwd, rows, cols)
     {
         Ok(session) => {
+            let session_id = session.id.clone();
             let response = SpawnResponse {
-                session_id: session.id.clone(),
+                session_id: session_id.clone(),
                 pid: session.pid,
                 command: session.command.clone(),
             };
+
+            // Register as a MonitoredAgent in AppState so the Poller won't discard it
+            {
+                #[allow(deprecated)]
+                let state = core.raw_state();
+                let mut s = state.write();
+                let agent_type = match req.command.as_str() {
+                    "claude" => tmai_core::agents::AgentType::ClaudeCode,
+                    "codex" => tmai_core::agents::AgentType::CodexCli,
+                    "gemini" => tmai_core::agents::AgentType::GeminiCli,
+                    other => tmai_core::agents::AgentType::Custom(other.to_string()),
+                };
+                let mut agent = tmai_core::agents::MonitoredAgent::new(
+                    session_id.clone(),
+                    agent_type,
+                    req.command.clone(),
+                    req.cwd.clone(),
+                    session.pid,
+                    "pty".to_string(),
+                    req.command.clone(),
+                    0,
+                    0,
+                );
+                agent.status = tmai_core::agents::AgentStatus::Processing {
+                    activity: "Starting...".to_string(),
+                };
+                agent.pty_session_id = Some(session_id.clone());
+                s.agents.insert(session_id.clone(), agent);
+                s.agent_order.push(session_id);
+            }
+            core.notify_agents_updated();
+
             tracing::info!(
                 "API: spawned session_id={} pid={}",
                 response.session_id,
