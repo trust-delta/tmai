@@ -218,6 +218,8 @@ pub struct HookState {
     pub transcript_path: Option<String>,
     /// Recent tool activity log for preview display
     pub activity_log: Vec<ToolActivity>,
+    /// Process ID of the Claude Code instance (for PTY injection)
+    pub pid: Option<u32>,
 }
 
 impl HookState {
@@ -235,6 +237,7 @@ impl HookState {
             compaction_count: 0,
             transcript_path: None,
             activity_log: Vec::new(),
+            pid: None,
         }
     }
 

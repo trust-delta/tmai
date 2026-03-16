@@ -164,6 +164,34 @@ fn derive_transcript_path(cwd: &str, session_id: &str) -> Option<String> {
     }
 }
 
+/// Resolve the PID for a given Claude Code session_id by scanning session files.
+///
+/// Walks `~/.claude/sessions/*.json`, finds the entry whose `session_id` matches,
+/// and returns the PID if the process is still alive.
+pub fn resolve_pid_for_session(session_id: &str) -> Option<u32> {
+    let sessions_dir = dirs::home_dir()?.join(".claude").join("sessions");
+    let entries = std::fs::read_dir(&sessions_dir).ok()?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let session: ClaudeSessionFile = match serde_json::from_str(&content) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if session.session_id == session_id && is_pid_alive(session.pid) {
+            return Some(session.pid);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

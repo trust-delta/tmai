@@ -118,16 +118,16 @@ async fn main() -> Result<()> {
 
     // Build TmaiCore facade (shared between Web and TUI for event broadcasting)
     let app_state = app.shared_state();
-    let core_cmd_sender = Arc::new(CommandSender::new(
-        Some(ipc_server.clone()),
-        runtime.clone(),
-        app_state.clone(),
-    ));
 
     // Create hook registry and load hook token
     let hook_registry = tmai_core::hooks::new_hook_registry();
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
     let hook_token = tmai::init::load_hook_token();
+
+    let core_cmd_sender = Arc::new(
+        CommandSender::new(Some(ipc_server.clone()), runtime.clone(), app_state.clone())
+            .with_hook_registry(hook_registry.clone()),
+    );
 
     let mut core_builder = TmaiCoreBuilder::new(settings.clone())
         .with_state(app_state.clone())
@@ -217,7 +217,8 @@ async fn main() -> Result<()> {
                 Some(ipc_server.clone()),
                 runtime.clone(),
                 app.shared_state(),
-            ),
+            )
+            .with_hook_registry(core.hook_registry().clone()),
             audit_tx,
         );
         service.start();
@@ -248,15 +249,14 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
         s.show_activity_name = settings.ui.show_activity_name;
     }
 
-    // Create command sender (IPC-primary, runtime fallback will error in standalone)
-    let cmd_sender = Arc::new(CommandSender::new(
-        Some(ipc_server.clone()),
-        runtime.clone(),
-        state.clone(),
-    ));
-
     // Create hook registry and load token
     let hook_registry = tmai_core::hooks::new_hook_registry();
+
+    // Create command sender (IPC → PTY inject → standalone error)
+    let cmd_sender = Arc::new(
+        CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
+            .with_hook_registry(hook_registry.clone()),
+    );
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
     let hook_token = tmai::init::load_hook_token();
 

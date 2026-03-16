@@ -343,7 +343,7 @@ impl Poller {
                         pane_id: (*pane_id).clone(),
                         window_name: "claude".to_string(),
                         command: "claude".to_string(),
-                        pid: 0,
+                        pid: hook_state.pid.unwrap_or(0),
                         title: String::new(),
                         cwd,
                     });
@@ -1523,6 +1523,7 @@ impl Poller {
             // Register in HookRegistry so the synthesize logic picks it up
             let mut state = HookState::new(session.session_id.clone(), Some(session.cwd.clone()));
             state.transcript_path = session.transcript_path;
+            state.pid = Some(session.pid);
             let mut reg = self.hook_registry.write();
             reg.insert(pane_id.clone(), state);
             tracing::info!(
