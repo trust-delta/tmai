@@ -6,5 +6,5 @@
 pub mod scanner;
 pub mod types;
 
-pub use scanner::SessionDiscoveryScanner;
+pub use scanner::{resolve_pid_for_session, SessionDiscoveryScanner};
 pub use types::DiscoveredSession;

@@ -42,6 +42,11 @@ pub fn handle_hook_event(
             state.last_context = build_context(payload);
             state.worktree = payload.worktree.clone();
             save_transcript_path(&mut state, payload);
+            // Resolve PID from session files for PTY injection
+            state.pid = crate::session_discovery::resolve_pid_for_session(&payload.session_id);
+            if let Some(pid) = state.pid {
+                debug!(pid, session_id = %payload.session_id, "Resolved PID for session");
+            }
             let mut reg = hook_registry.write();
             reg.insert(pane_id.to_string(), state);
             None
@@ -576,6 +581,10 @@ fn update_status(
         if payload.worktree.is_some() && state.worktree.is_none() {
             state.worktree = payload.worktree.clone();
         }
+        // Resolve PID if not yet known (fallback for late discovery)
+        if state.pid.is_none() && !payload.session_id.is_empty() {
+            state.pid = crate::session_discovery::resolve_pid_for_session(&payload.session_id);
+        }
         save_transcript_path(state, payload);
         state.last_context = build_context(payload);
         state.touch();
@@ -585,6 +594,8 @@ fn update_status(
         state.status = status;
         state.last_tool = tool_name;
         state.worktree = payload.worktree.clone();
+        // Resolve PID for new entry
+        state.pid = crate::session_discovery::resolve_pid_for_session(&payload.session_id);
         save_transcript_path(&mut state, payload);
         state.last_context = build_context(payload);
         reg.insert(pane_id.to_string(), state);
