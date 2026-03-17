@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
-    routing::{get, post},
+    routing::{any, get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -19,6 +19,7 @@ use super::auth::{self, AuthState};
 use super::events;
 use super::hooks;
 use super::static_files;
+use super::ws;
 
 /// Web server for remote control
 pub struct WebServer {
@@ -82,6 +83,10 @@ impl WebServer {
             .route("/worktrees/delete", post(api::delete_worktree))
             .route("/worktrees/launch", post(api::launch_agent_in_worktree))
             .route("/worktrees/diff", post(api::get_worktree_diff))
+            .route("/spawn", post(api::spawn_agent))
+            .route("/agents/{id}/output", get(api::get_agent_output))
+            .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))
+            .route("/agents/{id}/terminal", any(ws::ws_terminal))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

@@ -89,6 +89,9 @@ pub struct AgentInfo {
     /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_name: Option<String>,
+    /// PTY session ID if this agent was spawned via the PTY spawn API
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pty_session_id: Option<String>,
 }
 
 /// Team information associated with an agent for API response
@@ -272,6 +275,7 @@ pub(super) fn build_agent_info(snapshot: &tmai_core::api::AgentSnapshot) -> Agen
         auto_approve_phase,
         git_common_dir: snapshot.git_common_dir.clone(),
         worktree_name: snapshot.worktree_name.clone(),
+        pty_session_id: snapshot.pty_session_id.clone(),
     }
 }
 
@@ -772,6 +776,270 @@ pub async fn get_worktree_diff(
         }
         Err(e) => Err(api_error_to_http(e)),
     }
+}
+
+// =========================================================
+// PTY spawn endpoint
+// =========================================================
+
+/// Spawn request body
+#[derive(Debug, Deserialize)]
+pub struct SpawnRequest {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default = "default_cwd")]
+    pub cwd: String,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+}
+
+/// Default working directory for spawn
+fn default_cwd() -> String {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "/tmp".to_string())
+}
+
+/// Default terminal rows
+fn default_rows() -> u16 {
+    24
+}
+
+/// Default terminal cols
+fn default_cols() -> u16 {
+    80
+}
+
+/// Spawn response body
+#[derive(Debug, Serialize)]
+pub struct SpawnResponse {
+    pub session_id: String,
+    pub pid: u32,
+    pub command: String,
+}
+
+/// POST /api/spawn — spawn an agent in a new PTY session
+pub async fn spawn_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<SpawnRequest>,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate command (whitelist to prevent arbitrary execution)
+    let allowed_commands = ["claude", "codex", "gemini", "bash", "sh", "zsh"];
+    let base_command = req.command.split('/').next_back().unwrap_or(&req.command);
+    if !allowed_commands.contains(&base_command) {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!(
+                "Command not allowed: {}. Allowed: {:?}",
+                req.command, allowed_commands
+            ),
+        ));
+    }
+
+    // Validate cwd exists
+    if !std::path::Path::new(&req.cwd).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", req.cwd),
+        ));
+    }
+
+    let args: Vec<&str> = req.args.iter().map(|s| s.as_str()).collect();
+    let rows = if req.rows > 0 { req.rows } else { 24 };
+    let cols = if req.cols > 0 { req.cols } else { 80 };
+
+    tracing::info!(
+        "API: spawn command={} args={:?} cwd={}",
+        req.command,
+        req.args,
+        req.cwd
+    );
+
+    // Build environment variables so spawned agents can call tmai CLI
+    let (api_token, api_port) = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        (state.web.token.clone().unwrap_or_default(), state.web.port)
+    };
+    let api_url = format!("http://127.0.0.1:{}", api_port);
+    let env: Vec<(&str, &str)> = vec![
+        ("TMAI_API_URL", api_url.as_str()),
+        ("TMAI_TOKEN", api_token.as_str()),
+    ];
+
+    match core
+        .pty_registry()
+        .spawn_session(&req.command, &args, &req.cwd, rows, cols, &env)
+    {
+        Ok(session) => {
+            let session_id = session.id.clone();
+            let response = SpawnResponse {
+                session_id: session_id.clone(),
+                pid: session.pid,
+                command: session.command.clone(),
+            };
+
+            // Fetch git info for the cwd so spawned agent groups with same-repo agents
+            let git_info = tmai_core::git::GitCache::new().get_info(&req.cwd).await;
+
+            // Register as a MonitoredAgent in AppState so the Poller won't discard it
+            {
+                #[allow(deprecated)]
+                let state = core.raw_state();
+                let mut s = state.write();
+                let agent_type = match req.command.as_str() {
+                    "claude" => tmai_core::agents::AgentType::ClaudeCode,
+                    "codex" => tmai_core::agents::AgentType::CodexCli,
+                    "gemini" => tmai_core::agents::AgentType::GeminiCli,
+                    other => tmai_core::agents::AgentType::Custom(other.to_string()),
+                };
+                let mut agent = tmai_core::agents::MonitoredAgent::new(
+                    session_id.clone(),
+                    agent_type,
+                    req.command.clone(),
+                    req.cwd.clone(),
+                    session.pid,
+                    "pty".to_string(),
+                    req.command.clone(),
+                    0,
+                    0,
+                );
+                agent.status = tmai_core::agents::AgentStatus::Processing {
+                    activity: "Starting...".to_string(),
+                };
+                agent.pty_session_id = Some(session_id.clone());
+                if let Some(ref info) = git_info {
+                    agent.git_branch = Some(info.branch.clone());
+                    agent.git_dirty = Some(info.dirty);
+                    agent.is_worktree = Some(info.is_worktree);
+                    agent.git_common_dir = info.common_dir.clone();
+                    agent.worktree_name = tmai_core::git::extract_claude_worktree_name(&req.cwd);
+                }
+                s.agents.insert(session_id.clone(), agent);
+                s.agent_order.push(session_id);
+            }
+            core.notify_agents_updated();
+
+            tracing::info!(
+                "API: spawned session_id={} pid={}",
+                response.session_id,
+                response.pid
+            );
+            Ok(Json(response))
+        }
+        Err(e) => {
+            tracing::error!("API: spawn failed: {}", e);
+            Err(json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to spawn: {}", e),
+            ))
+        }
+    }
+}
+
+// =========================================================
+// Inter-agent communication endpoints
+// =========================================================
+
+/// GET /api/agents/{id}/output — get PTY scrollback output as text
+pub async fn get_agent_output(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let session = core
+        .pty_registry()
+        .get(&id)
+        .ok_or_else(|| json_error(StatusCode::NOT_FOUND, "PTY session not found"))?;
+
+    let snapshot = session.scrollback_snapshot();
+    let text = String::from_utf8_lossy(&snapshot).to_string();
+
+    Ok(Json(serde_json::json!({
+        "session_id": id,
+        "output": text,
+        "bytes": snapshot.len(),
+    })))
+}
+
+/// Request body for sending text between agents
+#[derive(Debug, Deserialize)]
+pub struct SendToRequest {
+    /// Text to send as input to the target agent
+    pub text: String,
+}
+
+/// POST /api/agents/{from}/send-to/{to} — send text from one agent to another
+pub async fn send_to_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Path((from, to)): Path<(String, String)>,
+    Json(req): Json<SendToRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate source exists (either PTY or regular agent)
+    let source_exists = core.pty_registry().get(&from).is_some() || core.get_agent(&from).is_ok();
+    if !source_exists {
+        return Err(json_error(StatusCode::NOT_FOUND, "Source agent not found"));
+    }
+
+    // Validate text length
+    if req.text.len() > 10240 {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Text too long (max 10KB)",
+        ));
+    }
+
+    // Try PTY write first (for PTY-spawned targets)
+    if let Some(target_session) = core.pty_registry().get(&to) {
+        target_session
+            .write_input(req.text.as_bytes())
+            .map_err(|e| {
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("Failed to write to target PTY: {}", e),
+                )
+            })?;
+        // Send Enter after the text
+        target_session.write_input(b"\r").map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to send Enter: {}", e),
+            )
+        })?;
+
+        tracing::info!(
+            "API: sent {} bytes from {} to {} (PTY)",
+            req.text.len(),
+            from,
+            to
+        );
+        return Ok(Json(serde_json::json!({
+            "status": "ok",
+            "method": "pty",
+        })));
+    }
+
+    // Fall back to regular send_text for non-PTY agents
+    core.send_text(&to, &req.text).await.map_err(|e| {
+        let status = match &e {
+            tmai_core::api::ApiError::AgentNotFound { .. } => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        json_error(status, &e.to_string())
+    })?;
+
+    tracing::info!(
+        "API: sent {} bytes from {} to {} (command_sender)",
+        req.text.len(),
+        from,
+        to
+    );
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "method": "command_sender",
+    })))
 }
 
 /// Re-export for convenience

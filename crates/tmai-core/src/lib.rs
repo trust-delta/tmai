@@ -10,6 +10,7 @@ pub mod git;
 pub mod hooks;
 pub mod ipc;
 pub mod monitor;
+pub mod pty;
 pub mod pty_inject;
 pub mod review;
 pub mod runtime;

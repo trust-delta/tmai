@@ -80,3 +80,64 @@ export async function fetchPreview(id: string) {
   if (!res.ok) throw new Error(`fetchPreview: ${res.status}`);
   return res.json();
 }
+
+/** POST /api/spawn — spawn an agent in a new PTY session */
+export async function spawnAgent(
+  command: string,
+  args: string[] = [],
+  cwd?: string,
+  rows?: number,
+  cols?: number,
+) {
+  const body: Record<string, unknown> = { command, args };
+  if (cwd) body.cwd = cwd;
+  if (rows) body.rows = rows;
+  if (cols) body.cols = cols;
+  const res = await apiFetch("/api/spawn", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`spawnAgent: ${res.status}`);
+  return res.json() as Promise<{
+    session_id: string;
+    pid: number;
+    command: string;
+  }>;
+}
+
+/** GET /api/agents/{id}/output — get PTY scrollback text */
+export async function getAgentOutput(id: string) {
+  const res = await apiFetch(
+    `/api/agents/${encodeURIComponent(id)}/output`,
+  );
+  if (!res.ok) throw new Error(`getAgentOutput: ${res.status}`);
+  return res.json() as Promise<{
+    session_id: string;
+    output: string;
+    bytes: number;
+  }>;
+}
+
+/** POST /api/agents/{from}/send-to/{to} — send text between agents */
+export async function sendToAgent(
+  from: string,
+  to: string,
+  text: string,
+) {
+  const res = await apiFetch(
+    `/api/agents/${encodeURIComponent(from)}/send-to/${encodeURIComponent(to)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    },
+  );
+  if (!res.ok) throw new Error(`sendToAgent: ${res.status}`);
+  return res.json();
+}
+
+/** Build a WebSocket URL for a PTY terminal session */
+export function buildWsUrl(sessionId: string): string {
+  const token = useAuthStore.getState().token;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/agents/${encodeURIComponent(sessionId)}/terminal?token=${encodeURIComponent(token)}`;
+}

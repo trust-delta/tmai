@@ -415,13 +415,20 @@ pub fn resolve_pane_id(
         }
     }
 
-    // Strategy 3: cwd-based matching
+    // Strategy 3: cwd-based matching (prefer PTY-spawned agents for direct linking)
     if let Some(cwd) = cwd {
         if !cwd.is_empty() {
             let app_state = state.read();
+            // First, check for PTY-spawned agents with matching cwd — these should
+            // receive hook events directly since they are tmai-managed processes
+            for agent in app_state.agents.values() {
+                if agent.cwd == cwd && agent.pty_session_id.is_some() {
+                    return Some(agent.id.clone());
+                }
+            }
+            // Then fall back to tmux pane_id mapping
             for agent in app_state.agents.values() {
                 if agent.cwd == cwd {
-                    // Extract pane_id from target_to_pane_id mapping
                     if let Some(pane_id) = app_state.target_to_pane_id.get(&agent.target) {
                         return Some(pane_id.clone());
                     }
@@ -445,6 +452,49 @@ fn build_context(payload: &HookEventPayload) -> HookContext {
         event_name: payload.hook_event_name.clone(),
         tool_input: payload.tool_input.clone(),
         permission_mode: payload.permission_mode.clone(),
+    }
+}
+
+/// Convert HookState to AgentStatus.
+///
+/// Used by both the Poller (for hook-detected agents) and the PTY sync
+/// logic (for PTY-spawned agents that receive hook events).
+pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agents::AgentStatus {
+    use super::types::HookStatus;
+    use crate::agents::{AgentStatus, ApprovalType};
+
+    match hs.status {
+        HookStatus::Processing => {
+            let activity = hs
+                .last_tool
+                .as_ref()
+                .filter(|t| !t.is_empty())
+                .map(|t| format!("Tool: {}", t))
+                .unwrap_or_default();
+            AgentStatus::Processing { activity }
+        }
+        HookStatus::Idle => AgentStatus::Idle,
+        HookStatus::AwaitingApproval => {
+            let tool_info = hs.last_tool.clone().unwrap_or_default();
+            if tool_info == "AskUserQuestion" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::UserQuestion {
+                        choices: vec![],
+                        multi_select: false,
+                        cursor_position: 0,
+                    },
+                    details: String::new(),
+                }
+            } else {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::Other("Approval".to_string()),
+                    details: tool_info,
+                }
+            }
+        }
+        HookStatus::Compacting => AgentStatus::Processing {
+            activity: "Compacting context…".to_string(),
+        },
     }
 }
 

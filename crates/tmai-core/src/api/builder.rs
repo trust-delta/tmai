@@ -15,6 +15,7 @@ use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
+use crate::pty::PtyRegistry;
 use crate::state::{AppState, SharedState};
 
 use super::core::TmaiCore;
@@ -29,6 +30,7 @@ pub struct TmaiCoreBuilder {
     hook_registry: Option<HookRegistry>,
     session_pane_map: Option<SessionPaneMap>,
     hook_token: Option<String>,
+    pty_registry: Option<Arc<PtyRegistry>>,
 }
 
 impl TmaiCoreBuilder {
@@ -43,6 +45,7 @@ impl TmaiCoreBuilder {
             hook_registry: None,
             session_pane_map: None,
             hook_token: None,
+            pty_registry: None,
         }
     }
 
@@ -57,6 +60,7 @@ impl TmaiCoreBuilder {
             hook_registry: None,
             session_pane_map: None,
             hook_token: None,
+            pty_registry: None,
         }
     }
 
@@ -102,6 +106,12 @@ impl TmaiCoreBuilder {
         self
     }
 
+    /// Set the PTY session registry for spawned agents
+    pub fn with_pty_registry(mut self, registry: Arc<PtyRegistry>) -> Self {
+        self.pty_registry = Some(registry);
+        self
+    }
+
     /// Build the `TmaiCore` instance
     ///
     /// If no state was provided, a fresh `AppState::shared()` is created.
@@ -115,6 +125,10 @@ impl TmaiCoreBuilder {
             .session_pane_map
             .unwrap_or_else(crate::hooks::new_session_pane_map);
 
+        let pty_registry = self
+            .pty_registry
+            .unwrap_or_else(|| Arc::new(PtyRegistry::default()));
+
         TmaiCore::new(
             state,
             self.command_sender,
@@ -124,6 +138,7 @@ impl TmaiCoreBuilder {
             hook_registry,
             session_pane_map,
             self.hook_token,
+            pty_registry,
         )
     }
 }

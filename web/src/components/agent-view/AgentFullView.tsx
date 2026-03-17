@@ -2,6 +2,8 @@ import { useAgentsStore } from "../../stores/agents";
 import { useAgentPreview } from "../../hooks/useAgentPreview";
 import { StatusBadge } from "../common/StatusBadge";
 import { PreviewPane } from "./PreviewPane";
+import { TerminalPane } from "./TerminalPane";
+import { SendToPanel } from "./SendToPanel";
 import { InputBar } from "./InputBar";
 import { ApprovalBar } from "./ApprovalBar";
 import type { Agent } from "../../types/agent";
@@ -53,13 +55,20 @@ export function AgentFullView({ agent }: AgentFullViewProps) {
         <ApprovalBar agent={agent} />
       )}
 
-      {/* Preview pane */}
+      {/* Terminal or Preview pane */}
       <div className="min-h-0 flex-1">
-        <PreviewPane preview={preview} />
+        {agent.pty_session_id ? (
+          <TerminalPane sessionId={agent.pty_session_id} />
+        ) : (
+          <PreviewPane preview={preview} />
+        )}
       </div>
 
-      {/* Input bar */}
-      <InputBar agentId={agent.id} />
+      {/* Inter-agent communication panel (shown when multiple agents exist) */}
+      <SendToPanel agent={agent} />
+
+      {/* Input bar (hidden when using xterm.js terminal — input goes directly to PTY) */}
+      {!agent.pty_session_id && <InputBar agentId={agent.id} />}
     </div>
   );
 }
