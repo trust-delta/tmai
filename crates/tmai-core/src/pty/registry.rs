@@ -22,7 +22,7 @@ impl PtyRegistry {
 
     /// Spawn a new agent process and register the session.
     ///
-    /// Returns the session ID on success.
+    /// Returns the session on success.
     pub fn spawn_session(
         &self,
         command: &str,
@@ -30,8 +30,9 @@ impl PtyRegistry {
         cwd: &str,
         rows: u16,
         cols: u16,
+        env: &[(&str, &str)],
     ) -> Result<Arc<PtySession>> {
-        let session = PtySession::spawn(command, args, cwd, rows, cols)?;
+        let session = PtySession::spawn(command, args, cwd, rows, cols, env)?;
         let id = session.id.clone();
         self.sessions.write().insert(id, session.clone());
         Ok(session)
@@ -91,7 +92,7 @@ mod tests {
     fn test_registry_spawn_and_get() {
         let registry = PtyRegistry::new();
         let session = registry
-            .spawn_session("echo", &["hello"], "/tmp", 24, 80)
+            .spawn_session("echo", &["hello"], "/tmp", 24, 80, &[])
             .expect("spawn_session failed");
 
         let id = session.id.clone();
@@ -103,7 +104,7 @@ mod tests {
     fn test_registry_remove() {
         let registry = PtyRegistry::new();
         let session = registry
-            .spawn_session("echo", &["hello"], "/tmp", 24, 80)
+            .spawn_session("echo", &["hello"], "/tmp", 24, 80, &[])
             .expect("spawn_session failed");
 
         let id = session.id.clone();
@@ -116,7 +117,7 @@ mod tests {
     fn test_registry_cleanup_dead() {
         let registry = PtyRegistry::new();
         let session = registry
-            .spawn_session("true", &[], "/tmp", 24, 80)
+            .spawn_session("true", &[], "/tmp", 24, 80, &[])
             .expect("spawn_session failed");
 
         let _id = session.id.clone();

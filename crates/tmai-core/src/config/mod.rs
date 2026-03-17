@@ -5,7 +5,7 @@ pub use claude_settings::{
     ClaudeSettings, ClaudeSettingsCache, SpinnerVerbsConfig, SpinnerVerbsMode,
 };
 pub use settings::{
-    AuditCommand, AutoApproveSettings, CodexWsConnection, CodexWsSettings, Config,
+    AuditCommand, AutoApproveSettings, CodexWsConnection, CodexWsSettings, Command, Config,
     CreateProcessSettings, ExfilDetectionSettings, ReviewSettings, RuleSettings, Settings,
     TeamSettings,
 };

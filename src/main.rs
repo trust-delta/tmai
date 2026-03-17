@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
         return tmai::codex_hook::run(settings.web.port, &token);
     }
 
+    // Check for inter-agent CLI commands (agents/output/send)
+    if let Some(cmd) = cli.get_agent_command() {
+        return run_agent_command(cmd.clone());
+    }
+
     // Check for init subcommand
     if cli.is_init_mode() {
         tmai::init::run(cli.get_init_force())?;
@@ -456,4 +461,116 @@ fn setup_logging(debug: bool, log_to_file: bool) {
             .with(tracing_subscriber::fmt::layer().with_target(false))
             .init();
     }
+}
+
+/// Run inter-agent CLI commands (agents/output/send).
+///
+/// These commands use TMAI_API_URL and TMAI_TOKEN environment variables
+/// to call the tmai web API, allowing spawned agents to communicate.
+fn run_agent_command(cmd: tmai_core::config::Command) -> Result<()> {
+    use tmai_core::config::Command;
+
+    let api_url =
+        std::env::var("TMAI_API_URL").unwrap_or_else(|_| "http://127.0.0.1:9876".to_string());
+    let token = std::env::var("TMAI_TOKEN").unwrap_or_default();
+
+    let auth_header = format!("Bearer {}", token);
+
+    match cmd {
+        Command::Agents => {
+            let url = format!("{}/api/agents", api_url);
+            let mut resp = ureq::get(&url)
+                .header("Authorization", &auth_header)
+                .call()
+                .context("Failed to fetch agents")?;
+            let body: serde_json::Value = resp
+                .body_mut()
+                .read_json()
+                .context("Failed to parse JSON")?;
+
+            if let Some(agents) = body.as_array() {
+                for agent in agents {
+                    let id = agent["id"].as_str().unwrap_or("?");
+                    let agent_type = agent["agent_type"].as_str().unwrap_or("?");
+                    let status_type = agent["status"]["type"].as_str().unwrap_or("?");
+                    let cwd = agent["cwd"].as_str().unwrap_or("?");
+                    let pty = if agent["pty_session_id"].is_string() {
+                        " [pty]"
+                    } else {
+                        ""
+                    };
+                    println!("{}\t{}\t{}\t{}{}", id, agent_type, status_type, cwd, pty);
+                }
+            }
+        }
+        Command::Output { id } => {
+            let url = format!("{}/api/agents/{}/output", api_url, urlencoded(&id));
+            let resp = ureq::get(&url).header("Authorization", &auth_header).call();
+            match resp {
+                Ok(mut r) => {
+                    let body: serde_json::Value =
+                        r.body_mut().read_json().context("Failed to parse JSON")?;
+                    if let Some(output) = body["output"].as_str() {
+                        print!("{}", output);
+                    }
+                }
+                Err(ureq::Error::StatusCode(404)) => {
+                    // Not a PTY session — try the preview endpoint
+                    let preview_url = format!("{}/api/agents/{}/preview", api_url, urlencoded(&id));
+                    let mut resp = ureq::get(&preview_url)
+                        .header("Authorization", &auth_header)
+                        .call()
+                        .context("Failed to fetch preview")?;
+                    let body: serde_json::Value = resp
+                        .body_mut()
+                        .read_json()
+                        .context("Failed to parse JSON")?;
+                    if let Some(content) = body["content"].as_str() {
+                        print!("{}", content);
+                    }
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Command::Send { id, text } => {
+            let message = text.join(" ");
+            if message.is_empty() {
+                anyhow::bail!("No text to send. Usage: tmai send <id> <text...>");
+            }
+
+            // Use send-to endpoint with self as source (session_id from env)
+            let self_id = std::env::var("TMAI_SESSION_ID").unwrap_or_else(|_| "cli".to_string());
+            let url = format!(
+                "{}/api/agents/{}/send-to/{}",
+                api_url,
+                urlencoded(&self_id),
+                urlencoded(&id)
+            );
+            let mut resp = ureq::post(&url)
+                .header("Authorization", &auth_header)
+                .header("Content-Type", "application/json")
+                .send(serde_json::json!({"text": message}).to_string().as_bytes())
+                .context("Failed to send text")?;
+            let body: serde_json::Value = resp
+                .body_mut()
+                .read_json()
+                .context("Failed to parse response")?;
+            if body["status"].as_str() == Some("ok") {
+                eprintln!("Sent to {}", id);
+            } else {
+                eprintln!("Send failed: {}", body);
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    Ok(())
+}
+
+/// Simple percent-encoding for URL path segments
+fn urlencoded(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace('/', "%2F")
+        .replace(':', "%3A")
+        .replace(' ', "%20")
 }

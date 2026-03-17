@@ -74,6 +74,20 @@ pub enum Command {
     /// Bridge Codex CLI hook events to tmai (called by Codex, not by users)
     #[command(name = "codex-hook")]
     CodexHook,
+    /// List all agents visible to tmai
+    Agents,
+    /// Get terminal output of another agent
+    Output {
+        /// Agent/session ID
+        id: String,
+    },
+    /// Send text input to another agent
+    Send {
+        /// Target agent/session ID
+        id: String,
+        /// Text to send
+        text: Vec<String>,
+    },
 }
 
 /// Audit analysis subcommands
@@ -174,6 +188,16 @@ impl Config {
                 let command = args[0].clone();
                 let cmd_args = args[1..].to_vec();
                 Some((command, cmd_args))
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if running an inter-agent CLI command (agents/output/send)
+    pub fn get_agent_command(&self) -> Option<&Command> {
+        match &self.command {
+            Some(cmd @ (Command::Agents | Command::Output { .. } | Command::Send { .. })) => {
+                Some(cmd)
             }
             _ => None,
         }

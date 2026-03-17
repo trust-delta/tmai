@@ -858,9 +858,21 @@ pub async fn spawn_agent(
         req.cwd
     );
 
+    // Build environment variables so spawned agents can call tmai CLI
+    let (api_token, api_port) = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        (state.web.token.clone().unwrap_or_default(), state.web.port)
+    };
+    let api_url = format!("http://127.0.0.1:{}", api_port);
+    let env: Vec<(&str, &str)> = vec![
+        ("TMAI_API_URL", api_url.as_str()),
+        ("TMAI_TOKEN", api_token.as_str()),
+    ];
+
     match core
         .pty_registry()
-        .spawn_session(&req.command, &args, &req.cwd, rows, cols)
+        .spawn_session(&req.command, &args, &req.cwd, rows, cols, &env)
     {
         Ok(session) => {
             let session_id = session.id.clone();

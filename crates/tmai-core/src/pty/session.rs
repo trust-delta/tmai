@@ -90,12 +90,14 @@ impl PtySession {
     /// Spawn a command in a new PTY session.
     ///
     /// Starts a background thread that reads PTY output and broadcasts it.
+    /// Optional `env` pairs are set as environment variables in the child.
     pub fn spawn(
         command: &str,
         args: &[&str],
         cwd: &str,
         rows: u16,
         cols: u16,
+        env: &[(&str, &str)],
     ) -> Result<Arc<Self>> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -111,6 +113,9 @@ impl PtySession {
         let mut cmd = CommandBuilder::new(command);
         cmd.args(args);
         cmd.cwd(cwd);
+        for (key, val) in env {
+            cmd.env(key, val);
+        }
 
         // Spawn child
         let child = pair
@@ -284,8 +289,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_echo() {
-        let session =
-            PtySession::spawn("echo", &["hello"], "/tmp", 24, 80).expect("Failed to spawn echo");
+        let session = PtySession::spawn("echo", &["hello"], "/tmp", 24, 80, &[])
+            .expect("Failed to spawn echo");
 
         let mut rx = session.subscribe();
 
@@ -326,7 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scrollback_snapshot() {
-        let session = PtySession::spawn("echo", &["hello world"], "/tmp", 24, 80)
+        let session = PtySession::spawn("echo", &["hello world"], "/tmp", 24, 80, &[])
             .expect("Failed to spawn echo");
 
         // Wait for output to be buffered
@@ -344,7 +349,8 @@ mod tests {
     #[test]
     fn test_write_input() {
         // Spawn cat which echoes input
-        let session = PtySession::spawn("cat", &[], "/tmp", 24, 80).expect("Failed to spawn cat");
+        let session =
+            PtySession::spawn("cat", &[], "/tmp", 24, 80, &[]).expect("Failed to spawn cat");
 
         // Write something
         session.write_input(b"test\n").expect("write_input failed");
@@ -357,7 +363,7 @@ mod tests {
     #[test]
     fn test_resize() {
         let session =
-            PtySession::spawn("sleep", &["1"], "/tmp", 24, 80).expect("Failed to spawn sleep");
+            PtySession::spawn("sleep", &["1"], "/tmp", 24, 80, &[]).expect("Failed to spawn sleep");
 
         // Resize should not error
         session.resize(40, 120).expect("resize failed");
