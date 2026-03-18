@@ -8,15 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@tauri-apps/api':
-        specifier: ^2
-        version: 2.10.1
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
-      '@xterm/addon-webgl':
-        specifier: ^0.19.0
-        version: 0.19.0
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
@@ -553,9 +547,6 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7
 
-  '@tauri-apps/api@2.10.1':
-    resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
-
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
 
@@ -590,9 +581,6 @@ packages:
 
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
-
-  '@xterm/addon-webgl@0.19.0':
-    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
 
   '@xterm/xterm@6.0.0':
     resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
@@ -1250,8 +1238,6 @@ snapshots:
       tailwindcss: 4.2.1
       vite: 6.4.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.31.1)
 
-  '@tauri-apps/api@2.10.1': {}
-
   '@types/babel__core@7.20.5':
     dependencies:
       '@babel/parser': 7.29.2
@@ -1300,8 +1286,6 @@ snapshots:
       - supports-color
 
   '@xterm/addon-fit@0.11.0': {}
-
-  '@xterm/addon-webgl@0.19.0': {}
 
   '@xterm/xterm@6.0.0': {}
 

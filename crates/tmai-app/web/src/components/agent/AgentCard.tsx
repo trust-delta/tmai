@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { statusName, needsAttention, type AgentSnapshot } from "@/lib/tauri";
+import { statusName, needsAttention, type AgentSnapshot } from "@/lib/api";
 
 // Status badge color mapping
 const statusColors: Record<string, string> = {

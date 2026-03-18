@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "@/lib/tauri";
+import { api } from "@/lib/api";
 
 interface SpawnBarProps {
   onSpawned: (target: string) => void;
@@ -14,7 +14,7 @@ export function SpawnBar({ onSpawned }: SpawnBarProps) {
     setSpawning(true);
     try {
       const res = await api.spawnPty({ command });
-      onSpawned(res.sessionId);
+      onSpawned(res.session_id);
     } catch (e) {
       console.error("Spawn failed:", e);
     } finally {

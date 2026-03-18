@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { api, statusName, type AgentSnapshot } from "@/lib/tauri";
+import { api, statusName, type AgentSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AgentActionsProps {

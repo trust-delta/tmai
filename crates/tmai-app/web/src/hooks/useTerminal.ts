@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Channel } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { api } from "@/lib/tauri";
+import { connectTerminal } from "@/lib/api";
 
 interface UseTerminalOptions {
   sessionId: string | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-// Hook to manage xterm.js terminal connected to a PTY session via Tauri Channel
+// Hook to manage xterm.js terminal connected to a PTY session via WebSocket
 export function useTerminal({ sessionId, containerRef }: UseTerminalOptions) {
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const sendRef = useRef<((data: string | ArrayBuffer) => void) | null>(null);
 
-  // Fit terminal to container
   const fit = useCallback(() => {
     fitAddonRef.current?.fit();
   }, []);
@@ -24,50 +23,48 @@ export function useTerminal({ sessionId, containerRef }: UseTerminalOptions) {
 
     const container = containerRef.current;
 
-    // Create terminal (WebGL disabled — interferes with IME on Linux/WebKitGTK)
     const term = new Terminal({
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
       theme: {
-        background: "#09090b", // zinc-950
-        foreground: "#fafafa", // zinc-50
-        cursor: "#a1a1aa", // zinc-400
-        selectionBackground: "#3f3f46", // zinc-700
+        background: "#09090b",
+        foreground: "#fafafa",
+        cursor: "#a1a1aa",
+        selectionBackground: "#3f3f46",
       },
       cursorBlink: true,
-      allowProposedApi: true,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
-
     fitAddon.fit();
+
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Subscribe to PTY output via Tauri Channel
-    const channel = new Channel<number[]>();
-    channel.onmessage = (data) => {
-      term.write(new Uint8Array(data));
-    };
-    api.subscribePty(sessionId, channel).catch(console.error);
+    // Connect to PTY via WebSocket
+    const { ws, send } = connectTerminal(sessionId, (data) => {
+      term.write(data);
+    });
+    sendRef.current = send;
 
-    // Forward terminal input to PTY
+    // Forward terminal input to PTY via WebSocket
     const inputDisposable = term.onData((data) => {
-      const bytes = Array.from(new TextEncoder().encode(data));
-      api.writePty(sessionId, bytes).catch(console.error);
+      send(new TextEncoder().encode(data));
     });
 
-    // Handle binary input (paste, etc.)
     const binaryDisposable = term.onBinary((data) => {
-      const bytes = Array.from(data, (c) => c.charCodeAt(0));
-      api.writePty(sessionId, bytes).catch(console.error);
+      const bytes = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        bytes[i] = data.charCodeAt(i);
+      }
+      send(bytes.buffer);
     });
 
-    // Sync terminal size to PTY on resize
+    // Send resize as JSON text frame
     const resizeDisposable = term.onResize(({ cols, rows }) => {
-      api.resizePty(sessionId, rows, cols).catch(console.error);
+      send(JSON.stringify({ type: "resize", rows, cols }));
     });
 
     // ResizeObserver for container size changes
@@ -76,20 +73,23 @@ export function useTerminal({ sessionId, containerRef }: UseTerminalOptions) {
     });
     observer.observe(container);
 
-    // Initial resize sync
-    const { rows, cols } = term;
-    api.resizePty(sessionId, rows, cols).catch(console.error);
-
     return () => {
       observer.disconnect();
       inputDisposable.dispose();
       binaryDisposable.dispose();
       resizeDisposable.dispose();
+      ws.close();
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
+      sendRef.current = null;
     };
   }, [sessionId, containerRef]);
 
-  return { terminal: termRef, fit };
+  // Send raw text to PTY via WebSocket
+  const writeText = useCallback((text: string) => {
+    sendRef.current?.(new TextEncoder().encode(text));
+  }, []);
+
+  return { terminal: termRef, fit, writeText };
 }

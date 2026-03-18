@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, onCoreEvent, type AgentSnapshot } from "@/lib/tauri";
+import { api, onCoreEvent, type AgentSnapshot } from "@/lib/api";
 
-// Hook to fetch and reactively update agent list via Tauri IPC + CoreEvent
+// Hook to fetch and reactively update agent list via HTTP API + SSE
 export function useAgents() {
   const [agents, setAgents] = useState<AgentSnapshot[]>([]);
   const [attentionCount, setAttentionCount] = useState(0);
@@ -16,20 +16,20 @@ export function useAgents() {
       setAgents(agentList);
       setAttentionCount(count);
     } catch {
-      // Core may not be initialized yet during app startup
+      // Server may not be ready yet during startup
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Initial fetch (retry until core is ready)
+    // Initial fetch (retry until server is ready)
     const retryInterval = setInterval(() => {
       refresh().then(() => clearInterval(retryInterval));
     }, 500);
 
-    // Subscribe to CoreEvents for live updates
-    const unlisten = onCoreEvent((event) => {
+    // Subscribe to CoreEvents via SSE for live updates
+    const { unlisten } = onCoreEvent((event) => {
       if (
         event.type === "AgentsUpdated" ||
         event.type === "AgentAppeared" ||
@@ -42,7 +42,7 @@ export function useAgents() {
 
     return () => {
       clearInterval(retryInterval);
-      unlisten.then((fn) => fn());
+      unlisten();
     };
   }, [refresh]);
 

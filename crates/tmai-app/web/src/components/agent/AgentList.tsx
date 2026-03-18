@@ -1,4 +1,4 @@
-import type { AgentSnapshot } from "@/lib/tauri";
+import type { AgentSnapshot } from "@/lib/api";
 import { AgentCard } from "./AgentCard";
 
 interface AgentListProps {

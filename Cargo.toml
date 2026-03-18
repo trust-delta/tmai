@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tmai-core", "crates/tmai-app", "."]
+members = ["crates/tmai-core", "."]
 resolver = "2"
 
 [package]
