@@ -297,10 +297,12 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     let web_server = WebServer::new(settings.clone(), core.clone(), token.clone());
     web_server.start();
 
-    eprintln!(
-        "tmai: web server running at http://localhost:{}/?token={}",
-        port, token
-    );
+    let url = format!("http://localhost:{port}/?token={token}");
+    eprintln!("tmai: web server running at {url}");
+
+    // Open in Chrome App Mode (Windows browser via WSL interop)
+    open_in_browser(&url);
+
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
 
@@ -356,6 +358,45 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Open URL in browser, preferring Chrome App Mode for standalone window experience.
+///
+/// Tries chrome/chromium --app= first (standalone window, no tabs/address bar),
+/// then falls back to xdg-open. On WSL2, uses Windows browser via interop.
+fn open_in_browser(url: &str) {
+    use std::process::Command;
+
+    // WSL2: try Windows Chrome via interop
+    let chrome_commands = [
+        // Windows Chrome via WSL interop
+        "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+        "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+        // Linux Chrome
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+    ];
+
+    for chrome in &chrome_commands {
+        if Command::new(chrome)
+            .arg(format!("--app={url}"))
+            .spawn()
+            .is_ok()
+        {
+            eprintln!("tmai: opened in Chrome App Mode");
+            return;
+        }
+    }
+
+    // Fallback: xdg-open (opens default browser with full UI)
+    if Command::new("xdg-open").arg(url).spawn().is_ok() {
+        eprintln!("tmai: opened in default browser");
+        return;
+    }
+
+    eprintln!("tmai: could not open browser automatically — open the URL manually");
 }
 
 /// Run in wrap mode (PTY proxy for AI agent)
