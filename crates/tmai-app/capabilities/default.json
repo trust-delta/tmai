@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for tmai-app",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

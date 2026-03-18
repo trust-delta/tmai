@@ -17,7 +17,8 @@ use super::core::TmaiCore;
 ///
 /// Consumers call [`TmaiCore::subscribe()`] to receive these events
 /// via a `broadcast::Receiver`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type")]
 pub enum CoreEvent {
     /// The full agent list was refreshed (after a poll cycle)
     AgentsUpdated,
