@@ -22,9 +22,9 @@ export function App() {
   );
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100">
+    <div className="flex h-screen text-zinc-100">
       {/* Sidebar */}
-      <aside className="flex w-80 shrink-0 flex-col border-r border-zinc-800">
+      <aside className="glass flex w-80 shrink-0 flex-col">
         <StatusBar
           agentCount={agents.length}
           attentionCount={attentionCount}
@@ -45,11 +45,11 @@ export function App() {
           <TerminalPanel key={sessionId} sessionId={sessionId} />
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-300">
+            <div className="glass-light rounded-2xl px-12 py-10 text-center">
+              <h1 className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
                 tmai
               </h1>
-              <p className="mt-1 text-sm text-zinc-600">
+              <p className="mt-2 text-sm text-zinc-500">
                 {agents.length > 0
                   ? "Select an agent to view terminal"
                   : "Spawn an agent to get started"}

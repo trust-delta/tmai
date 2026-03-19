@@ -47,7 +47,15 @@ export type AgentStatus =
 
 export function statusName(status: AgentStatus): string {
   if (typeof status === "string") return status;
-  return Object.keys(status)[0];
+  if (status == null) return "Unknown";
+  // Externally tagged: { "Processing": { "activity": "..." } }
+  const keys = Object.keys(status).filter((k) => k !== "type");
+  if (keys.length > 0) return keys[0];
+  // Internally tagged fallback: { "type": "Processing", ... }
+  if ("type" in status && typeof (status as Record<string, unknown>).type === "string") {
+    return (status as Record<string, unknown>).type as string;
+  }
+  return "Unknown";
 }
 
 export function needsAttention(status: AgentStatus): boolean {
@@ -77,12 +85,160 @@ export interface AgentSnapshot {
   git_branch: string | null;
   git_dirty: boolean | null;
   is_worktree: boolean | null;
+  git_common_dir: string | null;
+  worktree_name: string | null;
   effort_level: EffortLevel | null;
   active_subagents: number;
   compaction_count: number;
   pty_session_id: string | null;
   is_virtual: boolean;
   team_info: { team_name: string; member_name: string } | null;
+}
+
+// ── Project grouping ──
+
+// A worktree (or main) within a project, containing agents
+export interface WorktreeGroup {
+  name: string; // "main" or worktree name
+  branch: string | null;
+  isWorktree: boolean;
+  dirty: boolean;
+  agents: AgentSnapshot[];
+}
+
+// A project group: one git repository (main + worktrees)
+export interface ProjectGroup {
+  // Display name derived from path (last dir component)
+  name: string;
+  // Full path (git_common_dir or cwd)
+  path: string;
+  // Worktrees within this project (main first, then worktrees sorted)
+  worktrees: WorktreeGroup[];
+  // Aggregate counts
+  totalAgents: number;
+  attentionAgents: number;
+}
+
+// Derive project display name from path
+function projectName(path: string): string {
+  // "/home/user/works/tmai/.git" → "tmai"
+  // "/home/user/works/tmai" → "tmai"
+  const cleaned = path.replace(/\/\.git\/?$/, "");
+  return cleaned.split("/").filter(Boolean).pop() || path;
+}
+
+// Normalize git_common_dir: strip trailing /.git and slashes
+function normalizeGitDir(dir: string): string {
+  return dir.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
+}
+
+// Group agents by project (git_common_dir) and worktree
+export function groupByProject(agents: AgentSnapshot[]): ProjectGroup[] {
+  const projectMap = new Map<string, AgentSnapshot[]>();
+
+  // First pass: build a cwd→git_common_dir lookup from agents that have it
+  const cwdToGitDir = new Map<string, string>();
+  for (const agent of agents) {
+    if (agent.git_common_dir) {
+      const norm = normalizeGitDir(agent.git_common_dir);
+      cwdToGitDir.set(agent.cwd, norm);
+    }
+  }
+
+  for (const agent of agents) {
+    // Prefer git_common_dir, then lookup from cwd, then fallback to cwd itself
+    let key: string;
+    if (agent.git_common_dir) {
+      key = normalizeGitDir(agent.git_common_dir);
+    } else {
+      // Try to match this cwd to a known git dir via prefix
+      let matched = cwdToGitDir.get(agent.cwd);
+      if (!matched) {
+        for (const [cwd, gitDir] of cwdToGitDir) {
+          if (agent.cwd.startsWith(cwd) || cwd.startsWith(agent.cwd)) {
+            matched = gitDir;
+            break;
+          }
+        }
+      }
+      key = matched || agent.cwd;
+    }
+
+    const group = projectMap.get(key);
+    if (group) {
+      group.push(agent);
+    } else {
+      projectMap.set(key, [agent]);
+    }
+  }
+
+  const projects: ProjectGroup[] = [];
+
+  for (const [path, groupAgents] of projectMap) {
+    // Sub-group by worktree
+    const worktreeMap = new Map<string, AgentSnapshot[]>();
+
+    for (const agent of groupAgents) {
+      const wtKey = agent.is_worktree
+        ? agent.worktree_name || agent.git_branch || "worktree"
+        : "main";
+      const wt = worktreeMap.get(wtKey);
+      if (wt) {
+        wt.push(agent);
+      } else {
+        worktreeMap.set(wtKey, [agent]);
+      }
+    }
+
+    // Build worktree groups (main first, then worktrees sorted)
+    const worktrees: WorktreeGroup[] = [];
+    const mainAgents = worktreeMap.get("main");
+    if (mainAgents) {
+      worktreeMap.delete("main");
+      worktrees.push({
+        name: "main",
+        branch: mainAgents[0]?.git_branch ?? null,
+        isWorktree: false,
+        dirty: mainAgents.some((a) => a.git_dirty === true),
+        agents: mainAgents,
+      });
+    }
+
+    // Remaining worktrees sorted by name
+    const sortedEntries = [...worktreeMap.entries()].sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    for (const [name, wtAgents] of sortedEntries) {
+      worktrees.push({
+        name,
+        branch: wtAgents[0]?.git_branch ?? null,
+        isWorktree: true,
+        dirty: wtAgents.some((a) => a.git_dirty === true),
+        agents: wtAgents,
+      });
+    }
+
+    const attentionCount = groupAgents.filter((a) =>
+      needsAttention(a.status),
+    ).length;
+
+    projects.push({
+      name: projectName(path),
+      path,
+      worktrees,
+      totalAgents: groupAgents.length,
+      attentionAgents: attentionCount,
+    });
+  }
+
+  // Sort: projects with attention first, then by name
+  projects.sort((a, b) => {
+    if (a.attentionAgents > 0 && b.attentionAgents === 0) return -1;
+    if (a.attentionAgents === 0 && b.attentionAgents > 0) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return projects;
 }
 
 export interface CoreEvent {

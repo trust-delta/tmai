@@ -1,7 +1,6 @@
 import { cn } from "@/lib/utils";
 import { statusName, needsAttention, type AgentSnapshot } from "@/lib/api";
 
-// Status badge color mapping
 const statusColors: Record<string, string> = {
   Processing: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   AwaitingApproval: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -11,7 +10,11 @@ const statusColors: Record<string, string> = {
   Unknown: "bg-zinc-500/20 text-zinc-500 border-zinc-500/30",
 };
 
-// Detection source icons (matching TUI)
+const statusGlow: Record<string, string> = {
+  Processing: "glow-cyan",
+  AwaitingApproval: "glow-red",
+};
+
 const sourceIcons: Record<string, string> = {
   HttpHook: "◈",
   IpcSocket: "◉",
@@ -30,17 +33,16 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const statusStyle = statusColors[name] ?? statusColors.Unknown;
   const sourceIcon = sourceIcons[agent.detection_source] ?? "?";
   const attention = needsAttention(agent.status);
+  const glow = statusGlow[name] ?? "";
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full rounded-lg border p-3 text-left transition-colors",
-        "hover:bg-zinc-800/50",
-        selected
-          ? "border-zinc-500 bg-zinc-800/80"
-          : "border-zinc-800 bg-zinc-900/50",
-        attention && "border-amber-500/40",
+        "glass-card w-full rounded-xl p-3 text-left transition-all",
+        selected && "!border-cyan-500/30 !bg-cyan-500/10",
+        attention && "!border-amber-500/30",
+        glow && selected && glow,
       )}
     >
       <div className="flex items-center justify-between">
@@ -49,7 +51,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             {sourceIcon}
           </span>
           <span className="truncate font-medium text-zinc-200">
-            {agent.display_name}
+            {agent.display_name || agent.target || agent.id || "agent"}
           </span>
         </div>
         <span

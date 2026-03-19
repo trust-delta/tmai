@@ -50,7 +50,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
   };
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-10 border-t border-zinc-700 bg-zinc-900/95 p-3 backdrop-blur-sm">
+    <div className="glass absolute inset-x-0 bottom-0 z-10 border-0 border-t border-white/5 p-3">
       <div className="flex items-start gap-2">
         <textarea
           ref={inputRef}
@@ -59,7 +59,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
           onKeyDown={handleKeyDown}
           rows={2}
           placeholder="Ctrl+V でペーストして Enter で送信"
-          className="flex-1 resize-none rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+          className="flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-cyan-500/30 focus:outline-none"
         />
         <div className="flex flex-col gap-1">
           <button
