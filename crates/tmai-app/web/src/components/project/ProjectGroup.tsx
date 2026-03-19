@@ -101,10 +101,10 @@ function WorktreeSection({
       <div className="flex flex-col gap-1">
         {worktree.agents.map((agent) => (
           <AgentCard
-            key={agent.target}
+            key={agent.id}
             agent={agent}
-            selected={agent.target === selectedTarget}
-            onClick={() => onSelect(agent.target)}
+            selected={agent.id === selectedTarget}
+            onClick={() => onSelect(agent.id)}
           />
         ))}
       </div>

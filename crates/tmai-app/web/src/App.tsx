@@ -10,7 +10,10 @@ export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
 
-  const selectedAgent = agents.find((a) => a.target === selectedTarget);
+  // Match by id (target may be missing from API response)
+  const selectedAgent = agents.find(
+    (a) => a.id === selectedTarget || a.target === selectedTarget,
+  );
   const sessionId = selectedAgent?.pty_session_id ?? null;
 
   const handleSpawned = useCallback(

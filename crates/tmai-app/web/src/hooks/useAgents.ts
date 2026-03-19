@@ -13,6 +13,8 @@ export function useAgents() {
         api.listAgents(),
         api.attentionCount(),
       ]);
+      // Debug: uncomment to inspect agent data
+      // console.log("[tmai] agents:", JSON.stringify(agentList.map(a => ({ id: a.id, pty: a.pty_session_id }))));
       setAgents(agentList);
       setAttentionCount(count);
     } catch {

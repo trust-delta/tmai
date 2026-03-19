@@ -18,40 +18,40 @@ export function AgentActions({ agent }: AgentActionsProps) {
 
   const handleApprove = useCallback(async () => {
     try {
-      await api.approve(agent.target);
+      await api.approve(agent.id);
     } catch (e) {
       console.error("Approve failed:", e);
     }
-  }, [agent.target]);
+  }, [agent.id]);
 
   const handleReject = useCallback(async () => {
     try {
-      await api.sendKey(agent.target, "Escape");
+      await api.sendKey(agent.id, "Escape");
     } catch (e) {
       console.error("Reject failed:", e);
     }
-  }, [agent.target]);
+  }, [agent.id]);
 
   const handleSendText = useCallback(async () => {
     if (!input.trim() || sending) return;
     setSending(true);
     try {
-      await api.sendText(agent.target, input);
+      await api.sendText(agent.id, input);
       setInput("");
     } catch (e) {
       console.error("Send text failed:", e);
     } finally {
       setSending(false);
     }
-  }, [agent.target, input, sending]);
+  }, [agent.id, input, sending]);
 
   const handleKill = useCallback(async () => {
     try {
-      await api.killAgent(agent.target);
+      await api.killAgent(agent.id);
     } catch (e) {
       console.error("Kill failed:", e);
     }
-  }, [agent.target]);
+  }, [agent.id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
