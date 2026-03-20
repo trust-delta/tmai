@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
     // Web-only mode: skip TUI, run web server + monitoring loop only
     if cli.web_only {
         setup_logging(cli.debug, false); // stderr output (no TUI to corrupt)
-        return run_web_only_mode(settings).await;
+        return run_web_only_mode(settings, cli.debug).await;
     }
 
     setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
@@ -233,7 +233,7 @@ async fn main() -> Result<()> {
 }
 
 /// Run in web-only mode (no tmux, no TUI — hooks/IPC + web server only)
-async fn run_web_only_mode(settings: Settings) -> Result<()> {
+async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
     use tmai_core::runtime::StandaloneAdapter;
 
     eprintln!("tmai: starting in web-only mode (no tmux required)");
@@ -301,7 +301,8 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     eprintln!("tmai: web server running at {url}");
 
     // Open in Chrome App Mode (Windows browser via WSL interop)
-    open_in_browser(&url);
+    // In debug mode, enable Chrome remote debugging for DevTools MCP
+    open_in_browser(&url, debug);
 
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
@@ -360,11 +361,17 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     Ok(())
 }
 
+/// Chrome remote debugging port for DevTools MCP connection
+const CHROME_DEBUG_PORT: u16 = 9222;
+
 /// Open URL in browser, preferring Chrome App Mode for standalone window experience.
 ///
 /// Tries chrome/chromium --app= first (standalone window, no tabs/address bar),
 /// then falls back to xdg-open. On WSL2, uses Windows browser via interop.
-fn open_in_browser(url: &str) {
+///
+/// When `debug` is true, adds `--remote-debugging-port=9222` so that
+/// Chrome DevTools MCP can connect for automated testing/inspection.
+fn open_in_browser(url: &str, debug: bool) {
     use std::process::Command;
 
     // WSL2: try Windows Chrome via interop
@@ -379,13 +386,24 @@ fn open_in_browser(url: &str) {
         "chromium-browser",
     ];
 
+    // Build extra args for debug mode (Chrome DevTools Protocol)
+    let mut extra_args: Vec<String> = Vec::new();
+    if debug {
+        extra_args.push(format!("--remote-debugging-port={CHROME_DEBUG_PORT}"));
+        extra_args.push("--user-data-dir=/tmp/tmai-chrome-debug".to_string());
+    }
+
     for chrome in &chrome_commands {
-        if Command::new(chrome)
-            .arg(format!("--app={url}"))
-            .spawn()
-            .is_ok()
-        {
+        let mut cmd = Command::new(chrome);
+        cmd.arg(format!("--app={url}"));
+        for arg in &extra_args {
+            cmd.arg(arg);
+        }
+        if cmd.spawn().is_ok() {
             eprintln!("tmai: opened in Chrome App Mode");
+            if debug {
+                eprintln!("tmai: Chrome DevTools Protocol on port {CHROME_DEBUG_PORT} (for MCP)");
+            }
             return;
         }
     }
