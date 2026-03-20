@@ -1,14 +1,26 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAgents } from "@/hooks/useAgents";
+import { isAiAgent } from "@/lib/api";
 import { AgentList } from "@/components/agent/AgentList";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { TerminalList } from "@/components/terminal/TerminalList";
 import { SpawnBar } from "@/components/layout/SpawnBar";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+
+  // Split agents into AI agents and plain terminals
+  const aiAgents = useMemo(
+    () => agents.filter((a) => isAiAgent(a.agent_type)),
+    [agents],
+  );
+  const terminals = useMemo(
+    () => agents.filter((a) => !isAiAgent(a.agent_type)),
+    [agents],
+  );
 
   // Match by id (target may be missing from API response)
   const selectedAgent = agents.find(
@@ -29,12 +41,17 @@ export function App() {
       {/* Sidebar */}
       <aside className="glass flex w-80 shrink-0 flex-col">
         <StatusBar
-          agentCount={agents.length}
+          agentCount={aiAgents.length}
           attentionCount={attentionCount}
         />
         <AgentList
-          agents={agents}
+          agents={aiAgents}
           loading={loading}
+          selectedTarget={selectedTarget}
+          onSelect={setSelectedTarget}
+        />
+        <TerminalList
+          terminals={terminals}
           selectedTarget={selectedTarget}
           onSelect={setSelectedTarget}
         />

@@ -72,6 +72,16 @@ export type AgentType =
   | { Custom: string };
 export type EffortLevel = "Low" | "Medium" | "High";
 
+/// Whether this agent type is an AI coding agent (not a plain terminal)
+export function isAiAgent(agentType: AgentType): boolean {
+  return (
+    agentType === "ClaudeCode" ||
+    agentType === "OpenCode" ||
+    agentType === "CodexCli" ||
+    agentType === "GeminiCli"
+  );
+}
+
 export interface AgentSnapshot {
   id: string;
   target: string;
