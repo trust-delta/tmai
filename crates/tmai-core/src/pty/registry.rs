@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use parking_lot::RwLock;
 
+use super::persistence;
 use super::session::PtySession;
 
 /// Registry that tracks all active PTY sessions.
@@ -20,9 +21,7 @@ impl PtyRegistry {
         })
     }
 
-    /// Spawn a new agent process and register the session.
-    ///
-    /// Returns the session on success.
+    /// Spawn a new agent process (direct mode) and register the session.
     pub fn spawn_session(
         &self,
         command: &str,
@@ -36,6 +35,64 @@ impl PtyRegistry {
         let id = session.id.clone();
         self.sessions.write().insert(id, session.clone());
         Ok(session)
+    }
+
+    /// Spawn a new agent process via detached daemon and register the session.
+    ///
+    /// The child process survives tmai restart. The daemon holds the master PTY FD.
+    pub fn spawn_detached(
+        &self,
+        command: &str,
+        args: &[&str],
+        cwd: &str,
+        rows: u16,
+        cols: u16,
+        env: &[(&str, &str)],
+    ) -> Result<Arc<PtySession>> {
+        let session = PtySession::spawn_detached(command, args, cwd, rows, cols, env)?;
+        let id = session.id.clone();
+        self.sessions.write().insert(id, session.clone());
+        Ok(session)
+    }
+
+    /// Restore sessions from persisted metadata (reconnect to daemons).
+    ///
+    /// Called on tmai startup to rediscover PTY-spawned agents.
+    /// Returns list of (session_id, command, cwd, pid) for each restored session.
+    pub fn restore_sessions(&self) -> Vec<(String, String, String, u32)> {
+        let persisted = persistence::load_sessions();
+        let mut restored = Vec::new();
+
+        for ps in persisted {
+            match PtySession::connect_to_daemon(&ps.id, ps.pid, &ps.command, &ps.cwd) {
+                Ok(session) => {
+                    tracing::info!(
+                        "Restored PTY session: id={} command={} pid={}",
+                        ps.id,
+                        ps.command,
+                        ps.pid
+                    );
+                    let info = (
+                        session.id.clone(),
+                        session.command.clone(),
+                        session.cwd.clone(),
+                        session.pid,
+                    );
+                    self.sessions.write().insert(session.id.clone(), session);
+                    restored.push(info);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to restore PTY session {}: {}. Cleaning up.",
+                        ps.id,
+                        e
+                    );
+                    persistence::remove_session(&ps.id);
+                }
+            }
+        }
+
+        restored
     }
 
     /// Get a session by ID

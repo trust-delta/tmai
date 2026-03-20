@@ -42,6 +42,20 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Check for pty-hold daemon subcommand (no logging, no async runtime needed)
+    if cli.is_pty_hold_mode() {
+        if let Some((id, cmd, cwd, rows, cols, env_strs, args)) = cli.get_pty_hold_args() {
+            let env_pairs: Vec<(String, String)> = env_strs
+                .iter()
+                .filter_map(|s| {
+                    let mut parts = s.splitn(2, '=');
+                    Some((parts.next()?.to_string(), parts.next()?.to_string()))
+                })
+                .collect();
+            return tmai_core::pty::holder::run_holder(id, cmd, args, cwd, rows, cols, &env_pairs);
+        }
+    }
+
     // Check for codex-hook bridge subcommand (no logging, fast path)
     if cli.is_codex_hook_mode() {
         let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
@@ -281,6 +295,52 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
     }
 
     let core = Arc::new(core_builder.build());
+
+    // Restore PTY sessions from previous tmai instance
+    let restored = core.pty_registry().restore_sessions();
+    if !restored.is_empty() {
+        eprintln!("tmai: restored {} PTY session(s)", restored.len());
+        for (sid, cmd, cwd, pid) in &restored {
+            eprintln!("  - {} ({}) pid={} cwd={}", sid, cmd, pid, cwd);
+
+            // Re-register as MonitoredAgent
+            let git_info = tmai_core::git::GitCache::new().get_info(cwd).await;
+            let agent_type = match cmd.as_str() {
+                "claude" => tmai_core::agents::AgentType::ClaudeCode,
+                "codex" => tmai_core::agents::AgentType::CodexCli,
+                "gemini" => tmai_core::agents::AgentType::GeminiCli,
+                other => tmai_core::agents::AgentType::Custom(other.to_string()),
+            };
+            let mut agent = tmai_core::agents::MonitoredAgent::new(
+                sid.clone(),
+                agent_type,
+                cmd.clone(),
+                cwd.clone(),
+                *pid,
+                "pty".to_string(),
+                cmd.clone(),
+                0,
+                0,
+            );
+            agent.status = tmai_core::agents::AgentStatus::Processing {
+                activity: "Restored".to_string(),
+            };
+            agent.pty_session_id = Some(sid.clone());
+            if let Some(ref info) = git_info {
+                agent.git_branch = Some(info.branch.clone());
+                agent.git_dirty = Some(info.dirty);
+                agent.is_worktree = Some(info.is_worktree);
+                agent.git_common_dir = info.common_dir.clone();
+                agent.worktree_name = tmai_core::git::extract_claude_worktree_name(cwd);
+            }
+            {
+                let mut s = state.write();
+                s.agents.insert(sid.clone(), agent);
+                s.agent_order.push(sid.clone());
+            }
+        }
+        core.notify_agents_updated();
+    }
 
     // Start web server (required for web-only mode)
     if !settings.web.enabled {

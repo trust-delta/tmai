@@ -720,7 +720,7 @@ pub async fn spawn_agent(
 
     match core
         .pty_registry()
-        .spawn_session(&req.command, &args, &req.cwd, rows, cols, &env)
+        .spawn_detached(&req.command, &args, &req.cwd, rows, cols, &env)
     {
         Ok(session) => {
             let session_id = session.id.clone();

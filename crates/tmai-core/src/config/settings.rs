@@ -88,6 +88,31 @@ pub enum Command {
         /// Text to send
         text: Vec<String>,
     },
+    /// PTY holder daemon (internal — holds master PTY FD for detached sessions)
+    #[command(name = "pty-hold", hide = true)]
+    PtyHold {
+        /// Session ID
+        #[arg(long)]
+        id: String,
+        /// Command to spawn
+        #[arg(long)]
+        cmd: String,
+        /// Working directory
+        #[arg(long)]
+        cwd: String,
+        /// Terminal rows
+        #[arg(long, default_value = "24")]
+        rows: u16,
+        /// Terminal columns
+        #[arg(long, default_value = "80")]
+        cols: u16,
+        /// Environment variables (KEY=VALUE)
+        #[arg(long)]
+        env: Vec<String>,
+        /// Additional command arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 /// Audit analysis subcommands
@@ -171,6 +196,28 @@ impl Config {
     /// Check if running in codex-hook bridge mode
     pub fn is_codex_hook_mode(&self) -> bool {
         matches!(self.command, Some(Command::CodexHook))
+    }
+
+    /// Check if running as pty-hold daemon
+    pub fn is_pty_hold_mode(&self) -> bool {
+        matches!(self.command, Some(Command::PtyHold { .. }))
+    }
+
+    /// Get pty-hold daemon arguments
+    #[allow(clippy::type_complexity)]
+    pub fn get_pty_hold_args(&self) -> Option<(&str, &str, &str, u16, u16, &[String], &[String])> {
+        match &self.command {
+            Some(Command::PtyHold {
+                id,
+                cmd,
+                cwd,
+                rows,
+                cols,
+                env,
+                args,
+            }) => Some((id, cmd, cwd, *rows, *cols, env, args)),
+            _ => None,
+        }
     }
 
     /// Get audit subcommand
