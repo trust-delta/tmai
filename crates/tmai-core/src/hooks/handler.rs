@@ -63,6 +63,11 @@ pub fn handle_hook_event(
                 if payload.cwd.is_some() {
                     state.cwd = payload.cwd.clone();
                 }
+                // Resolve PID if not yet known
+                if state.pid.is_none() && !payload.session_id.is_empty() {
+                    state.pid =
+                        crate::session_discovery::resolve_pid_for_session(&payload.session_id);
+                }
                 state.last_context = ctx;
                 save_transcript_path(state, payload);
                 state.touch();
@@ -70,6 +75,7 @@ pub fn handle_hook_event(
                 let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
+                state.pid = crate::session_discovery::resolve_pid_for_session(&payload.session_id);
                 save_transcript_path(&mut state, payload);
                 reg.insert(pane_id.to_string(), state);
             }

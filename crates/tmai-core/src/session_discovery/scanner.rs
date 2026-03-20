@@ -118,6 +118,11 @@ impl SessionDiscoveryScanner {
     pub fn known_pids(&self) -> &HashSet<u32> {
         &self.known_pids
     }
+
+    /// Get mutable access to known PIDs (for merging externally discovered PIDs)
+    pub fn known_pids_mut(&mut self) -> &mut HashSet<u32> {
+        &mut self.known_pids
+    }
 }
 
 /// Check if a PID is still alive

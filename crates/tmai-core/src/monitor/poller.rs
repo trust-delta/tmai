@@ -311,19 +311,22 @@ impl Poller {
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
 
-            // Track which session_ids we've already synthesized
+            // Track which session_ids and PIDs we've already synthesized.
+            // Both are needed because Claude Code can change session_id
+            // within the same process (context restart / compaction).
             let mut synthesized_sids: HashSet<String> = HashSet::new();
+            let mut synthesized_pids: HashSet<u32> = HashSet::new();
 
-            // Collect session_ids of PTY-spawned agents — these are managed
+            // Collect identifiers of PTY-spawned agents — these are managed
             // separately via sync_pty_sessions and should not get duplicates
             {
                 let app_state = self.state.read();
                 for agent in app_state.agents.values() {
-                    if agent.pty_session_id.is_some() {
-                        // Use the pty_session_id as the dedup key
-                        if let Some(sid) = &agent.pty_session_id {
-                            synthesized_sids.insert(sid.clone());
-                        }
+                    if let Some(sid) = &agent.pty_session_id {
+                        synthesized_sids.insert(sid.clone());
+                    }
+                    if agent.pty_session_id.is_some() && agent.pid > 0 {
+                        synthesized_pids.insert(agent.pid);
                     }
                 }
             }
@@ -336,12 +339,18 @@ impl Poller {
             for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
                 if !existing_pane_ids.contains(*pane_id) {
                     let sid = &hook_state.session_id;
+                    let pid = hook_state.pid.unwrap_or(0);
 
-                    // Skip if we already have an entry for this session_id
-                    if synthesized_sids.contains(sid) {
+                    // Skip if we already have an entry for this session_id or PID
+                    if synthesized_sids.contains(sid)
+                        || (pid > 0 && synthesized_pids.contains(&pid))
+                    {
                         continue;
                     }
                     synthesized_sids.insert(sid.clone());
+                    if pid > 0 {
+                        synthesized_pids.insert(pid);
+                    }
 
                     let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
 
@@ -1488,20 +1497,54 @@ impl Poller {
             for key in &discovered_keys {
                 if let Some(discovered_state) = reg.get(key) {
                     let discovered_sid = &discovered_state.session_id;
-                    // Check if another (non-discovered) entry has the same session_id
+                    let discovered_pid = discovered_state.pid;
+                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
+                    // Check if another (non-discovered) entry matches by
+                    // session_id, PID, or cwd (same process, different session_id)
                     let has_hook_entry = reg.iter().any(|(k, hs)| {
-                        !k.starts_with("discovered:") && hs.session_id == *discovered_sid
+                        if k.starts_with("discovered:") {
+                            return false;
+                        }
+                        hs.session_id == *discovered_sid
+                            || (discovered_pid.is_some() && hs.pid == discovered_pid)
+                            || (!discovered_cwd.is_empty()
+                                && hs.cwd.as_deref() == Some(discovered_cwd))
                     });
                     if has_hook_entry {
-                        to_remove.push(key.clone());
+                        // Transfer PID to the hook entry before removing
+                        if let Some(pid) = discovered_pid {
+                            let hook_key = reg
+                                .iter()
+                                .find(|(k, hs)| {
+                                    !k.starts_with("discovered:")
+                                        && (hs.session_id == *discovered_sid
+                                            || (!discovered_cwd.is_empty()
+                                                && hs.cwd.as_deref() == Some(discovered_cwd)))
+                                })
+                                .map(|(k, _)| k.clone());
+                            if let Some(hk) = hook_key {
+                                // Can't mutate while iterating — defer to after drop(reg)
+                                to_remove.push((key.clone(), Some((hk, pid))));
+                                continue;
+                            }
+                        }
+                        to_remove.push((key.clone(), None));
                     }
                 }
             }
             drop(reg);
             if !to_remove.is_empty() {
                 let mut reg = self.hook_registry.write();
-                for key in &to_remove {
+                for (key, pid_transfer) in &to_remove {
                     reg.remove(key);
+                    // Transfer PID from discovered entry to the hook entry
+                    if let Some((hook_key, pid)) = pid_transfer {
+                        if let Some(hook_state) = reg.get_mut(hook_key) {
+                            if hook_state.pid.is_none() {
+                                hook_state.pid = Some(*pid);
+                            }
+                        }
+                    }
                     tracing::debug!(
                         pane_id = %key,
                         "Removed discovered entry superseded by hook registration"
@@ -1544,6 +1587,56 @@ impl Poller {
                     session_id = %session.session_id,
                     "Session already known via hooks, skipping discovery"
                 );
+                continue;
+            }
+
+            // Check if a hook entry with pid=None exists that could be the
+            // same process. Match by cwd (if available) or by checking
+            // /proc/{pid}/cwd for the discovered process. This handles
+            // the case where hook events arrived before session_discovery
+            // but without cwd info (e.g., PreToolUse as first event).
+            let mut merged = false;
+            {
+                let proc_cwd = std::fs::read_link(format!("/proc/{}/cwd", session.pid))
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
+
+                let mut reg = self.hook_registry.write();
+                let matching_key = reg
+                    .iter()
+                    .find(|(k, hs)| {
+                        if k.starts_with("discovered:") || hs.pid.is_some() {
+                            return false;
+                        }
+                        // Match by cwd if hook entry has one
+                        if let Some(hook_cwd) = &hs.cwd {
+                            return hook_cwd == &session.cwd;
+                        }
+                        // Match by /proc/{pid}/cwd if hook entry has no cwd
+                        if let Some(ref pc) = proc_cwd {
+                            // No cwd on hook entry — likely same project
+                            return pc == &session.cwd;
+                        }
+                        false
+                    })
+                    .map(|(k, _)| k.clone());
+                if let Some(key) = matching_key {
+                    if let Some(state) = reg.get_mut(&key) {
+                        state.pid = Some(session.pid);
+                        if state.cwd.is_none() {
+                            state.cwd = Some(session.cwd.clone());
+                        }
+                        tracing::debug!(
+                            pid = session.pid,
+                            pane_id = %key,
+                            "Merged discovered PID into existing hook entry"
+                        );
+                        merged = true;
+                    }
+                }
+            }
+            if merged {
+                self.session_scanner.known_pids_mut().insert(session.pid);
                 continue;
             }
 
