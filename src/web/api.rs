@@ -279,6 +279,20 @@ pub async fn send_key(
         })
 }
 
+/// Kill an agent (terminate PTY session or tmux pane)
+pub async fn kill_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: kill agent_id={}", id);
+    core.kill_pane(&id)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: kill failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
 /// Get preview content (pane capture) for an agent
 #[allow(deprecated)]
 pub async fn get_preview(

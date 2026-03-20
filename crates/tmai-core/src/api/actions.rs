@@ -295,10 +295,10 @@ impl TmaiCore {
             });
         }
 
-        let is_virtual = {
+        let (is_virtual, has_pty) = {
             let state = self.state().read();
             match state.agents.get(target) {
-                Some(a) => a.is_virtual,
+                Some(a) => (a.is_virtual, a.pty_session_id.is_some()),
                 None => {
                     return Err(ApiError::AgentNotFound {
                         target: target.to_string(),
@@ -313,8 +313,21 @@ impl TmaiCore {
             });
         }
 
-        let cmd = self.require_command_sender()?;
-        cmd.send_keys(target, key)?;
+        // PTY-spawned agents: write directly to PTY session
+        if has_pty {
+            if let Some(session) = self.pty_registry().get(target) {
+                let data = crate::utils::keys::tmux_key_to_bytes(key);
+                session.write_input(&data).map_err(ApiError::CommandError)?;
+            } else {
+                // PTY session gone — agent may have exited
+                return Err(ApiError::CommandError(anyhow::anyhow!(
+                    "PTY session not found for agent"
+                )));
+            }
+        } else {
+            let cmd = self.require_command_sender()?;
+            cmd.send_keys(target, key)?;
+        }
 
         self.audit_helper()
             .maybe_emit_input(target, "special_key", "api_input", None);
@@ -605,10 +618,10 @@ impl TmaiCore {
         Ok(target)
     }
 
-    /// Kill a specific pane in tmux
+    /// Kill a specific agent (PTY session or tmux pane)
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual
-        {
+        let has_pty = {
             let state = self.state().read();
             match state.agents.get(target) {
                 Some(a) if a.is_virtual => {
@@ -616,18 +629,33 @@ impl TmaiCore {
                         target: target.to_string(),
                     });
                 }
-                Some(_) => {}
+                Some(a) => a.pty_session_id.is_some(),
                 None => {
                     return Err(ApiError::AgentNotFound {
                         target: target.to_string(),
                     });
                 }
             }
-        }
+        };
 
-        let cmd = self.require_command_sender()?;
-        cmd.runtime().kill_pane(target)?;
-        Ok(())
+        if has_pty {
+            // PTY-spawned agent: kill the child process
+            if let Some(session) = self.pty_registry().get(target) {
+                session.kill();
+            }
+            // Remove from agent list
+            {
+                let mut state = self.state().write();
+                state.agents.remove(target);
+                state.agent_order.retain(|id| id != target);
+            }
+            self.notify_agents_updated();
+            Ok(())
+        } else {
+            let cmd = self.require_command_sender()?;
+            cmd.runtime().kill_pane(target)?;
+            Ok(())
+        }
     }
 
     /// Sync PTY-spawned agent statuses with actual PTY session liveness

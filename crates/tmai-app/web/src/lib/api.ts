@@ -288,10 +288,7 @@ export const api = {
       body: JSON.stringify({ key }),
     }),
   killAgent: (target: string) =>
-    apiFetch(`/agents/${target}/key`, {
-      method: "POST",
-      body: JSON.stringify({ key: "C-c" }),
-    }),
+    apiFetch(`/agents/${target}/kill`, { method: "POST" }),
 
   // Spawn
   spawnPty: (req: SpawnRequest) =>
