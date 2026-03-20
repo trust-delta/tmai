@@ -369,36 +369,62 @@ const CHROME_DEBUG_PORT: u16 = 9222;
 /// Tries chrome/chromium --app= first (standalone window, no tabs/address bar),
 /// then falls back to xdg-open. On WSL2, uses Windows browser via interop.
 ///
-/// When `debug` is true, adds `--remote-debugging-port=9222` so that
-/// Chrome DevTools MCP can connect for automated testing/inspection.
+/// When `debug` is true, launches Chrome as a separate process with
+/// `--remote-debugging-port=9222` and a dedicated user-data-dir so that
+/// Chrome DevTools MCP can connect even when Chrome is already running.
 fn open_in_browser(url: &str, debug: bool) {
     use std::process::Command;
 
-    // WSL2: try Windows Chrome via interop
-    let chrome_commands = [
-        // Windows Chrome via WSL interop
-        "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-        "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-        // Linux Chrome
-        "google-chrome",
-        "google-chrome-stable",
-        "chromium",
-        "chromium-browser",
-    ];
-
-    // Build extra args for debug mode (Chrome DevTools Protocol)
-    let mut extra_args: Vec<String> = Vec::new();
-    if debug {
-        extra_args.push(format!("--remote-debugging-port={CHROME_DEBUG_PORT}"));
-        extra_args.push("--user-data-dir=/tmp/tmai-chrome-debug".to_string());
+    /// Chrome executable paths to try
+    struct ChromeCandidate {
+        path: &'static str,
+        is_windows: bool,
     }
 
-    for chrome in &chrome_commands {
-        let mut cmd = Command::new(chrome);
+    let candidates = [
+        ChromeCandidate {
+            path: "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+            is_windows: true,
+        },
+        ChromeCandidate {
+            path: "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+            is_windows: true,
+        },
+        ChromeCandidate {
+            path: "google-chrome",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "google-chrome-stable",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "chromium",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "chromium-browser",
+            is_windows: false,
+        },
+    ];
+
+    for candidate in &candidates {
+        let mut cmd = Command::new(candidate.path);
         cmd.arg(format!("--app={url}"));
-        for arg in &extra_args {
-            cmd.arg(arg);
+
+        if debug {
+            cmd.arg(format!("--remote-debugging-port={CHROME_DEBUG_PORT}"));
+            // Use a dedicated profile so Chrome starts as a new process
+            // (existing Chrome ignores --remote-debugging-port)
+            // Windows Chrome needs a Windows path; Linux Chrome uses a Linux path
+            let user_data_dir = if candidate.is_windows {
+                r"C:\Temp\tmai-chrome-debug".to_string()
+            } else {
+                "/tmp/tmai-chrome-debug".to_string()
+            };
+            cmd.arg(format!("--user-data-dir={user_data_dir}"));
         }
+
         if cmd.spawn().is_ok() {
             eprintln!("tmai: opened in Chrome App Mode");
             if debug {
