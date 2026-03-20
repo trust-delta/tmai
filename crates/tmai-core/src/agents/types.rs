@@ -607,8 +607,28 @@ impl MonitoredAgent {
     }
 
     /// Get the display name for the agent
+    ///
+    /// For non-tmux agents (hook or PTY-spawned), derives a readable name
+    /// from the working directory (project name) instead of "hook:0.N" or "pty:0.0".
+    /// Uses worktree name or git branch as qualifier when available.
     pub fn display_name(&self) -> String {
-        format!("{}:{}.{}", self.session, self.window_index, self.pane_index)
+        if self.session == "hook" || self.session == "pty" {
+            let project = std::path::Path::new(&self.cwd)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| self.session.clone());
+
+            // Prefer worktree name, then git branch as qualifier
+            if let Some(wt) = &self.worktree_name {
+                format!("{} [{}]", project, wt)
+            } else if let Some(branch) = &self.git_branch {
+                format!("{} [{}]", project, branch)
+            } else {
+                project
+            }
+        } else {
+            format!("{}:{}.{}", self.session, self.window_index, self.pane_index)
+        }
     }
 }
 
@@ -856,5 +876,122 @@ mod tests {
             Some(AgentType::CodexCli),
             "node with 'codex cli' title should be detected as Codex"
         );
+    }
+
+    #[test]
+    fn test_display_name_tmux_agent() {
+        let agent = MonitoredAgent::new(
+            "main:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "main".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "main:0.1");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_project_name() {
+        let agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "tmai");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_with_branch() {
+        let mut agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        agent.git_branch = Some("feat/hooks".to_string());
+        assert_eq!(agent.display_name(), "tmai [feat/hooks]");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_with_worktree() {
+        let mut agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        agent.worktree_name = Some("feat-auth".to_string());
+        agent.git_branch = Some("feat/auth".to_string());
+        // worktree_name takes priority over git_branch
+        assert_eq!(agent.display_name(), "tmai [feat-auth]");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_unknown_cwd() {
+        let agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/unknown".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "unknown");
+    }
+
+    #[test]
+    fn test_display_name_pty_agent_project_name() {
+        let mut agent = MonitoredAgent::new(
+            "some-uuid".to_string(),
+            AgentType::ClaudeCode,
+            "bash".to_string(),
+            "/home/user/works/tmai".to_string(),
+            5678,
+            "pty".to_string(),
+            "bash".to_string(),
+            0,
+            0,
+        );
+        agent.git_branch = Some("dev/tmai-app".to_string());
+        assert_eq!(agent.display_name(), "tmai [dev/tmai-app]");
+    }
+
+    #[test]
+    fn test_display_name_pty_agent_no_branch() {
+        let agent = MonitoredAgent::new(
+            "some-uuid".to_string(),
+            AgentType::Custom("bash".to_string()),
+            "bash".to_string(),
+            "/home/user/works/myproject".to_string(),
+            5678,
+            "pty".to_string(),
+            "bash".to_string(),
+            0,
+            0,
+        );
+        assert_eq!(agent.display_name(), "myproject");
     }
 }
