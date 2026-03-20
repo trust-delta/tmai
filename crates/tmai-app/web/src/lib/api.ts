@@ -63,7 +63,7 @@ export function needsAttention(status: AgentStatus): boolean {
   return name === "AwaitingApproval" || name === "Error";
 }
 
-export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook";
+export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type AgentType =
   | "ClaudeCode"
   | "OpenCode"

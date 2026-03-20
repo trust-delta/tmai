@@ -65,9 +65,11 @@ pub struct AgentSnapshot {
     pub status: AgentStatus,
     /// Pane title
     pub title: String,
-    /// Last captured content (plain text)
+    /// Last captured content (plain text) — skipped in JSON serialization (use preview API)
+    #[serde(skip)]
     pub last_content: String,
-    /// Last captured content with ANSI codes (for preview rendering)
+    /// Last captured content with ANSI codes (for preview rendering) — skipped in JSON
+    #[serde(skip)]
     pub last_content_ansi: String,
     /// Working directory
     pub cwd: String,

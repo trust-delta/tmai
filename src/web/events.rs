@@ -17,12 +17,11 @@ use tokio::sync::broadcast::error::RecvError;
 
 use tmai_core::api::{CoreEvent, TmaiCore};
 
-use super::api::{build_agent_info, build_team_info, AgentInfo, TeamInfoResponse};
+use super::api::{build_team_info, TeamInfoResponse};
 
 /// Build agents JSON from TmaiCore snapshots
 fn build_agents_json(core: &TmaiCore) -> String {
-    let agents: Vec<AgentInfo> = core.list_agents().iter().map(build_agent_info).collect();
-    serde_json::to_string(&agents).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&core.list_agents()).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Build teams JSON from TmaiCore raw state

@@ -8,8 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use tmai_core::agents::{AgentStatus, ApprovalType};
-use tmai_core::api::{ApiError, TmaiCore};
+use tmai_core::api::{AgentSnapshot, ApiError, TmaiCore};
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
@@ -55,52 +54,6 @@ pub struct KeyRequest {
 pub struct PreviewResponse {
     pub content: String,
     pub lines: usize,
-}
-
-/// Agent information for API response
-#[derive(Debug, Serialize)]
-pub struct AgentInfo {
-    pub id: String,
-    pub agent_type: String,
-    pub status: StatusInfo,
-    pub cwd: String,
-    pub session: String,
-    pub window_name: String,
-    pub needs_attention: bool,
-    pub is_virtual: bool,
-    pub team: Option<AgentTeamInfoResponse>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub mode: String,
-    /// Git branch name (if in a git repo)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_branch: Option<String>,
-    /// Whether the git working tree has uncommitted changes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_dirty: Option<bool>,
-    /// Whether this directory is a git worktree (not the main repo)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_worktree: Option<bool>,
-    /// Auto-approve judgment phase: "judging", "approved_rule", "approved_ai", or "manual_required"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_approve_phase: Option<String>,
-    /// Absolute path to the shared git common directory (for repository grouping)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_common_dir: Option<String>,
-    /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub worktree_name: Option<String>,
-    /// PTY session ID if this agent was spawned via the PTY spawn API
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pty_session_id: Option<String>,
-}
-
-/// Team information associated with an agent for API response
-#[derive(Debug, Serialize)]
-pub struct AgentTeamInfoResponse {
-    pub team_name: String,
-    pub member_name: String,
-    pub is_lead: bool,
-    pub current_task: Option<TaskSummaryResponse>,
 }
 
 /// Summary of a task for API response
@@ -159,124 +112,6 @@ pub(crate) struct TeamTaskResponse {
     owner: Option<String>,
     blocks: Vec<String>,
     blocked_by: Vec<String>,
-}
-
-/// Status information for API response
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
-pub enum StatusInfo {
-    #[serde(rename = "idle")]
-    Idle,
-    #[serde(rename = "processing")]
-    Processing { message: Option<String> },
-    #[serde(rename = "awaiting_approval")]
-    AwaitingApproval {
-        approval_type: String,
-        details: String,
-        choices: Option<Vec<String>>,
-        multi_select: Option<bool>,
-    },
-    #[serde(rename = "error")]
-    Error { message: String },
-    #[serde(rename = "offline")]
-    Offline,
-    #[serde(rename = "unknown")]
-    Unknown,
-}
-
-impl From<&AgentStatus> for StatusInfo {
-    fn from(status: &AgentStatus) -> Self {
-        match status {
-            AgentStatus::Idle => StatusInfo::Idle,
-            AgentStatus::Processing { activity } => StatusInfo::Processing {
-                message: Some(activity.clone()),
-            },
-            AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            } => {
-                let (type_name, choices, multi_select) = match approval_type {
-                    ApprovalType::FileEdit => ("file_edit".to_string(), None, None),
-                    ApprovalType::FileCreate => ("file_create".to_string(), None, None),
-                    ApprovalType::FileDelete => ("file_delete".to_string(), None, None),
-                    ApprovalType::ShellCommand => ("shell_command".to_string(), None, None),
-                    ApprovalType::McpTool => ("mcp_tool".to_string(), None, None),
-                    ApprovalType::UserQuestion {
-                        choices,
-                        multi_select,
-                        ..
-                    } => (
-                        "user_question".to_string(),
-                        Some(choices.clone()),
-                        Some(*multi_select),
-                    ),
-                    ApprovalType::Other(_) => ("other".to_string(), None, None),
-                };
-                StatusInfo::AwaitingApproval {
-                    approval_type: type_name,
-                    details: details.clone(),
-                    choices,
-                    multi_select,
-                }
-            }
-            AgentStatus::Error { message } => StatusInfo::Error {
-                message: message.clone(),
-            },
-            AgentStatus::Offline => StatusInfo::Offline,
-            AgentStatus::Unknown => StatusInfo::Unknown,
-        }
-    }
-}
-
-/// Convert agent team info to API response format
-fn convert_team_info(team_info: &tmai_core::agents::AgentTeamInfo) -> AgentTeamInfoResponse {
-    AgentTeamInfoResponse {
-        team_name: team_info.team_name.clone(),
-        member_name: team_info.member_name.clone(),
-        is_lead: team_info.is_lead,
-        current_task: team_info
-            .current_task
-            .as_ref()
-            .map(|t| TaskSummaryResponse {
-                id: t.id.clone(),
-                subject: t.subject.clone(),
-                status: t.status.to_string(),
-            }),
-    }
-}
-
-/// Build AgentInfo from an AgentSnapshot
-///
-/// Shared helper used by both the REST API and SSE events.
-pub(super) fn build_agent_info(snapshot: &tmai_core::api::AgentSnapshot) -> AgentInfo {
-    use tmai_core::auto_approve::AutoApprovePhase;
-
-    let mode = snapshot.mode.to_string();
-    let auto_approve_phase = snapshot.auto_approve_phase.as_ref().map(|p| match p {
-        AutoApprovePhase::Judging => "judging".to_string(),
-        AutoApprovePhase::ApprovedByRule => "approved_rule".to_string(),
-        AutoApprovePhase::ApprovedByAi => "approved_ai".to_string(),
-        AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
-    });
-    AgentInfo {
-        id: snapshot.id.clone(),
-        agent_type: snapshot.agent_type.short_name().to_string(),
-        status: StatusInfo::from(&snapshot.status),
-        cwd: snapshot.display_cwd.clone(),
-        session: snapshot.session.clone(),
-        window_name: snapshot.window_name.clone(),
-        needs_attention: snapshot.needs_attention(),
-        is_virtual: snapshot.is_virtual,
-        team: snapshot.team_info.as_ref().map(convert_team_info),
-        mode,
-        git_branch: snapshot.git_branch.clone(),
-        git_dirty: snapshot.git_dirty,
-        is_worktree: snapshot.is_worktree,
-        auto_approve_phase,
-        git_common_dir: snapshot.git_common_dir.clone(),
-        worktree_name: snapshot.worktree_name.clone(),
-        pty_session_id: snapshot.pty_session_id.clone(),
-    }
 }
 
 /// Build a TeamInfoResponse from a TeamSnapshot
@@ -364,9 +199,8 @@ pub struct SubmitRequest {
 }
 
 /// Get all agents
-pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentInfo>> {
-    let agents: Vec<AgentInfo> = core.list_agents().iter().map(build_agent_info).collect();
-    Json(agents)
+pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentSnapshot>> {
+    Json(core.list_agents())
 }
 
 /// Approve an agent action (send approval keys)
@@ -1055,6 +889,7 @@ mod tests {
     use axum::Router;
     use http::Request;
     use http_body_util::BodyExt;
+    use tmai_core::agents::AgentStatus;
     use tmai_core::api::{has_checkbox_format, TmaiCoreBuilder};
     use tmai_core::command_sender::CommandSender;
     use tmai_core::state::SharedState;
@@ -1300,7 +1135,8 @@ mod tests {
         let agents: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0]["id"], "main:0.0");
-        assert_eq!(agents[0]["status"]["type"], "idle");
+        // AgentStatus uses serde externally tagged: unit variants serialize as strings
+        assert_eq!(agents[0]["status"], "Idle");
     }
 
     #[tokio::test]
