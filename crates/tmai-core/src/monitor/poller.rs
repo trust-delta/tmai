@@ -1,6 +1,4 @@
 use anyhow::Result;
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -304,25 +302,28 @@ impl Poller {
         // In standalone mode (or when panes are empty), synthesize PaneInfo
         // from HookRegistry entries that have no matching pane.
         // This allows hook-only agents to appear in the agent list.
-        // Dedup by cwd: if multiple registry entries share the same cwd
-        // (e.g., hook event and auto-discovery for the same Claude Code instance),
-        // prefer the non-discovered (hook) entry. Session_id can differ even for
-        // the same process (context restart / compaction creates new session_ids).
+        // Dedup by session_id: if multiple registry entries share the same
+        // session_id (e.g., hook event and auto-discovery for the same instance),
+        // prefer the non-discovered (hook) entry. Different sessions with the
+        // same cwd are distinct agents and must all appear.
         {
             let hook_reg = self.hook_registry.read();
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
 
-            // Track which cwds we've already synthesized
-            let mut synthesized_cwds: HashSet<String> = HashSet::new();
+            // Track which session_ids we've already synthesized
+            let mut synthesized_sids: HashSet<String> = HashSet::new();
 
-            // Collect cwds of PTY-spawned agents — these are managed separately
-            // and should not get duplicate synthesized PaneInfo entries
+            // Collect session_ids of PTY-spawned agents — these are managed
+            // separately via sync_pty_sessions and should not get duplicates
             {
                 let app_state = self.state.read();
                 for agent in app_state.agents.values() {
                     if agent.pty_session_id.is_some() {
-                        synthesized_cwds.insert(agent.cwd.clone());
+                        // Use the pty_session_id as the dedup key
+                        if let Some(sid) = &agent.pty_session_id {
+                            synthesized_sids.insert(sid.clone());
+                        }
                     }
                 }
             }
@@ -334,13 +335,15 @@ impl Poller {
 
             for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
                 if !existing_pane_ids.contains(*pane_id) {
-                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
+                    let sid = &hook_state.session_id;
 
-                    // Skip if we already have a PaneInfo for this cwd
-                    if synthesized_cwds.contains(&cwd) {
+                    // Skip if we already have an entry for this session_id
+                    if synthesized_sids.contains(sid) {
                         continue;
                     }
-                    synthesized_cwds.insert(cwd.clone());
+                    synthesized_sids.insert(sid.clone());
+
+                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
 
                     // Synthesize a PaneInfo for this hook-only agent
                     let pane_idx = (idx + 1) as u32;
@@ -1484,12 +1487,10 @@ impl Poller {
             let mut to_remove = Vec::new();
             for key in &discovered_keys {
                 if let Some(discovered_state) = reg.get(key) {
-                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
-                    // Check if another (non-discovered) entry has the same cwd
+                    let discovered_sid = &discovered_state.session_id;
+                    // Check if another (non-discovered) entry has the same session_id
                     let has_hook_entry = reg.iter().any(|(k, hs)| {
-                        !k.starts_with("discovered:")
-                            && hs.cwd.as_deref().unwrap_or("") == discovered_cwd
-                            && !discovered_cwd.is_empty()
+                        !k.starts_with("discovered:") && hs.session_id == *discovered_sid
                     });
                     if has_hook_entry {
                         to_remove.push(key.clone());
@@ -1511,14 +1512,30 @@ impl Poller {
 
         let (new_sessions, disappeared_pids) = self.session_scanner.scan();
 
+        // Keep discovered entries fresh so they don't expire from the
+        // 30-second hook freshness window. Without this, discovered
+        // sessions with no hook events would fall through to capture-pane
+        // fallback (which returns empty for synthesized panes) → Processing.
+        {
+            let mut reg = self.hook_registry.write();
+            for (key, state) in reg.iter_mut() {
+                if key.starts_with("discovered:") {
+                    state.last_event_at = crate::hooks::types::current_time_millis();
+                }
+            }
+        }
+
         for session in new_sessions {
             let pane_id = format!("discovered:{}", session.pid);
 
-            // Skip if this cwd is already known via hooks
+            // Skip if this PID or session_id is already known via hooks.
+            // PID check handles the case where Claude Code changes session_id
+            // (e.g., context restart) but the process remains the same.
             let already_known = {
                 let reg = self.hook_registry.read();
                 reg.iter().any(|(k, hs)| {
-                    !k.starts_with("discovered:") && hs.cwd.as_deref() == Some(session.cwd.as_str())
+                    !k.starts_with("discovered:")
+                        && (hs.session_id == session.session_id || hs.pid == Some(session.pid))
                 })
             };
             if already_known {
@@ -1708,14 +1725,9 @@ pub fn detect_agent_from_pane(
     Some(agent)
 }
 
+/// Re-export from utils for local use
 fn strip_ansi(input: &str) -> String {
-    // Remove OSC and CSI sequences for detection logic.
-    static OSC_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
-    static CSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
-
-    let without_osc = OSC_RE.replace_all(input, "");
-    CSI_RE.replace_all(&without_osc, "").to_string()
+    crate::utils::strip_ansi(input)
 }
 
 /// Build `AgentTeamInfo` for a team member, finding their current in-progress task.

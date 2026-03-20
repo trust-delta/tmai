@@ -254,7 +254,7 @@ impl HookState {
 }
 
 /// Get current time in milliseconds (reuses ipc::protocol pattern)
-fn current_time_millis() -> u64 {
+pub fn current_time_millis() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

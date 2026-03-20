@@ -675,16 +675,29 @@ impl TmaiCore {
                 continue;
             }
 
-            // No hook state yet — just upgrade from "Starting..."
-            if matches!(
-                &agent.status,
-                crate::agents::AgentStatus::Processing { activity } if activity == "Starting..."
-            ) && self.pty_registry().get(id).is_some()
-            {
-                agent.status = crate::agents::AgentStatus::Processing {
-                    activity: String::new(),
+            // No hook state — detect status from PTY scrollback (capture-pane equivalent)
+            if let Some(session) = self.pty_registry().get(id) {
+                let snapshot = session.scrollback_snapshot();
+                let raw_text = String::from_utf8_lossy(&snapshot);
+                // Take last ~4KB for detection (equivalent to capture-pane last N lines)
+                let tail = if raw_text.len() > 4096 {
+                    &raw_text[raw_text.len() - 4096..]
+                } else {
+                    &raw_text
                 };
-                changed = true;
+                let content = crate::utils::strip_ansi(tail);
+                let detector = crate::detectors::get_detector(&agent.agent_type);
+                let new_status = detector.detect_status("", &content);
+                if agent.status != new_status {
+                    agent.status = new_status;
+                    agent.detection_source = crate::agents::DetectionSource::CapturePane;
+                    changed = true;
+                }
+                // Update last_content for preview
+                if agent.last_content != content {
+                    agent.last_content = content;
+                    changed = true;
+                }
             }
         }
 
