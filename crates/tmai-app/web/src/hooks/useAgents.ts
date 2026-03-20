@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, onCoreEvent, type AgentSnapshot } from "@/lib/api";
+import {
+  api,
+  needsAttention,
+  subscribeSSE,
+  type AgentSnapshot,
+} from "@/lib/api";
 
-// Hook to fetch and reactively update agent list via HTTP API + SSE
+// Hook to fetch and reactively update agent list via SSE push + HTTP fallback
 export function useAgents() {
   const [agents, setAgents] = useState<AgentSnapshot[]>([]);
   const [attentionCount, setAttentionCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // Fallback: fetch via HTTP API (used for initial load)
   const refresh = useCallback(async () => {
     try {
-      const [agentList, count] = await Promise.all([
-        api.listAgents(),
-        api.attentionCount(),
-      ]);
-      // Debug: uncomment to inspect agent data
-      // console.log("[tmai] agents:", JSON.stringify(agentList.map(a => ({ id: a.id, pty: a.pty_session_id }))));
+      const agentList = await api.listAgents();
       setAgents(agentList);
-      setAttentionCount(count);
+      setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
     } catch {
       // Server may not be ready yet during startup
     } finally {
@@ -30,16 +31,15 @@ export function useAgents() {
       refresh().then(() => clearInterval(retryInterval));
     }, 500);
 
-    // Subscribe to CoreEvents via SSE for live updates
-    const { unlisten } = onCoreEvent((event) => {
-      if (
-        event.type === "AgentsUpdated" ||
-        event.type === "AgentAppeared" ||
-        event.type === "AgentDisappeared" ||
-        event.type === "AgentStatusChanged"
-      ) {
-        refresh();
-      }
+    // Subscribe to SSE "agents" named event for live push updates
+    const { unlisten } = subscribeSSE({
+      onAgents: (agentList) => {
+        setAgents(agentList);
+        setAttentionCount(
+          agentList.filter((a) => needsAttention(a.status)).length,
+        );
+        setLoading(false);
+      },
     });
 
     return () => {

@@ -241,15 +241,6 @@ export function groupByProject(agents: AgentSnapshot[]): ProjectGroup[] {
   return projects;
 }
 
-export interface CoreEvent {
-  type: string;
-  target?: string;
-  old_status?: string;
-  new_status?: string;
-  team_name?: string;
-  member_name?: string;
-}
-
 export interface SpawnResponse {
   session_id: string;
   pid: number;
@@ -312,20 +303,51 @@ export const api = {
 
 // ── SSE event subscription ──
 
-export function onCoreEvent(
-  cb: (event: CoreEvent) => void,
-): { unlisten: () => void } {
+/// Subscribe to SSE named events from /api/events.
+///
+/// The axum backend sends named SSE events:
+///   - "agents" — full AgentSnapshot[] payload
+///   - "teams"  — full team info payload
+///   - other named events (teammate_idle, task_completed, etc.)
+///
+/// EventSource.onmessage only fires for unnamed events, so we use
+/// addEventListener for each named event type.
+export function subscribeSSE(handlers: {
+  onAgents?: (agents: AgentSnapshot[]) => void;
+  onEvent?: (eventName: string, data: unknown) => void;
+}): { unlisten: () => void } {
   const url = `${config.baseUrl}/api/events?token=${config.token}`;
   const es = new EventSource(url);
 
-  es.onmessage = (e) => {
+  // "agents" named event — full agent list
+  es.addEventListener("agents", (e) => {
     try {
-      const event = JSON.parse(e.data) as CoreEvent;
-      cb(event);
+      const agents = JSON.parse(e.data) as AgentSnapshot[];
+      handlers.onAgents?.(agents);
     } catch {
-      // SSE may send non-JSON keepalive
+      // Ignore parse errors
     }
-  };
+  });
+
+  // Other named events — forward to generic handler
+  const namedEvents = [
+    "teams",
+    "teammate_idle",
+    "task_completed",
+    "context_compacting",
+    "review_launched",
+    "review_completed",
+  ];
+  for (const name of namedEvents) {
+    es.addEventListener(name, (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onEvent?.(name, data);
+      } catch {
+        // Ignore
+      }
+    });
+  }
 
   es.onerror = () => {
     // EventSource auto-reconnects
