@@ -5,12 +5,14 @@
 //! Listens on `$XDG_RUNTIME_DIR/tmai/pty_sessions/<id>.sock`.
 //!
 //! Protocol (binary, over Unix stream socket):
+//! - On connect: daemon sends scrollback snapshot (all buffered output)
 //! - Daemon → Client: raw PTY output bytes (just forwarded as-is)
 //! - Client → Daemon: raw input bytes (forwarded to PTY stdin)
 //! - Client → Daemon: control message (JSON text prefixed with 0x00 byte):
 //!   `\0{"type":"resize","rows":40,"cols":120}`
 //!   `\0{"type":"kill"}`
 
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -25,6 +27,46 @@ use super::persistence;
 
 /// Control message prefix byte (0x00 is not valid UTF-8 start, so unambiguous)
 const CONTROL_PREFIX: u8 = 0x00;
+
+/// Maximum scrollback buffer size (bytes) — matches PtySession's buffer
+const SCROLLBACK_MAX_BYTES: usize = 256 * 1024;
+
+/// Scrollback buffer that accumulates raw PTY output for replay on reconnect
+struct ScrollbackBuffer {
+    chunks: VecDeque<Vec<u8>>,
+    total_bytes: usize,
+}
+
+impl ScrollbackBuffer {
+    fn new() -> Self {
+        Self {
+            chunks: VecDeque::new(),
+            total_bytes: 0,
+        }
+    }
+
+    /// Append a chunk, evicting old data if over the limit
+    fn push(&mut self, data: &[u8]) {
+        self.total_bytes += data.len();
+        self.chunks.push_back(data.to_vec());
+        while self.total_bytes > SCROLLBACK_MAX_BYTES {
+            if let Some(old) = self.chunks.pop_front() {
+                self.total_bytes -= old.len();
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Return all buffered data as a single Vec
+    fn snapshot(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.total_bytes);
+        for chunk in &self.chunks {
+            buf.extend_from_slice(chunk);
+        }
+        buf
+    }
+}
 
 /// Run the PTY holder daemon (called from `tmai pty-hold` subcommand)
 ///
@@ -117,11 +159,16 @@ pub fn run_holder(
     let client_writer: Arc<parking_lot::Mutex<Option<UnixStream>>> =
         Arc::new(parking_lot::Mutex::new(None));
 
-    // Thread: read PTY output → write to connected client
+    // Scrollback buffer shared between output relay and accept loop
+    let scrollback: Arc<parking_lot::Mutex<ScrollbackBuffer>> =
+        Arc::new(parking_lot::Mutex::new(ScrollbackBuffer::new()));
+
+    // Thread: read PTY output → scrollback + write to connected client
     let running_out = running.clone();
     let client_w = client_writer.clone();
+    let scrollback_w = scrollback.clone();
     thread::spawn(move || {
-        output_relay(master_reader, running_out, client_w);
+        output_relay(master_reader, running_out, client_w, scrollback_w);
     });
 
     // Thread: wait for child exit
@@ -141,17 +188,28 @@ pub fn run_holder(
             Ok((stream, _)) => {
                 eprintln!("pty-hold: client connected (session={})", session_id);
 
-                // Replace old client
+                // Send scrollback snapshot to new client before live output
+                let mut client_stream = stream;
+                {
+                    let sb = scrollback.lock();
+                    let snapshot = sb.snapshot();
+                    if !snapshot.is_empty() {
+                        eprintln!("pty-hold: replaying {} bytes of scrollback", snapshot.len());
+                        let _ = client_stream.write_all(&snapshot);
+                        let _ = client_stream.flush();
+                    }
+                }
+
+                // Replace old client (output_relay will send new data here)
                 {
                     let mut cw = client_writer.lock();
-                    *cw = stream.try_clone().ok();
+                    *cw = client_stream.try_clone().ok();
                 }
 
                 // Handle input from this client in a new thread
                 let pty_w = pty_writer.clone();
                 let r = running.clone();
                 let master_r = master_for_resize.clone();
-                let client_stream = stream;
                 thread::spawn(move || {
                     input_relay(client_stream, pty_w, r, master_r);
                 });
@@ -174,11 +232,12 @@ pub fn run_holder(
     Ok(())
 }
 
-/// Relay PTY output to the connected client
+/// Relay PTY output to the connected client and scrollback buffer
 fn output_relay(
     mut reader: Box<dyn Read + Send>,
     running: Arc<AtomicBool>,
     client: Arc<parking_lot::Mutex<Option<UnixStream>>>,
+    scrollback: Arc<parking_lot::Mutex<ScrollbackBuffer>>,
 ) {
     let mut buf = [0u8; 4096];
     while running.load(Ordering::Relaxed) {
@@ -186,6 +245,11 @@ fn output_relay(
             Ok(0) => break, // EOF — PTY closed
             Ok(n) => {
                 let data = &buf[..n];
+
+                // Always buffer in scrollback (even if no client connected)
+                scrollback.lock().push(data);
+
+                // Forward to connected client
                 let mut cw = client.lock();
                 if let Some(ref mut stream) = *cw {
                     if stream.write_all(data).is_err() || stream.flush().is_err() {
@@ -193,7 +257,6 @@ fn output_relay(
                         *cw = None;
                     }
                 }
-                // If no client, output is silently dropped (scrollback is in tmai)
             }
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::WouldBlock {
