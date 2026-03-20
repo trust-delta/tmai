@@ -1498,17 +1498,15 @@ impl Poller {
                 if let Some(discovered_state) = reg.get(key) {
                     let discovered_sid = &discovered_state.session_id;
                     let discovered_pid = discovered_state.pid;
-                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
                     // Check if another (non-discovered) entry matches by
-                    // session_id, PID, or cwd (same process, different session_id)
+                    // session_id or PID. Do NOT match by cwd alone — multiple
+                    // sessions can share the same working directory.
                     let has_hook_entry = reg.iter().any(|(k, hs)| {
                         if k.starts_with("discovered:") {
                             return false;
                         }
                         hs.session_id == *discovered_sid
                             || (discovered_pid.is_some() && hs.pid == discovered_pid)
-                            || (!discovered_cwd.is_empty()
-                                && hs.cwd.as_deref() == Some(discovered_cwd))
                     });
                     if has_hook_entry {
                         // Transfer PID to the hook entry before removing
@@ -1517,13 +1515,10 @@ impl Poller {
                                 .iter()
                                 .find(|(k, hs)| {
                                     !k.starts_with("discovered:")
-                                        && (hs.session_id == *discovered_sid
-                                            || (!discovered_cwd.is_empty()
-                                                && hs.cwd.as_deref() == Some(discovered_cwd)))
+                                        && (hs.session_id == *discovered_sid || hs.pid == Some(pid))
                                 })
                                 .map(|(k, _)| k.clone());
                             if let Some(hk) = hook_key {
-                                // Can't mutate while iterating — defer to after drop(reg)
                                 to_remove.push((key.clone(), Some((hk, pid))));
                                 continue;
                             }
@@ -1590,13 +1585,15 @@ impl Poller {
                 continue;
             }
 
-            // Check if a hook entry with pid=None exists that could be the
-            // same process. Match by cwd (if available) or by checking
-            // /proc/{pid}/cwd for the discovered process. This handles
-            // the case where hook events arrived before session_discovery
-            // but without cwd info (e.g., PreToolUse as first event).
+            // In standalone/web-only mode, check if a hook entry with pid=None
+            // exists that could be the same process. This handles the case
+            // where hook events arrived before session_discovery but without
+            // PID info. Only one pid=None entry should exist per cwd in this
+            // mode, so cwd-based matching is safe.
+            // In tmux mode, multiple agents can share the same cwd, so this
+            // merge is skipped to avoid misattributing PIDs.
             let mut merged = false;
-            {
+            if self.settings.web_only {
                 let proc_cwd = std::fs::read_link(format!("/proc/{}/cwd", session.pid))
                     .ok()
                     .map(|p| p.to_string_lossy().to_string());
@@ -1614,7 +1611,6 @@ impl Poller {
                         }
                         // Match by /proc/{pid}/cwd if hook entry has no cwd
                         if let Some(ref pc) = proc_cwd {
-                            // No cwd on hook entry — likely same project
                             return pc == &session.cwd;
                         }
                         false

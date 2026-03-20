@@ -270,6 +270,10 @@ pub struct Settings {
     /// Git worktree settings
     #[serde(default)]
     pub worktree: WorktreeSettings,
+
+    /// Web-only mode (no tmux, standalone). Set from CLI --web-only flag.
+    #[serde(skip)]
+    pub web_only: bool,
 }
 
 fn default_poll_interval() -> u64 {
@@ -761,6 +765,7 @@ impl Default for Settings {
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
             worktree: WorktreeSettings::default(),
+            web_only: false,
         }
     }
 }
@@ -811,6 +816,9 @@ impl Settings {
         }
         if cli.audit {
             self.audit.enabled = true;
+        }
+        if cli.web_only {
+            self.web_only = true;
         }
     }
 
