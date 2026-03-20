@@ -451,6 +451,9 @@ pub struct AppState {
     pub create_process: Option<CreateProcessState>,
     /// Confirmation dialog state (None if not showing)
     pub confirmation_state: Option<ConfirmationState>,
+    /// Registered project directories (persisted to config.toml)
+    pub registered_projects: Vec<String>,
+
     /// Error message to display
     pub error_message: Option<String>,
     /// Last poll timestamp
@@ -507,6 +510,7 @@ impl AppState {
             target_to_pane_id: HashMap::new(),
             create_process: None,
             confirmation_state: None,
+            registered_projects: Vec::new(),
             error_message: None,
             last_poll: None,
             running: true,

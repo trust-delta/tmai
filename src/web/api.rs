@@ -627,6 +627,109 @@ pub async fn get_worktree_diff(
 }
 
 // =========================================================
+// Project management endpoints
+// =========================================================
+
+/// List registered project directories
+pub async fn get_projects(State(core): State<Arc<TmaiCore>>) -> Json<Vec<String>> {
+    Json(core.list_projects())
+}
+
+/// Add project request body
+#[derive(Debug, Deserialize)]
+pub struct AddProjectRequest {
+    pub path: String,
+}
+
+/// Register a new project directory
+pub async fn add_project(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<AddProjectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match core.add_project(&req.path) {
+        Ok(()) => Ok(Json(serde_json::json!({"ok": true}))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+/// Remove project request body
+#[derive(Debug, Deserialize)]
+pub struct RemoveProjectRequest {
+    pub path: String,
+}
+
+/// Directory entry for the tree browser
+#[derive(Debug, Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_git: bool,
+}
+
+/// List subdirectories at a given path for the directory tree browser.
+/// Query param: ?path=/some/dir (defaults to home directory)
+pub async fn list_directories(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<DirEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let base = params
+        .get("path")
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or(home);
+
+    if !base.is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Not a directory: {}", base.display()),
+        ));
+    }
+
+    let mut entries = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(&base) else {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            &format!("Cannot read directory: {}", base.display()),
+        ));
+    };
+
+    for entry in read_dir.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden dirs except common ones
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        let is_git = path.join(".git").exists();
+        entries.push(DirEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_git,
+        });
+    }
+
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(Json(entries))
+}
+
+/// Remove a registered project directory
+pub async fn remove_project(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<RemoveProjectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match core.remove_project(&req.path) {
+        Ok(()) => Ok(Json(serde_json::json!({"ok": true}))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+// =========================================================
 // PTY spawn endpoint
 // =========================================================
 

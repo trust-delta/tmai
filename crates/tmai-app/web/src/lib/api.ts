@@ -127,6 +127,8 @@ export interface ProjectGroup {
   // Aggregate counts
   totalAgents: number;
   attentionAgents: number;
+  // Whether this project was registered in config (vs auto-discovered)
+  isRegistered: boolean;
 }
 
 // Derive project display name from path
@@ -142,8 +144,12 @@ function normalizeGitDir(dir: string): string {
   return dir.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
 }
 
-// Group agents by project (git_common_dir) and worktree
-export function groupByProject(agents: AgentSnapshot[]): ProjectGroup[] {
+// Group agents by project (git_common_dir) and worktree.
+// Registered projects always appear even with 0 agents.
+export function groupByProject(
+  agents: AgentSnapshot[],
+  registeredProjects: string[] = [],
+): ProjectGroup[] {
   const projectMap = new Map<string, AgentSnapshot[]>();
 
   // First pass: build a cwd→git_common_dir lookup from agents that have it
@@ -232,17 +238,40 @@ export function groupByProject(agents: AgentSnapshot[]): ProjectGroup[] {
       needsAttention(a.status),
     ).length;
 
+    const normRegistered = new Set(
+      registeredProjects.map((p) => normalizeGitDir(p)),
+    );
+
     projects.push({
       name: projectName(path),
       path,
       worktrees,
       totalAgents: groupAgents.length,
       attentionAgents: attentionCount,
+      isRegistered: normRegistered.has(normalizeGitDir(path)),
     });
   }
 
-  // Sort: projects with attention first, then by name
+  // Add registered projects that have no agents yet
+  const existingPaths = new Set(projects.map((p) => normalizeGitDir(p.path)));
+  for (const regPath of registeredProjects) {
+    const norm = normalizeGitDir(regPath);
+    if (!existingPaths.has(norm)) {
+      projects.push({
+        name: projectName(regPath),
+        path: regPath,
+        worktrees: [],
+        totalAgents: 0,
+        attentionAgents: 0,
+        isRegistered: true,
+      });
+    }
+  }
+
+  // Sort: registered first, then attention, then by name
   projects.sort((a, b) => {
+    if (a.isRegistered && !b.isRegistered) return -1;
+    if (!a.isRegistered && b.isRegistered) return 1;
     if (a.attentionAgents > 0 && b.attentionAgents === 0) return -1;
     if (a.attentionAgents === 0 && b.attentionAgents > 0) return 1;
     return a.name.localeCompare(b.name);
@@ -263,6 +292,14 @@ export interface SpawnRequest {
   cwd?: string;
   rows?: number;
   cols?: number;
+}
+
+// ── Directory browser ──
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  is_git: boolean;
 }
 
 // ── API wrappers ──
@@ -305,6 +342,23 @@ export const api = {
     apiFetch<SpawnResponse>("/spawn", {
       method: "POST",
       body: JSON.stringify(req),
+    }),
+
+  // Directories
+  listDirectories: (path?: string) =>
+    apiFetch<DirEntry[]>(`/directories${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+
+  // Projects
+  listProjects: () => apiFetch<string[]>("/projects"),
+  addProject: (path: string) =>
+    apiFetch("/projects", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+  removeProject: (path: string) =>
+    apiFetch("/projects/remove", {
+      method: "POST",
+      body: JSON.stringify({ path }),
     }),
 };
 

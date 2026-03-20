@@ -169,7 +169,8 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
-                        Err(RecvError::Lagged(_)) => {
+                        Err(RecvError::Lagged(skipped)) => {
+                            tracing::debug!(skipped, "SSE subscriber lagged, re-sending full state");
                             // Re-send full state on lag
                             let agents_json = build_agents_json(&core);
                             if agents_json != last_agents_json {

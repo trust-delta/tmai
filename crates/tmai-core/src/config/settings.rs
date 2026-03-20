@@ -318,6 +318,10 @@ pub struct Settings {
     #[serde(default)]
     pub worktree: WorktreeSettings,
 
+    /// Registered project directories (absolute paths)
+    #[serde(default)]
+    pub projects: Vec<String>,
+
     /// Web-only mode (no tmux, standalone). Set from CLI --web-only flag.
     #[serde(skip)]
     pub web_only: bool,
@@ -812,6 +816,7 @@ impl Default for Settings {
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
             worktree: WorktreeSettings::default(),
+            projects: Vec::new(),
             web_only: false,
         }
     }
@@ -909,6 +914,41 @@ impl Settings {
             doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         doc[section][key] = toml_edit::value(value);
+
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!(?path, %e, "Failed to create config directory");
+                return;
+            }
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
+    /// Persist the projects list to config.toml
+    pub fn save_projects(projects: &[String]) {
+        let Some(path) = Self::config_path() else {
+            tracing::debug!("No config path available, skipping save");
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            tracing::debug!(?path, %e, "Could not read config, starting fresh");
+            String::new()
+        });
+        let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(?path, %e, "Failed to parse config, starting fresh");
+                toml_edit::DocumentMut::default()
+            }
+        };
+
+        let mut arr = toml_edit::Array::new();
+        for p in projects {
+            arr.push(p.as_str());
+        }
+        doc["projects"] = toml_edit::value(arr);
 
         if let Some(parent) = path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {

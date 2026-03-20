@@ -231,6 +231,60 @@ impl TmaiCore {
         let state = self.state().read();
         state.get_known_directories()
     }
+
+    // =========================================================
+    // Project queries
+    // =========================================================
+
+    /// List registered project directories.
+    pub fn list_projects(&self) -> Vec<String> {
+        let state = self.state().read();
+        state.registered_projects.clone()
+    }
+
+    /// Add a project directory. Persists to config.toml.
+    pub fn add_project(&self, path: &str) -> Result<(), ApiError> {
+        let canonical = std::path::Path::new(path);
+        if !canonical.is_absolute() {
+            return Err(ApiError::InvalidInput {
+                message: "Project path must be absolute".to_string(),
+            });
+        }
+        if !canonical.is_dir() {
+            return Err(ApiError::InvalidInput {
+                message: format!("Directory does not exist: {}", path),
+            });
+        }
+        let canonical_str = canonical.to_string_lossy().to_string();
+
+        let mut state = self.state().write();
+        if state.registered_projects.contains(&canonical_str) {
+            return Ok(()); // Already registered, idempotent
+        }
+        state.registered_projects.push(canonical_str);
+        let projects = state.registered_projects.clone();
+        drop(state);
+
+        crate::config::Settings::save_projects(&projects);
+        Ok(())
+    }
+
+    /// Remove a project directory. Persists to config.toml.
+    pub fn remove_project(&self, path: &str) -> Result<(), ApiError> {
+        let mut state = self.state().write();
+        let before = state.registered_projects.len();
+        state.registered_projects.retain(|p| p != path);
+        if state.registered_projects.len() == before {
+            return Err(ApiError::InvalidInput {
+                message: format!("Project not found: {}", path),
+            });
+        }
+        let projects = state.registered_projects.clone();
+        drop(state);
+
+        crate::config::Settings::save_projects(&projects);
+        Ok(())
+    }
 }
 
 #[cfg(test)]

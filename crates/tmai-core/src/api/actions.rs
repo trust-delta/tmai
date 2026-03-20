@@ -680,14 +680,35 @@ impl TmaiCore {
             }
 
             if dead_ids.contains(id) {
-                // Process exited
+                // Process exited — set Offline and clean up mappings
                 agent.status = crate::agents::AgentStatus::Offline;
                 changed = true;
+                // Remove from session_pane_map to prevent stale routing
+                if let Some(sid) = &agent.pty_session_id {
+                    let mut spm = self.session_pane_map().write();
+                    spm.remove(sid);
+                }
                 continue;
             }
 
-            // Try to apply hook-derived status (PTY agent's ID is used as pane_id)
-            if let Some(hook_state) = hook_reg.get(id) {
+            // Try to apply hook-derived status.
+            // PTY agent's ID is a session_id (UUID), but HookRegistry keys are
+            // pane_ids from resolve_pane_id(). Try: direct match, then
+            // session_pane_map lookup, then scan by session_id.
+            let hook_state_ref = hook_reg
+                .get(id)
+                .or_else(|| {
+                    // Lookup via session_pane_map (session_id → pane_id)
+                    let spm = self.session_pane_map().read();
+                    let sid = agent.pty_session_id.as_deref().unwrap_or(id);
+                    spm.get(sid).and_then(|pane_id| hook_reg.get(pane_id))
+                })
+                .or_else(|| {
+                    // Scan HookRegistry for matching session_id
+                    let sid = agent.pty_session_id.as_deref().unwrap_or(id);
+                    hook_reg.values().find(|hs| hs.session_id == sid)
+                });
+            if let Some(hook_state) = hook_state_ref {
                 let new_status = crate::hooks::handler::hook_status_to_agent_status(hook_state);
                 if agent.status != new_status {
                     agent.status = new_status;
@@ -709,7 +730,8 @@ impl TmaiCore {
                 let raw_text = String::from_utf8_lossy(&snapshot);
                 // Take last ~4KB for detection (equivalent to capture-pane last N lines)
                 let tail = if raw_text.len() > 4096 {
-                    &raw_text[raw_text.len() - 4096..]
+                    let start = raw_text.floor_char_boundary(raw_text.len() - 4096);
+                    &raw_text[start..]
                 } else {
                     &raw_text
                 };

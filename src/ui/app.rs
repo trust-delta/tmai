@@ -62,6 +62,7 @@ impl App {
             let mut s = state.write();
             s.show_activity_name = settings.ui.show_activity_name;
             s.line_wrap = settings.ui.line_wrap;
+            s.registered_projects = settings.projects.clone();
         }
         let command_sender = CommandSender::new(ipc_server, runtime, state.clone());
         let audit_helper = AuditHelper::new(audit_tx, state.clone());

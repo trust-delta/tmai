@@ -86,20 +86,37 @@ fn claude_settings_path() -> Result<PathBuf> {
 const HOOK_TIMEOUT_MS: u64 = 2000;
 
 /// Build a tmai hook entry for a given event (new wrapper format)
-fn build_hook_entry(event: &str, token: &str, port: u16) -> Value {
-    json!({
-        "hooks": [{
-            "type": "http",
-            "url": format!("http://localhost:{}/hooks/event", port),
-            "headers": {
-                "Authorization": format!("Bearer {}", token),
-                "X-Tmai-Pane-Id": "$TMUX_PANE"
-            },
-            "timeout": HOOK_TIMEOUT_MS,
-            "allowedEnvVars": ["TMUX_PANE"],
-            "statusMessage": format!("{}{}", TMAI_STATUS_PREFIX, event)
-        }]
-    })
+///
+/// When `include_tmux_pane` is true, includes `X-Tmai-Pane-Id: $TMUX_PANE` header
+/// and `allowedEnvVars`. When false (web-only/standalone), omits it to avoid
+/// hook errors from undefined environment variable.
+fn build_hook_entry(event: &str, token: &str, port: u16, include_tmux_pane: bool) -> Value {
+    let mut headers = serde_json::Map::new();
+    headers.insert(
+        "Authorization".to_string(),
+        json!(format!("Bearer {}", token)),
+    );
+    if include_tmux_pane {
+        headers.insert("X-Tmai-Pane-Id".to_string(), json!("$TMUX_PANE"));
+    }
+
+    let mut hook = serde_json::Map::new();
+    hook.insert("type".to_string(), json!("http"));
+    hook.insert(
+        "url".to_string(),
+        json!(format!("http://localhost:{}/hooks/event", port)),
+    );
+    hook.insert("headers".to_string(), json!(headers));
+    hook.insert("timeout".to_string(), json!(HOOK_TIMEOUT_MS));
+    if include_tmux_pane {
+        hook.insert("allowedEnvVars".to_string(), json!(["TMUX_PANE"]));
+    }
+    hook.insert(
+        "statusMessage".to_string(),
+        json!(format!("{}{}", TMAI_STATUS_PREFIX, event)),
+    );
+
+    json!({ "hooks": [hook] })
 }
 
 /// Check if a hook entry belongs to tmai (supports both old and new format)
@@ -152,7 +169,7 @@ fn target_events() -> &'static [&'static str] {
 /// For each target event, adds a tmai hook entry to the event's array.
 /// Existing non-tmai entries are preserved. Existing tmai entries are
 /// replaced (identified by statusMessage prefix).
-fn merge_hooks(settings: &mut Value, token: &str, port: u16) -> usize {
+fn merge_hooks(settings: &mut Value, token: &str, port: u16, include_tmux_pane: bool) -> usize {
     // Ensure settings is an object
     if !settings.is_object() {
         *settings = json!({});
@@ -185,7 +202,7 @@ fn merge_hooks(settings: &mut Value, token: &str, port: u16) -> usize {
         event_hooks.retain(|entry| !is_tmai_entry(entry));
 
         // Add new tmai entry
-        event_hooks.push(build_hook_entry(event, token, port));
+        event_hooks.push(build_hook_entry(event, token, port, include_tmux_pane));
         count += 1;
     }
 
@@ -283,7 +300,13 @@ pub fn run(force: bool) -> Result<()> {
     };
 
     // Step 3: Merge tmai hooks
-    let count = merge_hooks(&mut settings, &token, port);
+    // Include $TMUX_PANE header only when tmux is available;
+    // in web-only mode, pane_id is resolved via session_id/cwd fallback
+    let include_tmux_pane = std::env::var("TMUX").is_ok();
+    if !include_tmux_pane {
+        println!("Note: tmux not detected — hooks will use session_id for agent matching");
+    }
+    let count = merge_hooks(&mut settings, &token, port, include_tmux_pane);
 
     // Step 4: Write back settings
     if let Some(parent) = settings_path.parent() {
@@ -479,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_build_hook_entry() {
-        let entry = build_hook_entry("PreToolUse", "test-token", 9876);
+        let entry = build_hook_entry("PreToolUse", "test-token", 9876, true);
         // New format: wrapper with hooks array
         let hooks = entry["hooks"].as_array().unwrap();
         assert_eq!(hooks.len(), 1);
@@ -492,9 +515,19 @@ mod tests {
     }
 
     #[test]
+    fn test_build_hook_entry_without_tmux_pane() {
+        let entry = build_hook_entry("PostToolUse", "test-token", 9876, false);
+        let hooks = entry["hooks"].as_array().unwrap();
+        assert_eq!(hooks[0]["headers"]["Authorization"], "Bearer test-token");
+        // No TMUX_PANE header or allowedEnvVars
+        assert!(hooks[0]["headers"].get("X-Tmai-Pane-Id").is_none());
+        assert!(hooks[0].get("allowedEnvVars").is_none());
+    }
+
+    #[test]
     fn test_merge_hooks_empty_settings() {
         let mut settings = json!({});
-        let count = merge_hooks(&mut settings, "token-123", 9876);
+        let count = merge_hooks(&mut settings, "token-123", 9876, true);
         assert_eq!(count, target_events().len());
 
         // Verify hooks structure (new wrapper format)
@@ -523,7 +556,7 @@ mod tests {
             }
         });
 
-        merge_hooks(&mut settings, "token-123", 9876);
+        merge_hooks(&mut settings, "token-123", 9876, true);
 
         // Existing entry should be preserved
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
@@ -556,7 +589,7 @@ mod tests {
             }
         });
 
-        merge_hooks(&mut settings, "new-token", 9876);
+        merge_hooks(&mut settings, "new-token", 9876, true);
 
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
         // Should have 2: the "other" one + the new tmai one (old tmai replaced)
@@ -593,7 +626,7 @@ mod tests {
             }
         });
 
-        merge_hooks(&mut settings, "new-token", 9876);
+        merge_hooks(&mut settings, "new-token", 9876, true);
 
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
         // Should have 2: the non-tmai wrapper + the new tmai wrapper
@@ -750,7 +783,7 @@ mod tests {
         });
 
         // Merge with new token — should replace old-format entries with new-format
-        merge_hooks(&mut settings, "new-token", 9876);
+        merge_hooks(&mut settings, "new-token", 9876, true);
 
         // PreToolUse: old entry removed, new wrapper entry added
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();

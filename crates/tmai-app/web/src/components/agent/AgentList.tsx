@@ -7,6 +7,8 @@ interface AgentListProps {
   loading: boolean;
   selectedTarget: string | null;
   onSelect: (target: string) => void;
+  registeredProjects: string[];
+  onSpawned: (sessionId: string) => void;
 }
 
 // Scrollable list of agents grouped by project and worktree
@@ -15,8 +17,13 @@ export function AgentList({
   loading,
   selectedTarget,
   onSelect,
+  registeredProjects,
+  onSpawned,
 }: AgentListProps) {
-  const projects = useMemo(() => groupByProject(agents), [agents]);
+  const projects = useMemo(
+    () => groupByProject(agents, registeredProjects),
+    [agents, registeredProjects],
+  );
 
   if (loading) {
     return (
@@ -26,14 +33,14 @@ export function AgentList({
     );
   }
 
-  if (agents.length === 0) {
+  if (agents.length === 0 && registeredProjects.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-500">
-        <p>No agents detected</p>
+        <p>No projects registered</p>
         <p className="text-xs text-zinc-600">
-          Spawn an agent below or run{" "}
-          <code className="rounded bg-white/5 px-1">tmai init</code> to enable
-          hooks
+          Add projects in{" "}
+          <code className="rounded bg-white/5 px-1">config.toml</code> or run{" "}
+          <code className="rounded bg-white/5 px-1">tmai init</code>
         </p>
       </div>
     );
@@ -47,6 +54,7 @@ export function AgentList({
           project={project}
           selectedTarget={selectedTarget}
           onSelect={onSelect}
+          onSpawned={onSpawned}
         />
       ))}
     </div>

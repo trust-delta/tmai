@@ -252,6 +252,14 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
 
     eprintln!("tmai: starting in web-only mode (no tmux required)");
 
+    // Create audit event channel (if audit enabled)
+    let (audit_tx, audit_rx) = if settings.audit.enabled {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     // Start IPC server
     let ipc_server = IpcServer::start()
         .await
@@ -266,6 +274,7 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
     {
         let mut s = state.write();
         s.show_activity_name = settings.ui.show_activity_name;
+        s.registered_projects = settings.projects.clone();
     }
 
     // Create hook registry and load token
@@ -292,6 +301,10 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
         core_builder = core_builder.with_hook_token(token);
     } else {
         eprintln!("tmai: no hook token found — run `tmai init` to enable hooks");
+    }
+
+    if let Some(ref tx) = audit_tx {
+        core_builder = core_builder.with_audit_sender(tx.clone());
     }
 
     let core = Arc::new(core_builder.build());
@@ -364,6 +377,39 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
     // In debug mode, enable Chrome remote debugging for DevTools MCP
     open_in_browser(&url, debug);
 
+    // Start auto-approve service if mode is not Off
+    if settings.auto_approve.effective_mode()
+        != tmai_core::auto_approve::types::AutoApproveMode::Off
+    {
+        let service = tmai_core::auto_approve::AutoApproveService::new(
+            settings.auto_approve.clone(),
+            state.clone(),
+            CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
+                .with_hook_registry(core.hook_registry().clone()),
+            audit_tx,
+        );
+        service.start();
+        eprintln!(
+            "tmai: auto-approve service started (mode: {:?})",
+            settings.auto_approve.effective_mode()
+        );
+    }
+
+    // Start Codex CLI app-server WebSocket connections if configured
+    if !settings.codex_ws.connections.is_empty() {
+        let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
+            &settings.codex_ws.connections,
+            core.hook_registry().clone(),
+            core.event_sender(),
+            state.clone(),
+        );
+        codex_ws_service.start();
+        eprintln!(
+            "tmai: codex WS service started ({} connection(s))",
+            settings.codex_ws.connections.len()
+        );
+    }
+
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
 
@@ -375,7 +421,7 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
         runtime,
         ipc_registry,
         hook_registry,
-        None,
+        audit_rx,
     );
     poller = poller.with_event_tx(core.event_sender().clone());
 

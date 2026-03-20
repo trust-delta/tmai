@@ -16,7 +16,7 @@ use crate::detectors::GeminiDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::git::GitCache;
 use crate::hooks::registry::HookRegistry;
-use crate::hooks::HookState;
+use crate::hooks::{HookState, HookStatus};
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
@@ -172,6 +172,17 @@ impl Poller {
 
     /// Run the polling loop
     async fn run(mut self, tx: mpsc::Sender<PollMessage>) {
+        // Initialize grace periods for already-registered agents (e.g., restored PTY sessions)
+        // so they don't immediately drop to Idle on the first poll.
+        {
+            let state = self.state.read();
+            for (id, agent) in &state.agents {
+                if matches!(agent.status, AgentStatus::Processing { .. }) {
+                    self.grace_periods.insert(id.clone(), Instant::now());
+                }
+            }
+        }
+
         let normal_interval = self.settings.poll_interval_ms;
         let fast_interval = self.settings.passthrough_poll_interval_ms;
         let mut backoff_ms: u64 = 0;
@@ -212,11 +223,25 @@ impl Poller {
                         // Remove expired grace periods (> 30s old to avoid unbounded growth)
                         self.grace_periods
                             .retain(|_, ts| ts.elapsed().as_secs() < 30);
-                        // Remove stale hook entries (> 5 minutes without events)
-                        const HOOK_STALE_MS: u64 = 300_000;
+                        // Remove stale hook entries (> 2 minutes without events),
+                        // but only if the process is confirmed dead.
+                        // This prevents premature removal when hooks are slow.
+                        const HOOK_STALE_MS: u64 = 120_000;
                         {
                             let mut reg = self.hook_registry.write();
-                            reg.retain(|_, state| state.is_fresh(HOOK_STALE_MS));
+                            reg.retain(|_pane_id, state| {
+                                if state.is_fresh(HOOK_STALE_MS) {
+                                    return true; // Still fresh, keep
+                                }
+                                // Stale — check process liveness before removing
+                                if let Some(pid) = state.pid {
+                                    if std::path::Path::new(&format!("/proc/{}", pid)).exists() {
+                                        // Process alive, keep entry (hooks may resume)
+                                        return true;
+                                    }
+                                }
+                                false // Stale + dead process, remove
+                            });
                         }
                     }
 
@@ -318,15 +343,20 @@ impl Poller {
             let mut synthesized_pids: HashSet<u32> = HashSet::new();
 
             // Collect identifiers of PTY-spawned agents — these are managed
-            // separately via sync_pty_sessions and should not get duplicates
+            // separately via sync_pty_sessions and should not get duplicates.
+            // Also collect their cwds to prevent hook synthesis for the same dir.
+            let mut pty_cwds: HashSet<String> = HashSet::new();
             {
                 let app_state = self.state.read();
                 for agent in app_state.agents.values() {
                     if let Some(sid) = &agent.pty_session_id {
                         synthesized_sids.insert(sid.clone());
                     }
-                    if agent.pty_session_id.is_some() && agent.pid > 0 {
-                        synthesized_pids.insert(agent.pid);
+                    if agent.pty_session_id.is_some() {
+                        if agent.pid > 0 {
+                            synthesized_pids.insert(agent.pid);
+                        }
+                        pty_cwds.insert(agent.cwd.clone());
                     }
                 }
             }
@@ -341,9 +371,12 @@ impl Poller {
                     let sid = &hook_state.session_id;
                     let pid = hook_state.pid.unwrap_or(0);
 
-                    // Skip if we already have an entry for this session_id or PID
+                    let hook_cwd = hook_state.cwd.as_deref().unwrap_or("");
+                    // Skip if we already have an entry for this session_id, PID,
+                    // or if a PTY agent with the same cwd already exists
                     if synthesized_sids.contains(sid)
                         || (pid > 0 && synthesized_pids.contains(&pid))
+                        || (!hook_cwd.is_empty() && pty_cwds.contains(hook_cwd))
                     {
                         continue;
                     }
@@ -413,6 +446,9 @@ impl Poller {
 
                 // Hook freshness threshold: 30 seconds
                 const HOOK_FRESHNESS_MS: u64 = 30_000;
+                // Processing timeout: if Processing with no event for this long,
+                // assume Stop event was missed and check process liveness
+                const PROCESSING_TIMEOUT_MS: u64 = 120_000;
                 let has_fresh_hook = hook_state
                     .as_ref()
                     .map(|hs| hs.is_fresh(HOOK_FRESHNESS_MS))
@@ -499,7 +535,45 @@ impl Poller {
                 let (status, context_warning, detection_reason) = if has_fresh_hook {
                     // Tier 1: Hook-based detection
                     let hs = hook_state.as_ref().unwrap();
-                    let status = hook_state_to_agent_status(hs);
+                    let mut status = hook_state_to_agent_status(hs);
+
+                    // Processing timeout guard: if Processing for too long without
+                    // any new hook event, the Stop event was likely missed.
+                    // Check process liveness and demote to Idle if stale.
+                    if matches!(status, AgentStatus::Processing { .. })
+                        && !hs.is_fresh(PROCESSING_TIMEOUT_MS)
+                    {
+                        // Verify process is still alive before demoting
+                        let process_alive = hs
+                            .pid
+                            .map(|pid| std::path::Path::new(&format!("/proc/{}", pid)).exists())
+                            .unwrap_or(true); // assume alive if PID unknown
+
+                        if !process_alive {
+                            tracing::debug!(
+                                pane_id = %pane.pane_id,
+                                pid = ?hs.pid,
+                                last_event_age_ms = hs.last_event_at,
+                                "Hook Processing timeout: process dead, demoting to Idle"
+                            );
+                            status = AgentStatus::Idle;
+                            // Also update the hook registry to prevent repeated timeout checks
+                            let mut reg = self.hook_registry.write();
+                            if let Some(state) = reg.get_mut(&pane.pane_id) {
+                                state.status = HookStatus::Idle;
+                                state.last_tool = None;
+                                state.touch();
+                            }
+                        } else {
+                            tracing::debug!(
+                                pane_id = %pane.pane_id,
+                                elapsed_ms = %crate::hooks::types::current_time_millis()
+                                    .saturating_sub(hs.last_event_at),
+                                "Hook Processing stale but process alive, keeping Processing"
+                            );
+                        }
+                    }
+
                     let matched_text = hs.last_tool.as_ref().map(|t| format!("tool: {}", t));
                     let reason = DetectionReason {
                         rule: "http_hook".to_string(),
@@ -1324,6 +1398,12 @@ impl Poller {
                     } else {
                         // Still within debounce window - override agent status for UI stability
                         if let Some(committed) = self.previous_statuses.get(&agent.target) {
+                            tracing::trace!(
+                                target = %agent.target,
+                                detected = %current_status_name,
+                                shown = %committed.status,
+                                "Debounce: suppressing status flicker"
+                            );
                             agent.status = committed.full_status.clone();
                         }
                     }

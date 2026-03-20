@@ -426,10 +426,21 @@ pub fn resolve_pane_id(
         if !cwd.is_empty() {
             let app_state = state.read();
             // First, check for PTY-spawned agents with matching cwd — these should
-            // receive hook events directly since they are tmai-managed processes
-            for agent in app_state.agents.values() {
-                if agent.cwd == cwd && agent.pty_session_id.is_some() {
-                    return Some(agent.id.clone());
+            // receive hook events directly since they are tmai-managed processes.
+            // If multiple PTY agents share the same cwd, prefer the first one
+            // (stable: agent_order is deterministic).
+            for id in &app_state.agent_order {
+                if let Some(agent) = app_state.agents.get(id) {
+                    if agent.cwd == cwd && agent.pty_session_id.is_some() {
+                        let resolved = agent.id.clone();
+                        drop(app_state);
+                        // Persist mapping for future lookups (avoids re-matching)
+                        if !session_id.is_empty() {
+                            let mut map = session_pane_map.write();
+                            map.insert(session_id.to_string(), resolved.clone());
+                        }
+                        return Some(resolved);
+                    }
                 }
             }
             // Then fall back to tmux pane_id mapping
@@ -444,9 +455,14 @@ pub fn resolve_pane_id(
     }
 
     // Strategy 4: use session_id as synthetic pane_id (standalone mode)
-    // When no tmux is available, session_id serves as the unique identifier
+    // When no tmux is available, session_id serves as the unique identifier.
+    // Persist this mapping so subsequent events for the same session_id
+    // are resolved via Strategy 2 (deterministic).
     if !session_id.is_empty() {
-        return Some(format!("hook-{}", session_id));
+        let synthetic = format!("hook-{}", session_id);
+        let mut map = session_pane_map.write();
+        map.insert(session_id.to_string(), synthetic.clone());
+        return Some(synthetic);
     }
 
     None
