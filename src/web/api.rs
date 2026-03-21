@@ -49,6 +49,17 @@ pub struct KeyRequest {
     pub key: String,
 }
 
+/// Passthrough request body — sends raw input to an agent's terminal
+#[derive(Debug, Deserialize)]
+pub struct PassthroughRequest {
+    /// For character input: the literal text to send
+    #[serde(default)]
+    pub chars: Option<String>,
+    /// For special keys: tmux key name (e.g. "Enter", "Up", "C-c")
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
 /// Preview response
 #[derive(Debug, Serialize)]
 pub struct PreviewResponse {
@@ -277,6 +288,32 @@ pub async fn send_key(
             tracing::warn!("API: send_key failed agent_id={}: {}", id, e);
             api_error_to_http(e)
         })
+}
+
+/// POST /api/agents/{id}/passthrough — send raw input to agent terminal
+///
+/// No key whitelist — allows any keystroke for interactive passthrough.
+/// Accepts either `chars` (literal text) or `key` (tmux key name).
+#[allow(deprecated)]
+pub async fn passthrough_input(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<PassthroughRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let cmd = core
+        .raw_command_sender()
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+
+    if let Some(ref chars) = req.chars {
+        cmd.send_keys_literal(&id, chars)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+    if let Some(ref key) = req.key {
+        cmd.send_keys(&id, key)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 /// Kill an agent (terminate PTY session or tmux pane)

@@ -342,6 +342,11 @@ export const api = {
     }),
   killAgent: (target: string) =>
     apiFetch(`/agents/${target}/kill`, { method: "POST" }),
+  passthrough: (target: string, input: { chars?: string; key?: string }) =>
+    apiFetch(`/agents/${encodeURIComponent(target)}/passthrough`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   getPreview: (target: string) =>
     apiFetch<{ content: string }>(`/agents/${encodeURIComponent(target)}/preview`),
 

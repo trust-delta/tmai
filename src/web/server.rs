@@ -76,6 +76,7 @@ impl WebServer {
             .route("/agents/{id}/input", post(api::send_text))
             .route("/agents/{id}/key", post(api::send_key))
             .route("/agents/{id}/kill", post(api::kill_agent))
+            .route("/agents/{id}/passthrough", post(api::passthrough_input))
             .route("/agents/{id}/preview", get(api::get_preview))
             .route("/teams", get(api::get_teams))
             .route("/teams/{name}/tasks", get(api::get_team_tasks))
