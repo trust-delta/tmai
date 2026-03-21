@@ -293,40 +293,53 @@ pub async fn kill_agent(
         })
 }
 
-/// Get preview content (pane capture) for an agent
+/// Get preview content (pane capture) for an agent.
+///
+/// Returns ANSI-colored output when capture-pane is available (tmux runtime),
+/// falling back to plain text from last_content or activity log.
 #[allow(deprecated)]
 pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
-    // Check if agent exists and try to get content from AppState first
-    // (Poller already populates last_content with fallback chain:
-    //  capture-pane > transcript > activity log)
-    let agent_content = {
+    // Look up agent target for capture-pane (id may differ from tmux target)
+    let (agent_target, agent_content) = {
         let state = core.raw_state().read();
-        state
-            .agents
-            .get(&id)
-            .map(|a| a.last_content.clone())
-            .filter(|c| !c.trim().is_empty())
+        match state.agents.get(&id) {
+            Some(a) => (Some(a.target.clone()), Some(a.last_content.clone())),
+            None => (None, None),
+        }
     };
 
-    if let Some(content) = agent_content {
+    // Try capture-pane with ANSI colors first (via tmux target)
+    if let Some(ref target) = agent_target {
+        if let Some(cmd) = core.raw_command_sender() {
+            if let Ok(content) = cmd.runtime().capture_pane(target) {
+                if !content.trim().is_empty() {
+                    let lines = content.lines().count();
+                    return Ok(Json(PreviewResponse { content, lines }));
+                }
+            }
+        }
+    }
+
+    // Fallback: plain text from last_content
+    if let Some(content) = agent_content.filter(|c| !c.trim().is_empty()) {
         let lines = content.lines().count();
         return Ok(Json(PreviewResponse { content, lines }));
     }
 
-    // Agent exists check (if not found in state, try the facade)
+    // Agent exists check
     if core.get_agent(&id).is_err() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Fallback: try capture_pane_plain directly
+    // Fallback: try capture_pane directly with the id as target
     let cmd = core
         .raw_command_sender()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match cmd.runtime().capture_pane_plain(&id) {
+    match cmd.runtime().capture_pane(&id) {
         Ok(content) => {
             let display_content = if content.trim().is_empty() {
                 // Fallback: try activity log from hooks via pane_id mapping
@@ -730,7 +743,88 @@ pub async fn remove_project(
 }
 
 // =========================================================
-// PTY spawn endpoint
+// Spawn settings endpoint
+// =========================================================
+
+/// Response body for spawn settings
+#[derive(Debug, Serialize)]
+pub struct SpawnSettingsResponse {
+    /// Whether to spawn in tmux windows (vs internal PTY)
+    pub use_tmux_window: bool,
+    /// Whether tmux is available as a runtime
+    pub tmux_available: bool,
+    /// Window name for tmux-spawned agents
+    pub tmux_window_name: String,
+}
+
+/// Request body for updating spawn settings
+#[derive(Debug, Deserialize)]
+pub struct UpdateSpawnSettingsRequest {
+    /// Whether to spawn in tmux windows
+    pub use_tmux_window: bool,
+    /// Window name for tmux-spawned agents (optional, keeps current if omitted)
+    #[serde(default)]
+    pub tmux_window_name: Option<String>,
+}
+
+/// GET /api/settings/spawn — get spawn settings
+pub async fn get_spawn_settings(State(core): State<Arc<TmaiCore>>) -> Json<SpawnSettingsResponse> {
+    let (use_tmux_window, tmux_window_name) = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        (state.spawn_in_tmux, state.spawn_tmux_window_name.clone())
+    };
+    let tmux_available = is_tmux_available();
+
+    Json(SpawnSettingsResponse {
+        use_tmux_window,
+        tmux_available,
+        tmux_window_name,
+    })
+}
+
+/// PUT /api/settings/spawn — update spawn settings
+pub async fn update_spawn_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<UpdateSpawnSettingsRequest>,
+) -> Json<serde_json::Value> {
+    {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        s.spawn_in_tmux = req.use_tmux_window;
+        if let Some(ref name) = req.tmux_window_name {
+            if !name.is_empty() {
+                s.spawn_tmux_window_name = name.clone();
+            }
+        }
+    }
+    // Persist to config.toml
+    tmai_core::config::Settings::save_toml_value(
+        "spawn",
+        "use_tmux_window",
+        toml_edit::Value::from(req.use_tmux_window),
+    );
+    if let Some(ref name) = req.tmux_window_name {
+        if !name.is_empty() {
+            tmai_core::config::Settings::save_toml_value(
+                "spawn",
+                "tmux_window_name",
+                toml_edit::Value::from(name.as_str()),
+            );
+        }
+    }
+
+    tracing::info!(
+        "Spawn settings updated: use_tmux_window={} window_name={:?}",
+        req.use_tmux_window,
+        req.tmux_window_name
+    );
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
+// Agent spawn endpoint
 // =========================================================
 
 /// Spawn request body
@@ -772,7 +866,7 @@ pub struct SpawnResponse {
     pub command: String,
 }
 
-/// POST /api/spawn — spawn an agent in a new PTY session
+/// POST /api/spawn — spawn an agent (tmux window or PTY session)
 pub async fn spawn_agent(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<SpawnRequest>,
@@ -798,16 +892,161 @@ pub async fn spawn_agent(
         ));
     }
 
+    // Check if we should spawn in tmux
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let tmux_avail = is_tmux_available();
+
+    if use_tmux && tmux_avail {
+        spawn_in_tmux(&core, &req).await
+    } else {
+        spawn_in_pty(&core, &req).await
+    }
+}
+
+/// Check if tmux is available (running inside tmux and tmux command exists)
+fn is_tmux_available() -> bool {
+    std::env::var("TMUX").is_ok()
+        && std::process::Command::new("tmux")
+            .arg("list-sessions")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+}
+
+/// Get the current tmux session name from $TMUX environment variable
+fn current_tmux_session() -> Option<String> {
+    // $TMUX format: /path/to/socket,pid,session_index
+    // We need to ask tmux for the session name
+    let output = std::process::Command::new("tmux")
+        .args(["display-message", "-p", "#{session_name}"])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Find an existing tmux window by name in a session.
+/// Returns the window target (e.g., "session-1:2") if found.
+fn find_tmux_window(session: &str, window_name: &str) -> Option<String> {
+    let output = std::process::Command::new("tmux")
+        .args([
+            "list-windows",
+            "-t",
+            session,
+            "-F",
+            "#{window_index}:#{window_name}",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some((idx, name)) = line.split_once(':') {
+            if name == window_name {
+                return Some(format!("{}:{}", session, idx));
+            }
+        }
+    }
+    None
+}
+
+/// Spawn an agent in a tmux window (detected by poller like a normal pane)
+async fn spawn_in_tmux(
+    core: &Arc<TmaiCore>,
+    req: &SpawnRequest,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let tmux = tmai_core::tmux::TmuxClient::new();
+
+    // Determine the tmux session to use.
+    // Prefer current_tmux_session() since it always returns the real tmux session.
+    // AppState.current_session or agent.session may be "hook"/"pty" (non-tmux).
+    let session_name = current_tmux_session()
+        .or_else(|| {
+            #[allow(deprecated)]
+            let state = core.raw_state().read();
+            state.current_session.clone().or_else(|| {
+                state
+                    .agent_order
+                    .iter()
+                    .filter_map(|key| state.agents.get(key))
+                    .find(|a| a.session != "hook" && a.session != "pty")
+                    .map(|a| a.session.clone())
+            })
+        })
+        .unwrap_or_else(|| "main".to_string());
+
+    let window_name = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_tmux_window_name.clone()
+    };
+
+    // Reuse existing window with the same name, or create a new one
+    let pane_target = find_tmux_window(&session_name, &window_name)
+        .and_then(|target| {
+            // Split existing window to add a pane
+            tmux.split_window(&target, &req.cwd).ok()
+        })
+        .or_else(|| {
+            // No existing window — create a new one
+            tmux.new_window(&session_name, &req.cwd, Some(&window_name))
+                .ok()
+        })
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create tmux window or split pane",
+            )
+        })?;
+
+    // Build command with args
+    let full_command = if req.args.is_empty() {
+        req.command.clone()
+    } else {
+        format!("{} {}", req.command, req.args.join(" "))
+    };
+
+    // Run the command via tmai wrap for monitoring
+    tmux.run_command_wrapped(&pane_target, &full_command)
+        .map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to run command: {}", e),
+            )
+        })?;
+
+    tracing::info!(
+        "API: spawned in tmux window '{}' target={} command={}",
+        window_name,
+        pane_target,
+        req.command
+    );
+
+    // The agent will be discovered by the poller on the next cycle.
+    Ok(Json(SpawnResponse {
+        session_id: pane_target,
+        pid: 0, // poller will discover the actual PID
+        command: req.command.clone(),
+    }))
+}
+
+/// Spawn an agent in an internal PTY session (with WebSocket streaming)
+async fn spawn_in_pty(
+    core: &Arc<TmaiCore>,
+    req: &SpawnRequest,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
     let args: Vec<&str> = req.args.iter().map(|s| s.as_str()).collect();
     let rows = if req.rows > 0 { req.rows } else { 24 };
     let cols = if req.cols > 0 { req.cols } else { 80 };
-
-    tracing::info!(
-        "API: spawn command={} args={:?} cwd={}",
-        req.command,
-        req.args,
-        req.cwd
-    );
 
     // Build environment variables so spawned agents can call tmai CLI
     let (api_token, api_port) = {
@@ -823,7 +1062,7 @@ pub async fn spawn_agent(
 
     match core
         .pty_registry()
-        .spawn_detached(&req.command, &args, &req.cwd, rows, cols, &env)
+        .spawn_session(&req.command, &args, &req.cwd, rows, cols, &env)
     {
         Ok(session) => {
             let session_id = session.id.clone();
@@ -875,7 +1114,7 @@ pub async fn spawn_agent(
             core.notify_agents_updated();
 
             tracing::info!(
-                "API: spawned session_id={} pid={}",
+                "API: spawned PTY session_id={} pid={}",
                 response.session_id,
                 response.pid
             );

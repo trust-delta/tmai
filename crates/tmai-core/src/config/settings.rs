@@ -31,9 +31,9 @@ pub struct Config {
     #[arg(long)]
     pub audit: bool,
 
-    /// Web-only mode: run without tmux, using hooks/IPC only (no TUI)
+    /// WebUI mode: run without tmux, using hooks/IPC only (no TUI)
     #[arg(long)]
-    pub web_only: bool,
+    pub webui: bool,
 
     /// Subcommand
     #[command(subcommand)]
@@ -87,31 +87,6 @@ pub enum Command {
         id: String,
         /// Text to send
         text: Vec<String>,
-    },
-    /// PTY holder daemon (internal — holds master PTY FD for detached sessions)
-    #[command(name = "pty-hold", hide = true)]
-    PtyHold {
-        /// Session ID
-        #[arg(long)]
-        id: String,
-        /// Command to spawn
-        #[arg(long)]
-        cmd: String,
-        /// Working directory
-        #[arg(long)]
-        cwd: String,
-        /// Terminal rows
-        #[arg(long, default_value = "24")]
-        rows: u16,
-        /// Terminal columns
-        #[arg(long, default_value = "80")]
-        cols: u16,
-        /// Environment variables (KEY=VALUE)
-        #[arg(long)]
-        env: Vec<String>,
-        /// Additional command arguments
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
     },
 }
 
@@ -196,28 +171,6 @@ impl Config {
     /// Check if running in codex-hook bridge mode
     pub fn is_codex_hook_mode(&self) -> bool {
         matches!(self.command, Some(Command::CodexHook))
-    }
-
-    /// Check if running as pty-hold daemon
-    pub fn is_pty_hold_mode(&self) -> bool {
-        matches!(self.command, Some(Command::PtyHold { .. }))
-    }
-
-    /// Get pty-hold daemon arguments
-    #[allow(clippy::type_complexity)]
-    pub fn get_pty_hold_args(&self) -> Option<(&str, &str, &str, u16, u16, &[String], &[String])> {
-        match &self.command {
-            Some(Command::PtyHold {
-                id,
-                cmd,
-                cwd,
-                rows,
-                cols,
-                env,
-                args,
-            }) => Some((id, cmd, cwd, *rows, *cols, env, args)),
-            _ => None,
-        }
     }
 
     /// Get audit subcommand
@@ -318,13 +271,17 @@ pub struct Settings {
     #[serde(default)]
     pub worktree: WorktreeSettings,
 
+    /// Agent spawn settings
+    #[serde(default)]
+    pub spawn: SpawnSettings,
+
     /// Registered project directories (absolute paths)
     #[serde(default)]
     pub projects: Vec<String>,
 
-    /// Web-only mode (no tmux, standalone). Set from CLI --web-only flag.
+    /// WebUI mode (no tmux, standalone). Set from CLI --webui flag.
     #[serde(skip)]
-    pub web_only: bool,
+    pub webui: bool,
 }
 
 fn default_poll_interval() -> u64 {
@@ -777,6 +734,34 @@ impl Default for WorktreeSettings {
     }
 }
 
+/// Agent spawn settings (how new agents are started from the Web UI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpawnSettings {
+    /// When true and tmux is available, spawn agents in a tmux window
+    /// instead of an internal PTY session. The agent appears as a normal
+    /// tmux pane detected by the poller.
+    #[serde(default)]
+    pub use_tmux_window: bool,
+
+    /// Name of the tmux window for spawned agents
+    #[serde(default = "default_spawn_window_name")]
+    pub tmux_window_name: String,
+}
+
+/// Default tmux window name for spawned agents
+fn default_spawn_window_name() -> String {
+    "tmai-agents".to_string()
+}
+
+impl Default for SpawnSettings {
+    fn default() -> Self {
+        Self {
+            use_tmux_window: false,
+            tmux_window_name: default_spawn_window_name(),
+        }
+    }
+}
+
 /// Codex CLI app-server WebSocket connection settings
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CodexWsSettings {
@@ -816,8 +801,9 @@ impl Default for Settings {
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
             worktree: WorktreeSettings::default(),
+            spawn: SpawnSettings::default(),
             projects: Vec::new(),
-            web_only: false,
+            webui: false,
         }
     }
 }
@@ -869,8 +855,8 @@ impl Settings {
         if cli.audit {
             self.audit.enabled = true;
         }
-        if cli.web_only {
-            self.web_only = true;
+        if cli.webui {
+            self.webui = true;
         }
     }
 
@@ -920,6 +906,27 @@ impl Settings {
                 tracing::warn!(?path, %e, "Failed to create config directory");
                 return;
             }
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
+    /// Update a string or bool value within a TOML section, preserving formatting.
+    pub fn save_toml_value(section: &str, key: &str, value: toml_edit::Value) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+        if !doc.contains_table(section) {
+            doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        doc[section][key] = toml_edit::value(value);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
         }
         if let Err(e) = std::fs::write(&path, doc.to_string()) {
             tracing::warn!(?path, %e, "Failed to write config file");

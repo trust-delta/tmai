@@ -486,6 +486,11 @@ pub struct AppState {
     pub worktree_diff_content: Option<String>,
     /// Whether a diff is currently being loaded
     pub worktree_diff_loading: bool,
+
+    /// Whether to spawn agents in tmux windows (runtime toggle, init from config)
+    pub spawn_in_tmux: bool,
+    /// Tmux window name for spawned agents (runtime, init from config)
+    pub spawn_tmux_window_name: String,
 }
 
 impl AppState {
@@ -523,6 +528,8 @@ impl AppState {
             worktree_create_repo_path: None,
             worktree_diff_content: None,
             worktree_diff_loading: false,
+            spawn_in_tmux: false,
+            spawn_tmux_window_name: "tmai-agents".to_string(),
         }
     }
 

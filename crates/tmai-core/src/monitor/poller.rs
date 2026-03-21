@@ -484,7 +484,7 @@ impl Poller {
                     (String::new(), plain)
                 };
 
-                // Fallback chain for empty content (standalone/web-only mode):
+                // Fallback chain for empty content (standalone/webui mode):
                 // 1. transcript preview (D-2) — richest
                 // 2. activity log (D-1) — lightweight
                 if content.trim().is_empty() {
@@ -1665,7 +1665,7 @@ impl Poller {
                 continue;
             }
 
-            // In standalone/web-only mode, check if a hook entry with pid=None
+            // In standalone/webui mode, check if a hook entry with pid=None
             // exists that could be the same process. This handles the case
             // where hook events arrived before session_discovery but without
             // PID info. Only one pid=None entry should exist per cwd in this
@@ -1673,7 +1673,7 @@ impl Poller {
             // In tmux mode, multiple agents can share the same cwd, so this
             // merge is skipped to avoid misattributing PIDs.
             let mut merged = false;
-            if self.settings.web_only {
+            if self.settings.webui {
                 let proc_cwd = std::fs::read_link(format!("/proc/{}/cwd", session.pid))
                     .ok()
                     .map(|p| p.to_string_lossy().to_string());

@@ -16,6 +16,7 @@ use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
 use crate::pty::PtyRegistry;
+use crate::runtime::RuntimeAdapter;
 use crate::state::{AppState, SharedState};
 
 use super::core::TmaiCore;
@@ -31,6 +32,7 @@ pub struct TmaiCoreBuilder {
     session_pane_map: Option<SessionPaneMap>,
     hook_token: Option<String>,
     pty_registry: Option<Arc<PtyRegistry>>,
+    runtime: Option<Arc<dyn RuntimeAdapter>>,
 }
 
 impl TmaiCoreBuilder {
@@ -46,6 +48,7 @@ impl TmaiCoreBuilder {
             session_pane_map: None,
             hook_token: None,
             pty_registry: None,
+            runtime: None,
         }
     }
 
@@ -61,6 +64,7 @@ impl TmaiCoreBuilder {
             session_pane_map: None,
             hook_token: None,
             pty_registry: None,
+            runtime: None,
         }
     }
 
@@ -112,6 +116,12 @@ impl TmaiCoreBuilder {
         self
     }
 
+    /// Set the runtime adapter (tmux, standalone, etc.)
+    pub fn with_runtime(mut self, runtime: Arc<dyn RuntimeAdapter>) -> Self {
+        self.runtime = Some(runtime);
+        self
+    }
+
     /// Build the `TmaiCore` instance
     ///
     /// If no state was provided, a fresh `AppState::shared()` is created.
@@ -139,6 +149,7 @@ impl TmaiCoreBuilder {
             session_pane_map,
             self.hook_token,
             pty_registry,
+            self.runtime,
         )
     }
 }

@@ -42,20 +42,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Check for pty-hold daemon subcommand (no logging, no async runtime needed)
-    if cli.is_pty_hold_mode() {
-        if let Some((id, cmd, cwd, rows, cols, env_strs, args)) = cli.get_pty_hold_args() {
-            let env_pairs: Vec<(String, String)> = env_strs
-                .iter()
-                .filter_map(|s| {
-                    let mut parts = s.splitn(2, '=');
-                    Some((parts.next()?.to_string(), parts.next()?.to_string()))
-                })
-                .collect();
-            return tmai_core::pty::holder::run_holder(id, cmd, args, cwd, rows, cols, &env_pairs);
-        }
-    }
-
     // Check for codex-hook bridge subcommand (no logging, fast path)
     if cli.is_codex_hook_mode() {
         let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
@@ -102,9 +88,9 @@ async fn main() -> Result<()> {
     settings.validate();
 
     // Web-only mode: skip TUI, run web server + monitoring loop only
-    if cli.web_only {
+    if cli.webui {
         setup_logging(cli.debug, false); // stderr output (no TUI to corrupt)
-        return run_web_only_mode(settings, cli.debug).await;
+        return run_webui_mode(settings, cli.debug).await;
     }
 
     setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
@@ -153,7 +139,8 @@ async fn main() -> Result<()> {
         .with_ipc_server(ipc_server.clone())
         .with_command_sender(core_cmd_sender)
         .with_hook_registry(hook_registry)
-        .with_session_pane_map(session_pane_map);
+        .with_session_pane_map(session_pane_map)
+        .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
         if settings.web.enabled {
@@ -246,11 +233,11 @@ async fn main() -> Result<()> {
     app.run().await
 }
 
-/// Run in web-only mode (no tmux, no TUI — hooks/IPC + web server only)
-async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
+/// Run in WebUI mode (no tmux, no TUI — hooks/IPC + web server only)
+async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     use tmai_core::runtime::StandaloneAdapter;
 
-    eprintln!("tmai: starting in web-only mode (no tmux required)");
+    eprintln!("tmai: starting in WebUI mode (no tmux required)");
 
     // Create audit event channel (if audit enabled)
     let (audit_tx, audit_rx) = if settings.audit.enabled {
@@ -266,8 +253,13 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
         .context("Failed to start IPC server")?;
     let ipc_server = Arc::new(ipc_server);
 
-    // Create standalone runtime (no tmux)
-    let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+    // Use TmuxAdapter if tmux is available, otherwise StandaloneAdapter
+    let runtime: Arc<dyn RuntimeAdapter> = if std::env::var("TMUX").is_ok() {
+        eprintln!("tmai: tmux detected, using TmuxAdapter for capture-pane support");
+        Arc::new(tmai_core::runtime::TmuxAdapter::new(settings.capture_lines))
+    } else {
+        Arc::new(StandaloneAdapter::new())
+    };
 
     // Create shared state
     let state = tmai_core::state::AppState::shared();
@@ -275,6 +267,8 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
         let mut s = state.write();
         s.show_activity_name = settings.ui.show_activity_name;
         s.registered_projects = settings.projects.clone();
+        s.spawn_in_tmux = settings.spawn.use_tmux_window;
+        s.spawn_tmux_window_name = settings.spawn.tmux_window_name.clone();
     }
 
     // Create hook registry and load token
@@ -294,7 +288,8 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
         .with_ipc_server(ipc_server.clone())
         .with_command_sender(cmd_sender)
         .with_hook_registry(hook_registry.clone())
-        .with_session_pane_map(session_pane_map);
+        .with_session_pane_map(session_pane_map)
+        .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
         eprintln!("tmai: hook token loaded, hook endpoint enabled");
@@ -309,55 +304,9 @@ async fn run_web_only_mode(settings: Settings, debug: bool) -> Result<()> {
 
     let core = Arc::new(core_builder.build());
 
-    // Restore PTY sessions from previous tmai instance
-    let restored = core.pty_registry().restore_sessions();
-    if !restored.is_empty() {
-        eprintln!("tmai: restored {} PTY session(s)", restored.len());
-        for (sid, cmd, cwd, pid) in &restored {
-            eprintln!("  - {} ({}) pid={} cwd={}", sid, cmd, pid, cwd);
-
-            // Re-register as MonitoredAgent
-            let git_info = tmai_core::git::GitCache::new().get_info(cwd).await;
-            let agent_type = match cmd.as_str() {
-                "claude" => tmai_core::agents::AgentType::ClaudeCode,
-                "codex" => tmai_core::agents::AgentType::CodexCli,
-                "gemini" => tmai_core::agents::AgentType::GeminiCli,
-                other => tmai_core::agents::AgentType::Custom(other.to_string()),
-            };
-            let mut agent = tmai_core::agents::MonitoredAgent::new(
-                sid.clone(),
-                agent_type,
-                cmd.clone(),
-                cwd.clone(),
-                *pid,
-                "pty".to_string(),
-                cmd.clone(),
-                0,
-                0,
-            );
-            agent.status = tmai_core::agents::AgentStatus::Processing {
-                activity: "Restored".to_string(),
-            };
-            agent.pty_session_id = Some(sid.clone());
-            if let Some(ref info) = git_info {
-                agent.git_branch = Some(info.branch.clone());
-                agent.git_dirty = Some(info.dirty);
-                agent.is_worktree = Some(info.is_worktree);
-                agent.git_common_dir = info.common_dir.clone();
-                agent.worktree_name = tmai_core::git::extract_claude_worktree_name(cwd);
-            }
-            {
-                let mut s = state.write();
-                s.agents.insert(sid.clone(), agent);
-                s.agent_order.push(sid.clone());
-            }
-        }
-        core.notify_agents_updated();
-    }
-
-    // Start web server (required for web-only mode)
+    // Start web server (required for WebUI mode)
     if !settings.web.enabled {
-        anyhow::bail!("web-only mode requires web server to be enabled ([web] enabled = true)");
+        anyhow::bail!("WebUI mode requires web server to be enabled ([web] enabled = true)");
     }
 
     let token = tmai::web::auth::generate_token();

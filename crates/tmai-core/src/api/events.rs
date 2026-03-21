@@ -2,7 +2,7 @@
 //!
 //! The event system supports two modes:
 //! - **Bridge mode**: `start_monitoring()` spawns a Poller internally and
-//!   bridges `PollMessage` → `CoreEvent` automatically (for headless/web-only).
+//!   bridges `PollMessage` → `CoreEvent` automatically (for headless/webui).
 //! - **External mode**: The consumer (TUI) runs its own Poller and calls
 //!   `notify_agents_updated()` / `notify_teams_updated()` to emit events.
 

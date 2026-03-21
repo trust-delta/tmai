@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, type SpawnSettings } from "@/lib/api";
 import { DirBrowser } from "@/components/project/DirBrowser";
 
 interface SettingsPanelProps {
@@ -13,14 +13,20 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [browsing, setBrowsing] = useState(false);
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
+  const [spawnSettings, setSpawnSettings] = useState<SpawnSettings | null>(null);
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
   }, []);
 
+  const refreshSpawnSettings = useCallback(() => {
+    api.getSpawnSettings().then(setSpawnSettings).catch(console.error);
+  }, []);
+
   useEffect(() => {
     refreshProjects();
-  }, [refreshProjects]);
+    refreshSpawnSettings();
+  }, [refreshProjects, refreshSpawnSettings]);
 
   // Add a project directory
   const handleAdd = async (projectPath?: string) => {
@@ -49,6 +55,39 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     }
   };
 
+  // Toggle spawn in tmux
+  const handleToggleSpawnInTmux = async () => {
+    if (!spawnSettings) return;
+    const newValue = !spawnSettings.use_tmux_window;
+    try {
+      await api.updateSpawnSettings({ use_tmux_window: newValue });
+      setSpawnSettings({ ...spawnSettings, use_tmux_window: newValue });
+    } catch (e) {
+      console.error("Failed to update spawn settings:", e);
+    }
+  };
+
+  // Update tmux window name
+  const handleWindowNameChange = async (name: string) => {
+    if (!spawnSettings) return;
+    setSpawnSettings({ ...spawnSettings, tmux_window_name: name });
+  };
+
+  // Save window name on blur or Enter
+  const handleWindowNameSave = async () => {
+    if (!spawnSettings) return;
+    const trimmed = spawnSettings.tmux_window_name.trim();
+    if (!trimmed) return;
+    try {
+      await api.updateSpawnSettings({
+        use_tmux_window: spawnSettings.use_tmux_window,
+        tmux_window_name: trimmed,
+      });
+    } catch (e) {
+      console.error("Failed to update window name:", e);
+    }
+  };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
@@ -62,7 +101,72 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        {/* Spawn section */}
+        {spawnSettings && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Spawn</h3>
+            <p className="mt-1 text-xs text-zinc-600">
+              How new agents are started from the Web UI.
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">
+                    Spawn in tmux window
+                  </span>
+                  <p className="mt-0.5 text-[11px] text-zinc-600">
+                    {spawnSettings.tmux_available
+                      ? `New agents will appear as tmux panes in the "${spawnSettings.tmux_window_name}" window, detected by the poller like regular sessions.`
+                      : "tmux is not available in this mode. Agents are spawned as internal PTY sessions."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleToggleSpawnInTmux}
+                  disabled={!spawnSettings.tmux_available}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    !spawnSettings.tmux_available
+                      ? "cursor-not-allowed bg-white/5"
+                      : spawnSettings.use_tmux_window
+                        ? "bg-cyan-500/40"
+                        : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      !spawnSettings.tmux_available
+                        ? "translate-x-0.5 bg-zinc-700"
+                        : spawnSettings.use_tmux_window
+                          ? "translate-x-[18px] bg-cyan-400"
+                          : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {/* Window name field — shown when tmux is available and enabled */}
+              {spawnSettings.tmux_available && spawnSettings.use_tmux_window && (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="shrink-0 text-xs text-zinc-500">
+                    Window name
+                  </span>
+                  <input
+                    type="text"
+                    value={spawnSettings.tmux_window_name}
+                    onChange={(e) => handleWindowNameChange(e.target.value)}
+                    onBlur={handleWindowNameSave}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleWindowNameSave();
+                    }}
+                    className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Projects section */}
         <section>
           <h3 className="text-sm font-medium text-zinc-300">Projects</h3>

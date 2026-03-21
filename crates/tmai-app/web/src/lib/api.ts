@@ -286,6 +286,12 @@ export interface SpawnResponse {
   command: string;
 }
 
+export interface SpawnSettings {
+  use_tmux_window: boolean;
+  tmux_available: boolean;
+  tmux_window_name: string;
+}
+
 export interface SpawnRequest {
   command: string;
   args?: string[];
@@ -336,6 +342,8 @@ export const api = {
     }),
   killAgent: (target: string) =>
     apiFetch(`/agents/${target}/kill`, { method: "POST" }),
+  getPreview: (target: string) =>
+    apiFetch<{ content: string }>(`/agents/${encodeURIComponent(target)}/preview`),
 
   // Spawn
   spawnPty: (req: SpawnRequest) =>
@@ -359,6 +367,17 @@ export const api = {
     apiFetch("/projects/remove", {
       method: "POST",
       body: JSON.stringify({ path }),
+    }),
+
+  // Spawn settings
+  getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
+  updateSpawnSettings: (params: {
+    use_tmux_window: boolean;
+    tmux_window_name?: string;
+  }) =>
+    apiFetch("/settings/spawn", {
+      method: "PUT",
+      body: JSON.stringify(params),
     }),
 };
 

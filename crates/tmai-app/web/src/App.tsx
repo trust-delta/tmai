@@ -6,6 +6,7 @@ import { AgentActions } from "@/components/agent/AgentActions";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
+import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 
 export function App() {
@@ -89,6 +90,11 @@ export function App() {
             {selectedAgent && <AgentActions agent={selectedAgent} />}
             {sessionId ? (
               <TerminalPanel key={sessionId} sessionId={sessionId} />
+            ) : selectedAgent ? (
+              <PreviewPanel
+                key={selectedAgent.id}
+                agentId={selectedAgent.id}
+              />
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="glass-light rounded-2xl px-12 py-10 text-center">
@@ -97,7 +103,7 @@ export function App() {
                   </h1>
                   <p className="mt-2 text-sm text-zinc-500">
                     {agents.length > 0
-                      ? "Select an agent to view terminal"
+                      ? "Select an agent to view"
                       : "Click + on a project to spawn an agent"}
                   </p>
                 </div>

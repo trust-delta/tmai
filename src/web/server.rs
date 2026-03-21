@@ -87,6 +87,10 @@ impl WebServer {
             .route("/projects", get(api::get_projects).post(api::add_project))
             .route("/projects/remove", post(api::remove_project))
             .route("/directories", get(api::list_directories))
+            .route(
+                "/settings/spawn",
+                get(api::get_spawn_settings).put(api::update_spawn_settings),
+            )
             .route("/spawn", post(api::spawn_agent))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))

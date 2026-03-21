@@ -88,7 +88,7 @@ const HOOK_TIMEOUT_MS: u64 = 2000;
 /// Build a tmai hook entry for a given event (new wrapper format)
 ///
 /// When `include_tmux_pane` is true, includes `X-Tmai-Pane-Id: $TMUX_PANE` header
-/// and `allowedEnvVars`. When false (web-only/standalone), omits it to avoid
+/// and `allowedEnvVars`. When false (webui/standalone), omits it to avoid
 /// hook errors from undefined environment variable.
 fn build_hook_entry(event: &str, token: &str, port: u16, include_tmux_pane: bool) -> Value {
     let mut headers = serde_json::Map::new();
@@ -301,7 +301,7 @@ pub fn run(force: bool) -> Result<()> {
 
     // Step 3: Merge tmai hooks
     // Include $TMUX_PANE header only when tmux is available;
-    // in web-only mode, pane_id is resolved via session_id/cwd fallback
+    // in webui mode, pane_id is resolved via session_id/cwd fallback
     let include_tmux_pane = std::env::var("TMUX").is_ok();
     if !include_tmux_pane {
         println!("Note: tmux not detected — hooks will use session_id for agent matching");

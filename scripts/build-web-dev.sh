@@ -22,4 +22,4 @@ echo "==> Building Rust binary (debug)..."
 cd "$ROOT_DIR"
 cargo build
 
-echo "==> Done! Run with: cargo run -- --web-only"
+echo "==> Done! Run with: cargo run -- --webui"

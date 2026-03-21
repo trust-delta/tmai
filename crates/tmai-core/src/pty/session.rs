@@ -1,15 +1,10 @@
 //! PTY session — spawns a command in a pseudo-terminal and provides
 //! broadcast-based output streaming and input injection.
 //!
-//! Supports two modes:
-//! - **Direct**: PtySession holds the PTY master FD (original behavior).
-//!   Child is killed on drop. Used for ephemeral/test processes.
-//! - **Detached**: A separate `tmai pty-hold` daemon holds the master FD.
-//!   PtySession connects via Unix socket. Child survives tmai restart.
+//! Holds the PTY master FD directly. Child is killed on drop.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -19,18 +14,12 @@ use bytes::Bytes;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tokio::sync::broadcast;
 
-use super::holder;
-use super::persistence;
-
 /// Broadcast channel capacity for PTY output
 const OUTPUT_CHANNEL_CAPACITY: usize = 256;
 
 /// Maximum scrollback buffer size (bytes). Roughly 256KB — enough to
 /// reconstruct several screens of terminal content on reconnect.
 const SCROLLBACK_MAX_BYTES: usize = 256 * 1024;
-
-/// Control message prefix byte for the daemon protocol
-const CONTROL_PREFIX: u8 = 0x00;
 
 /// Scrollback buffer that accumulates raw PTY output for replay on reconnect.
 struct ScrollbackBuffer {
@@ -72,19 +61,6 @@ impl ScrollbackBuffer {
     }
 }
 
-/// How the PTY I/O is managed
-enum PtyBackend {
-    /// Direct: tmai holds the master PTY FD (killed on drop)
-    Direct {
-        writer: parking_lot::Mutex<Box<dyn Write + Send>>,
-        master: parking_lot::Mutex<Box<dyn portable_pty::MasterPty + Send>>,
-    },
-    /// Detached: a pty-hold daemon holds the master FD, we connect via socket
-    Detached {
-        socket_writer: parking_lot::Mutex<Option<UnixStream>>,
-    },
-}
-
 /// PTY session wrapping a spawned command.
 ///
 /// Output is streamed via a `broadcast::Sender<Bytes>` so that multiple
@@ -94,8 +70,10 @@ enum PtyBackend {
 pub struct PtySession {
     /// Unique session identifier
     pub id: String,
-    /// Backend (direct or daemon-backed)
-    backend: PtyBackend,
+    /// PTY master writer
+    writer: parking_lot::Mutex<Box<dyn Write + Send>>,
+    /// PTY master (for resize)
+    master: parking_lot::Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     /// Broadcast sender for raw PTY output
     output_tx: broadcast::Sender<Bytes>,
     /// Scrollback buffer for replay on reconnect
@@ -108,15 +86,14 @@ pub struct PtySession {
     pub command: String,
     /// Child process ID
     pub pid: u32,
-    /// Whether this session is detached (daemon-backed)
-    detached: bool,
 }
 
 impl PtySession {
-    /// Spawn a command in a new PTY session (direct mode — child killed on drop).
+    /// Spawn a command in a new PTY session.
     ///
     /// Starts a background thread that reads PTY output and broadcasts it.
     /// Optional `env` pairs are set as environment variables in the child.
+    /// Child is killed on drop.
     pub fn spawn(
         command: &str,
         args: &[&str],
@@ -151,7 +128,7 @@ impl PtySession {
         let child_pid = child.process_id().unwrap_or(0);
 
         tracing::info!(
-            "PTY session spawned (direct): command={} pid={} cwd={}",
+            "PTY session spawned: command={} pid={} cwd={}",
             command,
             child_pid,
             cwd
@@ -173,17 +150,14 @@ impl PtySession {
 
         let session = Arc::new(Self {
             id: id.clone(),
-            backend: PtyBackend::Direct {
-                writer: parking_lot::Mutex::new(master_writer),
-                master: parking_lot::Mutex::new(pair.master),
-            },
+            writer: parking_lot::Mutex::new(master_writer),
+            master: parking_lot::Mutex::new(pair.master),
             output_tx: output_tx.clone(),
             scrollback: parking_lot::Mutex::new(ScrollbackBuffer::new()),
             running: running.clone(),
             cwd: cwd.to_string(),
             command: command.to_string(),
             pid: child_pid,
-            detached: false,
         });
 
         // Background thread: read PTY output → broadcast + scrollback
@@ -198,166 +172,6 @@ impl PtySession {
         thread::spawn(move || {
             Self::child_wait_loop(child, running_child, &id);
         });
-
-        Ok(session)
-    }
-
-    /// Spawn a command via a detached pty-hold daemon (survives tmai restart).
-    ///
-    /// Launches `tmai pty-hold` as a separate process that holds the PTY master FD.
-    /// This session connects to the daemon via Unix socket for I/O relay.
-    pub fn spawn_detached(
-        command: &str,
-        args: &[&str],
-        cwd: &str,
-        rows: u16,
-        cols: u16,
-        env: &[(&str, &str)],
-    ) -> Result<Arc<Self>> {
-        let id = uuid::Uuid::new_v4().to_string();
-        let socket_path = holder::daemon_socket_path(&id);
-
-        // Build args for `tmai pty-hold`
-        let tmai_exe = std::env::current_exe().context("Failed to find tmai executable path")?;
-
-        let mut daemon_cmd = std::process::Command::new(&tmai_exe);
-        daemon_cmd.arg("pty-hold");
-        daemon_cmd.arg("--id").arg(&id);
-        daemon_cmd.arg("--cmd").arg(command);
-        daemon_cmd.arg("--cwd").arg(cwd);
-        daemon_cmd
-            .arg("--rows")
-            .arg(rows.to_string())
-            .arg("--cols")
-            .arg(cols.to_string());
-
-        // Pass additional command args
-        if !args.is_empty() {
-            daemon_cmd.arg("--");
-            daemon_cmd.args(args);
-        }
-
-        // Pass env vars as KEY=VALUE pairs via --env
-        for (key, val) in env {
-            daemon_cmd.arg("--env").arg(format!("{}={}", key, val));
-        }
-
-        // Spawn daemon as a fully independent process
-        // Redirect stderr to a log file for debugging
-        let log_dir = crate::ipc::protocol::state_dir().join("pty_sessions");
-        let _ = std::fs::create_dir_all(&log_dir);
-        let log_path = log_dir.join(format!("{}.log", id));
-        let log_file = std::fs::File::create(&log_path).ok();
-
-        daemon_cmd
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(
-                log_file
-                    .map(std::process::Stdio::from)
-                    .unwrap_or_else(std::process::Stdio::null),
-            );
-
-        let child = daemon_cmd
-            .spawn()
-            .context("Failed to spawn pty-hold daemon")?;
-        let daemon_pid = child.id();
-
-        tracing::info!(
-            "PTY session spawned (detached): command={} daemon_pid={} session={} socket={}",
-            command,
-            daemon_pid,
-            id,
-            socket_path.display()
-        );
-
-        // Wait for daemon socket to appear (with timeout)
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !socket_path.exists() {
-            if std::time::Instant::now() > deadline {
-                anyhow::bail!(
-                    "pty-hold daemon did not create socket within 5s: {}",
-                    socket_path.display()
-                );
-            }
-            thread::sleep(std::time::Duration::from_millis(50));
-        }
-        // Brief extra wait for the daemon to start listening
-        thread::sleep(std::time::Duration::from_millis(100));
-
-        // Read the persisted session to get the actual child PID
-        let persisted_path = persistence::daemon_socket_path(&id)
-            .with_extension("json")
-            .with_file_name(format!("{}.json", id));
-        let child_pid = {
-            let sessions_dir = crate::ipc::protocol::state_dir().join("pty_sessions");
-            let path = sessions_dir.join(format!("{}.json", id));
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(ps) = serde_json::from_str::<persistence::PersistedSession>(&content) {
-                    ps.pid
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
-        };
-        // Suppress unused variable warning
-        let _ = persisted_path;
-
-        // Connect to daemon socket
-        Self::connect_to_daemon(&id, child_pid, command, cwd)
-    }
-
-    /// Connect to an existing pty-hold daemon (for reconnection after restart)
-    pub fn connect_to_daemon(
-        session_id: &str,
-        pid: u32,
-        command: &str,
-        cwd: &str,
-    ) -> Result<Arc<Self>> {
-        let socket_path = holder::daemon_socket_path(session_id);
-        let stream =
-            UnixStream::connect(&socket_path).context("Failed to connect to pty-hold daemon")?;
-        let reader_stream = stream
-            .try_clone()
-            .context("Failed to clone daemon socket")?;
-
-        let (output_tx, _) = broadcast::channel(OUTPUT_CHANNEL_CAPACITY);
-        let running = Arc::new(AtomicBool::new(true));
-
-        let session = Arc::new(Self {
-            id: session_id.to_string(),
-            backend: PtyBackend::Detached {
-                socket_writer: parking_lot::Mutex::new(Some(stream)),
-            },
-            output_tx: output_tx.clone(),
-            scrollback: parking_lot::Mutex::new(ScrollbackBuffer::new()),
-            running: running.clone(),
-            cwd: cwd.to_string(),
-            command: command.to_string(),
-            pid,
-            detached: true,
-        });
-
-        // Background thread: read daemon socket → broadcast + scrollback
-        let running_r = running.clone();
-        let session_for_output = session.clone();
-        thread::spawn(move || {
-            Self::reader_loop(
-                Box::new(reader_stream),
-                output_tx,
-                running_r,
-                session_for_output,
-            );
-        });
-
-        tracing::info!(
-            "PTY session connected (detached): session={} pid={} command={}",
-            session_id,
-            pid,
-            command
-        );
 
         Ok(session)
     }
@@ -422,58 +236,22 @@ impl PtySession {
 
     /// Write input bytes to the PTY
     pub fn write_input(&self, data: &[u8]) -> Result<()> {
-        match &self.backend {
-            PtyBackend::Direct { writer, .. } => {
-                let mut w = writer.lock();
-                w.write_all(data).context("Failed to write to PTY")?;
-                w.flush().context("Failed to flush PTY writer")?;
-            }
-            PtyBackend::Detached { socket_writer } => {
-                let mut sw = socket_writer.lock();
-                if let Some(ref mut stream) = *sw {
-                    stream
-                        .write_all(data)
-                        .context("Failed to write to daemon socket")?;
-                    stream.flush().context("Failed to flush daemon socket")?;
-                } else {
-                    anyhow::bail!("Daemon socket not connected");
-                }
-            }
-        }
+        let mut w = self.writer.lock();
+        w.write_all(data).context("Failed to write to PTY")?;
+        w.flush().context("Failed to flush PTY writer")?;
         Ok(())
     }
 
     /// Resize the PTY terminal
     pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
-        match &self.backend {
-            PtyBackend::Direct { master, .. } => {
-                let m = master.lock();
-                m.resize(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-                .context("Failed to resize PTY")?;
-            }
-            PtyBackend::Detached { socket_writer } => {
-                // Send control message to daemon
-                let msg = format!(
-                    "{}",
-                    serde_json::json!({"type": "resize", "rows": rows, "cols": cols})
-                );
-                let mut payload = vec![CONTROL_PREFIX];
-                payload.extend_from_slice(msg.as_bytes());
-
-                let mut sw = socket_writer.lock();
-                if let Some(ref mut stream) = *sw {
-                    stream
-                        .write_all(&payload)
-                        .context("Failed to send resize to daemon")?;
-                    stream.flush()?;
-                }
-            }
-        }
+        let m = self.master.lock();
+        m.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .context("Failed to resize PTY")?;
         Ok(())
     }
 
@@ -482,27 +260,9 @@ impl PtySession {
         self.running.load(Ordering::Relaxed)
     }
 
-    /// Whether this session is detached (daemon-backed)
-    pub fn is_detached(&self) -> bool {
-        self.detached
-    }
-
     /// Kill the child process
     pub fn kill(&self) {
-        if self.detached {
-            // Send kill control message to daemon
-            if let PtyBackend::Detached { socket_writer } = &self.backend {
-                let msg = format!("{}", serde_json::json!({"type": "kill"}));
-                let mut payload = vec![CONTROL_PREFIX];
-                payload.extend_from_slice(msg.as_bytes());
-
-                let mut sw = socket_writer.lock();
-                if let Some(ref mut stream) = *sw {
-                    let _ = stream.write_all(&payload);
-                    let _ = stream.flush();
-                }
-            }
-        } else if self.pid > 0 {
+        if self.pid > 0 {
             let _ = nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(self.pid as i32),
                 nix::sys::signal::Signal::SIGTERM,
@@ -514,16 +274,7 @@ impl PtySession {
 
 impl Drop for PtySession {
     fn drop(&mut self) {
-        if self.detached {
-            // Detached sessions: just disconnect, don't kill the child
-            tracing::debug!(
-                "PTY session {} dropping (detached, child preserved)",
-                self.id
-            );
-        } else {
-            // Direct sessions: kill the child as before
-            self.kill();
-        }
+        self.kill();
     }
 }
 

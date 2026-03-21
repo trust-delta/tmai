@@ -1,7 +1,7 @@
 //! PTY stdin injection via `/proc/{pid}/fd/0`.
 //!
 //! Writes keystrokes directly to a Claude Code process's PTY stdin,
-//! enabling input delivery in web-only mode without tmux or IPC.
+//! enabling input delivery in webui mode without tmux or IPC.
 
 use std::fs::OpenOptions;
 use std::io::Write;
