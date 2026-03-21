@@ -41,18 +41,18 @@ function agentTypeLabel(agentType: AgentType): {
   return { icon: "›", label: "agent", color: "text-zinc-400" };
 }
 
-const sourceIcons: Record<string, { icon: string; label: string }> = {
-  HttpHook: { icon: "◈", label: "Hook (HTTP POST)" },
-  IpcSocket: { icon: "◉", label: "IPC (Unix socket)" },
-  CapturePane: { icon: "○", label: "capture-pane (text parse)" },
-  WebSocket: { icon: "◇", label: "WebSocket" },
+const sourceIcons: Record<string, { icon: string; label: string; color: string }> = {
+  HttpHook: { icon: "◈", label: "Hook (HTTP POST)", color: "text-cyan-400" },
+  IpcSocket: { icon: "◉", label: "IPC (Unix socket)", color: "text-emerald-400" },
+  CapturePane: { icon: "○", label: "capture-pane (text parse)", color: "text-zinc-500" },
+  WebSocket: { icon: "◇", label: "WebSocket", color: "text-purple-400" },
 };
 
-const sendIcons: Record<string, { icon: string; label: string }> = {
-  Ipc: { icon: "⇋", label: "IPC (Unix socket)" },
-  Tmux: { icon: "⇉", label: "tmux send-keys" },
-  PtyInject: { icon: "⇝", label: "PTY inject" },
-  None: { icon: "⊘", label: "送信不可" },
+const sendIcons: Record<string, { icon: string; label: string; color: string }> = {
+  Ipc: { icon: "⇋", label: "IPC (Unix socket)", color: "text-emerald-400" },
+  Tmux: { icon: "⇉", label: "tmux send-keys", color: "text-yellow-400" },
+  PtyInject: { icon: "⇝", label: "PTY inject", color: "text-orange-400" },
+  None: { icon: "⊘", label: "送信不可", color: "text-red-500" },
 };
 
 /// Resolve effective auto-approve state: override > global
@@ -80,10 +80,12 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const sourceEntry = sourceIcons[agent.detection_source] ?? {
     icon: "?",
     label: agent.detection_source,
+    color: "text-zinc-600",
   };
   const sendEntry = sendIcons[agent.send_capability] ?? {
     icon: "?",
     label: agent.send_capability,
+    color: "text-zinc-600",
   };
   const canSend = agent.send_capability !== "None";
 
@@ -135,17 +137,15 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
           {isAi && (
-            <span className="text-[10px] text-zinc-600">
-              <span title={`検出: ${sourceEntry.label}`}>{sourceEntry.icon}</span>
-              <span
-                className={canSend ? "" : "text-red-500"}
-                title={`送信: ${sendEntry.label}`}
-              >
+            <span className="text-[10px]">
+              <span className={sourceEntry.color} title={`検出: ${sourceEntry.label}`}>
+                {sourceEntry.icon}
+              </span>
+              <span className={sendEntry.color} title={`送信: ${sendEntry.label}`}>
                 {sendEntry.icon}
               </span>
             </span>
           )}
-          <span className={cn("text-sm", typeInfo.color)}>{typeInfo.icon}</span>
           <span className="truncate text-sm font-medium text-zinc-200">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
           </span>
