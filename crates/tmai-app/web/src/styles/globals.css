@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Nerd Font Symbols — provides Powerline glyphs and icons for terminal preview */
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('/fonts/SymbolsNerdFontMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-background: oklch(0.145 0 0);
   --color-foreground: oklch(0.985 0 0);
@@ -98,7 +107,18 @@ body {
 }
 
 /* ANSI color classes for capture-pane preview (ansi_up use_classes mode) */
-.ansi-preview { color: #d4d4d8; }
+.ansi-preview {
+  color: #d4d4d8;
+  font-family:
+    'JetBrainsMono Nerd Font', 'JetBrainsMono NF',
+    'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF',
+    'FiraCode Nerd Font', 'FiraCode NF',
+    'MesloLGS NF', 'MesloLGS Nerd Font',
+    'Hack Nerd Font', 'Hack NF',
+    'JetBrains Mono', 'Cascadia Code', 'Fira Code',
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+}
 .ansi-bright-fg-0, .ansi-fg-0  { color: #3f3f46; }
 .ansi-bright-fg-1, .ansi-fg-1  { color: #f87171; }
 .ansi-bright-fg-2, .ansi-fg-2  { color: #4ade80; }

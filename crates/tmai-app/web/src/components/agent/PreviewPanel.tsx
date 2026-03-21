@@ -208,11 +208,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="preview-scroll flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-[1.35]"
+        className="preview-scroll flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35]"
       >
         {content ? (
           <pre
             className="ansi-preview m-0 cursor-text whitespace-pre-wrap break-words"
+            style={{
+              fontFamily:
+                "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
+                "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', " +
+                "'FiraCode Nerd Font', 'FiraCode NF', " +
+                "'MesloLGS NF', 'Hack Nerd Font', " +
+                "'JetBrains Mono', 'Cascadia Code', 'Fira Code', " +
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, " +
+                "'Liberation Mono', 'Courier New', " +
+                "'Symbols Nerd Font Mono', monospace",
+            }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
         ) : (
