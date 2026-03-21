@@ -31,9 +31,9 @@ pub struct Config {
     #[arg(long)]
     pub audit: bool,
 
-    /// WebUI mode: run without tmux, using hooks/IPC only (no TUI)
+    /// Tmux TUI mode: use ratatui TUI with tmux backend (default is WebUI)
     #[arg(long)]
-    pub webui: bool,
+    pub tmux: bool,
 
     /// Subcommand
     #[command(subcommand)]
@@ -279,7 +279,7 @@ pub struct Settings {
     #[serde(default)]
     pub projects: Vec<String>,
 
-    /// WebUI mode (no tmux, standalone). Set from CLI --webui flag.
+    /// WebUI mode (default). False when --tmux flag is used.
     #[serde(skip)]
     pub webui: bool,
 }
@@ -803,7 +803,7 @@ impl Default for Settings {
             worktree: WorktreeSettings::default(),
             spawn: SpawnSettings::default(),
             projects: Vec::new(),
-            webui: false,
+            webui: true,
         }
     }
 }
@@ -855,8 +855,8 @@ impl Settings {
         if cli.audit {
             self.audit.enabled = true;
         }
-        if cli.webui {
-            self.webui = true;
+        if cli.tmux {
+            self.webui = false;
         }
     }
 

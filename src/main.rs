@@ -87,14 +87,18 @@ async fn main() -> Result<()> {
     settings.merge_cli(&cli);
     settings.validate();
 
-    // Web-only mode: skip TUI, run web server + monitoring loop only
-    if cli.webui {
-        setup_logging(cli.debug, false); // stderr output (no TUI to corrupt)
-        return run_webui_mode(settings, cli.debug).await;
+    // Tmux TUI mode: ratatui TUI with tmux backend (opt-in via --tmux)
+    if cli.tmux {
+        setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
+        return run_tmux_mode(settings, cli).await;
     }
 
-    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
+    // Default: WebUI mode
+    run_webui_mode(settings, cli.debug).await
+}
 
+/// Run in tmux TUI mode (ratatui TUI with tmux backend, opt-in via --tmux)
+async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Start IPC server
     let ipc_server = IpcServer::start()
         .await
@@ -179,13 +183,12 @@ async fn main() -> Result<()> {
 
     // Start review service if enabled
     if settings.review.enabled {
-        // Build notification info for review completion reporting
         let review_notification = if settings.web.enabled {
             core.hook_token().map(|token| {
                 std::sync::Arc::new(tmai_core::review::types::ReviewNotification {
                     port: settings.web.port,
                     token: token.to_string(),
-                    source_target: String::new(), // filled per-request
+                    source_target: String::new(),
                 })
             })
         } else {
@@ -233,7 +236,7 @@ async fn main() -> Result<()> {
     app.run().await
 }
 
-/// Run in WebUI mode (no tmux, no TUI — hooks/IPC + web server only)
+/// Run in WebUI mode (default — hooks/IPC + web server, no TUI)
 async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     use tmai_core::runtime::StandaloneAdapter;
 

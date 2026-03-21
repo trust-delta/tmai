@@ -335,6 +335,12 @@ impl Poller {
             let hook_reg = self.hook_registry.read();
             let existing_pane_ids: HashSet<String> =
                 all_panes.iter().map(|p| p.pane_id.clone()).collect();
+            // Collect PIDs of existing tmux panes for dedup.
+            let existing_pane_pids: HashSet<u32> = all_panes
+                .iter()
+                .filter(|p| p.pid > 0)
+                .map(|p| p.pid)
+                .collect();
 
             // Track which session_ids and PIDs we've already synthesized.
             // Both are needed because Claude Code can change session_id
@@ -373,9 +379,22 @@ impl Poller {
 
                     let hook_cwd = hook_state.cwd.as_deref().unwrap_or("");
                     // Skip if we already have an entry for this session_id, PID,
-                    // or if a PTY agent with the same cwd already exists
+                    // if a PTY agent with the same cwd exists, or if this PID
+                    // is a child of an existing tmux pane process
+                    let is_pane_child = pid > 0 && {
+                        existing_pane_pids.contains(&pid)
+                            || std::fs::read_to_string(format!("/proc/{}/stat", pid))
+                                .ok()
+                                .and_then(|stat| {
+                                    stat.split_whitespace()
+                                        .nth(3)
+                                        .and_then(|ppid| ppid.parse::<u32>().ok())
+                                })
+                                .is_some_and(|ppid| existing_pane_pids.contains(&ppid))
+                    };
                     if synthesized_sids.contains(sid)
                         || (pid > 0 && synthesized_pids.contains(&pid))
+                        || is_pane_child
                         || (!hook_cwd.is_empty() && pty_cwds.contains(hook_cwd))
                     {
                         continue;
@@ -1646,15 +1665,22 @@ impl Poller {
         for session in new_sessions {
             let pane_id = format!("discovered:{}", session.pid);
 
-            // Skip if this PID or session_id is already known via hooks.
-            // PID check handles the case where Claude Code changes session_id
-            // (e.g., context restart) but the process remains the same.
+            // Skip if this PID or session_id is already known via hooks
+            // or as a tmux pane (prevents double-counting in webui+tmux mode).
             let already_known = {
                 let reg = self.hook_registry.read();
-                reg.iter().any(|(k, hs)| {
+                let known_via_hooks = reg.iter().any(|(k, hs)| {
                     !k.starts_with("discovered:")
                         && (hs.session_id == session.session_id || hs.pid == Some(session.pid))
-                })
+                });
+                let known_via_pane = {
+                    let state = self.state.read();
+                    state
+                        .agents
+                        .values()
+                        .any(|a| a.pid == session.pid && !a.target.starts_with("discovered:"))
+                };
+                known_via_hooks || known_via_pane
             };
             if already_known {
                 tracing::debug!(

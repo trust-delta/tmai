@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useAgents } from "@/hooks/useAgents";
 import { isAiAgent, api } from "@/lib/api";
 import { AgentList } from "@/components/agent/AgentList";
-import { AgentActions } from "@/components/agent/AgentActions";
+import { AgentActions, AgentInputBar } from "@/components/agent/AgentActions";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -109,6 +109,7 @@ export function App() {
                 </div>
               </div>
             )}
+            {selectedAgent && <AgentInputBar agent={selectedAgent} />}
           </>
         )}
       </main>
