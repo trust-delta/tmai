@@ -292,7 +292,8 @@ pub async fn send_key(
 
 /// POST /api/agents/{id}/passthrough — send raw input to agent terminal
 ///
-/// No key whitelist — allows any keystroke for interactive passthrough.
+/// Uses tmux send-keys directly for reliable passthrough. Falls back to
+/// CommandSender for non-tmux agents.
 /// Accepts either `chars` (literal text) or `key` (tmux key name).
 #[allow(deprecated)]
 pub async fn passthrough_input(
@@ -300,17 +301,42 @@ pub async fn passthrough_input(
     Path(id): Path<String>,
     Json(req): Json<PassthroughRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let cmd = core
-        .raw_command_sender()
-        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+    // Resolve the tmux target — agent id may be "hook:0.x" (not a valid tmux target)
+    // so we need to find the actual tmux pane target from the agent's target field
+    let tmux_target = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state
+            .agents
+            .get(&id)
+            .map(|a| a.target.clone())
+            .filter(|t| !t.starts_with("hook:") && !t.starts_with("discovered:"))
+    };
 
-    if let Some(ref chars) = req.chars {
-        cmd.send_keys_literal(&id, chars)
-            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
-    }
-    if let Some(ref key) = req.key {
-        cmd.send_keys(&id, key)
-            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    if let Some(target) = tmux_target {
+        // Direct tmux send-keys for reliable passthrough
+        let tmux = tmai_core::tmux::TmuxClient::new();
+        if let Some(ref chars) = req.chars {
+            tmux.send_keys_literal(&target, chars)
+                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        }
+        if let Some(ref key) = req.key {
+            tmux.send_keys(&target, key)
+                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        }
+    } else {
+        // Fallback for non-tmux agents (PTY sessions, etc.)
+        let cmd = core
+            .raw_command_sender()
+            .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+        if let Some(ref chars) = req.chars {
+            cmd.send_keys_literal(&id, chars)
+                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        }
+        if let Some(ref key) = req.key {
+            cmd.send_keys(&id, key)
+                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        }
     }
 
     Ok(Json(serde_json::json!({"status": "ok"})))

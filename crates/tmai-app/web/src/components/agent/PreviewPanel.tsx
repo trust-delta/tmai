@@ -8,14 +8,10 @@ interface PreviewPanelProps {
 
 // Map browser KeyboardEvent to tmux key name for special keys
 function toTmuxKey(e: KeyboardEvent): string | null {
-  if (e.ctrlKey) {
-    // Ctrl+C, Ctrl+D, etc.
-    if (e.key.length === 1) return `C-${e.key.toLowerCase()}`;
-    if (e.key === "Enter") return "C-m";
-  }
+  if (e.ctrlKey && e.key.length === 1) return `C-${e.key.toLowerCase()}`;
   switch (e.key) {
     case "Enter":
-      return "Enter";
+      return e.ctrlKey ? "C-m" : "Enter";
     case "Escape":
       return "Escape";
     case "Backspace":
@@ -50,10 +46,13 @@ function toTmuxKey(e: KeyboardEvent): string | null {
 // Interactive terminal preview with passthrough input.
 // Renders capture-pane output with ANSI colors and forwards keystrokes
 // to the agent's terminal. Click to focus, Esc to blur.
+// IME (Japanese, Chinese, etc.) is supported via a hidden input element.
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
   const [focused, setFocused] = useState(true);
+  const [composing, setComposing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const ansi = useMemo(() => {
     const a = new AnsiUp();
@@ -61,68 +60,99 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
+  // Focus the hidden input when agent is selected or panel gains focus
+  const focusInput = useCallback(() => {
+    setFocused(true);
+    // Delay to ensure the hidden input is rendered
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   // Auto-focus on mount (agent selected from sidebar)
   useEffect(() => {
-    containerRef.current?.focus();
-  }, [agentId]);
+    focusInput();
+  }, [agentId, focusInput]);
 
   // Polling interval: faster when focused for interactive feel
   const pollInterval = focused ? 500 : 2000;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchPreview = async () => {
-      try {
-        const data = await api.getPreview(agentId);
-        if (!cancelled && data.content) {
-          setContent(data.content);
-        }
-      } catch {
-        // Agent may not have content yet
+  // Fetch preview content, shared between polling and post-keystroke refresh
+  const fetchPreview = useCallback(async () => {
+    try {
+      const data = await api.getPreview(agentId);
+      if (data.content) {
+        setContent(data.content);
       }
-    };
+    } catch {
+      // Agent may not have content yet
+    }
+  }, [agentId]);
 
+  useEffect(() => {
     fetchPreview();
     const interval = setInterval(fetchPreview, pollInterval);
+    return () => clearInterval(interval);
+  }, [fetchPreview, pollInterval]);
 
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [agentId, pollInterval]);
+  // Send passthrough input then immediately refresh the preview
+  const sendPassthrough = useCallback(
+    (input: { chars?: string; key?: string }) => {
+      api
+        .passthrough(agentId, input)
+        .then(() => {
+          // Small delay for tmux to process, then fetch updated content
+          setTimeout(fetchPreview, 30);
+        })
+        .catch(() => {});
+    },
+    [agentId, fetchPreview],
+  );
 
   // Auto-scroll to bottom when content changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [content]);
 
-  // Handle keyboard passthrough
+  // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!focused) return;
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // Don't intercept during IME composition
+      if (composing) return;
 
-      // Esc: blur the panel instead of sending to agent
+      // Esc: blur the panel
       if (e.key === "Escape" && !e.ctrlKey) {
         setFocused(false);
-        containerRef.current?.blur();
+        inputRef.current?.blur();
         return;
       }
 
-      // Prevent browser defaults for keys we handle
-      e.preventDefault();
-      e.stopPropagation();
-
       const tmuxKey = toTmuxKey(e.nativeEvent);
       if (tmuxKey) {
-        // Special key → send as tmux key name
-        api.passthrough(agentId, { key: tmuxKey }).catch(() => {});
-      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        // Regular character → send as literal
-        api.passthrough(agentId, { chars: e.key }).catch(() => {});
+        e.preventDefault();
+        sendPassthrough({ key: tmuxKey });
+        return;
+      }
+
+      // Single ASCII character (non-IME) — send directly, clear input
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        sendPassthrough({ chars: e.key });
       }
     },
-    [agentId, focused],
+    [agentId, composing],
+  );
+
+  // Handle IME confirmed text via input event
+  const handleInput = useCallback(
+    (e: React.FormEvent<HTMLInputElement>) => {
+      const input = e.currentTarget;
+      const value = input.value;
+      if (value && !composing) {
+        // IME confirmed or direct paste — send the full text
+        sendPassthrough({ chars: value });
+        input.value = "";
+      }
+    },
+    [agentId, composing],
   );
 
   const html = useMemo(() => ansi.ansi_to_html(content), [ansi, content]);
@@ -130,15 +160,37 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   return (
     <div
       ref={containerRef}
-      tabIndex={0}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onKeyDown={handleKeyDown}
-      onClick={() => containerRef.current?.focus()}
-      className={`flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
+      onClick={focusInput}
+      className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
         focused ? "ring-1 ring-cyan-500/30 ring-inset" : ""
       }`}
     >
+      {/* IME input — positioned at bottom-left so the candidate window appears there */}
+      {focused && (
+        <input
+          ref={inputRef}
+          type="text"
+          className="absolute bottom-6 left-3 w-px bg-transparent text-transparent caret-transparent outline-none"
+          style={{ fontSize: "13px", lineHeight: "1.35" }}
+          onKeyDown={handleKeyDown}
+          onInput={handleInput}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={(e) => {
+            setComposing(false);
+            const value = e.currentTarget.value;
+            if (value) {
+              sendPassthrough({ chars: value });
+              e.currentTarget.value = "";
+            }
+          }}
+          onBlur={() => setFocused(false)}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+      )}
+
       <div className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-[1.35]">
         {content ? (
           <pre
@@ -150,10 +202,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         )}
         <div ref={bottomRef} />
       </div>
+
       {/* Focus hint */}
       {!focused && content && (
         <div className="border-t border-white/5 px-3 py-1 text-center text-[11px] text-zinc-600">
-          Click to interact · Keystrokes will be sent to the agent
+          Click to interact
         </div>
       )}
       {focused && (
