@@ -107,9 +107,23 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     [agentId, fetchPreview],
   );
 
-  // Auto-scroll to bottom when content changes
+  // Auto-scroll to bottom only if user hasn't scrolled up
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUp = useRef(false);
+
+  // Detect user scroll position
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    // Consider "at bottom" if within 50px of the end
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    userScrolledUp.current = !atBottom;
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!userScrolledUp.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [content]);
 
   // Handle special keys (non-IME) via the hidden input's keydown
@@ -191,7 +205,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         />
       )}
 
-      <div className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-[1.35]">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="preview-scroll flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-[1.35]"
+      >
         {content ? (
           <pre
             className="ansi-preview m-0 cursor-text whitespace-pre-wrap break-words"

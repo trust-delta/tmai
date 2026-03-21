@@ -44,6 +44,11 @@ pub trait RuntimeAdapter: Send + Sync {
     /// Capture pane content with ANSI escape codes (for preview rendering).
     fn capture_pane(&self, target: &str) -> Result<String>;
 
+    /// Capture full scrollback with ANSI escape codes (all history).
+    fn capture_pane_full(&self, target: &str) -> Result<String> {
+        self.capture_pane(target)
+    }
+
     /// Capture pane content as plain text (for detection analysis).
     fn capture_pane_plain(&self, target: &str) -> Result<String>;
 

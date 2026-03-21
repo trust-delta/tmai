@@ -377,7 +377,7 @@ pub async fn get_preview(
     // Try capture-pane with ANSI colors first (via tmux target)
     if let Some(ref target) = agent_target {
         if let Some(cmd) = core.raw_command_sender() {
-            if let Ok(content) = cmd.runtime().capture_pane(target) {
+            if let Ok(content) = cmd.runtime().capture_pane_full(target) {
                 if !content.trim().is_empty() {
                     let lines = content.lines().count();
                     return Ok(Json(PreviewResponse { content, lines }));
