@@ -110,6 +110,34 @@ pub struct Poller {
     transcript_watcher: crate::transcript::TranscriptWatcher,
 }
 
+/// Check if a PID is a descendant (child, grandchild, ...) of any PID in the set.
+/// Walks up the process tree via /proc/{pid}/stat (max 5 levels to avoid loops).
+fn is_descendant_of_any(pid: u32, ancestor_pids: &HashSet<u32>) -> bool {
+    if ancestor_pids.contains(&pid) {
+        return true;
+    }
+    let mut current = pid;
+    for _ in 0..5 {
+        let ppid = std::fs::read_to_string(format!("/proc/{}/stat", current))
+            .ok()
+            .and_then(|stat| {
+                stat.split_whitespace()
+                    .nth(3)
+                    .and_then(|s| s.parse::<u32>().ok())
+            });
+        match ppid {
+            Some(p) if p > 1 => {
+                if ancestor_pids.contains(&p) {
+                    return true;
+                }
+                current = p;
+            }
+            _ => break,
+        }
+    }
+    false
+}
+
 impl Poller {
     /// Create a new poller
     pub fn new(
@@ -381,17 +409,7 @@ impl Poller {
                     // Skip if we already have an entry for this session_id, PID,
                     // if a PTY agent with the same cwd exists, or if this PID
                     // is a child of an existing tmux pane process
-                    let is_pane_child = pid > 0 && {
-                        existing_pane_pids.contains(&pid)
-                            || std::fs::read_to_string(format!("/proc/{}/stat", pid))
-                                .ok()
-                                .and_then(|stat| {
-                                    stat.split_whitespace()
-                                        .nth(3)
-                                        .and_then(|ppid| ppid.parse::<u32>().ok())
-                                })
-                                .is_some_and(|ppid| existing_pane_pids.contains(&ppid))
-                    };
+                    let is_pane_child = pid > 0 && is_descendant_of_any(pid, &existing_pane_pids);
                     if synthesized_sids.contains(sid)
                         || (pid > 0 && synthesized_pids.contains(&pid))
                         || is_pane_child
