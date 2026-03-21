@@ -44,7 +44,7 @@ function agentTypeLabel(agentType: AgentType): {
 const sourceIcons: Record<string, { icon: string; label: string; color: string }> = {
   HttpHook: { icon: "◈", label: "Hook (HTTP POST)", color: "text-cyan-400" },
   IpcSocket: { icon: "◉", label: "IPC (Unix socket)", color: "text-emerald-400" },
-  CapturePane: { icon: "○", label: "capture-pane (text parse)", color: "text-zinc-500" },
+  CapturePane: { icon: "●", label: "capture-pane (text parse)", color: "text-zinc-500" },
   WebSocket: { icon: "◇", label: "WebSocket", color: "text-purple-400" },
 };
 

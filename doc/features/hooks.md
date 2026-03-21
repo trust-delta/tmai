@@ -123,7 +123,7 @@ tmai shows which detection method is being used in the status bar:
 
 - `◈ Hook` (Cyan) — HTTP Hooks (highest precision)
 - `◉ IPC` — PTY wrapping via IPC socket (high precision)
-- `○ capture` — capture-pane (traditional)
+- `● capture` — capture-pane (traditional)
 
 ## Performance Optimization
 

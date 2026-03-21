@@ -10,7 +10,7 @@ use crate::teams::TaskStatus;
 ///
 /// Displayed as: ○=low, ◐=medium, ●=high
 ///
-/// Note: ○ (Low) shares the same glyph as `DetectionSource::CapturePane` icon,
+/// Note: ● (High) shares the same glyph as `DetectionSource::CapturePane` icon,
 /// but they appear in different UI positions (effort is next to mode, detection
 /// source is in the status column) so there is no visual ambiguity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +79,7 @@ impl DetectionSource {
             DetectionSource::HttpHook => '◈',
             DetectionSource::IpcSocket => '◉',
             DetectionSource::WebSocket => '◆',
-            DetectionSource::CapturePane => '○',
+            DetectionSource::CapturePane => '●',
         }
     }
 
