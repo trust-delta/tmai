@@ -122,7 +122,7 @@ Hook events are authenticated with a dedicated Bearer token, separate from the W
 tmai shows which detection method is being used in the status bar:
 
 - `◈ Hook` (Cyan) — HTTP Hooks (highest precision)
-- `◉ IPC` — PTY wrapping via IPC socket (high precision)
+- `⊙ IPC` — PTY wrapping via IPC socket (high precision)
 - `● capture` — capture-pane (traditional)
 
 ## Performance Optimization

@@ -77,7 +77,7 @@ impl DetectionSource {
     pub fn icon(&self) -> char {
         match self {
             DetectionSource::HttpHook => '◈',
-            DetectionSource::IpcSocket => '◉',
+            DetectionSource::IpcSocket => '⊙',
             DetectionSource::WebSocket => '◆',
             DetectionSource::CapturePane => '●',
         }

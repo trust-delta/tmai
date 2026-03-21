@@ -122,7 +122,7 @@ hookイベントは専用のBearerトークンで認証されます（Web Remote
 tmaiはステータスバーに使用中の検出方式を表示します：
 
 - `◈ Hook`（Cyan） — HTTP Hooks（最高精度）
-- `◉ IPC` — PTYラッピング・IPCソケット（高精度）
+- `⊙ IPC` — PTYラッピング・IPCソケット（高精度）
 - `● capture` — capture-pane（従来方式）
 
 ## パフォーマンス最適化
