@@ -7,7 +7,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::agents::{
-    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel,
+    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel, SendCapability,
 };
 use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
@@ -136,6 +136,8 @@ pub struct AgentSnapshot {
     /// PTY session ID if this agent was spawned via the PTY spawn API
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pty_session_id: Option<String>,
+    /// Best available method for sending keystrokes to this agent
+    pub send_capability: SendCapability,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -208,6 +210,7 @@ impl AgentSnapshot {
             active_subagents: agent.active_subagents,
             compaction_count: agent.compaction_count,
             pty_session_id: agent.pty_session_id.clone(),
+            send_capability: agent.send_capability,
         }
     }
 

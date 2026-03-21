@@ -64,6 +64,7 @@ export function needsAttention(status: AgentStatus): boolean {
 }
 
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
+export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 export type AgentType =
   | "ClaudeCode"
   | "OpenCode"
@@ -101,6 +102,7 @@ export interface AgentSnapshot {
   active_subagents: number;
   compaction_count: number;
   pty_session_id: string | null;
+  send_capability: SendCapability;
   is_virtual: boolean;
   team_info: { team_name: string; member_name: string } | null;
   auto_approve_phase:

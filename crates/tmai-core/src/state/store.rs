@@ -656,6 +656,8 @@ impl AppState {
                 // Hook-tracked metrics
                 existing.active_subagents = agent.active_subagents;
                 existing.compaction_count = agent.compaction_count;
+                // Send capability (re-evaluated each poll)
+                existing.send_capability = agent.send_capability;
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)
                 if !matches!(

@@ -298,9 +298,20 @@ impl StatusBar {
                     tmai_core::agents::DetectionSource::WebSocket => Color::Cyan,
                     tmai_core::agents::DetectionSource::CapturePane => Color::DarkGray,
                 };
+                let send_label = agent.send_capability.label();
+                let send_color = if agent.send_capability.can_send() {
+                    detection_color
+                } else {
+                    Color::Red
+                };
                 spans.push(Span::styled(
-                    format!("[{}] ", detection_label),
-                    Style::default().fg(detection_color),
+                    format!(
+                        "[{}{}{}] ",
+                        detection_label,
+                        agent.send_capability.icon(),
+                        send_label
+                    ),
+                    Style::default().fg(send_color),
                 ));
 
                 // Show team info if the agent is part of a team

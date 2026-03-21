@@ -838,6 +838,23 @@ impl Poller {
                     agent.compaction_count = hs.compaction_count;
                 }
 
+                // Determine send capability (best available tier)
+                agent.send_capability = if wrap_state.is_some() {
+                    // Tier 1: IPC — tmai wrap holds PTY master
+                    crate::agents::SendCapability::Ipc
+                } else if !pane.session.starts_with("hook")
+                    && !pane.session.starts_with("discovered")
+                {
+                    // Tier 2: tmux send-keys — real tmux pane
+                    crate::agents::SendCapability::Tmux
+                } else if pane.pid > 0 && crate::pty_inject::is_tiocsti_available() {
+                    // Tier 3: PTY inject — PID known AND TIOCSTI enabled
+                    crate::agents::SendCapability::PtyInject
+                } else {
+                    // No send path available (PID unknown or TIOCSTI disabled)
+                    crate::agents::SendCapability::None
+                };
+
                 agents.push(agent);
             }
         }

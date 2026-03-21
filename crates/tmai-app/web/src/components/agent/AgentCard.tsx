@@ -47,6 +47,13 @@ const sourceIcons: Record<string, string> = {
   WebSocket: "◇",
 };
 
+const sendIcons: Record<string, string> = {
+  Ipc: "⇋",
+  Tmux: "⇉",
+  PtyInject: "⇝",
+  None: "⊘",
+};
+
 interface AgentCardProps {
   agent: AgentSnapshot;
   selected?: boolean;
@@ -60,6 +67,8 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   const sourceIcon = sourceIcons[agent.detection_source] ?? "?";
+  const sendIcon = sendIcons[agent.send_capability] ?? "?";
+  const canSend = agent.send_capability !== "None";
 
   // Auto-approve overrides status display when active
   const phase = agent.auto_approve_phase;
@@ -97,9 +106,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           {isAi && (
             <span
               className="text-[10px] text-zinc-600"
-              title={agent.detection_source}
+              title={`detect: ${agent.detection_source} | send: ${agent.send_capability}`}
             >
               {sourceIcon}
+              <span className={canSend ? "" : "text-red-500"}>{sendIcon}</span>
             </span>
           )}
         </div>

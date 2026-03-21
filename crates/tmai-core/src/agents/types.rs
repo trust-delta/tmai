@@ -94,6 +94,47 @@ impl DetectionSource {
     }
 }
 
+/// Best available method for sending keystrokes to this agent
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SendCapability {
+    /// IPC connection available (PTY master held by tmai wrap)
+    Ipc,
+    /// tmux send-keys available (agent runs in a tmux pane)
+    Tmux,
+    /// PTY inject available (TIOCSTI via /proc/{pid}/fd/0, kernel support required)
+    PtyInject,
+    /// No send path available (detection only)
+    #[default]
+    None,
+}
+
+impl SendCapability {
+    /// Get icon for this send capability
+    pub fn icon(&self) -> char {
+        match self {
+            SendCapability::Ipc => '⇋',
+            SendCapability::Tmux => '⇉',
+            SendCapability::PtyInject => '⇝',
+            SendCapability::None => '⊘',
+        }
+    }
+
+    /// Get short label for this send capability
+    pub fn label(&self) -> &'static str {
+        match self {
+            SendCapability::Ipc => "IPC",
+            SendCapability::Tmux => "tmux",
+            SendCapability::PtyInject => "PTY",
+            SendCapability::None => "none",
+        }
+    }
+
+    /// Whether this agent can receive keystrokes
+    pub fn can_send(&self) -> bool {
+        !matches!(self, SendCapability::None)
+    }
+}
+
 /// Type of AI agent being monitored
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentType {
@@ -527,6 +568,8 @@ pub struct MonitoredAgent {
     pub compaction_count: u32,
     /// PTY session ID if this agent was spawned via the PTY spawn API
     pub pty_session_id: Option<String>,
+    /// Best available method for sending keystrokes to this agent
+    pub send_capability: SendCapability,
 }
 
 impl MonitoredAgent {
@@ -575,6 +618,7 @@ impl MonitoredAgent {
             active_subagents: 0,
             compaction_count: 0,
             pty_session_id: None,
+            send_capability: SendCapability::default(),
         }
     }
 

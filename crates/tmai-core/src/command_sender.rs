@@ -6,7 +6,12 @@ use crate::ipc::server::IpcServer;
 use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
 
-/// Unified command sender with 3-tier fallback: IPC → PTY inject → RuntimeAdapter
+/// Unified command sender with 3-tier fallback: IPC → RuntimeAdapter (tmux) → PTY inject
+///
+/// Tier priority follows reliability:
+/// - **IPC**: `tmai wrap` provides PTY master — most reliable
+/// - **tmux send-keys**: tmux native mechanism — reliable when tmux is available
+/// - **PTY inject**: TIOCSTI via `/proc/{pid}/fd/0` — last resort, requires kernel support
 pub struct CommandSender {
     ipc_server: Option<Arc<IpcServer>>,
     runtime: Arc<dyn RuntimeAdapter>,
@@ -29,13 +34,13 @@ impl CommandSender {
         }
     }
 
-    /// Attach a HookRegistry for PTY injection (Tier 2) PID resolution
+    /// Attach a HookRegistry for PTY injection PID resolution
     pub fn with_hook_registry(mut self, registry: HookRegistry) -> Self {
         self.hook_registry = Some(registry);
         self
     }
 
-    /// Send keys via IPC → PTY inject → runtime adapter
+    /// Send keys via IPC → tmux send-keys → PTY inject
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
@@ -45,17 +50,20 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection via /proc/{pid}/fd/0
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_keys(target, keys).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection via /proc/{pid}/fd/0 (TIOCSTI)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text(pid, keys).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text(pid, keys);
             }
         }
-        // Tier 3: RuntimeAdapter (tmux send-keys / standalone error)
-        self.runtime.send_keys(target, keys)
+        anyhow::bail!("All send_keys tiers failed for target {}", target)
     }
 
-    /// Send literal keys via IPC → PTY inject → runtime adapter
+    /// Send literal keys via IPC → tmux send-keys → PTY inject
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
@@ -65,17 +73,20 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection (literal text, no key-name conversion)
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_keys_literal(target, keys).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection (literal text)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text_literal(pid, keys).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text_literal(pid, keys);
             }
         }
-        // Tier 3: RuntimeAdapter
-        self.runtime.send_keys_literal(target, keys)
+        anyhow::bail!("All send_keys_literal tiers failed for target {}", target)
     }
 
-    /// Send text + Enter via IPC → PTY inject → runtime adapter
+    /// Send text + Enter via IPC → tmux send-keys → PTY inject
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
@@ -85,14 +96,17 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection (text + Enter)
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_text_and_enter(target, text).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection (text + Enter)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text_and_enter(pid, text).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text_and_enter(pid, text);
             }
         }
-        // Tier 3: RuntimeAdapter
-        self.runtime.send_text_and_enter(target, text)
+        anyhow::bail!("All send_text_and_enter tiers failed for target {}", target)
     }
 
     /// Access the runtime adapter for direct operations (focus_pane, kill_pane, etc.)
