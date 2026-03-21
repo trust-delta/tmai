@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
-    routing::{any, get, post},
+    routing::{any, get, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -75,6 +75,7 @@ impl WebServer {
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))
             .route("/agents/{id}/key", post(api::send_key))
+            .route("/agents/{id}/auto-approve", put(api::set_auto_approve))
             .route("/agents/{id}/kill", post(api::kill_agent))
             .route("/agents/{id}/passthrough", post(api::passthrough_input))
             .route("/agents/{id}/preview", get(api::get_preview))

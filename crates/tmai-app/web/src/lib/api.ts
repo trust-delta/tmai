@@ -111,6 +111,7 @@ export interface AgentSnapshot {
     | "ApprovedByAi"
     | { ManualRequired: string }
     | null;
+  auto_approve_override: boolean | null;
 }
 
 // ── Project grouping ──
@@ -353,6 +354,11 @@ export const api = {
     }),
   killAgent: (target: string) =>
     apiFetch(`/agents/${target}/kill`, { method: "POST" }),
+  setAutoApprove: (target: string, enabled: boolean | null) =>
+    apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
   passthrough: (target: string, input: { chars?: string; key?: string }) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/passthrough`, {
       method: "POST",

@@ -190,6 +190,18 @@ impl AutoApproveService {
                         continue;
                     }
 
+                    // Check per-agent auto-approve override
+                    if agent.auto_approve_override == Some(false) {
+                        if let Some(a) = state.agents.get_mut(target) {
+                            if a.auto_approve_phase.is_none() {
+                                a.auto_approve_phase = Some(AutoApprovePhase::ManualRequired(
+                                    "disabled for this agent".to_string(),
+                                ));
+                            }
+                        }
+                        continue;
+                    }
+
                     // Check allowed_types filter
                     if !self.settings.allowed_types.is_empty() {
                         let type_str = approval_type_to_string(&approval_type);

@@ -138,6 +138,9 @@ pub struct AgentSnapshot {
     pub pty_session_id: Option<String>,
     /// Best available method for sending keystrokes to this agent
     pub send_capability: SendCapability,
+    /// Per-agent auto-approve override: None = follow global, Some(bool) = override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_approve_override: Option<bool>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -211,6 +214,7 @@ impl AgentSnapshot {
             compaction_count: agent.compaction_count,
             pty_session_id: agent.pty_session_id.clone(),
             send_capability: agent.send_capability,
+            auto_approve_override: agent.auto_approve_override,
         }
     }
 

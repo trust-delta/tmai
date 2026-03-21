@@ -570,6 +570,8 @@ pub struct MonitoredAgent {
     pub pty_session_id: Option<String>,
     /// Best available method for sending keystrokes to this agent
     pub send_capability: SendCapability,
+    /// Per-agent auto-approve override: None = follow global setting, Some(bool) = override
+    pub auto_approve_override: Option<bool>,
 }
 
 impl MonitoredAgent {
@@ -619,6 +621,7 @@ impl MonitoredAgent {
             compaction_count: 0,
             pty_session_id: None,
             send_capability: SendCapability::default(),
+            auto_approve_override: None,
         }
     }
 

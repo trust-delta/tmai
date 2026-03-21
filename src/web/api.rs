@@ -60,6 +60,13 @@ pub struct PassthroughRequest {
     pub key: Option<String>,
 }
 
+/// Per-agent auto-approve override request
+#[derive(Debug, Deserialize)]
+pub struct AutoApproveOverrideRequest {
+    /// None = follow global, Some(true) = force enable, Some(false) = force disable
+    pub enabled: Option<bool>,
+}
+
 /// Preview response
 #[derive(Debug, Serialize)]
 pub struct PreviewResponse {
@@ -288,6 +295,20 @@ pub async fn send_key(
             tracing::warn!("API: send_key failed agent_id={}: {}", id, e);
             api_error_to_http(e)
         })
+}
+
+/// PUT /api/agents/{id}/auto-approve — set per-agent auto-approve override
+///
+/// Body: `{"enabled": true}` to force enable, `{"enabled": false}` to force disable,
+/// `{"enabled": null}` to follow global setting.
+pub async fn set_auto_approve(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<AutoApproveOverrideRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    core.set_auto_approve_override(&id, req.enabled)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(api_error_to_http)
 }
 
 /// POST /api/agents/{id}/passthrough — send raw input to agent terminal

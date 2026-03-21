@@ -3,6 +3,7 @@ import {
   statusName,
   needsAttention,
   isAiAgent,
+  api,
   type AgentSnapshot,
   type AgentType,
 } from "@/lib/api";
@@ -54,6 +55,16 @@ const sendIcons: Record<string, string> = {
   None: "⊘",
 };
 
+/// Resolve effective auto-approve state: override > global
+function autoApproveEffective(agent: AgentSnapshot): boolean {
+  if (agent.auto_approve_override !== null && agent.auto_approve_override !== undefined) {
+    return agent.auto_approve_override;
+  }
+  // No override — assume global default (we don't have global state here,
+  // but the badge only shows when override is explicitly set)
+  return true;
+}
+
 interface AgentCardProps {
   agent: AgentSnapshot;
   selected?: boolean;
@@ -70,6 +81,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const sendIcon = sendIcons[agent.send_capability] ?? "?";
   const canSend = agent.send_capability !== "None";
 
+  // Auto-approve state
+  const hasOverride = agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
+  const isAutoApproveOn = autoApproveEffective(agent);
+
   // Auto-approve overrides status display when active
   const phase = agent.auto_approve_phase;
   const isJudging = phase === "Judging";
@@ -85,6 +100,20 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
       : (statusColors[name] ?? statusColors.Unknown);
   const glow = isJudging || isAutoApproved ? "" : (statusGlow[name] ?? "");
+
+  /// Toggle auto-approve override: null → true → false → null (cycle)
+  function handleAutoApproveToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    let next: boolean | null;
+    if (agent.auto_approve_override === null || agent.auto_approve_override === undefined) {
+      next = false; // global → force off
+    } else if (agent.auto_approve_override === false) {
+      next = true; // force off → force on
+    } else {
+      next = null; // force on → back to global
+    }
+    api.setAutoApprove(agent.target, next);
+  }
 
   return (
     <button
@@ -113,14 +142,35 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             </span>
           )}
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-            statusStyle,
-          )}
-        >
-          {displayName}
-        </span>
+        <div className="flex items-center gap-1">
+          {/* Auto-approve toggle */}
+          <span
+            onClick={handleAutoApproveToggle}
+            className={cn(
+              "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-colors",
+              !hasOverride && "text-zinc-600 hover:text-zinc-400",
+              hasOverride && isAutoApproveOn && "text-emerald-400 bg-emerald-500/10",
+              hasOverride && !isAutoApproveOn && "text-red-400 bg-red-500/10",
+            )}
+            title={
+              !hasOverride
+                ? "Auto-approve: global default (click to override)"
+                : isAutoApproveOn
+                  ? "Auto-approve: ON (click to cycle)"
+                  : "Auto-approve: OFF (click to cycle)"
+            }
+          >
+            {!hasOverride ? "⚡" : isAutoApproveOn ? "⚡on" : "⚡off"}
+          </span>
+          <span
+            className={cn(
+              "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+              statusStyle,
+            )}
+          >
+            {displayName}
+          </span>
+        </div>
       </div>
 
       {/* Row 2: Branch + worktree + meta indicators */}

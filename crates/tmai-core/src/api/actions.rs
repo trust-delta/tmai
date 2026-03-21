@@ -335,6 +335,28 @@ impl TmaiCore {
         Ok(())
     }
 
+    /// Toggle per-agent auto-approve override.
+    ///
+    /// - `None` → follow global setting (default)
+    /// - `Some(true)` → force enabled for this agent
+    /// - `Some(false)` → force disabled for this agent
+    pub fn set_auto_approve_override(
+        &self,
+        target: &str,
+        enabled: Option<bool>,
+    ) -> Result<(), ApiError> {
+        let mut state = self.state().write();
+        match state.agents.get_mut(target) {
+            Some(agent) => {
+                agent.auto_approve_override = enabled;
+                Ok(())
+            }
+            None => Err(ApiError::AgentNotFound {
+                target: target.to_string(),
+            }),
+        }
+    }
+
     /// Focus on a specific pane in tmux
     pub fn focus_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual
