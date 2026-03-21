@@ -87,7 +87,7 @@ export function App() {
           />
         ) : (
           <>
-            {selectedAgent && <AgentActions agent={selectedAgent} />}
+            {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
             {sessionId ? (
               <TerminalPanel key={sessionId} sessionId={sessionId} />
             ) : selectedAgent ? (

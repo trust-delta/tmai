@@ -56,12 +56,26 @@ interface AgentCardProps {
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const name = statusName(agent.status);
-  const statusStyle = statusColors[name] ?? statusColors.Unknown;
   const attention = needsAttention(agent.status);
-  const glow = statusGlow[name] ?? "";
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   const sourceIcon = sourceIcons[agent.detection_source] ?? "?";
+
+  // Auto-approve overrides status display when active
+  const phase = agent.auto_approve_phase;
+  const isJudging = phase === "Judging";
+  const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
+  const displayName = isJudging
+    ? "Judging"
+    : isAutoApproved
+      ? "Approved"
+      : name;
+  const statusStyle = isJudging
+    ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+    : isAutoApproved
+      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+      : (statusColors[name] ?? statusColors.Unknown);
+  const glow = isJudging || isAutoApproved ? "" : (statusGlow[name] ?? "");
 
   return (
     <button
@@ -95,7 +109,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             statusStyle,
           )}
         >
-          {name}
+          {displayName}
         </span>
       </div>
 

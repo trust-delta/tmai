@@ -4,10 +4,12 @@ import { cn } from "@/lib/utils";
 
 interface AgentActionsProps {
   agent: AgentSnapshot;
+  /** Whether passthrough input is active (hides approve/reject buttons) */
+  passthrough?: boolean;
 }
 
 // Status bar displayed above the main panel for the selected agent
-export function AgentActions({ agent }: AgentActionsProps) {
+export function AgentActions({ agent, passthrough }: AgentActionsProps) {
   const name = statusName(agent.status);
   const needsPermission = name === "AwaitingApproval";
   const isProcessing = name === "Processing";
@@ -70,7 +72,7 @@ export function AgentActions({ agent }: AgentActionsProps) {
 
       <div className="flex-1" />
 
-      {needsPermission && (
+      {needsPermission && !passthrough && (
         <>
           <button
             onClick={handleApprove}

@@ -887,6 +887,55 @@ pub async fn update_spawn_settings(
 }
 
 // =========================================================
+// Auto-approve settings endpoint
+// =========================================================
+
+/// Response body for auto-approve settings
+#[derive(Debug, Serialize)]
+pub struct AutoApproveSettingsResponse {
+    /// Current effective mode
+    pub mode: String,
+    /// Whether the service is running
+    pub running: bool,
+}
+
+/// Request body for updating auto-approve mode
+#[derive(Debug, Deserialize)]
+pub struct UpdateAutoApproveRequest {
+    /// Mode: "off", "rules", "ai", "hybrid"
+    pub mode: String,
+}
+
+/// GET /api/settings/auto-approve — get current auto-approve settings
+pub async fn get_auto_approve_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<AutoApproveSettingsResponse> {
+    let mode = format!("{:?}", core.settings().auto_approve.effective_mode());
+    let running = core.settings().auto_approve.effective_mode()
+        != tmai_core::auto_approve::types::AutoApproveMode::Off;
+
+    Json(AutoApproveSettingsResponse { mode, running })
+}
+
+/// PUT /api/settings/auto-approve — update auto-approve mode (persisted to config.toml)
+pub async fn update_auto_approve_settings(
+    Json(req): Json<UpdateAutoApproveRequest>,
+) -> Json<serde_json::Value> {
+    // Persist to config.toml (takes effect on restart)
+    tmai_core::config::Settings::save_toml_value(
+        "auto_approve",
+        "mode",
+        toml_edit::Value::from(req.mode.as_str()),
+    );
+
+    tracing::info!(
+        "Auto-approve mode updated to '{}' (restart to apply)",
+        req.mode
+    );
+    Json(serde_json::json!({"ok": true, "restart_required": true}))
+}
+
+// =========================================================
 // Agent spawn endpoint
 // =========================================================
 

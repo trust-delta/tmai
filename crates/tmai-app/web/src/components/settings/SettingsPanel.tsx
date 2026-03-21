@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api, type SpawnSettings } from "@/lib/api";
+import { api, type SpawnSettings, type AutoApproveSettings } from "@/lib/api";
 import { DirBrowser } from "@/components/project/DirBrowser";
 
 interface SettingsPanelProps {
@@ -14,6 +14,9 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [spawnSettings, setSpawnSettings] = useState<SpawnSettings | null>(null);
+  const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(
+    null,
+  );
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -23,10 +26,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api.getSpawnSettings().then(setSpawnSettings).catch(console.error);
   }, []);
 
+  const refreshAutoApprove = useCallback(() => {
+    api.getAutoApproveSettings().then(setAutoApprove).catch(console.error);
+  }, []);
+
   useEffect(() => {
     refreshProjects();
     refreshSpawnSettings();
-  }, [refreshProjects, refreshSpawnSettings]);
+    refreshAutoApprove();
+  }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove]);
 
   // Add a project directory
   const handleAdd = async (projectPath?: string) => {
@@ -102,6 +110,50 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        {/* Auto-approve section */}
+        {autoApprove && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Auto-approve</h3>
+            <p className="mt-1 text-xs text-zinc-600">
+              Automatically approve agent actions. Changes apply on restart.
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Mode</span>
+                <select
+                  value={autoApprove.mode}
+                  onChange={async (e) => {
+                    const mode = e.target.value;
+                    setAutoApprove({ ...autoApprove, mode });
+                    try {
+                      await api.updateAutoApproveMode(mode);
+                    } catch (err) {
+                      console.error("Failed to update auto-approve:", err);
+                    }
+                  }}
+                  className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                >
+                  <option value="Off">Off</option>
+                  <option value="Rules">Rules (fast, pattern-based)</option>
+                  <option value="Ai">AI (Claude Haiku judge)</option>
+                  <option value="Hybrid">Hybrid (rules → AI fallback)</option>
+                </select>
+              </div>
+              {autoApprove.running && (
+                <p className="mt-2 text-[11px] text-emerald-500/70">
+                  Service running
+                </p>
+              )}
+              {autoApprove.mode !== "Off" && !autoApprove.running && (
+                <p className="mt-2 text-[11px] text-amber-500/70">
+                  Restart tmai to activate
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Spawn section */}
         {spawnSettings && (
           <section>

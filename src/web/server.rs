@@ -92,6 +92,10 @@ impl WebServer {
                 "/settings/spawn",
                 get(api::get_spawn_settings).put(api::update_spawn_settings),
             )
+            .route(
+                "/settings/auto-approve",
+                get(api::get_auto_approve_settings).put(api::update_auto_approve_settings),
+            )
             .route("/spawn", post(api::spawn_agent))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))

@@ -103,6 +103,12 @@ export interface AgentSnapshot {
   pty_session_id: string | null;
   is_virtual: boolean;
   team_info: { team_name: string; member_name: string } | null;
+  auto_approve_phase:
+    | "Judging"
+    | "ApprovedByRule"
+    | "ApprovedByAi"
+    | { ManualRequired: string }
+    | null;
 }
 
 // ── Project grouping ──
@@ -268,12 +274,10 @@ export function groupByProject(
     }
   }
 
-  // Sort: registered first, then attention, then by name
+  // Sort: registered first, then by name (stable — no attention reordering)
   projects.sort((a, b) => {
     if (a.isRegistered && !b.isRegistered) return -1;
     if (!a.isRegistered && b.isRegistered) return 1;
-    if (a.attentionAgents > 0 && b.attentionAgents === 0) return -1;
-    if (a.attentionAgents === 0 && b.attentionAgents > 0) return 1;
     return a.name.localeCompare(b.name);
   });
 
@@ -284,6 +288,11 @@ export interface SpawnResponse {
   session_id: string;
   pid: number;
   command: string;
+}
+
+export interface AutoApproveSettings {
+  mode: string;
+  running: boolean;
 }
 
 export interface SpawnSettings {
@@ -372,6 +381,15 @@ export const api = {
     apiFetch("/projects/remove", {
       method: "POST",
       body: JSON.stringify({ path }),
+    }),
+
+  // Auto-approve settings
+  getAutoApproveSettings: () =>
+    apiFetch<AutoApproveSettings>("/settings/auto-approve"),
+  updateAutoApproveMode: (mode: string) =>
+    apiFetch("/settings/auto-approve", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
     }),
 
   // Spawn settings
