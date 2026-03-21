@@ -41,18 +41,18 @@ function agentTypeLabel(agentType: AgentType): {
   return { icon: "›", label: "agent", color: "text-zinc-400" };
 }
 
-const sourceIcons: Record<string, string> = {
-  HttpHook: "◈",
-  IpcSocket: "◉",
-  CapturePane: "○",
-  WebSocket: "◇",
+const sourceIcons: Record<string, { icon: string; label: string }> = {
+  HttpHook: { icon: "◈", label: "Hook (HTTP POST)" },
+  IpcSocket: { icon: "◉", label: "IPC (Unix socket)" },
+  CapturePane: { icon: "○", label: "capture-pane (text parse)" },
+  WebSocket: { icon: "◇", label: "WebSocket" },
 };
 
-const sendIcons: Record<string, string> = {
-  Ipc: "⇋",
-  Tmux: "⇉",
-  PtyInject: "⇝",
-  None: "⊘",
+const sendIcons: Record<string, { icon: string; label: string }> = {
+  Ipc: { icon: "⇋", label: "IPC (Unix socket)" },
+  Tmux: { icon: "⇉", label: "tmux send-keys" },
+  PtyInject: { icon: "⇝", label: "PTY inject" },
+  None: { icon: "⊘", label: "送信不可" },
 };
 
 /// Resolve effective auto-approve state: override > global
@@ -77,8 +77,14 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const attention = needsAttention(agent.status);
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
-  const sourceIcon = sourceIcons[agent.detection_source] ?? "?";
-  const sendIcon = sendIcons[agent.send_capability] ?? "?";
+  const sourceEntry = sourceIcons[agent.detection_source] ?? {
+    icon: "?",
+    label: agent.detection_source,
+  };
+  const sendEntry = sendIcons[agent.send_capability] ?? {
+    icon: "?",
+    label: agent.send_capability,
+  };
   const canSend = agent.send_capability !== "None";
 
   // Auto-approve state
@@ -128,19 +134,21 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       {/* Row 1: Agent type + status badge */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
+          {isAi && (
+            <span className="text-[10px] text-zinc-600">
+              <span title={`検出: ${sourceEntry.label}`}>{sourceEntry.icon}</span>
+              <span
+                className={canSend ? "" : "text-red-500"}
+                title={`送信: ${sendEntry.label}`}
+              >
+                {sendEntry.icon}
+              </span>
+            </span>
+          )}
           <span className={cn("text-sm", typeInfo.color)}>{typeInfo.icon}</span>
           <span className="truncate text-sm font-medium text-zinc-200">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
           </span>
-          {isAi && (
-            <span
-              className="text-[10px] text-zinc-600"
-              title={`detect: ${agent.detection_source} | send: ${agent.send_capability}`}
-            >
-              {sourceIcon}
-              <span className={canSend ? "" : "text-red-500"}>{sendIcon}</span>
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-1">
           {/* Auto-approve toggle */}
