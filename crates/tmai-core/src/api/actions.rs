@@ -640,6 +640,63 @@ impl TmaiCore {
         Ok(target)
     }
 
+    // =========================================================
+    // Usage actions
+    // =========================================================
+
+    /// Get the cached usage snapshot from state.
+    pub fn get_usage(&self) -> crate::usage::UsageSnapshot {
+        self.state().read().usage.clone()
+    }
+
+    /// Start a background usage fetch.
+    ///
+    /// If a fetch is already in progress, this is a no-op.
+    /// On completion, updates state and emits `CoreEvent::UsageUpdated`.
+    pub fn fetch_usage(&self) {
+        // Check and set fetching flag atomically
+        {
+            let mut state = self.state().write();
+            if state.usage.fetching {
+                return;
+            }
+            state.usage.fetching = true;
+        }
+
+        let state = self.state().clone();
+        let event_tx = self.event_sender();
+
+        // Determine if tmux is available by checking runtime
+        let tmux_session = self.runtime().and_then(|_rt| {
+            // If runtime supports tmux, try to get a session name from agents
+            let s = self.state().read();
+            s.agent_order
+                .first()
+                .and_then(|key| s.agents.get(key))
+                .map(|a| a.session.clone())
+        });
+
+        tokio::spawn(async move {
+            let result = crate::usage::fetch_usage_auto(tmux_session.as_deref()).await;
+
+            let mut s = state.write();
+            match result {
+                Ok(snapshot) => {
+                    s.usage = snapshot;
+                    s.usage.fetching = false;
+                    s.usage.error = None;
+                }
+                Err(e) => {
+                    tracing::warn!("Usage fetch failed: {e}");
+                    s.usage.fetching = false;
+                    s.usage.error = Some(e.to_string());
+                }
+            }
+            drop(s);
+            let _ = event_tx.send(super::events::CoreEvent::UsageUpdated);
+        });
+    }
+
     /// Kill a specific agent (PTY session or tmux pane)
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual

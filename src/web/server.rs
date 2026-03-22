@@ -105,6 +105,12 @@ impl WebServer {
             .route("/agents/{id}/terminal", any(ws::ws_terminal))
             .route("/security/scan", post(api::security_scan))
             .route("/security/last", get(api::last_security_scan))
+            .route("/usage", get(api::get_usage))
+            .route("/usage/fetch", post(api::trigger_usage_fetch))
+            .route(
+                "/settings/usage",
+                get(api::get_usage_settings).put(api::update_usage_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

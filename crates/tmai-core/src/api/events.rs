@@ -159,6 +159,9 @@ pub enum CoreEvent {
         /// Error message
         error: String,
     },
+
+    /// Usage data was updated (after a fetch cycle)
+    UsageUpdated,
 }
 
 impl TmaiCore {

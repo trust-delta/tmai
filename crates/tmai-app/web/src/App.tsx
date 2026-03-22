@@ -9,6 +9,7 @@ import { TerminalList } from "@/components/terminal/TerminalList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
+import { UsagePanel } from "@/components/usage/UsagePanel";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -82,6 +83,7 @@ export function App() {
             setShowSecurity(false);
           }}
         />
+        <UsagePanel />
       </aside>
 
       {/* Main area */}

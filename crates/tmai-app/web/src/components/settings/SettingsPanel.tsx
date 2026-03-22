@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api, type SpawnSettings, type AutoApproveSettings } from "@/lib/api";
+import { api, type SpawnSettings, type AutoApproveSettings, type UsageSettings } from "@/lib/api";
 import { DirBrowser } from "@/components/project/DirBrowser";
 
 interface SettingsPanelProps {
@@ -17,6 +17,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(
     null,
   );
+  const [usageSettings, setUsageSettings] = useState<UsageSettings | null>(null);
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -30,11 +31,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api.getAutoApproveSettings().then(setAutoApprove).catch(console.error);
   }, []);
 
+  const refreshUsageSettings = useCallback(() => {
+    api.getUsageSettings().then(setUsageSettings).catch(console.error);
+  }, []);
+
   useEffect(() => {
     refreshProjects();
     refreshSpawnSettings();
     refreshAutoApprove();
-  }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove]);
+    refreshUsageSettings();
+  }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove, refreshUsageSettings]);
 
   // Add a project directory
   const handleAdd = async (projectPath?: string) => {
@@ -213,6 +219,75 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     }}
                     className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                   />
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Usage monitoring section */}
+        {usageSettings && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Usage Monitoring</h3>
+            <p className="mt-1 text-xs text-zinc-600">
+              Periodically fetch Claude Code subscription usage.
+              Spawns a temporary Claude Code instance (Haiku) for each refresh.
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Auto-refresh</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    const newEnabled = !usageSettings.enabled;
+                    setUsageSettings({ ...usageSettings, enabled: newEnabled });
+                    try {
+                      await api.updateUsageSettings({ enabled: newEnabled });
+                    } catch (e) {
+                      console.error("Failed to update usage settings:", e);
+                    }
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    usageSettings.enabled ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      usageSettings.enabled
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {usageSettings.enabled && (
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-xs text-zinc-500">Interval</span>
+                  <input
+                    type="number"
+                    min={5}
+                    max={1440}
+                    value={usageSettings.auto_refresh_min || 30}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) {
+                        setUsageSettings({ ...usageSettings, auto_refresh_min: val });
+                      }
+                    }}
+                    onBlur={async () => {
+                      const val = Math.max(5, usageSettings.auto_refresh_min || 30);
+                      try {
+                        await api.updateUsageSettings({ auto_refresh_min: val });
+                      } catch (e) {
+                        console.error("Failed to update usage interval:", e);
+                      }
+                    }}
+                    className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                  />
+                  <span className="text-xs text-zinc-500">minutes</span>
                 </div>
               )}
             </div>

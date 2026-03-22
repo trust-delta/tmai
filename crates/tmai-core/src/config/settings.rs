@@ -602,6 +602,9 @@ pub struct UsageSettings {
     /// Auto-refresh interval in minutes (0 = disabled, manual `U` key only)
     #[serde(default)]
     pub auto_refresh_min: u32,
+    /// Enable usage monitoring in WebUI
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 /// Fresh Session Review settings

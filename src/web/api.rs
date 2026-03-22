@@ -1511,6 +1511,65 @@ pub async fn last_security_scan(
     Json(core.last_security_scan())
 }
 
+// ── Usage ──
+
+/// GET /api/usage — return cached usage snapshot
+pub async fn get_usage(State(core): State<Arc<TmaiCore>>) -> Json<tmai_core::usage::UsageSnapshot> {
+    Json(core.get_usage())
+}
+
+/// POST /api/usage/fetch — trigger a background usage fetch
+pub async fn trigger_usage_fetch(State(core): State<Arc<TmaiCore>>) -> StatusCode {
+    core.fetch_usage();
+    StatusCode::ACCEPTED
+}
+
+/// Usage settings response
+#[derive(Debug, Serialize)]
+pub struct UsageSettingsResponse {
+    pub enabled: bool,
+    pub auto_refresh_min: u32,
+}
+
+/// Usage settings update request
+#[derive(Debug, Deserialize)]
+pub struct UsageSettingsRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub auto_refresh_min: Option<u32>,
+}
+
+/// GET /api/settings/usage — get usage settings
+pub async fn get_usage_settings(State(core): State<Arc<TmaiCore>>) -> Json<UsageSettingsResponse> {
+    let s = core.settings();
+    Json(UsageSettingsResponse {
+        enabled: s.usage.enabled,
+        auto_refresh_min: s.usage.auto_refresh_min,
+    })
+}
+
+/// PUT /api/settings/usage — update usage settings and persist
+pub async fn update_usage_settings(
+    Json(req): Json<UsageSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(enabled) = req.enabled {
+        tmai_core::config::Settings::save_toml_value(
+            "usage",
+            "enabled",
+            toml_edit::Value::from(enabled),
+        );
+    }
+    if let Some(interval) = req.auto_refresh_min {
+        tmai_core::config::Settings::save_toml_value(
+            "usage",
+            "auto_refresh_min",
+            toml_edit::Value::from(interval as i64),
+        );
+    }
+    Json(serde_json::json!({"ok": true}))
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)

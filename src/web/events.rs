@@ -154,6 +154,15 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::UsageUpdated) => {
+                            let usage = core.get_usage();
+                            if let Ok(data) = serde_json::to_string(&usage) {
+                                let event = Event::default().event("usage").data(data);
+                                if tx.send(Ok(event)).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::WorktreeCreated { .. })
                         | Ok(CoreEvent::WorktreeRemoved { .. })

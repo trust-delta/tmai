@@ -319,6 +319,26 @@ export interface SpawnRequest {
   force_pty?: boolean;
 }
 
+// ── Usage ──
+
+export interface UsageMeter {
+  label: string;
+  percent: number;
+  reset_info: string | null;
+  spending: string | null;
+}
+
+export interface UsageSnapshot {
+  meters: UsageMeter[];
+  fetched_at: string | null;
+  error: string | null;
+}
+
+export interface UsageSettings {
+  enabled: boolean;
+  auto_refresh_min: number;
+}
+
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
@@ -442,6 +462,17 @@ export const api = {
   lastSecurityScan: () =>
     apiFetch<ScanResult | null>("/security/last"),
 
+  // Usage
+  getUsage: () => apiFetch<UsageSnapshot>("/usage"),
+  fetchUsage: () =>
+    apiFetch("/usage/fetch", { method: "POST" }),
+  getUsageSettings: () => apiFetch<UsageSettings>("/settings/usage"),
+  updateUsageSettings: (params: Partial<UsageSettings>) =>
+    apiFetch("/settings/usage", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
   // Auto-approve settings
   getAutoApproveSettings: () =>
     apiFetch<AutoApproveSettings>("/settings/auto-approve"),
@@ -499,6 +530,7 @@ export function subscribeSSE(handlers: {
     "context_compacting",
     "review_launched",
     "review_completed",
+    "usage",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {
