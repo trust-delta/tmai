@@ -67,7 +67,7 @@ temp-env = "0.3"
 tower = { version = "0.5", features = ["util"] }
 http = "1"
 http-body-util = "0.1"
-tempfile = "3.25.0"
+tempfile = "3.27.0"
 
 [[bin]]
 name = "tmai"
