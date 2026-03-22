@@ -533,8 +533,8 @@ impl TmaiCore {
         &self,
         req: &crate::worktree::WorktreeDeleteRequest,
     ) -> Result<(), ApiError> {
-        // Check for running agents in this worktree
-        {
+        // Check for running agents in this worktree (skip if force)
+        if !req.force {
             let state = self.state().read();
             let worktree_path = std::path::Path::new(&req.repo_path)
                 .join(".claude")

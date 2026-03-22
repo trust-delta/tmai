@@ -589,11 +589,9 @@ pub async fn delete_worktree(
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
     }
 
-    // Verify the repo_path exists in our known worktrees
-    let repo_exists = core.list_worktrees().iter().any(|wt| {
-        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
-    });
-    if !repo_exists {
+    // Verify the repo_path is a valid directory
+    let repo_dir = strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
     }
 

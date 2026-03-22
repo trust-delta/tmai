@@ -386,6 +386,13 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  // Worktree management
+  deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
+    apiFetch("/worktrees/delete", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, worktree_name: worktreeName, force: force ?? false }),
+    }),
+
   // Git branches
   listBranches: (repoPath: string) =>
     apiFetch<BranchListResponse>(`/git/branches?repo=${encodeURIComponent(repoPath)}`),
