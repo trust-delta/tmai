@@ -196,6 +196,14 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             )}
           </span>
         )}
+        {agent.worktree_base_branch && (
+          <span
+            className="shrink-0 text-[10px] text-zinc-600"
+            title={`forked from ${agent.worktree_base_branch}`}
+          >
+            ← {agent.worktree_base_branch}
+          </span>
+        )}
         {!agent.git_branch && (
           <span className="truncate text-zinc-600" title={agent.cwd}>
             {agent.display_cwd}

@@ -98,6 +98,7 @@ export interface AgentSnapshot {
   is_worktree: boolean | null;
   git_common_dir: string | null;
   worktree_name: string | null;
+  worktree_base_branch: string | null;
   effort_level: EffortLevel | null;
   active_subagents: number;
   compaction_count: number;
@@ -287,6 +288,11 @@ export function groupByProject(
   return projects;
 }
 
+export interface BranchListResponse {
+  default_branch: string;
+  branches: string[];
+}
+
 export interface SpawnResponse {
   session_id: string;
   pid: number;
@@ -310,6 +316,7 @@ export interface SpawnRequest {
   cwd?: string;
   rows?: number;
   cols?: number;
+  force_pty?: boolean;
 }
 
 // ── Directory browser ──
@@ -373,6 +380,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
+  spawnWorktree: (req: { name: string; cwd: string; base_branch?: string; rows?: number; cols?: number }) =>
+    apiFetch<SpawnResponse>("/spawn/worktree", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  // Git branches
+  listBranches: (repoPath: string) =>
+    apiFetch<BranchListResponse>(`/git/branches?repo=${encodeURIComponent(repoPath)}`),
 
   // Directories
   listDirectories: (path?: string) =>

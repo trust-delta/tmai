@@ -556,6 +556,7 @@ pub async fn create_worktree(
     let create_req = tmai_core::worktree::WorktreeCreateRequest {
         repo_path: strip_git_suffix(&req.repo_path).to_string(),
         branch_name: req.branch_name,
+        dir_name: None,
         base_branch: req.base_branch,
     };
 
@@ -972,6 +973,9 @@ pub struct SpawnRequest {
     pub rows: u16,
     #[serde(default = "default_cols")]
     pub cols: u16,
+    /// Force PTY spawn even when tmux mode is enabled (e.g., for worktree)
+    #[serde(default)]
+    pub force_pty: bool,
 }
 
 /// Default working directory for spawn
@@ -1033,7 +1037,7 @@ pub async fn spawn_agent(
     };
     let tmux_avail = is_tmux_available();
 
-    if use_tmux && tmux_avail {
+    if use_tmux && tmux_avail && !req.force_pty {
         spawn_in_tmux(&core, &req).await
     } else {
         spawn_in_pty(&core, &req).await
@@ -1261,6 +1265,132 @@ async fn spawn_in_pty(
             ))
         }
     }
+}
+
+// =========================================================
+// Git branch listing endpoint
+// =========================================================
+
+/// Query params for branch listing
+#[derive(Debug, Deserialize)]
+pub struct BranchQueryParams {
+    pub repo: String,
+}
+
+/// GET /api/git/branches — list branches for a repository
+pub async fn list_branches(
+    axum::extract::Query(params): axum::extract::Query<BranchQueryParams>,
+) -> Result<Json<tmai_core::git::BranchListResult>, (StatusCode, Json<serde_json::Value>)> {
+    if !std::path::Path::new(&params.repo).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", params.repo),
+        ));
+    }
+
+    tmai_core::git::list_branches(&params.repo)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list branches"))
+        .map(Json)
+}
+
+// =========================================================
+// Worktree spawn endpoint
+// =========================================================
+
+/// Request body for worktree spawn
+#[derive(Debug, Deserialize)]
+pub struct WorktreeSpawnRequest {
+    /// Worktree name (also used as branch name)
+    pub name: String,
+    /// Repository path
+    pub cwd: String,
+    /// Base branch to create worktree from (defaults to current HEAD)
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+}
+
+/// POST /api/spawn/worktree — create git worktree then spawn claude in it
+pub async fn spawn_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeSpawnRequest>,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate cwd
+    if !std::path::Path::new(&req.cwd).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", req.cwd),
+        ));
+    }
+
+    // Validate worktree name
+    if !tmai_core::git::is_valid_worktree_name(&req.name) {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Invalid worktree name: {}", req.name),
+        ));
+    }
+
+    // Create git worktree using tmai-core
+    // Directory: .claude/worktrees/<name>/, branch: worktree-<name> (Claude Code convention)
+    let wt_req = tmai_core::worktree::WorktreeCreateRequest {
+        repo_path: req.cwd.clone(),
+        branch_name: format!("worktree-{}", req.name),
+        dir_name: Some(req.name.clone()),
+        base_branch: req.base_branch.clone(),
+    };
+
+    let wt_result = tmai_core::worktree::create_worktree(&wt_req)
+        .await
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+
+    tracing::info!(
+        "API: created worktree '{}' at {} (branch: {})",
+        req.name,
+        wt_result.path,
+        wt_result.branch
+    );
+
+    // Spawn claude in the worktree directory
+    let spawn_req = SpawnRequest {
+        command: "claude".to_string(),
+        args: vec![],
+        cwd: wt_result.path,
+        rows: req.rows,
+        cols: req.cols,
+        force_pty: false,
+    };
+
+    // Resolve the effective base branch for metadata
+    let effective_base = req.base_branch.clone();
+
+    // Use tmux if available, otherwise PTY
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let result = if use_tmux && is_tmux_available() {
+        spawn_in_tmux(&core, &spawn_req).await
+    } else {
+        spawn_in_pty(&core, &spawn_req).await
+    };
+
+    // Set worktree_base_branch on the spawned agent
+    if let Ok(ref resp) = result {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        if let Some(agent) = s.agents.get_mut(&resp.session_id) {
+            agent.worktree_base_branch = effective_base;
+        }
+    }
+
+    result
 }
 
 // =========================================================

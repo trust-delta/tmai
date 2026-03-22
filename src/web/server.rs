@@ -98,6 +98,8 @@ impl WebServer {
                 get(api::get_auto_approve_settings).put(api::update_auto_approve_settings),
             )
             .route("/spawn", post(api::spawn_agent))
+            .route("/spawn/worktree", post(api::spawn_worktree))
+            .route("/git/branches", get(api::list_branches))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))
             .route("/agents/{id}/terminal", any(ws::ws_terminal))

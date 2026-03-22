@@ -1703,6 +1703,7 @@ impl App {
                             let req = tmai_core::worktree::WorktreeCreateRequest {
                                 repo_path,
                                 branch_name,
+                                dir_name: None,
                                 base_branch: None,
                             };
                             tokio::spawn(async move {

@@ -346,7 +346,93 @@ pub async fn fetch_full_diff(dir: &str, base_branch: &str) -> Option<String> {
     }
 }
 
+/// Result of listing branches for a repository
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BranchListResult {
+    /// Detected default branch (main, master, etc.)
+    pub default_branch: String,
+    /// All local branch names
+    pub branches: Vec<String>,
+}
+
+/// List branches for a repository and detect the default branch
+pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
+    // List local branches
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "branch", "--format=%(refname:short)"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let branches: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Detect default branch: try symbolic-ref, then fallback to main/master
+    let default_branch = detect_default_branch(repo_dir).await.unwrap_or_else(|| {
+        if branches.contains(&"main".to_string()) {
+            "main".to_string()
+        } else if branches.contains(&"master".to_string()) {
+            "master".to_string()
+        } else {
+            branches
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "main".to_string())
+        }
+    });
+
+    Some(BranchListResult {
+        default_branch,
+        branches,
+    })
+}
+
+/// Detect the default remote branch via symbolic-ref
+async fn detect_default_branch(repo_dir: &str) -> Option<String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(3),
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "--short",
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let refname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // "origin/main" -> "main"
+    refname
+        .strip_prefix("origin/")
+        .map(|s| s.to_string())
+        .or(Some(refname))
+        .filter(|s| !s.is_empty())
+}
+
 /// Validate a worktree name (alphanumeric, hyphens, and underscores only, max 64 chars)
+///
+/// Slashes are rejected: use flat names (`feature-auth`) for the directory,
+/// and let the branch name use a prefix (`worktree-feature-auth`).
 pub fn is_valid_worktree_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
@@ -587,7 +673,7 @@ branch refs/heads/main
         assert!(!is_valid_worktree_name("a|b"));
         assert!(!is_valid_worktree_name("a&b"));
 
-        // Invalid: path traversal
+        // Invalid: path traversal and slashes
         assert!(!is_valid_worktree_name("../../../etc"));
         assert!(!is_valid_worktree_name("foo/bar"));
 

@@ -1595,6 +1595,16 @@ impl Poller {
                 agent.is_worktree = Some(info.is_worktree);
                 agent.git_common_dir = info.common_dir.clone();
                 agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
+
+                // Detect base branch for worktrees that don't have one set
+                if info.is_worktree && agent.worktree_base_branch.is_none() {
+                    if let Some(ref common_dir) = info.common_dir {
+                        let repo_dir = crate::git::strip_git_suffix(common_dir);
+                        if let Some(branch_info) = crate::git::list_branches(repo_dir).await {
+                            agent.worktree_base_branch = Some(branch_info.default_branch);
+                        }
+                    }
+                }
             }
         }
     }

@@ -116,6 +116,8 @@ impl PtySession {
         let mut cmd = CommandBuilder::new(command);
         cmd.args(args);
         cmd.cwd(cwd);
+        // Remove JSC_SIGNAL_FOR_GC — Bun misinterprets it as a CLI option
+        cmd.env_remove("JSC_SIGNAL_FOR_GC");
         for (key, val) in env {
             cmd.env(key, val);
         }

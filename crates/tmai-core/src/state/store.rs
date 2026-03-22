@@ -653,6 +653,10 @@ impl AppState {
                 existing.is_worktree = agent.is_worktree;
                 existing.git_common_dir = agent.git_common_dir;
                 existing.worktree_name = agent.worktree_name;
+                // Preserve worktree_base_branch (set at spawn time or by poller, not every poll)
+                if agent.worktree_base_branch.is_some() {
+                    existing.worktree_base_branch = agent.worktree_base_branch;
+                }
                 // Hook-tracked metrics
                 existing.active_subagents = agent.active_subagents;
                 existing.compaction_count = agent.compaction_count;

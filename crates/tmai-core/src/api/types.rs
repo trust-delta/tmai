@@ -122,6 +122,9 @@ pub struct AgentSnapshot {
     /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_name: Option<String>,
+    /// Base branch the worktree was forked from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_base_branch: Option<String>,
     /// Display name (e.g., "main:0.1")
     pub display_name: String,
     /// Agent definition info from `.claude/agents/*.md`
@@ -208,6 +211,7 @@ impl AgentSnapshot {
             auto_approve_phase: agent.auto_approve_phase.clone(),
             git_common_dir: agent.git_common_dir.clone(),
             worktree_name: agent.worktree_name.clone(),
+            worktree_base_branch: agent.worktree_base_branch.clone(),
             display_name: agent.display_name(),
             agent_definition: None,
             active_subagents: agent.active_subagents,

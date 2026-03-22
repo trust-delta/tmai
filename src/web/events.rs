@@ -21,7 +21,24 @@ use super::api::{build_team_info, TeamInfoResponse};
 
 /// Build agents JSON from TmaiCore snapshots
 fn build_agents_json(core: &TmaiCore) -> String {
-    serde_json::to_string(&core.list_agents()).unwrap_or_else(|_| "[]".to_string())
+    let agents = core.list_agents();
+    serde_json::to_string(&agents).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Build agents JSON for change-detection comparison (excludes volatile fields like last_update)
+fn build_agents_fingerprint(core: &TmaiCore) -> String {
+    let agents = core.list_agents();
+    let stripped: Vec<serde_json::Value> = agents
+        .iter()
+        .filter_map(|a| {
+            let mut v = serde_json::to_value(a).ok()?;
+            if let Some(obj) = v.as_object_mut() {
+                obj.remove("last_update");
+            }
+            Some(v)
+        })
+        .collect();
+    serde_json::to_string(&stripped).unwrap_or_default()
 }
 
 /// Build teams JSON from TmaiCore raw state
@@ -46,11 +63,12 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
 
     tokio::spawn(async move {
         let mut event_rx = core.subscribe();
-        let mut last_agents_json = String::new();
+        let mut last_agents_fingerprint = String::new();
         let mut last_teams_json = String::new();
 
         // Send initial state immediately
         let agents_json = build_agents_json(&core);
+        let agents_fingerprint = build_agents_fingerprint(&core);
         let teams_json = build_teams_json(&core);
 
         if !agents_json.is_empty() && agents_json != "[]" {
@@ -58,7 +76,7 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
             if tx.send(Ok(event)).await.is_err() {
                 return;
             }
-            last_agents_json = agents_json;
+            last_agents_fingerprint = agents_fingerprint;
         }
         if !teams_json.is_empty() && teams_json != "[]" {
             let event = Event::default().event("teams").data(&teams_json);
@@ -79,13 +97,14 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                     match result {
                         Ok(CoreEvent::AgentsUpdated) | Ok(CoreEvent::AgentStatusChanged { .. })
                         | Ok(CoreEvent::AgentAppeared { .. }) | Ok(CoreEvent::AgentDisappeared { .. }) => {
-                            let agents_json = build_agents_json(&core);
-                            if agents_json != last_agents_json {
+                            let fingerprint = build_agents_fingerprint(&core);
+                            if fingerprint != last_agents_fingerprint {
+                                let agents_json = build_agents_json(&core);
                                 let event = Event::default().event("agents").data(&agents_json);
                                 if tx.send(Ok(event)).await.is_err() {
                                     return;
                                 }
-                                last_agents_json = agents_json;
+                                last_agents_fingerprint = fingerprint;
                             }
                         }
                         Ok(CoreEvent::TeamsUpdated) => {
@@ -172,13 +191,14 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         Err(RecvError::Lagged(skipped)) => {
                             tracing::debug!(skipped, "SSE subscriber lagged, re-sending full state");
                             // Re-send full state on lag
-                            let agents_json = build_agents_json(&core);
-                            if agents_json != last_agents_json {
+                            let fingerprint = build_agents_fingerprint(&core);
+                            if fingerprint != last_agents_fingerprint {
+                                let agents_json = build_agents_json(&core);
                                 let event = Event::default().event("agents").data(&agents_json);
                                 if tx.send(Ok(event)).await.is_err() {
                                     return;
                                 }
-                                last_agents_json = agents_json;
+                                last_agents_fingerprint = fingerprint;
                             }
                             let teams_json = build_teams_json(&core);
                             if teams_json != last_teams_json {

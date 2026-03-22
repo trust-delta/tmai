@@ -37,10 +37,11 @@ pub async fn create_worktree(
         }
     }
 
+    let dir_name = req.dir_name.as_deref().unwrap_or(&req.branch_name);
     let worktree_dir = Path::new(&req.repo_path)
         .join(".claude")
         .join("worktrees")
-        .join(&req.branch_name);
+        .join(dir_name);
 
     // Ensure parent directory exists
     let parent = worktree_dir
@@ -285,6 +286,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-test".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -305,6 +307,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path,
             branch_name: "feat-from-main".to_string(),
+            dir_name: None,
             base_branch: Some("HEAD".to_string()),
         };
 
@@ -317,6 +320,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: "/tmp/fake".to_string(),
             branch_name: "bad; rm -rf /".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -329,6 +333,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: "/tmp/fake".to_string(),
             branch_name: "valid-name".to_string(),
+            dir_name: None,
             base_branch: Some("--exec=evil".to_string()),
         };
 
@@ -344,6 +349,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-dup".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -363,6 +369,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-delete-me".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         create_worktree(&create_req).await.unwrap();
@@ -401,6 +408,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-dirty".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         let wt = create_worktree(&create_req).await.unwrap();
@@ -439,6 +447,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-force".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         let wt = create_worktree(&create_req).await.unwrap();
