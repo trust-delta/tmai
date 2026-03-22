@@ -115,9 +115,12 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
         }
     }
 
+    // Detect the branch name before removing the worktree
+    let worktree_path_str = worktree_dir.to_string_lossy().to_string();
+    let branch_name = detect_worktree_branch(&req.repo_path, &worktree_path_str).await;
+
     // Run git worktree remove
     let mut args = vec!["-C", &req.repo_path, "worktree", "remove"];
-    let worktree_path_str = worktree_dir.to_string_lossy().to_string();
     args.push(&worktree_path_str);
     if req.force {
         args.push("--force");
@@ -136,7 +139,50 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
         return Err(WorktreeOpsError::GitError(stderr));
     }
 
+    // Delete the associated branch (best-effort, don't fail if branch is already gone)
+    if let Some(ref branch) = branch_name {
+        let _ = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args(["-C", &req.repo_path, "branch", "-D", branch])
+                .output(),
+        )
+        .await;
+    }
+
     Ok(())
+}
+
+/// Detect the branch checked out in a worktree via `git worktree list --porcelain`
+async fn detect_worktree_branch(repo_path: &str, worktree_path: &str) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_path, "worktree", "list", "--porcelain"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    // Parse porcelain output: blocks separated by blank lines
+    // Each block: "worktree <path>\nHEAD <sha>\nbranch refs/heads/<name>\n"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut in_target = false;
+    for line in stdout.lines() {
+        if line.starts_with("worktree ") {
+            in_target = line.trim_start_matches("worktree ") == worktree_path;
+        } else if in_target && line.starts_with("branch refs/heads/") {
+            return Some(line.trim_start_matches("branch refs/heads/").to_string());
+        } else if line.is_empty() {
+            in_target = false;
+        }
+    }
+    None
 }
 
 /// Check if a worktree has no uncommitted changes
