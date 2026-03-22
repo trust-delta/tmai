@@ -319,6 +319,28 @@ export interface SpawnRequest {
   force_pty?: boolean;
 }
 
+// ── Security scan ──
+
+export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
+export type SecurityCategory = "Permissions" | "McpServer" | "Environment" | "Hooks" | "FilePermissions";
+
+export interface SecurityRisk {
+  rule_id: string;
+  severity: SecuritySeverity;
+  category: SecurityCategory;
+  summary: string;
+  detail: string;
+  source: string;
+  matched_value: string | null;
+}
+
+export interface ScanResult {
+  risks: SecurityRisk[];
+  scanned_at: string;
+  scanned_projects: string[];
+  files_scanned: number;
+}
+
 // ── Directory browser ──
 
 export interface DirEntry {
@@ -413,6 +435,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
+
+  // Security scan
+  runSecurityScan: () =>
+    apiFetch<ScanResult>("/security/scan", { method: "POST" }),
+  lastSecurityScan: () =>
+    apiFetch<ScanResult | null>("/security/last"),
 
   // Auto-approve settings
   getAutoApproveSettings: () =>

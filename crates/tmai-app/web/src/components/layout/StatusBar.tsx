@@ -2,6 +2,7 @@ interface StatusBarProps {
   agentCount: number;
   attentionCount: number;
   onSettingsClick: () => void;
+  onSecurityClick: () => void;
 }
 
 // Top status bar with glassmorphism
@@ -9,6 +10,7 @@ export function StatusBar({
   agentCount,
   attentionCount,
   onSettingsClick,
+  onSecurityClick,
 }: StatusBarProps) {
   return (
     <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
@@ -22,6 +24,13 @@ export function StatusBar({
             {attentionCount}
           </span>
         )}
+        <button
+          onClick={onSecurityClick}
+          className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+          title="Security Scan"
+        >
+          🛡
+        </button>
         <button
           onClick={onSettingsClick}
           className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"

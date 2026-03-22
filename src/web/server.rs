@@ -103,6 +103,8 @@ impl WebServer {
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))
             .route("/agents/{id}/terminal", any(ws::ws_terminal))
+            .route("/security/scan", post(api::security_scan))
+            .route("/security/last", get(api::last_security_scan))
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

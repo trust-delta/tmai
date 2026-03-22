@@ -1493,6 +1493,24 @@ pub async fn send_to_agent(
     })))
 }
 
+// =========================================================
+// Security scan endpoints
+// =========================================================
+
+/// POST /api/security/scan — run a security scan and return results
+pub async fn security_scan(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<tmai_core::security::ScanResult> {
+    Json(core.security_scan())
+}
+
+/// GET /api/security/last — return cached scan result (no new scan)
+pub async fn last_security_scan(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<Option<tmai_core::security::ScanResult>> {
+    Json(core.last_security_scan())
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)
@@ -1538,6 +1556,8 @@ mod tests {
             .route("/agents/{id}/preview", get(get_preview))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
+            .route("/security/scan", post(security_scan))
+            .route("/security/last", get(last_security_scan))
             .with_state(core)
     }
 
@@ -1802,6 +1822,45 @@ mod tests {
         assert!(!is_valid_team_name("../evil"));
         assert!(!is_valid_team_name("team/name"));
         assert!(!is_valid_team_name("team name"));
+    }
+
+    #[tokio::test]
+    async fn test_security_last_initially_null() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/security/last")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(result.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_security_scan_returns_ok() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/security/scan")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(result["risks"].is_array());
+        assert!(result["scanned_at"].is_string());
+        assert!(result["files_scanned"].is_number());
     }
 
     #[test]

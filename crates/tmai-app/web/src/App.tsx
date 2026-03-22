@@ -8,12 +8,14 @@ import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { SecurityPanel } from "@/components/settings/SecurityPanel";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
@@ -43,6 +45,7 @@ export function App() {
     (target: string) => {
       setSelectedTarget(target);
       setShowSettings(false);
+      setShowSecurity(false);
       refresh();
     },
     [refresh],
@@ -55,7 +58,8 @@ export function App() {
         <StatusBar
           agentCount={aiAgents.length}
           attentionCount={attentionCount}
-          onSettingsClick={() => setShowSettings((v) => !v)}
+          onSettingsClick={() => { setShowSettings((v) => !v); setShowSecurity(false); }}
+          onSecurityClick={() => { setShowSecurity((v) => !v); setShowSettings(false); }}
         />
         <AgentList
           agents={aiAgents}
@@ -64,6 +68,7 @@ export function App() {
           onSelect={(target) => {
             setSelectedTarget(target);
             setShowSettings(false);
+            setShowSecurity(false);
           }}
           registeredProjects={registeredProjects}
           onSpawned={handleSpawned}
@@ -74,13 +79,16 @@ export function App() {
           onSelect={(target) => {
             setSelectedTarget(target);
             setShowSettings(false);
+            setShowSecurity(false);
           }}
         />
       </aside>
 
       {/* Main area */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        {showSettings ? (
+        {showSecurity ? (
+          <SecurityPanel onClose={() => setShowSecurity(false)} />
+        ) : showSettings ? (
           <SettingsPanel
             onClose={() => setShowSettings(false)}
             onProjectsChanged={refreshProjects}
