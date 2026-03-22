@@ -91,19 +91,26 @@ body {
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.15), inset 0 0 12px rgba(239, 68, 68, 0.05);
 }
 
-/* Thin overlay scrollbar for preview panel */
-.preview-scroll::-webkit-scrollbar {
+/* Thin overlay scrollbar — applied globally to all scrollable areas */
+*::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
-.preview-scroll::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
-.preview-scroll::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
-.preview-scroll::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
 /* ANSI color classes for capture-pane preview (ansi_up use_classes mode) */

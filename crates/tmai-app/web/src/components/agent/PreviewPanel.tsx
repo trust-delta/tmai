@@ -208,7 +208,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="preview-scroll flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35]"
+        className="flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35]"
       >
         {content ? (
           <pre
