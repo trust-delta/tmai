@@ -87,8 +87,6 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     label: agent.send_capability,
     color: "text-zinc-600",
   };
-  const canSend = agent.send_capability !== "None";
-
   // Auto-approve state
   const hasOverride = agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
   const isAutoApproveOn = autoApproveEffective(agent);
