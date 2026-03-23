@@ -750,6 +750,42 @@ export function BranchGraph({
                         {actionBusy ? "..." : `Merge into current`}
                       </button>
                     )}
+                    {/* Create branch from this branch */}
+                    {!showNewBranch ? (
+                      <button
+                        onClick={() => setShowNewBranch(true)}
+                        className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
+                      >
+                        Create Branch
+                      </button>
+                    ) : (
+                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                        <div className="mb-1 text-[11px] text-zinc-500">
+                          from: <span className="text-zinc-300">{activeNode.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={newBranchName}
+                            onChange={(e) => setNewBranchName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleCreateBranch(activeNode.name);
+                              if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
+                            }}
+                            placeholder="branch name"
+                            className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-white/20 focus:ring-white/40"
+                          />
+                          <button
+                            onClick={() => handleCreateBranch(activeNode.name)}
+                            disabled={!newBranchName.trim() || actionBusy}
+                            className="rounded px-2 py-1 text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-30"
+                          >
+                            Go
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {/* Create worktree from this branch */}
                     {!showNewWorktree ? (
                       <button

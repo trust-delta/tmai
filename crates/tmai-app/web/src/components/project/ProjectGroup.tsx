@@ -28,6 +28,14 @@ export function ProjectGroup({
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawning, setSpawning] = useState(false);
 
+  // Derive branch info from worktree groups
+  const mainWt = project.worktrees.find((wt) => !wt.isWorktree);
+  const mainBranch = mainWt?.branch ?? null;
+  const mainDirty = mainWt?.dirty ?? false;
+  const worktreeBranches = project.worktrees
+    .filter((wt) => wt.isWorktree)
+    .map((wt) => ({ name: wt.branch || wt.name, dirty: wt.dirty }));
+
   // Derive selectedTarget for agent card highlighting
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
   const isProjectSelected =
@@ -56,24 +64,46 @@ export function ProjectGroup({
       <div className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/5">
         <button
           onClick={() => setCollapsed((v) => !v)}
-          className="flex flex-1 items-center gap-2 text-left"
+          className="flex flex-1 items-center gap-2 text-left min-w-0"
         >
           <span
             className={cn(
-              "text-[10px] text-zinc-600 transition-transform",
+              "text-[10px] text-zinc-600 transition-transform shrink-0",
               collapsed && "-rotate-90",
             )}
           >
             ▼
           </span>
-          <span
-            className={cn(
-              "truncate text-xs font-semibold",
-              isEmpty ? "text-zinc-500" : "text-zinc-300",
-            )}
-          >
-            {project.name}
-          </span>
+          <div className="min-w-0">
+            <span
+              className={cn(
+                "block truncate text-xs font-semibold",
+                isEmpty ? "text-zinc-500" : "text-zinc-300",
+              )}
+            >
+              {project.name}
+            </span>
+            {/* Branch info under project name */}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {mainBranch && (
+                <span className="truncate text-[10px] text-zinc-500">
+                  {mainBranch}
+                  {mainDirty && <span className="text-amber-500">*</span>}
+                </span>
+              )}
+              {worktreeBranches.length > 0 && (
+                <>
+                  {worktreeBranches.map((wb) => (
+                    <span key={wb.name} className="flex items-center gap-0.5 truncate text-[10px] text-emerald-600">
+                      <span>🌿</span>
+                      <span>{wb.name}</span>
+                      {wb.dirty && <span className="text-amber-500">*</span>}
+                    </span>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
         </button>
         <div className="flex items-center gap-1.5">
           {project.totalAgents > 0 && (
@@ -141,7 +171,6 @@ export function ProjectGroup({
               worktree={wt}
               selectedTarget={selectedTarget}
               onSelect={onSelectAgent}
-              showHeader={project.worktrees.length > 1}
             />
           ))}
           {isEmpty && (
@@ -159,7 +188,6 @@ interface WorktreeSectionProps {
   worktree: WorktreeGroup;
   selectedTarget: string | null;
   onSelect: (target: string) => void;
-  showHeader: boolean;
 }
 
 // Sub-section for a worktree (or main) within a project
@@ -167,25 +195,9 @@ function WorktreeSection({
   worktree,
   selectedTarget,
   onSelect,
-  showHeader,
 }: WorktreeSectionProps) {
   return (
     <div className="mb-0.5">
-      {showHeader && (
-        <div className="flex items-center gap-1.5 px-1 py-1">
-          {worktree.isWorktree ? (
-            <span className="text-[10px] text-emerald-500">🌿</span>
-          ) : (
-            <span className="text-[10px] text-zinc-500">●</span>
-          )}
-          <span className="truncate text-[11px] text-zinc-500">
-            {worktree.branch || worktree.name}
-          </span>
-          {worktree.dirty && (
-            <span className="text-[10px] text-amber-500">*</span>
-          )}
-        </div>
-      )}
       <div className="flex flex-col gap-1">
         {worktree.agents.map((agent) => (
           <AgentCard

@@ -179,29 +179,8 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         </div>
       </div>
 
-      {/* Row 2: Branch + worktree + meta indicators */}
+      {/* Row 2: meta indicators */}
       <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
-        {agent.is_worktree && (
-          <span className="text-emerald-500" title="worktree">
-            🌿
-          </span>
-        )}
-        {agent.git_branch && (
-          <span className="truncate text-zinc-400">
-            {agent.git_branch}
-            {agent.git_dirty && (
-              <span className="text-amber-500">*</span>
-            )}
-          </span>
-        )}
-        {agent.worktree_base_branch && (
-          <span
-            className="shrink-0 text-[10px] text-zinc-600"
-            title={`forked from ${agent.worktree_base_branch}`}
-          >
-            ← {agent.worktree_base_branch}
-          </span>
-        )}
         {!agent.git_branch && (
           <span className="truncate text-zinc-600" title={agent.cwd}>
             {agent.display_cwd}
