@@ -318,6 +318,7 @@ export interface BranchListResponse {
   default_branch: string;
   current_branch: string | null;
   branches: string[];
+  parents: Record<string, string>;
 }
 
 export interface SpawnResponse {

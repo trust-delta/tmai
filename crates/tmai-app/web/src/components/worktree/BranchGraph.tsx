@@ -13,12 +13,11 @@ interface BranchGraphProps {
 const NODE_R = 8;
 const ROW_H = 56;
 const TRUNK_X = 80;
-const BRANCH_X = 240;
-const LABEL_X = BRANCH_X + 20;
 const TOP_PAD = 40;
 
 interface BranchNode {
   name: string;
+  parent: string | null; // parent branch name (null for main)
   isWorktree: boolean;
   isMain: boolean;
   isCurrent: boolean;
@@ -86,11 +85,13 @@ export function BranchGraph({
   const nodes = useMemo(() => {
     const defaultBranch = branches?.default_branch ?? "main";
     const currentBranch = branches?.current_branch ?? null;
+    const parentMap = branches?.parents ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
 
     result.push({
       name: defaultBranch,
+      parent: null,
       isWorktree: false,
       isMain: true,
       isCurrent: currentBranch === defaultBranch,
@@ -106,6 +107,7 @@ export function BranchGraph({
       const branchName = wt.branch || wt.name;
       result.push({
         name: branchName,
+        parent: parentMap[branchName] ?? defaultBranch,
         isWorktree: true,
         isMain: false,
         isCurrent: currentBranch === branchName,
@@ -123,6 +125,7 @@ export function BranchGraph({
         if (!listed.has(b)) {
           result.push({
             name: b,
+            parent: parentMap[b] ?? defaultBranch,
             isWorktree: false,
             isMain: false,
             isCurrent: currentBranch === b,
@@ -136,13 +139,70 @@ export function BranchGraph({
       }
     }
 
-    return result;
+    // Sort: children appear right after their parent (depth-first tree order)
+    const mainItem = result[0];
+    const rest = result.slice(1);
+    const sorted: BranchNode[] = [mainItem];
+    const childrenOf = new Map<string, BranchNode[]>();
+    for (const n of rest) {
+      const p = n.parent ?? defaultBranch;
+      const list = childrenOf.get(p) ?? [];
+      list.push(n);
+      childrenOf.set(p, list);
+    }
+    const visit = (parentName: string) => {
+      const children = childrenOf.get(parentName);
+      if (!children) return;
+      for (const child of children) {
+        sorted.push(child);
+        visit(child.name);
+      }
+    };
+    visit(defaultBranch);
+    // Add any orphans not reachable from default
+    for (const n of rest) {
+      if (!sorted.includes(n)) sorted.push(n);
+    }
+
+    return sorted;
   }, [projectWorktrees, branches]);
 
   const mainNode = nodes[0];
   const branchNodes = nodes.slice(1);
   const svgHeight = TOP_PAD + Math.max(branchNodes.length, 1) * ROW_H + 40;
-  const svgWidth = 600;
+
+  // Compute indentation level based on ancestry depth
+  const nodeDepth = useMemo(() => {
+    const depth = new Map<string, number>();
+    depth.set(mainNode.name, 0);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of branchNodes) {
+        if (depth.has(n.name)) continue;
+        const parentDepth = n.parent ? depth.get(n.parent) : 0;
+        if (parentDepth !== undefined) {
+          depth.set(n.name, parentDepth + 1);
+          changed = true;
+        }
+      }
+    }
+    for (const n of branchNodes) {
+      if (!depth.has(n.name)) depth.set(n.name, 1);
+    }
+    return depth;
+  }, [mainNode, branchNodes]);
+
+  const maxDepth = Math.max(...[...nodeDepth.values()], 1);
+  const svgWidth = Math.max(600, TRUNK_X + maxDepth * 50 + 300);
+
+  // Build Y-position map for parent-aware drawing
+  const nodeYMap = useMemo(() => {
+    const map = new Map<string, number>();
+    map.set(mainNode.name, TOP_PAD);
+    branchNodes.forEach((n, i) => map.set(n.name, TOP_PAD + (i + 1) * ROW_H));
+    return map;
+  }, [mainNode, branchNodes]);
 
   // Selected node data
   const activeNode = nodes.find((n) => n.name === selectedNode) ?? null;
@@ -416,15 +476,20 @@ export function BranchGraph({
               </filter>
             </defs>
 
-            {/* Trunk line */}
-            <line
-              x1={TRUNK_X}
-              y1={TOP_PAD}
-              x2={TRUNK_X}
-              y2={TOP_PAD + Math.max(branchNodes.length - 1, 0) * ROW_H + 20}
-              stroke="rgba(161,161,170,0.3)"
-              strokeWidth="2"
-            />
+            {/* Trunk line (extends to the last direct child of main) */}
+            {(() => {
+              const lastDirectIdx = branchNodes.reduce((acc, n, i) =>
+                (n.parent === mainNode.name || n.parent === null) ? i : acc, -1);
+              const trunkEndY = lastDirectIdx >= 0
+                ? TOP_PAD + (lastDirectIdx + 1) * ROW_H
+                : TOP_PAD + 20;
+              return (
+                <line
+                  x1={TRUNK_X} y1={TOP_PAD} x2={TRUNK_X} y2={trunkEndY}
+                  stroke="rgba(161,161,170,0.3)" strokeWidth="2"
+                />
+              );
+            })()}
 
             {/* Main node */}
             <g className="cursor-pointer" onClick={() => selectNode(mainNode.name)}>
@@ -472,8 +537,16 @@ export function BranchGraph({
             {/* Branch nodes */}
             {branchNodes.map((node, i) => {
               const y = TOP_PAD + (i + 1) * ROW_H;
-              const forkY = TOP_PAD + i * ROW_H * 0.3 + 10;
               const isSelected = selectedNode === node.name;
+              const depth = nodeDepth.get(node.name) ?? 1;
+              const nodeX = TRUNK_X + depth * 50;
+
+              // Find parent's position for fork curve
+              const parentY = node.parent ? (nodeYMap.get(node.parent) ?? TOP_PAD) : TOP_PAD;
+              const parentDepth = node.parent ? (nodeDepth.get(node.parent) ?? 0) : 0;
+              const parentX = TRUNK_X + parentDepth * 50;
+              // Fork point: between parent and this node
+              const forkFromY = parentY + Math.min((y - parentY) * 0.3, ROW_H * 0.5);
 
               return (
                 <g
@@ -481,9 +554,17 @@ export function BranchGraph({
                   className="cursor-pointer"
                   onClick={() => selectNode(node.name)}
                 >
-                  {/* Fork curve */}
+                  {/* Vertical line from parent to fork point */}
+                  {parentX === TRUNK_X && parentY < forkFromY && (
+                    <line
+                      x1={parentX} y1={parentY} x2={parentX} y2={forkFromY}
+                      stroke="rgba(161,161,170,0.15)" strokeWidth="1"
+                    />
+                  )}
+
+                  {/* Fork curve from parent to this node */}
                   <path
-                    d={`M${TRUNK_X},${Math.min(forkY, y - 20)} C${TRUNK_X + 40},${y - 10} ${BRANCH_X - 40},${y} ${BRANCH_X},${y}`}
+                    d={`M${parentX},${forkFromY} C${parentX + 25},${(forkFromY + y) / 2} ${nodeX - 25},${y} ${nodeX},${y}`}
                     stroke={
                       isSelected
                         ? "rgba(34,211,238,0.5)"
@@ -495,10 +576,10 @@ export function BranchGraph({
                     fill="none"
                   />
 
-                  {/* Trunk fork dot */}
+                  {/* Fork point dot on parent */}
                   <circle
-                    cx={TRUNK_X}
-                    cy={Math.min(forkY, y - 20)}
+                    cx={parentX}
+                    cy={forkFromY}
                     r={3}
                     fill={
                       isSelected
@@ -511,7 +592,7 @@ export function BranchGraph({
 
                   {/* Branch node circle */}
                   <circle
-                    cx={BRANCH_X}
+                    cx={nodeX}
                     cy={y}
                     r={NODE_R}
                     fill={
@@ -545,14 +626,14 @@ export function BranchGraph({
                   />
 
                   {node.isWorktree && (
-                    <text x={BRANCH_X} y={y + 1} textAnchor="middle" dominantBaseline="middle" fontSize="9">
+                    <text x={nodeX} y={y + 1} textAnchor="middle" dominantBaseline="middle" fontSize="9">
                       🌿
                     </text>
                   )}
 
                   {/* Branch label */}
                   <text
-                    x={LABEL_X}
+                    x={nodeX + 16}
                     y={y - 6}
                     fill={
                       isSelected
@@ -571,7 +652,7 @@ export function BranchGraph({
                   {/* HEAD marker */}
                   {node.isCurrent && (
                     <text
-                      x={LABEL_X + node.name.length * 7.2 + 8}
+                      x={nodeX + 16 + node.name.length * 7.2 + 8}
                       y={y - 6}
                       fill="rgb(34,211,238)"
                       fontSize="9"
@@ -583,7 +664,7 @@ export function BranchGraph({
                   )}
 
                   {/* Status line */}
-                  <text x={LABEL_X} y={y + 10} fontSize="10" dominantBaseline="middle" fill="rgba(161,161,170,0.4)">
+                  <text x={nodeX + 16} y={y + 10} fontSize="10" dominantBaseline="middle" fill="rgba(161,161,170,0.4)">
                     {node.hasAgent && (
                       <tspan fill="rgb(34,211,238)">● {node.agentStatus || "active"}{"  "}</tspan>
                     )}

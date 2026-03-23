@@ -355,6 +355,9 @@ pub struct BranchListResult {
     pub current_branch: Option<String>,
     /// All local branch names
     pub branches: Vec<String>,
+    /// Parent branch map: branch_name → closest ancestor branch
+    #[serde(default)]
+    pub parents: HashMap<String, String>,
 }
 
 /// List branches for a repository and detect the default branch
@@ -397,11 +400,103 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
     // Get current HEAD branch
     let current_branch = fetch_branch(repo_dir).await;
 
+    // Compute parent branch map
+    let parents = compute_branch_parents(repo_dir, &branches, &default_branch).await;
+
     Some(BranchListResult {
         default_branch,
         current_branch,
         branches,
+        parents,
     })
+}
+
+/// Compute parent branch for each non-default branch
+///
+/// For each branch, finds the closest ancestor among other branches
+/// using `git merge-base --is-ancestor`. Falls back to default_branch.
+async fn compute_branch_parents(
+    repo_dir: &str,
+    branches: &[String],
+    default_branch: &str,
+) -> HashMap<String, String> {
+    let mut parents = HashMap::new();
+
+    for branch in branches {
+        if branch == default_branch {
+            continue;
+        }
+
+        let mut best_parent = default_branch.to_string();
+        let mut best_count = u32::MAX;
+
+        for candidate in branches {
+            if candidate == branch {
+                continue;
+            }
+
+            // Check if candidate is an ancestor of branch
+            let is_ancestor = tokio::time::timeout(
+                GIT_TIMEOUT,
+                Command::new("git")
+                    .args([
+                        "-C",
+                        repo_dir,
+                        "merge-base",
+                        "--is-ancestor",
+                        candidate,
+                        branch,
+                    ])
+                    .output(),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+            if !is_ancestor {
+                continue;
+            }
+
+            // Count commits from candidate to branch (fewer = closer parent)
+            let count = tokio::time::timeout(
+                GIT_TIMEOUT,
+                Command::new("git")
+                    .args([
+                        "-C",
+                        repo_dir,
+                        "rev-list",
+                        "--count",
+                        &format!("{}..{}", candidate, branch),
+                    ])
+                    .output(),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .and_then(|o| {
+                if o.status.success() {
+                    String::from_utf8_lossy(&o.stdout)
+                        .trim()
+                        .parse::<u32>()
+                        .ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(u32::MAX);
+
+            if count < best_count {
+                best_count = count;
+                best_parent = candidate.clone();
+            }
+        }
+
+        parents.insert(branch.clone(), best_parent);
+    }
+
+    parents
 }
 
 /// Detect the default remote branch via symbolic-ref
