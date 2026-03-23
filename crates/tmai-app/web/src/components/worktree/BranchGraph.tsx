@@ -249,13 +249,27 @@ export function BranchGraph({
     }
   }, [actionBusy, selectNode]);
 
+  // After deletion, focus on parent or HEAD
+  const focusAfterDelete = useCallback((node: BranchNode) => {
+    const target = node.parent ?? branches?.current_branch ?? branches?.default_branch ?? mainNode.name;
+    setSelectedNode(target);
+    setActionError(null);
+    setConfirmDelete(false);
+    setForceDelete(false);
+    setDiffData(null);
+    setDiffLoading(false);
+    setShowNewWorktree(false);
+    setShowNewBranch(false);
+    setGitOutput(null);
+  }, [branches, mainNode.name]);
+
   const handleDeleteWorktree = useCallback(async (node: BranchNode) => {
     if (!node.worktree || actionBusy) return;
     setActionBusy(true);
     setActionError(null);
     try {
       await api.deleteWorktree(node.worktree.repo_path, node.worktree.name, forceDelete);
-      selectNode(null);
+      focusAfterDelete(node);
       refreshBranches();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to delete worktree");
@@ -270,7 +284,7 @@ export function BranchGraph({
     setActionError(null);
     try {
       await api.deleteBranch(projectPath, node.name, forceDelete);
-      selectNode(null);
+      focusAfterDelete(node);
       refreshBranches();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to delete branch");

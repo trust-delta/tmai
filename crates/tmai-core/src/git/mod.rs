@@ -413,13 +413,14 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
 
 /// Compute parent branch for each non-default branch
 ///
-/// For each branch, finds the closest ancestor among other branches
-/// using `git merge-base --is-ancestor`. Falls back to default_branch.
+/// Strategy: first check reflog for "Created from <branch>" (exact match),
+/// then fall back to closest ancestor via `git merge-base --is-ancestor`.
 async fn compute_branch_parents(
     repo_dir: &str,
     branches: &[String],
     default_branch: &str,
 ) -> HashMap<String, String> {
+    let branch_set: std::collections::HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
     let mut parents = HashMap::new();
 
     for branch in branches {
@@ -427,6 +428,13 @@ async fn compute_branch_parents(
             continue;
         }
 
+        // 1. Try reflog: "branch: Created from <name>"
+        if let Some(parent) = reflog_created_from(repo_dir, branch, &branch_set).await {
+            parents.insert(branch.clone(), parent);
+            continue;
+        }
+
+        // 2. Fallback: closest ancestor by commit count
         let mut best_parent = default_branch.to_string();
         let mut best_count = u32::MAX;
 
@@ -435,7 +443,6 @@ async fn compute_branch_parents(
                 continue;
             }
 
-            // Check if candidate is an ancestor of branch
             let is_ancestor = tokio::time::timeout(
                 GIT_TIMEOUT,
                 Command::new("git")
@@ -459,7 +466,6 @@ async fn compute_branch_parents(
                 continue;
             }
 
-            // Count commits from candidate to branch (fewer = closer parent)
             let count = tokio::time::timeout(
                 GIT_TIMEOUT,
                 Command::new("git")
@@ -497,6 +503,44 @@ async fn compute_branch_parents(
     }
 
     parents
+}
+
+/// Check reflog for the branch creation source
+///
+/// Parses the first reflog entry for "Created from <branch_name>".
+/// Returns the source branch if it's a known local branch.
+async fn reflog_created_from(
+    repo_dir: &str,
+    branch: &str,
+    known_branches: &std::collections::HashSet<&str>,
+) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "reflog", "show", branch, "--format=%gs"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    // Last line of reflog is the creation entry
+    let text = String::from_utf8_lossy(&output.stdout);
+    let last_line = text.lines().last()?;
+
+    // Parse "branch: Created from <source>"
+    let source = last_line.strip_prefix("branch: Created from ")?.trim();
+
+    // Only return if the source is a known local branch
+    if known_branches.contains(source) {
+        Some(source.to_string())
+    } else {
+        None
+    }
 }
 
 /// Detect the default remote branch via symbolic-ref
