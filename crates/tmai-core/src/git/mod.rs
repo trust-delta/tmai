@@ -351,6 +351,8 @@ pub async fn fetch_full_diff(dir: &str, base_branch: &str) -> Option<String> {
 pub struct BranchListResult {
     /// Detected default branch (main, master, etc.)
     pub default_branch: String,
+    /// Currently checked-out branch (HEAD)
+    pub current_branch: Option<String>,
     /// All local branch names
     pub branches: Vec<String>,
 }
@@ -392,8 +394,12 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
         }
     });
 
+    // Get current HEAD branch
+    let current_branch = fetch_branch(repo_dir).await;
+
     Some(BranchListResult {
         default_branch,
+        current_branch,
         branches,
     })
 }
@@ -487,6 +493,213 @@ pub fn repo_name_from_common_dir(common_dir: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(trimmed)
         .to_string()
+}
+
+/// Delete a local branch
+///
+/// Uses `git branch -d` (safe delete, requires branch to be merged).
+/// With `force=true`, uses `git branch -D` (force delete).
+/// Returns Ok(()) on success, Err(message) on failure.
+pub async fn delete_branch(repo_dir: &str, branch: &str, force: bool) -> Result<(), String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let flag = if force { "-D" } else { "-d" };
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "branch", flag, branch])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git command timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Checkout (switch to) a local branch
+///
+/// Uses `git checkout <branch>`. Fails if there are uncommitted changes
+/// that conflict with the target branch.
+pub async fn checkout_branch(repo_dir: &str, branch: &str) -> Result<(), String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "checkout", branch])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git command timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Create a new local branch (without checking it out)
+///
+/// Uses `git branch <name> [base]`.
+pub async fn create_branch(repo_dir: &str, name: &str, base: Option<&str>) -> Result<(), String> {
+    if !is_safe_git_ref(name) {
+        return Err("Invalid branch name".to_string());
+    }
+    if let Some(b) = base {
+        if !is_safe_git_ref(b) {
+            return Err("Invalid base branch name".to_string());
+        }
+    }
+
+    let mut args = vec!["-C", repo_dir, "branch", name];
+    if let Some(b) = base {
+        args.push(b);
+    }
+
+    let output = tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&args).output())
+        .await
+        .map_err(|_| "Git command timed out".to_string())?
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Fetch from a remote (default: origin)
+pub async fn fetch_remote(repo_dir: &str, remote: Option<&str>) -> Result<String, String> {
+    let remote = remote.unwrap_or("origin");
+    if !is_safe_git_ref(remote) {
+        return Err("Invalid remote name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(30), // fetch can be slow
+        Command::new("git")
+            .args(["-C", repo_dir, "fetch", remote, "--prune"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git fetch timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        // git fetch outputs to stderr even on success
+        Ok(format!("{}{}", stdout.trim(), stderr.trim()))
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Pull from upstream (fetch + merge)
+pub async fn pull(repo_dir: &str) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new("git")
+            .args(["-C", repo_dir, "pull", "--ff-only"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git pull timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(format!("{}\n{}", stdout.trim(), stderr.trim())
+            .trim()
+            .to_string())
+    }
+}
+
+/// Merge a branch into the current branch
+pub async fn merge_branch(repo_dir: &str, branch: &str) -> Result<String, String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(15),
+        Command::new("git")
+            .args(["-C", repo_dir, "merge", branch, "--no-edit"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git merge timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(format!("{}\n{}", stdout.trim(), stderr.trim())
+            .trim()
+            .to_string())
+    }
+}
+
+/// Get ahead/behind counts relative to a base branch
+///
+/// Returns (ahead, behind) commit counts.
+pub async fn ahead_behind(repo_dir: &str, branch: &str, base: &str) -> Option<(usize, usize)> {
+    if !is_safe_git_ref(branch) || !is_safe_git_ref(base) {
+        return None;
+    }
+
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("{}...{}", base, branch),
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = text.trim().split('\t').collect();
+    if parts.len() == 2 {
+        let behind = parts[0].parse().ok()?;
+        let ahead = parts[1].parse().ok()?;
+        Some((ahead, behind))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

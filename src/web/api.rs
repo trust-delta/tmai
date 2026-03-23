@@ -1292,6 +1292,144 @@ pub async fn list_branches(
         .map(Json)
 }
 
+/// Delete branch request body
+#[derive(Debug, Deserialize)]
+pub struct DeleteBranchRequest {
+    pub repo_path: String,
+    pub branch: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// Delete a local git branch
+pub async fn delete_branch(
+    Json(req): Json<DeleteBranchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !tmai_core::git::is_safe_git_ref(&req.branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::delete_branch(repo_dir, &req.branch, req.force)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Checkout branch request body
+#[derive(Debug, Deserialize)]
+pub struct CheckoutRequest {
+    pub repo_path: String,
+    pub branch: String,
+}
+
+/// Checkout (switch to) a branch
+pub async fn checkout_branch(
+    Json(req): Json<CheckoutRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::checkout_branch(repo_dir, &req.branch)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Create branch request body
+#[derive(Debug, Deserialize)]
+pub struct CreateBranchRequest {
+    pub repo_path: String,
+    pub name: String,
+    pub base: Option<String>,
+}
+
+/// Create a new local branch (without checking it out)
+pub async fn create_branch(
+    Json(req): Json<CreateBranchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::create_branch(repo_dir, &req.name, req.base.as_deref())
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Fetch request body
+#[derive(Debug, Deserialize)]
+pub struct FetchRequest {
+    pub repo_path: String,
+    pub remote: Option<String>,
+}
+
+/// Fetch from a remote
+pub async fn git_fetch(
+    Json(req): Json<FetchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::fetch_remote(repo_dir, req.remote.as_deref())
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Pull request body
+#[derive(Debug, Deserialize)]
+pub struct PullRequest {
+    pub repo_path: String,
+}
+
+/// Pull from upstream (fast-forward only)
+pub async fn git_pull(
+    Json(req): Json<PullRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::pull(repo_dir)
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Merge request body
+#[derive(Debug, Deserialize)]
+pub struct MergeRequest {
+    pub repo_path: String,
+    pub branch: String,
+}
+
+/// Merge a branch into the current branch
+pub async fn git_merge(
+    Json(req): Json<MergeRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::merge_branch(repo_dir, &req.branch)
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
 // =========================================================
 // Worktree spawn endpoint
 // =========================================================

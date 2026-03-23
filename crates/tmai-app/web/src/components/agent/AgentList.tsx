@@ -1,12 +1,13 @@
 import { useMemo } from "react";
-import { groupByProject, type AgentSnapshot } from "@/lib/api";
+import { groupByProject, type AgentSnapshot, type Selection } from "@/lib/api";
 import { ProjectGroup } from "@/components/project/ProjectGroup";
 
 interface AgentListProps {
   agents: AgentSnapshot[];
   loading: boolean;
-  selectedTarget: string | null;
-  onSelect: (target: string) => void;
+  selection: Selection | null;
+  onSelectAgent: (target: string) => void;
+  onSelectProject: (path: string, name: string) => void;
   registeredProjects: string[];
   onSpawned: (sessionId: string) => void;
 }
@@ -15,8 +16,9 @@ interface AgentListProps {
 export function AgentList({
   agents,
   loading,
-  selectedTarget,
-  onSelect,
+  selection,
+  onSelectAgent,
+  onSelectProject,
   registeredProjects,
   onSpawned,
 }: AgentListProps) {
@@ -52,8 +54,9 @@ export function AgentList({
         <ProjectGroup
           key={project.path}
           project={project}
-          selectedTarget={selectedTarget}
-          onSelect={onSelect}
+          selection={selection}
+          onSelectAgent={onSelectAgent}
+          onSelectProject={onSelectProject}
           onSpawned={onSpawned}
         />
       ))}

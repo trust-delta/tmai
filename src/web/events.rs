@@ -163,9 +163,31 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 }
                             }
                         }
+                        Ok(CoreEvent::WorktreeCreated { target, worktree }) => {
+                            let data = serde_json::json!({
+                                "target": target,
+                                "worktree": worktree,
+                            });
+                            let event = Event::default()
+                                .event("worktree_created")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::WorktreeRemoved { target, worktree }) => {
+                            let data = serde_json::json!({
+                                "target": target,
+                                "worktree": worktree,
+                            });
+                            let event = Event::default()
+                                .event("worktree_removed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
-                        | Ok(CoreEvent::WorktreeCreated { .. })
-                        | Ok(CoreEvent::WorktreeRemoved { .. })
                         | Ok(CoreEvent::AgentStopped { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })

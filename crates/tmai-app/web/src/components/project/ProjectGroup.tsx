@@ -1,21 +1,28 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { ProjectGroup as ProjectGroupType, WorktreeGroup, BranchListResponse } from "@/lib/api";
+import type {
+  ProjectGroup as ProjectGroupType,
+  WorktreeGroup,
+  Selection,
+  BranchListResponse,
+} from "@/lib/api";
 import { AgentCard } from "@/components/agent/AgentCard";
 
 interface ProjectGroupProps {
   project: ProjectGroupType;
-  selectedTarget: string | null;
-  onSelect: (target: string) => void;
+  selection: Selection | null;
+  onSelectAgent: (target: string) => void;
+  onSelectProject: (path: string, name: string) => void;
   onSpawned: (sessionId: string) => void;
 }
 
 // Collapsible project group containing worktree sub-groups
 export function ProjectGroup({
   project,
-  selectedTarget,
-  onSelect,
+  selection,
+  onSelectAgent,
+  onSelectProject,
   onSpawned,
 }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -36,6 +43,11 @@ export function ProjectGroup({
     }
   }, [worktreeInput]);
 
+  // Derive selectedTarget for agent card highlighting
+  const selectedTarget = selection?.type === "agent" ? selection.id : null;
+  const isProjectSelected =
+    selection?.type === "project" && selection.path === project.path;
+
   // Spawn an agent in this project's directory
   const spawn = async (command: string, args?: string[]) => {
     if (spawning) return;
@@ -53,7 +65,7 @@ export function ProjectGroup({
     }
   };
 
-  // Validate worktree name: alphanumeric, hyphens, underscores only (no slashes)
+  // Validate worktree name
   const validateWorktreeName = (name: string): string => {
     if (!name) return "";
     if (name.length > 64) return "Max 64 chars";
@@ -126,6 +138,25 @@ export function ProjectGroup({
               {project.attentionAgents}
             </span>
           )}
+          {/* Branch graph button */}
+          <button
+            onClick={() => onSelectProject(project.path, project.name)}
+            className={cn(
+              "rounded px-1 py-0.5 transition-colors",
+              isProjectSelected
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-600 hover:text-emerald-400 hover:bg-emerald-500/10",
+            )}
+            title="Branch graph"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
+              <circle cx="4" cy="4" r="2" fill="currentColor" />
+              <circle cx="4" cy="12" r="2" fill="currentColor" />
+              <circle cx="12" cy="8" r="2" fill="currentColor" />
+              <line x1="4" y1="6" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M4 6 C4 8, 8 8, 12 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            </svg>
+          </button>
           {/* Spawn button */}
           <div className="relative">
             <button
@@ -154,7 +185,7 @@ export function ProjectGroup({
                   }}
                   className="whitespace-nowrap rounded px-3 py-1 text-left text-xs text-emerald-400 transition-colors hover:bg-emerald-500/10 hover:text-emerald-300"
                 >
-                  🌿 Worktree (Claude)
+                  Worktree (Claude)
                 </button>
               </div>
             )}
@@ -200,7 +231,6 @@ export function ProjectGroup({
                 {worktreeError && (
                   <span className="text-[10px] text-red-400">{worktreeError}</span>
                 )}
-                {/* Branch picker */}
                 <button
                   onClick={() => setBranchPickerOpen((v) => !v)}
                   className="flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
@@ -258,7 +288,7 @@ export function ProjectGroup({
         </div>
       </div>
 
-      {/* Worktree sub-groups */}
+      {/* Agent sub-groups */}
       {!collapsed && (
         <div className="ml-1 border-l border-white/5 pl-2">
           {project.worktrees.map((wt) => (
@@ -266,7 +296,7 @@ export function ProjectGroup({
               key={wt.name}
               worktree={wt}
               selectedTarget={selectedTarget}
-              onSelect={onSelect}
+              onSelect={onSelectAgent}
               showHeader={project.worktrees.length > 1}
             />
           ))}

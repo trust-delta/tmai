@@ -288,8 +288,35 @@ export function groupByProject(
   return projects;
 }
 
+// ── Worktree types ──
+
+export interface WorktreeSnapshot {
+  repo_name: string;
+  repo_path: string;
+  name: string;
+  path: string;
+  branch: string | null;
+  is_main: boolean;
+  agent_target: string | null;
+  agent_status: string | null;
+  is_dirty: boolean | null;
+  diff_summary: { files_changed: number; insertions: number; deletions: number } | null;
+}
+
+export interface WorktreeDiffResponse {
+  diff: string | null;
+  summary: { files_changed: number; insertions: number; deletions: number } | null;
+}
+
+// Discriminated union for sidebar selection
+export type Selection =
+  | { type: "agent"; id: string }
+  | { type: "worktree"; repoPath: string; name: string; worktreePath: string }
+  | { type: "project"; path: string; name: string };
+
 export interface BranchListResponse {
   default_branch: string;
+  current_branch: string | null;
   branches: string[];
 }
 
@@ -429,6 +456,17 @@ export const api = {
     }),
 
   // Worktree management
+  listWorktrees: () => apiFetch<WorktreeSnapshot[]>("/worktrees"),
+  getWorktreeDiff: (worktreePath: string, baseBranch?: string) =>
+    apiFetch<WorktreeDiffResponse>("/worktrees/diff", {
+      method: "POST",
+      body: JSON.stringify({ worktree_path: worktreePath, base_branch: baseBranch ?? "main" }),
+    }),
+  launchWorktreeAgent: (repoPath: string, worktreeName: string) =>
+    apiFetch<{ status: string; target: string }>("/worktrees/launch", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, worktree_name: worktreeName }),
+    }),
   deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
     apiFetch("/worktrees/delete", {
       method: "POST",
@@ -438,6 +476,41 @@ export const api = {
   // Git branches
   listBranches: (repoPath: string) =>
     apiFetch<BranchListResponse>(`/git/branches?repo=${encodeURIComponent(repoPath)}`),
+  deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
+    apiFetch("/git/branches/delete", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, branch, force: force ?? false }),
+    }),
+  createBranch: (repoPath: string, name: string, base?: string) =>
+    apiFetch("/git/branches/create", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, name, base }),
+    }),
+  checkoutBranch: (repoPath: string, branch: string) =>
+    apiFetch("/git/checkout", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, branch }),
+    }),
+  gitFetch: (repoPath: string) =>
+    apiFetch<{ status: string; output: string }>("/git/fetch", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath }),
+    }),
+  gitPull: (repoPath: string) =>
+    apiFetch<{ status: string; output: string }>("/git/pull", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath }),
+    }),
+  gitMerge: (repoPath: string, branch: string) =>
+    apiFetch<{ status: string; output: string }>("/git/merge", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, branch }),
+    }),
+  createWorktree: (repoPath: string, branchName: string, baseBranch?: string) =>
+    apiFetch<{ status: string; path: string; branch: string }>("/worktrees", {
+      method: "POST",
+      body: JSON.stringify({ repo_path: repoPath, branch_name: branchName, base_branch: baseBranch }),
+    }),
 
   // Directories
   listDirectories: (path?: string) =>
@@ -531,6 +604,8 @@ export function subscribeSSE(handlers: {
     "review_launched",
     "review_completed",
     "usage",
+    "worktree_created",
+    "worktree_removed",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {

@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useAgents } from "@/hooks/useAgents";
-import { isAiAgent, api } from "@/lib/api";
+import { useWorktrees } from "@/hooks/useWorktrees";
+import { isAiAgent, api, type Selection } from "@/lib/api";
 import { AgentList } from "@/components/agent/AgentList";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -10,10 +11,13 @@ import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { UsagePanel } from "@/components/usage/UsagePanel";
+import { WorktreePanel } from "@/components/worktree/WorktreePanel";
+import { BranchGraph } from "@/components/worktree/BranchGraph";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
-  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const { worktrees, refresh: refreshWorktrees } = useWorktrees();
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
@@ -36,21 +40,67 @@ export function App() {
     [agents],
   );
 
-  // Match by id (target may be missing from API response)
-  const selectedAgent = agents.find(
-    (a) => a.id === selectedTarget || a.target === selectedTarget,
-  );
+  // Derive selected agent from selection
+  const selectedAgent =
+    selection?.type === "agent"
+      ? agents.find(
+          (a) => a.id === selection.id || a.target === selection.id,
+        )
+      : undefined;
   const sessionId = selectedAgent?.pty_session_id ?? null;
+
+  // Derive selected worktree from selection
+  const selectedWorktree =
+    selection?.type === "worktree"
+      ? worktrees.find(
+          (wt) =>
+            wt.repo_path === selection.repoPath && wt.name === selection.name,
+        )
+      : undefined;
 
   const handleSpawned = useCallback(
     (target: string) => {
-      setSelectedTarget(target);
+      setSelection({ type: "agent", id: target });
       setShowSettings(false);
       setShowSecurity(false);
       refresh();
     },
     [refresh],
   );
+
+  // Select handler for agents
+  const handleSelectAgent = useCallback(
+    (target: string) => {
+      setSelection({ type: "agent", id: target });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [],
+  );
+
+  // Select handler for worktrees (from BranchGraph click)
+  const handleSelectWorktree = useCallback(
+    (repoPath: string, name: string, worktreePath: string) => {
+      setSelection({ type: "worktree", repoPath, name, worktreePath });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [],
+  );
+
+  // Select handler for project branch graph
+  const handleSelectProject = useCallback(
+    (path: string, name: string) => {
+      setSelection({ type: "project", path, name });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [],
+  );
+
+  // Derive selectedTarget string for components that need it
+  const selectedTarget =
+    selection?.type === "agent" ? selection.id : null;
 
   return (
     <div className="flex h-screen text-zinc-100">
@@ -65,23 +115,16 @@ export function App() {
         <AgentList
           agents={aiAgents}
           loading={loading}
-          selectedTarget={selectedTarget}
-          onSelect={(target) => {
-            setSelectedTarget(target);
-            setShowSettings(false);
-            setShowSecurity(false);
-          }}
+          selection={selection}
+          onSelectAgent={handleSelectAgent}
+          onSelectProject={handleSelectProject}
           registeredProjects={registeredProjects}
           onSpawned={handleSpawned}
         />
         <TerminalList
           terminals={terminals}
           selectedTarget={selectedTarget}
-          onSelect={(target) => {
-            setSelectedTarget(target);
-            setShowSettings(false);
-            setShowSecurity(false);
-          }}
+          onSelect={handleSelectAgent}
         />
         <UsagePanel />
       </aside>
@@ -94,6 +137,26 @@ export function App() {
           <SettingsPanel
             onClose={() => setShowSettings(false)}
             onProjectsChanged={refreshProjects}
+          />
+        ) : selection?.type === "project" ? (
+          <BranchGraph
+            key={selection.path}
+            projectPath={selection.path}
+            projectName={selection.name}
+            worktrees={worktrees}
+            onSelectWorktree={handleSelectWorktree}
+          />
+        ) : selection?.type === "worktree" && selectedWorktree ? (
+          <WorktreePanel
+            worktree={selectedWorktree}
+            onLaunched={(target) => {
+              handleSpawned(target);
+              refreshWorktrees();
+            }}
+            onDeleted={() => {
+              setSelection(null);
+              refreshWorktrees();
+            }}
           />
         ) : (
           <>
