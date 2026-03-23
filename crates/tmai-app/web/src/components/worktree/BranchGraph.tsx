@@ -39,6 +39,7 @@ export function BranchGraph({
   const [branches, setBranches] = useState<BranchListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [initialSelected, setInitialSelected] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -56,11 +57,20 @@ export function BranchGraph({
 
   useEffect(() => {
     setLoading(true);
+    setInitialSelected(false);
     api.listBranches(projectPath)
       .then(setBranches)
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [projectPath]);
+
+  // Auto-select HEAD branch on first load
+  useEffect(() => {
+    if (branches && !initialSelected) {
+      setSelectedNode(branches.current_branch ?? branches.default_branch);
+      setInitialSelected(true);
+    }
+  }, [branches, initialSelected]);
 
   const normPath = projectPath.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
 
@@ -137,9 +147,10 @@ export function BranchGraph({
   // Selected node data
   const activeNode = nodes.find((n) => n.name === selectedNode) ?? null;
 
-  // Reset action state when selection changes
+  // Select a node (always show panel, no toggle-off)
   const selectNode = useCallback((name: string | null) => {
-    setSelectedNode((prev) => prev === name ? null : name);
+    if (name === null) return;
+    setSelectedNode(name);
     setActionError(null);
     setConfirmDelete(false);
     setForceDelete(false);
