@@ -314,12 +314,20 @@ export type Selection =
   | { type: "worktree"; repoPath: string; name: string; worktreePath: string }
   | { type: "project"; path: string; name: string };
 
+export interface RemoteTrackingInfo {
+  remote_branch: string;
+  ahead: number;
+  behind: number;
+}
+
 export interface BranchListResponse {
   default_branch: string;
   current_branch: string | null;
   branches: string[];
   parents: Record<string, string>;
   ahead_behind: Record<string, [number, number]>;
+  remote_tracking: Record<string, RemoteTrackingInfo>;
+  last_fetch: number | null;
 }
 
 export interface SpawnResponse {

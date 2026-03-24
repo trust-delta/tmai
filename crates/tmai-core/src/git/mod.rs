@@ -346,6 +346,17 @@ pub async fn fetch_full_diff(dir: &str, base_branch: &str) -> Option<String> {
     }
 }
 
+/// Remote tracking info for a branch
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteTrackingInfo {
+    /// Remote tracking branch name (e.g., "origin/main")
+    pub remote_branch: String,
+    /// Commits ahead of remote (need to push)
+    pub ahead: usize,
+    /// Commits behind remote (need to pull)
+    pub behind: usize,
+}
+
 /// Result of listing branches for a repository
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BranchListResult {
@@ -361,6 +372,11 @@ pub struct BranchListResult {
     /// Ahead/behind counts vs default branch: branch_name → (ahead, behind)
     #[serde(default)]
     pub ahead_behind: HashMap<String, (usize, usize)>,
+    /// Remote tracking info per branch
+    #[serde(default)]
+    pub remote_tracking: HashMap<String, RemoteTrackingInfo>,
+    /// Last fetch timestamp (Unix seconds), None if never fetched
+    pub last_fetch: Option<u64>,
 }
 
 /// List branches for a repository and detect the default branch
@@ -417,13 +433,115 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
         }
     }
 
+    // Compute remote tracking info
+    let remote_tracking = fetch_remote_tracking(repo_dir).await;
+
+    // Get last fetch timestamp
+    let last_fetch = fetch_head_time(repo_dir);
+
     Some(BranchListResult {
         default_branch,
         current_branch,
         branches,
         parents,
         ahead_behind: ab_map,
+        remote_tracking,
+        last_fetch,
     })
+}
+
+/// Fetch remote tracking info for all local branches
+///
+/// Uses `git for-each-ref` to get upstream tracking and ahead/behind counts.
+async fn fetch_remote_tracking(repo_dir: &str) -> HashMap<String, RemoteTrackingInfo> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "for-each-ref",
+                "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)",
+                "refs/heads/",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let mut result = HashMap::new();
+
+    let Some(output) = output else {
+        return result;
+    };
+    if !output.status.success() {
+        return result;
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let branch = parts[0].trim();
+        let upstream = parts[1].trim();
+        let track = parts.get(2).map(|s| s.trim()).unwrap_or("");
+
+        if upstream.is_empty() {
+            continue;
+        }
+
+        // Parse track: e.g., "[ahead 3]", "[behind 2]", "[ahead 3, behind 2]"
+        let (ahead, behind) = parse_track(track);
+
+        result.insert(
+            branch.to_string(),
+            RemoteTrackingInfo {
+                remote_branch: upstream.to_string(),
+                ahead,
+                behind,
+            },
+        );
+    }
+
+    result
+}
+
+/// Parse git upstream:track format
+///
+/// Examples: "[ahead 3]", "[behind 2]", "[ahead 3, behind 2]", "[gone]", ""
+fn parse_track(track: &str) -> (usize, usize) {
+    let mut ahead = 0usize;
+    let mut behind = 0usize;
+
+    // Strip brackets
+    let inner = track
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+
+    for part in inner.split(',') {
+        let part = part.trim();
+        if let Some(n) = part.strip_prefix("ahead ") {
+            ahead = n.trim().parse().unwrap_or(0);
+        } else if let Some(n) = part.strip_prefix("behind ") {
+            behind = n.trim().parse().unwrap_or(0);
+        }
+    }
+
+    (ahead, behind)
+}
+
+/// Get FETCH_HEAD modification time as Unix timestamp
+fn fetch_head_time(repo_dir: &str) -> Option<u64> {
+    let fetch_head = std::path::Path::new(repo_dir).join(".git/FETCH_HEAD");
+    let meta = std::fs::metadata(fetch_head).ok()?;
+    let modified = meta.modified().ok()?;
+    modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
 }
 
 /// Compute parent branch for each non-default branch

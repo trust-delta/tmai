@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { api, type WorktreeSnapshot, type BranchListResponse, type WorktreeDiffResponse } from "@/lib/api";
+import { api, type WorktreeSnapshot, type BranchListResponse, type WorktreeDiffResponse, type RemoteTrackingInfo } from "@/lib/api";
 import { DiffViewer } from "./DiffViewer";
 
 interface BranchGraphProps {
@@ -7,6 +7,15 @@ interface BranchGraphProps {
   projectName: string;
   worktrees: WorktreeSnapshot[];
   onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
+}
+
+// Format Unix timestamp as relative time (e.g., "2m ago", "3h ago")
+function formatRelativeTime(unixSecs: number): string {
+  const diff = Math.floor(Date.now() / 1000) - unixSecs;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 // SVG layout constants
@@ -28,6 +37,7 @@ interface BranchNode {
   worktree: WorktreeSnapshot | null;
   ahead: number;
   behind: number;
+  remote: RemoteTrackingInfo | null;
 }
 
 // Graphical branch tree with interactive action panels
@@ -90,6 +100,7 @@ export function BranchGraph({
     const currentBranch = branches?.current_branch ?? null;
     const parentMap = branches?.parents ?? {};
     const abMap = branches?.ahead_behind ?? {};
+    const rtMap = branches?.remote_tracking ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
 
@@ -106,6 +117,7 @@ export function BranchGraph({
       worktree: mainWt ?? null,
       ahead: 0,
       behind: 0,
+      remote: rtMap[defaultBranch] ?? null,
     });
 
     for (const wt of projectWorktrees) {
@@ -125,6 +137,7 @@ export function BranchGraph({
         worktree: wt,
         ahead: ab?.[0] ?? 0,
         behind: ab?.[1] ?? 0,
+        remote: rtMap[branchName] ?? null,
       });
     }
 
@@ -146,6 +159,7 @@ export function BranchGraph({
             worktree: null,
             ahead: ab?.[0] ?? 0,
             behind: ab?.[1] ?? 0,
+            remote: rtMap[b] ?? null,
           });
         }
       }
@@ -323,6 +337,21 @@ export function BranchGraph({
     }
   }, [actionBusy, newWtName, projectPath, selectNode, refreshBranches]);
 
+  // Refresh: fetch from remote + reload branch data
+  const handleRefresh = useCallback(async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await api.gitFetch(projectPath);
+      refreshBranches();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Fetch failed");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [actionBusy, projectPath, refreshBranches]);
+
   // AI delegation: spawn an agent with a pre-filled prompt
   const delegateToAi = useCallback(async (prompt: string) => {
     if (actionBusy) return;
@@ -363,6 +392,19 @@ export function BranchGraph({
             {" · "}
             {projectWorktrees.filter((w) => !w.is_main).length} worktree{projectWorktrees.filter((w) => !w.is_main).length !== 1 ? "s" : ""}
           </span>
+          <div className="flex-1" />
+          {branches?.last_fetch && (
+            <span className="text-[10px] text-zinc-600" title={new Date(branches.last_fetch * 1000).toLocaleString()}>
+              fetched {formatRelativeTime(branches.last_fetch)}
+            </span>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={actionBusy}
+            className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 disabled:opacity-50"
+          >
+            {actionBusy ? "..." : "Refresh"}
+          </button>
         </div>
       </div>
 
@@ -660,6 +702,31 @@ export function BranchGraph({
                     {" · "}
                     {activeNode.diffSummary.files_changed} file{activeNode.diffSummary.files_changed !== 1 ? "s" : ""}
                   </div>
+                )}
+                {/* Remote tracking info */}
+                {activeNode.remote ? (
+                  <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-zinc-500">
+                      <span className="text-zinc-600">remote:</span>
+                      <span className="font-mono text-zinc-400">{activeNode.remote.remote_branch}</span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      {activeNode.remote.ahead === 0 && activeNode.remote.behind === 0 ? (
+                        <span className="text-zinc-500">= up to date</span>
+                      ) : (
+                        <>
+                          {activeNode.remote.ahead > 0 && (
+                            <span className="text-amber-400">{activeNode.remote.ahead} to push</span>
+                          )}
+                          {activeNode.remote.behind > 0 && (
+                            <span className="text-cyan-400">{activeNode.remote.behind} to pull</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-zinc-600">no remote tracking</div>
                 )}
               </div>
 
