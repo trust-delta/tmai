@@ -721,6 +721,10 @@ pub struct WorktreeSettings {
     /// Timeout for each setup command in seconds (default: 300 = 5 minutes)
     #[serde(default = "default_setup_timeout")]
     pub setup_timeout_secs: u64,
+
+    /// Branch depth at which to show a warning (default: 3 = great-grandchild of main)
+    #[serde(default = "default_branch_depth_warning")]
+    pub branch_depth_warning: u32,
 }
 
 /// Default setup timeout (5 minutes)
@@ -728,11 +732,17 @@ fn default_setup_timeout() -> u64 {
     300
 }
 
+/// Default branch depth warning threshold
+fn default_branch_depth_warning() -> u32 {
+    3
+}
+
 impl Default for WorktreeSettings {
     fn default() -> Self {
         Self {
             setup_commands: Vec::new(),
             setup_timeout_secs: default_setup_timeout(),
+            branch_depth_warning: default_branch_depth_warning(),
         }
     }
 }

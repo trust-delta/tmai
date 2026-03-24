@@ -1292,6 +1292,27 @@ pub async fn list_branches(
         .map(Json)
 }
 
+/// Commit log query params
+#[derive(Debug, Deserialize)]
+pub struct CommitLogParams {
+    pub repo: String,
+    pub base: String,
+    pub branch: String,
+}
+
+/// Get commit log between two branches
+pub async fn git_log(
+    axum::extract::Query(params): axum::extract::Query<CommitLogParams>,
+) -> Result<Json<Vec<tmai_core::git::CommitEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    let commits = tmai_core::git::log_commits(repo_dir, &params.base, &params.branch, 20).await;
+    Ok(Json(commits))
+}
+
 /// Delete branch request body
 #[derive(Debug, Deserialize)]
 pub struct DeleteBranchRequest {

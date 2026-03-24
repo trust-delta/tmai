@@ -319,6 +319,7 @@ export interface BranchListResponse {
   current_branch: string | null;
   branches: string[];
   parents: Record<string, string>;
+  ahead_behind: Record<string, [number, number]>;
 }
 
 export interface SpawnResponse {
@@ -477,6 +478,10 @@ export const api = {
   // Git branches
   listBranches: (repoPath: string) =>
     apiFetch<BranchListResponse>(`/git/branches?repo=${encodeURIComponent(repoPath)}`),
+  gitLog: (repoPath: string, base: string, branch: string) =>
+    apiFetch<{ sha: string; subject: string; body: string }[]>(
+      `/git/log?repo=${encodeURIComponent(repoPath)}&base=${encodeURIComponent(base)}&branch=${encodeURIComponent(branch)}`,
+    ),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",

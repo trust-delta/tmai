@@ -358,6 +358,9 @@ pub struct BranchListResult {
     /// Parent branch map: branch_name → closest ancestor branch
     #[serde(default)]
     pub parents: HashMap<String, String>,
+    /// Ahead/behind counts vs default branch: branch_name → (ahead, behind)
+    #[serde(default)]
+    pub ahead_behind: HashMap<String, (usize, usize)>,
 }
 
 /// List branches for a repository and detect the default branch
@@ -403,11 +406,23 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
     // Compute parent branch map
     let parents = compute_branch_parents(repo_dir, &branches, &default_branch).await;
 
+    // Compute ahead/behind vs default branch for each branch
+    let mut ab_map = HashMap::new();
+    for branch in &branches {
+        if branch == &default_branch {
+            continue;
+        }
+        if let Some((a, b)) = ahead_behind(repo_dir, branch, &default_branch).await {
+            ab_map.insert(branch.clone(), (a, b));
+        }
+    }
+
     Some(BranchListResult {
         default_branch,
         current_branch,
         branches,
         parents,
+        ahead_behind: ab_map,
     })
 }
 
@@ -429,7 +444,9 @@ async fn compute_branch_parents(
         }
 
         // 1. Try reflog: "branch: Created from <name>"
-        if let Some(parent) = reflog_created_from(repo_dir, branch, &branch_set).await {
+        if let Some(parent) =
+            reflog_created_from(repo_dir, branch, &branch_set, default_branch).await
+        {
             parents.insert(branch.clone(), parent);
             continue;
         }
@@ -507,17 +524,19 @@ async fn compute_branch_parents(
 
 /// Check reflog for the branch creation source
 ///
-/// Parses the first reflog entry for "Created from <branch_name>".
-/// Returns the source branch if it's a known local branch.
+/// Parses the last reflog entry for "Created from <branch_name>".
+/// When source is "HEAD", resolves by finding which known branch was
+/// at the same commit using `git branch --points-at`.
 async fn reflog_created_from(
     repo_dir: &str,
     branch: &str,
     known_branches: &std::collections::HashSet<&str>,
+    default_branch: &str,
 ) -> Option<String> {
     let output = tokio::time::timeout(
         GIT_TIMEOUT,
         Command::new("git")
-            .args(["-C", repo_dir, "reflog", "show", branch, "--format=%gs"])
+            .args(["-C", repo_dir, "reflog", "show", branch, "--format=%H %gs"])
             .output(),
     )
     .await
@@ -528,18 +547,72 @@ async fn reflog_created_from(
         return None;
     }
 
-    // Last line of reflog is the creation entry
     let text = String::from_utf8_lossy(&output.stdout);
     let last_line = text.lines().last()?;
 
-    // Parse "branch: Created from <source>"
-    let source = last_line.strip_prefix("branch: Created from ")?.trim();
+    // Format: "<sha> branch: Created from <source>"
+    let (sha, action) = last_line.split_once(' ')?;
+    let raw_source = action.strip_prefix("branch: Created from ")?.trim();
+    let source = raw_source.strip_prefix("refs/heads/").unwrap_or(raw_source);
 
-    // Only return if the source is a known local branch
-    if known_branches.contains(source) {
+    if source == "HEAD" {
+        // Resolve HEAD: find which known branch was at the same commit
+        resolve_branch_at_commit(repo_dir, sha, branch, known_branches, default_branch).await
+    } else if known_branches.contains(source) {
         Some(source.to_string())
     } else {
         None
+    }
+}
+
+/// Find which known branch was at a given commit
+///
+/// Uses `git branch --points-at <sha>` and picks the best match:
+/// default_branch preferred, otherwise first known branch found.
+async fn resolve_branch_at_commit(
+    repo_dir: &str,
+    sha: &str,
+    exclude_branch: &str,
+    known_branches: &std::collections::HashSet<&str>,
+    default_branch: &str,
+) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "branch",
+                "--points-at",
+                sha,
+                "--format=%(refname:short)",
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let candidates: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && *l != exclude_branch && known_branches.contains(l))
+        .collect();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Prefer default branch among candidates
+    if candidates.contains(&default_branch) {
+        Some(default_branch.to_string())
+    } else {
+        Some(candidates[0].to_string())
     }
 }
 
@@ -597,6 +670,64 @@ pub fn extract_claude_worktree_name(cwd: &str) -> Option<String> {
     // Take up to the next '/' or end of string
     let name = after.split('/').next().filter(|s| !s.is_empty())?;
     Some(name.to_string())
+}
+
+/// A single commit entry from git log
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CommitEntry {
+    pub sha: String,
+    pub subject: String,
+    pub body: String,
+}
+
+/// Get commit log between two branches (base..branch)
+///
+/// Returns list of CommitEntry with sha, subject, and full body.
+pub async fn log_commits(
+    repo_dir: &str,
+    base: &str,
+    branch: &str,
+    max_count: usize,
+) -> Vec<CommitEntry> {
+    if !is_safe_git_ref(base) || !is_safe_git_ref(branch) {
+        return Vec::new();
+    }
+
+    // Use record separator (ASCII 0x1E) to split commits
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "log",
+                "--format=%h\t%s\t%b%x1e",
+                &format!("--max-count={}", max_count),
+                &format!("{}..{}", base, branch),
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .split('\x1e')
+            .filter_map(|entry| {
+                let entry = entry.trim();
+                if entry.is_empty() {
+                    return None;
+                }
+                let mut parts = entry.splitn(3, '\t');
+                let sha = parts.next()?.trim().to_string();
+                let subject = parts.next()?.trim().to_string();
+                let body = parts.next().unwrap_or("").trim().to_string();
+                Some(CommitEntry { sha, subject, body })
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// Strip `/.git` or `/.git/` suffix from a path to get the repository root

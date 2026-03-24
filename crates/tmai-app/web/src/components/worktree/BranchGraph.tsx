@@ -17,7 +17,7 @@ const TOP_PAD = 40;
 
 interface BranchNode {
   name: string;
-  parent: string | null; // parent branch name (null for main)
+  parent: string | null;
   isWorktree: boolean;
   isMain: boolean;
   isCurrent: boolean;
@@ -26,6 +26,8 @@ interface BranchNode {
   agentStatus: string | null;
   diffSummary: { files_changed: number; insertions: number; deletions: number } | null;
   worktree: WorktreeSnapshot | null;
+  ahead: number;
+  behind: number;
 }
 
 // Graphical branch tree with interactive action panels
@@ -48,6 +50,7 @@ export function BranchGraph({
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [newWtName, setNewWtName] = useState("");
   const [newWtError, setNewWtError] = useState("");
+  const BRANCH_DEPTH_WARNING = 3; // TODO: fetch from server settings
 
   // Fetch branch list
   const refreshBranches = useCallback(() => {
@@ -86,6 +89,7 @@ export function BranchGraph({
     const defaultBranch = branches?.default_branch ?? "main";
     const currentBranch = branches?.current_branch ?? null;
     const parentMap = branches?.parents ?? {};
+    const abMap = branches?.ahead_behind ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
 
@@ -100,11 +104,14 @@ export function BranchGraph({
       agentStatus: mainWt?.agent_status ?? null,
       diffSummary: null,
       worktree: mainWt ?? null,
+      ahead: 0,
+      behind: 0,
     });
 
     for (const wt of projectWorktrees) {
       if (wt.is_main) continue;
       const branchName = wt.branch || wt.name;
+      const ab = abMap[branchName];
       result.push({
         name: branchName,
         parent: parentMap[branchName] ?? defaultBranch,
@@ -116,6 +123,8 @@ export function BranchGraph({
         agentStatus: wt.agent_status,
         diffSummary: wt.diff_summary,
         worktree: wt,
+        ahead: ab?.[0] ?? 0,
+        behind: ab?.[1] ?? 0,
       });
     }
 
@@ -123,6 +132,7 @@ export function BranchGraph({
     if (branches) {
       for (const b of branches.branches) {
         if (!listed.has(b)) {
+          const ab = abMap[b];
           result.push({
             name: b,
             parent: parentMap[b] ?? defaultBranch,
@@ -134,6 +144,8 @@ export function BranchGraph({
             agentStatus: null,
             diffSummary: null,
             worktree: null,
+            ahead: ab?.[0] ?? 0,
+            behind: ab?.[1] ?? 0,
           });
         }
       }
@@ -259,8 +271,6 @@ export function BranchGraph({
     setDiffData(null);
     setDiffLoading(false);
     setShowNewWorktree(false);
-    setShowNewBranch(false);
-    setGitOutput(null);
   }, [branches, mainNode.name]);
 
   const handleDeleteWorktree = useCallback(async (node: BranchNode) => {
@@ -313,98 +323,19 @@ export function BranchGraph({
     }
   }, [actionBusy, newWtName, projectPath, selectNode, refreshBranches]);
 
-  // Git operations
-  const [gitOutput, setGitOutput] = useState<string | null>(null);
-
-  const handleCheckout = useCallback(async (branch: string) => {
+  // AI delegation: spawn an agent with a pre-filled prompt
+  const delegateToAi = useCallback(async (prompt: string) => {
     if (actionBusy) return;
     setActionBusy(true);
     setActionError(null);
-    setGitOutput(null);
     try {
-      await api.checkoutBranch(projectPath, branch);
-      setGitOutput(`Switched to branch '${branch}'`);
-      refreshBranches();
+      await api.spawnPty({ command: "claude", args: ["-p", prompt], cwd: projectPath });
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Checkout failed");
+      setActionError(e instanceof Error ? e.message : "Failed to launch agent");
     } finally {
       setActionBusy(false);
     }
-  }, [actionBusy, projectPath, refreshBranches]);
-
-  const handleFetch = useCallback(async () => {
-    if (actionBusy) return;
-    setActionBusy(true);
-    setActionError(null);
-    setGitOutput(null);
-    try {
-      const res = await api.gitFetch(projectPath);
-      setGitOutput(res.output || "Fetched (up to date)");
-      refreshBranches();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Fetch failed");
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, projectPath, refreshBranches]);
-
-  const handlePull = useCallback(async () => {
-    if (actionBusy) return;
-    setActionBusy(true);
-    setActionError(null);
-    setGitOutput(null);
-    try {
-      const res = await api.gitPull(projectPath);
-      setGitOutput(res.output || "Already up to date");
-      refreshBranches();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Pull failed");
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, projectPath, refreshBranches]);
-
-  const handleMerge = useCallback(async (branch: string) => {
-    if (actionBusy) return;
-    setActionBusy(true);
-    setActionError(null);
-    setGitOutput(null);
-    try {
-      const res = await api.gitMerge(projectPath, branch);
-      setGitOutput(res.output || "Merge complete");
-      refreshBranches();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Merge failed");
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, projectPath, refreshBranches]);
-
-  const [showNewBranch, setShowNewBranch] = useState(false);
-  const [newBranchName, setNewBranchName] = useState("");
-
-  const handleCreateBranch = useCallback(async (base: string) => {
-    const name = newBranchName.trim();
-    if (!name || actionBusy) return;
-    if (!/^[a-zA-Z0-9/_.-]+$/.test(name)) {
-      setActionError("Invalid branch name");
-      return;
-    }
-    setActionBusy(true);
-    setActionError(null);
-    setGitOutput(null);
-    try {
-      await api.createBranch(projectPath, name, base);
-      setGitOutput(`Branch '${name}' created from '${base}'`);
-      setShowNewBranch(false);
-      setNewBranchName("");
-      refreshBranches();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to create branch");
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, newBranchName, projectPath, refreshBranches]);
+  }, [actionBusy, projectPath]);
 
   if (loading) {
     return (
@@ -432,29 +363,7 @@ export function BranchGraph({
             {" · "}
             {projectWorktrees.filter((w) => !w.is_main).length} worktree{projectWorktrees.filter((w) => !w.is_main).length !== 1 ? "s" : ""}
           </span>
-          <div className="flex-1" />
-          <button
-            onClick={handleFetch}
-            disabled={actionBusy}
-            className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 disabled:opacity-50"
-          >
-            {actionBusy ? "..." : "Fetch"}
-          </button>
-          <button
-            onClick={handlePull}
-            disabled={actionBusy}
-            className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 disabled:opacity-50"
-          >
-            {actionBusy ? "..." : "Pull"}
-          </button>
         </div>
-        {/* Git output toast */}
-        {gitOutput && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400">
-            <span className="flex-1 font-mono">{gitOutput}</span>
-            <button onClick={() => setGitOutput(null)} className="text-zinc-500 hover:text-zinc-300">x</button>
-          </div>
-        )}
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -679,6 +588,14 @@ export function BranchGraph({
 
                   {/* Status line */}
                   <text x={nodeX + 16} y={y + 10} fontSize="10" dominantBaseline="middle" fill="rgba(161,161,170,0.4)">
+                    {!node.isMain && (node.ahead > 0 || node.behind > 0) && (
+                      <tspan>
+                        {node.ahead > 0 && <tspan fill="rgb(52,211,153)">{node.ahead}↑</tspan>}
+                        {node.ahead > 0 && node.behind > 0 && " "}
+                        {node.behind > 0 && <tspan fill="rgb(248,113,113)">{node.behind}↓</tspan>}
+                        {"  "}
+                      </tspan>
+                    )}
                     {node.hasAgent && (
                       <tspan fill="rgb(34,211,238)">● {node.agentStatus || "active"}{"  "}</tspan>
                     )}
@@ -690,15 +607,8 @@ export function BranchGraph({
                         <tspan fill="rgb(52,211,153)">+{node.diffSummary.insertions}</tspan>
                         {" "}
                         <tspan fill="rgb(248,113,113)">-{node.diffSummary.deletions}</tspan>
-                        {" "}
-                        <tspan fill="rgba(161,161,170,0.4)">{node.diffSummary.files_changed} file{node.diffSummary.files_changed !== 1 ? "s" : ""}</tspan>
+                        {"  "}
                       </tspan>
-                    )}
-                    {!node.hasAgent && !node.isDirty && !node.diffSummary && !node.isWorktree && (
-                      <tspan>branch</tspan>
-                    )}
-                    {!node.hasAgent && node.isWorktree && !node.isDirty && !node.diffSummary && (
-                      <tspan>no agent</tspan>
                     )}
                   </text>
                 </g>
@@ -825,60 +735,29 @@ export function BranchGraph({
                 {/* Plain branch actions */}
                 {!activeNode.isWorktree && !activeNode.isMain && (
                   <>
-                    {/* Checkout */}
-                    {!activeNode.isCurrent && (
-                      <button
-                        onClick={() => handleCheckout(activeNode.name)}
-                        disabled={actionBusy}
-                        className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
-                      >
-                        {actionBusy ? "..." : "Checkout"}
-                      </button>
+                    {/* AI delegation: merge / PR */}
+                    {activeNode.ahead > 0 && (
+                      <>
+                        <button
+                          onClick={() => delegateToAi(`${activeNode.name} ブランチを main にマージしてください。コンフリクトがあれば解消してください。`)}
+                          disabled={actionBusy}
+                          className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
+                        >
+                          AIにマージを指示
+                        </button>
+                        <button
+                          onClick={() => delegateToAi(`${activeNode.name} ブランチのPull Requestを作成してください。変更内容を要約してdescriptionに記載してください。`)}
+                          disabled={actionBusy}
+                          className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
+                        >
+                          AIにPR作成を指示
+                        </button>
+                      </>
                     )}
-                    {/* Merge into current */}
-                    {!activeNode.isCurrent && (
-                      <button
-                        onClick={() => handleMerge(activeNode.name)}
-                        disabled={actionBusy}
-                        className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
-                      >
-                        {actionBusy ? "..." : `Merge into current`}
-                      </button>
-                    )}
-                    {/* Create branch from this branch */}
-                    {!showNewBranch ? (
-                      <button
-                        onClick={() => setShowNewBranch(true)}
-                        className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
-                      >
-                        Create Branch
-                      </button>
-                    ) : (
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                        <div className="mb-1 text-[11px] text-zinc-500">
-                          from: <span className="text-zinc-300">{activeNode.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <input
-                            autoFocus
-                            type="text"
-                            value={newBranchName}
-                            onChange={(e) => setNewBranchName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleCreateBranch(activeNode.name);
-                              if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
-                            }}
-                            placeholder="branch name"
-                            className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-white/20 focus:ring-white/40"
-                          />
-                          <button
-                            onClick={() => handleCreateBranch(activeNode.name)}
-                            disabled={!newBranchName.trim() || actionBusy}
-                            className="rounded px-2 py-1 text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-30"
-                          >
-                            Go
-                          </button>
-                        </div>
+                    {/* AI delegation: sync with remote */}
+                    {activeNode.behind > 0 && (
+                      <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                        mainから{activeNode.behind}コミット遅れています
                       </div>
                     )}
                     {/* Create worktree from this branch */}
@@ -894,6 +773,11 @@ export function BranchGraph({
                         <div className="mb-1 text-[11px] text-zinc-500">
                           from: <span className="text-emerald-400">{activeNode.name}</span>
                         </div>
+                        {(nodeDepth.get(activeNode.name) ?? 0) + 1 >= BRANCH_DEPTH_WARNING && (
+                          <div className="mb-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400">
+                            mainから{(nodeDepth.get(activeNode.name) ?? 0) + 1}段目になります。親ブランチを先にmainにマージすることを検討してください。
+                          </div>
+                        )}
                         <div className="flex items-center gap-1">
                           <input
                             autoFocus
@@ -964,52 +848,6 @@ export function BranchGraph({
                 {/* Main branch actions */}
                 {activeNode.isMain && (
                   <>
-                    {/* Checkout (if not current) */}
-                    {!activeNode.isCurrent && (
-                      <button
-                        onClick={() => handleCheckout(activeNode.name)}
-                        disabled={actionBusy}
-                        className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
-                      >
-                        {actionBusy ? "..." : "Checkout"}
-                      </button>
-                    )}
-                    {/* Create Branch */}
-                    {!showNewBranch ? (
-                      <button
-                        onClick={() => setShowNewBranch(true)}
-                        className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
-                      >
-                        Create Branch
-                      </button>
-                    ) : (
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                        <div className="mb-1 text-[11px] text-zinc-500">
-                          from: <span className="text-emerald-400">{activeNode.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <input
-                            autoFocus
-                            type="text"
-                            value={newBranchName}
-                            onChange={(e) => setNewBranchName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleCreateBranch(activeNode.name);
-                              if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
-                            }}
-                            placeholder="branch name"
-                            className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-white/20 focus:ring-white/40"
-                          />
-                          <button
-                            onClick={() => handleCreateBranch(activeNode.name)}
-                            disabled={!newBranchName.trim() || actionBusy}
-                            className="rounded px-2 py-1 text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-30"
-                          >
-                            Go
-                          </button>
-                        </div>
-                      </div>
-                    )}
                     {/* Create Worktree */}
                     {!showNewWorktree ? (
                       <button
@@ -1054,18 +892,21 @@ export function BranchGraph({
                 )}
               </div>
 
-              {/* Git output */}
-              {gitOutput && (
-                <div className="mt-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-400">
-                  {gitOutput}
-                </div>
-              )}
-
               {/* Error display */}
               {actionError && (
                 <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
                   {actionError}
                 </div>
+              )}
+
+              {/* Commit log */}
+              {!activeNode.isMain && activeNode.ahead > 0 && (
+                <CommitLog
+                  repoPath={projectPath}
+                  base={branches?.default_branch ?? "main"}
+                  branch={activeNode.name}
+                  count={activeNode.ahead}
+                />
               )}
 
               {/* Inline diff viewer */}
@@ -1083,6 +924,86 @@ export function BranchGraph({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface CommitData {
+  sha: string;
+  subject: string;
+  body: string;
+}
+
+// Lazy-loaded commit log for a branch
+function CommitLog({
+  repoPath,
+  base,
+  branch,
+  count,
+}: {
+  repoPath: string;
+  base: string;
+  branch: string;
+  count: number;
+}) {
+  const [commits, setCommits] = useState<CommitData[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const [expandedSha, setExpandedSha] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCommits(null);
+    setExpandedSha(null);
+    setLoading(true);
+    api.gitLog(repoPath, base, branch)
+      .then(setCommits)
+      .catch(() => setCommits([]))
+      .finally(() => setLoading(false));
+  }, [repoPath, base, branch]);
+
+  return (
+    <div className="mt-4">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+      >
+        <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
+        <span>Commits ({count})</span>
+      </button>
+      {expanded && (
+        <div className="mt-1.5">
+          {loading && (
+            <div className="text-[11px] text-zinc-600 py-1">Loading...</div>
+          )}
+          {commits && commits.length === 0 && !loading && (
+            <div className="text-[11px] text-zinc-600 py-1">No commits</div>
+          )}
+          {commits && commits.map((c) => (
+            <div key={c.sha} className="border-b border-white/5 last:border-0">
+              <button
+                onClick={() => setExpandedSha((prev) => prev === c.sha ? null : c.sha)}
+                className="flex w-full items-baseline gap-2 py-1 text-left hover:bg-white/[0.03] rounded px-1 -mx-1 transition-colors"
+              >
+                <span className="shrink-0 font-mono text-[10px] text-cyan-600">{c.sha}</span>
+                <span className="text-[11px] text-zinc-400 truncate">{c.subject}</span>
+              </button>
+              {expandedSha === c.sha && (
+                <div className="px-1 pb-2 select-text">
+                  <div className="rounded bg-white/[0.03] px-2 py-1.5 text-[11px] text-zinc-300 font-mono whitespace-pre-wrap break-words">
+                    {c.subject}
+                    {c.body && (
+                      <>
+                        {"\n\n"}
+                        <span className="text-zinc-500">{c.body}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
