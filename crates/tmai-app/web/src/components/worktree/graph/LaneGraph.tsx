@@ -9,7 +9,9 @@ interface LaneGraphProps {
   selectedBranch: string | null;
   repoPath: string;
   defaultBranch: string;
+  collapsedLanes: Set<string>;
   onSelectBranch: (branch: string) => void;
+  onToggleCollapse: (branch: string) => void;
 }
 
 // Commit detail fetched from git log
@@ -19,7 +21,15 @@ interface CommitDetail {
   body: string;
 }
 
-export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onSelectBranch }: LaneGraphProps) {
+export function LaneGraph({
+  layout,
+  selectedBranch,
+  repoPath,
+  defaultBranch,
+  collapsedLanes,
+  onSelectBranch,
+  onToggleCollapse,
+}: LaneGraphProps) {
   const [hoveredSha, setHoveredSha] = useState<string | null>(null);
   const [expandedSha, setExpandedSha] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<CommitDetail | null>(null);
@@ -48,11 +58,12 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
     return ranges;
   }, [rows]);
 
-  // Build set of branch tip SHAs (first commit per lane = tip)
+  // Build set of branch tip SHAs (first non-fold commit per lane = tip)
   const branchTipLanes = useMemo(() => {
     const tips = new Set<string>();
     const seenLanes = new Set<number>();
     for (const row of rows) {
+      if (row.isFold) continue;
       if (!seenLanes.has(row.lane)) {
         tips.add(row.sha);
         seenLanes.add(row.lane);
@@ -87,7 +98,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
         if (found) {
           setCommitDetail({ sha: found.sha, subject: found.subject, body: found.body });
         } else {
-          // Fallback: use the subject from graph data
           const row = rows.find(r => r.sha === sha);
           setCommitDetail({ sha, subject: row?.subject ?? "", body: "" });
         }
@@ -227,14 +237,64 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
           );
         })}
 
-        {/* Commit dots */}
+        {/* Commit dots + fold indicators */}
         {rows.map(row => {
           const x = laneX(row.lane);
+          const color = laneColor(row.lane);
+
+          // Fold indicator row
+          if (row.isFold) {
+            return (
+              <g
+                key={row.sha}
+                className="cursor-pointer"
+                onClick={() => onToggleCollapse(branchForLane(row.lane))}
+              >
+                {/* Dotted line segment */}
+                <line
+                  x1={x}
+                  y1={row.y - 8}
+                  x2={x}
+                  y2={row.y + 8}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.3}
+                  strokeDasharray="2 3"
+                />
+                {/* Ellipsis dots */}
+                {[-4, 0, 4].map(dy => (
+                  <circle
+                    key={dy}
+                    cx={x}
+                    cy={row.y + dy}
+                    r={1.5}
+                    fill={color}
+                    fillOpacity={0.5}
+                  />
+                ))}
+                {/* Count label */}
+                <text
+                  x={labelX}
+                  y={row.y + 1}
+                  fill="rgba(161,161,170,0.4)"
+                  fontSize="10"
+                  dominantBaseline="middle"
+                  style={{ userSelect: "none" }}
+                >
+                  <tspan fill={color} fillOpacity={0.5}>{"\u22EE"}</tspan>
+                  {"  "}
+                  {row.foldCount} commit{(row.foldCount ?? 0) > 1 ? "s" : ""} hidden
+                  {"  "}
+                  <tspan fill="rgba(161,161,170,0.3)" fontSize="9">click to expand</tspan>
+                </text>
+              </g>
+            );
+          }
+
           const isTip = branchTipLanes.has(row.sha);
           const isSelectedLane = row.lane === selectedLaneIdx;
           const isHovered = hoveredSha === row.sha;
           const isExpanded = expandedSha === row.sha;
-          const color = laneColor(row.lane);
           const r = isTip ? BRANCH_R : COMMIT_R;
 
           return (
@@ -254,7 +314,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
                 onMouseLeave={() => setHoveredSha(null)}
                 onClick={() => handleCommitClick(row.sha, row.lane)}
               />
-              {/* Merge indicator */}
               {row.isMerge && (
                 <circle
                   cx={x}
@@ -270,44 +329,87 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
           );
         })}
 
-        {/* Branch name headers */}
+        {/* Branch name headers with collapse toggle */}
         {lanes.map(lane => {
           const isSelected = lane.laneIndex === selectedLaneIdx;
+          const isCollapsed = collapsedLanes.has(lane.branch);
           const maxChars = Math.max(4, Math.floor(laneW / 7));
           const displayName = lane.branch.length > maxChars
             ? lane.branch.slice(0, Math.ceil(maxChars / 2)) + "\u2026" + lane.branch.slice(-(Math.floor(maxChars / 2)))
             : lane.branch;
+
+          // Count total commits in this lane (for collapse toggle)
+          const laneCommitCount = rows.filter(r => r.lane === lane.laneIndex && !r.isFold).length;
+          const showToggle = laneCommitCount > 2;
+
           return (
-            <g
-              key={`hdr-${lane.laneIndex}`}
-              className="cursor-pointer"
-              onClick={() => onSelectBranch(lane.branch)}
-            >
-              <title>{lane.branch}</title>
-              <text
-                x={laneX(lane.laneIndex)}
-                y={16}
-                textAnchor="middle"
-                fill={isSelected ? lane.color : laneDimColor(lane.laneIndex)}
-                fontSize="10"
-                fontWeight={isSelected ? "600" : "400"}
-                style={{ userSelect: "none" }}
+            <g key={`hdr-${lane.laneIndex}`}>
+              {/* Branch name (click to select) */}
+              <g
+                className="cursor-pointer"
+                onClick={() => onSelectBranch(lane.branch)}
               >
-                {displayName}
-              </text>
-              <circle
-                cx={laneX(lane.laneIndex)}
-                cy={28}
-                r={3}
-                fill={lane.color}
-                fillOpacity={isSelected ? 1 : 0.4}
-              />
+                <title>{lane.branch}</title>
+                <text
+                  x={laneX(lane.laneIndex)}
+                  y={16}
+                  textAnchor="middle"
+                  fill={isSelected ? lane.color : laneDimColor(lane.laneIndex)}
+                  fontSize="10"
+                  fontWeight={isSelected ? "600" : "400"}
+                  style={{ userSelect: "none" }}
+                >
+                  {displayName}
+                </text>
+              </g>
+              {/* Collapse/expand toggle (click to toggle) */}
+              {showToggle ? (
+                <g
+                  className="cursor-pointer"
+                  onClick={() => onToggleCollapse(lane.branch)}
+                >
+                  <title>{isCollapsed ? "Expand commits" : "Collapse commits"}</title>
+                  <circle
+                    cx={laneX(lane.laneIndex)}
+                    cy={28}
+                    r={5}
+                    fill={isCollapsed ? lane.color : "transparent"}
+                    fillOpacity={isCollapsed ? 0.15 : 0}
+                    stroke={lane.color}
+                    strokeWidth={1}
+                    strokeOpacity={isSelected ? 0.8 : 0.4}
+                  />
+                  <text
+                    x={laneX(lane.laneIndex)}
+                    y={29}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill={lane.color}
+                    fillOpacity={isSelected ? 1 : 0.5}
+                    fontSize="8"
+                    fontWeight="600"
+                    style={{ userSelect: "none" }}
+                  >
+                    {isCollapsed ? "\u25B8" : "\u25BE"}
+                  </text>
+                </g>
+              ) : (
+                <circle
+                  cx={laneX(lane.laneIndex)}
+                  cy={28}
+                  r={3}
+                  fill={lane.color}
+                  fillOpacity={isSelected ? 1 : 0.4}
+                />
+              )}
             </g>
           );
         })}
 
-        {/* Commit labels (right side) — all commits */}
+        {/* Commit labels (right side) — all visible commits */}
         {rows.map(row => {
+          if (row.isFold) return null; // fold indicator has its own label above
+
           const isTip = branchTipLanes.has(row.sha);
           const isHovered = hoveredSha === row.sha;
           const isSelectedLane = row.lane === selectedLaneIdx;
@@ -321,7 +423,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
               onMouseLeave={() => setHoveredSha(null)}
               onClick={() => handleCommitClick(row.sha, row.lane)}
             >
-              {/* SHA */}
               <text
                 x={labelX}
                 y={row.y + 1}
@@ -333,7 +434,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
               >
                 {row.sha.slice(0, 7)}
               </text>
-              {/* Subject */}
               <text
                 x={labelX + 60}
                 y={row.y + 1}
@@ -353,7 +453,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
               >
                 {row.subject.length > 60 ? row.subject.slice(0, 57) + "\u2026" : row.subject}
               </text>
-              {/* Ref badges */}
               {isTip && row.refs.length > 0 && (
                 <text
                   x={labelX + 60 + Math.min(row.subject.length, 60) * 6.2 + 8}
@@ -372,8 +471,8 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
         })}
       </svg>
 
-      {/* Commit detail overlay (HTML, positioned below the expanded row) */}
-      {expandedRow && (
+      {/* Commit detail overlay */}
+      {expandedRow && !expandedRow.isFold && (
         <div
           className="absolute z-10 rounded-lg border border-white/10 bg-zinc-900/95 shadow-xl backdrop-blur-sm"
           style={{
@@ -384,7 +483,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
           }}
         >
           <div className="p-3">
-            {/* Header: SHA + close */}
             <div className="flex items-center justify-between gap-3">
               <span className="font-mono text-[11px] text-cyan-400 select-all">
                 {commitDetail?.sha ?? expandedRow.sha}
@@ -396,11 +494,9 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
                 Esc
               </button>
             </div>
-            {/* Subject */}
             <div className="mt-1.5 text-xs font-medium text-zinc-200 select-text">
               {expandedRow.subject}
             </div>
-            {/* Body */}
             {detailLoading ? (
               <div className="mt-2 text-[11px] text-zinc-600">Loading...</div>
             ) : commitDetail?.body ? (
@@ -408,7 +504,6 @@ export function LaneGraph({ layout, selectedBranch, repoPath, defaultBranch, onS
                 {commitDetail.body}
               </div>
             ) : null}
-            {/* Branch badge */}
             <div className="mt-2 flex items-center gap-1.5 text-[10px] text-zinc-600">
               <span
                 className="rounded px-1.5 py-0.5"

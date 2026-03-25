@@ -37,6 +37,7 @@ export function BranchGraph({
   const [initialSelected, setInitialSelected] = useState(false);
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
 
   // Fetch branch list and graph data in parallel
   const fetchData = useCallback(async () => {
@@ -184,8 +185,8 @@ export function BranchGraph({
   // Compute lane layout from graph data
   const layout = useMemo(() => {
     if (!graphData || !branches) return null;
-    return computeLayout(graphData, branches, nodes);
-  }, [graphData, branches, nodes]);
+    return computeLayout(graphData, branches, nodes, collapsedLanes);
+  }, [graphData, branches, nodes, collapsedLanes]);
 
   // Selected node data
   const activeNode = nodes.find((n) => n.name === selectedNode) ?? null;
@@ -193,6 +194,19 @@ export function BranchGraph({
   // Select a branch
   const selectBranch = useCallback((name: string) => {
     setSelectedNode(name);
+  }, []);
+
+  // Toggle lane collapse
+  const toggleCollapse = useCallback((branch: string) => {
+    setCollapsedLanes(prev => {
+      const next = new Set(prev);
+      if (next.has(branch)) {
+        next.delete(branch);
+      } else {
+        next.add(branch);
+      }
+      return next;
+    });
   }, []);
 
   // Refresh: fetch from remote + reload data
@@ -264,7 +278,9 @@ export function BranchGraph({
               selectedBranch={selectedNode}
               repoPath={projectPath}
               defaultBranch={branches?.default_branch ?? "main"}
+              collapsedLanes={collapsedLanes}
               onSelectBranch={selectBranch}
+              onToggleCollapse={toggleCollapse}
             />
           ) : (
             <div className="flex items-center justify-center py-20 text-sm text-zinc-500">

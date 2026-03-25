@@ -23,6 +23,8 @@ export interface RowInfo {
   subject: string;
   refs: string[];
   isMerge: boolean;
+  isFold?: boolean;
+  foldCount?: number;
 }
 
 export interface Connection {

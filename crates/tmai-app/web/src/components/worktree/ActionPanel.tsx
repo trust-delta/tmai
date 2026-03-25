@@ -270,24 +270,24 @@ export function ActionPanel({
               {activeNode.ahead > 0 && (
                 <>
                   <button
-                    onClick={() => delegateToAi(`${activeNode.name} \u30D6\u30E9\u30F3\u30C1\u3092 main \u306B\u30DE\u30FC\u30B8\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u30B3\u30F3\u30D5\u30EA\u30AF\u30C8\u304C\u3042\u308C\u3070\u89E3\u6D88\u3057\u3066\u304F\u3060\u3055\u3044\u3002`)}
+                    onClick={() => delegateToAi(`Merge the ${activeNode.name} branch into main. Resolve any conflicts if present.`)}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
-                    AI\u306B\u30DE\u30FC\u30B8\u3092\u6307\u793A
+                    AI Merge
                   </button>
                   <button
-                    onClick={() => delegateToAi(`${activeNode.name} \u30D6\u30E9\u30F3\u30C1\u306EPull Request\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u5909\u66F4\u5185\u5BB9\u3092\u8981\u7D04\u3057\u3066description\u306B\u8A18\u8F09\u3057\u3066\u304F\u3060\u3055\u3044\u3002`)}
+                    onClick={() => delegateToAi(`Create a Pull Request for the ${activeNode.name} branch. Summarize the changes in the description.`)}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
                   >
-                    AI\u306BPR\u4F5C\u6210\u3092\u6307\u793A
+                    AI Create PR
                   </button>
                 </>
               )}
               {activeNode.behind > 0 && (
                 <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-                  main\u304B\u3089{activeNode.behind}\u30B3\u30DF\u30C3\u30C8\u9045\u308C\u3066\u3044\u307E\u3059
+                  {activeNode.behind} commit{activeNode.behind !== 1 ? "s" : ""} behind main
                 </div>
               )}
               {/* Create worktree from this branch */}
@@ -305,7 +305,7 @@ export function ActionPanel({
                   </div>
                   {(nodeDepth.get(activeNode.name) ?? 0) + 1 >= branchDepthWarning && (
                     <div className="mb-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400">
-                      main\u304B\u3089{(nodeDepth.get(activeNode.name) ?? 0) + 1}\u6BB5\u76EE\u306B\u306A\u308A\u307E\u3059\u3002\u89AA\u30D6\u30E9\u30F3\u30C1\u3092\u5148\u306Bmain\u306B\u30DE\u30FC\u30B8\u3059\u308B\u3053\u3068\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+                      This will be {(nodeDepth.get(activeNode.name) ?? 0) + 1} levels deep from main. Consider merging the parent branch first.
                     </div>
                   )}
                   <div className="flex items-center gap-1">
