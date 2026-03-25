@@ -330,6 +330,18 @@ export interface BranchListResponse {
   last_fetch: number | null;
 }
 
+export interface GraphCommit {
+  sha: string;
+  parents: string[];
+  refs: string[];
+  subject: string;
+  authored_date: number;
+}
+
+export interface GraphData {
+  commits: GraphCommit[];
+}
+
 export interface SpawnResponse {
   session_id: string;
   pid: number;
@@ -489,6 +501,10 @@ export const api = {
   gitLog: (repoPath: string, base: string, branch: string) =>
     apiFetch<{ sha: string; subject: string; body: string }[]>(
       `/git/log?repo=${encodeURIComponent(repoPath)}&base=${encodeURIComponent(base)}&branch=${encodeURIComponent(branch)}`,
+    ),
+  gitGraph: (repoPath: string, limit?: number) =>
+    apiFetch<GraphData>(
+      `/git/graph?repo=${encodeURIComponent(repoPath)}${limit ? `&limit=${limit}` : ""}`,
     ),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     apiFetch("/git/branches/delete", {

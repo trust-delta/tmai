@@ -848,6 +848,87 @@ pub async fn log_commits(
     }
 }
 
+/// A single commit in the full graph (all branches)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GraphCommit {
+    pub sha: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub subject: String,
+    pub authored_date: i64,
+}
+
+/// Full graph data for lane-based visualization
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GraphData {
+    pub commits: Vec<GraphCommit>,
+}
+
+/// Get full commit graph across all branches for lane-based visualization
+///
+/// Uses `git log --all --topo-order` to get commits from all branches
+/// with parent SHAs, ref decorations, and timestamps.
+pub async fn log_graph(repo_dir: &str, max_commits: usize) -> Option<GraphData> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "log",
+                "--all",
+                "--topo-order",
+                &format!("--max-count={}", max_commits),
+                "--format=%H\t%P\t%D\t%s\t%at",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let commits: Vec<GraphCommit> = stdout
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.splitn(5, '\t');
+            let sha = parts.next()?.to_string();
+            let parents: Vec<String> = parts
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+            let refs: Vec<String> = parts
+                .next()
+                .unwrap_or("")
+                .split(", ")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let subject = parts.next().unwrap_or("").to_string();
+            let authored_date = parts.next().unwrap_or("0").parse::<i64>().unwrap_or(0);
+            Some(GraphCommit {
+                sha,
+                parents,
+                refs,
+                subject,
+                authored_date,
+            })
+        })
+        .collect();
+
+    Some(GraphData { commits })
+}
+
 /// Strip `/.git` or `/.git/` suffix from a path to get the repository root
 ///
 /// Returns the original path if no `.git` suffix is found.
@@ -1310,5 +1391,26 @@ branch refs/heads/main
         assert!(!is_safe_git_ref(""));
         assert!(!is_safe_git_ref("-flag"));
         assert!(!is_safe_git_ref("--exec=evil"));
+    }
+
+    #[tokio::test]
+    async fn test_log_graph_returns_data_for_this_repo() {
+        // Use this repo itself as test subject
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let result = log_graph(repo, 10).await;
+        // Should succeed (we're in a git repo)
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert!(!data.commits.is_empty());
+        // First commit should have a SHA
+        assert!(!data.commits[0].sha.is_empty());
+        // authored_date should be non-zero (valid timestamp)
+        assert!(data.commits[0].authored_date > 0);
+    }
+
+    #[tokio::test]
+    async fn test_log_graph_invalid_dir_returns_none() {
+        let result = log_graph("/nonexistent/path", 10).await;
+        assert!(result.is_none());
     }
 }

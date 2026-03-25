@@ -1313,6 +1313,34 @@ pub async fn git_log(
     Ok(Json(commits))
 }
 
+/// Graph query params
+#[derive(Debug, Deserialize)]
+pub struct GraphQueryParams {
+    pub repo: String,
+    #[serde(default = "default_graph_limit")]
+    pub limit: usize,
+}
+
+/// Default limit for graph commits
+fn default_graph_limit() -> usize {
+    100
+}
+
+/// GET /api/git/graph — get full commit graph for lane visualization
+pub async fn git_graph(
+    axum::extract::Query(params): axum::extract::Query<GraphQueryParams>,
+) -> Result<Json<tmai_core::git::GraphData>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::log_graph(repo_dir, params.limit)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to get graph"))
+        .map(Json)
+}
+
 /// Delete branch request body
 #[derive(Debug, Deserialize)]
 pub struct DeleteBranchRequest {

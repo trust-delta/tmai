@@ -88,6 +88,7 @@ impl WebServer {
             .route("/worktrees/diff", post(api::get_worktree_diff))
             .route("/git/branches/delete", post(api::delete_branch))
             .route("/git/log", get(api::git_log))
+            .route("/git/graph", get(api::git_graph))
             .route("/git/branches/create", post(api::create_branch))
             .route("/git/checkout", post(api::checkout_branch))
             .route("/git/fetch", post(api::git_fetch))
