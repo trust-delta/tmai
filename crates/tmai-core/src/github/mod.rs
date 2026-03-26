@@ -1,3 +1,5 @@
+//! GitHub integration via `gh` CLI — fetches PR, CI, and issue data.
+
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::process::Command;
