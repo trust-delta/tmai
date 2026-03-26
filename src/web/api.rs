@@ -1833,18 +1833,13 @@ pub struct FileReadParams {
     pub path: String,
 }
 
-/// GET /api/files/read — read a file's content
+/// GET /api/files/read — read any text file's content
 pub async fn read_file(
     axum::extract::Query(params): axum::extract::Query<FileReadParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let path = std::path::Path::new(&params.path);
     if !path.is_file() {
         return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
-    }
-    // Security: only allow reading .md, .json, .toml, .txt, .yaml, .yml files
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if !matches!(ext, "md" | "json" | "toml" | "txt" | "yaml" | "yml") {
-        return Err(json_error(StatusCode::FORBIDDEN, "File type not allowed"));
     }
     // Limit file size to 1MB
     let metadata = std::fs::metadata(path)
@@ -1856,9 +1851,11 @@ pub async fn read_file(
         ));
     }
     let content = std::fs::read_to_string(path)
-        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        .map_err(|_| json_error(StatusCode::BAD_REQUEST, "Not a text file (binary content)"))?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let editable = OPENABLE_EXTENSIONS.contains(&ext);
     Ok(Json(
-        serde_json::json!({ "path": params.path, "content": content }),
+        serde_json::json!({ "path": params.path, "content": content, "editable": editable }),
     ))
 }
 

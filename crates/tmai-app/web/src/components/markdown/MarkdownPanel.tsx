@@ -19,6 +19,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [editable, setEditable] = useState(false);
 
   // Fetch file tree
   useEffect(() => {
@@ -36,9 +37,10 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
     setSaveError(null);
     setFileLoading(true);
     api.readFile(path)
-      .then(data => {
+      .then((data) => {
         setContent(data.content);
         setEditContent(data.content);
+        setEditable(data.editable ?? false);
       })
       .catch(() => setContent("Failed to load file"))
       .finally(() => setFileLoading(false));
@@ -146,30 +148,40 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                 <span className="text-xs text-zinc-400 font-mono truncate flex-1">
                   {selectedFile.split("/").pop()}
                 </span>
-                <button
-                  onClick={() => setEditing(true)}
-                  className="rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
-                >
-                  Edit
-                </button>
+                {editable ? (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-zinc-600">read-only</span>
+                )}
               </div>
-              {/* Markdown preview */}
+              {/* Content: markdown preview or code view */}
               <div className="flex-1 overflow-auto px-6 py-4">
-                <div className="prose prose-invert prose-sm max-w-none
-                  prose-headings:text-zinc-100 prose-headings:font-semibold
-                  prose-p:text-zinc-300 prose-p:leading-relaxed
-                  prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-                  prose-strong:text-zinc-200
-                  prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-                  prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg
-                  prose-li:text-zinc-300
-                  prose-th:text-zinc-300 prose-th:border-white/10
-                  prose-td:text-zinc-400 prose-td:border-white/10
-                  prose-hr:border-white/10
-                  prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400
-                ">
-                  <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
-                </div>
+                {selectedFile.endsWith(".md") ? (
+                  <div className="prose prose-invert prose-sm max-w-none
+                    prose-headings:text-zinc-100 prose-headings:font-semibold
+                    prose-p:text-zinc-300 prose-p:leading-relaxed
+                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+                    prose-strong:text-zinc-200
+                    prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+                    prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg
+                    prose-li:text-zinc-300
+                    prose-th:text-zinc-300 prose-th:border-white/10
+                    prose-td:text-zinc-400 prose-td:border-white/10
+                    prose-hr:border-white/10
+                    prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400
+                  ">
+                    <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+                  </div>
+                ) : (
+                  <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-words select-text leading-relaxed">
+                    {content}
+                  </pre>
+                )}
               </div>
             </div>
           )}
@@ -231,19 +243,6 @@ function TreeNode({
           );
         }
         const isSelected = selectedFile === entry.path;
-        if (!entry.openable) {
-          // Non-openable file: dimmed, not clickable
-          return (
-            <div
-              key={entry.path}
-              className="flex w-full items-center gap-1.5 px-2 py-0.5 text-[11px] text-zinc-700"
-              style={{ paddingLeft: 8 + depth * 12 }}
-            >
-              <span className="shrink-0 text-[9px] text-zinc-700">{extLabel(entry.name)}</span>
-              <span className="truncate">{entry.name}</span>
-            </div>
-          );
-        }
         return (
           <button
             key={entry.path}
@@ -251,11 +250,15 @@ function TreeNode({
             className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11px] transition-colors ${
               isSelected
                 ? "bg-blue-500/10 text-blue-400"
-                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                : entry.openable
+                  ? "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                  : "text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-400"
             }`}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
-            <span className={`shrink-0 text-[10px] ${isSelected ? "text-blue-500" : "text-zinc-500"}`}>
+            <span className={`shrink-0 text-[10px] ${
+              isSelected ? "text-blue-500" : entry.openable ? "text-zinc-500" : "text-zinc-700"
+            }`}>
               {extLabel(entry.name)}
             </span>
             <span className="truncate">{entry.name}</span>

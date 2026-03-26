@@ -645,7 +645,7 @@ export const api = {
 
   // Files
   readFile: (path: string) =>
-    apiFetch<{ path: string; content: string }>(`/files/read?path=${encodeURIComponent(path)}`),
+    apiFetch<{ path: string; content: string; editable: boolean }>(`/files/read?path=${encodeURIComponent(path)}`),
   writeFile: (path: string, content: string) =>
     apiFetch("/files/write", {
       method: "POST",
