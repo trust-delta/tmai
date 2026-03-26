@@ -342,6 +342,19 @@ export interface GraphData {
   commits: GraphCommit[];
 }
 
+export interface PrInfo {
+  number: number;
+  title: string;
+  state: string;
+  head_branch: string;
+  url: string;
+  review_decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  check_status: "SUCCESS" | "FAILURE" | "PENDING" | null;
+  is_draft: boolean;
+  additions: number;
+  deletions: number;
+}
+
 export interface SpawnResponse {
   session_id: string;
   pid: number;
@@ -506,6 +519,8 @@ export const api = {
     apiFetch<GraphData>(
       `/git/graph?repo=${encodeURIComponent(repoPath)}${limit ? `&limit=${limit}` : ""}`,
     ),
+  listPrs: (repoPath: string) =>
+    apiFetch<Record<string, PrInfo>>(`/github/prs?repo=${encodeURIComponent(repoPath)}`),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",

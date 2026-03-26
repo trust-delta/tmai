@@ -1757,6 +1757,35 @@ pub async fn update_usage_settings(
     Json(serde_json::json!({"ok": true}))
 }
 
+/// Query params for PR listing
+#[derive(Debug, Deserialize)]
+pub struct PrQueryParams {
+    pub repo: String,
+}
+
+/// GET /api/github/prs — list open PRs for a repository
+pub async fn list_prs(
+    axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
+) -> Result<
+    Json<std::collections::HashMap<String, tmai_core::github::PrInfo>>,
+    (StatusCode, Json<serde_json::Value>),
+> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_open_prs(repo_dir)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to list PRs (is gh CLI authenticated?)",
+            )
+        })
+        .map(Json)
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)

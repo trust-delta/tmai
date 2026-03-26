@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { api, type WorktreeDiffResponse, type BranchListResponse } from "@/lib/api";
+import { api, type WorktreeDiffResponse, type BranchListResponse, type PrInfo } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { DiffViewer } from "./DiffViewer";
 
@@ -9,6 +9,7 @@ interface ActionPanelProps {
   projectPath: string;
   nodeDepth: Map<string, number>;
   branchDepthWarning: number;
+  prInfo: PrInfo | undefined;
   onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
   onRefresh: () => void;
   onSelectNode: (name: string | null) => void;
@@ -21,6 +22,7 @@ export function ActionPanel({
   projectPath,
   nodeDepth,
   branchDepthWarning,
+  prInfo,
   onSelectWorktree,
   onRefresh,
   onSelectNode,
@@ -191,6 +193,61 @@ export function ActionPanel({
             </div>
           ) : (
             <div className="mt-2 text-[11px] text-zinc-600">no remote tracking</div>
+          )}
+          {/* PR info */}
+          {prInfo && (
+            <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
+              <div className="flex items-center gap-1.5">
+                <a
+                  href={prInfo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-green-400 hover:underline"
+                >
+                  PR #{prInfo.number}
+                </a>
+                {prInfo.is_draft && (
+                  <span className="rounded bg-zinc-500/15 px-1 py-0.5 text-[10px] text-zinc-500">draft</span>
+                )}
+              </div>
+              <div className="mt-0.5 truncate text-zinc-400">{prInfo.title}</div>
+              <div className="mt-1 flex items-center gap-2">
+                {prInfo.review_decision && (
+                  <span className={`text-[10px] ${
+                    prInfo.review_decision === "APPROVED" ? "text-green-400"
+                    : prInfo.review_decision === "CHANGES_REQUESTED" ? "text-orange-400"
+                    : "text-zinc-500"
+                  }`}>
+                    {prInfo.review_decision === "APPROVED" ? "Approved"
+                     : prInfo.review_decision === "CHANGES_REQUESTED" ? "Changes requested"
+                     : "Review required"}
+                  </span>
+                )}
+                {prInfo.check_status && (
+                  <span className={`flex items-center gap-1 text-[10px] ${
+                    prInfo.check_status === "SUCCESS" ? "text-green-400"
+                    : prInfo.check_status === "FAILURE" ? "text-red-400"
+                    : "text-yellow-400"
+                  }`}>
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      prInfo.check_status === "SUCCESS" ? "bg-green-400"
+                      : prInfo.check_status === "FAILURE" ? "bg-red-400"
+                      : "bg-yellow-400"
+                    }`} />
+                    {prInfo.check_status === "SUCCESS" ? "Checks passed"
+                     : prInfo.check_status === "FAILURE" ? "Checks failed"
+                     : "Checks running"}
+                  </span>
+                )}
+              </div>
+              {(prInfo.additions > 0 || prInfo.deletions > 0) && (
+                <div className="mt-0.5 text-[10px] text-zinc-600">
+                  <span className="text-emerald-400">+{prInfo.additions}</span>
+                  {" "}
+                  <span className="text-red-400">-{prInfo.deletions}</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

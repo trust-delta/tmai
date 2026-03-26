@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import type { LaneLayout } from "./types";
 import { ROW_H, COMMIT_R, BRANCH_R, LEFT_PAD } from "./layout";
 import { laneColor, laneDimColor, laneBgColor } from "./colors";
-import { api } from "@/lib/api";
+import { api, type PrInfo } from "@/lib/api";
 
 interface LaneGraphProps {
   layout: LaneLayout;
@@ -10,6 +10,7 @@ interface LaneGraphProps {
   repoPath: string;
   defaultBranch: string;
   collapsedLanes: Set<string>;
+  prMap: Record<string, PrInfo>;
   onSelectBranch: (branch: string) => void;
   onToggleCollapse: (branch: string) => void;
 }
@@ -27,6 +28,7 @@ export function LaneGraph({
   repoPath,
   defaultBranch,
   collapsedLanes,
+  prMap,
   onSelectBranch,
   onToggleCollapse,
 }: LaneGraphProps) {
@@ -466,6 +468,79 @@ export function LaneGraph({
                   {row.refs.filter(r => !r.startsWith("origin/")).slice(0, 2).join(", ")}
                 </text>
               )}
+              {/* PR badge for branch tips */}
+              {isTip && (() => {
+                const branch = lanes[row.lane]?.branch;
+                const pr = branch ? prMap[branch] : undefined;
+                if (!pr) return null;
+
+                // Position after the subject text
+                const badgeX = labelX + 60 + Math.min(row.subject.length, 60) * 6.2 + (row.refs.length > 0 ? 80 : 8);
+
+                return (
+                  <g>
+                    {/* PR number + status */}
+                    <a href={pr.url} target="_blank" rel="noopener noreferrer">
+                      <rect
+                        x={badgeX}
+                        y={row.y - 8}
+                        width={pr.is_draft ? 70 : 55}
+                        height={16}
+                        rx={4}
+                        fill={pr.is_draft ? "rgba(161,161,170,0.1)" : "rgba(34,197,94,0.1)"}
+                        stroke={pr.is_draft ? "rgba(161,161,170,0.2)" : "rgba(34,197,94,0.2)"}
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={badgeX + 4}
+                        y={row.y + 1}
+                        fill={pr.is_draft ? "rgba(161,161,170,0.6)" : "rgb(74,222,128)"}
+                        fontSize="10"
+                        fontWeight="500"
+                        dominantBaseline="middle"
+                        style={{ userSelect: "none" }}
+                      >
+                        {pr.is_draft ? `#${pr.number} draft` : `#${pr.number}`}
+                      </text>
+                    </a>
+
+                    {/* Review decision badge */}
+                    {pr.review_decision && (
+                      <text
+                        x={badgeX + (pr.is_draft ? 74 : 59)}
+                        y={row.y + 1}
+                        fontSize="10"
+                        dominantBaseline="middle"
+                        fill={
+                          pr.review_decision === "APPROVED" ? "rgb(74,222,128)"
+                          : pr.review_decision === "CHANGES_REQUESTED" ? "rgb(251,146,60)"
+                          : "rgba(161,161,170,0.5)"
+                        }
+                        style={{ userSelect: "none" }}
+                      >
+                        {pr.review_decision === "APPROVED" ? "\u2714"
+                         : pr.review_decision === "CHANGES_REQUESTED" ? "\u2716"
+                         : "\u25CB"}
+                      </text>
+                    )}
+
+                    {/* CI status badge */}
+                    {pr.check_status && (
+                      <circle
+                        cx={badgeX + (pr.is_draft ? 74 : 59) + (pr.review_decision ? 16 : 0)}
+                        cy={row.y}
+                        r={4}
+                        fill={
+                          pr.check_status === "SUCCESS" ? "rgb(34,197,94)"
+                          : pr.check_status === "FAILURE" ? "rgb(239,68,68)"
+                          : "rgb(234,179,8)"
+                        }
+                        fillOpacity={0.8}
+                      />
+                    )}
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
