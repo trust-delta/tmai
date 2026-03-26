@@ -157,9 +157,14 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
                 return CheckStatus::Failure;
             }
             let has_pending = checks.iter().any(|c| {
-                c.status.as_deref() == Some("IN_PROGRESS")
-                    || c.status.as_deref() == Some("QUEUED")
-                    || c.conclusion.is_none()
+                matches!(
+                    c.status.as_deref(),
+                    Some("IN_PROGRESS")
+                        | Some("QUEUED")
+                        | Some("WAITING")
+                        | Some("PENDING")
+                        | Some("REQUESTED")
+                )
             });
             if has_pending {
                 return CheckStatus::Pending;
@@ -312,9 +317,12 @@ fn compute_rollup(checks: &[CiCheck]) -> CheckStatus {
     if has_failure {
         return CheckStatus::Failure;
     }
-    let has_pending = checks
-        .iter()
-        .any(|c| c.status == "in_progress" || c.status == "queued" || c.conclusion.is_none());
+    let has_pending = checks.iter().any(|c| {
+        matches!(
+            c.status.as_str(),
+            "in_progress" | "queued" | "waiting" | "pending" | "requested"
+        )
+    });
     if has_pending {
         return CheckStatus::Pending;
     }

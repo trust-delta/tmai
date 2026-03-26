@@ -228,8 +228,8 @@ export function ActionPanel({
                 )}
               </div>
               <div className="mt-0.5 truncate text-zinc-400">{prInfo.title}</div>
-              <div className="mt-1 flex items-center gap-2">
-                {prInfo.review_decision && (
+              {prInfo.review_decision && (
+                <div className="mt-1 flex items-center gap-2">
                   <span className={`text-[10px] ${
                     prInfo.review_decision === "APPROVED" ? "text-green-400"
                     : prInfo.review_decision === "CHANGES_REQUESTED" ? "text-orange-400"
@@ -239,24 +239,8 @@ export function ActionPanel({
                      : prInfo.review_decision === "CHANGES_REQUESTED" ? "Changes requested"
                      : "Review required"}
                   </span>
-                )}
-                {prInfo.check_status && (
-                  <span className={`flex items-center gap-1 text-[10px] ${
-                    prInfo.check_status === "SUCCESS" ? "text-green-400"
-                    : prInfo.check_status === "FAILURE" ? "text-red-400"
-                    : "text-yellow-400"
-                  }`}>
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${
-                      prInfo.check_status === "SUCCESS" ? "bg-green-400"
-                      : prInfo.check_status === "FAILURE" ? "bg-red-400"
-                      : "bg-yellow-400"
-                    }`} />
-                    {prInfo.check_status === "SUCCESS" ? "Checks passed"
-                     : prInfo.check_status === "FAILURE" ? "Checks failed"
-                     : "Checks running"}
-                  </span>
-                )}
-              </div>
+                </div>
+              )}
               {(prInfo.additions > 0 || prInfo.deletions > 0) && (
                 <div className="mt-0.5 text-[10px] text-zinc-600">
                   <span className="text-emerald-400">+{prInfo.additions}</span>
@@ -335,7 +319,30 @@ export function ActionPanel({
             </div>
           )}
           {ciSummary && ciSummary.checks.length === 0 && !ciLoading && (
-            <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
+            prInfo?.check_status ? (
+              <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                <span className={`inline-block h-2 w-2 rounded-full ${
+                  prInfo.check_status === "SUCCESS" ? "bg-green-400"
+                  : prInfo.check_status === "FAILURE" ? "bg-red-400"
+                  : prInfo.check_status === "PENDING" ? "bg-yellow-400"
+                  : "bg-zinc-600"
+                }`} />
+                <span className={
+                  prInfo.check_status === "SUCCESS" ? "text-green-400"
+                  : prInfo.check_status === "FAILURE" ? "text-red-400"
+                  : prInfo.check_status === "PENDING" ? "text-yellow-400"
+                  : "text-zinc-600"
+                }>
+                  {prInfo.check_status === "SUCCESS" ? "CI passed"
+                   : prInfo.check_status === "FAILURE" ? "CI failed"
+                   : prInfo.check_status === "PENDING" ? "CI running"
+                   : "CI unknown"}
+                </span>
+                <span className="text-[10px] text-zinc-600">(from PR)</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
+            )
           )}
           {/* Linked issues */}
           {(() => {
