@@ -353,6 +353,8 @@ export interface PrInfo {
   is_draft: boolean;
   additions: number;
   deletions: number;
+  comments: number;
+  reviews: number;
 }
 
 export interface CiCheck {

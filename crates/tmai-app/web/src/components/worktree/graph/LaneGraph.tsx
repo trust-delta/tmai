@@ -538,6 +538,20 @@ export function LaneGraph({
                         fillOpacity={0.8}
                       />
                     )}
+
+                    {/* Review count */}
+                    {pr.reviews > 0 && (
+                      <text
+                        x={badgeX + (pr.is_draft ? 74 : 59) + (pr.review_decision ? 16 : 0) + (pr.check_status ? 14 : 0)}
+                        y={row.y + 1}
+                        fill="rgba(161,161,170,0.5)"
+                        fontSize="9"
+                        dominantBaseline="middle"
+                        style={{ userSelect: "none" }}
+                      >
+                        {pr.reviews}r
+                      </text>
+                    )}
                   </g>
                 );
               })()}

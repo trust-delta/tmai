@@ -40,13 +40,14 @@ export function BranchGraph({
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
   const [issues, setIssues] = useState<IssueInfo[]>([]);
+  const [graphLimit, setGraphLimit] = useState(200);
 
   // Fetch branch list and graph data in parallel
   const fetchData = useCallback(async () => {
     try {
       const [branchResult, graphResult, prResult, issueResult] = await Promise.all([
         api.listBranches(projectPath),
-        api.gitGraph(projectPath, 100),
+        api.gitGraph(projectPath, graphLimit),
         api.listPrs(projectPath).catch(() => ({})),
         api.listIssues(projectPath).catch(() => []),
       ]);
@@ -57,7 +58,7 @@ export function BranchGraph({
     } catch (e) {
       console.error(e);
     }
-  }, [projectPath]);
+  }, [projectPath, graphLimit]);
 
   // Refresh branches (also refetches graph)
   const refreshBranches = useCallback(() => {
@@ -255,6 +256,12 @@ export function BranchGraph({
             {branchCount} branch{branchCount !== 1 ? "es" : ""}
             {" \u00B7 "}
             {projectWorktrees.filter((w) => !w.is_main).length} worktree{projectWorktrees.filter((w) => !w.is_main).length !== 1 ? "s" : ""}
+            {graphData && (
+              <>
+                {" \u00B7 "}
+                {graphData.commits.length} commit{graphData.commits.length !== 1 ? "s" : ""}
+              </>
+            )}
           </span>
           <div className="flex-1" />
           {branches?.last_fetch && (
@@ -294,6 +301,18 @@ export function BranchGraph({
               {graphData?.commits.length === 0
                 ? "No commits found"
                 : "Only the default branch exists"}
+            </div>
+          )}
+
+          {/* Truncation indicator */}
+          {graphData && graphData.commits.length >= graphLimit && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => setGraphLimit(prev => prev + 200)}
+                className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+              >
+                Load more commits ({graphLimit} shown)
+              </button>
             </div>
           )}
 

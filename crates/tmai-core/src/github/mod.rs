@@ -1,11 +1,40 @@
 //! GitHub integration via `gh` CLI — fetches PR, CI, and issue data.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
+use tokio::sync::RwLock;
 
 /// Timeout for gh CLI commands
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// TTL for cached GitHub data
+const CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Cached result with TTL
+struct CacheEntry<T> {
+    data: T,
+    fetched_at: Instant,
+}
+
+/// Global cache for GitHub API results (gh CLI is slow, ~1-10s per call)
+struct GhCache {
+    prs: RwLock<HashMap<String, CacheEntry<HashMap<String, PrInfo>>>>,
+    issues: RwLock<HashMap<String, CacheEntry<Vec<IssueInfo>>>>,
+}
+
+impl GhCache {
+    fn new() -> Self {
+        Self {
+            prs: RwLock::new(HashMap::new()),
+            issues: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+/// Module-level cache instance
+static GH_CACHE: LazyLock<GhCache> = LazyLock::new(GhCache::new);
 
 /// PR review decision
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -42,6 +71,10 @@ pub struct PrInfo {
     pub is_draft: bool,
     pub additions: u64,
     pub deletions: u64,
+    /// Conversation comments count
+    pub comments: u64,
+    /// Review count
+    pub reviews: u64,
 }
 
 /// Raw PR data from gh CLI JSON output
@@ -58,6 +91,8 @@ struct GhPrEntry {
     is_draft: bool,
     additions: Option<u64>,
     deletions: Option<u64>,
+    comments: Option<Vec<serde_json::Value>>,
+    reviews: Option<Vec<serde_json::Value>>,
 }
 
 /// Individual check run from statusCheckRollup
@@ -67,10 +102,20 @@ struct GhCheckRun {
     status: Option<String>,
 }
 
-/// Fetch open PRs for a repository using gh CLI
+/// Fetch open PRs for a repository using gh CLI (cached with 30s TTL)
 ///
 /// Returns a map of head_branch -> PrInfo for quick lookup.
 pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
+    // Check cache first
+    {
+        let cache_read = GH_CACHE.prs.read().await;
+        if let Some(entry) = cache_read.get(repo_dir) {
+            if entry.fetched_at.elapsed() < CACHE_TTL {
+                return Some(entry.data.clone());
+            }
+        }
+    }
+
     let output = tokio::time::timeout(
         GH_TIMEOUT,
         Command::new("gh")
@@ -80,7 +125,7 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
                 "--state",
                 "open",
                 "--json",
-                "number,title,state,headRefName,url,reviewDecision,statusCheckRollup,isDraft,additions,deletions",
+                "number,title,state,headRefName,url,reviewDecision,statusCheckRollup,isDraft,additions,deletions,comments,reviews",
                 "--limit",
                 "50",
             ])
@@ -140,8 +185,22 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
             is_draft: entry.is_draft,
             additions: entry.additions.unwrap_or(0),
             deletions: entry.deletions.unwrap_or(0),
+            comments: entry.comments.map(|c| c.len() as u64).unwrap_or(0),
+            reviews: entry.reviews.map(|r| r.len() as u64).unwrap_or(0),
         };
         map.insert(entry.head_ref_name, pr);
+    }
+
+    // Store in cache
+    {
+        let mut cache_write = GH_CACHE.prs.write().await;
+        cache_write.insert(
+            repo_dir.to_string(),
+            CacheEntry {
+                data: map.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
     }
 
     Some(map)
@@ -289,8 +348,18 @@ struct GhIssueEntry {
     labels: Vec<IssueLabel>,
 }
 
-/// Fetch open issues for a repository using gh CLI
+/// Fetch open issues for a repository using gh CLI (cached with 30s TTL)
 pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
+    // Check cache first
+    {
+        let cache_read = GH_CACHE.issues.read().await;
+        if let Some(entry) = cache_read.get(repo_dir) {
+            if entry.fetched_at.elapsed() < CACHE_TTL {
+                return Some(entry.data.clone());
+            }
+        }
+    }
+
     let output = tokio::time::timeout(
         GH_TIMEOUT,
         Command::new("gh")
@@ -317,7 +386,7 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
 
     let entries: Vec<GhIssueEntry> = serde_json::from_slice(&output.stdout).ok()?;
 
-    let issues = entries
+    let issues: Vec<IssueInfo> = entries
         .into_iter()
         .map(|e| IssueInfo {
             number: e.number,
@@ -327,6 +396,18 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
             labels: e.labels,
         })
         .collect();
+
+    // Store in cache
+    {
+        let mut cache_write = GH_CACHE.issues.write().await;
+        cache_write.insert(
+            repo_dir.to_string(),
+            CacheEntry {
+                data: issues.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+    }
 
     Some(issues)
 }

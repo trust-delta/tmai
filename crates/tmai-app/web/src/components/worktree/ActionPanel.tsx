@@ -264,6 +264,16 @@ export function ActionPanel({
                   <span className="text-red-400">-{prInfo.deletions}</span>
                 </div>
               )}
+              {(prInfo.reviews > 0 || prInfo.comments > 0) && (
+                <div className="mt-0.5 flex items-center gap-2 text-[10px] text-zinc-600">
+                  {prInfo.reviews > 0 && (
+                    <span>{prInfo.reviews} review{prInfo.reviews !== 1 ? "s" : ""}</span>
+                  )}
+                  {prInfo.comments > 0 && (
+                    <span>{prInfo.comments} comment{prInfo.comments !== 1 ? "s" : ""}</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {/* CI checks */}
@@ -329,8 +339,13 @@ export function ActionPanel({
           )}
           {/* Linked issues */}
           {(() => {
-            // Extract issue numbers from branch name
+            // Extract issue numbers from branch name and PR title
             const nums = extractIssueNumbers(activeNode.name);
+            if (prInfo?.title) {
+              for (const n of extractIssueRefs(prInfo.title)) {
+                if (!nums.includes(n)) nums.push(n);
+              }
+            }
             const linked = issues.filter(i => nums.includes(i.number));
             if (linked.length === 0) return null;
             return (
@@ -629,6 +644,24 @@ function extractIssueNumbers(branch: string): number[] {
     if (!isNaN(n) && n > 0 && n < 100000) {
       nums.push(n);
     }
+  }
+  return nums;
+}
+
+/// Extract issue references from text (e.g., "Fixes #42", "closes #7", "resolves #123")
+function extractIssueRefs(text: string): number[] {
+  const nums: number[] = [];
+  const pattern = /(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s*#(\d+)/gi;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const n = parseInt(match[1], 10);
+    if (n > 0 && n < 100000) nums.push(n);
+  }
+  // Also match standalone #N references
+  const hashPattern = /#(\d+)/g;
+  while ((match = hashPattern.exec(text)) !== null) {
+    const n = parseInt(match[1], 10);
+    if (n > 0 && n < 100000 && !nums.includes(n)) nums.push(n);
   }
   return nums;
 }
