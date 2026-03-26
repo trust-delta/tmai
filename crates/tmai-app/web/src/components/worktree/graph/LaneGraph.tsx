@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import type { LaneLayout } from "./types";
-import { ROW_H, COMMIT_R, BRANCH_R, LEFT_PAD, HEADER_H } from "./layout";
+import { ROW_H, COMMIT_R, BRANCH_R, LEFT_PAD } from "./layout";
 import { laneColor, laneDimColor, laneBgColor } from "./colors";
 import { api, type PrInfo } from "@/lib/api";
 
@@ -280,8 +280,8 @@ export function LaneGraph({
         </svg>
       </div>
 
-      {/* Right: HTML commit labels — expands to content width */}
-      <div className="shrink-0">
+      {/* Right: HTML commit labels — absolute positioned to match SVG Y coords */}
+      <div className="relative shrink-0" style={{ minHeight: svgHeight }}>
         {rows.map(row => {
           const isTip = branchTipLanes.has(row.sha);
           const isHovered = hoveredSha === row.sha;
@@ -294,8 +294,8 @@ export function LaneGraph({
             return (
               <div
                 key={row.sha}
-                className="flex cursor-pointer items-center gap-2 px-2"
-                style={{ height: ROW_H, marginTop: row.y === HEADER_H ? HEADER_H - ROW_H : 0 }}
+                className="absolute flex cursor-pointer items-center gap-2 px-2"
+                style={{ height: ROW_H, top: row.y - ROW_H / 2, left: 0, right: 0 }}
                 onClick={() => onToggleCollapse(branchForLane(row.lane))}
               >
                 <span className="text-[10px]" style={{ color, opacity: 0.5 }}>{"\u22EE"}</span>
@@ -313,10 +313,10 @@ export function LaneGraph({
           return (
             <div
               key={row.sha}
-              className={`flex cursor-pointer items-center gap-2 px-2 transition-colors ${
+              className={`absolute flex cursor-pointer items-center gap-2 px-2 transition-colors ${
                 isHovered ? "bg-white/[0.02]" : ""
               } ${isExpanded ? "bg-cyan-500/[0.04]" : ""}`}
-              style={{ height: ROW_H }}
+              style={{ height: ROW_H, top: row.y - ROW_H / 2, left: 0, right: 0 }}
               onMouseEnter={() => setHoveredSha(row.sha)}
               onMouseLeave={() => setHoveredSha(null)}
               onClick={() => handleCommitClick(row.sha, row.lane)}
