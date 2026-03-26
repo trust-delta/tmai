@@ -94,6 +94,7 @@ impl WebServer {
             .route("/git/fetch", post(api::git_fetch))
             .route("/git/pull", post(api::git_pull))
             .route("/github/prs", get(api::list_prs))
+            .route("/github/checks", get(api::list_checks))
             .route("/git/merge", post(api::git_merge))
             .route("/projects", get(api::get_projects).post(api::add_project))
             .route("/projects/remove", post(api::remove_project))

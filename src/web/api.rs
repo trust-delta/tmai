@@ -1786,6 +1786,28 @@ pub async fn list_prs(
         .map(Json)
 }
 
+/// Query params for CI checks
+#[derive(Debug, Deserialize)]
+pub struct ChecksQueryParams {
+    pub repo: String,
+    pub branch: String,
+}
+
+/// GET /api/github/checks — list CI checks for a branch
+pub async fn list_checks(
+    axum::extract::Query(params): axum::extract::Query<ChecksQueryParams>,
+) -> Result<Json<tmai_core::github::CiSummary>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_checks(repo_dir, &params.branch)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list checks"))
+        .map(Json)
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)

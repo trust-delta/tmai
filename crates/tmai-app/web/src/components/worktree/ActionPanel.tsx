@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { api, type WorktreeDiffResponse, type BranchListResponse, type PrInfo } from "@/lib/api";
+import { useState, useCallback, useEffect } from "react";
+import { api, type WorktreeDiffResponse, type BranchListResponse, type PrInfo, type CiSummary } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { DiffViewer } from "./DiffViewer";
 
@@ -36,6 +36,21 @@ export function ActionPanel({
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [newWtName, setNewWtName] = useState("");
   const [newWtError, setNewWtError] = useState("");
+  const [ciSummary, setCiSummary] = useState<CiSummary | null>(null);
+  const [ciLoading, setCiLoading] = useState(false);
+  const [ciExpanded, setCiExpanded] = useState(false);
+
+  // Fetch CI checks when branch changes
+  useEffect(() => {
+    setCiSummary(null);
+    setCiExpanded(false);
+    if (!activeNode.name) return;
+    setCiLoading(true);
+    api.listChecks(projectPath, activeNode.name)
+      .then(setCiSummary)
+      .catch(() => setCiSummary(null))
+      .finally(() => setCiLoading(false));
+  }, [activeNode.name, projectPath]);
 
   // Focus parent or HEAD after deletion
   const focusAfterDelete = useCallback(() => {
@@ -248,6 +263,67 @@ export function ActionPanel({
                 </div>
               )}
             </div>
+          )}
+          {/* CI checks */}
+          {ciLoading && (
+            <div className="mt-2 text-[11px] text-zinc-600">Loading checks...</div>
+          )}
+          {ciSummary && ciSummary.checks.length > 0 && (
+            <div className="mt-2">
+              <button
+                onClick={() => setCiExpanded(v => !v)}
+                className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                <span className={`inline-block h-2 w-2 rounded-full ${
+                  ciSummary.rollup === "SUCCESS" ? "bg-green-400"
+                  : ciSummary.rollup === "FAILURE" ? "bg-red-400"
+                  : ciSummary.rollup === "PENDING" ? "bg-yellow-400"
+                  : "bg-zinc-600"
+                }`} />
+                <span>
+                  CI {ciSummary.rollup === "SUCCESS" ? "passed"
+                    : ciSummary.rollup === "FAILURE" ? "failed"
+                    : ciSummary.rollup === "PENDING" ? "running"
+                    : "unknown"}
+                </span>
+                <span className="text-[10px] text-zinc-600">
+                  ({ciSummary.checks.length} check{ciSummary.checks.length !== 1 ? "s" : ""})
+                </span>
+                <span className="text-[10px]">{ciExpanded ? "\u25BE" : "\u25B8"}</span>
+              </button>
+              {ciExpanded && (
+                <div className="mt-1.5 flex flex-col gap-1">
+                  {ciSummary.checks.map((check) => (
+                    <a
+                      key={check.name + check.url}
+                      href={check.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded bg-white/[0.03] px-2 py-1 text-[11px] hover:bg-white/[0.06] transition-colors"
+                    >
+                      <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                        check.conclusion === "success" ? "bg-green-400"
+                        : check.conclusion === "failure" ? "bg-red-400"
+                        : check.status === "in_progress" || check.status === "queued" ? "bg-yellow-400"
+                        : "bg-zinc-600"
+                      }`} />
+                      <span className="truncate text-zinc-300">{check.name}</span>
+                      <span className={`ml-auto shrink-0 text-[10px] ${
+                        check.conclusion === "success" ? "text-green-400"
+                        : check.conclusion === "failure" ? "text-red-400"
+                        : check.status === "in_progress" ? "text-yellow-400"
+                        : "text-zinc-600"
+                      }`}>
+                        {check.conclusion ?? check.status}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {ciSummary && ciSummary.checks.length === 0 && !ciLoading && (
+            <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
           )}
         </div>
 

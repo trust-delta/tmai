@@ -355,6 +355,21 @@ export interface PrInfo {
   deletions: number;
 }
 
+export interface CiCheck {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface CiSummary {
+  branch: string;
+  checks: CiCheck[];
+  rollup: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN";
+}
+
 export interface SpawnResponse {
   session_id: string;
   pid: number;
@@ -521,6 +536,8 @@ export const api = {
     ),
   listPrs: (repoPath: string) =>
     apiFetch<Record<string, PrInfo>>(`/github/prs?repo=${encodeURIComponent(repoPath)}`),
+  listChecks: (repoPath: string, branch: string) =>
+    apiFetch<CiSummary>(`/github/checks?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",

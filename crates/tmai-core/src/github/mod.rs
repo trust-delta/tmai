@@ -1,3 +1,5 @@
+//! GitHub integration via `gh` CLI — fetches PR, CI, and issue data.
+
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::process::Command;
@@ -143,4 +145,119 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
     }
 
     Some(map)
+}
+
+/// A single CI check / workflow run
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CiCheck {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub url: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+/// CI checks summary for a branch
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CiSummary {
+    pub branch: String,
+    pub checks: Vec<CiCheck>,
+    pub rollup: CheckStatus,
+}
+
+/// Raw workflow run from `gh run list`
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct GhRunEntry {
+    name: String,
+    status: String,
+    conclusion: Option<String>,
+    url: String,
+    head_branch: String,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+}
+
+/// Fetch CI checks for a specific branch
+///
+/// Uses `gh run list --branch <branch>` to get recent workflow runs.
+pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
+    if branch.is_empty() || branch.starts_with('-') {
+        return None;
+    }
+
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "run",
+                "list",
+                "--branch",
+                branch,
+                "--json",
+                "name,status,conclusion,url,headBranch,createdAt,updatedAt",
+                "--limit",
+                "10",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let entries: Vec<GhRunEntry> = serde_json::from_slice(&output.stdout).ok()?;
+
+    // Deduplicate by workflow name (keep most recent = first in list)
+    let mut seen = std::collections::HashSet::new();
+    let checks: Vec<CiCheck> = entries
+        .into_iter()
+        .filter(|e| seen.insert(e.name.clone()))
+        .map(|e| CiCheck {
+            name: e.name,
+            status: e.status,
+            conclusion: e.conclusion,
+            url: e.url,
+            started_at: e.created_at,
+            completed_at: e.updated_at,
+        })
+        .collect();
+
+    // Compute rollup from individual checks
+    let rollup = compute_rollup(&checks);
+
+    Some(CiSummary {
+        branch: branch.to_string(),
+        checks,
+        rollup,
+    })
+}
+
+/// Compute rollup status from a list of checks
+fn compute_rollup(checks: &[CiCheck]) -> CheckStatus {
+    if checks.is_empty() {
+        return CheckStatus::Unknown;
+    }
+    let has_failure = checks.iter().any(|c| {
+        matches!(
+            c.conclusion.as_deref(),
+            Some("failure") | Some("timed_out") | Some("cancelled")
+        )
+    });
+    if has_failure {
+        return CheckStatus::Failure;
+    }
+    let has_pending = checks
+        .iter()
+        .any(|c| c.status == "in_progress" || c.status == "queued" || c.conclusion.is_none());
+    if has_pending {
+        return CheckStatus::Pending;
+    }
+    CheckStatus::Success
 }
