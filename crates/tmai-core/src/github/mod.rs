@@ -261,3 +261,104 @@ fn compute_rollup(checks: &[CiCheck]) -> CheckStatus {
     }
     CheckStatus::Success
 }
+
+/// A GitHub issue label
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IssueLabel {
+    pub name: String,
+    pub color: String,
+}
+
+/// A GitHub issue
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IssueInfo {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub url: String,
+    pub labels: Vec<IssueLabel>,
+}
+
+/// Raw issue from `gh issue list`
+#[derive(Debug, serde::Deserialize)]
+struct GhIssueEntry {
+    number: u64,
+    title: String,
+    state: String,
+    url: String,
+    labels: Vec<IssueLabel>,
+}
+
+/// Fetch open issues for a repository using gh CLI
+pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "issue",
+                "list",
+                "--state",
+                "open",
+                "--json",
+                "number,title,state,url,labels",
+                "--limit",
+                "50",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let entries: Vec<GhIssueEntry> = serde_json::from_slice(&output.stdout).ok()?;
+
+    let issues = entries
+        .into_iter()
+        .map(|e| IssueInfo {
+            number: e.number,
+            title: e.title,
+            state: e.state,
+            url: e.url,
+            labels: e.labels,
+        })
+        .collect();
+
+    Some(issues)
+}
+
+/// Extract issue numbers from a branch name
+///
+/// Matches patterns like: `fix/123-desc`, `feat/42`, `issue-7`, `gh-99`
+pub fn extract_issue_numbers(branch: &str) -> Vec<u64> {
+    let mut numbers = Vec::new();
+    for part in branch.split(&['/', '-', '_'][..]) {
+        if let Ok(n) = part.parse::<u64>() {
+            if n > 0 && n < 100_000 {
+                numbers.push(n);
+            }
+        }
+    }
+    numbers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_issue_numbers() {
+        assert_eq!(extract_issue_numbers("fix/123-login-bug"), vec![123]);
+        assert_eq!(extract_issue_numbers("feat/42"), vec![42]);
+        assert_eq!(extract_issue_numbers("issue-7-auth"), vec![7]);
+        assert_eq!(extract_issue_numbers("gh-99"), vec![99]);
+        assert_eq!(extract_issue_numbers("main"), Vec::<u64>::new());
+        assert_eq!(extract_issue_numbers("feat/no-number"), Vec::<u64>::new());
+        // Ignore zero and very large numbers
+        assert_eq!(extract_issue_numbers("fix/0-test"), Vec::<u64>::new());
+    }
+}

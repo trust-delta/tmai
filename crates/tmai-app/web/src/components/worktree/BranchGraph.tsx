@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo } from "@/lib/api";
+import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
@@ -39,18 +39,21 @@ export function BranchGraph({
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
+  const [issues, setIssues] = useState<IssueInfo[]>([]);
 
   // Fetch branch list and graph data in parallel
   const fetchData = useCallback(async () => {
     try {
-      const [branchResult, graphResult, prResult] = await Promise.all([
+      const [branchResult, graphResult, prResult, issueResult] = await Promise.all([
         api.listBranches(projectPath),
         api.gitGraph(projectPath, 100),
-        api.listPrs(projectPath).catch(() => ({})),  // graceful fallback if gh not available
+        api.listPrs(projectPath).catch(() => ({})),
+        api.listIssues(projectPath).catch(() => []),
       ]);
       setBranches(branchResult);
       setGraphData(graphResult);
       setPrMap(prResult);
+      setIssues(issueResult);
     } catch (e) {
       console.error(e);
     }
@@ -331,6 +334,7 @@ export function BranchGraph({
             nodeDepth={nodeDepth}
             branchDepthWarning={BRANCH_DEPTH_WARNING}
             prInfo={prMap[activeNode.name]}
+            issues={issues}
             onSelectWorktree={onSelectWorktree}
             onRefresh={refreshBranches}
             onSelectNode={setSelectedNode}

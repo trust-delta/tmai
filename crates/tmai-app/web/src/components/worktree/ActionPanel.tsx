@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { api, type WorktreeDiffResponse, type BranchListResponse, type PrInfo, type CiSummary } from "@/lib/api";
+import { api, type WorktreeDiffResponse, type BranchListResponse, type PrInfo, type CiSummary, type IssueInfo } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { DiffViewer } from "./DiffViewer";
 
@@ -10,6 +10,7 @@ interface ActionPanelProps {
   nodeDepth: Map<string, number>;
   branchDepthWarning: number;
   prInfo: PrInfo | undefined;
+  issues: IssueInfo[];
   onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
   onRefresh: () => void;
   onSelectNode: (name: string | null) => void;
@@ -23,6 +24,7 @@ export function ActionPanel({
   nodeDepth,
   branchDepthWarning,
   prInfo,
+  issues,
   onSelectWorktree,
   onRefresh,
   onSelectNode,
@@ -325,6 +327,48 @@ export function ActionPanel({
           {ciSummary && ciSummary.checks.length === 0 && !ciLoading && (
             <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
           )}
+          {/* Linked issues */}
+          {(() => {
+            // Extract issue numbers from branch name
+            const nums = extractIssueNumbers(activeNode.name);
+            const linked = issues.filter(i => nums.includes(i.number));
+            if (linked.length === 0) return null;
+            return (
+              <div className="mt-2">
+                <div className="text-[11px] text-zinc-500 mb-1">Linked issues</div>
+                <div className="flex flex-col gap-1">
+                  {linked.map(issue => (
+                    <a
+                      key={issue.number}
+                      href={issue.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-1.5 rounded bg-white/[0.03] px-2 py-1.5 text-[11px] hover:bg-white/[0.06] transition-colors"
+                    >
+                      <span className="shrink-0 text-green-400">#{issue.number}</span>
+                      <span className="truncate text-zinc-300">{issue.title}</span>
+                      {issue.labels.length > 0 && (
+                        <div className="ml-auto flex shrink-0 gap-1">
+                          {issue.labels.slice(0, 2).map(label => (
+                            <span
+                              key={label.name}
+                              className="rounded px-1 py-0.5 text-[9px]"
+                              style={{
+                                backgroundColor: `#${label.color}22`,
+                                color: `#${label.color}`,
+                              }}
+                            >
+                              {label.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Action buttons */}
@@ -575,4 +619,16 @@ export function ActionPanel({
       </div>
     </div>
   );
+}
+
+/// Extract issue numbers from a branch name (e.g., "fix/123-desc" → [123])
+function extractIssueNumbers(branch: string): number[] {
+  const nums: number[] = [];
+  for (const part of branch.split(/[/\-_]/)) {
+    const n = parseInt(part, 10);
+    if (!isNaN(n) && n > 0 && n < 100000) {
+      nums.push(n);
+    }
+  }
+  return nums;
 }

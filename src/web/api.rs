@@ -1808,6 +1808,21 @@ pub async fn list_checks(
         .map(Json)
 }
 
+/// GET /api/github/issues — list open issues for a repository
+pub async fn list_issues(
+    axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
+) -> Result<Json<Vec<tmai_core::github::IssueInfo>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_issues(repo_dir)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list issues"))
+        .map(Json)
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)
