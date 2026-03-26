@@ -1894,14 +1894,18 @@ pub struct MdTreeParams {
     pub root: String,
 }
 
-/// Entry in the markdown file tree
+/// Entry in the file tree
 #[derive(Debug, Serialize)]
 pub struct MdTreeEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    pub openable: bool,
     pub children: Option<Vec<MdTreeEntry>>,
 }
+
+/// File extensions that can be opened (read/write) in the markdown panel
+const OPENABLE_EXTENSIONS: &[&str] = &["md", "json", "toml", "txt", "yaml", "yml"];
 
 /// GET /api/files/md-tree — list markdown files in a directory tree
 pub async fn md_tree(
@@ -1916,7 +1920,7 @@ pub async fn md_tree(
     Ok(Json(entries))
 }
 
-/// Recursively scan a directory for markdown files (max depth 5)
+/// Recursively scan a directory for all files (max depth 5)
 fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>, String> {
     if depth > 5 {
         return Ok(Vec::new());
@@ -1935,7 +1939,7 @@ fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>,
         if name.starts_with('.') && name != ".claude" {
             continue;
         }
-        // Skip node_modules, target, dist
+        // Skip bulky directories
         if matches!(name.as_str(), "node_modules" | "target" | "dist" | ".git") {
             continue;
         }
@@ -1947,14 +1951,18 @@ fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>,
                     name,
                     path: path.to_string_lossy().to_string(),
                     is_dir: true,
+                    openable: false,
                     children: Some(children),
                 });
             }
-        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let openable = OPENABLE_EXTENSIONS.contains(&ext);
             entries.push(MdTreeEntry {
                 name,
                 path: path.to_string_lossy().to_string(),
                 is_dir: false,
+                openable,
                 children: None,
             });
         }

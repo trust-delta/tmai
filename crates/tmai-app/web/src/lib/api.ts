@@ -390,6 +390,7 @@ export interface MdTreeEntry {
   name: string;
   path: string;
   is_dir: boolean;
+  openable: boolean;
   children: MdTreeEntry[] | null;
 }
 

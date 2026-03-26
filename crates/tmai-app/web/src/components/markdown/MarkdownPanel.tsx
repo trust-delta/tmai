@@ -179,7 +179,18 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
   );
 }
 
-// Recursive tree node component for displaying markdown file tree
+/// Get a short extension label for display
+function extLabel(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    md: "MD", json: "JS", toml: "TM", txt: "TX", yaml: "YM", yml: "YM",
+    rs: "RS", ts: "TS", tsx: "TX", js: "JS", jsx: "JX", css: "CS",
+    html: "HT", lock: "LK", sh: "SH", py: "PY", go: "GO",
+  };
+  return map[ext] ?? ext.slice(0, 2).toUpperCase();
+}
+
+// Recursive tree node component
 function TreeNode({
   entries,
   selectedFile,
@@ -220,6 +231,19 @@ function TreeNode({
           );
         }
         const isSelected = selectedFile === entry.path;
+        if (!entry.openable) {
+          // Non-openable file: dimmed, not clickable
+          return (
+            <div
+              key={entry.path}
+              className="flex w-full items-center gap-1.5 px-2 py-0.5 text-[11px] text-zinc-700"
+              style={{ paddingLeft: 8 + depth * 12 }}
+            >
+              <span className="shrink-0 text-[9px] text-zinc-700">{extLabel(entry.name)}</span>
+              <span className="truncate">{entry.name}</span>
+            </div>
+          );
+        }
         return (
           <button
             key={entry.path}
@@ -231,7 +255,9 @@ function TreeNode({
             }`}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
-            <span className="shrink-0 text-[10px] text-zinc-600">MD</span>
+            <span className={`shrink-0 text-[10px] ${isSelected ? "text-blue-500" : "text-zinc-500"}`}>
+              {extLabel(entry.name)}
+            </span>
             <span className="truncate">{entry.name}</span>
           </button>
         );
@@ -240,10 +266,10 @@ function TreeNode({
   );
 }
 
-// Find a specific filename in the tree (recursive search)
+// Find a specific openable filename in the tree (recursive search)
 function findFile(entries: MdTreeEntry[], name: string): string | null {
   for (const entry of entries) {
-    if (!entry.is_dir && entry.name === name) return entry.path;
+    if (!entry.is_dir && entry.openable && entry.name === name) return entry.path;
     if (entry.is_dir && entry.children) {
       const found = findFile(entry.children, name);
       if (found) return found;
