@@ -312,7 +312,8 @@ export interface WorktreeDiffResponse {
 export type Selection =
   | { type: "agent"; id: string }
   | { type: "worktree"; repoPath: string; name: string; worktreePath: string }
-  | { type: "project"; path: string; name: string };
+  | { type: "project"; path: string; name: string }
+  | { type: "markdown"; projectPath: string; projectName: string };
 
 export interface RemoteTrackingInfo {
   remote_branch: string;
@@ -383,6 +384,13 @@ export interface IssueInfo {
   state: string;
   url: string;
   labels: IssueLabel[];
+}
+
+export interface MdTreeEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children: MdTreeEntry[] | null;
 }
 
 export interface SpawnResponse {
@@ -633,6 +641,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ mode }),
     }),
+
+  // Files
+  readFile: (path: string) =>
+    apiFetch<{ path: string; content: string }>(`/files/read?path=${encodeURIComponent(path)}`),
+  writeFile: (path: string, content: string) =>
+    apiFetch("/files/write", {
+      method: "POST",
+      body: JSON.stringify({ path, content }),
+    }),
+  mdTree: (root: string) =>
+    apiFetch<MdTreeEntry[]>(`/files/md-tree?root=${encodeURIComponent(root)}`),
 
   // Spawn settings
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),

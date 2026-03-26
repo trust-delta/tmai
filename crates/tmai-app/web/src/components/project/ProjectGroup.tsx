@@ -13,6 +13,7 @@ interface ProjectGroupProps {
   selection: Selection | null;
   onSelectAgent: (target: string) => void;
   onSelectProject: (path: string, name: string) => void;
+  onSelectMarkdown: (projectPath: string, projectName: string) => void;
   onSpawned: (sessionId: string) => void;
 }
 
@@ -22,6 +23,7 @@ export function ProjectGroup({
   selection,
   onSelectAgent,
   onSelectProject,
+  onSelectMarkdown,
   onSpawned,
 }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -40,6 +42,8 @@ export function ProjectGroup({
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
   const isProjectSelected =
     selection?.type === "project" && selection.path === project.path;
+  const isMarkdownSelected =
+    selection?.type === "markdown" && selection.projectPath === project.path;
 
   // Spawn an agent in this project's directory
   const spawn = async (command: string, args?: string[]) => {
@@ -133,6 +137,25 @@ export function ProjectGroup({
               <circle cx="12" cy="8" r="2" fill="currentColor" />
               <line x1="4" y1="6" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
               <path d="M4 6 C4 8, 8 8, 12 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            </svg>
+          </button>
+          {/* Markdown files button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectMarkdown(project.path, project.name);
+            }}
+            className={cn(
+              "rounded px-1 py-0.5 transition-colors",
+              isMarkdownSelected
+                ? "text-blue-400 bg-blue-500/10"
+                : "text-zinc-600 hover:text-blue-400 hover:bg-blue-500/10",
+            )}
+            title="Markdown files"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
+              <rect x="2" y="1" width="12" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              <text x="8" y="11" textAnchor="middle" fill="currentColor" fontSize="7" fontWeight="bold">M</text>
             </svg>
           </button>
           {/* Spawn button */}

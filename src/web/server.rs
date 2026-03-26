@@ -100,6 +100,9 @@ impl WebServer {
             .route("/projects", get(api::get_projects).post(api::add_project))
             .route("/projects/remove", post(api::remove_project))
             .route("/directories", get(api::list_directories))
+            .route("/files/read", get(api::read_file))
+            .route("/files/write", post(api::write_file))
+            .route("/files/md-tree", get(api::md_tree))
             .route(
                 "/settings/spawn",
                 get(api::get_spawn_settings).put(api::update_spawn_settings),

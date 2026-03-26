@@ -1823,6 +1823,145 @@ pub async fn list_issues(
         .map(Json)
 }
 
+// =========================================================
+// File read/write/tree endpoints
+// =========================================================
+
+/// Query params for file read
+#[derive(Debug, Deserialize)]
+pub struct FileReadParams {
+    pub path: String,
+}
+
+/// GET /api/files/read — read a file's content
+pub async fn read_file(
+    axum::extract::Query(params): axum::extract::Query<FileReadParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let path = std::path::Path::new(&params.path);
+    if !path.is_file() {
+        return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
+    }
+    // Security: only allow reading .md, .json, .toml, .txt, .yaml, .yml files
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !matches!(ext, "md" | "json" | "toml" | "txt" | "yaml" | "yml") {
+        return Err(json_error(StatusCode::FORBIDDEN, "File type not allowed"));
+    }
+    // Limit file size to 1MB
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    if metadata.len() > 1_048_576 {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "File too large (max 1MB)",
+        ));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(
+        serde_json::json!({ "path": params.path, "content": content }),
+    ))
+}
+
+/// Request body for file write
+#[derive(Debug, Deserialize)]
+pub struct FileWriteRequest {
+    pub path: String,
+    pub content: String,
+}
+
+/// POST /api/files/write — write content to a file
+pub async fn write_file(
+    Json(req): Json<FileWriteRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let path = std::path::Path::new(&req.path);
+    // Security: only allow writing .md, .json, .toml, .txt, .yaml, .yml files
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !matches!(ext, "md" | "json" | "toml" | "txt" | "yaml" | "yml") {
+        return Err(json_error(StatusCode::FORBIDDEN, "File type not allowed"));
+    }
+    // Must be an existing file (no creating new files via this endpoint)
+    if !path.is_file() {
+        return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
+    }
+    std::fs::write(path, &req.content)
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+/// Query params for markdown file tree
+#[derive(Debug, Deserialize)]
+pub struct MdTreeParams {
+    pub root: String,
+}
+
+/// Entry in the markdown file tree
+#[derive(Debug, Serialize)]
+pub struct MdTreeEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub children: Option<Vec<MdTreeEntry>>,
+}
+
+/// GET /api/files/md-tree — list markdown files in a directory tree
+pub async fn md_tree(
+    axum::extract::Query(params): axum::extract::Query<MdTreeParams>,
+) -> Result<Json<Vec<MdTreeEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let root = std::path::Path::new(&params.root);
+    if !root.is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Directory not found"));
+    }
+    let entries =
+        scan_md_tree(root, 0).map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e))?;
+    Ok(Json(entries))
+}
+
+/// Recursively scan a directory for markdown files (max depth 5)
+fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>, String> {
+    if depth > 5 {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+
+    let mut items: Vec<_> = read_dir.filter_map(|e| e.ok()).collect();
+    items.sort_by_key(|e| e.file_name());
+
+    for entry in items {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden directories (except .claude)
+        if name.starts_with('.') && name != ".claude" {
+            continue;
+        }
+        // Skip node_modules, target, dist
+        if matches!(name.as_str(), "node_modules" | "target" | "dist" | ".git") {
+            continue;
+        }
+
+        if path.is_dir() {
+            let children = scan_md_tree(&path, depth + 1)?;
+            if !children.is_empty() {
+                entries.push(MdTreeEntry {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    is_dir: true,
+                    children: Some(children),
+                });
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            entries.push(MdTreeEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                children: None,
+            });
+        }
+    }
+    Ok(entries)
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)

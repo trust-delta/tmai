@@ -13,6 +13,7 @@ import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { UsagePanel } from "@/components/usage/UsagePanel";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
+import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -98,6 +99,16 @@ export function App() {
     [],
   );
 
+  // Select handler for project markdown viewer
+  const handleSelectMarkdown = useCallback(
+    (projectPath: string, projectName: string) => {
+      setSelection({ type: "markdown", projectPath, projectName });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [],
+  );
+
   // Derive selectedTarget string for components that need it
   const selectedTarget =
     selection?.type === "agent" ? selection.id : null;
@@ -118,6 +129,7 @@ export function App() {
           selection={selection}
           onSelectAgent={handleSelectAgent}
           onSelectProject={handleSelectProject}
+          onSelectMarkdown={handleSelectMarkdown}
           registeredProjects={registeredProjects}
           onSpawned={handleSpawned}
         />
@@ -145,6 +157,12 @@ export function App() {
             projectName={selection.name}
             worktrees={worktrees}
             onSelectWorktree={handleSelectWorktree}
+          />
+        ) : selection?.type === "markdown" ? (
+          <MarkdownPanel
+            key={selection.projectPath}
+            projectPath={selection.projectPath}
+            projectName={selection.projectName}
           />
         ) : selection?.type === "worktree" && selectedWorktree ? (
           <WorktreePanel

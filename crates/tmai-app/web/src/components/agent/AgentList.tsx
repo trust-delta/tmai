@@ -8,6 +8,7 @@ interface AgentListProps {
   selection: Selection | null;
   onSelectAgent: (target: string) => void;
   onSelectProject: (path: string, name: string) => void;
+  onSelectMarkdown: (projectPath: string, projectName: string) => void;
   registeredProjects: string[];
   onSpawned: (sessionId: string) => void;
 }
@@ -19,6 +20,7 @@ export function AgentList({
   selection,
   onSelectAgent,
   onSelectProject,
+  onSelectMarkdown,
   registeredProjects,
   onSpawned,
 }: AgentListProps) {
@@ -57,6 +59,7 @@ export function AgentList({
           selection={selection}
           onSelectAgent={onSelectAgent}
           onSelectProject={onSelectProject}
+          onSelectMarkdown={onSelectMarkdown}
           onSpawned={onSpawned}
         />
       ))}

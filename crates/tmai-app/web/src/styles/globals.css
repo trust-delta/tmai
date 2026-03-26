@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* Nerd Font Symbols — provides Powerline glyphs and icons for terminal preview */
 @font-face {
