@@ -3,13 +3,15 @@ use std::sync::Arc;
 
 use crate::hooks::registry::HookRegistry;
 use crate::ipc::server::IpcServer;
+use crate::pty::registry::PtyRegistry;
 use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
 
-/// Unified command sender with 3-tier fallback: IPC → RuntimeAdapter (tmux) → PTY inject
+/// Unified command sender with 4-tier fallback: PTY session → IPC → RuntimeAdapter (tmux) → PTY inject
 ///
 /// Tier priority follows reliability:
-/// - **IPC**: `tmai wrap` provides PTY master — most reliable
+/// - **PTY session**: Direct write to spawned PTY session — most reliable for WebUI-spawned agents
+/// - **IPC**: `tmai wrap` provides PTY master — most reliable for wrapped agents
 /// - **tmux send-keys**: tmux native mechanism — reliable when tmux is available
 /// - **PTY inject**: TIOCSTI via `/proc/{pid}/fd/0` — last resort, requires kernel support
 pub struct CommandSender {
@@ -17,6 +19,7 @@ pub struct CommandSender {
     runtime: Arc<dyn RuntimeAdapter>,
     app_state: SharedState,
     hook_registry: Option<HookRegistry>,
+    pty_registry: Option<Arc<PtyRegistry>>,
 }
 
 impl CommandSender {
@@ -31,6 +34,7 @@ impl CommandSender {
             runtime,
             app_state,
             hook_registry: None,
+            pty_registry: None,
         }
     }
 
@@ -40,8 +44,46 @@ impl CommandSender {
         self
     }
 
-    /// Send keys via IPC → tmux send-keys → PTY inject
+    /// Attach a PtyRegistry for direct PTY session writes
+    pub fn with_pty_registry(mut self, registry: Arc<PtyRegistry>) -> Self {
+        self.pty_registry = Some(registry);
+        self
+    }
+
+    /// Try writing directly to a PTY session (for WebUI-spawned agents)
+    fn try_pty_session_write(&self, target: &str, data: &[u8]) -> bool {
+        if let Some(ref registry) = self.pty_registry {
+            // target may be the session_id directly
+            if let Some(session) = registry.get(target) {
+                if session.is_running() {
+                    return session.write_input(data).is_ok();
+                }
+            }
+            // Also check via pty_session_id in agent state
+            let session_id = {
+                let state = self.app_state.read();
+                state
+                    .agents
+                    .get(target)
+                    .and_then(|a| a.pty_session_id.clone())
+            };
+            if let Some(sid) = session_id {
+                if let Some(session) = registry.get(&sid) {
+                    if session.is_running() {
+                        return session.write_input(data).is_ok();
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Send keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write
+        if self.try_pty_session_write(target, keys.as_bytes()) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -63,8 +105,12 @@ impl CommandSender {
         anyhow::bail!("All send_keys tiers failed for target {}", target)
     }
 
-    /// Send literal keys via IPC → tmux send-keys → PTY inject
+    /// Send literal keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write
+        if self.try_pty_session_write(target, keys.as_bytes()) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -86,8 +132,14 @@ impl CommandSender {
         anyhow::bail!("All send_keys_literal tiers failed for target {}", target)
     }
 
-    /// Send text + Enter via IPC → tmux send-keys → PTY inject
+    /// Send text + Enter via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write (text + carriage return)
+        let mut data = text.as_bytes().to_vec();
+        data.push(b'\r');
+        if self.try_pty_session_write(target, &data) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {

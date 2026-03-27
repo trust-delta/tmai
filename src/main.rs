@@ -227,7 +227,8 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
                 runtime.clone(),
                 app.shared_state(),
             )
-            .with_hook_registry(core.hook_registry().clone()),
+            .with_hook_registry(core.hook_registry().clone())
+            .with_pty_registry(core.pty_registry().clone()),
             audit_tx,
         );
         service.start();
@@ -277,11 +278,12 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     // Create hook registry and load token
     let hook_registry = tmai_core::hooks::new_hook_registry();
 
-    // Create command sender (IPC → PTY inject → standalone error)
+    // Create command sender (PTY session → IPC → tmux → PTY inject)
     let cmd_sender = Arc::new(
         CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
             .with_hook_registry(hook_registry.clone()),
     );
+    // Note: pty_registry is attached after core is built (see below)
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
     let hook_token = tmai::init::load_hook_token();
 
@@ -337,7 +339,8 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             settings.auto_approve.clone(),
             state.clone(),
             CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
-                .with_hook_registry(core.hook_registry().clone()),
+                .with_hook_registry(core.hook_registry().clone())
+                .with_pty_registry(core.pty_registry().clone()),
             audit_tx,
         );
         service.start();
