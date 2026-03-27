@@ -141,7 +141,7 @@ export function ActionPanel({
     setActionBusy(true);
     setActionError(null);
     try {
-      await api.spawnPty({ command: "claude", args: ["-p", prompt], cwd: projectPath });
+      await api.spawnPty({ command: "claude", args: [prompt], cwd: projectPath });
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to launch agent");
     } finally {
