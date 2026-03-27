@@ -601,31 +601,25 @@ async fn compute_branch_parents(
                 continue;
             }
 
-            let count = tokio::time::timeout(
-                GIT_TIMEOUT,
-                Command::new("git")
-                    .args([
-                        "-C",
-                        repo_dir,
-                        "rev-list",
-                        "--count",
-                        &format!("{}..{}", candidate, branch),
-                    ])
-                    .output(),
+            // Check if candidate is a genuine parent (not a child branch).
+            // If merge-base(candidate, branch) == candidate HEAD, then candidate
+            // is entirely contained in branch's history — it's a child, not a parent.
+            let merge_base = git_output(repo_dir, &["merge-base", candidate, branch]).await;
+            let candidate_head = git_output(repo_dir, &["rev-parse", candidate]).await;
+            if let (Some(mb), Some(ch)) = (&merge_base, &candidate_head) {
+                if mb == ch {
+                    // candidate HEAD is the merge-base → candidate is behind branch
+                    continue;
+                }
+            }
+
+            // Count how far branch has diverged from candidate
+            let count = git_output(
+                repo_dir,
+                &["rev-list", "--count", &format!("{}..{}", candidate, branch)],
             )
             .await
-            .ok()
-            .and_then(|r| r.ok())
-            .and_then(|o| {
-                if o.status.success() {
-                    String::from_utf8_lossy(&o.stdout)
-                        .trim()
-                        .parse::<u32>()
-                        .ok()
-                } else {
-                    None
-                }
-            })
+            .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(u32::MAX);
 
             if count < best_count {
@@ -645,6 +639,23 @@ async fn compute_branch_parents(
 /// Parses the last reflog entry for "Created from <branch_name>".
 /// When source is "HEAD", resolves by finding which known branch was
 /// at the same commit using `git branch --points-at`.
+/// Run a git command and return trimmed stdout, or None on failure/timeout
+async fn git_output(repo_dir: &str, args: &[&str]) -> Option<String> {
+    let mut cmd_args = vec!["-C", repo_dir];
+    cmd_args.extend_from_slice(args);
+    tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&cmd_args).output())
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
 async fn reflog_created_from(
     repo_dir: &str,
     branch: &str,
