@@ -94,6 +94,7 @@ async fn main() -> Result<()> {
     }
 
     // Default: WebUI mode
+    setup_logging(cli.debug, true); // file output (WebUI mode)
     run_webui_mode(settings, cli.debug).await
 }
 
