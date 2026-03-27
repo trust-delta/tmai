@@ -177,17 +177,15 @@ export function LaneGraph({
             );
           })}
 
-          {/* Fork/Merge curves */}
+          {/* Fork/Merge lines */}
           {connections.map((conn, i) => {
             const fromX = laneX(conn.fromLane);
             const toX = laneX(conn.toLane);
-            const dy = Math.abs(conn.toY - conn.fromY);
-            const delta = Math.min(dy * 0.4, ROW_H * 1.5);
             return (
-              <path
+              <line
                 key={`conn-${i}`}
-                d={`M${fromX},${conn.fromY} C${fromX},${conn.fromY + delta} ${toX},${conn.toY - delta} ${toX},${conn.toY}`}
-                stroke={conn.color} strokeWidth={1.5} strokeOpacity={0.5} fill="none"
+                x1={fromX} y1={conn.fromY} x2={toX} y2={conn.toY}
+                stroke={conn.color} strokeWidth={1.5} strokeOpacity={0.5}
               />
             );
           })}
