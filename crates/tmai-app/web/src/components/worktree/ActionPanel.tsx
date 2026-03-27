@@ -135,6 +135,9 @@ export function ActionPanel({
     }
   }, [actionBusy, newWtName, projectPath, onRefresh]);
 
+  // Resolve the base branch for merge/PR operations
+  const baseBranch = activeNode.parent ?? branches?.default_branch ?? "main";
+
   // AI delegation
   const delegateToAi = useCallback(async (prompt: string) => {
     if (actionBusy) return;
@@ -469,14 +472,18 @@ export function ActionPanel({
               {activeNode.ahead > 0 && (
                 <>
                   <button
-                    onClick={() => delegateToAi(`Merge the ${activeNode.name} branch into main. Resolve any conflicts if present.`)}
+                    onClick={() => delegateToAi(
+                      prInfo
+                        ? `Squash merge PR #${prInfo.number} (branch: ${activeNode.name}) using 'gh pr merge ${prInfo.number} --squash --delete-branch'. Do NOT use git merge directly.`
+                        : `Merge the ${activeNode.name} branch into ${baseBranch} (NOT main unless ${baseBranch} IS main). Use 'gh pr merge --squash --delete-branch' if a PR exists, otherwise use git merge. Resolve any conflicts if present.`
+                    )}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
                     AI Merge
                   </button>
                   <button
-                    onClick={() => delegateToAi(`Create a Pull Request for the ${activeNode.name} branch. Summarize the changes in the description.`)}
+                    onClick={() => delegateToAi(`Create a Pull Request for the ${activeNode.name} branch with base branch '${baseBranch}'. Use 'gh pr create --base ${baseBranch}'. Summarize the changes in the description.`)}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
                   >
