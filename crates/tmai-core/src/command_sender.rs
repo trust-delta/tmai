@@ -6,6 +6,7 @@ use crate::ipc::server::IpcServer;
 use crate::pty::registry::PtyRegistry;
 use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
+use crate::utils::keys::tmux_key_to_bytes;
 
 /// Unified command sender with 4-tier fallback: PTY session → IPC → RuntimeAdapter (tmux) → PTY inject
 ///
@@ -80,8 +81,9 @@ impl CommandSender {
 
     /// Send keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
-        // Tier 0: Direct PTY session write
-        if self.try_pty_session_write(target, keys.as_bytes()) {
+        // Tier 0: Direct PTY session write (convert tmux key names to bytes)
+        let key_bytes = tmux_key_to_bytes(keys);
+        if self.try_pty_session_write(target, &key_bytes) {
             return Ok(());
         }
         // Tier 1: IPC
@@ -107,7 +109,7 @@ impl CommandSender {
 
     /// Send literal keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
-        // Tier 0: Direct PTY session write
+        // Tier 0: Direct PTY session write (literal = raw bytes, no key name conversion)
         if self.try_pty_session_write(target, keys.as_bytes()) {
             return Ok(());
         }
@@ -195,8 +197,14 @@ impl CommandSender {
             }
         }
 
-        // Fallback: check MonitoredAgent.pid in AppState
+        // Fallback: check MonitoredAgent.pid in AppState (direct lookup by agent ID)
         let state = self.app_state.read();
+        if let Some(agent) = state.agents.get(target) {
+            if agent.pid > 0 {
+                return Some(agent.pid);
+            }
+        }
+        // Also try matching by target field (for tmux-based agents)
         for agent in state.agents.values() {
             if agent.target == target && agent.pid > 0 {
                 return Some(agent.pid);
