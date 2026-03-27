@@ -197,21 +197,19 @@ impl ClaudeHaikuJudge {
             return Ok(output);
         }
 
-        // Try parsing as claude CLI JSON format: {"type":"result","result":[...]}
-        // or just the result array
+        // Try parsing as claude CLI JSON format: {"type":"result","result":"..."}
         if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(stdout) {
-            // Extract text from result content blocks
             let text = Self::extract_text_from_claude_json(&wrapper);
             if let Some(text) = text {
+                // Try direct parse of extracted text
                 if let Ok(output) = serde_json::from_str::<JudgmentOutput>(&text) {
                     return Ok(output);
                 }
+                // Try extracting JSON from text (e.g. ```json ... ``` blocks)
+                if let Some(output) = Self::extract_json_from_text(&text) {
+                    return Ok(output);
+                }
             }
-        }
-
-        // Try extracting JSON object from text (model may wrap JSON in markdown or text)
-        if let Some(output) = Self::extract_json_from_text(stdout) {
-            return Ok(output);
         }
 
         anyhow::bail!("Could not parse claude output as JudgmentOutput")
