@@ -177,6 +177,27 @@ export function LaneGraph({
             );
           })}
 
+          {/* Dashed fork lines for empty lanes (branches with no unique commits) */}
+          {lanes.map(lane => {
+            if (laneYRange.has(lane.laneIndex)) return null; // has commits, skip
+            // Find the row where this branch's ref appears (its HEAD commit in another lane)
+            const refRow = rows.find(r =>
+              r.refs.some(ref => ref.replace(/^HEAD -> /, "").replace(/^origin\//, "") === lane.branch)
+            );
+            if (!refRow) return null;
+            const parentX = laneX(refRow.lane); // fork point on parent lane
+            const childX = laneX(lane.laneIndex); // top of this lane
+            const topY = rows.length > 0 ? rows[0].y : 0;
+            return (
+              <line
+                key={`empty-lane-${lane.laneIndex}`}
+                x1={parentX} y1={refRow.y} x2={childX} y2={topY}
+                stroke={lane.color} strokeWidth={1.5} strokeOpacity={0.4}
+                strokeDasharray="4 4"
+              />
+            );
+          })}
+
           {/* Fork/Merge lines */}
           {connections.map((conn, i) => {
             const fromX = laneX(conn.fromLane);
