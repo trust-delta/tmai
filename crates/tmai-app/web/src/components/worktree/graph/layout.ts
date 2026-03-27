@@ -68,8 +68,22 @@ export function computeLayout(
     }
   }
 
-  // Walk parent chains to assign branch ownership
-  for (const [branch, tipSha] of branchTipSha) {
+  // Walk parent chains to assign branch ownership.
+  // Parent branches take priority: if a commit is shared between parent and child,
+  // it belongs to the parent's lane. Child lanes only contain unique commits.
+  const parentMap = branchInfo.parents;
+
+  // Resolve ancestry depth so parent branches are processed first
+  const branchDepth = (b: string): number => {
+    let d = 0;
+    let cur = b;
+    while (parentMap[cur]) { cur = parentMap[cur]; d++; }
+    return d;
+  };
+  const sortedTips = [...branchTipSha.entries()]
+    .sort((a, b) => branchDepth(a[0]) - branchDepth(b[0]));
+
+  for (const [branch, tipSha] of sortedTips) {
     let currentSha = tipSha;
     const visited = new Set<string>();
     while (currentSha && !visited.has(currentSha)) {
@@ -77,8 +91,17 @@ export function computeLayout(
       const idx = shaIdx.get(currentSha);
       if (idx === undefined) break;
       const commit = commits[idx];
-      if (shaToBranch.has(currentSha) && shaToBranch.get(currentSha) !== branch) break;
-      shaToBranch.set(currentSha, branch);
+      const existing = shaToBranch.get(currentSha);
+      if (existing && existing !== branch) {
+        // Already owned by another branch — only reclaim if this branch is its parent
+        if (parentMap[existing] === branch) {
+          shaToBranch.set(currentSha, branch);
+        } else {
+          break;
+        }
+      } else {
+        shaToBranch.set(currentSha, branch);
+      }
       if (commit.parents.length > 0) {
         currentSha = commit.parents[0];
       } else {
@@ -103,7 +126,6 @@ export function computeLayout(
   if (branchesInGraph.has(defaultBranch)) {
     sortedBranches.push(defaultBranch);
   }
-  const parentMap = branchInfo.parents;
   const activeBranches = [...branchesInGraph]
     .filter(b => b !== defaultBranch && activeSet.has(b))
     .sort((a, b) => getDepth(a, parentMap, defaultBranch) - getDepth(b, parentMap, defaultBranch));
