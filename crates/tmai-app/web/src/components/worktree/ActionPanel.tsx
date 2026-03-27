@@ -126,7 +126,7 @@ export function ActionPanel({
     setActionBusy(true);
     setActionError(null);
     try {
-      await api.createWorktree(projectPath, name, baseBranch);
+      await api.spawnWorktree({ name, cwd: projectPath, base_branch: baseBranch });
       onRefresh();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to create worktree");
