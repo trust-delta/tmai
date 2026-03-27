@@ -117,10 +117,9 @@ export function computeLayout(
       .map(n => n.name)
   );
 
-  const branchesInGraph = new Set<string>();
-  for (const [, branch] of shaToBranch) {
-    branchesInGraph.add(branch);
-  }
+  // Use all known branches for lane assignment, not just those with owned commits.
+  // Branches with 0 unique commits (e.g. just-created worktrees) still get a lane.
+  const branchesInGraph = new Set<string>(branchInfo.branches);
 
   const sortedBranches: string[] = [];
   if (branchesInGraph.has(defaultBranch)) {
