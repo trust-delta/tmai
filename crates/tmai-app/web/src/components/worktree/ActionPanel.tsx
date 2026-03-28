@@ -25,6 +25,7 @@ export function ActionPanel({
   nodeDepth,
   branchDepthWarning,
   prInfo,
+  targetPrs,
   issues,
   onSelectWorktree,
   onRefresh,
@@ -397,6 +398,69 @@ export function ActionPanel({
           })()}
         </div>
 
+        {/* Incoming PRs (PRs targeting this branch) */}
+        {targetPrs.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              Incoming PRs
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {targetPrs.map((pr) => (
+                <div
+                  key={pr.number}
+                  className="rounded-lg border border-white/5 bg-white/[0.03] p-2"
+                >
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <a
+                      href={pr.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-green-400 hover:underline"
+                    >
+                      #{pr.number}
+                    </a>
+                    {pr.is_draft && (
+                      <span className="rounded bg-zinc-500/15 px-1 py-0.5 text-[10px] text-zinc-500">draft</span>
+                    )}
+                    {pr.review_decision === "APPROVED" && (
+                      <span className="text-[10px] text-green-400">Approved</span>
+                    )}
+                    {pr.check_status === "SUCCESS" && (
+                      <span className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-green-400" title="CI passed" />
+                    )}
+                    {pr.check_status === "FAILURE" && (
+                      <span className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-red-400" title="CI failed" />
+                    )}
+                    {pr.check_status === "PENDING" && (
+                      <span className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" title="CI running" />
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400 truncate">{pr.title}</div>
+                  <div className="mt-0.5 text-[10px] text-zinc-600">
+                    {pr.head_branch} → {activeNode.name}
+                  </div>
+                  {(pr.additions > 0 || pr.deletions > 0) && (
+                    <div className="mt-0.5 text-[10px] text-zinc-600">
+                      <span className="text-emerald-400">+{pr.additions}</span>
+                      {" "}
+                      <span className="text-red-400">-{pr.deletions}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => delegateToAi(
+                      `Squash merge PR #${pr.number} (branch: ${pr.head_branch}) into ${activeNode.name} using 'gh pr merge ${pr.number} --squash --delete-branch'. Do NOT use git merge directly.`
+                    )}
+                    disabled={actionBusy}
+                    className="mt-1.5 w-full rounded bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
+                  >
+                    Merge PR #{pr.number}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="flex flex-col gap-2">
           {/* Worktree actions */}
@@ -469,7 +533,7 @@ export function ActionPanel({
           {/* Plain branch actions */}
           {!activeNode.isWorktree && !activeNode.isMain && (
             <>
-              {/* AI delegation: merge / PR */}
+              {/* Push to parent: merge this branch into its parent */}
               {activeNode.ahead > 0 && (
                 <>
                   <button
