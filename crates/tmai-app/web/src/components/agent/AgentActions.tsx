@@ -39,21 +39,6 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
     }
   }, [agent.id]);
 
-  // Close worktree: kill agent then remove git worktree
-  const handleCloseWorktree = useCallback(async () => {
-    if (!agent.worktree_name || !agent.git_common_dir) return;
-    try {
-      // Kill the agent first
-      await api.killAgent(agent.id);
-      // Wait briefly for process cleanup
-      await new Promise((r) => setTimeout(r, 1000));
-      // Remove the git worktree
-      await api.deleteWorktree(agent.git_common_dir, agent.worktree_name, true);
-    } catch (e) {
-      console.error("Close worktree failed:", e);
-    }
-  }, [agent.id, agent.worktree_name, agent.git_common_dir]);
-
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "Enter" && needsPermission) {
@@ -105,15 +90,6 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
         </>
       )}
 
-      {agent.worktree_name && agent.git_common_dir && (
-        <button
-          onClick={handleCloseWorktree}
-          className="rounded-md px-2 py-1 text-xs text-zinc-600 transition-colors hover:text-amber-400"
-          title="Kill agent and remove worktree"
-        >
-          Close Worktree
-        </button>
-      )}
       <button
         onClick={handleKill}
         className="rounded-md px-2 py-1 text-xs text-zinc-600 transition-colors hover:text-red-400"
