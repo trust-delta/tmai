@@ -17,10 +17,12 @@ import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 import { ProjectSidebar } from "@/components/project/ProjectSidebar";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
+import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
+  const toast = useToast();
   const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
@@ -37,8 +39,11 @@ export function App() {
       if (projects.length > 0 && !currentProject) {
         setCurrentProject(projects[0]);
       }
-    }).catch(console.error);
-  }, [currentProject]);
+    }).catch((e) => {
+      console.error("Failed to load projects:", e);
+      toast.error("Failed to load projects");
+    });
+  }, [currentProject, toast]);
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
@@ -77,8 +82,9 @@ export function App() {
       setShowSettings(false);
       setShowSecurity(false);
       refresh();
+      toast.success("Agent spawned");
     },
-    [refresh],
+    [refresh, toast],
   );
 
   // Select handler for agents
@@ -148,6 +154,7 @@ export function App() {
         setCurrentProjectIndex(newIndex);
         if (registeredProjects[newIndex]) {
           setCurrentProject(registeredProjects[newIndex]);
+          toast.info("Previous project");
         }
       },
     },
@@ -162,6 +169,7 @@ export function App() {
         setCurrentProjectIndex(newIndex);
         if (registeredProjects[newIndex]) {
           setCurrentProject(registeredProjects[newIndex]);
+          toast.info("Next project");
         }
       },
     },
@@ -268,6 +276,7 @@ export function App() {
               onDeleted={() => {
                 setSelection(null);
                 refreshWorktrees();
+                toast.success("Worktree deleted");
               }}
             />
           </div>
@@ -302,6 +311,9 @@ export function App() {
 
       {/* Help overlay */}
       <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
     </div>
   );
 }
