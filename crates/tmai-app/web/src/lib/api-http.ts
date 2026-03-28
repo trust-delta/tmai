@@ -716,6 +716,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(params),
     }),
+
+  // Teams
+  listTeams: () => apiFetch<import("./teams").TeamSummary[]>("/teams"),
+  getTeamTasks: (teamName: string) =>
+    apiFetch<import("./teams").TeamTaskInfo[]>(`/teams/${encodeURIComponent(teamName)}/tasks`),
 };
 
 // ── SSE event subscription ──

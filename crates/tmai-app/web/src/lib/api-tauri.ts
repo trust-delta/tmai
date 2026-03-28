@@ -3,10 +3,12 @@
 
 // Re-export everything from the HTTP API for types
 export * from "./api-http";
+export * from "./teams";
 
 // Import for implementation
 import { tauri } from "./tauri";
 import { api as httpApi } from "./api-http";
+import type { TeamSummary, TeamTaskInfo } from "./teams";
 import type { AgentSnapshot } from "./api-http";
 
 // Detect if running in Tauri environment
@@ -193,4 +195,10 @@ export const api = {
     httpApi.getSpawnSettings(),
   updateSpawnSettings: (params: any) =>
     httpApi.updateSpawnSettings(params),
+
+  // Teams (HTTP only for now)
+  listTeams: (): Promise<TeamSummary[]> =>
+    httpApi.listTeams(),
+  getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> =>
+    httpApi.getTeamTasks(teamName),
 };
