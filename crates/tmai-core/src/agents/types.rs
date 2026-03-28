@@ -574,6 +574,10 @@ pub struct MonitoredAgent {
     pub send_capability: SendCapability,
     /// Per-agent auto-approve override: None = follow global setting, Some(bool) = override
     pub auto_approve_override: Option<bool>,
+    /// Tool name from hook event (for structured auto-approve in slow path)
+    pub hook_tool_name: Option<String>,
+    /// Tool input from hook event (for structured auto-approve in slow path)
+    pub hook_tool_input: Option<serde_json::Value>,
 }
 
 impl MonitoredAgent {
@@ -625,6 +629,8 @@ impl MonitoredAgent {
             pty_session_id: None,
             send_capability: SendCapability::default(),
             auto_approve_override: None,
+            hook_tool_name: None,
+            hook_tool_input: None,
         }
     }
 

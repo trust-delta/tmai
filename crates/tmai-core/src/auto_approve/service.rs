@@ -238,13 +238,25 @@ impl AutoApproveService {
                         agent.cwd.clone(),
                         agent.agent_type.clone(),
                         agent.last_content.clone(),
+                        agent.hook_tool_name.clone(),
+                        agent.hook_tool_input.clone(),
                     ));
                 }
                 candidates
             };
 
             // Spawn judgment tasks for each candidate
-            for (target, approval_type, details, cwd, agent_type, last_content) in candidates {
+            for (
+                target,
+                approval_type,
+                details,
+                cwd,
+                agent_type,
+                last_content,
+                hook_tool_name,
+                hook_tool_input,
+            ) in candidates
+            {
                 // Check semaphore availability (non-blocking)
                 let permit = match semaphore.clone().try_acquire_owned() {
                     Ok(permit) => permit,
@@ -270,6 +282,8 @@ impl AutoApproveService {
                     screen_context: extract_screen_context(&last_content, SCREEN_CONTEXT_LINES),
                     cwd: cwd.clone(),
                     agent_type: agent_type.short_name().to_string(),
+                    hook_tool_name: hook_tool_name.clone(),
+                    hook_tool_input: hook_tool_input.clone(),
                 };
 
                 let rule_engine_ref = rule_engine.clone();
@@ -281,14 +295,28 @@ impl AutoApproveService {
                 let agent_type_clone = agent_type.clone();
 
                 tokio::spawn(async move {
+                    // Helper: evaluate rules using structured hook data if available,
+                    // falling back to screen-based parsing
+                    let judge_rules =
+                        |engine: &RuleEngine, req: &JudgmentRequest| -> JudgmentResult {
+                            if let Some(ref tool_name) = req.hook_tool_name {
+                                engine.judge_structured(tool_name, req.hook_tool_input.as_ref())
+                            } else {
+                                // Synchronous screen-based evaluation (legacy path)
+                                let parsed_ctx = engine.parse_screen_context(&req.screen_context);
+                                engine.judge_from_parsed(
+                                    &req.screen_context,
+                                    parsed_ctx.0.as_deref(),
+                                    parsed_ctx.1.as_deref(),
+                                )
+                            }
+                        };
+
                     // Dispatch based on mode
                     let result = match mode {
                         AutoApproveMode::Rules => {
-                            rule_engine_ref
-                                .as_ref()
-                                .expect("rule engine initialized")
-                                .judge(&request)
-                                .await
+                            let engine = rule_engine_ref.as_ref().expect("rule engine initialized");
+                            Ok(judge_rules(engine, &request))
                         }
                         AutoApproveMode::Ai => {
                             ai_judge_ref
@@ -298,21 +326,17 @@ impl AutoApproveService {
                                 .await
                         }
                         AutoApproveMode::Hybrid => {
-                            let rule_result = rule_engine_ref
-                                .as_ref()
-                                .expect("rule engine initialized")
-                                .judge(&request)
-                                .await;
-                            match rule_result {
-                                Ok(ref r) if r.decision == JudgmentDecision::Uncertain => {
-                                    // Rules abstained → escalate to AI
-                                    ai_judge_ref
-                                        .as_ref()
-                                        .expect("ai judge initialized")
-                                        .judge(&request)
-                                        .await
-                                }
-                                other => other,
+                            let engine = rule_engine_ref.as_ref().expect("rule engine initialized");
+                            let rule_result = judge_rules(engine, &request);
+                            if rule_result.decision == JudgmentDecision::Uncertain {
+                                // Rules abstained → escalate to AI
+                                ai_judge_ref
+                                    .as_ref()
+                                    .expect("ai judge initialized")
+                                    .judge(&request)
+                                    .await
+                            } else {
+                                Ok(rule_result)
                             }
                         }
                         AutoApproveMode::Off => unreachable!("Off mode should not reach here"),

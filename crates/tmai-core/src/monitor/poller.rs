@@ -833,9 +833,15 @@ impl Poller {
                 }
 
                 // Propagate hook-tracked metrics (subagent count, compaction count)
+                // and structured tool data for auto-approve slow path
                 if let Some(hs) = hook_state.as_ref() {
                     agent.active_subagents = hs.active_subagents;
                     agent.compaction_count = hs.compaction_count;
+                    // Propagate tool_name/tool_input for AwaitingApproval slow path
+                    if hs.status == crate::hooks::types::HookStatus::AwaitingApproval {
+                        agent.hook_tool_name = hs.last_tool.clone();
+                        agent.hook_tool_input = hs.last_context.tool_input.clone();
+                    }
                 }
 
                 // Determine send capability (best available tier)
