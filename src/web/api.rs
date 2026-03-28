@@ -15,6 +15,19 @@ fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json
     (status, Json(serde_json::json!({"error": message})))
 }
 
+/// Shell-quote a string for safe embedding in tmux send-keys commands.
+/// Wraps in single quotes and escapes any embedded single quotes.
+fn shell_quote(s: &str) -> String {
+    // If it contains no shell-special characters, return as-is
+    if s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'/')
+    {
+        return s.to_string();
+    }
+    // Wrap in single quotes, escaping embedded single quotes: ' → '\''
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Convert ApiError to HTTP status + JSON error
 fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
     let status = match &err {
@@ -1208,11 +1221,12 @@ async fn spawn_in_tmux(
             )
         })?;
 
-    // Build command with args
+    // Build command with args (shell-quote each arg to prevent splitting)
     let full_command = if req.args.is_empty() {
         req.command.clone()
     } else {
-        format!("{} {}", req.command, req.args.join(" "))
+        let quoted_args: Vec<String> = req.args.iter().map(|a| shell_quote(a)).collect();
+        format!("{} {}", req.command, quoted_args.join(" "))
     };
 
     // Run the command via tmai wrap for monitoring

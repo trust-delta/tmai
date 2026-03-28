@@ -248,7 +248,7 @@ export function App() {
             />
           </div>
         ) : selection?.type === "project" ? (
-          <div className="animate-fade-in">
+          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
             <BranchGraph
               key={selection.path}
               projectPath={selection.path}
@@ -281,14 +281,14 @@ export function App() {
             />
           </div>
         ) : (
-          <>
+          <div className="flex flex-1 flex-col overflow-hidden">
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
             {sessionId ? (
-              <div key={sessionId} className="animate-fade-in">
+              <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
                 <TerminalPanel sessionId={sessionId} />
               </div>
             ) : selectedAgent ? (
-              <div key={selectedAgent.id} className="animate-fade-in">
+              <div key={selectedAgent.id} className="flex-1 overflow-auto animate-fade-in">
                 <PreviewPanel agentId={selectedAgent.id} />
               </div>
             ) : (
@@ -305,7 +305,7 @@ export function App() {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </main>
 
