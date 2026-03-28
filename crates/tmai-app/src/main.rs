@@ -7,6 +7,7 @@ mod commands;
 mod events;
 mod hooks_server;
 mod state;
+mod ws_server;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -26,9 +27,14 @@ async fn main() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            // Agent queries
             commands::agents::list_agents,
             commands::agents::get_agent,
             commands::agents::attention_count,
+            // Agent actions
+            commands::agent_actions::approve_agent,
+            commands::agent_actions::send_text,
+            commands::agent_actions::send_key,
         ])
         .setup(|app| {
             // Initialize TmaiCore with default settings
