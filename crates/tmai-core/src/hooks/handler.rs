@@ -520,11 +520,23 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
     }
 }
 
-/// Save transcript_path from payload to HookState if present
+/// Save transcript_path from payload to HookState if present,
+/// and extract model_id from the transcript on first set.
 fn save_transcript_path(state: &mut HookState, payload: &HookEventPayload) {
     if let Some(ref path) = payload.transcript_path {
         if !path.is_empty() && state.transcript_path.is_none() {
             state.transcript_path = Some(path.clone());
+            // Extract model_id from the transcript file (first assistant message)
+            if state.model_id.is_none() {
+                state.model_id = crate::transcript::parser::extract_model_id(path);
+            }
+        }
+    }
+    // Retry model extraction if transcript exists but model wasn't found yet
+    // (assistant message may not have been written at SessionStart time)
+    if state.model_id.is_none() {
+        if let Some(ref path) = state.transcript_path {
+            state.model_id = crate::transcript::parser::extract_model_id(path);
         }
     }
 }

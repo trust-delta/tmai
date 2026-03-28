@@ -144,6 +144,14 @@ pub struct AgentSnapshot {
     /// Per-agent auto-approve override: None = follow global, Some(bool) = override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_override: Option<bool>,
+    /// Which communication channels are currently available
+    pub connection_channels: crate::agents::ConnectionChannels,
+    /// Model ID (e.g., "claude-opus-4-6")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    /// Model display name (e.g., "Opus 4.6")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_display_name: Option<String>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -219,6 +227,12 @@ impl AgentSnapshot {
             pty_session_id: agent.pty_session_id.clone(),
             send_capability: agent.send_capability,
             auto_approve_override: agent.auto_approve_override,
+            connection_channels: agent.connection_channels,
+            model_display_name: agent
+                .model_id
+                .as_deref()
+                .map(crate::transcript::parser::model_display_name),
+            model_id: agent.model_id.clone(),
         }
     }
 

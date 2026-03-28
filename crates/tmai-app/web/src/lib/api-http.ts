@@ -65,6 +65,14 @@ export function needsAttention(status: AgentStatus): boolean {
 
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
+
+/// Which communication channels are currently available for this agent
+export interface ConnectionChannels {
+  has_tmux: boolean;
+  has_ipc: boolean;
+  has_hook: boolean;
+  has_websocket: boolean;
+}
 export type AgentType =
   | "ClaudeCode"
   | "OpenCode"
@@ -113,6 +121,9 @@ export interface AgentSnapshot {
     | { ManualRequired: string }
     | null;
   auto_approve_override: boolean | null;
+  connection_channels?: ConnectionChannels;
+  model_id?: string | null;
+  model_display_name?: string | null;
 }
 
 // ── Project grouping ──

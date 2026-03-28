@@ -58,6 +58,20 @@ impl fmt::Display for AgentMode {
     }
 }
 
+/// Which communication channels are currently available for this agent.
+/// Each channel is independently tracked (not mutually exclusive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ConnectionChannels {
+    /// tmux pane exists (capture-pane and send-keys available)
+    pub has_tmux: bool,
+    /// IPC socket connected (PTY wrapper via Unix domain socket)
+    pub has_ipc: bool,
+    /// HTTP hook events being received (Claude Code Hooks)
+    pub has_hook: bool,
+    /// Codex CLI WebSocket connected
+    pub has_websocket: bool,
+}
+
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
@@ -574,6 +588,10 @@ pub struct MonitoredAgent {
     pub send_capability: SendCapability,
     /// Per-agent auto-approve override: None = follow global setting, Some(bool) = override
     pub auto_approve_override: Option<bool>,
+    /// Which communication channels are currently available
+    pub connection_channels: ConnectionChannels,
+    /// Model ID extracted from transcript (e.g., "claude-opus-4-6")
+    pub model_id: Option<String>,
     /// Tool name from hook event (for structured auto-approve in slow path)
     pub hook_tool_name: Option<String>,
     /// Tool input from hook event (for structured auto-approve in slow path)
@@ -629,6 +647,8 @@ impl MonitoredAgent {
             pty_session_id: None,
             send_capability: SendCapability::default(),
             auto_approve_override: None,
+            connection_channels: ConnectionChannels::default(),
+            model_id: None,
             hook_tool_name: None,
             hook_tool_input: None,
         }

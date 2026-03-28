@@ -801,12 +801,25 @@ impl Poller {
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
+                // Track all available connection channels independently
+                let is_real_tmux_pane = !pane.session.starts_with("hook")
+                    && !pane.session.starts_with("discovered")
+                    && !pane.session.starts_with("pty");
+                let is_ws_source = hook_state
+                    .as_ref()
+                    .map(|hs| hs.session_id.starts_with("codex-ws-"))
+                    .unwrap_or(false);
+                // connection_channels: whether channel *exists* (not just fresh)
+                let hook_registered = hook_state.is_some();
+                agent.connection_channels = crate::agents::ConnectionChannels {
+                    has_tmux: is_real_tmux_pane,
+                    has_ipc: wrap_state.is_some(),
+                    has_hook: hook_registered && !is_ws_source,
+                    has_websocket: hook_registered && is_ws_source,
+                };
+
+                // detection_source: which method was actually used for this poll cycle
                 agent.detection_source = if has_fresh_hook {
-                    // Codex WS entries have session_id starting with "codex-ws-"
-                    let is_ws_source = hook_state
-                        .as_ref()
-                        .map(|hs| hs.session_id.starts_with("codex-ws-"))
-                        .unwrap_or(false);
                     if is_ws_source {
                         DetectionSource::WebSocket
                     } else {
@@ -837,6 +850,7 @@ impl Poller {
                 if let Some(hs) = hook_state.as_ref() {
                     agent.active_subagents = hs.active_subagents;
                     agent.compaction_count = hs.compaction_count;
+                    agent.model_id = hs.model_id.clone();
                     // Propagate tool_name/tool_input for AwaitingApproval slow path
                     if hs.status == crate::hooks::types::HookStatus::AwaitingApproval {
                         agent.hook_tool_name = hs.last_tool.clone();
@@ -1779,6 +1793,12 @@ impl Poller {
                         if state.cwd.is_none() {
                             state.cwd = Some(session.cwd.clone());
                         }
+                        // Extract model_id if not yet known
+                        if state.model_id.is_none() {
+                            if let Some(ref path) = state.transcript_path {
+                                state.model_id = crate::transcript::parser::extract_model_id(path);
+                            }
+                        }
                         tracing::debug!(
                             pid = session.pid,
                             pane_id = %key,
@@ -1796,6 +1816,10 @@ impl Poller {
             // Register in HookRegistry so the synthesize logic picks it up
             let mut state = HookState::new(session.session_id.clone(), Some(session.cwd.clone()));
             state.transcript_path = session.transcript_path;
+            // Extract model_id from transcript if available
+            if let Some(ref path) = state.transcript_path {
+                state.model_id = crate::transcript::parser::extract_model_id(path);
+            }
             state.pid = Some(session.pid);
             let mut reg = self.hook_registry.write();
             reg.insert(pane_id.clone(), state);

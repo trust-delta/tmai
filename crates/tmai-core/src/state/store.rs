@@ -673,6 +673,12 @@ impl AppState {
                 existing.compaction_count = agent.compaction_count;
                 // Send capability (re-evaluated each poll)
                 existing.send_capability = agent.send_capability;
+                // Connection channels (re-evaluated each poll)
+                existing.connection_channels = agent.connection_channels;
+                // Model ID (from transcript, cached after first read)
+                if agent.model_id.is_some() {
+                    existing.model_id = agent.model_id;
+                }
                 // Preserve per-agent auto-approve override (set by user, not by poller)
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)

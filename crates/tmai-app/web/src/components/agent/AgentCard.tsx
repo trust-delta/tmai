@@ -6,6 +6,9 @@ import {
   api,
   type AgentSnapshot,
   type AgentType,
+  type ConnectionChannels,
+  type DetectionSource,
+  type SendCapability,
 } from "@/lib/api";
 
 const statusColors: Record<string, string> = {
@@ -41,19 +44,50 @@ function agentTypeLabel(agentType: AgentType): {
   return { icon: "›", label: "agent", color: "text-zinc-400" };
 }
 
-const sourceIcons: Record<string, { icon: string; label: string; color: string }> = {
-  HttpHook: { icon: "◈", label: "Hook (HTTP POST)", color: "text-cyan-400" },
-  IpcSocket: { icon: "⊙", label: "IPC (Unix socket)", color: "text-emerald-400" },
-  CapturePane: { icon: "●", label: "capture-pane (text parse)", color: "text-zinc-500" },
-  WebSocket: { icon: "◇", label: "WebSocket", color: "text-purple-400" },
-};
+// Model tier styling: color gradient per model family
+function modelStyle(displayName: string): { color: string; glow: string } {
+  const lower = displayName.toLowerCase();
+  if (lower.includes("opus"))
+    return { color: "text-amber-400/80", glow: "drop-shadow-[0_0_3px_rgba(251,191,36,0.3)]" };
+  if (lower.includes("sonnet"))
+    return { color: "text-violet-400/80", glow: "drop-shadow-[0_0_3px_rgba(167,139,250,0.2)]" };
+  if (lower.includes("haiku"))
+    return { color: "text-emerald-400/70", glow: "" };
+  return { color: "text-zinc-500", glow: "" };
+}
 
-const sendIcons: Record<string, { icon: string; label: string; color: string }> = {
-  Ipc: { icon: "⇋", label: "IPC (Unix socket)", color: "text-emerald-400" },
-  Tmux: { icon: "⇉", label: "tmux send-keys", color: "text-yellow-400" },
-  PtyInject: { icon: "⇝", label: "PTY inject", color: "text-orange-400" },
-  None: { icon: "⊘", label: "送信不可", color: "text-red-500" },
-};
+// Build tooltip describing detection and send details
+function buildConnectionTooltip(
+  channels: ConnectionChannels,
+  detectionSource: DetectionSource,
+  sendCapability: SendCapability,
+): string {
+  const detectMethods: string[] = [];
+  if (channels.has_hook) detectMethods.push("Hook");
+  if (channels.has_websocket) detectMethods.push("WebSocket");
+  if (channels.has_ipc) detectMethods.push("IPC");
+  if (channels.has_tmux) detectMethods.push("tmux");
+  if (detectMethods.length === 0) detectMethods.push("なし");
+
+  const sendLabels: Record<string, string> = {
+    Ipc: "IPC",
+    Tmux: "tmux",
+    PtyInject: "PTY inject",
+    None: "なし",
+  };
+  const sendLabel = sendLabels[sendCapability] ?? sendCapability;
+
+  const activeLabel =
+    detectionSource === "HttpHook"
+      ? "Hook"
+      : detectionSource === "IpcSocket"
+        ? "IPC"
+        : detectionSource === "WebSocket"
+          ? "WebSocket"
+          : "tmux";
+
+  return `検出: ${detectMethods.join(" + ")} (現在: ${activeLabel})\n送信: ${sendLabel}`;
+}
 
 /// Resolve effective auto-approve state: override > global
 function autoApproveEffective(agent: AgentSnapshot): boolean {
@@ -63,6 +97,30 @@ function autoApproveEffective(agent: AgentSnapshot): boolean {
   // No override — assume global default (we don't have global state here,
   // but the badge only shows when override is explicitly set)
   return true;
+}
+
+// Channel badge: rounded pill with color when active, gray when inactive
+function ChannelBadge({
+  label,
+  active,
+  activeColor,
+}: {
+  label: string;
+  active: boolean;
+  activeColor: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded-sm px-1 py-px text-[9px] font-medium leading-tight transition-subtle",
+        active
+          ? `${activeColor} border border-current/20`
+          : "text-zinc-700 border border-zinc-800",
+      )}
+    >
+      {label}
+    </span>
+  );
 }
 
 interface AgentCardProps {
@@ -77,16 +135,6 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const attention = needsAttention(agent.status);
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
-  const sourceEntry = sourceIcons[agent.detection_source] ?? {
-    icon: "?",
-    label: agent.detection_source,
-    color: "text-zinc-600",
-  };
-  const sendEntry = sendIcons[agent.send_capability] ?? {
-    icon: "?",
-    label: agent.send_capability,
-    color: "text-zinc-600",
-  };
   // Auto-approve state
   const hasOverride = agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
   const isAutoApproveOn = autoApproveEffective(agent);
@@ -106,6 +154,18 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
       : (statusColors[name] ?? statusColors.Unknown);
   const glow = isJudging || isAutoApproved ? "" : (statusGlow[name] ?? "");
+
+  // Connection channels (with fallback for older API)
+  const channels: ConnectionChannels = agent.connection_channels ?? {
+    has_tmux: agent.detection_source === "CapturePane" || agent.send_capability === "Tmux",
+    has_ipc: agent.detection_source === "IpcSocket" || agent.send_capability === "Ipc",
+    has_hook: agent.detection_source === "HttpHook",
+    has_websocket: agent.detection_source === "WebSocket",
+  };
+
+  const tooltip = isAi
+    ? buildConnectionTooltip(channels, agent.detection_source, agent.send_capability)
+    : undefined;
 
   /// Toggle auto-approve override: null → true → false → null (cycle)
   function handleAutoApproveToggle(e: React.MouseEvent) {
@@ -135,18 +195,19 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       {/* Row 1: Agent type + status badge */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
-          {isAi && (
-            <span className="text-[10px] transition-subtle group-hover:opacity-100 opacity-80">
-              <span className={sourceEntry.color} title={`検出: ${sourceEntry.label}`}>
-                {sourceEntry.icon}
-              </span>
-              <span className={sendEntry.color} title={`送信: ${sendEntry.label}`}>
-                {sendEntry.icon}
-              </span>
-            </span>
-          )}
           <span className="truncate text-sm font-medium text-zinc-200 group-hover:text-zinc-100 transition-subtle">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
+            {isAi && agent.model_display_name && (
+              <span
+                className={cn(
+                  "ml-1.5 text-[10px] font-medium tracking-wide transition-subtle",
+                  modelStyle(agent.model_display_name).color,
+                  modelStyle(agent.model_display_name).glow,
+                )}
+              >
+                {agent.model_display_name}
+              </span>
+            )}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -180,14 +241,59 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         </div>
       </div>
 
-      {/* Row 2: meta indicators */}
-      <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500 transition-subtle group-hover:text-zinc-400">
-        {!agent.git_branch && (
-          <span className="truncate text-zinc-600 group-hover:text-zinc-500 transition-subtle" title={agent.cwd}>
+      {/* Row 2: connection channel badges + branch */}
+      <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 transition-subtle group-hover:text-zinc-400">
+        {isAi && (
+          <div className="flex items-center gap-0.5" title={tooltip}>
+            {(channels.has_hook || channels.has_websocket) && (
+              <ChannelBadge
+                label={channels.has_websocket ? "WS" : "Hook"}
+                active={channels.has_hook || channels.has_websocket}
+                activeColor="text-cyan-400"
+              />
+            )}
+            {(channels.has_ipc || channels.has_hook || channels.has_websocket || channels.has_tmux) && (
+              <ChannelBadge
+                label="IPC"
+                active={channels.has_ipc}
+                activeColor="text-emerald-400"
+              />
+            )}
+            {channels.has_tmux && (
+              <ChannelBadge
+                label="tmux"
+                active={channels.has_tmux}
+                activeColor="text-yellow-400"
+              />
+            )}
+            {/* Fallback: show capture-pane only when no other channel */}
+            {!channels.has_hook && !channels.has_websocket && !channels.has_ipc && !channels.has_tmux && (
+              <ChannelBadge label="--" active={false} activeColor="" />
+            )}
+          </div>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Branch / worktree info (right side) */}
+        {agent.git_branch ? (
+          <span
+            className={cn(
+              "truncate text-right",
+              agent.is_worktree ? "text-emerald-600" : "text-zinc-600",
+              "group-hover:text-zinc-500 transition-subtle",
+            )}
+            title={`${agent.is_worktree ? "worktree: " : "branch: "}${agent.git_branch}${agent.git_dirty ? " (dirty)" : ""}`}
+          >
+            {agent.is_worktree && "🌿"}
+            {agent.git_branch}
+            {agent.git_dirty && <span className="text-amber-500">*</span>}
+          </span>
+        ) : (
+          <span className="truncate text-right text-zinc-600 group-hover:text-zinc-500 transition-subtle" title={agent.cwd}>
             {agent.display_cwd}
           </span>
         )}
-        <div className="flex-1" />
         {agent.active_subagents > 0 && (
           <span className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-subtle">
             ⑂{agent.active_subagents}
