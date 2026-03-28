@@ -44,6 +44,19 @@ export function ActionPanel({
   const [ciLoading, setCiLoading] = useState(false);
   const [ciExpanded, setCiExpanded] = useState(false);
 
+  // Reset all ephemeral state when branch changes
+  useEffect(() => {
+    setActionBusy(false);
+    setActionError(null);
+    setConfirmDelete(false);
+    setForceDelete(false);
+    setDiffData(null);
+    setDiffLoading(false);
+    setShowNewWorktree(false);
+    setNewWtName("");
+    setNewWtError("");
+  }, [activeNode.name]);
+
   // Fetch CI checks when branch changes
   useEffect(() => {
     setCiSummary(null);

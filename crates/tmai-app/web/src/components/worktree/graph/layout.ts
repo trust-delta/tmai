@@ -20,14 +20,16 @@ export function computeLaneW(laneCount: number): number {
   return Math.max(MIN_LANE_W, Math.min(MAX_LANE_W, Math.floor(GRAPH_AREA_TARGET / laneCount)));
 }
 
-/// Strip ref decoration prefixes to get bare branch name
+/// Strip ref decoration prefixes to get bare branch name.
+/// Remote tracking refs (origin/...) are mapped to their local branch name
+/// so that commits only on the remote (not yet pulled) are assigned correctly.
 function stripRefPrefix(ref: string): string | null {
   if (ref.startsWith("HEAD -> ")) return ref.slice(8);
   if (ref.startsWith("tag: ")) return null;
-  if (ref.includes("/")) {
-    const parts = ref.split("/");
-    if (parts[0] === "origin" || parts[0] === "refs") return null;
-  }
+  // Map origin/branch-name → branch-name (e.g. origin/dev/tmai-app → dev/tmai-app)
+  if (ref.startsWith("origin/")) return ref.slice(7);
+  // Skip other ref types (refs/stash, etc.)
+  if (ref.startsWith("refs/")) return null;
   return ref;
 }
 
