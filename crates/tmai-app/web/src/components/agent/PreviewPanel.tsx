@@ -142,6 +142,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         if (sel && sel.toString().length > 0) return; // let browser handle copy
       }
 
+      // Allow Ctrl+V to paste via browser — the pasted text will arrive
+      // through the hidden input's onInput handler and be sent as passthrough
+      if (e.ctrlKey && e.key === "v") return;
+
       // Esc: blur the panel
       if (e.key === "Escape" && !e.ctrlKey) {
         setFocused(false);
