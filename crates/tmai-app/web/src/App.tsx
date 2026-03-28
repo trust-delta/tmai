@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useAgents } from "@/hooks/useAgents";
 import { useWorktrees } from "@/hooks/useWorktrees";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { isAiAgent, api, type Selection } from "@/lib/api";
 import { AgentList } from "@/components/agent/AgentList";
 import { AgentActions } from "@/components/agent/AgentActions";
@@ -15,6 +16,7 @@ import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 import { ProjectSidebar } from "@/components/project/ProjectSidebar";
+import { HelpOverlay } from "@/components/layout/HelpOverlay";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -22,8 +24,10 @@ export function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
+  const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
@@ -121,6 +125,67 @@ export function App() {
   const selectedTarget =
     selection?.type === "agent" ? selection.id : null;
 
+  // Keyboard shortcuts handlers
+  useKeyboardShortcuts([
+    {
+      keys: ["?"],
+      description: "Toggle help menu",
+      handler: () => setShowHelp((v) => !v),
+    },
+    {
+      keys: ["s"],
+      description: "Toggle settings",
+      handler: () => {
+        setShowSettings((v) => !v);
+        setShowSecurity(false);
+      },
+    },
+    {
+      keys: ["["],
+      description: "Previous project",
+      handler: () => {
+        const newIndex = Math.max(0, currentProjectIndex - 1);
+        setCurrentProjectIndex(newIndex);
+        if (registeredProjects[newIndex]) {
+          setCurrentProject(registeredProjects[newIndex]);
+        }
+      },
+    },
+    {
+      keys: ["]"],
+      description: "Next project",
+      handler: () => {
+        const newIndex = Math.min(
+          registeredProjects.length - 1,
+          currentProjectIndex + 1,
+        );
+        setCurrentProjectIndex(newIndex);
+        if (registeredProjects[newIndex]) {
+          setCurrentProject(registeredProjects[newIndex]);
+        }
+      },
+    },
+  ]);
+
+  // Close help on ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showHelp) {
+        setShowHelp(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showHelp]);
+
+  // Update currentProjectIndex when currentProject changes
+  useEffect(() => {
+    const idx = registeredProjects.indexOf(currentProject || "");
+    if (idx >= 0) {
+      setCurrentProjectIndex(idx);
+    }
+  }, [currentProject, registeredProjects]);
+
   return (
     <div className="flex h-screen text-zinc-100">
       {/* Sidebar */}
@@ -128,8 +193,14 @@ export function App() {
         <StatusBar
           agentCount={aiAgents.length}
           attentionCount={attentionCount}
-          onSettingsClick={() => { setShowSettings((v) => !v); setShowSecurity(false); }}
-          onSecurityClick={() => { setShowSecurity((v) => !v); setShowSettings(false); }}
+          onSettingsClick={() => {
+            setShowSettings((v) => !v);
+            setShowSecurity(false);
+          }}
+          onSecurityClick={() => {
+            setShowSecurity((v) => !v);
+            setShowSettings(false);
+          }}
         />
         <ProjectSidebar
           registeredProjects={registeredProjects}
@@ -209,9 +280,7 @@ export function App() {
               </div>
             ) : selectedAgent ? (
               <div key={selectedAgent.id} className="animate-fade-in">
-                <PreviewPanel
-                  agentId={selectedAgent.id}
-                />
+                <PreviewPanel agentId={selectedAgent.id} />
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center animate-fade-in">
@@ -221,8 +290,8 @@ export function App() {
                   </h1>
                   <p className="mt-2 text-sm text-zinc-500">
                     {agents.length > 0
-                      ? "Select an agent to view"
-                      : "Click + on a project to spawn an agent"}
+                      ? "Select an agent to view • Press ? for shortcuts"
+                      : "Click + on a project to spawn an agent • Press ? for shortcuts"}
                   </p>
                 </div>
               </div>
@@ -230,6 +299,9 @@ export function App() {
           </>
         )}
       </main>
+
+      {/* Help overlay */}
+      <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 }
