@@ -43,6 +43,9 @@ function toTmuxKey(e: KeyboardEvent): string | null {
   }
 }
 
+// Per-agent auto-scroll preference (persists across agent switches)
+const agentAutoScrollMap = new Map<string, boolean>();
+
 // Interactive terminal preview with passthrough input.
 // Renders capture-pane output with ANSI colors and forwards keystrokes
 // to the agent's terminal. Passthrough is button-controlled.
@@ -51,7 +54,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
   const [focused, setFocused] = useState(true);
   const [composing, setComposing] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
+
+  // Wrap setter to persist preference per agent
+  const setAutoScroll = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
+    setAutoScrollRaw((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      agentAutoScrollMap.set(agentId, next);
+      return next;
+    });
+  }, [agentId]);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -61,11 +73,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
-  // Reset state when switching agents
+  // Reset state when switching agents (autoScroll restored from per-agent map)
   useEffect(() => {
     setContent("");
     setFocused(true);
-    setAutoScroll(true);
+    setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
   }, [agentId]);
 
@@ -129,15 +141,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Auto-scroll to bottom (toggleable, default on)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // When user scrolls up, disable auto-scroll; when at bottom, re-enable
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    if (atBottom && !autoScroll) {
-      setAutoScroll(true);
-    }
-  }, [autoScroll]);
+  // Scroll handler (reserved for future use, auto-scroll is button-controlled only)
+  const handleScroll = useCallback(() => {}, []);
 
 
   // Handle special keys (non-IME) via the hidden input's keydown
