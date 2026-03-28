@@ -1,17 +1,20 @@
 // Enhanced API layer with Tauri IPC support for agents
-// Falls back to HTTP for non-agent operations
+// Re-exports all types from api-http.ts and provides Tauri-aware implementations
 
+// Re-export everything from the HTTP API for types
+export * from "./api-http";
+
+// Import for implementation
 import { tauri } from "./tauri";
-import { api as httpApi } from "./api";
-import type { AgentSnapshot } from "./api";
+import { api as httpApi } from "./api-http";
+import type { AgentSnapshot } from "./api-http";
 
 // Detect if running in Tauri environment
 async function isTauriEnvironment(): Promise<boolean> {
   try {
-    // Try to invoke a simple command to check if Tauri is available
-    const { invoke } = await import("@tauri-apps/api/core");
-    // If invoke is available, we're in Tauri
-    return typeof invoke === "function";
+    // Try to import Tauri API to check if available
+    await import("@tauri-apps/api/core");
+    return true;
   } catch {
     return false;
   }
@@ -26,6 +29,7 @@ async function isInTauri(): Promise<boolean> {
   return tauriCheck;
 }
 
+// Create Tauri-aware API wrapper that overrides agent methods
 export const api = {
   // Agent queries - use Tauri IPC if available
   listAgents: async (): Promise<AgentSnapshot[]> => {

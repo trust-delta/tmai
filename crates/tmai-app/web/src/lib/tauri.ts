@@ -1,6 +1,6 @@
 // Tauri IPC layer for agent commands via invoke()
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentSnapshot } from "./api";
+import type { AgentSnapshot } from "./api-http";
 
 // Wrapper type for Tauri invoke responses (matches Rust AgentInfo)
 interface TauriAgentInfo {

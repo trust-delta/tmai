@@ -14,7 +14,8 @@ export function useAgents() {
       const agentList = await api.listAgents();
       setAgents(agentList);
       setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
-    } catch {
+    } catch (e) {
+      console.warn("Failed to fetch agents:", e);
       // Server may not be ready yet during startup
     } finally {
       setLoading(false);
@@ -23,17 +24,9 @@ export function useAgents() {
 
   // Handle Tauri core-event emissions
   const handleTauriEvent = useCallback((event: CoreEvent) => {
-    if (event.type === "AgentsUpdated") {
-      // AgentsUpdated event (assuming it carries updated agents)
-      if (event.data && typeof event.data === "object" && "agents" in event.data) {
-        const newAgents = (event.data as { agents: AgentSnapshot[] }).agents;
-        setAgents(newAgents);
-        setAttentionCount(newAgents.filter((a) => needsAttention(a.status)).length);
-        setLoading(false);
-      } else {
-        // If event doesn't contain agents, refresh from API
-        refresh();
-      }
+    if (event.type === "agents-updated") {
+      // Refresh agent list when AgentsUpdated event is received
+      refresh();
     }
   }, [refresh]);
 
@@ -41,7 +34,7 @@ export function useAgents() {
   useTauriEvents(handleTauriEvent);
 
   useEffect(() => {
-    // Initial fetch (retry until server is ready)
+    // Initial fetch (retry until server/API is ready)
     const retryInterval = setInterval(() => {
       refresh().then(() => clearInterval(retryInterval));
     }, 500);
