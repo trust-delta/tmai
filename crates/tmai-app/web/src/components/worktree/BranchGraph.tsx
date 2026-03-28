@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
 import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { LaneGraph } from "./graph/LaneGraph";
@@ -41,6 +41,8 @@ export function BranchGraph({
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
   const [issues, setIssues] = useState<IssueInfo[]>([]);
   const [graphLimit, setGraphLimit] = useState(200);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const savedScrollTop = useRef<number | null>(null);
 
   // Fetch branch list and graph data in parallel
   const fetchData = useCallback(async () => {
@@ -78,6 +80,14 @@ export function BranchGraph({
       setInitialSelected(true);
     }
   }, [branches, initialSelected]);
+
+  // Restore scroll position after "Load more" re-renders the graph
+  useLayoutEffect(() => {
+    if (savedScrollTop.current != null && scrollRef.current) {
+      scrollRef.current.scrollTop = savedScrollTop.current;
+      savedScrollTop.current = null;
+    }
+  }, [graphData]);
 
   const normPath = projectPath.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
 
@@ -284,7 +294,7 @@ export function BranchGraph({
 
       <div className="flex flex-1 overflow-hidden">
         {/* Graph canvas */}
-        <div className="flex-1 overflow-auto p-6">
+        <div ref={scrollRef} className="flex-1 overflow-auto p-6">
           {layout && layout.lanes.length > 0 ? (
             <LaneGraph
               layout={layout}
@@ -308,7 +318,10 @@ export function BranchGraph({
           {graphData && graphData.commits.length >= graphLimit && (
             <div className="mt-4 flex justify-center">
               <button
-                onClick={() => setGraphLimit(prev => prev + 200)}
+                onClick={() => {
+                  savedScrollTop.current = scrollRef.current?.scrollTop ?? null;
+                  setGraphLimit(prev => prev + 200);
+                }}
                 className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
               >
                 Load more commits ({graphLimit} shown)

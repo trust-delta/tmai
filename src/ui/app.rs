@@ -388,7 +388,7 @@ impl App {
                                     let elapsed = chrono::Utc::now() - t;
                                     elapsed.num_minutes() >= i64::from(interval_min)
                                 })
-                                .unwrap_or(false)
+                                .unwrap_or(true)
                     };
                     if should_fetch {
                         self.trigger_usage_fetch();

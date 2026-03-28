@@ -7,6 +7,7 @@ pub fn tmux_key_to_bytes(key: &str) -> Vec<u8> {
         "Space" => vec![b' '],
         "BSpace" => vec![0x7f],
         "Tab" => vec![b'\t'],
+        "BTab" => vec![0x1b, b'[', b'Z'],
         "Escape" | "Esc" => vec![0x1b],
         "Up" => vec![0x1b, b'[', b'A'],
         "Down" => vec![0x1b, b'[', b'B'],
@@ -40,6 +41,7 @@ mod tests {
         assert_eq!(tmux_key_to_bytes("C-A"), vec![1]); // uppercase: same as C-a
         assert_eq!(tmux_key_to_bytes("C-@"), vec![0]); // NUL
         assert_eq!(tmux_key_to_bytes("C-["), vec![0x1b]); // ESC
+        assert_eq!(tmux_key_to_bytes("BTab"), vec![0x1b, b'[', b'Z']);
         assert_eq!(tmux_key_to_bytes("y"), vec![b'y']);
     }
 }

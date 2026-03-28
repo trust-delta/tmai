@@ -400,9 +400,19 @@ export interface SpawnResponse {
   command: string;
 }
 
+export interface AutoApproveRules {
+  allow_read: boolean;
+  allow_tests: boolean;
+  allow_fetch: boolean;
+  allow_git_readonly: boolean;
+  allow_format_lint: boolean;
+  allow_patterns: string[];
+}
+
 export interface AutoApproveSettings {
   mode: string;
   running: boolean;
+  rules: AutoApproveRules;
 }
 
 export interface SpawnSettings {
@@ -641,6 +651,11 @@ export const api = {
     apiFetch("/settings/auto-approve", {
       method: "PUT",
       body: JSON.stringify({ mode }),
+    }),
+  updateAutoApproveRules: (rules: Partial<AutoApproveRules>) =>
+    apiFetch("/settings/auto-approve", {
+      method: "PUT",
+      body: JSON.stringify({ rules }),
     }),
 
   // Files

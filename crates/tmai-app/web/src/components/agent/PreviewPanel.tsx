@@ -17,7 +17,7 @@ function toTmuxKey(e: KeyboardEvent): string | null {
     case "Backspace":
       return "BSpace";
     case "Tab":
-      return "Tab";
+      return e.shiftKey ? "BTab" : "Tab";
     case "ArrowUp":
       return "Up";
     case "ArrowDown":
@@ -60,8 +60,12 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
-  // Focus the hidden input when agent is selected or panel gains focus
+  // Focus the hidden input when agent is selected or panel gains focus.
+  // Skip if the user has an active text selection (to avoid stealing focus
+  // during copy/select operations).
   const focusInput = useCallback(() => {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0) return;
     setFocused(true);
     // Delay to ensure the hidden input is rendered
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -131,6 +135,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       // Don't intercept during IME composition
       if (composing) return;
+
+      // Allow Ctrl+C to copy when there is a text selection
+      if (e.ctrlKey && e.key === "c") {
+        const sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return; // let browser handle copy
+      }
+
+      // Allow Ctrl+V to paste via browser — the pasted text will arrive
+      // through the hidden input's onInput handler and be sent as passthrough
+      if (e.ctrlKey && e.key === "v") return;
 
       // Esc: blur the panel
       if (e.key === "Escape" && !e.ctrlKey) {
@@ -212,7 +226,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       >
         {content ? (
           <pre
-            className="ansi-preview m-0 cursor-text whitespace-pre-wrap break-words"
+            className="ansi-preview m-0 cursor-text select-text whitespace-pre-wrap break-words"
             style={{
               fontFamily:
                 "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +

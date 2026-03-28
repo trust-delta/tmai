@@ -917,41 +917,138 @@ pub struct AutoApproveSettingsResponse {
     pub mode: String,
     /// Whether the service is running
     pub running: bool,
+    /// Rule presets
+    pub rules: RuleSettingsResponse,
 }
 
-/// Request body for updating auto-approve mode
+/// Rule presets included in the auto-approve response
+#[derive(Debug, Serialize)]
+pub struct RuleSettingsResponse {
+    pub allow_read: bool,
+    pub allow_tests: bool,
+    pub allow_fetch: bool,
+    pub allow_git_readonly: bool,
+    pub allow_format_lint: bool,
+    pub allow_patterns: Vec<String>,
+}
+
+/// Request body for updating auto-approve settings
 #[derive(Debug, Deserialize)]
 pub struct UpdateAutoApproveRequest {
     /// Mode: "off", "rules", "ai", "hybrid"
-    pub mode: String,
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Rule preset updates (partial)
+    #[serde(default)]
+    pub rules: Option<UpdateRuleSettingsRequest>,
+}
+
+/// Partial update for rule presets
+#[derive(Debug, Deserialize)]
+pub struct UpdateRuleSettingsRequest {
+    pub allow_read: Option<bool>,
+    pub allow_tests: Option<bool>,
+    pub allow_fetch: Option<bool>,
+    pub allow_git_readonly: Option<bool>,
+    pub allow_format_lint: Option<bool>,
+    pub allow_patterns: Option<Vec<String>>,
 }
 
 /// GET /api/settings/auto-approve — get current auto-approve settings
 pub async fn get_auto_approve_settings(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<AutoApproveSettingsResponse> {
-    let mode = format!("{:?}", core.settings().auto_approve.effective_mode());
-    let running = core.settings().auto_approve.effective_mode()
-        != tmai_core::auto_approve::types::AutoApproveMode::Off;
+    let aa = &core.settings().auto_approve;
+    let mode = format!("{:?}", aa.effective_mode());
+    let running = aa.effective_mode() != tmai_core::auto_approve::types::AutoApproveMode::Off;
 
-    Json(AutoApproveSettingsResponse { mode, running })
+    let rules = RuleSettingsResponse {
+        allow_read: aa.rules.allow_read,
+        allow_tests: aa.rules.allow_tests,
+        allow_fetch: aa.rules.allow_fetch,
+        allow_git_readonly: aa.rules.allow_git_readonly,
+        allow_format_lint: aa.rules.allow_format_lint,
+        allow_patterns: aa.rules.allow_patterns.clone(),
+    };
+
+    Json(AutoApproveSettingsResponse {
+        mode,
+        running,
+        rules,
+    })
 }
 
-/// PUT /api/settings/auto-approve — update auto-approve mode (persisted to config.toml)
+/// PUT /api/settings/auto-approve — update auto-approve settings (persisted to config.toml)
 pub async fn update_auto_approve_settings(
     Json(req): Json<UpdateAutoApproveRequest>,
 ) -> Json<serde_json::Value> {
-    // Persist to config.toml (takes effect on restart)
-    tmai_core::config::Settings::save_toml_value(
-        "auto_approve",
-        "mode",
-        toml_edit::Value::from(req.mode.as_str()),
-    );
+    // Persist mode change
+    if let Some(ref mode) = req.mode {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "mode",
+            toml_edit::Value::from(mode.as_str()),
+        );
+        tracing::info!("Auto-approve mode updated to '{mode}' (restart to apply)");
+    }
 
-    tracing::info!(
-        "Auto-approve mode updated to '{}' (restart to apply)",
-        req.mode
-    );
+    // Persist rule preset changes
+    if let Some(ref rules) = req.rules {
+        if let Some(v) = rules.allow_read {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_read",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_tests {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_tests",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_fetch {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_fetch",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_git_readonly {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_git_readonly",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_format_lint {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_format_lint",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(ref patterns) = rules.allow_patterns {
+            let arr = patterns
+                .iter()
+                .map(|s| toml_edit::Value::from(s.as_str()))
+                .collect::<toml_edit::Array>();
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_patterns",
+                toml_edit::Value::Array(arr),
+            );
+        }
+        tracing::info!("Auto-approve rules updated (restart to apply)");
+    }
+
     Json(serde_json::json!({"ok": true, "restart_required": true}))
 }
 
