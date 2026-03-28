@@ -10,6 +10,7 @@ interface ActionPanelProps {
   nodeDepth: Map<string, number>;
   branchDepthWarning: number;
   prInfo: PrInfo | undefined;
+  targetPrs: PrInfo[];
   issues: IssueInfo[];
   onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
   onRefresh: () => void;

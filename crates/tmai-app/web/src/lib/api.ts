@@ -390,6 +390,7 @@ export interface PrInfo {
   title: string;
   state: string;
   head_branch: string;
+  base_branch: string;
   url: string;
   review_decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   check_status: "SUCCESS" | "FAILURE" | "PENDING" | null;

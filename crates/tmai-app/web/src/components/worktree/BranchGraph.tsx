@@ -205,6 +205,17 @@ export function BranchGraph({
     return computeLayout(graphData, branches, nodes, collapsedLanes);
   }, [graphData, branches, nodes, collapsedLanes]);
 
+  // Build targetPrMap: base_branch → PrInfo[] (PRs targeting each branch)
+  const targetPrMap = useMemo(() => {
+    const map: Record<string, PrInfo[]> = {};
+    for (const pr of Object.values(prMap)) {
+      if (!pr.base_branch) continue;
+      if (!map[pr.base_branch]) map[pr.base_branch] = [];
+      map[pr.base_branch].push(pr);
+    }
+    return map;
+  }, [prMap]);
+
   // Selected node data
   const activeNode = nodes.find((n) => n.name === selectedNode) ?? null;
 
@@ -366,6 +377,7 @@ export function BranchGraph({
             nodeDepth={nodeDepth}
             branchDepthWarning={BRANCH_DEPTH_WARNING}
             prInfo={prMap[activeNode.name]}
+            targetPrs={targetPrMap[activeNode.name] ?? []}
             issues={issues}
             onSelectWorktree={onSelectWorktree}
             onRefresh={refreshBranches}
