@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { api, statusName, type AgentSnapshot } from "@/lib/api";
+import { type AgentSnapshot, api, statusName } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AgentActionsProps {
@@ -18,26 +18,20 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
   const handleApprove = useCallback(async () => {
     try {
       await api.approve(agent.target);
-    } catch (e) {
-      console.error("Approve failed:", e);
-    }
-  }, [agent.id]);
+    } catch (_e) {}
+  }, [agent.target]);
 
   const handleReject = useCallback(async () => {
     try {
       await api.sendKey(agent.target, "Escape");
-    } catch (e) {
-      console.error("Reject failed:", e);
-    }
-  }, [agent.id]);
+    } catch (_e) {}
+  }, [agent.target]);
 
   const handleKill = useCallback(async () => {
     try {
       await api.killAgent(agent.target);
-    } catch (e) {
-      console.error("Kill failed:", e);
-    }
-  }, [agent.id]);
+    } catch (_e) {}
+  }, [agent.target]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -52,19 +46,14 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
 
   return (
     <div className="glass flex items-center gap-2 border-0 border-b border-white/5 px-3 py-2">
-      <span className="text-sm font-medium text-zinc-300">
-        {agent.display_name}
-      </span>
+      <span className="text-sm font-medium text-zinc-300">{agent.display_name}</span>
       <span
         className={cn(
           "rounded px-1.5 py-0.5 text-xs",
           needsPermission && "bg-red-500/20 text-red-400",
           isProcessing && "bg-cyan-500/20 text-cyan-400",
           isIdle && "bg-zinc-500/20 text-zinc-400",
-          !needsPermission &&
-            !isProcessing &&
-            !isIdle &&
-            "bg-zinc-700/50 text-zinc-400",
+          !needsPermission && !isProcessing && !isIdle && "bg-zinc-700/50 text-zinc-400",
         )}
       >
         {name}
@@ -75,6 +64,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
       {needsPermission && !passthrough && (
         <>
           <button
+            type="button"
             onClick={handleApprove}
             className="rounded-md bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30"
             title="Ctrl+Enter"
@@ -82,6 +72,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
             Approve
           </button>
           <button
+            type="button"
             onClick={handleReject}
             className="glass-card rounded-md px-3 py-1 text-xs font-medium text-zinc-300 transition-colors"
           >
@@ -91,6 +82,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
       )}
 
       <button
+        type="button"
         onClick={handleKill}
         className="rounded-md px-2 py-1 text-xs text-zinc-600 transition-colors hover:text-red-400"
         title="Kill agent"

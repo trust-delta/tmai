@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { X, AlertCircle, CheckCircle, Info } from "lucide-react";
+import { AlertCircle, CheckCircle, Info, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type ToastType = "info" | "success" | "error";
@@ -20,11 +20,7 @@ export function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
   return (
     <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm">
       {toasts.map((toast) => (
-        <ToastItem
-          key={toast.id}
-          toast={toast}
-          onRemove={onRemove}
-        />
+        <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
     </div>
   );
@@ -38,11 +34,11 @@ interface ToastItemProps {
 function ToastItem({ toast, onRemove }: ToastItemProps) {
   useEffect(() => {
     if (!toast.duration) return;
-    
+
     const timer = setTimeout(() => {
       onRemove(toast.id);
     }, toast.duration);
-    
+
     return () => clearTimeout(timer);
   }, [toast.id, toast.duration, onRemove]);
 
@@ -77,13 +73,10 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
         bgColors[toast.type],
       )}
     >
-      <div className={cn("mt-0.5 flex-shrink-0", iconColors[toast.type])}>
-        {icons[toast.type]}
-      </div>
-      <p className={cn("flex-1 text-sm", textColors[toast.type])}>
-        {toast.message}
-      </p>
+      <div className={cn("mt-0.5 flex-shrink-0", iconColors[toast.type])}>{icons[toast.type]}</div>
+      <p className={cn("flex-1 text-sm", textColors[toast.type])}>{toast.message}</p>
       <button
+        type="button"
         onClick={() => onRemove(toast.id)}
         className="flex-shrink-0 rounded p-0.5 transition-colors hover:bg-white/10"
       >
@@ -97,11 +90,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = useCallback((
-    message: string,
-    type: ToastType = "info",
-    duration = 4000,
-  ) => {
+  const addToast = useCallback((message: string, type: ToastType = "info", duration = 4000) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, type, message, duration }]);
     return id;

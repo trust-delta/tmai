@@ -1,22 +1,22 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { useAgents } from "@/hooks/useAgents";
-import { useWorktrees } from "@/hooks/useWorktrees";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { isAiAgent, api, type Selection } from "@/lib/api";
-import { AgentList } from "@/components/agent/AgentList";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
-import { StatusBar } from "@/components/layout/StatusBar";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
-import { TerminalList } from "@/components/terminal/TerminalList";
+import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import { SecurityPanel } from "@/components/settings/SecurityPanel";
-import { UsagePanel } from "@/components/usage/UsagePanel";
-import { WorktreePanel } from "@/components/worktree/WorktreePanel";
-import { BranchGraph } from "@/components/worktree/BranchGraph";
-import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
+import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
+import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
+import { SecurityPanel } from "@/components/settings/SecurityPanel";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { TerminalList } from "@/components/terminal/TerminalList";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { UsagePanel } from "@/components/usage/UsagePanel";
+import { BranchGraph } from "@/components/worktree/BranchGraph";
+import { WorktreePanel } from "@/components/worktree/WorktreePanel";
+import { useAgents } from "@/hooks/useAgents";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useWorktrees } from "@/hooks/useWorktrees";
+import { api, isAiAgent, type Selection } from "@/lib/api";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -32,47 +32,38 @@ export function App() {
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
-    api.listProjects().then((projects) => {
-      setRegisteredProjects(projects);
-      // Set first project as default if not set
-      if (projects.length > 0 && !currentProject) {
-        setCurrentProject(projects[0]);
-      }
-    }).catch((e) => {
-      console.error("Failed to load projects:", e);
-      toast.error("Failed to load projects");
-    });
+    api
+      .listProjects()
+      .then((projects) => {
+        setRegisteredProjects(projects);
+        // Set first project as default if not set
+        if (projects.length > 0 && !currentProject) {
+          setCurrentProject(projects[0]);
+        }
+      })
+      .catch((_e) => {
+        toast.error("Failed to load projects");
+      });
   }, [currentProject, toast]);
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
 
   // Split agents into AI agents and plain terminals
-  const aiAgents = useMemo(
-    () => agents.filter((a) => isAiAgent(a.agent_type)),
-    [agents],
-  );
-  const terminals = useMemo(
-    () => agents.filter((a) => !isAiAgent(a.agent_type)),
-    [agents],
-  );
+  const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
+  const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
 
   // Derive selected agent from selection
   const selectedAgent =
     selection?.type === "agent"
-      ? agents.find(
-          (a) => a.id === selection.id || a.target === selection.id,
-        )
+      ? agents.find((a) => a.id === selection.id || a.target === selection.id)
       : undefined;
   const sessionId = selectedAgent?.pty_session_id ?? null;
 
   // Derive selected worktree from selection
   const selectedWorktree =
     selection?.type === "worktree"
-      ? worktrees.find(
-          (wt) =>
-            wt.repo_path === selection.repoPath && wt.name === selection.name,
-        )
+      ? worktrees.find((wt) => wt.repo_path === selection.repoPath && wt.name === selection.name)
       : undefined;
 
   const handleSpawned = useCallback(
@@ -87,40 +78,30 @@ export function App() {
   );
 
   // Select handler for agents
-  const handleSelectAgent = useCallback(
-    (target: string) => {
-      setSelection({ type: "agent", id: target });
-      setShowSettings(false);
-      setShowSecurity(false);
-    },
-    [],
-  );
+  const handleSelectAgent = useCallback((target: string) => {
+    setSelection({ type: "agent", id: target });
+    setShowSettings(false);
+    setShowSecurity(false);
+  }, []);
 
   // Select handler for worktrees (from BranchGraph click)
 
   // Select handler for project branch graph
-  const handleSelectProject = useCallback(
-    (path: string, name: string) => {
-      setSelection({ type: "project", path, name });
-      setShowSettings(false);
-      setShowSecurity(false);
-    },
-    [],
-  );
+  const handleSelectProject = useCallback((path: string, name: string) => {
+    setSelection({ type: "project", path, name });
+    setShowSettings(false);
+    setShowSecurity(false);
+  }, []);
 
   // Select handler for project markdown viewer
-  const handleSelectMarkdown = useCallback(
-    (projectPath: string, projectName: string) => {
-      setSelection({ type: "markdown", projectPath, projectName });
-      setShowSettings(false);
-      setShowSecurity(false);
-    },
-    [],
-  );
+  const handleSelectMarkdown = useCallback((projectPath: string, projectName: string) => {
+    setSelection({ type: "markdown", projectPath, projectName });
+    setShowSettings(false);
+    setShowSecurity(false);
+  }, []);
 
   // Derive selectedTarget string for components that need it
-  const selectedTarget =
-    selection?.type === "agent" ? selection.id : null;
+  const selectedTarget = selection?.type === "agent" ? selection.id : null;
 
   // Keyboard shortcuts handlers
   useKeyboardShortcuts([
@@ -153,10 +134,7 @@ export function App() {
       keys: ["]"],
       description: "Next project",
       handler: () => {
-        const newIndex = Math.min(
-          registeredProjects.length - 1,
-          currentProjectIndex + 1,
-        );
+        const newIndex = Math.min(registeredProjects.length - 1, currentProjectIndex + 1);
         setCurrentProjectIndex(newIndex);
         if (registeredProjects[newIndex]) {
           setCurrentProject(registeredProjects[newIndex]);
@@ -275,7 +253,10 @@ export function App() {
                 <TerminalPanel sessionId={sessionId} />
               </div>
             ) : selectedAgent ? (
-              <div key={selectedAgent.id} className="flex flex-1 flex-col overflow-hidden animate-fade-in">
+              <div
+                key={selectedAgent.id}
+                className="flex flex-1 flex-col overflow-hidden animate-fade-in"
+              >
                 <PreviewPanel agentId={selectedAgent.id} />
               </div>
             ) : (

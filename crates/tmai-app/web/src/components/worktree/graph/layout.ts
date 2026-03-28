@@ -1,16 +1,16 @@
-import type {
-  GraphData,
-  GraphCommit,
-  LaneLayout,
-  LaneInfo,
-  RowInfo,
-  CommitRow,
-  FoldRow,
-  Connection,
-  BranchNode,
-} from "./types";
 import type { BranchListResponse } from "@/lib/api";
 import { laneColor } from "./colors";
+import type {
+  BranchNode,
+  CommitRow,
+  Connection,
+  FoldRow,
+  GraphCommit,
+  GraphData,
+  LaneInfo,
+  LaneLayout,
+  RowInfo,
+} from "./types";
 
 // Layout constants
 export const MIN_LANE_W = 24;
@@ -27,10 +27,7 @@ const GRAPH_AREA_TARGET = 300;
 /// Compute dynamic lane width based on number of lanes
 export function computeLaneW(laneCount: number): number {
   if (laneCount <= 1) return MAX_LANE_W;
-  return Math.max(
-    MIN_LANE_W,
-    Math.min(MAX_LANE_W, Math.floor(GRAPH_AREA_TARGET / laneCount)),
-  );
+  return Math.max(MIN_LANE_W, Math.min(MAX_LANE_W, Math.floor(GRAPH_AREA_TARGET / laneCount)));
 }
 
 /// Strip ref decoration prefixes to get bare branch name.
@@ -47,11 +44,7 @@ function stripRefPrefix(ref: string): string | null {
 }
 
 /// Get depth of a branch from default branch via parent map
-function getDepth(
-  branch: string,
-  parents: Record<string, string>,
-  defaultBranch: string,
-): number {
+function getDepth(branch: string, parents: Record<string, string>, defaultBranch: string): number {
   let depth = 0;
   let current = branch;
   const visited = new Set<string>();
@@ -72,10 +65,12 @@ function getDepth(
 function assignCommitsToBranches(
   commits: GraphCommit[],
   branchInfo: BranchListResponse,
-  defaultBranch: string,
+  _defaultBranch: string,
 ): { shaToBranch: Map<string, string>; branchTipSha: Map<string, string> } {
   const shaIdx = new Map<string, number>();
-  commits.forEach((c, i) => shaIdx.set(c.sha, i));
+  for (const [i, c] of commits.entries()) {
+    shaIdx.set(c.sha, i);
+  }
 
   const shaToBranch = new Map<string, string>();
   const branchTipSha = new Map<string, string>();
@@ -149,10 +144,7 @@ function assignLanes(
 ): { branchToLane: Map<string, number>; sortedBranches: string[] } {
   const activeSet = new Set(
     activeNodes
-      .filter(
-        (n) =>
-          n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent,
-      )
+      .filter((n) => n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent)
       .map((n) => n.name),
   );
   const parentMap = branchInfo.parents;
@@ -164,11 +156,7 @@ function assignLanes(
   }
   const activeBranches = [...branchesInGraph]
     .filter((b) => b !== defaultBranch && activeSet.has(b))
-    .sort(
-      (a, b) =>
-        getDepth(a, parentMap, defaultBranch) -
-        getDepth(b, parentMap, defaultBranch),
-    );
+    .sort((a, b) => getDepth(a, parentMap, defaultBranch) - getDepth(b, parentMap, defaultBranch));
   sortedBranches.push(...activeBranches);
   const inactiveBranches = [...branchesInGraph]
     .filter((b) => b !== defaultBranch && !activeSet.has(b))
@@ -176,7 +164,9 @@ function assignLanes(
   sortedBranches.push(...inactiveBranches);
 
   const branchToLane = new Map<string, number>();
-  sortedBranches.forEach((b, i) => branchToLane.set(b, i));
+  for (const [i, b] of sortedBranches.entries()) {
+    branchToLane.set(b, i);
+  }
 
   return { branchToLane, sortedBranches };
 }
@@ -218,8 +208,7 @@ function classifyVisibility(
 
     const isCollapsedLane = collapsed.has(branch);
     const hasRefs = commit.refs.length > 0;
-    const visible =
-      !isCollapsedLane || isTip || isMerge || hasCrossLaneParent || hasRefs;
+    const visible = !isCollapsedLane || isTip || isMerge || hasCrossLaneParent || hasRefs;
 
     commitInfos.push({
       sha: commit.sha,
@@ -393,27 +382,16 @@ export function computeLayout(
   }
 
   // Step 1: Assign commits to branches
-  const { shaToBranch, branchTipSha } = assignCommitsToBranches(
-    commits,
-    branchInfo,
-    defaultBranch,
-  );
+  const { shaToBranch, branchTipSha } = assignCommitsToBranches(commits, branchInfo, defaultBranch);
 
   // Step 2: Assign lanes
   const activeSet = new Set(
     activeNodes
-      .filter(
-        (n) =>
-          n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent,
-      )
+      .filter((n) => n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent)
       .map((n) => n.name),
   );
 
-  const { branchToLane, sortedBranches } = assignLanes(
-    branchInfo,
-    activeNodes,
-    defaultBranch,
-  );
+  const { branchToLane, sortedBranches } = assignLanes(branchInfo, activeNodes, defaultBranch);
   const totalLanes = sortedBranches.length || 1;
 
   // Step 3: Build lane info

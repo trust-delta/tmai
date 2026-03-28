@@ -44,12 +44,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandler[]) {
         const ctrlMatch = handler.requiresCtrl
           ? event.ctrlKey || event.metaKey
           : !event.ctrlKey && !event.metaKey;
-        const shiftMatch = handler.requiresShift
-          ? event.shiftKey
-          : !event.shiftKey;
-        const altMatch = handler.requiresAlt
-          ? event.altKey
-          : !event.altKey;
+        const shiftMatch = handler.requiresShift ? event.shiftKey : !event.shiftKey;
+        const altMatch = handler.requiresAlt ? event.altKey : !event.altKey;
 
         if (keyMatch && ctrlMatch && shiftMatch && altMatch) {
           event.preventDefault();

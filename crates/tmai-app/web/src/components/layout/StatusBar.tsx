@@ -25,6 +25,7 @@ export function StatusBar({
           </span>
         )}
         <button
+          type="button"
           onClick={onSecurityClick}
           className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
           title="Security Scan"
@@ -32,6 +33,7 @@ export function StatusBar({
           🛡
         </button>
         <button
+          type="button"
           onClick={onSettingsClick}
           className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
           title="Settings"

@@ -14,10 +14,7 @@ function getConfig(): { baseUrl: string; token: string } {
 const config = getConfig();
 
 // Authenticated fetch helper
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${config.baseUrl}/api${path}`;
   const res = await fetch(url, {
     ...options,
@@ -73,12 +70,7 @@ export interface ConnectionChannels {
   has_hook: boolean;
   has_websocket: boolean;
 }
-export type AgentType =
-  | "ClaudeCode"
-  | "OpenCode"
-  | "CodexCli"
-  | "GeminiCli"
-  | { Custom: string };
+export type AgentType = "ClaudeCode" | "OpenCode" | "CodexCli" | "GeminiCli" | { Custom: string };
 export type EffortLevel = "Low" | "Medium" | "High";
 
 /// Whether this agent type is an AI coding agent (not a plain terminal)
@@ -246,9 +238,7 @@ export function groupByProject(
     }
 
     // Remaining worktrees sorted by name
-    const sortedEntries = [...worktreeMap.entries()].sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
+    const sortedEntries = [...worktreeMap.entries()].sort(([a], [b]) => a.localeCompare(b));
     for (const [name, wtAgents] of sortedEntries) {
       // Find matching WorktreeSnapshot for path
       const snap = worktreeSnapshots.find(
@@ -266,9 +256,7 @@ export function groupByProject(
 
     // Add agent-less worktrees from snapshots
     const existingWtNames = new Set(worktrees.map((wt) => wt.name));
-    const repoSnapshots = worktreeSnapshots.filter(
-      (ws) => normalizeGitDir(ws.repo_path) === path,
-    );
+    const repoSnapshots = worktreeSnapshots.filter((ws) => normalizeGitDir(ws.repo_path) === path);
     // Ensure "main" group exists if we have snapshots for this repo
     if (!existingWtNames.has("main")) {
       const mainSnap = repoSnapshots.find((ws) => ws.is_main);
@@ -297,13 +285,9 @@ export function groupByProject(
       });
     }
 
-    const attentionCount = groupAgents.filter((a) =>
-      needsAttention(a.status),
-    ).length;
+    const attentionCount = groupAgents.filter((a) => needsAttention(a.status)).length;
 
-    const normRegistered = new Set(
-      registeredProjects.map((p) => normalizeGitDir(p)),
-    );
+    const normRegistered = new Set(registeredProjects.map((p) => normalizeGitDir(p)));
 
     projects.push({
       name: projectName(path),
@@ -508,7 +492,12 @@ export interface UsageSettings {
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
-export type SecurityCategory = "Permissions" | "McpServer" | "Environment" | "Hooks" | "FilePermissions";
+export type SecurityCategory =
+  | "Permissions"
+  | "McpServer"
+  | "Environment"
+  | "Hooks"
+  | "FilePermissions";
 
 export interface SecurityRisk {
   rule_id: string;
@@ -567,8 +556,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ key }),
     }),
-  killAgent: (target: string) =>
-    apiFetch(`/agents/${target}/kill`, { method: "POST" }),
+  killAgent: (target: string) => apiFetch(`/agents/${target}/kill`, { method: "POST" }),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
       method: "PUT",
@@ -588,7 +576,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
-  spawnWorktree: (req: { name: string; cwd: string; base_branch?: string; rows?: number; cols?: number }) =>
+  spawnWorktree: (req: {
+    name: string;
+    cwd: string;
+    base_branch?: string;
+    rows?: number;
+    cols?: number;
+  }) =>
     apiFetch<SpawnResponse>("/spawn/worktree", {
       method: "POST",
       body: JSON.stringify(req),
@@ -609,7 +603,11 @@ export const api = {
   deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
     apiFetch("/worktrees/delete", {
       method: "POST",
-      body: JSON.stringify({ repo_path: repoPath, worktree_name: worktreeName, force: force ?? false }),
+      body: JSON.stringify({
+        repo_path: repoPath,
+        worktree_name: worktreeName,
+        force: force ?? false,
+      }),
     }),
 
   // Git branches
@@ -634,7 +632,9 @@ export const api = {
   listPrs: (repoPath: string) =>
     apiFetch<Record<string, PrInfo>>(`/github/prs?repo=${encodeURIComponent(repoPath)}`),
   listChecks: (repoPath: string, branch: string) =>
-    apiFetch<CiSummary>(`/github/checks?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`),
+    apiFetch<CiSummary>(
+      `/github/checks?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`,
+    ),
   listIssues: (repoPath: string) =>
     apiFetch<IssueInfo[]>(`/github/issues?repo=${encodeURIComponent(repoPath)}`),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
@@ -685,15 +685,12 @@ export const api = {
     }),
 
   // Security scan
-  runSecurityScan: () =>
-    apiFetch<ScanResult>("/security/scan", { method: "POST" }),
-  lastSecurityScan: () =>
-    apiFetch<ScanResult | null>("/security/last"),
+  runSecurityScan: () => apiFetch<ScanResult>("/security/scan", { method: "POST" }),
+  lastSecurityScan: () => apiFetch<ScanResult | null>("/security/last"),
 
   // Usage
   getUsage: () => apiFetch<UsageSnapshot>("/usage"),
-  fetchUsage: () =>
-    apiFetch("/usage/fetch", { method: "POST" }),
+  fetchUsage: () => apiFetch("/usage/fetch", { method: "POST" }),
   getUsageSettings: () => apiFetch<UsageSettings>("/settings/usage"),
   updateUsageSettings: (params: Partial<UsageSettings>) =>
     apiFetch("/settings/usage", {
@@ -702,8 +699,7 @@ export const api = {
     }),
 
   // Auto-approve settings
-  getAutoApproveSettings: () =>
-    apiFetch<AutoApproveSettings>("/settings/auto-approve"),
+  getAutoApproveSettings: () => apiFetch<AutoApproveSettings>("/settings/auto-approve"),
   updateAutoApproveMode: (mode: string) =>
     apiFetch("/settings/auto-approve", {
       method: "PUT",
@@ -717,7 +713,9 @@ export const api = {
 
   // Files
   readFile: (path: string) =>
-    apiFetch<{ path: string; content: string; editable: boolean }>(`/files/read?path=${encodeURIComponent(path)}`),
+    apiFetch<{ path: string; content: string; editable: boolean }>(
+      `/files/read?path=${encodeURIComponent(path)}`,
+    ),
   writeFile: (path: string, content: string) =>
     apiFetch("/files/write", {
       method: "POST",
@@ -728,10 +726,7 @@ export const api = {
 
   // Spawn settings
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
-  updateSpawnSettings: (params: {
-    use_tmux_window: boolean;
-    tmux_window_name?: string;
-  }) =>
+  updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
     apiFetch("/settings/spawn", {
       method: "PUT",
       body: JSON.stringify(params),

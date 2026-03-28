@@ -1,16 +1,15 @@
 // Hook for listening to Tauri core-event emissions
-import { useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect } from "react";
 
 export interface CoreEvent {
   type: string;
   data: unknown;
 }
 
-export function useTauriEvents(
-  onEvent: (event: CoreEvent) => void,
-): { isListening: boolean } {
+export function useTauriEvents(onEvent: (event: CoreEvent) => void): { isListening: boolean } {
   const handleEvent = useCallback(
     (event: { payload: CoreEvent }) => {
       onEvent(event.payload);
@@ -25,9 +24,7 @@ export function useTauriEvents(
       .then((fn) => {
         unsubscribe = fn;
       })
-      .catch((e) => {
-        console.warn("Failed to listen for core-event (not in Tauri?)", e);
-      });
+      .catch((_e) => {});
 
     return () => {
       if (unsubscribe) {

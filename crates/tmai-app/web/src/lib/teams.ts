@@ -1,9 +1,6 @@
 // Team management types and API methods
 
-export type TaskStatus = 
-  | "pending" 
-  | "in_progress" 
-  | "completed";
+export type TaskStatus = "pending" | "in_progress" | "completed";
 
 export interface TeamTaskInfo {
   /// Task ID
@@ -21,7 +18,7 @@ export interface TeamTaskInfo {
 export interface TeamSummary {
   /// Team name
   name: string;
-  /// Team description  
+  /// Team description
   description: string | null;
   /// Number of team members
   member_count: number;

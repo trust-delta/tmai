@@ -1,6 +1,6 @@
 // Tauri IPC layer for agent commands via invoke()
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentSnapshot } from "./api-http";
+import type { AgentSnapshot, AgentType, DetectionSource, EffortLevel } from "./api-http";
 
 // Wrapper type for Tauri invoke responses (matches Rust AgentInfo)
 interface TauriAgentInfo {
@@ -44,20 +44,20 @@ function convertTauriAgent(info: TauriAgentInfo): AgentSnapshot {
   return {
     id: info.id,
     target: info.target,
-    agent_type: (info.type as any),
+    agent_type: info.type as AgentType,
     status,
     title: info.title,
     cwd: info.cwd,
     display_cwd: info.display_cwd,
     display_name: info.title,
-    detection_source: (info.detection_source as any),
+    detection_source: info.detection_source as DetectionSource,
     git_branch: info.git_branch,
     git_dirty: info.git_dirty,
     is_worktree: null,
     git_common_dir: null,
     worktree_name: null,
     worktree_base_branch: null,
-    effort_level: (info.effort as any),
+    effort_level: info.effort as EffortLevel | null,
     active_subagents: 0,
     compaction_count: 0,
     pty_session_id: null,

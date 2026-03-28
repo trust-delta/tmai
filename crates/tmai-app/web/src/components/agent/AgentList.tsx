@@ -1,6 +1,11 @@
 import { useMemo } from "react";
-import { groupByProject, type AgentSnapshot, type WorktreeSnapshot, type Selection } from "@/lib/api";
 import { ProjectGroup } from "@/components/project/ProjectGroup";
+import {
+  type AgentSnapshot,
+  groupByProject,
+  type Selection,
+  type WorktreeSnapshot,
+} from "@/lib/api";
 
 interface AgentListProps {
   agents: AgentSnapshot[];
@@ -44,8 +49,7 @@ export function AgentList({
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-500">
         <p>No projects registered</p>
         <p className="text-xs text-zinc-600">
-          Add projects in{" "}
-          <code className="rounded bg-white/5 px-1">config.toml</code> or run{" "}
+          Add projects in <code className="rounded bg-white/5 px-1">config.toml</code> or run{" "}
           <code className="rounded bg-white/5 px-1">tmai init</code>
         </p>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type MdTreeEntry } from "@/lib/api";
@@ -24,7 +24,8 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
   // Fetch file tree
   useEffect(() => {
     setLoading(true);
-    api.mdTree(projectPath)
+    api
+      .mdTree(projectPath)
       .then(setTree)
       .catch(() => setTree([]))
       .finally(() => setLoading(false));
@@ -36,7 +37,8 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
     setEditing(false);
     setSaveError(null);
     setFileLoading(true);
-    api.readFile(path)
+    api
+      .readFile(path)
       .then((data) => {
         setContent(data.content);
         setEditContent(data.content);
@@ -75,11 +77,53 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
       {/* Header */}
       <div className="glass shrink-0 border-b border-white/5 px-6 py-4">
         <div className="flex items-center gap-3">
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="text-blue-400">
-            <rect x="2" y="1" width="12" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
-            <line x1="5" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-            <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-            <line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 16 16"
+            fill="none"
+            className="text-blue-400"
+            role="img"
+            aria-label="Document icon"
+          >
+            <title>Document icon</title>
+            <rect
+              x="2"
+              y="1"
+              width="12"
+              height="14"
+              rx="1"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              fill="none"
+            />
+            <line
+              x1="5"
+              y1="5"
+              x2="11"
+              y2="5"
+              stroke="currentColor"
+              strokeWidth="1"
+              opacity="0.5"
+            />
+            <line
+              x1="5"
+              y1="8"
+              x2="11"
+              y2="8"
+              stroke="currentColor"
+              strokeWidth="1"
+              opacity="0.5"
+            />
+            <line
+              x1="5"
+              y1="11"
+              x2="9"
+              y2="11"
+              stroke="currentColor"
+              strokeWidth="1"
+              opacity="0.5"
+            />
           </svg>
           <h2 className="text-lg font-semibold text-zinc-100">{projectName}</h2>
           <span className="text-xs text-zinc-500">Markdown</span>
@@ -116,6 +160,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                   {selectedFile.split("/").pop()}
                 </span>
                 <button
+                  type="button"
                   onClick={handleSave}
                   disabled={saving}
                   className="rounded bg-blue-500/20 px-3 py-1 text-xs text-blue-400 hover:bg-blue-500/30 disabled:opacity-50"
@@ -123,7 +168,12 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                   {saving ? "Saving..." : "Save"}
                 </button>
                 <button
-                  onClick={() => { setEditing(false); setEditContent(content); setSaveError(null); }}
+                  type="button"
+                  onClick={() => {
+                    setEditing(false);
+                    setEditContent(content);
+                    setSaveError(null);
+                  }}
                   className="rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10"
                 >
                   Cancel
@@ -136,7 +186,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
               )}
               <textarea
                 value={editContent}
-                onChange={e => setEditContent(e.target.value)}
+                onChange={(e) => setEditContent(e.target.value)}
                 className="flex-1 resize-none bg-transparent px-6 py-4 font-mono text-sm text-zinc-200 outline-none"
                 spellCheck={false}
               />
@@ -150,6 +200,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                 </span>
                 {editable ? (
                   <button
+                    type="button"
                     onClick={() => setEditing(true)}
                     className="rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
                   >
@@ -162,7 +213,8 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
               {/* Content: markdown preview or code view */}
               <div className="flex-1 overflow-auto px-6 py-4">
                 {selectedFile.endsWith(".md") ? (
-                  <div className="prose prose-invert prose-sm max-w-none
+                  <div
+                    className="prose prose-invert prose-sm max-w-none
                     prose-headings:text-zinc-100 prose-headings:font-semibold
                     prose-p:text-zinc-300 prose-p:leading-relaxed
                     prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
@@ -174,7 +226,8 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                     prose-td:text-zinc-400 prose-td:border-white/10
                     prose-hr:border-white/10
                     prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400
-                  ">
+                  "
+                  >
                     <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
                   </div>
                 ) : (
@@ -195,9 +248,23 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
 function extLabel(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    md: "MD", json: "JS", toml: "TM", txt: "TX", yaml: "YM", yml: "YM",
-    rs: "RS", ts: "TS", tsx: "TX", js: "JS", jsx: "JX", css: "CS",
-    html: "HT", lock: "LK", sh: "SH", py: "PY", go: "GO",
+    md: "MD",
+    json: "JS",
+    toml: "TM",
+    txt: "TX",
+    yaml: "YM",
+    yml: "YM",
+    rs: "RS",
+    ts: "TS",
+    tsx: "TX",
+    js: "JS",
+    jsx: "JX",
+    css: "CS",
+    html: "HT",
+    lock: "LK",
+    sh: "SH",
+    py: "PY",
+    go: "GO",
   };
   return map[ext] ?? ext.slice(0, 2).toUpperCase();
 }
@@ -218,18 +285,21 @@ function TreeNode({
 
   return (
     <>
-      {entries.map(entry => {
+      {entries.map((entry) => {
         if (entry.is_dir) {
           const isCollapsed = collapsed.has(entry.path);
           return (
             <div key={entry.path}>
               <button
-                onClick={() => setCollapsed(prev => {
-                  const next = new Set(prev);
-                  if (next.has(entry.path)) next.delete(entry.path);
-                  else next.add(entry.path);
-                  return next;
-                })}
+                type="button"
+                onClick={() =>
+                  setCollapsed((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(entry.path)) next.delete(entry.path);
+                    else next.add(entry.path);
+                    return next;
+                  })
+                }
                 className="flex w-full items-center gap-1 px-2 py-1 text-left text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
                 style={{ paddingLeft: 8 + depth * 12 }}
               >
@@ -237,7 +307,12 @@ function TreeNode({
                 <span className="truncate">{entry.name}</span>
               </button>
               {!isCollapsed && entry.children && (
-                <TreeNode entries={entry.children} selectedFile={selectedFile} onSelect={onSelect} depth={depth + 1} />
+                <TreeNode
+                  entries={entry.children}
+                  selectedFile={selectedFile}
+                  onSelect={onSelect}
+                  depth={depth + 1}
+                />
               )}
             </div>
           );
@@ -245,6 +320,7 @@ function TreeNode({
         const isSelected = selectedFile === entry.path;
         return (
           <button
+            type="button"
             key={entry.path}
             onClick={() => onSelect(entry.path)}
             className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11px] transition-colors ${
@@ -256,9 +332,11 @@ function TreeNode({
             }`}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
-            <span className={`shrink-0 text-[10px] ${
-              isSelected ? "text-blue-500" : entry.openable ? "text-zinc-500" : "text-zinc-700"
-            }`}>
+            <span
+              className={`shrink-0 text-[10px] ${
+                isSelected ? "text-blue-500" : entry.openable ? "text-zinc-500" : "text-zinc-700"
+              }`}
+            >
               {extLabel(entry.name)}
             </span>
             <span className="truncate">{entry.name}</span>

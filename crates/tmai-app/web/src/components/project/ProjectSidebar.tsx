@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from "react";
 import { ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { TeamSummary } from "@/lib/teams";
+import { cn } from "@/lib/utils";
 
 interface ProjectSidebarProps {
   registeredProjects: string[];
@@ -28,8 +28,7 @@ export function ProjectSidebar({
         setTeamsLoading(true);
         const teamList = await api.listTeams();
         setTeams(teamList);
-      } catch (e) {
-        console.error("Failed to load teams:", e);
+      } catch (_e) {
       } finally {
         setTeamsLoading(false);
       }
@@ -56,28 +55,20 @@ export function ProjectSidebar({
   };
 
   // Get active project display
-  const activeProjectName = currentProject
-    ? getProjectName(currentProject)
-    : "Select Project";
+  const activeProjectName = currentProject ? getProjectName(currentProject) : "Select Project";
 
   return (
     <div className="flex flex-col gap-3 border-b border-white/10 px-3 py-3">
       {/* Project Selector */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-zinc-500 uppercase">
-            Project
-          </span>
+          <span className="text-xs font-semibold text-zinc-500 uppercase">Project</span>
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="rounded p-1 text-zinc-600 transition-colors hover:text-zinc-400"
           >
-            <span
-              className={cn(
-                "inline-block transition-transform",
-                !expanded && "-rotate-90",
-              )}
-            >
+            <span className={cn("inline-block transition-transform", !expanded && "-rotate-90")}>
               ▼
             </span>
           </button>
@@ -86,6 +77,7 @@ export function ProjectSidebar({
         {expanded && (
           <div className="relative" ref={dropdownRef}>
             <button
+              type="button"
               onClick={() => setShowDropdown(!showDropdown)}
               className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm transition-all hover:bg-white/[0.05] hover:border-white/20 flex items-center justify-between group"
             >
@@ -98,12 +90,11 @@ export function ProjectSidebar({
             {showDropdown && (
               <div className="absolute left-0 right-0 top-full z-10 mt-1 flex max-h-48 flex-col gap-1 rounded-lg border border-white/10 bg-zinc-900/95 p-1 shadow-xl overflow-y-auto">
                 {registeredProjects.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-zinc-500">
-                    No projects registered
-                  </div>
+                  <div className="px-3 py-2 text-xs text-zinc-500">No projects registered</div>
                 ) : (
                   registeredProjects.map((path) => (
                     <button
+                      type="button"
                       key={path}
                       onClick={() => {
                         onProjectChange(path);
@@ -116,12 +107,8 @@ export function ProjectSidebar({
                           : "text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-300",
                       )}
                     >
-                      <div className="truncate font-medium">
-                        {getProjectName(path)}
-                      </div>
-                      <div className="truncate text-[10px] text-zinc-600 mt-0.5">
-                        {path}
-                      </div>
+                      <div className="truncate font-medium">{getProjectName(path)}</div>
+                      <div className="truncate text-[10px] text-zinc-600 mt-0.5">{path}</div>
                     </button>
                   ))
                 )}
@@ -141,13 +128,9 @@ export function ProjectSidebar({
           </div>
 
           {teamsLoading ? (
-            <div className="px-2 py-2 text-xs text-zinc-600">
-              Loading teams...
-            </div>
+            <div className="px-2 py-2 text-xs text-zinc-600">Loading teams...</div>
           ) : teams.length === 0 ? (
-            <div className="px-2 py-2 text-xs text-zinc-600">
-              No teams available
-            </div>
+            <div className="px-2 py-2 text-xs text-zinc-600">No teams available</div>
           ) : (
             <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
               {teams.map((team) => (
@@ -156,9 +139,7 @@ export function ProjectSidebar({
                   className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 transition-all hover:bg-white/[0.04] hover:border-white/[0.12]"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-medium text-zinc-300">
-                      {team.name}
-                    </span>
+                    <span className="truncate text-xs font-medium text-zinc-300">{team.name}</span>
                     {team.task_done > 0 && (
                       <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 text-[10px] text-emerald-400">
                         {team.task_done}/{team.task_total}

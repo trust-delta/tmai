@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api, type TeamSummary } from "@/lib/api";
-import { type TeamTaskInfo } from "@/lib/teams";
+import type { TeamTaskInfo } from "@/lib/teams";
 
 interface TeamsPanelProps {
   onClose: () => void;
@@ -17,7 +17,8 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
   // Load teams on mount
   useEffect(() => {
     setLoading(true);
-    api.listTeams()
+    api
+      .listTeams()
       .then((teams) => {
         setTeams(teams);
         if (teams.length > 0) {
@@ -33,8 +34,9 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
   // Load team tasks when team selection changes
   useEffect(() => {
     if (!selectedTeam) return;
-    
-    api.getTeamTasks(selectedTeam)
+
+    api
+      .getTeamTasks(selectedTeam)
       .then((tasks) => setTeamTasks(tasks))
       .catch((e) => setError((e as Error).message));
   }, [selectedTeam]);
@@ -47,6 +49,7 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
         <h2 className="text-lg font-semibold text-zinc-100">Teams</h2>
         <button
+          type="button"
           onClick={onClose}
           className="text-zinc-500 hover:text-zinc-300 transition-subtle"
         >
@@ -68,6 +71,7 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
             <div className="space-y-2">
               {teams.map((team) => (
                 <button
+                  type="button"
                   key={team.name}
                   onClick={() => setSelectedTeam(team.name)}
                   className={`glass-card w-full rounded-lg px-3 py-2 text-left transition-subtle text-sm ${
@@ -92,18 +96,15 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
             <div className="space-y-4">
               {/* Team Info */}
               <div className="glass-card rounded-lg px-4 py-3">
-                <h3 className="font-semibold text-zinc-100 text-base">
-                  {selectedTeamData.name}
-                </h3>
+                <h3 className="font-semibold text-zinc-100 text-base">{selectedTeamData.name}</h3>
                 {selectedTeamData.description && (
-                  <p className="text-sm text-zinc-400 mt-1">
-                    {selectedTeamData.description}
-                  </p>
+                  <p className="text-sm text-zinc-400 mt-1">{selectedTeamData.description}</p>
                 )}
                 <div className="text-xs text-zinc-500 mt-2 space-y-1">
                   <div>Members: {selectedTeamData.member_count}</div>
                   <div>
-                    Progress: {selectedTeamData.task_done}/{selectedTeamData.task_total} tasks completed
+                    Progress: {selectedTeamData.task_done}/{selectedTeamData.task_total} tasks
+                    completed
                   </div>
                 </div>
               </div>
@@ -116,33 +117,26 @@ export function TeamsPanel({ onClose }: TeamsPanelProps) {
                 ) : (
                   <div className="space-y-2">
                     {teamTasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className="glass-card rounded-lg px-3 py-2 text-sm"
-                      >
+                      <div key={task.id} className="glass-card rounded-lg px-3 py-2 text-sm">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1">
-                            <div className="font-medium text-zinc-200">
-                              {task.subject}
-                            </div>
-                            <div className="text-xs text-zinc-600 mt-0.5">
-                              {task.description}
-                            </div>
+                            <div className="font-medium text-zinc-200">{task.subject}</div>
+                            <div className="text-xs text-zinc-600 mt-0.5">{task.description}</div>
                           </div>
-                          <div className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
-                            task.status === "completed"
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : task.status === "in_progress"
-                                ? "bg-cyan-500/20 text-cyan-400"
-                                : "bg-zinc-500/20 text-zinc-400"
-                          }`}>
+                          <div
+                            className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                              task.status === "completed"
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : task.status === "in_progress"
+                                  ? "bg-cyan-500/20 text-cyan-400"
+                                  : "bg-zinc-500/20 text-zinc-400"
+                            }`}
+                          >
                             {task.status}
                           </div>
                         </div>
                         {task.owner && (
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Owner: {task.owner}
-                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">Owner: {task.owner}</div>
                         )}
                       </div>
                     ))}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 interface CommitData {
@@ -25,7 +25,8 @@ export function CommitLog({ repoPath, base, branch, count }: CommitLogProps) {
     setCommits(null);
     setExpandedSha(null);
     setLoading(true);
-    api.gitLog(repoPath, base, branch)
+    api
+      .gitLog(repoPath, base, branch)
       .then(setCommits)
       .catch(() => setCommits([]))
       .finally(() => setLoading(false));
@@ -34,6 +35,7 @@ export function CommitLog({ repoPath, base, branch, count }: CommitLogProps) {
   return (
     <div className="mt-4">
       <button
+        type="button"
         onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
       >
@@ -42,16 +44,15 @@ export function CommitLog({ repoPath, base, branch, count }: CommitLogProps) {
       </button>
       {expanded && (
         <div className="mt-1.5">
-          {loading && (
-            <div className="text-[11px] text-zinc-600 py-1">Loading...</div>
-          )}
+          {loading && <div className="text-[11px] text-zinc-600 py-1">Loading...</div>}
           {commits && commits.length === 0 && !loading && (
             <div className="text-[11px] text-zinc-600 py-1">No commits</div>
           )}
-          {commits && commits.map((c) => (
+          {commits?.map((c) => (
             <div key={c.sha} className="border-b border-white/5 last:border-0">
               <button
-                onClick={() => setExpandedSha((prev) => prev === c.sha ? null : c.sha)}
+                type="button"
+                onClick={() => setExpandedSha((prev) => (prev === c.sha ? null : c.sha))}
                 className="flex w-full items-baseline gap-2 py-1 text-left hover:bg-white/[0.03] rounded px-1 -mx-1 transition-colors"
               >
                 <span className="shrink-0 font-mono text-[10px] text-cyan-600">{c.sha}</span>

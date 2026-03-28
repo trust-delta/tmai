@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, needsAttention, subscribeSSE, type AgentSnapshot } from "@/lib/api";
-import { useTauriEvents, type CoreEvent } from "./useTauriEvents";
+import { type AgentSnapshot, api, needsAttention, subscribeSSE } from "@/lib/api";
+import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
 // Hook to fetch and reactively update agent list via Tauri events + HTTP fallback
 export function useAgents() {
@@ -14,8 +14,7 @@ export function useAgents() {
       const agentList = await api.listAgents();
       setAgents(agentList);
       setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
-    } catch (e) {
-      console.warn("Failed to fetch agents:", e);
+    } catch (_e) {
       // Server may not be ready yet during startup
     } finally {
       setLoading(false);
@@ -23,12 +22,15 @@ export function useAgents() {
   }, []);
 
   // Handle Tauri core-event emissions
-  const handleTauriEvent = useCallback((event: CoreEvent) => {
-    if (event.type === "agents-updated") {
-      // Refresh agent list when AgentsUpdated event is received
-      refresh();
-    }
-  }, [refresh]);
+  const handleTauriEvent = useCallback(
+    (event: CoreEvent) => {
+      if (event.type === "agents-updated") {
+        // Refresh agent list when AgentsUpdated event is received
+        refresh();
+      }
+    },
+    [refresh],
+  );
 
   // Subscribe to Tauri events
   useTauriEvents(handleTauriEvent);
@@ -43,9 +45,7 @@ export function useAgents() {
     const { unlisten } = subscribeSSE({
       onAgents: (agentList) => {
         setAgents(agentList);
-        setAttentionCount(
-          agentList.filter((a) => needsAttention(a.status)).length,
-        );
+        setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
         setLoading(false);
       },
     });

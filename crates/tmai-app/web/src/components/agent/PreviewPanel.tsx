@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { api } from "@/lib/api";
 import { AnsiUp } from "ansi_up";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "@/lib/api";
 
 interface PreviewPanelProps {
   agentId: string;
@@ -57,13 +57,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
   // Wrap setter to persist preference per agent
-  const setAutoScroll = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
-    setAutoScrollRaw((prev) => {
-      const next = typeof v === "function" ? v(prev) : v;
-      agentAutoScrollMap.set(agentId, next);
-      return next;
-    });
-  }, [agentId]);
+  const setAutoScroll = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setAutoScrollRaw((prev) => {
+        const next = typeof v === "function" ? v(prev) : v;
+        agentAutoScrollMap.set(agentId, next);
+        return next;
+      });
+    },
+    [agentId],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -144,7 +147,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Scroll handler (reserved for future use, auto-scroll is button-controlled only)
   const handleScroll = useCallback(() => {}, []);
 
-
   // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -180,7 +182,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         sendPassthrough({ chars: e.key });
       }
     },
-    [agentId, composing],
+    [composing, enterSelectMode, sendPassthrough],
   );
 
   // Handle IME confirmed text via input event
@@ -194,7 +196,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         input.value = "";
       }
     },
-    [agentId, composing],
+    [
+      composing, // IME confirmed or direct paste — send the full text
+      sendPassthrough,
+    ],
   );
 
   const html = useMemo(() => ansi.ansi_to_html(content), [ansi, content]);
@@ -223,6 +228,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       }`}
     >
       <div
+        role="log"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable log needs focus for keyboard scrolling
+        tabIndex={0}
         ref={scrollContainerRef}
         onScroll={handleScroll}
         onMouseDown={() => {
@@ -291,18 +299,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       {/* Footer status bar */}
       <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1">
         <button
+          type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={focused ? enterSelectMode : enterInputMode}
           className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-            focused
-              ? "bg-cyan-500/20 text-cyan-400"
-              : "bg-amber-500/20 text-amber-400"
+            focused ? "bg-cyan-500/20 text-cyan-400" : "bg-amber-500/20 text-amber-400"
           }`}
-          title={focused ? "Input mode — keystrokes sent to agent (click or Esc for select mode)" : "Select mode — click to copy text (click for input mode)"}
+          title={
+            focused
+              ? "Input mode — keystrokes sent to agent (click or Esc for select mode)"
+              : "Select mode — click to copy text (click for input mode)"
+          }
         >
           {focused ? "⌨ Input" : "📋 Select"}
         </button>
         <button
+          type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => setAutoScroll((v) => !v)}
           className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${

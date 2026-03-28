@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, subscribeSSE, type UsageSnapshot } from "@/lib/api";
 
 // Color class based on usage percentage
@@ -63,51 +63,38 @@ export function UsagePanel() {
     <div className="border-t border-white/5">
       {/* Header row */}
       <button
+        type="button"
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-white/5"
       >
-        <span className="text-[10px] font-semibold tracking-wider text-zinc-500">
-          USAGE
-        </span>
+        <span className="text-[10px] font-semibold tracking-wider text-zinc-500">USAGE</span>
 
         {/* Collapsed: show top 2 meters as badges */}
         {!expanded && hasData && (
           <div className="flex flex-1 items-center gap-2">
-            {usage.meters.slice(0, 2).map((m, i) => (
-              <span
-                key={i}
-                className={`text-[11px] font-medium ${meterColor(m.percent)}`}
-              >
+            {usage.meters.slice(0, 2).map((m) => (
+              <span key={m.label} className={`text-[11px] font-medium ${meterColor(m.percent)}`}>
                 {m.percent}%
               </span>
             ))}
           </div>
         )}
 
-        {!expanded && !hasData && (
-          <span className="flex-1 text-[11px] text-zinc-600">—</span>
-        )}
+        {!expanded && !hasData && <span className="flex-1 text-[11px] text-zinc-600">—</span>}
 
         {/* Refresh button */}
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             handleFetch();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.stopPropagation();
-              handleFetch();
-            }
           }}
           className={`text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${
             fetching ? "animate-spin" : ""
           }`}
         >
           ↻
-        </span>
+        </button>
       </button>
 
       {/* Expanded: show full meters */}
@@ -115,15 +102,11 @@ export function UsagePanel() {
         <div className="px-4 pb-3 space-y-3">
           {hasData ? (
             <>
-              {usage.meters.map((m, i) => (
-                <div key={i} className="space-y-1">
+              {usage.meters.map((m) => (
+                <div key={m.label} className="space-y-1">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] text-zinc-400">
-                      {m.label}
-                    </span>
-                    <span
-                      className={`text-[11px] font-medium ${meterColor(m.percent)}`}
-                    >
+                    <span className="text-[11px] text-zinc-400">{m.label}</span>
+                    <span className={`text-[11px] font-medium ${meterColor(m.percent)}`}>
                       {m.percent}%
                     </span>
                   </div>
@@ -145,21 +128,15 @@ export function UsagePanel() {
                 </div>
               ))}
               {/* Updated timestamp */}
-              <p className="text-[10px] text-zinc-600">
-                Updated {timeAgo(usage.fetched_at)}
-              </p>
+              <p className="text-[10px] text-zinc-600">Updated {timeAgo(usage.fetched_at)}</p>
             </>
           ) : (
             <p className="text-[11px] text-zinc-600">
-              {fetching
-                ? "Fetching usage..."
-                : "Click ↻ to fetch usage data"}
+              {fetching ? "Fetching usage..." : "Click ↻ to fetch usage data"}
             </p>
           )}
 
-          {usage?.error && (
-            <p className="text-[10px] text-red-400/70">{usage.error}</p>
-          )}
+          {usage?.error && <p className="text-[10px] text-red-400/70">{usage.error}</p>}
         </div>
       )}
     </div>

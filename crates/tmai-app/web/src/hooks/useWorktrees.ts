@@ -31,10 +31,7 @@ export function useWorktrees(): {
         refresh();
       },
       onEvent: (eventName) => {
-        if (
-          eventName === "worktree_created" ||
-          eventName === "worktree_removed"
-        ) {
+        if (eventName === "worktree_created" || eventName === "worktree_removed") {
           refresh();
         }
       },

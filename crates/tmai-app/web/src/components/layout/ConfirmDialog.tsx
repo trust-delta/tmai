@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 interface ConfirmOptions {
   title?: string;
@@ -29,6 +29,11 @@ export function useConfirm(): (options: ConfirmOptions) => Promise<boolean> {
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<ConfirmState | null>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (state) confirmBtnRef.current?.focus();
+  }, [state]);
 
   const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
     return new Promise<boolean>((resolve) => {
@@ -49,6 +54,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       {children}
       {state && (
         <div
+          role="dialog"
           ref={backdropRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={(e) => {
@@ -60,22 +66,20 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         >
           <div className="w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 p-5 shadow-2xl">
             {state.title && (
-              <h3 className="mb-1 text-sm font-semibold text-zinc-100">
-                {state.title}
-              </h3>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-100">{state.title}</h3>
             )}
-            <p className="text-[13px] leading-relaxed text-zinc-400">
-              {state.message}
-            </p>
+            <p className="text-[13px] leading-relaxed text-zinc-400">{state.message}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => handleResolve(false)}
                 className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
               >
                 {state.cancelLabel ?? "Cancel"}
               </button>
               <button
-                autoFocus
+                type="button"
+                ref={confirmBtnRef}
                 onClick={() => handleResolve(true)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   state.variant === "danger"

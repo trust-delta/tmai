@@ -1,5 +1,5 @@
+import { type AgentSnapshot, statusName } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { statusName, type AgentSnapshot } from "@/lib/api";
 
 interface TerminalListProps {
   terminals: AgentSnapshot[];
@@ -8,11 +8,7 @@ interface TerminalListProps {
 }
 
 // Compact list of non-AI terminal sessions (bash, shell, etc.)
-export function TerminalList({
-  terminals,
-  selectedTarget,
-  onSelect,
-}: TerminalListProps) {
+export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalListProps) {
   if (terminals.length === 0) return null;
 
   return (
@@ -27,6 +23,7 @@ export function TerminalList({
           const status = statusName(t.status);
           return (
             <button
+              type="button"
               key={t.id}
               onClick={() => onSelect(t.id)}
               className={cn(

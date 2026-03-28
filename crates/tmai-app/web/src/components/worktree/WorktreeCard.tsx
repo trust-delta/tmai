@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { WorktreeSnapshot } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface WorktreeCardProps {
   worktree: WorktreeSnapshot;
@@ -13,6 +13,7 @@ export function WorktreeCard({ worktree, selected, onClick }: WorktreeCardProps)
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "glass-card w-full rounded-xl px-3 py-2 text-left transition-all",
@@ -25,14 +26,11 @@ export function WorktreeCard({ worktree, selected, onClick }: WorktreeCardProps)
           <span className="truncate text-sm font-medium text-zinc-200">
             {worktree.branch || worktree.name}
           </span>
-          {worktree.is_dirty && (
-            <span className="text-[10px] text-amber-500">*</span>
-          )}
+          {worktree.is_dirty && <span className="text-[10px] text-amber-500">*</span>}
         </div>
         {ds && (
           <span className="shrink-0 text-[10px] text-zinc-500">
-            <span className="text-emerald-400">+{ds.insertions}</span>
-            {" "}
+            <span className="text-emerald-400">+{ds.insertions}</span>{" "}
             <span className="text-red-400">-{ds.deletions}</span>
           </span>
         )}
@@ -42,7 +40,9 @@ export function WorktreeCard({ worktree, selected, onClick }: WorktreeCardProps)
         {ds && (
           <>
             <span>·</span>
-            <span>{ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}</span>
+            <span>
+              {ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}
+            </span>
           </>
         )}
       </div>

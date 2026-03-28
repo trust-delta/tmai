@@ -1,15 +1,15 @@
-import { cn } from "@/lib/utils";
 import {
-  statusName,
-  needsAttention,
-  isAiAgent,
-  api,
   type AgentSnapshot,
   type AgentType,
+  api,
   type ConnectionChannels,
   type DetectionSource,
+  isAiAgent,
+  needsAttention,
   type SendCapability,
+  statusName,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const statusColors: Record<string, string> = {
   Processing: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
@@ -31,14 +31,10 @@ function agentTypeLabel(agentType: AgentType): {
   label: string;
   color: string;
 } {
-  if (agentType === "ClaudeCode")
-    return { icon: "⬡", label: "Claude", color: "text-orange-400" };
-  if (agentType === "CodexCli")
-    return { icon: "◆", label: "Codex", color: "text-green-400" };
-  if (agentType === "GeminiCli")
-    return { icon: "✦", label: "Gemini", color: "text-blue-400" };
-  if (agentType === "OpenCode")
-    return { icon: "◇", label: "OpenCode", color: "text-purple-400" };
+  if (agentType === "ClaudeCode") return { icon: "⬡", label: "Claude", color: "text-orange-400" };
+  if (agentType === "CodexCli") return { icon: "◆", label: "Codex", color: "text-green-400" };
+  if (agentType === "GeminiCli") return { icon: "✦", label: "Gemini", color: "text-blue-400" };
+  if (agentType === "OpenCode") return { icon: "◇", label: "OpenCode", color: "text-purple-400" };
   if (typeof agentType === "object" && "Custom" in agentType)
     return { icon: "›", label: agentType.Custom, color: "text-zinc-400" };
   return { icon: "›", label: "agent", color: "text-zinc-400" };
@@ -51,8 +47,7 @@ function modelStyle(displayName: string): { color: string; glow: string } {
     return { color: "text-amber-400/80", glow: "drop-shadow-[0_0_3px_rgba(251,191,36,0.3)]" };
   if (lower.includes("sonnet"))
     return { color: "text-violet-400/80", glow: "drop-shadow-[0_0_3px_rgba(167,139,250,0.2)]" };
-  if (lower.includes("haiku"))
-    return { color: "text-emerald-400/70", glow: "" };
+  if (lower.includes("haiku")) return { color: "text-emerald-400/70", glow: "" };
   return { color: "text-zinc-500", glow: "" };
 }
 
@@ -113,9 +108,7 @@ function ChannelBadge({
     <span
       className={cn(
         "rounded-sm px-1 py-px text-[9px] font-medium leading-tight transition-subtle",
-        active
-          ? `${activeColor} border border-current/20`
-          : "text-zinc-700 border border-zinc-800",
+        active ? `${activeColor} border border-current/20` : "text-zinc-700 border border-zinc-800",
       )}
     >
       {label}
@@ -136,18 +129,15 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   // Auto-approve state
-  const hasOverride = agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
+  const hasOverride =
+    agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
   const isAutoApproveOn = autoApproveEffective(agent);
 
   // Auto-approve overrides status display when active
   const phase = agent.auto_approve_phase;
   const isJudging = phase === "Judging";
   const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
-  const displayName = isJudging
-    ? "Judging"
-    : isAutoApproved
-      ? "Approved"
-      : name;
+  const displayName = isJudging ? "Judging" : isAutoApproved ? "Approved" : name;
   const statusStyle = isJudging
     ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
     : isAutoApproved
@@ -183,6 +173,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
@@ -212,12 +203,15 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         </div>
         <div className="flex items-center gap-1">
           {/* Auto-approve toggle */}
-          <span
+          <button
+            type="button"
             onClick={handleAutoApproveToggle}
             className={cn(
               "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-subtle",
               !hasOverride && "text-zinc-600 hover:text-zinc-400 hover:bg-white/5",
-              hasOverride && isAutoApproveOn && "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15",
+              hasOverride &&
+                isAutoApproveOn &&
+                "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15",
               hasOverride && !isAutoApproveOn && "text-red-400 bg-red-500/10 hover:bg-red-500/15",
             )}
             title={
@@ -229,7 +223,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             }
           >
             {!hasOverride ? "⚡" : isAutoApproveOn ? "⚡on" : "⚡off"}
-          </span>
+          </button>
           <span
             className={cn(
               "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-subtle",
@@ -252,24 +246,20 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
                 activeColor="text-cyan-400"
               />
             )}
-            {(channels.has_ipc || channels.has_hook || channels.has_websocket || channels.has_tmux) && (
-              <ChannelBadge
-                label="IPC"
-                active={channels.has_ipc}
-                activeColor="text-emerald-400"
-              />
+            {(channels.has_ipc ||
+              channels.has_hook ||
+              channels.has_websocket ||
+              channels.has_tmux) && (
+              <ChannelBadge label="IPC" active={channels.has_ipc} activeColor="text-emerald-400" />
             )}
             {channels.has_tmux && (
-              <ChannelBadge
-                label="tmux"
-                active={channels.has_tmux}
-                activeColor="text-yellow-400"
-              />
+              <ChannelBadge label="tmux" active={channels.has_tmux} activeColor="text-yellow-400" />
             )}
             {/* Fallback: show capture-pane only when no other channel */}
-            {!channels.has_hook && !channels.has_websocket && !channels.has_ipc && !channels.has_tmux && (
-              <ChannelBadge label="--" active={false} activeColor="" />
-            )}
+            {!channels.has_hook &&
+              !channels.has_websocket &&
+              !channels.has_ipc &&
+              !channels.has_tmux && <ChannelBadge label="--" active={false} activeColor="" />}
           </div>
         )}
 
@@ -290,7 +280,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             {agent.git_dirty && <span className="text-amber-500">*</span>}
           </span>
         ) : (
-          <span className="truncate text-right text-zinc-600 group-hover:text-zinc-500 transition-subtle" title={agent.cwd}>
+          <span
+            className="truncate text-right text-zinc-600 group-hover:text-zinc-500 transition-subtle"
+            title={agent.cwd}
+          >
             {agent.display_cwd}
           </span>
         )}

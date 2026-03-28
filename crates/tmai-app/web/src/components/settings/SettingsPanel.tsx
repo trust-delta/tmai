@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { api, type SpawnSettings, type AutoApproveSettings, type UsageSettings } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
+import { type AutoApproveSettings, api, type SpawnSettings, type UsageSettings } from "@/lib/api";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -14,9 +14,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [spawnSettings, setSpawnSettings] = useState<SpawnSettings | null>(null);
-  const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(
-    null,
-  );
+  const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(null);
   const [usageSettings, setUsageSettings] = useState<UsageSettings | null>(null);
   const [newPattern, setNewPattern] = useState("");
 
@@ -65,9 +63,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
       await api.removeProject(projectPath);
       refreshProjects();
       onProjectsChanged();
-    } catch (e) {
-      console.error("Remove failed:", e);
-    }
+    } catch (_e) {}
   };
 
   // Toggle spawn in tmux
@@ -77,9 +73,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     try {
       await api.updateSpawnSettings({ use_tmux_window: newValue });
       setSpawnSettings({ ...spawnSettings, use_tmux_window: newValue });
-    } catch (e) {
-      console.error("Failed to update spawn settings:", e);
-    }
+    } catch (_e) {}
   };
 
   // Update tmux window name
@@ -98,9 +92,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         use_tmux_window: spawnSettings.use_tmux_window,
         tmux_window_name: trimmed,
       });
-    } catch (e) {
-      console.error("Failed to update window name:", e);
-    }
+    } catch (_e) {}
   };
 
   return (
@@ -109,6 +101,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
       <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
         <h2 className="text-lg font-semibold text-zinc-200">Settings</h2>
         <button
+          type="button"
           onClick={onClose}
           className="rounded-md px-3 py-1 text-sm text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300"
         >
@@ -136,9 +129,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     setAutoApprove({ ...autoApprove, mode });
                     try {
                       await api.updateAutoApproveMode(mode);
-                    } catch (err) {
-                      console.error("Failed to update auto-approve:", err);
-                    }
+                    } catch (_err) {}
                   }}
                   className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 >
@@ -151,14 +142,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
 
               {/* Status indicator */}
               {autoApprove.running && (
-                <p className="text-[11px] text-emerald-500/70">
-                  Service running
-                </p>
+                <p className="text-[11px] text-emerald-500/70">Service running</p>
               )}
               {autoApprove.mode !== "off" && !autoApprove.running && (
-                <p className="text-[11px] text-amber-500/70">
-                  Restart tmai to activate
-                </p>
+                <p className="text-[11px] text-amber-500/70">Restart tmai to activate</p>
               )}
 
               {/* Rule presets — visible when mode uses rules */}
@@ -167,19 +154,42 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                     Rule Presets
                   </p>
-                  {([
-                    { key: "allow_read" as const, label: "Read operations", desc: "file reads, cat, ls, grep, find" },
-                    { key: "allow_tests" as const, label: "Test execution", desc: "cargo test, npm test, pytest, go test" },
-                    { key: "allow_fetch" as const, label: "Web fetch", desc: "WebFetch / WebSearch (GET only)" },
-                    { key: "allow_git_readonly" as const, label: "Git read-only", desc: "status, log, diff, branch, show, blame" },
-                    { key: "allow_format_lint" as const, label: "Format & lint", desc: "cargo fmt/clippy, prettier, eslint" },
-                  ] as const).map(({ key, label, desc }) => (
+                  {(
+                    [
+                      {
+                        key: "allow_read" as const,
+                        label: "Read operations",
+                        desc: "file reads, cat, ls, grep, find",
+                      },
+                      {
+                        key: "allow_tests" as const,
+                        label: "Test execution",
+                        desc: "cargo test, npm test, pytest, go test",
+                      },
+                      {
+                        key: "allow_fetch" as const,
+                        label: "Web fetch",
+                        desc: "WebFetch / WebSearch (GET only)",
+                      },
+                      {
+                        key: "allow_git_readonly" as const,
+                        label: "Git read-only",
+                        desc: "status, log, diff, branch, show, blame",
+                      },
+                      {
+                        key: "allow_format_lint" as const,
+                        label: "Format & lint",
+                        desc: "cargo fmt/clippy, prettier, eslint",
+                      },
+                    ] as const
+                  ).map(({ key, label, desc }) => (
                     <label key={key} className="flex items-center justify-between gap-3">
                       <div className="flex-1">
                         <span className="text-xs text-zinc-300">{label}</span>
                         <p className="text-[10px] text-zinc-600">{desc}</p>
                       </div>
                       <button
+                        type="button"
                         onClick={async () => {
                           const newVal = !autoApprove.rules[key];
                           setAutoApprove({
@@ -188,9 +198,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                           });
                           try {
                             await api.updateAutoApproveRules({ [key]: newVal });
-                          } catch (err) {
-                            console.error("Failed to update rule:", err);
-                          }
+                          } catch (_err) {}
                         }}
                         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                           autoApprove.rules[key] ? "bg-cyan-500/40" : "bg-white/10"
@@ -219,15 +227,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     {/* Pattern list */}
                     {autoApprove.rules.allow_patterns.length > 0 && (
                       <div className="space-y-1">
-                        {autoApprove.rules.allow_patterns.map((pat, i) => (
+                        {autoApprove.rules.allow_patterns.map((pat) => (
                           <div
-                            key={i}
+                            key={pat}
                             className="group flex items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-white/5"
                           >
                             <code className="flex-1 text-[11px] text-zinc-300 font-mono">
                               {pat}
                             </code>
                             <button
+                              type="button"
                               onClick={async () => {
                                 const updated = autoApprove.rules.allow_patterns.filter(
                                   (_, idx) => idx !== i,
@@ -240,9 +249,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                                   await api.updateAutoApproveRules({
                                     allow_patterns: updated,
                                   });
-                                } catch (err) {
-                                  console.error("Failed to remove pattern:", err);
-                                }
+                                } catch (_err) {}
                               }}
                               className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                             >
@@ -274,21 +281,17 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                               await api.updateAutoApproveRules({
                                 allow_patterns: updated,
                               });
-                            } catch (err) {
-                              console.error("Failed to add pattern:", err);
-                            }
+                            } catch (_err) {}
                           }
                         }}
                         placeholder="e.g. cargo build.*"
                         className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-mono text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
                       />
                       <button
+                        type="button"
                         onClick={async () => {
                           if (!newPattern.trim()) return;
-                          const updated = [
-                            ...autoApprove.rules.allow_patterns,
-                            newPattern.trim(),
-                          ];
+                          const updated = [...autoApprove.rules.allow_patterns, newPattern.trim()];
                           setAutoApprove({
                             ...autoApprove,
                             rules: { ...autoApprove.rules, allow_patterns: updated },
@@ -298,9 +301,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                             await api.updateAutoApproveRules({
                               allow_patterns: updated,
                             });
-                          } catch (err) {
-                            console.error("Failed to add pattern:", err);
-                          }
+                          } catch (_err) {}
                         }}
                         className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
                       >
@@ -325,9 +326,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
               <label className="flex items-center justify-between gap-3">
                 <div className="flex-1">
-                  <span className="text-sm text-zinc-300">
-                    Spawn in tmux window
-                  </span>
+                  <span className="text-sm text-zinc-300">Spawn in tmux window</span>
                   <p className="mt-0.5 text-[11px] text-zinc-600">
                     {spawnSettings.tmux_available
                       ? `New agents will appear as tmux panes in the "${spawnSettings.tmux_window_name}" window, detected by the poller like regular sessions.`
@@ -335,6 +334,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={handleToggleSpawnInTmux}
                   disabled={!spawnSettings.tmux_available}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
@@ -360,9 +360,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               {/* Window name field — shown when tmux is available and enabled */}
               {spawnSettings.tmux_available && spawnSettings.use_tmux_window && (
                 <div className="mt-3 flex items-center gap-2">
-                  <span className="shrink-0 text-xs text-zinc-500">
-                    Window name
-                  </span>
+                  <span className="shrink-0 text-xs text-zinc-500">Window name</span>
                   <input
                     type="text"
                     value={spawnSettings.tmux_window_name}
@@ -384,8 +382,8 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
           <section>
             <h3 className="text-sm font-medium text-zinc-300">Usage Monitoring</h3>
             <p className="mt-1 text-xs text-zinc-600">
-              Periodically fetch Claude Code subscription usage.
-              Spawns a temporary Claude Code instance (Haiku) for each refresh.
+              Periodically fetch Claude Code subscription usage. Spawns a temporary Claude Code
+              instance (Haiku) for each refresh.
             </p>
 
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
@@ -394,14 +392,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   <span className="text-sm text-zinc-300">Auto-refresh</span>
                 </div>
                 <button
+                  type="button"
                   onClick={async () => {
                     const newEnabled = !usageSettings.enabled;
                     setUsageSettings({ ...usageSettings, enabled: newEnabled });
                     try {
                       await api.updateUsageSettings({ enabled: newEnabled });
-                    } catch (e) {
-                      console.error("Failed to update usage settings:", e);
-                    }
+                    } catch (_e) {}
                   }}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                     usageSettings.enabled ? "bg-cyan-500/40" : "bg-white/10"
@@ -427,7 +424,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     value={usageSettings.auto_refresh_min || 30}
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val)) {
+                      if (!Number.isNaN(val)) {
                         setUsageSettings({ ...usageSettings, auto_refresh_min: val });
                       }
                     }}
@@ -435,9 +432,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       const val = Math.max(5, usageSettings.auto_refresh_min || 30);
                       try {
                         await api.updateUsageSettings({ auto_refresh_min: val });
-                      } catch (e) {
-                        console.error("Failed to update usage interval:", e);
-                      }
+                      } catch (_e) {}
                     }}
                     className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                   />
@@ -469,21 +464,21 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
               />
               <button
+                type="button"
                 onClick={() => handleAdd()}
                 className="rounded-md bg-cyan-500/20 px-3 py-1.5 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
               >
                 Add
               </button>
               <button
+                type="button"
                 onClick={() => setBrowsing((v) => !v)}
                 className={`rounded-md border border-white/10 px-3 py-1.5 text-xs transition-colors hover:bg-white/10 ${browsing ? "text-cyan-400" : "text-zinc-400 hover:text-zinc-200"}`}
               >
                 Browse
               </button>
             </div>
-            {error && (
-              <p className="mt-1.5 text-[11px] text-red-400">{error}</p>
-            )}
+            {error && <p className="mt-1.5 text-[11px] text-red-400">{error}</p>}
             {browsing && (
               <div className="mt-2">
                 <DirBrowser
@@ -497,9 +492,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
           {/* Project list */}
           <div className="mt-3 space-y-1">
             {projects.length === 0 && (
-              <p className="py-4 text-center text-xs text-zinc-600">
-                No projects registered
-              </p>
+              <p className="py-4 text-center text-xs text-zinc-600">No projects registered</p>
             )}
             {projects.map((p) => (
               <div
@@ -514,6 +507,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   <span className="ml-2 text-[11px] text-zinc-600">{p}</span>
                 </div>
                 <button
+                  type="button"
                   onClick={() => handleRemove(p)}
                   className="shrink-0 rounded px-2 py-0.5 text-xs text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                 >

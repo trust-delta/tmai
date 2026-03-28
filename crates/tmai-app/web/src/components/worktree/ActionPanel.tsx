@@ -1,17 +1,17 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
   api,
-  type WorktreeDiffResponse,
   type BranchListResponse,
-  type PrInfo,
   type CiSummary,
   type IssueInfo,
+  type PrInfo,
+  type WorktreeDiffResponse,
 } from "@/lib/api";
-import type { BranchNode } from "./graph/types";
-import { DiffViewer } from "./DiffViewer";
-import { CreateWorktreeForm } from "./CreateWorktreeForm";
 import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
-import { useConfirm } from "@/components/layout/ConfirmDialog";
+import { CreateWorktreeForm } from "./CreateWorktreeForm";
+import { DiffViewer } from "./DiffViewer";
+import type { BranchNode } from "./graph/types";
 
 interface ActionPanelProps {
   activeNode: BranchNode;
@@ -66,7 +66,7 @@ export function ActionPanel({
     setDiffData(null);
     setDiffLoading(false);
     setShowNewWorktree(false);
-  }, [activeNode.name]);
+  }, []);
 
   // Fetch CI checks when branch changes
   useEffect(() => {
@@ -85,8 +85,7 @@ export function ActionPanel({
   useEffect(() => {
     setBranchDiffStat(null);
     if (activeNode.isMain || activeNode.diffSummary) return;
-    const base =
-      activeNode.parent ?? branches?.default_branch ?? "main";
+    const base = activeNode.parent ?? branches?.default_branch ?? "main";
     api
       .gitDiffStat(projectPath, activeNode.name, base)
       .then((stat) => setBranchDiffStat(stat))
@@ -103,29 +102,23 @@ export function ActionPanel({
   // Focus parent or HEAD after deletion
   const focusAfterDelete = useCallback(() => {
     const target =
-      activeNode.parent ??
-      branches?.current_branch ??
-      branches?.default_branch ??
-      "main";
+      activeNode.parent ?? branches?.current_branch ?? branches?.default_branch ?? "main";
     onSelectNode(target);
   }, [activeNode.parent, branches, onSelectNode]);
 
   const handleViewDiff = useCallback(async () => {
     setDiffLoading(true);
     try {
-      let data;
+      let data: string;
       if (activeNode.worktree) {
         data = await api.getWorktreeDiff(activeNode.worktree.path);
       } else {
-        const base =
-          activeNode.parent ?? branches?.default_branch ?? "main";
+        const base = activeNode.parent ?? branches?.default_branch ?? "main";
         data = await api.gitBranchDiff(projectPath, activeNode.name, base);
       }
       setDiffData(data);
     } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Failed to load diff",
-      );
+      setActionError(e instanceof Error ? e.message : "Failed to load diff");
     } finally {
       setDiffLoading(false);
     }
@@ -142,14 +135,9 @@ export function ActionPanel({
     setActionBusy(true);
     setActionError(null);
     try {
-      await api.launchWorktreeAgent(
-        activeNode.worktree.repo_path,
-        activeNode.worktree.name,
-      );
+      await api.launchWorktreeAgent(activeNode.worktree.repo_path, activeNode.worktree.name);
     } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Failed to launch agent",
-      );
+      setActionError(e instanceof Error ? e.message : "Failed to launch agent");
     } finally {
       setActionBusy(false);
     }
@@ -168,9 +156,7 @@ export function ActionPanel({
       focusAfterDelete();
       onRefresh();
     } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Failed to delete worktree",
-      );
+      setActionError(e instanceof Error ? e.message : "Failed to delete worktree");
     } finally {
       setActionBusy(false);
     }
@@ -185,17 +171,14 @@ export function ActionPanel({
       focusAfterDelete();
       onRefresh();
     } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Failed to delete branch",
-      );
+      setActionError(e instanceof Error ? e.message : "Failed to delete branch");
     } finally {
       setActionBusy(false);
     }
   }, [actionBusy, projectPath, activeNode.name, forceDelete, focusAfterDelete, onRefresh]);
 
   // Resolve the base branch for merge/PR operations
-  const baseBranch =
-    activeNode.parent ?? branches?.default_branch ?? "main";
+  const baseBranch = activeNode.parent ?? branches?.default_branch ?? "main";
 
   // Warn before destructive actions while an agent is active on this branch
   const confirm = useConfirm();
@@ -222,9 +205,7 @@ export function ActionPanel({
       try {
         await api.spawnPty({ command: "claude", args: [prompt], cwd: projectPath });
       } catch (e) {
-        setActionError(
-          e instanceof Error ? e.message : "Failed to launch agent",
-        );
+        setActionError(e instanceof Error ? e.message : "Failed to launch agent");
       } finally {
         setActionBusy(false);
       }
@@ -249,9 +230,7 @@ export function ActionPanel({
         <div className="mb-4">
           <div className="flex items-center gap-2">
             {activeNode.isWorktree && <span className="text-sm">🌿</span>}
-            <h3 className="text-sm font-semibold text-zinc-100">
-              {activeNode.name}
-            </h3>
+            <h3 className="text-sm font-semibold text-zinc-100">{activeNode.name}</h3>
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
             {activeNode.isMain && (
@@ -265,9 +244,7 @@ export function ActionPanel({
               </span>
             )}
             {activeNode.isCurrent && (
-              <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-cyan-400">
-                HEAD
-              </span>
+              <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-cyan-400">HEAD</span>
             )}
             {activeNode.hasAgent && (
               <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-cyan-400">
@@ -275,9 +252,7 @@ export function ActionPanel({
               </span>
             )}
             {activeNode.isDirty && (
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">
-                modified
-              </span>
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">modified</span>
             )}
           </div>
           {(() => {
@@ -297,34 +272,25 @@ export function ActionPanel({
             <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
               <div className="flex items-center gap-1.5 text-zinc-500">
                 <span className="text-zinc-600">remote:</span>
-                <span className="font-mono text-zinc-400">
-                  {activeNode.remote.remote_branch}
-                </span>
+                <span className="font-mono text-zinc-400">{activeNode.remote.remote_branch}</span>
               </div>
               <div className="mt-0.5 flex items-center gap-2">
-                {activeNode.remote.ahead === 0 &&
-                activeNode.remote.behind === 0 ? (
+                {activeNode.remote.ahead === 0 && activeNode.remote.behind === 0 ? (
                   <span className="text-zinc-500">= up to date</span>
                 ) : (
                   <>
                     {activeNode.remote.ahead > 0 && (
-                      <span className="text-amber-400">
-                        {activeNode.remote.ahead} to push
-                      </span>
+                      <span className="text-amber-400">{activeNode.remote.ahead} to push</span>
                     )}
                     {activeNode.remote.behind > 0 && (
-                      <span className="text-cyan-400">
-                        {activeNode.remote.behind} to pull
-                      </span>
+                      <span className="text-cyan-400">{activeNode.remote.behind} to pull</span>
                     )}
                   </>
                 )}
               </div>
             </div>
           ) : (
-            <div className="mt-2 text-[11px] text-zinc-600">
-              no remote tracking
-            </div>
+            <div className="mt-2 text-[11px] text-zinc-600">no remote tracking</div>
           )}
           {/* PR info */}
           {prInfo && (
@@ -344,9 +310,7 @@ export function ActionPanel({
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate text-zinc-400">
-                {prInfo.title}
-              </div>
+              <div className="mt-0.5 truncate text-zinc-400">{prInfo.title}</div>
               {prInfo.review_decision && (
                 <div className="mt-1 flex items-center gap-2">
                   <span
@@ -390,14 +354,11 @@ export function ActionPanel({
             </div>
           )}
           {/* CI checks */}
-          {ciLoading && (
-            <div className="mt-2 text-[11px] text-zinc-600">
-              Loading checks...
-            </div>
-          )}
+          {ciLoading && <div className="mt-2 text-[11px] text-zinc-600">Loading checks...</div>}
           {ciSummary && ciSummary.checks.length > 0 && (
             <div className="mt-2">
               <button
+                type="button"
                 onClick={() => setCiExpanded((v) => !v)}
                 className="flex items-center gap-1.5 text-[11px] text-zinc-400 transition-colors hover:text-zinc-200"
               >
@@ -426,9 +387,7 @@ export function ActionPanel({
                   ({ciSummary.checks.length} check
                   {ciSummary.checks.length !== 1 ? "s" : ""})
                 </span>
-                <span className="text-[10px]">
-                  {ciExpanded ? "\u25BE" : "\u25B8"}
-                </span>
+                <span className="text-[10px]">{ciExpanded ? "\u25BE" : "\u25B8"}</span>
               </button>
               {ciExpanded && (
                 <div className="mt-1.5 flex flex-col gap-1">
@@ -446,15 +405,12 @@ export function ActionPanel({
                             ? "bg-green-400"
                             : check.conclusion === "failure"
                               ? "bg-red-400"
-                              : check.status === "in_progress" ||
-                                  check.status === "queued"
+                              : check.status === "in_progress" || check.status === "queued"
                                 ? "bg-yellow-400"
                                 : "bg-zinc-600"
                         }`}
                       />
-                      <span className="truncate text-zinc-300">
-                        {check.name}
-                      </span>
+                      <span className="truncate text-zinc-300">{check.name}</span>
                       <span
                         className={`ml-auto shrink-0 text-[10px] ${
                           check.conclusion === "success"
@@ -512,9 +468,7 @@ export function ActionPanel({
                 <span className="text-[10px] text-zinc-600">(from PR)</span>
               </div>
             ) : (
-              <div className="mt-2 text-[11px] text-zinc-600">
-                No CI checks
-              </div>
+              <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
             ))}
           {/* Linked issues */}
           {(() => {
@@ -528,9 +482,7 @@ export function ActionPanel({
             if (linked.length === 0) return null;
             return (
               <div className="mt-2">
-                <div className="mb-1 text-[11px] text-zinc-500">
-                  Linked issues
-                </div>
+                <div className="mb-1 text-[11px] text-zinc-500">Linked issues</div>
                 <div className="flex flex-col gap-1">
                   {linked.map((issue) => (
                     <a
@@ -540,12 +492,8 @@ export function ActionPanel({
                       rel="noopener noreferrer"
                       className="flex items-start gap-1.5 rounded bg-white/[0.03] px-2 py-1.5 text-[11px] transition-colors hover:bg-white/[0.06]"
                     >
-                      <span className="shrink-0 text-green-400">
-                        #{issue.number}
-                      </span>
-                      <span className="truncate text-zinc-300">
-                        {issue.title}
-                      </span>
+                      <span className="shrink-0 text-green-400">#{issue.number}</span>
+                      <span className="truncate text-zinc-300">{issue.title}</span>
                       {issue.labels.length > 0 && (
                         <div className="ml-auto flex shrink-0 gap-1">
                           {issue.labels.slice(0, 2).map((label) => (
@@ -597,9 +545,7 @@ export function ActionPanel({
                       </span>
                     )}
                     {pr.review_decision === "APPROVED" && (
-                      <span className="text-[10px] text-green-400">
-                        Approved
-                      </span>
+                      <span className="text-[10px] text-green-400">Approved</span>
                     )}
                     {pr.check_status === "SUCCESS" && (
                       <span
@@ -620,21 +566,18 @@ export function ActionPanel({
                       />
                     )}
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-zinc-400">
-                    {pr.title}
-                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-zinc-400">{pr.title}</div>
                   <div className="mt-0.5 text-[10px] text-zinc-600">
                     {pr.head_branch} → {activeNode.name}
                   </div>
                   {(pr.additions > 0 || pr.deletions > 0) && (
                     <div className="mt-0.5 text-[10px] text-zinc-600">
-                      <span className="text-emerald-400">
-                        +{pr.additions}
-                      </span>{" "}
+                      <span className="text-emerald-400">+{pr.additions}</span>{" "}
                       <span className="text-red-400">-{pr.deletions}</span>
                     </div>
                   )}
                   <button
+                    type="button"
                     onClick={() =>
                       confirmIfAgentActive("Merge", () =>
                         delegateToAi(
@@ -658,6 +601,7 @@ export function ActionPanel({
           {/* View Diff — available for all non-main branches */}
           {!activeNode.isMain && (
             <button
+              type="button"
               onClick={handleViewDiff}
               disabled={diffLoading}
               className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50"
@@ -672,6 +616,7 @@ export function ActionPanel({
               {/* Focus Agent (worktree or any branch with agent) */}
               {activeNode.agentTarget ? (
                 <button
+                  type="button"
                   onClick={() => onFocusAgent(activeNode.agentTarget!)}
                   className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25"
                 >
@@ -681,9 +626,8 @@ export function ActionPanel({
                 activeNode.isWorktree &&
                 activeNode.worktree && (
                   <button
-                    onClick={() =>
-                      confirmIfAgentActive("Launch agent", handleLaunchAgent)
-                    }
+                    type="button"
+                    onClick={() => confirmIfAgentActive("Launch agent", handleLaunchAgent)}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
                   >
@@ -696,6 +640,7 @@ export function ActionPanel({
               {activeNode.ahead > 0 && (
                 <>
                   <button
+                    type="button"
                     onClick={() =>
                       confirmIfAgentActive("Merge", () =>
                         delegateToAi(
@@ -713,6 +658,7 @@ export function ActionPanel({
                       : `AI Merge into ${baseBranch}`}
                   </button>
                   <button
+                    type="button"
                     onClick={() =>
                       delegateToAi(
                         `Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`,
@@ -735,37 +681,32 @@ export function ActionPanel({
               )}
 
               {/* Create worktree (only for non-worktree branches) */}
-              {!activeNode.isWorktree && (
-                <>
-                  {!showNewWorktree ? (
-                    <button
-                      onClick={() => setShowNewWorktree(true)}
-                      className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
-                    >
-                      Create Worktree
-                    </button>
-                  ) : (
-                    <CreateWorktreeForm
-                      baseBranch={activeNode.name}
-                      depth={nodeDepth.get(activeNode.name) ?? 0}
-                      depthWarning={branchDepthWarning}
-                      projectPath={projectPath}
-                      onCreated={handleWorktreeCreated}
-                      onCancel={handleWorktreeCancel}
-                    />
-                  )}
-                </>
-              )}
+              {!activeNode.isWorktree &&
+                (!showNewWorktree ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowNewWorktree(true)}
+                    className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+                  >
+                    Create Worktree
+                  </button>
+                ) : (
+                  <CreateWorktreeForm
+                    baseBranch={activeNode.name}
+                    depth={nodeDepth.get(activeNode.name) ?? 0}
+                    depthWarning={branchDepthWarning}
+                    projectPath={projectPath}
+                    onCreated={handleWorktreeCreated}
+                    onCancel={handleWorktreeCancel}
+                  />
+                ))}
 
               {/* Delete */}
               <hr className="border-white/5" />
               {!confirmDelete ? (
                 <button
-                  onClick={() =>
-                    confirmIfAgentActive("Delete", () =>
-                      setConfirmDelete(true),
-                    )
-                  }
+                  type="button"
+                  onClick={() => confirmIfAgentActive("Delete", () => setConfirmDelete(true))}
                   disabled={!activeNode.isWorktree && activeNode.isCurrent}
                   className="w-full rounded-lg bg-red-500/10 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-30"
                 >
@@ -784,17 +725,15 @@ export function ActionPanel({
                   </label>
                   <div className="mt-2 flex gap-2">
                     <button
-                      onClick={
-                        activeNode.isWorktree
-                          ? handleDeleteWorktree
-                          : handleDeleteBranch
-                      }
+                      type="button"
+                      onClick={activeNode.isWorktree ? handleDeleteWorktree : handleDeleteBranch}
                       disabled={actionBusy}
                       className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
                     >
                       {actionBusy ? "..." : "Confirm"}
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setConfirmDelete(false);
                         setForceDelete(false);
@@ -810,27 +749,25 @@ export function ActionPanel({
           )}
 
           {/* Main branch actions */}
-          {activeNode.isMain && (
-            <>
-              {!showNewWorktree ? (
-                <button
-                  onClick={() => setShowNewWorktree(true)}
-                  className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
-                >
-                  Create Worktree
-                </button>
-              ) : (
-                <CreateWorktreeForm
-                  baseBranch={activeNode.name}
-                  depth={0}
-                  depthWarning={branchDepthWarning}
-                  projectPath={projectPath}
-                  onCreated={handleWorktreeCreated}
-                  onCancel={handleWorktreeCancel}
-                />
-              )}
-            </>
-          )}
+          {activeNode.isMain &&
+            (!showNewWorktree ? (
+              <button
+                type="button"
+                onClick={() => setShowNewWorktree(true)}
+                className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+              >
+                Create Worktree
+              </button>
+            ) : (
+              <CreateWorktreeForm
+                baseBranch={activeNode.name}
+                depth={0}
+                depthWarning={branchDepthWarning}
+                projectPath={projectPath}
+                onCreated={handleWorktreeCreated}
+                onCancel={handleWorktreeCancel}
+              />
+            ))}
         </div>
 
         {/* Error display */}
@@ -847,9 +784,7 @@ export function ActionPanel({
           </div>
         )}
         {diffData && !diffData.diff && !diffLoading && (
-          <div className="mt-4 text-center text-xs text-zinc-500">
-            No changes vs base branch
-          </div>
+          <div className="mt-4 text-center text-xs text-zinc-500">No changes vs base branch</div>
         )}
       </div>
     </div>

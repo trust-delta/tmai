@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface ImeOverlayProps {
   onSubmit: (text: string) => void;
@@ -32,7 +32,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
     try {
       const clipText = await navigator.clipboard.readText();
       if (clipText) {
-        onSubmit(clipText + "\n");
+        onSubmit(`${clipText}\n`);
       }
     } catch {
       // Clipboard API may fail — user can still paste manually
@@ -43,7 +43,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
     if (e.key === "Enter" && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!text) return;
-      const payload = e.shiftKey ? text : text + "\n";
+      const payload = e.shiftKey ? text : `${text}\n`;
       onSubmit(payload);
       setText("");
     }
@@ -63,9 +63,10 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
         />
         <div className="flex flex-col gap-1">
           <button
+            type="button"
             onClick={() => {
               if (text) {
-                onSubmit(text + "\n");
+                onSubmit(`${text}\n`);
                 setText("");
               }
             }}
@@ -75,6 +76,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
             Send
           </button>
           <button
+            type="button"
             onClick={handlePasteSend}
             className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
             title="クリップボードの内容を直接送信"
@@ -82,6 +84,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
             Paste+Send
           </button>
           <button
+            type="button"
             onClick={onClose}
             className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
           >
@@ -90,8 +93,7 @@ export function ImeOverlay({ onSubmit, onClose }: ImeOverlayProps) {
         </div>
       </div>
       <p className="mt-1.5 text-xs text-zinc-600">
-        Ctrl+V → Enter: 送信+改行 / Paste+Send: クリップボードを直接送信 / Esc:
-        閉じる
+        Ctrl+V → Enter: 送信+改行 / Paste+Send: クリップボードを直接送信 / Esc: 閉じる
       </p>
     </div>
   );

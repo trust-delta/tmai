@@ -1,9 +1,18 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
-import { api, statusName, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo, type AgentSnapshot } from "@/lib/api";
-import type { BranchNode } from "./graph/types";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type AgentSnapshot,
+  api,
+  type BranchListResponse,
+  type GraphData,
+  type IssueInfo,
+  type PrInfo,
+  statusName,
+  type WorktreeSnapshot,
+} from "@/lib/api";
+import { ActionPanel } from "./ActionPanel";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
-import { ActionPanel } from "./ActionPanel";
+import type { BranchNode } from "./graph/types";
 
 interface BranchGraphProps {
   projectPath: string;
@@ -59,9 +68,7 @@ export function BranchGraph({
       setGraphData(graphResult);
       setPrMap(prResult);
       setIssues(issueResult);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (_e) {}
   }, [projectPath, graphLimit]);
 
   // Refresh branches (also refetches graph)
@@ -89,7 +96,7 @@ export function BranchGraph({
       scrollRef.current.scrollTop = savedScrollTop.current;
       savedScrollTop.current = null;
     }
-  }, [graphData]);
+  }, []);
 
   const normPath = projectPath.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
 
@@ -128,7 +135,11 @@ export function BranchGraph({
       isDirty: mainWt?.is_dirty ?? false,
       hasAgent: !!mainWt?.agent_target,
       agentTarget: mainWt?.agent_target ?? branchAgentMap.get(defaultBranch)?.target ?? null,
-      agentStatus: mainWt?.agent_status ?? (branchAgentMap.has(defaultBranch) ? statusName(branchAgentMap.get(defaultBranch)!.status) : null),
+      agentStatus:
+        mainWt?.agent_status ??
+        (branchAgentMap.has(defaultBranch)
+          ? statusName(branchAgentMap.get(defaultBranch)?.status)
+          : null),
       diffSummary: null,
       worktree: mainWt ?? null,
       ahead: 0,
@@ -187,7 +198,7 @@ export function BranchGraph({
     return result;
   }, [projectWorktrees, branches, agents]);
 
-  const branchCount = nodes.filter(n => !n.isMain).length;
+  const branchCount = nodes.filter((n) => !n.isMain).length;
 
   // Compute indentation depth for branch depth warning
   const nodeDepth = useMemo(() => {
@@ -240,7 +251,7 @@ export function BranchGraph({
 
   // Toggle lane collapse
   const toggleCollapse = useCallback((branch: string) => {
-    setCollapsedLanes(prev => {
+    setCollapsedLanes((prev) => {
       const next = new Set(prev);
       if (next.has(branch)) {
         next.delete(branch);
@@ -279,7 +290,16 @@ export function BranchGraph({
       {/* Header */}
       <div className="glass shrink-0 border-b border-white/5 px-6 py-4">
         <div className="flex items-center gap-3">
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="text-emerald-400">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 16 16"
+            fill="none"
+            className="text-emerald-400"
+            role="img"
+            aria-label="Branch graph"
+          >
+            <title>Branch graph</title>
             <circle cx="4" cy="4" r="2" fill="currentColor" />
             <circle cx="4" cy="12" r="2" fill="currentColor" />
             <circle cx="12" cy="8" r="2" fill="currentColor" />
@@ -303,11 +323,15 @@ export function BranchGraph({
           </span>
           <div className="flex-1" />
           {branches?.last_fetch && (
-            <span className="text-[10px] text-zinc-600" title={new Date(branches.last_fetch * 1000).toLocaleString()}>
+            <span
+              className="text-[10px] text-zinc-600"
+              title={new Date(branches.last_fetch * 1000).toLocaleString()}
+            >
               fetched {formatRelativeTime(branches.last_fetch)}
             </span>
           )}
           <button
+            type="button"
             onClick={handleRefresh}
             disabled={refreshBusy}
             className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 disabled:opacity-50"
@@ -315,9 +339,7 @@ export function BranchGraph({
             {refreshBusy ? "..." : "Refresh"}
           </button>
         </div>
-        {refreshError && (
-          <div className="mt-2 text-xs text-red-400">{refreshError}</div>
-        )}
+        {refreshError && <div className="mt-2 text-xs text-red-400">{refreshError}</div>}
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -346,9 +368,10 @@ export function BranchGraph({
           {graphData && graphData.commits.length >= graphLimit && (
             <div className="mt-4 flex justify-center">
               <button
+                type="button"
                 onClick={() => {
                   savedScrollTop.current = scrollRef.current?.scrollTop ?? null;
-                  setGraphLimit(prev => prev + 200);
+                  setGraphLimit((prev) => prev + 200);
                 }}
                 className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
               >
@@ -358,14 +381,31 @@ export function BranchGraph({
           )}
 
           {/* Inactive branches (not shown in graph) */}
-          {nodes.filter(n => !n.isMain && !n.isWorktree && !n.hasAgent && !n.isDirty && n.ahead === 0 && !n.isCurrent).length > 0 && (
+          {nodes.filter(
+            (n) =>
+              !n.isMain &&
+              !n.isWorktree &&
+              !n.hasAgent &&
+              !n.isDirty &&
+              n.ahead === 0 &&
+              !n.isCurrent,
+          ).length > 0 && (
             <div className="mt-6 border-t border-white/5 pt-4">
               <div className="mb-2 text-[11px] text-zinc-600">Inactive branches</div>
               <div className="flex flex-wrap gap-1.5">
                 {nodes
-                  .filter(n => !n.isMain && !n.isWorktree && !n.hasAgent && !n.isDirty && n.ahead === 0 && !n.isCurrent)
-                  .map(n => (
+                  .filter(
+                    (n) =>
+                      !n.isMain &&
+                      !n.isWorktree &&
+                      !n.hasAgent &&
+                      !n.isDirty &&
+                      n.ahead === 0 &&
+                      !n.isCurrent,
+                  )
+                  .map((n) => (
                     <button
+                      type="button"
                       key={n.name}
                       onClick={() => selectBranch(n.name)}
                       className={`rounded-md px-2 py-1 text-[11px] transition-colors ${

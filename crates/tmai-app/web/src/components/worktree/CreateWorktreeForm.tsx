@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 interface CreateWorktreeFormProps {
@@ -22,6 +22,11 @@ export function CreateWorktreeForm({
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleCreate = useCallback(async () => {
     const trimmed = name.trim();
@@ -53,7 +58,7 @@ export function CreateWorktreeForm({
       )}
       <div className="flex items-center gap-1">
         <input
-          autoFocus
+          ref={inputRef}
           type="text"
           value={name}
           onChange={(e) => {
@@ -68,6 +73,7 @@ export function CreateWorktreeForm({
           className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
         />
         <button
+          type="button"
           onClick={handleCreate}
           disabled={!name.trim() || busy}
           className="rounded px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30"

@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { api, type WorktreeSnapshot, type WorktreeDiffResponse } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { api, type WorktreeDiffResponse, type WorktreeSnapshot } from "@/lib/api";
 import { DiffViewer } from "./DiffViewer";
 
 interface WorktreePanelProps {
@@ -43,8 +43,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
     try {
       const res = await api.launchWorktreeAgent(worktree.repo_path, worktree.name);
       onLaunched(res.target);
-    } catch (e) {
-      console.error("Launch failed:", e);
+    } catch (_e) {
     } finally {
       setLaunching(false);
     }
@@ -57,8 +56,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
     try {
       await api.deleteWorktree(worktree.repo_path, worktree.name, forceDelete);
       onDeleted();
-    } catch (e) {
-      console.error("Delete failed:", e);
+    } catch (_e) {
     } finally {
       setDeleting(false);
       setConfirmDelete(false);
@@ -80,24 +78,19 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
               <h2 className="text-lg font-semibold text-zinc-100">
                 {worktree.branch || worktree.name}
               </h2>
-              {worktree.is_dirty && (
-                <span className="text-sm text-amber-500">*</span>
-              )}
+              {worktree.is_dirty && <span className="text-sm text-amber-500">*</span>}
             </div>
             <div className="mt-1 flex items-center gap-3 text-xs text-zinc-500">
               {ds && (
                 <span>
-                  <span className="text-emerald-400">+{ds.insertions}</span>
-                  {" "}
+                  <span className="text-emerald-400">+{ds.insertions}</span>{" "}
                   <span className="text-red-400">-{ds.deletions}</span>
                   {" · "}
                   {ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}
                 </span>
               )}
               {hasAgent ? (
-                <span className="text-cyan-400">
-                  Agent: {worktree.agent_status || "active"}
-                </span>
+                <span className="text-cyan-400">Agent: {worktree.agent_status || "active"}</span>
               ) : (
                 <span className="text-zinc-600">No agent</span>
               )}
@@ -112,6 +105,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
         <div className="mt-3 flex items-center gap-2">
           {!hasAgent && (
             <button
+              type="button"
               onClick={handleLaunch}
               disabled={launching}
               className="rounded-lg bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
@@ -121,6 +115,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
           )}
           {!confirmDelete ? (
             <button
+              type="button"
               onClick={() => setConfirmDelete(true)}
               className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
             >
@@ -138,6 +133,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
                 Force
               </label>
               <button
+                type="button"
                 onClick={handleDelete}
                 disabled={deleting}
                 className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
@@ -145,7 +141,11 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
                 {deleting ? "Deleting..." : "Confirm"}
               </button>
               <button
-                onClick={() => { setConfirmDelete(false); setForceDelete(false); }}
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setForceDelete(false);
+                }}
                 className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
               >
                 Cancel
@@ -153,6 +153,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
             </div>
           )}
           <button
+            type="button"
             onClick={fetchDiff}
             disabled={diffLoading}
             className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 disabled:opacity-50"
@@ -173,9 +174,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
         ) : diffData?.diff ? (
           <DiffViewer diff={diffData.diff} />
         ) : (
-          <div className="py-8 text-center text-sm text-zinc-500">
-            No changes vs base branch
-          </div>
+          <div className="py-8 text-center text-sm text-zinc-500">No changes vs base branch</div>
         )}
       </div>
     </div>
