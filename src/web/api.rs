@@ -1625,11 +1625,11 @@ pub async fn spawn_worktree(
     }
 
     // Create git worktree using tmai-core
-    // Directory: .claude/worktrees/<name>/, branch: worktree-<name> (Claude Code convention)
+    // Directory and branch both use the user-provided name (consistent with PATH 1)
     let wt_req = tmai_core::worktree::WorktreeCreateRequest {
         repo_path: req.cwd.clone(),
-        branch_name: format!("worktree-{}", req.name),
-        dir_name: Some(req.name.clone()),
+        branch_name: req.name.clone(),
+        dir_name: None,
         base_branch: req.base_branch.clone(),
     };
 
