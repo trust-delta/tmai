@@ -131,6 +131,7 @@ export function App() {
           onSelectProject={handleSelectProject}
           onSelectMarkdown={handleSelectMarkdown}
           registeredProjects={registeredProjects}
+          worktrees={worktrees}
           onSpawned={handleSpawned}
         />
         <TerminalList

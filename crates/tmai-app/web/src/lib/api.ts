@@ -120,6 +120,7 @@ export interface AgentSnapshot {
 // A worktree (or main) within a project, containing agents
 export interface WorktreeGroup {
   name: string; // "main" or worktree name
+  path: string; // filesystem path (for spawn cwd)
   branch: string | null;
   isWorktree: boolean;
   dirty: boolean;
@@ -156,9 +157,11 @@ function normalizeGitDir(dir: string): string {
 
 // Group agents by project (git_common_dir) and worktree.
 // Registered projects always appear even with 0 agents.
+// When worktreeSnapshots is provided, agent-less worktrees are also shown.
 export function groupByProject(
   agents: AgentSnapshot[],
   registeredProjects: string[] = [],
+  worktreeSnapshots: WorktreeSnapshot[] = [],
 ): ProjectGroup[] {
   const projectMap = new Map<string, AgentSnapshot[]>();
 
@@ -223,6 +226,7 @@ export function groupByProject(
       worktreeMap.delete("main");
       worktrees.push({
         name: "main",
+        path,
         branch: mainAgents[0]?.git_branch ?? null,
         isWorktree: false,
         dirty: mainAgents.some((a) => a.git_dirty === true),
@@ -235,12 +239,50 @@ export function groupByProject(
       a.localeCompare(b),
     );
     for (const [name, wtAgents] of sortedEntries) {
+      // Find matching WorktreeSnapshot for path
+      const snap = worktreeSnapshots.find(
+        (ws) => normalizeGitDir(ws.repo_path) === path && ws.name === name,
+      );
       worktrees.push({
         name,
-        branch: wtAgents[0]?.git_branch ?? null,
+        path: snap?.path ?? wtAgents[0]?.cwd ?? path,
+        branch: wtAgents[0]?.git_branch ?? snap?.branch ?? null,
         isWorktree: true,
         dirty: wtAgents.some((a) => a.git_dirty === true),
         agents: wtAgents,
+      });
+    }
+
+    // Add agent-less worktrees from snapshots
+    const existingWtNames = new Set(worktrees.map((wt) => wt.name));
+    const repoSnapshots = worktreeSnapshots.filter(
+      (ws) => normalizeGitDir(ws.repo_path) === path,
+    );
+    // Ensure "main" group exists if we have snapshots for this repo
+    if (!existingWtNames.has("main")) {
+      const mainSnap = repoSnapshots.find((ws) => ws.is_main);
+      if (mainSnap) {
+        worktrees.unshift({
+          name: "main",
+          path,
+          branch: mainSnap.branch,
+          isWorktree: false,
+          dirty: mainSnap.is_dirty ?? false,
+          agents: [],
+        });
+        existingWtNames.add("main");
+      }
+    }
+    for (const snap of repoSnapshots) {
+      if (snap.is_main) continue;
+      if (existingWtNames.has(snap.name)) continue;
+      worktrees.push({
+        name: snap.name,
+        path: snap.path,
+        branch: snap.branch,
+        isWorktree: true,
+        dirty: snap.is_dirty ?? false,
+        agents: [],
       });
     }
 

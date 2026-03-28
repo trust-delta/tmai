@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { groupByProject, type AgentSnapshot, type Selection } from "@/lib/api";
+import { groupByProject, type AgentSnapshot, type WorktreeSnapshot, type Selection } from "@/lib/api";
 import { ProjectGroup } from "@/components/project/ProjectGroup";
 
 interface AgentListProps {
@@ -10,6 +10,7 @@ interface AgentListProps {
   onSelectProject: (path: string, name: string) => void;
   onSelectMarkdown: (projectPath: string, projectName: string) => void;
   registeredProjects: string[];
+  worktrees: WorktreeSnapshot[];
   onSpawned: (sessionId: string) => void;
 }
 
@@ -22,11 +23,12 @@ export function AgentList({
   onSelectProject,
   onSelectMarkdown,
   registeredProjects,
+  worktrees,
   onSpawned,
 }: AgentListProps) {
   const projects = useMemo(
-    () => groupByProject(agents, registeredProjects),
-    [agents, registeredProjects],
+    () => groupByProject(agents, registeredProjects, worktrees),
+    [agents, registeredProjects, worktrees],
   );
 
   if (loading) {
