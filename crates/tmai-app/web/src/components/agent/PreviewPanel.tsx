@@ -111,24 +111,25 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     [agentId, fetchPreview],
   );
 
-  // Auto-scroll to bottom only if user hasn't scrolled up
+  // Auto-scroll to bottom (toggleable, default on)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const userScrolledUp = useRef(false);
+  const [autoScroll, setAutoScroll] = useState(true);
 
-  // Detect user scroll position
+  // When user scrolls up, disable auto-scroll; when at bottom, re-enable
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    // Consider "at bottom" if within 50px of the end
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    userScrolledUp.current = !atBottom;
-  }, []);
+    if (atBottom && !autoScroll) {
+      setAutoScroll(true);
+    }
+  }, [autoScroll]);
 
   useEffect(() => {
-    if (!userScrolledUp.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (autoScroll) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [content]);
+  }, [content, autoScroll]);
 
   // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
@@ -246,17 +247,27 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Focus hint */}
-      {!focused && content && (
-        <div className="border-t border-white/5 px-3 py-1 text-center text-[11px] text-zinc-600">
-          Click to interact
+      {/* Footer: auto-scroll toggle + focus hint */}
+      <div className="flex items-center border-t border-white/5 px-3 py-1">
+        <button
+          onClick={() => setAutoScroll((v) => !v)}
+          className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+            autoScroll
+              ? "bg-cyan-500/15 text-cyan-400"
+              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
+          }`}
+          title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
+        >
+          {autoScroll ? "⇩ Auto" : "⇩ Off"}
+        </button>
+        <div className="flex-1 text-center text-[11px]">
+          {focused ? (
+            <span className="text-cyan-500/60">PASSTHROUGH · Esc to unfocus</span>
+          ) : content ? (
+            <span className="text-zinc-600">Click to interact</span>
+          ) : null}
         </div>
-      )}
-      {focused && (
-        <div className="border-t border-cyan-500/20 px-3 py-1 text-center text-[11px] text-cyan-500/60">
-          PASSTHROUGH · Esc to unfocus
-        </div>
-      )}
+      </div>
     </div>
   );
 }
