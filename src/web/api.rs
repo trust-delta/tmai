@@ -1136,7 +1136,10 @@ pub async fn spawn_agent(
     };
     let tmux_avail = is_tmux_available();
 
-    if use_tmux && tmux_avail && !req.force_pty {
+    // Shell commands (bash/sh/zsh) always use PTY — tmux wrap is for AI agents
+    let is_shell = matches!(req.command.as_str(), "bash" | "sh" | "zsh");
+
+    if use_tmux && tmux_avail && !req.force_pty && !is_shell {
         spawn_in_tmux(&core, &req).await
     } else {
         spawn_in_pty(&core, &req).await
