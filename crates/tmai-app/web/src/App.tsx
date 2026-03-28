@@ -14,19 +14,27 @@ import { UsagePanel } from "@/components/usage/UsagePanel";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
+import { ProjectSidebar } from "@/components/project/ProjectSidebar";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
+  const [currentProject, setCurrentProject] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
-    api.listProjects().then(setRegisteredProjects).catch(console.error);
-  }, []);
+    api.listProjects().then((projects) => {
+      setRegisteredProjects(projects);
+      // Set first project as default if not set
+      if (projects.length > 0 && !currentProject) {
+        setCurrentProject(projects[0]);
+      }
+    }).catch(console.error);
+  }, [currentProject]);
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
@@ -122,6 +130,11 @@ export function App() {
           attentionCount={attentionCount}
           onSettingsClick={() => { setShowSettings((v) => !v); setShowSecurity(false); }}
           onSecurityClick={() => { setShowSecurity((v) => !v); setShowSettings(false); }}
+        />
+        <ProjectSidebar
+          registeredProjects={registeredProjects}
+          currentProject={currentProject}
+          onProjectChange={setCurrentProject}
         />
         <AgentList
           agents={aiAgents}
