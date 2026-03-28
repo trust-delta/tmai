@@ -611,6 +611,14 @@ export const api = {
     apiFetch<GraphData>(
       `/git/graph?repo=${encodeURIComponent(repoPath)}${limit ? `&limit=${limit}` : ""}`,
     ),
+  gitDiffStat: (repoPath: string, branch: string, base: string) =>
+    apiFetch<{ files_changed: number; insertions: number; deletions: number } | null>(
+      `/git/diff-stat?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}&base=${encodeURIComponent(base)}`,
+    ),
+  gitBranchDiff: (repoPath: string, branch: string, base: string) =>
+    apiFetch<WorktreeDiffResponse>(
+      `/git/diff?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}&base=${encodeURIComponent(base)}`,
+    ),
   listPrs: (repoPath: string) =>
     apiFetch<Record<string, PrInfo>>(`/github/prs?repo=${encodeURIComponent(repoPath)}`),
   listChecks: (repoPath: string, branch: string) =>

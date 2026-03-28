@@ -1837,6 +1837,15 @@ impl Poller {
             }
         }
 
+        // Also include registered projects (even without agents)
+        {
+            let state = self.state.read();
+            for project_path in &state.registered_projects {
+                let git_dir = format!("{}/.git", project_path);
+                repo_agents.entry(git_dir).or_default();
+            }
+        }
+
         if repo_agents.is_empty() {
             let mut state = self.state.write();
             state.worktree_info.clear();
@@ -1896,14 +1905,28 @@ impl Poller {
                 })
                 .collect();
 
+            // Determine default branch from main worktree entry
+            let default_branch = worktrees
+                .iter()
+                .find(|wt| wt.is_main)
+                .and_then(|wt| wt.branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+
             // Fetch diff stats for non-main worktrees (lightweight, parallel)
+            // Use agent's worktree_base_branch if available, otherwise default branch
             let diff_futures: Vec<_> = worktrees
                 .iter()
                 .enumerate()
                 .filter(|(_, wt)| !wt.is_main)
                 .map(|(idx, wt)| {
                     let path = wt.path.clone();
-                    async move { (idx, git::fetch_diff_stat(&path, "main").await) }
+                    // Find linked agent's base branch setting
+                    let base = repo_agents_list
+                        .iter()
+                        .find(|a| std::path::Path::new(&a.cwd).starts_with(&path))
+                        .and_then(|a| a.worktree_base_branch.clone())
+                        .unwrap_or_else(|| default_branch.clone());
+                    async move { (idx, git::fetch_diff_stat(&path, &base).await) }
                 })
                 .collect();
 

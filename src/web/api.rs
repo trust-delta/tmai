@@ -1379,6 +1379,65 @@ pub struct CommitLogParams {
     pub branch: String,
 }
 
+/// Query params for diff stat endpoint
+#[derive(Debug, Deserialize)]
+pub struct DiffStatParams {
+    pub repo: String,
+    pub branch: String,
+    pub base: String,
+}
+
+/// GET /api/git/diff-stat — get diff statistics between two branches
+pub async fn git_diff_stat(
+    axum::extract::Query(params): axum::extract::Query<DiffStatParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    let result =
+        tmai_core::git::fetch_branch_diff_stat(repo_dir, &params.branch, &params.base).await;
+    match result {
+        Some(s) => Ok(Json(serde_json::json!({
+            "files_changed": s.files_changed,
+            "insertions": s.insertions,
+            "deletions": s.deletions,
+        }))),
+        None => Ok(Json(serde_json::json!(null))),
+    }
+}
+
+/// GET /api/git/diff — get full diff between two branches
+pub async fn git_branch_diff(
+    axum::extract::Query(params): axum::extract::Query<DiffStatParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !tmai_core::git::is_safe_git_ref(&params.branch)
+        || !tmai_core::git::is_safe_git_ref(&params.base)
+    {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    let diff_spec = format!("{}...{}", params.base, params.branch);
+    let output = tokio::process::Command::new("git")
+        .args(["-C", repo_dir, "diff", &diff_spec])
+        .output()
+        .await
+        .map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("git diff failed: {}", e),
+            )
+        })?;
+    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+    let summary =
+        tmai_core::git::fetch_branch_diff_stat(repo_dir, &params.branch, &params.base).await;
+    Ok(Json(serde_json::json!({
+        "diff": if diff.is_empty() { None } else { Some(diff) },
+        "summary": summary.map(|s| serde_json::json!({
+            "files_changed": s.files_changed,
+            "insertions": s.insertions,
+            "deletions": s.deletions,
+        })),
+    })))
+}
+
 /// Get commit log between two branches
 pub async fn git_log(
     axum::extract::Query(params): axum::extract::Query<CommitLogParams>,

@@ -9,7 +9,6 @@ interface BranchGraphProps {
   projectPath: string;
   projectName: string;
   worktrees: WorktreeSnapshot[];
-  onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
 }
 
 // Format Unix timestamp as relative time (e.g., "2m ago", "3h ago")
@@ -28,7 +27,6 @@ export function BranchGraph({
   projectPath,
   projectName,
   worktrees,
-  onSelectWorktree,
 }: BranchGraphProps) {
   const [branches, setBranches] = useState<BranchListResponse | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -275,8 +273,11 @@ export function BranchGraph({
           <h2 className="text-lg font-semibold text-zinc-100">{projectName}</h2>
           <span className="text-xs text-zinc-500">
             {branchCount} branch{branchCount !== 1 ? "es" : ""}
-            {" \u00B7 "}
-            {projectWorktrees.filter((w) => !w.is_main).length} worktree{projectWorktrees.filter((w) => !w.is_main).length !== 1 ? "s" : ""}
+            {(() => {
+              const wtCount = projectWorktrees.filter((w) => !w.is_main).length;
+              if (wtCount === 0) return null;
+              return ` (${wtCount} worktree${wtCount !== 1 ? "s" : ""})`;
+            })()}
             {graphData && (
               <>
                 {" \u00B7 "}
@@ -379,7 +380,6 @@ export function BranchGraph({
             prInfo={prMap[activeNode.name]}
             targetPrs={targetPrMap[activeNode.name] ?? []}
             issues={issues}
-            onSelectWorktree={onSelectWorktree}
             onRefresh={refreshBranches}
             onSelectNode={setSelectedNode}
           />

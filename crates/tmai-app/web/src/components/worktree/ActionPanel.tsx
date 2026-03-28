@@ -12,7 +12,6 @@ interface ActionPanelProps {
   prInfo: PrInfo | undefined;
   targetPrs: PrInfo[];
   issues: IssueInfo[];
-  onSelectWorktree: (repoPath: string, name: string, worktreePath: string) => void;
   onRefresh: () => void;
   onSelectNode: (name: string | null) => void;
 }
@@ -27,7 +26,6 @@ export function ActionPanel({
   prInfo,
   targetPrs,
   issues,
-  onSelectWorktree,
   onRefresh,
   onSelectNode,
 }: ActionPanelProps) {
@@ -43,6 +41,7 @@ export function ActionPanel({
   const [ciSummary, setCiSummary] = useState<CiSummary | null>(null);
   const [ciLoading, setCiLoading] = useState(false);
   const [ciExpanded, setCiExpanded] = useState(false);
+  const [branchDiffStat, setBranchDiffStat] = useState<{ files_changed: number; insertions: number; deletions: number } | null>(null);
 
   // Reset all ephemeral state when branch changes
   useEffect(() => {
@@ -69,6 +68,16 @@ export function ActionPanel({
       .finally(() => setCiLoading(false));
   }, [activeNode.name, projectPath]);
 
+  // Fetch diff stat vs parent branch when branch changes (for non-main branches without worktree diffSummary)
+  useEffect(() => {
+    setBranchDiffStat(null);
+    if (activeNode.isMain || activeNode.diffSummary) return;
+    const base = activeNode.parent ?? branches?.default_branch ?? "main";
+    api.gitDiffStat(projectPath, activeNode.name, base)
+      .then((stat) => setBranchDiffStat(stat))
+      .catch(() => setBranchDiffStat(null));
+  }, [activeNode.name, activeNode.isMain, activeNode.diffSummary, activeNode.parent, branches?.default_branch, projectPath]);
+
   // Focus parent or HEAD after deletion
   const focusAfterDelete = useCallback(() => {
     const target = activeNode.parent ?? branches?.current_branch ?? branches?.default_branch ?? "main";
@@ -76,17 +85,22 @@ export function ActionPanel({
   }, [activeNode.parent, branches, onSelectNode]);
 
   const handleViewDiff = useCallback(async () => {
-    if (!activeNode.worktree) return;
     setDiffLoading(true);
     try {
-      const data = await api.getWorktreeDiff(activeNode.worktree.path);
+      let data;
+      if (activeNode.worktree) {
+        data = await api.getWorktreeDiff(activeNode.worktree.path);
+      } else {
+        const base = activeNode.parent ?? branches?.default_branch ?? "main";
+        data = await api.gitBranchDiff(projectPath, activeNode.name, base);
+      }
       setDiffData(data);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to load diff");
     } finally {
       setDiffLoading(false);
     }
-  }, [activeNode.worktree]);
+  }, [activeNode.worktree, activeNode.parent, activeNode.name, branches?.default_branch, projectPath]);
 
   const handleLaunchAgent = useCallback(async () => {
     if (!activeNode.worktree || actionBusy) return;
@@ -142,6 +156,8 @@ export function ActionPanel({
     setActionError(null);
     try {
       await api.spawnWorktree({ name, cwd: projectPath, base_branch: baseBranch });
+      setShowNewWorktree(false);
+      setNewWtName("");
       onRefresh();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to create worktree");
@@ -195,15 +211,19 @@ export function ActionPanel({
               <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">modified</span>
             )}
           </div>
-          {activeNode.diffSummary && (
-            <div className="mt-2 text-xs text-zinc-500">
-              <span className="text-emerald-400">+{activeNode.diffSummary.insertions}</span>
-              {" "}
-              <span className="text-red-400">-{activeNode.diffSummary.deletions}</span>
-              {" \u00B7 "}
-              {activeNode.diffSummary.files_changed} file{activeNode.diffSummary.files_changed !== 1 ? "s" : ""}
-            </div>
-          )}
+          {(() => {
+            const ds = activeNode.diffSummary ?? branchDiffStat;
+            if (!ds) return null;
+            return (
+              <div className="mt-2 text-xs text-zinc-500">
+                <span className="text-emerald-400">+{ds.insertions}</span>
+                {" "}
+                <span className="text-red-400">-{ds.deletions}</span>
+                {" \u00B7 "}
+                {ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}
+              </div>
+            );
+          })()}
           {/* Remote tracking info */}
           {activeNode.remote ? (
             <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
@@ -476,16 +496,20 @@ export function ActionPanel({
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2">
+          {/* View Diff — available for all non-main branches */}
+          {!activeNode.isMain && (
+            <button
+              onClick={handleViewDiff}
+              disabled={diffLoading}
+              className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+            >
+              {diffLoading ? "Loading..." : "View Diff"}
+            </button>
+          )}
+
           {/* Worktree actions */}
           {activeNode.isWorktree && activeNode.worktree && (
             <>
-              <button
-                onClick={handleViewDiff}
-                disabled={diffLoading}
-                className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50"
-              >
-                {diffLoading ? "Loading..." : "View Diff"}
-              </button>
               {!activeNode.hasAgent && (
                 <button
                   onClick={handleLaunchAgent}
@@ -495,15 +519,6 @@ export function ActionPanel({
                   {actionBusy ? "Launching..." : "Launch Agent"}
                 </button>
               )}
-              <button
-                onClick={() => {
-                  const wt = activeNode.worktree!;
-                  onSelectWorktree(wt.repo_path, wt.name, wt.path);
-                }}
-                className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
-              >
-                Open Detail Panel
-              </button>
               <hr className="border-white/5" />
               {!confirmDelete ? (
                 <button

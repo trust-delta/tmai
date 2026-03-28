@@ -278,6 +278,34 @@ pub async fn fetch_diff_stat(dir: &str, base_branch: &str) -> Option<DiffSummary
     parse_shortstat(&text)
 }
 
+/// Fetch diff statistics between two explicit branches (not using HEAD)
+pub async fn fetch_branch_diff_stat(
+    dir: &str,
+    branch: &str,
+    base_branch: &str,
+) -> Option<DiffSummary> {
+    if !is_safe_git_ref(base_branch) || !is_safe_git_ref(branch) {
+        return None;
+    }
+    let diff_spec = format!("{}...{}", base_branch, branch);
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", dir, "diff", "--shortstat", &diff_spec])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_shortstat(&text)
+}
+
 /// Parse `git diff --shortstat` output into DiffSummary
 ///
 /// Example input: " 3 files changed, 45 insertions(+), 12 deletions(-)\n"

@@ -145,6 +145,10 @@ export const api = {
     httpApi.gitPull(repoPath),
   gitMerge: (repoPath: string, branch: string) =>
     httpApi.gitMerge(repoPath, branch),
+  gitDiffStat: (repoPath: string, branch: string, base: string) =>
+    httpApi.gitDiffStat(repoPath, branch, base),
+  gitBranchDiff: (repoPath: string, branch: string, base: string) =>
+    httpApi.gitBranchDiff(repoPath, branch, base),
 
   // Directories
   listDirectories: (path?: string) =>

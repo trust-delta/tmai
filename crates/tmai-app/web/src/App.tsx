@@ -15,7 +15,6 @@ import { UsagePanel } from "@/components/usage/UsagePanel";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
-import { ProjectSidebar } from "@/components/project/ProjectSidebar";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 
@@ -98,14 +97,6 @@ export function App() {
   );
 
   // Select handler for worktrees (from BranchGraph click)
-  const handleSelectWorktree = useCallback(
-    (repoPath: string, name: string, worktreePath: string) => {
-      setSelection({ type: "worktree", repoPath, name, worktreePath });
-      setShowSettings(false);
-      setShowSecurity(false);
-    },
-    [],
-  );
 
   // Select handler for project branch graph
   const handleSelectProject = useCallback(
@@ -210,11 +201,6 @@ export function App() {
             setShowSettings(false);
           }}
         />
-        <ProjectSidebar
-          registeredProjects={registeredProjects}
-          currentProject={currentProject}
-          onProjectChange={setCurrentProject}
-        />
         <AgentList
           agents={aiAgents}
           loading={loading}
@@ -237,11 +223,11 @@ export function App() {
       {/* Main area */}
       <main className="flex flex-1 flex-col overflow-hidden transition-subtle">
         {showSecurity ? (
-          <div className="animate-scale-in">
+          <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
             <SecurityPanel onClose={() => setShowSecurity(false)} />
           </div>
         ) : showSettings ? (
-          <div className="animate-scale-in">
+          <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
             <SettingsPanel
               onClose={() => setShowSettings(false)}
               onProjectsChanged={refreshProjects}
@@ -254,11 +240,10 @@ export function App() {
               projectPath={selection.path}
               projectName={selection.name}
               worktrees={worktrees}
-              onSelectWorktree={handleSelectWorktree}
             />
           </div>
         ) : selection?.type === "markdown" ? (
-          <div className="animate-fade-in">
+          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
             <MarkdownPanel
               key={selection.projectPath}
               projectPath={selection.projectPath}
@@ -266,7 +251,7 @@ export function App() {
             />
           </div>
         ) : selection?.type === "worktree" && selectedWorktree ? (
-          <div className="animate-fade-in">
+          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
             <WorktreePanel
               worktree={selectedWorktree}
               onLaunched={(target) => {
