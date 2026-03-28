@@ -39,6 +39,15 @@ export function LaneGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const { lanes, rows, connections, laneW, svgHeight } = layout;
 
+  // Build SHA → PrInfo map for placing PR badges at correct commit
+  const prBySha = useMemo(() => {
+    const map: Record<string, PrInfo> = {};
+    for (const pr of Object.values(prMap)) {
+      if (pr.head_sha) map[pr.head_sha] = pr;
+    }
+    return map;
+  }, [prMap]);
+
   // SVG width = only the graph portion (lanes + padding)
   const graphW = LEFT_PAD + lanes.length * laneW + 12;
 
@@ -327,7 +336,11 @@ export function LaneGraph({
           }
 
           const branch = lanes[row.lane]?.branch;
-          const pr = branch ? prMap[branch] : undefined;
+          // PR badge: prefer SHA match → origin/ remote ref → branch ref (if no head_sha data)
+          const branchPr = branch ? prMap[branch] : undefined;
+          const pr = prBySha[row.sha]
+            ?? (branchPr && row.refs.some(r => r === `origin/${branch}`) ? branchPr : undefined)
+            ?? (branchPr && !branchPr.head_sha && row.refs.some(r => !r.startsWith("origin/")) ? branchPr : undefined);
 
           return (
             <div
@@ -363,18 +376,18 @@ export function LaneGraph({
                 {row.subject}
               </span>
 
-              {/* Ref + PR badges (only for branch tips) */}
-              {isTip && (
+              {/* Ref + PR badges */}
+              {(isTip || pr) && (
                 <div className="flex shrink-0 items-center gap-1.5">
-                  {/* Ref badge */}
-                  {row.refs.filter(r => !r.startsWith("origin/")).slice(0, 1).map(ref => (
+                  {/* Ref badge (tips only) */}
+                  {isTip && row.refs.filter(r => !r.startsWith("origin/")).slice(0, 1).map(ref => (
                     <span key={ref} className="rounded px-1 py-0.5 text-[9px] font-semibold"
                       style={{ color, backgroundColor: color.replace("rgb(", "rgba(").replace(")", ",0.1)") }}>
                       {ref.startsWith("HEAD -> ") ? ref.slice(8) : ref}
                     </span>
                   ))}
 
-                  {/* PR badge */}
+                  {/* PR badge (at PR head commit) */}
                   {pr && (
                     <a href={pr.url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:brightness-125"

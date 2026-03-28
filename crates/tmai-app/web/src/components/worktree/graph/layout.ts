@@ -179,7 +179,8 @@ export function computeLayout(
     });
 
     const isCollapsedLane = collapsed.has(branch);
-    const visible = !isCollapsedLane || isTip || isMerge || hasCrossLaneParent;
+    const hasRefs = commit.refs.length > 0;
+    const visible = !isCollapsedLane || isTip || isMerge || hasCrossLaneParent || hasRefs;
 
     commitInfos.push({
       sha: commit.sha,

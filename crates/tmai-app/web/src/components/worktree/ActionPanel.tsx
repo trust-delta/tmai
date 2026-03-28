@@ -171,6 +171,13 @@ export function ActionPanel({
   // Resolve the base branch for merge/PR operations
   const baseBranch = activeNode.parent ?? branches?.default_branch ?? "main";
 
+  // Warn before destructive actions while an agent is active on this branch
+  const agentActive = activeNode.hasAgent;
+  const confirmIfAgentActive = (action: string, fn: () => void) => {
+    if (agentActive && !window.confirm(`An agent is already active here. ${action} anyway?`)) return;
+    fn();
+  };
+
   // AI delegation
   const delegateToAi = useCallback(async (prompt: string) => {
     if (actionBusy) return;
@@ -482,9 +489,9 @@ export function ActionPanel({
                     </div>
                   )}
                   <button
-                    onClick={() => delegateToAi(
+                    onClick={() => confirmIfAgentActive("Merge", () => delegateToAi(
                       `Merge PR #${pr.number}. First run 'gh pr view ${pr.number} --json baseRefName -q .baseRefName' to verify base is '${activeNode.name}'. If base matches, run 'gh pr merge ${pr.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`
-                    )}
+                    ))}
                     disabled={actionBusy}
                     className="mt-1.5 w-full rounded bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
@@ -522,7 +529,7 @@ export function ActionPanel({
                 </button>
               ) : activeNode.isWorktree && activeNode.worktree && (
                 <button
-                  onClick={handleLaunchAgent}
+                  onClick={() => confirmIfAgentActive("Launch agent", handleLaunchAgent)}
                   disabled={actionBusy}
                   className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
                 >
@@ -534,11 +541,11 @@ export function ActionPanel({
               {activeNode.ahead > 0 && (
                 <>
                   <button
-                    onClick={() => delegateToAi(
+                    onClick={() => confirmIfAgentActive("Merge", () => delegateToAi(
                       prInfo
                         ? `Merge PR #${prInfo.number}. First run 'gh pr view ${prInfo.number} --json baseRefName -q .baseRefName' to verify base is '${baseBranch}'. If base matches, run 'gh pr merge ${prInfo.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`
                         : `Merge branch '${activeNode.name}' into '${baseBranch}'. First check 'gh pr list --head ${activeNode.name} --base ${baseBranch}'. If PR exists and its base is '${baseBranch}', run 'gh pr merge <number> --squash --delete-branch'. If no PR, run 'git checkout ${baseBranch} && git merge ${activeNode.name}'. Do not merge into any branch other than '${baseBranch}'.`
-                    )}
+                    ))}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
@@ -615,7 +622,7 @@ export function ActionPanel({
               <hr className="border-white/5" />
               {!confirmDelete ? (
                 <button
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() => confirmIfAgentActive("Delete", () => setConfirmDelete(true))}
                   disabled={!activeNode.isWorktree && activeNode.isCurrent}
                   className="w-full rounded-lg bg-red-500/10 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-30"
                 >

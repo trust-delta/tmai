@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
-import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo, type AgentSnapshot } from "@/lib/api";
+import { api, statusName, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo, type AgentSnapshot } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
@@ -128,7 +128,7 @@ export function BranchGraph({
       isDirty: mainWt?.is_dirty ?? false,
       hasAgent: !!mainWt?.agent_target,
       agentTarget: mainWt?.agent_target ?? branchAgentMap.get(defaultBranch)?.target ?? null,
-      agentStatus: mainWt?.agent_status ?? branchAgentMap.get(defaultBranch)?.status ?? null,
+      agentStatus: mainWt?.agent_status ?? (branchAgentMap.has(defaultBranch) ? statusName(branchAgentMap.get(defaultBranch)!.status) : null),
       diffSummary: null,
       worktree: mainWt ?? null,
       ahead: 0,
@@ -173,7 +173,7 @@ export function BranchGraph({
             isDirty: false,
             hasAgent: !!matchedAgent,
             agentTarget: matchedAgent?.target ?? null,
-            agentStatus: matchedAgent?.status ?? null,
+            agentStatus: matchedAgent ? statusName(matchedAgent.status) : null,
             diffSummary: null,
             worktree: null,
             ahead: ab?.[0] ?? 0,
