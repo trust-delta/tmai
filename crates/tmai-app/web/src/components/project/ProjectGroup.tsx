@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import type {
   ProjectGroup as ProjectGroupType,
   WorktreeGroup,
@@ -60,10 +61,17 @@ export function ProjectGroup({
     selection?.type === "markdown" && selection.projectPath === project.path;
 
   // Spawn an agent in a specific directory
-  const spawn = async (command: string, cwd: string, hasAgent: boolean, args?: string[]) => {
+  const confirm = useConfirm();
+  const spawn = useCallback(async (command: string, cwd: string, hasAgent: boolean, args?: string[]) => {
     if (spawning) return;
     if (hasAgent && command !== "bash") {
-      if (!window.confirm(`An agent is already active here. Launch ${command} anyway?`)) return;
+      const ok = await confirm({
+        title: "Agent Active",
+        message: `An agent is already active here. Launch ${command} anyway?`,
+        confirmLabel: `Launch ${command}`,
+        variant: "danger",
+      });
+      if (!ok) return;
     }
     setSpawning(true);
     setShowSpawn(false);
@@ -75,7 +83,7 @@ export function ProjectGroup({
     } finally {
       setSpawning(false);
     }
-  };
+  }, [spawning, confirm, onSpawned]);
 
   // All spawn targets: main + worktrees. Fallback ensures at least one target.
   const defaultTarget: WorktreeGroup = { name: "main", path: project.path, branch: null, isWorktree: false, dirty: false, agents: [] };

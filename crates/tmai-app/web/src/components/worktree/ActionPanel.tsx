@@ -11,6 +11,7 @@ import type { BranchNode } from "./graph/types";
 import { DiffViewer } from "./DiffViewer";
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
 import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 
 interface ActionPanelProps {
   activeNode: BranchNode;
@@ -197,13 +198,18 @@ export function ActionPanel({
     activeNode.parent ?? branches?.default_branch ?? "main";
 
   // Warn before destructive actions while an agent is active on this branch
+  const confirm = useConfirm();
   const agentActive = activeNode.hasAgent;
-  const confirmIfAgentActive = (action: string, fn: () => void) => {
-    if (
-      agentActive &&
-      !window.confirm(`An agent is already active here. ${action} anyway?`)
-    )
-      return;
+  const confirmIfAgentActive = async (action: string, fn: () => void) => {
+    if (agentActive) {
+      const ok = await confirm({
+        title: "Agent Active",
+        message: `An agent is already active here. ${action} anyway?`,
+        confirmLabel: action,
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
     fn();
   };
 
