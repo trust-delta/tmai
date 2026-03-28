@@ -1,4 +1,14 @@
-import type { GraphData, LaneLayout, LaneInfo, RowInfo, Connection, BranchNode } from "./types";
+import type {
+  GraphData,
+  GraphCommit,
+  LaneLayout,
+  LaneInfo,
+  RowInfo,
+  CommitRow,
+  FoldRow,
+  Connection,
+  BranchNode,
+} from "./types";
 import type { BranchListResponse } from "@/lib/api";
 import { laneColor } from "./colors";
 
@@ -17,7 +27,10 @@ const GRAPH_AREA_TARGET = 300;
 /// Compute dynamic lane width based on number of lanes
 export function computeLaneW(laneCount: number): number {
   if (laneCount <= 1) return MAX_LANE_W;
-  return Math.max(MIN_LANE_W, Math.min(MAX_LANE_W, Math.floor(GRAPH_AREA_TARGET / laneCount)));
+  return Math.max(
+    MIN_LANE_W,
+    Math.min(MAX_LANE_W, Math.floor(GRAPH_AREA_TARGET / laneCount)),
+  );
 }
 
 /// Strip ref decoration prefixes to get bare branch name.
@@ -33,31 +46,42 @@ function stripRefPrefix(ref: string): string | null {
   return ref;
 }
 
-/// Compute lane-based layout from graph data and branch metadata
-///
-/// collapsedLanes: set of branch names whose intermediate commits are folded
-export function computeLayout(
-  graphData: GraphData,
-  branchInfo: BranchListResponse,
-  activeNodes: BranchNode[],
-  collapsedLanes?: Set<string>,
-): LaneLayout {
-  const defaultBranch = branchInfo.default_branch;
-  const commits = graphData.commits;
-  const collapsed = collapsedLanes ?? new Set<string>();
-
-  if (commits.length === 0) {
-    return { lanes: [], rows: [], connections: [], laneW: MAX_LANE_W, svgWidth: 200, svgHeight: 100 };
+/// Get depth of a branch from default branch via parent map
+function getDepth(
+  branch: string,
+  parents: Record<string, string>,
+  defaultBranch: string,
+): number {
+  let depth = 0;
+  let current = branch;
+  const visited = new Set<string>();
+  while (current !== defaultBranch && !visited.has(current)) {
+    visited.add(current);
+    const parent = parents[current];
+    if (!parent) break;
+    current = parent;
+    depth++;
   }
+  return depth;
+}
 
-  // Step 1: Build SHA -> commit index map
+// ── Sub-function 1: Assign commits to branches ──
+
+/// Walk commits and determine which branch each commit belongs to.
+/// Parent branches take priority over child branches for shared commits.
+function assignCommitsToBranches(
+  commits: GraphCommit[],
+  branchInfo: BranchListResponse,
+  defaultBranch: string,
+): { shaToBranch: Map<string, string>; branchTipSha: Map<string, string> } {
   const shaIdx = new Map<string, number>();
   commits.forEach((c, i) => shaIdx.set(c.sha, i));
 
-  // Step 2: Determine which branch each commit belongs to
   const shaToBranch = new Map<string, string>();
   const branchTipSha = new Map<string, string>();
+  const parentMap = branchInfo.parents;
 
+  // First pass: assign by refs
   for (const commit of commits) {
     for (const ref of commit.refs) {
       const branch = stripRefPrefix(ref);
@@ -70,21 +94,21 @@ export function computeLayout(
     }
   }
 
-  // Walk parent chains to assign branch ownership.
-  // Parent branches take priority: if a commit is shared between parent and child,
-  // it belongs to the parent's lane. Child lanes only contain unique commits.
-  const parentMap = branchInfo.parents;
-
   // Resolve ancestry depth so parent branches are processed first
   const branchDepth = (b: string): number => {
     let d = 0;
     let cur = b;
-    while (parentMap[cur]) { cur = parentMap[cur]; d++; }
+    while (parentMap[cur]) {
+      cur = parentMap[cur];
+      d++;
+    }
     return d;
   };
-  const sortedTips = [...branchTipSha.entries()]
-    .sort((a, b) => branchDepth(a[0]) - branchDepth(b[0]));
+  const sortedTips = [...branchTipSha.entries()].sort(
+    (a, b) => branchDepth(a[0]) - branchDepth(b[0]),
+  );
 
+  // Walk parent chains to assign branch ownership
   for (const [branch, tipSha] of sortedTips) {
     let currentSha = tipSha;
     const visited = new Set<string>();
@@ -112,15 +136,26 @@ export function computeLayout(
     }
   }
 
-  // Step 3: Assign lanes to branches
+  return { shaToBranch, branchTipSha };
+}
+
+// ── Sub-function 2: Assign lanes to branches ──
+
+/// Sort branches and assign lane indices.
+function assignLanes(
+  branchInfo: BranchListResponse,
+  activeNodes: BranchNode[],
+  defaultBranch: string,
+): { branchToLane: Map<string, number>; sortedBranches: string[] } {
   const activeSet = new Set(
     activeNodes
-      .filter(n => n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent)
-      .map(n => n.name)
+      .filter(
+        (n) =>
+          n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent,
+      )
+      .map((n) => n.name),
   );
-
-  // Use all known branches for lane assignment, not just those with owned commits.
-  // Branches with 0 unique commits (e.g. just-created worktrees) still get a lane.
+  const parentMap = branchInfo.parents;
   const branchesInGraph = new Set<string>(branchInfo.branches);
 
   const sortedBranches: string[] = [];
@@ -128,44 +163,47 @@ export function computeLayout(
     sortedBranches.push(defaultBranch);
   }
   const activeBranches = [...branchesInGraph]
-    .filter(b => b !== defaultBranch && activeSet.has(b))
-    .sort((a, b) => getDepth(a, parentMap, defaultBranch) - getDepth(b, parentMap, defaultBranch));
+    .filter((b) => b !== defaultBranch && activeSet.has(b))
+    .sort(
+      (a, b) =>
+        getDepth(a, parentMap, defaultBranch) -
+        getDepth(b, parentMap, defaultBranch),
+    );
   sortedBranches.push(...activeBranches);
   const inactiveBranches = [...branchesInGraph]
-    .filter(b => b !== defaultBranch && !activeSet.has(b))
+    .filter((b) => b !== defaultBranch && !activeSet.has(b))
     .sort();
   sortedBranches.push(...inactiveBranches);
 
   const branchToLane = new Map<string, number>();
   sortedBranches.forEach((b, i) => branchToLane.set(b, i));
 
-  const totalLanes = sortedBranches.length || 1;
+  return { branchToLane, sortedBranches };
+}
 
-  // Step 4: Build lane info
-  const lanes: LaneInfo[] = sortedBranches.map((branch, i) => ({
-    branch,
-    laneIndex: i,
-    color: laneColor(i),
-    isActive: activeSet.has(branch) || branch === defaultBranch,
-  }));
+// ── Sub-function 3: Classify visibility ──
 
-  // Step 5: Build rows with collapsing support
-  // First pass: classify commits and identify tips
-  const tipShaSet = new Set(branchTipSha.values());
+interface CommitInfo {
+  sha: string;
+  branch: string;
+  lane: number;
+  subject: string;
+  refs: string[];
+  isMerge: boolean;
+  isTip: boolean;
+  visible: boolean;
+}
 
-  // Identify which commits to show vs fold
-  // For collapsed lanes: show tip, merge commits, and commits with cross-lane connections,
-  // fold the rest into a single indicator
-  const commitInfos: Array<{
-    sha: string;
-    branch: string;
-    lane: number;
-    subject: string;
-    refs: string[];
-    isMerge: boolean;
-    isTip: boolean;
-    visible: boolean;
-  }> = [];
+/// Classify each commit as visible or hidden based on collapse state.
+function classifyVisibility(
+  commits: GraphCommit[],
+  shaToBranch: Map<string, string>,
+  branchToLane: Map<string, number>,
+  collapsed: Set<string>,
+  tipShaSet: Set<string>,
+  defaultBranch: string,
+): CommitInfo[] {
+  const commitInfos: CommitInfo[] = [];
 
   for (const commit of commits) {
     const branch = shaToBranch.get(commit.sha) ?? defaultBranch;
@@ -173,14 +211,15 @@ export function computeLayout(
     const isTip = tipShaSet.has(commit.sha);
     const isMerge = commit.parents.length > 1;
     // A commit with cross-lane parents (fork point) should stay visible
-    const hasCrossLaneParent = commit.parents.some(p => {
+    const hasCrossLaneParent = commit.parents.some((p) => {
       const pb = shaToBranch.get(p) ?? defaultBranch;
       return (branchToLane.get(pb) ?? 0) !== lane;
     });
 
     const isCollapsedLane = collapsed.has(branch);
     const hasRefs = commit.refs.length > 0;
-    const visible = !isCollapsedLane || isTip || isMerge || hasCrossLaneParent || hasRefs;
+    const visible =
+      !isCollapsedLane || isTip || isMerge || hasCrossLaneParent || hasRefs;
 
     commitInfos.push({
       sha: commit.sha,
@@ -194,82 +233,96 @@ export function computeLayout(
     });
   }
 
-  // Second pass: build rows, inserting fold indicators for hidden runs
+  return commitInfos;
+}
+
+// ── Sub-function 4: Build rows ──
+
+/// Build row layout from classified commits, inserting fold indicators for hidden runs.
+function buildRows(commitInfos: CommitInfo[]): {
+  rows: RowInfo[];
+  shaToY: Map<string, number>;
+  finalY: number;
+} {
   const rows: RowInfo[] = [];
   const shaToY = new Map<string, number>();
   let currentY = HEADER_H;
 
   // Track consecutive hidden commits per lane to create fold indicators
-  const hiddenRun = new Map<number, number>(); // lane -> count of hidden
+  const hiddenRun = new Map<number, number>();
 
   for (let i = 0; i < commitInfos.length; i++) {
     const info = commitInfos[i];
 
     if (!info.visible) {
       hiddenRun.set(info.lane, (hiddenRun.get(info.lane) ?? 0) + 1);
-      // Map this hidden commit's SHA to the fold indicator's Y (will be set when fold is emitted)
       continue;
     }
 
-    // Before showing this visible commit, emit fold indicators for any accumulated hidden runs
-    // Check if there's a hidden run for THIS lane that needs flushing
+    // Before showing this visible commit, emit fold indicators for accumulated hidden runs
     const hiddenCount = hiddenRun.get(info.lane) ?? 0;
     if (hiddenCount > 0) {
-      rows.push({
+      const fold: FoldRow = {
+        kind: "fold",
         sha: `__fold_${info.lane}_${i}`,
         lane: info.lane,
         y: currentY,
-        subject: "",
-        refs: [],
-        isMerge: false,
-        isFold: true,
         foldCount: hiddenCount,
-      });
+      };
+      rows.push(fold);
       currentY += ROW_H;
       hiddenRun.set(info.lane, 0);
     }
 
-    // Also flush any OTHER lane hidden runs that have been accumulating
-    // (these are interleaved with visible commits from other lanes)
-    // We don't flush them individually — they'll be flushed when their lane's next visible commit appears
-
     shaToY.set(info.sha, currentY);
-    rows.push({
+    const row: CommitRow = {
+      kind: "commit",
       sha: info.sha,
       lane: info.lane,
       y: currentY,
       subject: info.subject,
       refs: info.refs,
       isMerge: info.isMerge,
-    });
+    };
+    rows.push(row);
     currentY += ROW_H;
   }
 
   // Flush remaining hidden runs at the end
   for (const [lane, count] of hiddenRun) {
     if (count > 0) {
-      rows.push({
+      const fold: FoldRow = {
+        kind: "fold",
         sha: `__fold_end_${lane}`,
         lane,
         y: currentY,
-        subject: "",
-        refs: [],
-        isMerge: false,
-        isFold: true,
         foldCount: count,
-      });
+      };
+      rows.push(fold);
       currentY += ROW_H;
     }
   }
 
-  // Step 6: Build connections
-  // We need to map hidden SHAs to the nearest visible Y for their lane
-  // Build a lookup: for each commit, find its Y (either direct or fold indicator)
+  return { rows, shaToY, finalY: currentY };
+}
+
+// ── Sub-function 5: Build connections ──
+
+/// Build cross-lane connection lines (fork/merge).
+function buildConnections(
+  commits: GraphCommit[],
+  rows: RowInfo[],
+  shaToY: Map<string, number>,
+  shaToBranch: Map<string, string>,
+  branchToLane: Map<string, number>,
+  defaultBranch: string,
+): Connection[] {
+  // Resolve Y for hidden commits via their lane's fold indicator
   const effectiveY = (sha: string, lane: number): number | undefined => {
     const direct = shaToY.get(sha);
     if (direct !== undefined) return direct;
     // Hidden commit — find the fold indicator row for this lane that's closest
-    const foldRow = rows.find(r => r.isFold && r.lane === lane);
+    const foldRow = rows.find((r) => r.kind === "fold" && r.lane === lane);
     return foldRow?.y;
   };
 
@@ -311,24 +364,93 @@ export function computeLayout(
     }
   }
 
-  const laneW = computeLaneW(totalLanes);
-  const svgWidth = Math.max(LEFT_PAD + totalLanes * laneW + 500, 600);
-  const svgHeight = currentY + 40;
-
-  return { lanes, rows, connections, laneW, svgWidth, svgHeight };
+  return connections;
 }
 
-/// Get depth of a branch from default branch via parent map
-function getDepth(branch: string, parents: Record<string, string>, defaultBranch: string): number {
-  let depth = 0;
-  let current = branch;
-  const visited = new Set<string>();
-  while (current !== defaultBranch && !visited.has(current)) {
-    visited.add(current);
-    const parent = parents[current];
-    if (!parent) break;
-    current = parent;
-    depth++;
+// ── Orchestrator ──
+
+/// Compute lane-based layout from graph data and branch metadata.
+/// collapsedLanes: set of branch names whose intermediate commits are folded.
+export function computeLayout(
+  graphData: GraphData,
+  branchInfo: BranchListResponse,
+  activeNodes: BranchNode[],
+  collapsedLanes?: Set<string>,
+): LaneLayout {
+  const defaultBranch = branchInfo.default_branch;
+  const commits = graphData.commits;
+  const collapsed = collapsedLanes ?? new Set<string>();
+
+  if (commits.length === 0) {
+    return {
+      lanes: [],
+      rows: [],
+      connections: [],
+      laneW: MAX_LANE_W,
+      svgWidth: 200,
+      svgHeight: 100,
+    };
   }
-  return depth;
+
+  // Step 1: Assign commits to branches
+  const { shaToBranch, branchTipSha } = assignCommitsToBranches(
+    commits,
+    branchInfo,
+    defaultBranch,
+  );
+
+  // Step 2: Assign lanes
+  const activeSet = new Set(
+    activeNodes
+      .filter(
+        (n) =>
+          n.isWorktree || n.hasAgent || n.isDirty || n.ahead > 0 || n.isCurrent,
+      )
+      .map((n) => n.name),
+  );
+
+  const { branchToLane, sortedBranches } = assignLanes(
+    branchInfo,
+    activeNodes,
+    defaultBranch,
+  );
+  const totalLanes = sortedBranches.length || 1;
+
+  // Step 3: Build lane info
+  const lanes: LaneInfo[] = sortedBranches.map((branch, i) => ({
+    branch,
+    laneIndex: i,
+    color: laneColor(i),
+    isActive: activeSet.has(branch) || branch === defaultBranch,
+  }));
+
+  // Step 4: Classify visibility
+  const tipShaSet = new Set(branchTipSha.values());
+  const commitInfos = classifyVisibility(
+    commits,
+    shaToBranch,
+    branchToLane,
+    collapsed,
+    tipShaSet,
+    defaultBranch,
+  );
+
+  // Step 5: Build rows
+  const { rows, shaToY, finalY } = buildRows(commitInfos);
+
+  // Step 6: Build connections
+  const connections = buildConnections(
+    commits,
+    rows,
+    shaToY,
+    shaToBranch,
+    branchToLane,
+    defaultBranch,
+  );
+
+  const laneW = computeLaneW(totalLanes);
+  const svgWidth = Math.max(LEFT_PAD + totalLanes * laneW + 500, 600);
+  const svgHeight = finalY + 40;
+
+  return { lanes, rows, connections, laneW, svgWidth, svgHeight };
 }

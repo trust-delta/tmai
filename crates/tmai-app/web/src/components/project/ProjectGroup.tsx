@@ -77,10 +77,11 @@ export function ProjectGroup({
     }
   };
 
-  // All spawn targets: main + worktrees
-  const spawnTargets = project.worktrees.length > 0
+  // All spawn targets: main + worktrees. Fallback ensures at least one target.
+  const defaultTarget: WorktreeGroup = { name: "main", path: project.path, branch: null, isWorktree: false, dirty: false, agents: [] };
+  const spawnTargets: WorktreeGroup[] = project.worktrees.length > 0
     ? project.worktrees
-    : [{ name: "main", path: project.path, branch: null as string | null, isWorktree: false, dirty: false, agents: [] as import("@/lib/api").AgentSnapshot[] }];
+    : [defaultTarget];
   const hasMultipleTargets = spawnTargets.length > 1 || (spawnTargets.length === 1 && spawnTargets[0].isWorktree);
 
   const isEmpty = project.totalAgents === 0;

@@ -77,7 +77,7 @@ export function LaneGraph({
     const tips = new Set<string>();
     const seenLanes = new Set<number>();
     for (const row of rows) {
-      if (row.isFold) continue;
+      if (row.kind === "fold") continue;
       if (!seenLanes.has(row.lane)) {
         tips.add(row.sha);
         seenLanes.add(row.lane);
@@ -110,12 +110,14 @@ export function LaneGraph({
           setCommitDetail({ sha: found.sha, subject: found.subject, body: found.body });
         } else {
           const row = rows.find(r => r.sha === sha);
-          setCommitDetail({ sha, subject: row?.subject ?? "", body: "" });
+          const subject = row && row.kind === "commit" ? row.subject : "";
+          setCommitDetail({ sha, subject, body: "" });
         }
       })
       .catch(() => {
         const row = rows.find(r => r.sha === sha);
-        setCommitDetail({ sha, subject: row?.subject ?? "", body: "" });
+        const subject = row && row.kind === "commit" ? row.subject : "";
+        setCommitDetail({ sha, subject, body: "" });
       })
       .finally(() => setDetailLoading(false));
   }, [expandedSha, branchForLane, repoPath, defaultBranch, rows]);
@@ -191,6 +193,7 @@ export function LaneGraph({
             if (laneYRange.has(lane.laneIndex)) return null; // has commits, skip
             // Find the row where this branch's ref appears (its HEAD commit in another lane)
             const refRow = rows.find(r =>
+              r.kind === "commit" &&
               r.refs.some(ref => ref.replace(/^HEAD -> /, "").replace(/^origin\//, "") === lane.branch)
             );
             if (!refRow) return null;
@@ -225,7 +228,7 @@ export function LaneGraph({
             const x = laneX(row.lane);
             const color = laneColor(row.lane);
 
-            if (row.isFold) {
+            if (row.kind === "fold") {
               return (
                 <g key={row.sha} className="cursor-pointer" onClick={() => onToggleCollapse(branchForLane(row.lane))}>
                   <line x1={x} y1={row.y - 8} x2={x} y2={row.y + 8}
@@ -274,7 +277,7 @@ export function LaneGraph({
             const displayName = lane.branch.length > maxChars
               ? lane.branch.slice(0, Math.ceil(maxChars / 2)) + "\u2026" + lane.branch.slice(-(Math.floor(maxChars / 2)))
               : lane.branch;
-            const laneCommitCount = rows.filter(r => r.lane === lane.laneIndex && !r.isFold).length;
+            const laneCommitCount = rows.filter(r => r.lane === lane.laneIndex && r.kind === "commit").length;
             const showToggle = laneCommitCount > 2;
 
             return (
@@ -311,14 +314,13 @@ export function LaneGraph({
       {/* Right: HTML commit labels — absolute positioned to match SVG Y coords */}
       <div className="relative shrink-0" style={{ minHeight: svgHeight }}>
         {rows.map(row => {
-          const isTip = branchTipLanes.has(row.sha);
           const isHovered = hoveredSha === row.sha;
           const isSelectedLane = row.lane === selectedLaneIdx;
           const isExpanded = expandedSha === row.sha;
           const color = laneColor(row.lane);
 
           // Fold indicator row
-          if (row.isFold) {
+          if (row.kind === "fold") {
             return (
               <div
                 key={row.sha}
@@ -328,13 +330,14 @@ export function LaneGraph({
               >
                 <span className="text-[10px]" style={{ color, opacity: 0.5 }}>{"\u22EE"}</span>
                 <span className="text-[10px] text-zinc-500">
-                  {row.foldCount} commit{(row.foldCount ?? 0) > 1 ? "s" : ""} hidden
+                  {row.foldCount} commit{row.foldCount > 1 ? "s" : ""} hidden
                 </span>
                 <span className="text-[9px] text-zinc-600">click to expand</span>
               </div>
             );
           }
 
+          const isTip = branchTipLanes.has(row.sha);
           const branch = lanes[row.lane]?.branch;
           // PR badge: prefer SHA match → origin/ remote ref → branch ref (if no head_sha data)
           const branchPr = branch ? prMap[branch] : undefined;
@@ -424,7 +427,7 @@ export function LaneGraph({
       </div>
 
       {/* Commit detail overlay */}
-      {expandedRow && !expandedRow.isFold && (
+      {expandedRow && expandedRow.kind === "commit" && (
         <div
           className="absolute z-10 rounded-lg border border-white/10 bg-zinc-900/95 shadow-xl backdrop-blur-sm"
           style={{

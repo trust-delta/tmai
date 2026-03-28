@@ -16,15 +16,25 @@ export interface LaneInfo {
   isActive: boolean;
 }
 
-export interface RowInfo {
+// Discriminated union for row types — TypeScript narrows automatically on `kind`
+export type RowInfo = CommitRow | FoldRow;
+
+export interface CommitRow {
+  kind: "commit";
   sha: string;
   lane: number;
   y: number;
   subject: string;
   refs: string[];
   isMerge: boolean;
-  isFold?: boolean;
-  foldCount?: number;
+}
+
+export interface FoldRow {
+  kind: "fold";
+  sha: string;
+  lane: number;
+  y: number;
+  foldCount: number;
 }
 
 export interface Connection {
@@ -47,7 +57,11 @@ export interface BranchNode {
   hasAgent: boolean;
   agentTarget: string | null;
   agentStatus: string | null;
-  diffSummary: { files_changed: number; insertions: number; deletions: number } | null;
+  diffSummary: {
+    files_changed: number;
+    insertions: number;
+    deletions: number;
+  } | null;
   worktree: import("@/lib/api").WorktreeSnapshot | null;
   ahead: number;
   behind: number;
