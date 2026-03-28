@@ -2,7 +2,7 @@
 
 Recommended ways to use tmai effectively.
 
-## Workflow Tips
+## Getting Started
 
 ### Set Up Claude Code Hooks (One-Time)
 
@@ -26,29 +26,54 @@ tmai wrap claude
 # Hooks + PTY wrapping work together (hooks take priority for status)
 ```
 
-### Keep tmai in a Dedicated Pane
+## WebUI Tips
 
-Create a consistent layout:
+### Register Your Projects
+
+Register project directories to unlock branch graph, GitHub integration, and worktree management:
+
+1. Click the settings button (⚙) in the status bar
+2. Add project paths
+3. Select projects in the sidebar to view the branch graph
+
+### Leverage the Branch Graph
+
+The branch graph provides a visual overview of all branches, PRs, and CI status:
+
+- Click branches to see diff summary and actions
+- Use "AI Merge" or "AI Create PR" to delegate operations
+- Check CI status directly on branch tips
+
+### Run Security Scans
+
+Periodically scan your Claude Code configuration for vulnerabilities:
+
+1. Click the security button (🛡) in the status bar
+2. Review findings by severity
+3. Address Critical and High severity issues promptly
+
+### Monitor Usage
+
+Keep an eye on subscription usage to avoid rate limits:
+
+- The Usage Panel at the bottom of the sidebar shows meter status
+- Color changes from cyan to amber (50%) to red (80%)
+- Click refresh to fetch latest data
+
+### Use Inter-Agent Messaging
+
+When agents need to coordinate, use the "Send To" feature to pass context between them without manual copy-paste.
+
+## TUI Tips (`--tmux` mode)
+
+### Keep tmai in a Dedicated Pane
 
 ```
 ┌───────────────────────┬───────────────────────┐
 │                       │                       │
 │      Agent pane       │      tmai pane        │
 │                       │                       │
-│                       │                       │
 └───────────────────────┴───────────────────────┘
-```
-
-Or use a smaller tmai pane:
-
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│                Agent pane                     │
-│                                               │
-├───────────────────────────────────────────────┤
-│  tmai (List view)                             │
-└───────────────────────────────────────────────┘
 ```
 
 ### Use View Modes Appropriately
@@ -61,19 +86,9 @@ Or use a smaller tmai pane:
 
 Toggle with `Tab`.
 
-### Monitor Session vs Window vs All
-
-> **Note**: Monitor scope (`m`) is currently disabled while Agent Teams integration is active. Scope is fixed to AllSessions.
-
-| Scope | Use Case |
-|-------|----------|
-| All | Overview of all agents |
-| Session | Focus on current project |
-| Window | Focus on specific task |
-
 ## Multi-Agent Tips
 
-### Naming Convention
+### Naming Convention (tmux mode)
 
 Use descriptive session/window names:
 
@@ -81,39 +96,27 @@ Use descriptive session/window names:
 # Clear naming
 tmux new-session -s project-a
 tmux new-window -n feature-auth
-
-# Agent will show as: project-a:feature-auth
+# Agent shows as: project-a:feature-auth
 ```
 
 ### Worktree Workflow
 
-When using Git worktrees:
+In the WebUI, create and manage worktrees visually from the branch graph. In tmux mode:
 
 ```bash
-# Create worktree
 git worktree add ../project-feature-a feature/a
-
-# Start agent in worktree
 cd ../project-feature-a
-tmux new-session -s feature-a
 tmai wrap claude
 ```
-
-tmai monitors the existing session—no special commands needed.
 
 ## Agent Teams Tips
 
 ### Monitor Team Progress
 
-When using Claude Code Agent Teams, use the team overview (`T`) to see all teams and their task progress at a glance.
-
-### Use Task Overlay for Details
-
-Select a team member in the agent list and press `t` to see their team's task list with status indicators.
+- **WebUI**: Team data appears in the sidebar with real-time updates
+- **TUI**: Press `T` to see all teams, `t` for task overlay
 
 ### Configure Scan Interval
-
-If team data updates too frequently or not often enough:
 
 ```toml
 [teams]
@@ -122,86 +125,45 @@ scan_interval = 2  # Faster updates (default: 5)
 
 ## Security Tips
 
-### Enable Debug Logging for Audits
-
-When running sensitive tasks:
+### Enable Audit Logging
 
 ```bash
-tmai --debug 2>&1 | tee ~/tmai-audit.log
+tmai --audit
 ```
 
-This captures exfil detection logs.
-
-### Review Exfil Logs Periodically
-
-Check for unexpected external transmissions:
+Review audit data:
 
 ```bash
-grep "External transmission" ~/tmai-audit.log
-grep "Sensitive data" ~/tmai-audit.log
+tmai audit stats
+tmai audit misdetections
 ```
 
-### Limit Web Remote Exposure
+### Limit Web Server Exposure
 
-- Only enable when needed
 - Use on trusted networks
-- Don't share the QR code/URL publicly
-
-## Performance Tips
-
-### Reduce Polling Frequency for Many Agents
-
-If monitoring many agents causes lag, consider:
-
-1. Using session/window scope to limit monitored panes
-2. Running agents in batches
-
-### Use List View for Overview
-
-Split view with preview uses more resources. Switch to List view when just checking status.
+- Don't share the token URL publicly
+- Use token-based authentication (automatic)
 
 ## Troubleshooting
 
 ### Agent Not Detected
 
-1. Check if agent is in a tmux pane
-2. Verify process name matches supported agents
-3. Try restarting tmai
+1. Verify `tmai init` was run (for Claude Code hooks)
+2. In tmux mode, check if agent is in a tmux pane
+3. Verify process name matches supported agents
+4. Check logs with `tmai --debug`
 
 ### Wrong State Detected
 
 1. Run `tmai init` to enable hooks (recommended for Claude Code)
 2. Use PTY wrapping for additional accuracy (`tmai wrap claude`)
-3. Check detection source in status bar: `◈ Hook` > `PTY` > `CAP`
-4. Report persistent issues with reproduction steps
+3. Check detection source: `◈ Hook` > `⊙ IPC` > `● capture`
 
-### Web Remote Not Connecting
+### Web Server Not Accessible
 
 1. Check `[web] enabled = true` in config
-2. Verify firewall allows the port
+2. Verify firewall allows the port (default 9876)
 3. For WSL, check networking mode and port forwarding
-
-### High CPU Usage
-
-1. Reduce number of monitored panes
-2. Use session/window scope
-3. Switch to List view
-
-## Anti-Patterns
-
-### Don't
-
-- Run tmai in the same pane as an agent
-- Share Web Remote URLs on public networks
-- Ignore exfil detection warnings
-- Use passthrough mode for extended periods
-
-### Do
-
-- Keep tmai in a dedicated monitoring pane
-- Review agent activity periodically
-- Use appropriate view modes
-- Check logs when something seems off
 
 ## Next Steps
 

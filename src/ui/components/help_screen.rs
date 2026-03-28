@@ -62,7 +62,7 @@ impl HelpScreen {
         let scope_str = "All Sessions".to_string();
 
         vec![
-            Self::title_line("tmai - Tmux Multi Agent Interface"),
+            Self::title_line("tmai - Tactful Multi Agent Interface"),
             Line::from(""),
             Self::section_header("Current Settings"),
             Line::from(vec![

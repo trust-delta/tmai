@@ -2,7 +2,30 @@
 
 Basic usage for monitoring a single AI agent.
 
-## Basic Flow
+## WebUI Mode (Default)
+
+```bash
+# 1. Set up hooks (one-time)
+tmai init
+
+# 2. Start tmai (opens Chrome App Mode)
+tmai
+
+# 3. Start Claude Code in any terminal
+claude
+```
+
+tmai auto-detects the agent via hooks and displays it in the dashboard.
+
+### Operations in WebUI
+
+- **Approve** — Click the approve button
+- **Select options** — Click numbered choices
+- **Send text** — Type in the input bar and press Enter
+- **Terminal** — Open the interactive terminal panel
+- **Kill** — Terminate the agent
+
+## TUI Mode (`--tmux`)
 
 ```bash
 # 1. Create a tmux session
@@ -11,60 +34,19 @@ tmux new-session -s dev
 # 2. Start Claude Code
 claude
 
-# 3. Start tmai in another pane
-# Ctrl+b % to split horizontally
-tmai
+# 3. Start tmai in another pane (Ctrl+b % to split)
+tmai --tmux
 ```
 
-## Screen Layout
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ tmux                                                        │
-│                                                             │
-│  ┌─────────────────────────┬───────────────────────────────┐│
-│  │                         │                               ││
-│  │   claude                │   tmai                        ││
-│  │   (working)             │   (monitoring)                ││
-│  │                         │                               ││
-│  └─────────────────────────┴───────────────────────────────┘│
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Operations
-
-### Approval
-
-When claude requests approval, in the tmai pane:
+### Operations in TUI
 
 | Key | Action |
 |-----|--------|
 | `y` | Approve (send Enter to confirm) |
-
-### AskUserQuestion
-
-When options are displayed:
-
-| Key | Action |
-|-----|--------|
-| `1-9` | Select option |
+| `1-9` | Select AskUserQuestion option |
 | `Space` | Toggle for multi-select |
-
-### Direct Input
-
-When text input is needed:
-
-```
-p key → Passthrough mode → Type → Esc to return
-```
-
-### Preview Scrolling
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+d` | Scroll down |
-| `Ctrl+u` | Scroll up |
+| `p` | Passthrough mode (type directly, Esc to return) |
+| `Ctrl+d/u` | Scroll preview |
 
 ## Claude Code Hooks (Recommended)
 

@@ -1,6 +1,6 @@
 # tmai
 
-**Tmux Multi Agent Interface** - tmux上で複数のAIエージェントを監視・操作するツール
+**Tactful Multi Agent Interface** — 複数のAIコーディングエージェントを統合WebUIで監視・操作
 
 ![Rust](https://img.shields.io/badge/rust-1.91%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)

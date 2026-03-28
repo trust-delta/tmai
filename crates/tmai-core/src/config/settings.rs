@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Tmux Multi Agent Interface")]
+#[command(author, version, about = "Tactful Multi Agent Interface")]
 pub struct Config {
     /// Enable debug mode
     #[arg(short, long, global = true)]

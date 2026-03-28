@@ -1,6 +1,6 @@
 # PTY Wrapping
 
-High-precision state detection through PTY proxy.
+High-precision state detection through PTY proxy. Works in both WebUI (default) and TUI (`--tmux`) modes.
 
 > **Note**: For Claude Code, [HTTP Hooks](./hooks.md) are now the recommended primary detection method. PTY wrapping remains useful for exfil detection, full AskUserQuestion parsing, and non-Claude agents.
 
