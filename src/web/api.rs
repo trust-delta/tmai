@@ -959,7 +959,10 @@ pub async fn get_auto_approve_settings(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<AutoApproveSettingsResponse> {
     let aa = &core.settings().auto_approve;
-    let mode = format!("{:?}", aa.effective_mode());
+    let mode = serde_json::to_value(aa.effective_mode())
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", aa.effective_mode()).to_lowercase());
     let running = aa.effective_mode() != tmai_core::auto_approve::types::AutoApproveMode::Off;
 
     let rules = RuleSettingsResponse {
@@ -982,14 +985,15 @@ pub async fn get_auto_approve_settings(
 pub async fn update_auto_approve_settings(
     Json(req): Json<UpdateAutoApproveRequest>,
 ) -> Json<serde_json::Value> {
-    // Persist mode change
+    // Persist mode change (normalize to lowercase for serde compat)
     if let Some(ref mode) = req.mode {
+        let mode_lower = mode.to_lowercase();
         tmai_core::config::Settings::save_toml_value(
             "auto_approve",
             "mode",
-            toml_edit::Value::from(mode.as_str()),
+            toml_edit::Value::from(mode_lower.as_str()),
         );
-        tracing::info!("Auto-approve mode updated to '{mode}' (restart to apply)");
+        tracing::info!("Auto-approve mode updated to '{mode_lower}' (restart to apply)");
     }
 
     // Persist rule preset changes

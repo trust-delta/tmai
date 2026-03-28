@@ -142,10 +142,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   }}
                   className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 >
-                  <option value="Off">Off</option>
-                  <option value="Rules">Rules (fast, pattern-based)</option>
-                  <option value="Ai">AI (Claude Haiku judge)</option>
-                  <option value="Hybrid">Hybrid (rules → AI fallback)</option>
+                  <option value="off">Off</option>
+                  <option value="rules">Rules (fast, pattern-based)</option>
+                  <option value="ai">AI (Claude Haiku judge)</option>
+                  <option value="hybrid">Hybrid (rules → AI fallback)</option>
                 </select>
               </div>
 
@@ -155,14 +155,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   Service running
                 </p>
               )}
-              {autoApprove.mode !== "Off" && !autoApprove.running && (
+              {autoApprove.mode !== "off" && !autoApprove.running && (
                 <p className="text-[11px] text-amber-500/70">
                   Restart tmai to activate
                 </p>
               )}
 
               {/* Rule presets — visible when mode uses rules */}
-              {(autoApprove.mode === "Rules" || autoApprove.mode === "Hybrid") && (
+              {(autoApprove.mode === "rules" || autoApprove.mode === "hybrid") && (
                 <div className="space-y-2 border-t border-white/5 pt-3">
                   <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                     Rule Presets
