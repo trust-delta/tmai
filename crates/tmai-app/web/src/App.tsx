@@ -240,6 +240,7 @@ export function App() {
               projectPath={selection.path}
               projectName={selection.name}
               worktrees={worktrees}
+              agents={aiAgents}
               onFocusAgent={handleSelectAgent}
             />
           </div>

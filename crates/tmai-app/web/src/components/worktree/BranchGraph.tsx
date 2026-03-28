@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
-import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo } from "@/lib/api";
+import { api, type WorktreeSnapshot, type BranchListResponse, type GraphData, type PrInfo, type IssueInfo, type AgentSnapshot } from "@/lib/api";
 import type { BranchNode } from "./graph/types";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
@@ -9,6 +9,7 @@ interface BranchGraphProps {
   projectPath: string;
   projectName: string;
   worktrees: WorktreeSnapshot[];
+  agents: AgentSnapshot[];
   onFocusAgent: (target: string) => void;
 }
 
@@ -28,6 +29,7 @@ export function BranchGraph({
   projectPath,
   projectName,
   worktrees,
+  agents,
   onFocusAgent,
 }: BranchGraphProps) {
   const [branches, setBranches] = useState<BranchListResponse | null>(null);
@@ -109,6 +111,14 @@ export function BranchGraph({
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
 
+    // Build a map from branch name to agent target for non-worktree branches
+    const branchAgentMap = new Map<string, AgentSnapshot>();
+    for (const agent of agents) {
+      if (agent.git_branch) {
+        branchAgentMap.set(agent.git_branch, agent);
+      }
+    }
+
     result.push({
       name: defaultBranch,
       parent: null,
@@ -117,7 +127,8 @@ export function BranchGraph({
       isCurrent: currentBranch === defaultBranch,
       isDirty: mainWt?.is_dirty ?? false,
       hasAgent: !!mainWt?.agent_target,
-      agentStatus: mainWt?.agent_status ?? null,
+      agentTarget: mainWt?.agent_target ?? branchAgentMap.get(defaultBranch)?.target ?? null,
+      agentStatus: mainWt?.agent_status ?? branchAgentMap.get(defaultBranch)?.status ?? null,
       diffSummary: null,
       worktree: mainWt ?? null,
       ahead: 0,
@@ -137,6 +148,7 @@ export function BranchGraph({
         isCurrent: currentBranch === branchName,
         isDirty: wt.is_dirty ?? false,
         hasAgent: !!wt.agent_target,
+        agentTarget: wt.agent_target ?? branchAgentMap.get(branchName)?.target ?? null,
         agentStatus: wt.agent_status,
         diffSummary: wt.diff_summary,
         worktree: wt,
@@ -151,6 +163,7 @@ export function BranchGraph({
       for (const b of branches.branches) {
         if (!listed.has(b)) {
           const ab = abMap[b];
+          const matchedAgent = branchAgentMap.get(b);
           result.push({
             name: b,
             parent: parentMap[b] ?? defaultBranch,
@@ -158,8 +171,9 @@ export function BranchGraph({
             isMain: false,
             isCurrent: currentBranch === b,
             isDirty: false,
-            hasAgent: false,
-            agentStatus: null,
+            hasAgent: !!matchedAgent,
+            agentTarget: matchedAgent?.target ?? null,
+            agentStatus: matchedAgent?.status ?? null,
             diffSummary: null,
             worktree: null,
             ahead: ab?.[0] ?? 0,
@@ -171,7 +185,7 @@ export function BranchGraph({
     }
 
     return result;
-  }, [projectWorktrees, branches]);
+  }, [projectWorktrees, branches, agents]);
 
   const branchCount = nodes.filter(n => !n.isMain).length;
 

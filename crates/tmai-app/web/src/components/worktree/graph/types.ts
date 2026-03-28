@@ -45,6 +45,7 @@ export interface BranchNode {
   isCurrent: boolean;
   isDirty: boolean;
   hasAgent: boolean;
+  agentTarget: string | null;
   agentStatus: string | null;
   diffSummary: { files_changed: number; insertions: number; deletions: number } | null;
   worktree: import("@/lib/api").WorktreeSnapshot | null;

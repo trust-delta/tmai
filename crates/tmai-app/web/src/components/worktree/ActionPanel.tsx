@@ -488,7 +488,7 @@ export function ActionPanel({
                     disabled={actionBusy}
                     className="mt-1.5 w-full rounded bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
-                    Merge PR #{pr.number}
+                    AI Merge PR #{pr.number}
                   </button>
                 </div>
               ))}
@@ -512,27 +512,25 @@ export function ActionPanel({
           {/* Non-main branch/worktree actions (unified) */}
           {!activeNode.isMain && (
             <>
-              {/* Worktree: Launch or Focus Agent */}
-              {activeNode.isWorktree && activeNode.worktree && (
-                activeNode.hasAgent && activeNode.worktree.agent_target ? (
-                  <button
-                    onClick={() => onFocusAgent(activeNode.worktree!.agent_target!)}
-                    className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25"
-                  >
-                    Focus Agent
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleLaunchAgent}
-                    disabled={actionBusy}
-                    className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
-                  >
-                    {actionBusy ? "Launching..." : "Launch Agent"}
-                  </button>
-                )
+              {/* Focus Agent (worktree or any branch with agent) */}
+              {activeNode.agentTarget ? (
+                <button
+                  onClick={() => onFocusAgent(activeNode.agentTarget!)}
+                  className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25"
+                >
+                  Focus Agent
+                </button>
+              ) : activeNode.isWorktree && activeNode.worktree && (
+                <button
+                  onClick={handleLaunchAgent}
+                  disabled={actionBusy}
+                  className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
+                >
+                  {actionBusy ? "Launching..." : "Launch Agent"}
+                </button>
               )}
 
-              {/* AI Merge / Create PR */}
+              {/* Merge into parent / Create PR */}
               {activeNode.ahead > 0 && (
                 <>
                   <button
@@ -544,14 +542,14 @@ export function ActionPanel({
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
                   >
-                    AI Merge
+                    {prInfo ? `AI Merge PR #${prInfo.number} into ${baseBranch}` : `AI Merge into ${baseBranch}`}
                   </button>
                   <button
                     onClick={() => delegateToAi(`Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`)}
                     disabled={actionBusy}
                     className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
                   >
-                    AI Create PR
+                    AI Create PR → {baseBranch}
                   </button>
                 </>
               )}
