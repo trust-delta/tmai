@@ -646,12 +646,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ repo_path: repoPath, branch }),
     }),
-  createWorktree: (repoPath: string, branchName: string, baseBranch?: string) =>
-    apiFetch<{ status: string; path: string; branch: string }>("/worktrees", {
-      method: "POST",
-      body: JSON.stringify({ repo_path: repoPath, branch_name: branchName, base_branch: baseBranch }),
-    }),
-
   // Directories
   listDirectories: (path?: string) =>
     apiFetch<DirEntry[]>(`/directories${path ? `?path=${encodeURIComponent(path)}` : ""}`),

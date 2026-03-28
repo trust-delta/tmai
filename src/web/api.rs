@@ -519,15 +519,6 @@ pub async fn get_team_tasks(
 // Worktree endpoints
 // =========================================================
 
-/// Worktree creation request body
-#[derive(Debug, Deserialize)]
-pub struct WorktreeCreateRequestBody {
-    pub repo_path: String,
-    pub branch_name: String,
-    #[serde(default)]
-    pub base_branch: Option<String>,
-}
-
 /// Default agent type for launch
 fn default_agent_type() -> String {
     "claude".to_string()
@@ -538,36 +529,6 @@ pub async fn get_worktrees(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<Vec<tmai_core::api::WorktreeSnapshot>> {
     Json(core.list_worktrees())
-}
-
-/// Create a new worktree
-pub async fn create_worktree(
-    State(core): State<Arc<TmaiCore>>,
-    Json(req): Json<WorktreeCreateRequestBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Verify the repo_path exists in our known worktrees (prevent arbitrary path writes)
-    let repo_exists = core.list_worktrees().iter().any(|wt| {
-        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
-    });
-    if !repo_exists {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
-
-    let create_req = tmai_core::worktree::WorktreeCreateRequest {
-        repo_path: strip_git_suffix(&req.repo_path).to_string(),
-        branch_name: req.branch_name,
-        dir_name: None,
-        base_branch: req.base_branch,
-    };
-
-    match core.create_worktree(&create_req).await {
-        Ok(result) => Ok(Json(serde_json::json!({
-            "status": "ok",
-            "path": result.path,
-            "branch": result.branch,
-        }))),
-        Err(e) => Err(api_error_to_http(e)),
-    }
 }
 
 /// Worktree delete request body (uses repo_path for unambiguous identification)
