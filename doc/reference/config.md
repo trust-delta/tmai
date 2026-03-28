@@ -170,6 +170,60 @@ enabled = true  # Equivalent to mode = "ai"
 
 For detailed usage, see [Auto-Approve](../features/auto-approve.md).
 
+### [audit]
+
+Detection audit logging settings.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable audit logging (also via `--audit` CLI flag) |
+| `max_size_bytes` | integer | `10485760` | Max log file size before rotation (10MB) |
+| `log_source_disagreement` | bool | `false` | Log when detection sources disagree |
+
+Output: `~/.local/share/tmai/audit/detection.ndjson`
+
+### [review]
+
+Fresh Session Review settings (automatic code review on agent completion).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable automatic review |
+| `agent` | string | `"claude_code"` | Review agent: `claude_code`, `codex`, `gemini` |
+| `base_branch` | string | `"main"` | Base branch to diff against |
+| `custom_instructions` | string | `""` | Custom instructions appended to review prompt |
+
+### [usage]
+
+Subscription usage tracking settings.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable usage monitoring in WebUI |
+| `auto_refresh_min` | integer | `0` | Auto-refresh interval in minutes (0 = manual only) |
+
+### [spawn]
+
+Agent spawn settings (WebUI spawn feature).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `use_tmux_window` | bool | `false` | Spawn in tmux window instead of PTY |
+| `tmux_window_name` | string | `"tmai-agents"` | tmux window name for spawned agents |
+
+### projects
+
+Registered project directories for branch graph and GitHub integration.
+
+```toml
+projects = [
+    "/home/user/myproject",
+    "/home/user/another-project"
+]
+```
+
+Projects can also be managed from the WebUI Settings panel.
+
 ## Environment Variables
 
 ### RUST_LOG
@@ -199,7 +253,9 @@ TMAI_CONFIG=/path/to/config.toml tmai
 
 | Option | Description |
 |--------|-------------|
+| `--tmux` | TUI mode (ratatui in tmux, instead of default WebUI) |
 | `--debug` | Enable debug mode (verbose logging) |
+| `--audit` | Enable detection audit logging |
 | `--version` | Show version |
 | `--help` | Show help |
 
@@ -207,11 +263,15 @@ TMAI_CONFIG=/path/to/config.toml tmai
 
 | Command | Description |
 |---------|-------------|
-| `tmai` | Start TUI monitor |
+| `tmai` | Start WebUI dashboard (default) |
+| `tmai --tmux` | Start TUI monitor (requires tmux) |
 | `tmai init` | Set up Claude Code hooks integration (recommended) |
 | `tmai init --force` | Force-regenerate token and re-add hooks |
+| `tmai init --codex` | Also set up Codex CLI hooks |
 | `tmai uninit` | Remove tmai hooks and delete token |
 | `tmai wrap <command>` | Start agent with PTY wrapping |
+| `tmai demo` | Demo mode (no tmux or agents needed) |
+| `tmai audit <subcommand>` | Audit log analysis (stats, misdetections, disagreements) |
 
 #### init Examples
 

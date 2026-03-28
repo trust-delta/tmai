@@ -1,6 +1,6 @@
 # PTYラッピング
 
-PTYプロキシによる高精度な状態検出。
+PTYプロキシによる高精度な状態検出。WebUI（デフォルト）とTUI（`--tmux`）の両モードで動作します。
 
 > **Note**: Claude Codeの場合、[HTTP Hooks連携](./hooks.md)が推奨される主要な検出方法になりました。PTYラッピングは外部送信検知、AskUserQuestionの完全な解析、Claude Code以外のエージェントで引き続き有用です。
 

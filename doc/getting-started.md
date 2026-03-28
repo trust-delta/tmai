@@ -5,8 +5,9 @@ Installation and first steps with tmai.
 ## Requirements
 
 - Rust toolchain (1.70+)
-- tmux
+- Chrome or Chromium (for WebUI App Mode — auto-detected)
 - AI agents to monitor (Claude Code, Codex CLI, Gemini CLI, etc.)
+- tmux (optional, only needed for `--tmux` TUI mode)
 
 ## Installation
 
@@ -27,46 +28,63 @@ cargo build --release
 cp target/release/tmai ~/.local/bin/
 ```
 
-## Basic Usage
+## Quick Start (WebUI Mode)
 
-### 1. Start an AI agent
-
-First, start an AI agent in tmux.
+### 1. Set up hooks (recommended, one-time)
 
 ```bash
-# Create a tmux session
-tmux new-session -s dev
-
-# Start Claude Code
-claude
+tmai init
 ```
+
+This registers tmai as an HTTP hook receiver in `~/.claude/settings.json`. All Claude Code sessions automatically send state events to tmai.
 
 ### 2. Start tmai
 
-Open another pane or window and start tmai.
-
 ```bash
-# Split pane
-# Ctrl+b % (horizontal) or Ctrl+b " (vertical)
-
-# Start tmai
 tmai
 ```
 
-tmai automatically detects AI agents running in tmux and starts monitoring.
+tmai starts a web server and opens Chrome in App Mode automatically. The dashboard shows all detected AI agents.
 
-### 3. Monitor and operate
+<!-- screenshot: webui-first-launch.png -->
+
+### 3. Start an AI agent
+
+Open a terminal and start an AI agent:
+
+```bash
+claude
+```
+
+tmai detects the agent automatically via hooks and displays it in the dashboard. You can approve, send input, and interact without leaving the WebUI.
+
+### 4. Monitor and operate
+
+In the WebUI dashboard:
+
+- **Sidebar** — Lists all detected agents grouped by project
+- **Agent view** — Shows agent status, approval buttons, and text input
+- **Terminal** — Full interactive terminal via xterm.js
+- **Branch graph** — Git commit history with branch visualization
+- **GitHub** — PR status, CI checks, and issues
+
+## TUI Mode (Optional)
+
+For tmux power users, tmai also supports a terminal UI:
+
+```bash
+# Requires tmux — start tmai in a tmux pane
+tmai --tmux
+```
 
 | Key | Action |
 |-----|--------|
 | `j/k` | Select agent |
 | `y` | Approve (send Enter) |
 | `1-9` | Select AskUserQuestion option |
-| `p` | Passthrough mode (direct input) |
+| `i` | Input mode |
+| `->` | Passthrough mode |
 | `?` | Show help |
-| `q` | Quit |
-
-> **Note**: For rejection or other options, use number keys, input mode (`i`), or passthrough mode (`p`).
 
 ## Claude Code Hooks (Recommended)
 
@@ -77,13 +95,11 @@ For the highest precision state detection, set up Claude Code Hooks:
 tmai init
 ```
 
-This registers tmai as an HTTP hook receiver in `~/.claude/settings.json`. After setup, all Claude Code sessions automatically send state events to tmai — no special agent startup required.
-
 Benefits:
 - Event-driven state detection (highest precision)
 - Works with normal `claude` command (no wrapper needed)
 - Zero-latency event delivery
-- Works with existing sessions
+- Works in both WebUI and TUI modes
 
 ## PTY Wrapping Mode (Optional)
 
@@ -101,10 +117,20 @@ Additional benefits over hooks:
 
 > **Note**: Hooks and PTY wrapping can be used together. When both are active, hooks take priority for state detection.
 
+## Demo Mode
+
+Try tmai without tmux or agents:
+
+```bash
+tmai demo
+```
+
 ## Next Steps
 
+- [WebUI Overview](./features/webui-overview.md) - Dashboard layout and features
+- [Branch Graph](./features/branch-graph.md) - Git visualization
+- [GitHub Integration](./features/github-integration.md) - PR and CI monitoring
 - [Claude Code Hooks](./features/hooks.md) - Detailed hooks documentation
 - [Multi-Agent Monitoring](./workflows/multi-agent.md) - Monitor multiple agents
 - [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
-- [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Parallel development workflow
 - [tmai's Strengths](./guides/strengths.md) - What makes tmai unique

@@ -1,6 +1,6 @@
 # Claude Code Hooks Integration
 
-High-precision state detection via Claude Code's HTTP hooks.
+High-precision state detection via Claude Code's HTTP hooks. Works in both WebUI (default) and TUI (`--tmux`) modes.
 
 ## Overview
 
@@ -164,5 +164,6 @@ This regenerates the token and updates settings.json.
 ## Next Steps
 
 - [PTY Wrapping](./pty-wrapping.md) - Additional precision with I/O monitoring
-- [Web Remote Control](./web-remote.md) - Control from smartphone
+- [WebUI Overview](./webui-overview.md) - Dashboard features
+- [Mobile Remote Control](./web-remote.md) - Control from smartphone
 - [Configuration](../reference/config.md) - Config options

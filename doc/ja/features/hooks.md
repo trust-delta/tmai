@@ -1,6 +1,6 @@
 # Claude Code Hooks連携
 
-Claude CodeのHTTP Hooksによる高精度な状態検出。
+Claude CodeのHTTP Hooksによる高精度な状態検出。WebUI（デフォルト）とTUI（`--tmux`）の両モードで動作します。
 
 ## 概要
 
@@ -164,5 +164,6 @@ tmai init --force
 ## 次のステップ
 
 - [PTYラッピング](./pty-wrapping.md) - I/O監視による追加の精度向上
-- [Web Remote Control](./web-remote.md) - スマホから操作
+- [WebUI概要](./webui-overview.md) - ダッシュボード機能
+- [モバイルリモートコントロール](./web-remote.md) - スマホから操作
 - [設定リファレンス](../reference/config.md) - 設定オプション

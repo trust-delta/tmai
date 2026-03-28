@@ -1,6 +1,8 @@
-# Web Remote Control
+# Mobile Remote Control
 
 Operate AI agents from your smartphone via QR code.
+
+> **Note**: This document covers the mobile-optimized remote control interface. For the full desktop WebUI dashboard, see [WebUI Overview](./webui-overview.md).
 
 ## Overview
 
@@ -198,5 +200,6 @@ See [Web API Reference](../reference/web-api.md) for details.
 
 ## Next Steps
 
+- [WebUI Overview](./webui-overview.md) - Full desktop dashboard
 - [Web API Reference](../reference/web-api.md) - Full API documentation
 - [Remote Approval Workflow](../workflows/remote-approval.md) - Usage scenarios
