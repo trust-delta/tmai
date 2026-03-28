@@ -17,7 +17,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
 
   const handleApprove = useCallback(async () => {
     try {
-      await api.approve(agent.id);
+      await api.approve(agent.target);
     } catch (e) {
       console.error("Approve failed:", e);
     }
@@ -25,7 +25,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
 
   const handleReject = useCallback(async () => {
     try {
-      await api.sendKey(agent.id, "Escape");
+      await api.sendKey(agent.target, "Escape");
     } catch (e) {
       console.error("Reject failed:", e);
     }
@@ -33,7 +33,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
 
   const handleKill = useCallback(async () => {
     try {
-      await api.killAgent(agent.id);
+      await api.killAgent(agent.target);
     } catch (e) {
       console.error("Kill failed:", e);
     }
