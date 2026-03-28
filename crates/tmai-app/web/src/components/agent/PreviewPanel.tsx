@@ -46,6 +46,45 @@ function toTmuxKey(e: KeyboardEvent): string | null {
 // Per-agent auto-scroll preference (persists across agent switches)
 const agentAutoScrollMap = new Map<string, boolean>();
 
+const MONO_FONT_STACK =
+  "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
+  "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', " +
+  "'FiraCode Nerd Font', 'FiraCode NF', " +
+  "'MesloLGS NF', 'Hack Nerd Font', " +
+  "'JetBrains Mono', 'Cascadia Code', 'Fira Code', " +
+  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, " +
+  "'Liberation Mono', 'Courier New', " +
+  "'Symbols Nerd Font Mono', monospace";
+
+// Box Drawing horizontal characters (U+2500–U+257F range commonly used for lines)
+const HLINE_RE = /^[\u2500-\u257f]+$/;
+
+// ANSI escape patterns (constructed via RegExp to avoid control-char lint)
+const ESC = "\x1b";
+const CSI_RE = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+const OSC_RE = new RegExp(`${ESC}\\][^\\x07${ESC}]*(?:\\x07|${ESC}\\\\)`, "g");
+const LEAD_CSI_RE = new RegExp(`^(${ESC}\\[[0-9;?]*[ -/]*[@-~])*`);
+const TRAIL_CSI_RE = new RegExp(`(${ESC}\\[[0-9;?]*[ -/]*[@-~])*$`);
+
+// Trim trailing blank lines and truncate Box Drawing horizontal lines to fit container width
+function trimPreviewContent(raw: string, cols: number): string {
+  // Strip trailing blank lines (may contain ANSI escapes but no visible chars)
+  const trimmed = raw.replace(/(\s*\n)*\s*$/, "");
+  if (cols <= 0) return trimmed;
+
+  return trimmed.replace(/^.*$/gm, (line) => {
+    // Strip ANSI escapes to measure visible length
+    const visible = line.replace(CSI_RE, "").replace(OSC_RE, "");
+    if (HLINE_RE.test(visible) && visible.length > cols) {
+      // Truncate: keep only `cols` visible chars while preserving leading ANSI
+      const leadAnsi = line.match(LEAD_CSI_RE)?.[0] ?? "";
+      const trailAnsi = line.match(TRAIL_CSI_RE)?.[0] ?? "";
+      return leadAnsi + visible.slice(0, cols) + trailAnsi;
+    }
+    return line;
+  });
+}
+
 // Interactive terminal preview with passthrough input.
 // Renders capture-pane output with ANSI colors and forwards keystrokes
 // to the agent's terminal. Passthrough is button-controlled.
@@ -70,6 +109,29 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Measure character columns that fit in the preview container
+  const [cols, setCols] = useState(0);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const span = measureRef.current;
+      if (!span) return;
+      const charW = span.getBoundingClientRect().width;
+      if (charW > 0) {
+        // Subtract horizontal padding (p-3 = 12px each side)
+        const available = el.clientWidth - 24;
+        setCols(Math.floor(available / charW));
+      }
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
   const ansi = useMemo(() => {
     const a = new AnsiUp();
     a.use_classes = true;
@@ -142,7 +204,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   );
 
   // Auto-scroll to bottom (toggleable, default on)
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Scroll handler (reserved for future use, auto-scroll is button-controlled only)
   const handleScroll = useCallback(() => {}, []);
@@ -202,7 +263,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     ],
   );
 
-  const html = useMemo(() => ansi.ansi_to_html(content), [ansi, content]);
+  const html = useMemo(
+    () => ansi.ansi_to_html(trimPreviewContent(content, cols)),
+    [ansi, content, cols],
+  );
 
   // Set innerHTML via ref to bypass React's DOM diffing, which destroys text selection.
   // Also handles auto-scroll after content update to ensure correct ordering.
@@ -249,19 +313,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           !focused ? "ring-2 ring-amber-500/40 ring-inset" : ""
         }`}
       >
+        {/* Hidden char-width measurement probe (same font as preview) */}
+        <span
+          ref={measureRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-[9999px] whitespace-pre text-[13px]"
+          style={{
+            fontFamily: MONO_FONT_STACK,
+          }}
+        >
+          X
+        </span>
         {content ? (
           <div
             className="ansi-preview m-0 cursor-text select-text whitespace-pre-wrap break-words"
             style={{
-              fontFamily:
-                "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
-                "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', " +
-                "'FiraCode Nerd Font', 'FiraCode NF', " +
-                "'MesloLGS NF', 'Hack Nerd Font', " +
-                "'JetBrains Mono', 'Cascadia Code', 'Fira Code', " +
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, " +
-                "'Liberation Mono', 'Courier New', " +
-                "'Symbols Nerd Font Mono', monospace",
+              fontFamily: MONO_FONT_STACK,
             }}
           >
             <div ref={contentRef} />
