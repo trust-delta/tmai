@@ -45,7 +45,7 @@ function toTmuxKey(e: KeyboardEvent): string | null {
 
 // Interactive terminal preview with passthrough input.
 // Renders capture-pane output with ANSI colors and forwards keystrokes
-// to the agent's terminal. Click to focus, Esc to blur.
+// to the agent's terminal. Passthrough is button-controlled.
 // IME (Japanese, Chinese, etc.) is supported via a hidden input element.
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
@@ -78,12 +78,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const pollInterval = focused ? 500 : 2000;
 
   // Fetch preview content, shared between polling and post-keystroke refresh
+  // Skips DOM update while user has an active text selection
   const fetchPreview = useCallback(async () => {
     try {
       const data = await api.getPreview(agentId);
-      if (data.content) {
-        setContent(data.content);
-      }
+      if (!data.content) return;
+      const sel = window.getSelection();
+      if (sel && sel.toString().length > 0) return;
+      setContent(data.content);
     } catch {
       // Agent may not have content yet
     }
@@ -123,11 +125,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     }
   }, [autoScroll]);
 
-  useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: "instant" });
-    }
-  }, [content, autoScroll]);
 
   // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
@@ -145,7 +142,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       // through the hidden input's onInput handler and be sent as passthrough
       if (e.ctrlKey && e.key === "v") return;
 
-      // Esc: blur the panel
+      // Esc: toggle passthrough
       if (e.key === "Escape" && !e.ctrlKey) {
         togglePassthrough();
         return;
@@ -183,6 +180,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
   const html = useMemo(() => ansi.ansi_to_html(content), [ansi, content]);
 
+  // Set innerHTML via ref to bypass React's DOM diffing, which destroys text selection.
+  // Also handles auto-scroll after content update to ensure correct ordering.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (contentRef.current) {
+      const sel = window.getSelection();
+      const hasSelection = sel && sel.toString().length > 0;
+      if (!hasSelection) {
+        contentRef.current.innerHTML = html;
+      }
+    }
+    if (autoScroll) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    }
+  }, [html, autoScroll]);
+
   return (
     <div
       ref={containerRef}
@@ -196,7 +209,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         className="flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35]"
       >
         {content ? (
-          <pre
+          <div
             className="ansi-preview m-0 cursor-text select-text whitespace-pre-wrap break-words"
             style={{
               fontFamily:
@@ -209,8 +222,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
                 "'Liberation Mono', 'Courier New', " +
                 "'Symbols Nerd Font Mono', monospace",
             }}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
+          >
+            <div ref={contentRef} />
+          </div>
         ) : (
           <span className="text-zinc-600">Waiting for output...</span>
         )}
@@ -221,8 +235,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       <input
         ref={inputRef}
         type="text"
-        className="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
-        style={{ bottom: "2rem", left: "0.75rem" }}
+        className="pointer-events-none absolute h-0 w-0 overflow-hidden border-0 p-0 opacity-0"
+        style={{ bottom: "2rem", left: "0.75rem", userSelect: "none" }}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
         onCompositionStart={() => setComposing(true)}

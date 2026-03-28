@@ -274,7 +274,7 @@ export function App() {
                 <TerminalPanel sessionId={sessionId} />
               </div>
             ) : selectedAgent ? (
-              <div key={selectedAgent.id} className="flex-1 overflow-auto animate-fade-in">
+              <div key={selectedAgent.id} className="flex flex-1 flex-col overflow-hidden animate-fade-in">
                 <PreviewPanel agentId={selectedAgent.id} />
               </div>
             ) : (
