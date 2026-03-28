@@ -116,7 +116,7 @@ export function App() {
   return (
     <div className="flex h-screen text-zinc-100">
       {/* Sidebar */}
-      <aside className="glass flex w-80 shrink-0 flex-col">
+      <aside className="glass flex w-80 shrink-0 flex-col transition-subtle">
         <StatusBar
           agentCount={aiAgents.length}
           attentionCount={attentionCount}
@@ -143,53 +143,66 @@ export function App() {
       </aside>
 
       {/* Main area */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="flex flex-1 flex-col overflow-hidden transition-subtle">
         {showSecurity ? (
-          <SecurityPanel onClose={() => setShowSecurity(false)} />
+          <div className="animate-scale-in">
+            <SecurityPanel onClose={() => setShowSecurity(false)} />
+          </div>
         ) : showSettings ? (
-          <SettingsPanel
-            onClose={() => setShowSettings(false)}
-            onProjectsChanged={refreshProjects}
-          />
+          <div className="animate-scale-in">
+            <SettingsPanel
+              onClose={() => setShowSettings(false)}
+              onProjectsChanged={refreshProjects}
+            />
+          </div>
         ) : selection?.type === "project" ? (
-          <BranchGraph
-            key={selection.path}
-            projectPath={selection.path}
-            projectName={selection.name}
-            worktrees={worktrees}
-            onSelectWorktree={handleSelectWorktree}
-          />
+          <div className="animate-fade-in">
+            <BranchGraph
+              key={selection.path}
+              projectPath={selection.path}
+              projectName={selection.name}
+              worktrees={worktrees}
+              onSelectWorktree={handleSelectWorktree}
+            />
+          </div>
         ) : selection?.type === "markdown" ? (
-          <MarkdownPanel
-            key={selection.projectPath}
-            projectPath={selection.projectPath}
-            projectName={selection.projectName}
-          />
+          <div className="animate-fade-in">
+            <MarkdownPanel
+              key={selection.projectPath}
+              projectPath={selection.projectPath}
+              projectName={selection.projectName}
+            />
+          </div>
         ) : selection?.type === "worktree" && selectedWorktree ? (
-          <WorktreePanel
-            worktree={selectedWorktree}
-            onLaunched={(target) => {
-              handleSpawned(target);
-              refreshWorktrees();
-            }}
-            onDeleted={() => {
-              setSelection(null);
-              refreshWorktrees();
-            }}
-          />
+          <div className="animate-fade-in">
+            <WorktreePanel
+              worktree={selectedWorktree}
+              onLaunched={(target) => {
+                handleSpawned(target);
+                refreshWorktrees();
+              }}
+              onDeleted={() => {
+                setSelection(null);
+                refreshWorktrees();
+              }}
+            />
+          </div>
         ) : (
           <>
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
             {sessionId ? (
-              <TerminalPanel key={sessionId} sessionId={sessionId} />
+              <div key={sessionId} className="animate-fade-in">
+                <TerminalPanel sessionId={sessionId} />
+              </div>
             ) : selectedAgent ? (
-              <PreviewPanel
-                key={selectedAgent.id}
-                agentId={selectedAgent.id}
-              />
+              <div key={selectedAgent.id} className="animate-fade-in">
+                <PreviewPanel
+                  agentId={selectedAgent.id}
+                />
+              </div>
             ) : (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="glass-light rounded-2xl px-12 py-10 text-center">
+              <div className="flex flex-1 items-center justify-center animate-fade-in">
+                <div className="glass-light rounded-2xl px-12 py-10 text-center transition-subtle hover:glass">
                   <h1 className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
                     tmai
                   </h1>

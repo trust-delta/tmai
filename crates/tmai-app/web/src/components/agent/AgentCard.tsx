@@ -125,9 +125,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     <button
       onClick={onClick}
       className={cn(
-        "glass-card w-full rounded-xl px-3 py-2 text-left transition-all",
+        "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
+        "hover:bg-white/[0.08] hover:border-white/10",
         selected && "!border-cyan-500/30 !bg-cyan-500/10",
-        attention && "!border-amber-500/30",
+        attention && "!border-amber-500/30 animate-glow-pulse",
         glow && selected && glow,
       )}
     >
@@ -135,7 +136,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
           {isAi && (
-            <span className="text-[10px]">
+            <span className="text-[10px] transition-subtle group-hover:opacity-100 opacity-80">
               <span className={sourceEntry.color} title={`検出: ${sourceEntry.label}`}>
                 {sourceEntry.icon}
               </span>
@@ -144,7 +145,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
               </span>
             </span>
           )}
-          <span className="truncate text-sm font-medium text-zinc-200">
+          <span className="truncate text-sm font-medium text-zinc-200 group-hover:text-zinc-100 transition-subtle">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
           </span>
         </div>
@@ -153,10 +154,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           <span
             onClick={handleAutoApproveToggle}
             className={cn(
-              "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-colors",
-              !hasOverride && "text-zinc-600 hover:text-zinc-400",
-              hasOverride && isAutoApproveOn && "text-emerald-400 bg-emerald-500/10",
-              hasOverride && !isAutoApproveOn && "text-red-400 bg-red-500/10",
+              "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-subtle",
+              !hasOverride && "text-zinc-600 hover:text-zinc-400 hover:bg-white/5",
+              hasOverride && isAutoApproveOn && "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15",
+              hasOverride && !isAutoApproveOn && "text-red-400 bg-red-500/10 hover:bg-red-500/15",
             )}
             title={
               !hasOverride
@@ -170,7 +171,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           </span>
           <span
             className={cn(
-              "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+              "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-subtle",
               statusStyle,
             )}
           >
@@ -180,20 +181,20 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       </div>
 
       {/* Row 2: meta indicators */}
-      <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+      <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500 transition-subtle group-hover:text-zinc-400">
         {!agent.git_branch && (
-          <span className="truncate text-zinc-600" title={agent.cwd}>
+          <span className="truncate text-zinc-600 group-hover:text-zinc-500 transition-subtle" title={agent.cwd}>
             {agent.display_cwd}
           </span>
         )}
         <div className="flex-1" />
         {agent.active_subagents > 0 && (
-          <span className="shrink-0 text-zinc-600">
+          <span className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-subtle">
             ⑂{agent.active_subagents}
           </span>
         )}
         {agent.compaction_count > 0 && (
-          <span className="shrink-0 text-zinc-600">
+          <span className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-subtle">
             ♻{agent.compaction_count}
           </span>
         )}
