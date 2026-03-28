@@ -14,7 +14,7 @@ const MAX_TEXT_LENGTH: usize = 1024;
 
 /// Allowed special key names for send_key
 const ALLOWED_KEYS: &[&str] = &[
-    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BSpace",
+    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BTab", "BSpace",
 ];
 
 /// Check if choices use checkbox format ([ ], [x], [X], [×], [✔])
