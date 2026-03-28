@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type {
@@ -29,14 +29,28 @@ export function ProjectGroup({
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawning, setSpawning] = useState(false);
+  const spawnRef = useRef<HTMLDivElement>(null);
+
+  // Close spawn dropdown on outside click
+  useEffect(() => {
+    if (!showSpawn) return;
+    const handleClick = (e: MouseEvent) => {
+      if (spawnRef.current && !spawnRef.current.contains(e.target as Node)) {
+        setShowSpawn(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSpawn]);
 
   // Derive branch info from worktree groups
   const mainWt = project.worktrees.find((wt) => !wt.isWorktree);
   const mainBranch = mainWt?.branch ?? null;
   const mainDirty = mainWt?.dirty ?? false;
-  const worktreeBranches = project.worktrees
+  const worktreeCount = project.worktrees.filter((wt) => wt.isWorktree).length;
+  const worktreesDirty = project.worktrees
     .filter((wt) => wt.isWorktree)
-    .map((wt) => ({ name: wt.branch || wt.name, dirty: wt.dirty }));
+    .some((wt) => wt.dirty);
 
   // Derive selectedTarget for agent card highlighting
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
@@ -101,16 +115,12 @@ export function ProjectGroup({
                   {mainDirty && <span className="text-amber-500">*</span>}
                 </span>
               )}
-              {worktreeBranches.length > 0 && (
-                <>
-                  {worktreeBranches.map((wb) => (
-                    <span key={wb.name} className="flex items-center gap-0.5 truncate text-[10px] text-emerald-600">
-                      <span>🌿</span>
-                      <span>{wb.name}</span>
-                      {wb.dirty && <span className="text-amber-500">*</span>}
-                    </span>
-                  ))}
-                </>
+              {worktreeCount > 0 && (
+                <span className="flex items-center gap-0.5 text-[10px] text-emerald-600">
+                  <span>🌿</span>
+                  <span>×{worktreeCount}</span>
+                  {worktreesDirty && <span className="text-amber-500">*</span>}
+                </span>
               )}
             </div>
           </div>
@@ -165,7 +175,7 @@ export function ProjectGroup({
             </svg>
           </button>
           {/* Spawn button */}
-          <div className="relative">
+          <div className="relative" ref={spawnRef}>
             <button
               onClick={() => setShowSpawn((v) => !v)}
               disabled={spawning}
@@ -175,7 +185,7 @@ export function ProjectGroup({
               +
             </button>
             {showSpawn && (
-              <div className="glass absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-white/10 p-1 shadow-lg min-w-[140px]">
+              <div className="absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-white/10 bg-zinc-900 p-1 shadow-lg min-w-[140px]">
                 {hasMultipleTargets ? (
                   // Show worktree-grouped spawn options
                   spawnTargets.map((target) => (
