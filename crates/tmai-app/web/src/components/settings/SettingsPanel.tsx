@@ -239,7 +239,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                               type="button"
                               onClick={async () => {
                                 const updated = autoApprove.rules.allow_patterns.filter(
-                                  (_, idx) => idx !== i,
+                                  (p) => p !== pat,
                                 );
                                 setAutoApprove({
                                   ...autoApprove,

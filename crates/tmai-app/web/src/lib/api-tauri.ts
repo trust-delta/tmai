@@ -92,7 +92,13 @@ export const api = {
 
   // Spawn
   spawnPty: (req: SpawnRequest) => httpApi.spawnPty(req),
-  spawnWorktree: (req: { repo_path: string; worktree_name: string }) => httpApi.spawnWorktree(req),
+  spawnWorktree: (req: {
+    name: string;
+    cwd: string;
+    base_branch?: string;
+    rows?: number;
+    cols?: number;
+  }) => httpApi.spawnWorktree(req),
 
   // Worktree management
   listWorktrees: () => httpApi.listWorktrees(),

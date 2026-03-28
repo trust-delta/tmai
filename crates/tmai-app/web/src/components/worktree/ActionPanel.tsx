@@ -109,7 +109,7 @@ export function ActionPanel({
   const handleViewDiff = useCallback(async () => {
     setDiffLoading(true);
     try {
-      let data: string;
+      let data: WorktreeDiffResponse;
       if (activeNode.worktree) {
         data = await api.getWorktreeDiff(activeNode.worktree.path);
       } else {

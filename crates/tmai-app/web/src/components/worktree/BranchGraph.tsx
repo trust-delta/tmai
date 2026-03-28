@@ -138,7 +138,7 @@ export function BranchGraph({
       agentStatus:
         mainWt?.agent_status ??
         (branchAgentMap.has(defaultBranch)
-          ? statusName(branchAgentMap.get(defaultBranch)?.status)
+          ? statusName(branchAgentMap.get(defaultBranch)!.status)
           : null),
       diffSummary: null,
       worktree: mainWt ?? null,
