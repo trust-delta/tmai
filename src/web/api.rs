@@ -588,11 +588,16 @@ pub struct WorktreeLaunchRequestBody {
     pub worktree_name: String,
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
+    /// Unused — kept for backward compatibility with older frontends.
     #[serde(default)]
+    #[allow(dead_code)]
     pub session: Option<String>,
 }
 
-/// Launch an agent in a worktree
+/// Launch an agent in a worktree.
+///
+/// Resolves the worktree path, then delegates to the same spawn pipeline
+/// used by `/api/spawn` so it works in both tmux and standalone modes.
 pub async fn launch_agent_in_worktree(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<WorktreeLaunchRequestBody>,
@@ -619,12 +624,12 @@ pub async fn launch_agent_in_worktree(
         None => return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found")),
     };
 
-    // Parse agent type
-    let agent_type = match req.agent_type.as_str() {
-        "claude" | "claude_code" => tmai_core::agents::AgentType::ClaudeCode,
-        "codex" | "codex_cli" => tmai_core::agents::AgentType::CodexCli,
-        "gemini" | "gemini_cli" => tmai_core::agents::AgentType::GeminiCli,
-        "opencode" | "open_code" => tmai_core::agents::AgentType::OpenCode,
+    // Map agent_type string to command name
+    let command = match req.agent_type.as_str() {
+        "claude" | "claude_code" => "claude",
+        "codex" | "codex_cli" => "codex",
+        "gemini" | "gemini_cli" => "gemini",
+        "opencode" | "open_code" => "opencode",
         other => {
             return Err(json_error(
                 StatusCode::BAD_REQUEST,
@@ -633,14 +638,35 @@ pub async fn launch_agent_in_worktree(
         }
     };
 
-    core.launch_agent_in_worktree(&wt_path, &agent_type, req.session.as_deref())
-        .map(|target| {
-            Json(serde_json::json!({
-                "status": "ok",
-                "target": target,
-            }))
-        })
-        .map_err(api_error_to_http)
+    // Worktree already exists — just cd into it and launch the agent
+    let spawn_req = SpawnRequest {
+        command: command.to_string(),
+        args: vec![],
+        cwd: wt_path,
+        rows: default_rows(),
+        cols: default_cols(),
+        force_pty: false,
+    };
+
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let tmux_avail = is_tmux_available();
+
+    let result = if use_tmux && tmux_avail {
+        spawn_in_tmux(&core, &spawn_req).await
+    } else {
+        spawn_in_pty(&core, &spawn_req).await
+    };
+
+    result.map(|Json(resp)| {
+        Json(serde_json::json!({
+            "status": "ok",
+            "target": resp.session_id,
+        }))
+    })
 }
 
 /// Worktree diff request body
