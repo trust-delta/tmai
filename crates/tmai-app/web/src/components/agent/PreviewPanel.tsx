@@ -51,6 +51,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
   const [focused, setFocused] = useState(true);
   const [composing, setComposing] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -60,15 +61,29 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
-  // Toggle passthrough mode (button-controlled only)
-  const togglePassthrough = useCallback(() => {
-    setFocused((prev) => !prev);
+  // Reset state when switching agents
+  useEffect(() => {
+    setContent("");
+    setFocused(true);
+    setAutoScroll(true);
+    setComposing(false);
+  }, [agentId]);
+
+  // Switch to input mode (passthrough ON)
+  const enterInputMode = useCallback(() => {
+    setFocused(true);
   }, []);
 
-  // Focus/blur the hidden input when passthrough mode changes
+  // Switch to select mode (passthrough OFF, text selection enabled)
+  const enterSelectMode = useCallback(() => {
+    setFocused(false);
+  }, []);
+
+  // Focus/blur the hidden input when mode changes
   useEffect(() => {
     if (focused) {
-      requestAnimationFrame(() => inputRef.current?.focus());
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
     } else {
       inputRef.current?.blur();
     }
@@ -113,7 +128,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
   // Auto-scroll to bottom (toggleable, default on)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
 
   // When user scrolls up, disable auto-scroll; when at bottom, re-enable
   const handleScroll = useCallback(() => {
@@ -142,9 +156,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       // through the hidden input's onInput handler and be sent as passthrough
       if (e.ctrlKey && e.key === "v") return;
 
-      // Esc: toggle passthrough
+      // Esc: switch to select mode
       if (e.key === "Escape" && !e.ctrlKey) {
-        togglePassthrough();
+        enterSelectMode();
         return;
       }
 
@@ -206,7 +220,21 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35]"
+        onMouseDown={() => {
+          if (focused) enterSelectMode();
+        }}
+        onMouseUp={() => {
+          // If no text was selected (just a click), return to input mode
+          if (!focused) {
+            const sel = window.getSelection();
+            if (!sel || sel.toString().length === 0) {
+              enterInputMode();
+            }
+          }
+        }}
+        className={`flex-1 overflow-y-auto p-3 text-[13px] leading-[1.35] ${
+          !focused ? "ring-2 ring-amber-500/40 ring-inset" : ""
+        }`}
       >
         {content ? (
           <div
@@ -235,7 +263,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       <input
         ref={inputRef}
         type="text"
-        className="pointer-events-none absolute h-0 w-0 overflow-hidden border-0 p-0 opacity-0"
+        className="pointer-events-none absolute h-px w-px overflow-hidden border-0 p-0 opacity-0"
         style={{ bottom: "2rem", left: "0.75rem", userSelect: "none" }}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
@@ -258,17 +286,19 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       {/* Footer status bar */}
       <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1">
         <button
-          onClick={togglePassthrough}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={focused ? enterSelectMode : enterInputMode}
           className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
             focused
               ? "bg-cyan-500/20 text-cyan-400"
-              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
+              : "bg-amber-500/20 text-amber-400"
           }`}
-          title={focused ? "Passthrough: ON (Esc to toggle)" : "Passthrough: OFF"}
+          title={focused ? "Input mode — keystrokes sent to agent (click or Esc for select mode)" : "Select mode — click to copy text (click for input mode)"}
         >
-          {focused ? "⌨ Pass" : "⌨ Off"}
+          {focused ? "⌨ Input" : "📋 Select"}
         </button>
         <button
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => setAutoScroll((v) => !v)}
           className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
             autoScroll
@@ -280,9 +310,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           {autoScroll ? "⇩ Auto" : "⇩ Off"}
         </button>
         <div className="flex-1" />
-        {focused && (
-          <span className="text-[10px] text-zinc-600">Esc to toggle</span>
-        )}
+        <span className="text-[10px] text-zinc-600">
+          {focused ? "Esc / click to select" : "click ⌨ to input"}
+        </span>
       </div>
     </div>
   );
