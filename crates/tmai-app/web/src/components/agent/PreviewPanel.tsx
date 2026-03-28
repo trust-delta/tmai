@@ -17,7 +17,7 @@ function toTmuxKey(e: KeyboardEvent): string | null {
     case "Backspace":
       return "BSpace";
     case "Tab":
-      return "Tab";
+      return e.shiftKey ? "BTab" : "Tab";
     case "ArrowUp":
       return "Up";
     case "ArrowDown":
