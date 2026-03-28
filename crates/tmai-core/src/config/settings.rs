@@ -946,6 +946,38 @@ impl Settings {
         }
     }
 
+    /// Update a value within a nested TOML subsection (e.g. `[auto_approve.rules]`).
+    pub fn save_toml_nested_value(
+        section: &str,
+        subsection: &str,
+        key: &str,
+        value: toml_edit::Value,
+    ) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+        if !doc.contains_table(section) {
+            doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        if doc[section]
+            .as_table()
+            .is_none_or(|t| !t.contains_table(subsection))
+        {
+            doc[section][subsection] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        doc[section][subsection][key] = toml_edit::value(value);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
     /// Persist the projects list to config.toml
     pub fn save_projects(projects: &[String]) {
         let Some(path) = Self::config_path() else {
@@ -1054,5 +1086,42 @@ mod tests {
         assert_eq!(settings.poll_interval_ms, 1000);
         assert_eq!(settings.capture_lines, 200);
         assert!(!settings.ui.show_preview);
+    }
+
+    #[test]
+    fn test_auto_approve_rules_defaults() {
+        let rules = RuleSettings::default();
+        assert!(rules.allow_read);
+        assert!(rules.allow_tests);
+        assert!(rules.allow_fetch);
+        assert!(rules.allow_git_readonly);
+        assert!(rules.allow_format_lint);
+        assert!(rules.allow_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_auto_approve_rules_deserialization() {
+        let toml = r#"
+            [auto_approve]
+            mode = "rules"
+
+            [auto_approve.rules]
+            allow_read = true
+            allow_tests = false
+            allow_fetch = true
+            allow_git_readonly = false
+            allow_format_lint = true
+            allow_patterns = ["cargo build.*", "npm run build"]
+        "#;
+
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        let rules = &settings.auto_approve.rules;
+        assert!(rules.allow_read);
+        assert!(!rules.allow_tests);
+        assert!(rules.allow_fetch);
+        assert!(!rules.allow_git_readonly);
+        assert!(rules.allow_format_lint);
+        assert_eq!(rules.allow_patterns.len(), 2);
+        assert_eq!(rules.allow_patterns[0], "cargo build.*");
     }
 }

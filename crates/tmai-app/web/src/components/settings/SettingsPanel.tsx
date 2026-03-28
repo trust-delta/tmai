@@ -18,6 +18,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     null,
   );
   const [usageSettings, setUsageSettings] = useState<UsageSettings | null>(null);
+  const [newPattern, setNewPattern] = useState("");
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -124,7 +125,8 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               Automatically approve agent actions. Changes apply on restart.
             </p>
 
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-4">
+              {/* Mode selector */}
               <div className="flex items-center gap-2">
                 <span className="shrink-0 text-xs text-zinc-500">Mode</span>
                 <select
@@ -146,15 +148,167 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   <option value="Hybrid">Hybrid (rules → AI fallback)</option>
                 </select>
               </div>
+
+              {/* Status indicator */}
               {autoApprove.running && (
-                <p className="mt-2 text-[11px] text-emerald-500/70">
+                <p className="text-[11px] text-emerald-500/70">
                   Service running
                 </p>
               )}
               {autoApprove.mode !== "Off" && !autoApprove.running && (
-                <p className="mt-2 text-[11px] text-amber-500/70">
+                <p className="text-[11px] text-amber-500/70">
                   Restart tmai to activate
                 </p>
+              )}
+
+              {/* Rule presets — visible when mode uses rules */}
+              {(autoApprove.mode === "Rules" || autoApprove.mode === "Hybrid") && (
+                <div className="space-y-2 border-t border-white/5 pt-3">
+                  <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                    Rule Presets
+                  </p>
+                  {([
+                    { key: "allow_read" as const, label: "Read operations", desc: "file reads, cat, ls, grep, find" },
+                    { key: "allow_tests" as const, label: "Test execution", desc: "cargo test, npm test, pytest, go test" },
+                    { key: "allow_fetch" as const, label: "Web fetch", desc: "WebFetch / WebSearch (GET only)" },
+                    { key: "allow_git_readonly" as const, label: "Git read-only", desc: "status, log, diff, branch, show, blame" },
+                    { key: "allow_format_lint" as const, label: "Format & lint", desc: "cargo fmt/clippy, prettier, eslint" },
+                  ] as const).map(({ key, label, desc }) => (
+                    <label key={key} className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <span className="text-xs text-zinc-300">{label}</span>
+                        <p className="text-[10px] text-zinc-600">{desc}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const newVal = !autoApprove.rules[key];
+                          setAutoApprove({
+                            ...autoApprove,
+                            rules: { ...autoApprove.rules, [key]: newVal },
+                          });
+                          try {
+                            await api.updateAutoApproveRules({ [key]: newVal });
+                          } catch (err) {
+                            console.error("Failed to update rule:", err);
+                          }
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          autoApprove.rules[key] ? "bg-cyan-500/40" : "bg-white/10"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                            autoApprove.rules[key]
+                              ? "translate-x-[18px] bg-cyan-400"
+                              : "translate-x-0.5 bg-zinc-500"
+                          }`}
+                        />
+                      </button>
+                    </label>
+                  ))}
+
+                  {/* Custom patterns */}
+                  <div className="border-t border-white/5 pt-3 space-y-2">
+                    <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                      Custom Patterns
+                    </p>
+                    <p className="text-[10px] text-zinc-600">
+                      Regex patterns matched against tool context for approval.
+                    </p>
+
+                    {/* Pattern list */}
+                    {autoApprove.rules.allow_patterns.length > 0 && (
+                      <div className="space-y-1">
+                        {autoApprove.rules.allow_patterns.map((pat, i) => (
+                          <div
+                            key={i}
+                            className="group flex items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-white/5"
+                          >
+                            <code className="flex-1 text-[11px] text-zinc-300 font-mono">
+                              {pat}
+                            </code>
+                            <button
+                              onClick={async () => {
+                                const updated = autoApprove.rules.allow_patterns.filter(
+                                  (_, idx) => idx !== i,
+                                );
+                                setAutoApprove({
+                                  ...autoApprove,
+                                  rules: { ...autoApprove.rules, allow_patterns: updated },
+                                });
+                                try {
+                                  await api.updateAutoApproveRules({
+                                    allow_patterns: updated,
+                                  });
+                                } catch (err) {
+                                  console.error("Failed to remove pattern:", err);
+                                }
+                              }}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add pattern */}
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={newPattern}
+                        onChange={(e) => setNewPattern(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter" && newPattern.trim()) {
+                            const updated = [
+                              ...autoApprove.rules.allow_patterns,
+                              newPattern.trim(),
+                            ];
+                            setAutoApprove({
+                              ...autoApprove,
+                              rules: { ...autoApprove.rules, allow_patterns: updated },
+                            });
+                            setNewPattern("");
+                            try {
+                              await api.updateAutoApproveRules({
+                                allow_patterns: updated,
+                              });
+                            } catch (err) {
+                              console.error("Failed to add pattern:", err);
+                            }
+                          }
+                        }}
+                        placeholder="e.g. cargo build.*"
+                        className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-mono text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!newPattern.trim()) return;
+                          const updated = [
+                            ...autoApprove.rules.allow_patterns,
+                            newPattern.trim(),
+                          ];
+                          setAutoApprove({
+                            ...autoApprove,
+                            rules: { ...autoApprove.rules, allow_patterns: updated },
+                          });
+                          setNewPattern("");
+                          try {
+                            await api.updateAutoApproveRules({
+                              allow_patterns: updated,
+                            });
+                          } catch (err) {
+                            console.error("Failed to add pattern:", err);
+                          }
+                        }}
+                        className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </section>
