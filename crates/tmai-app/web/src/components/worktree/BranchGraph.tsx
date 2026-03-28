@@ -9,6 +9,7 @@ interface BranchGraphProps {
   projectPath: string;
   projectName: string;
   worktrees: WorktreeSnapshot[];
+  onFocusAgent: (target: string) => void;
 }
 
 // Format Unix timestamp as relative time (e.g., "2m ago", "3h ago")
@@ -27,6 +28,7 @@ export function BranchGraph({
   projectPath,
   projectName,
   worktrees,
+  onFocusAgent,
 }: BranchGraphProps) {
   const [branches, setBranches] = useState<BranchListResponse | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -382,6 +384,7 @@ export function BranchGraph({
             issues={issues}
             onRefresh={refreshBranches}
             onSelectNode={setSelectedNode}
+            onFocusAgent={onFocusAgent}
           />
         )}
       </div>

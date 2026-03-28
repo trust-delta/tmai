@@ -240,6 +240,7 @@ export function App() {
               projectPath={selection.path}
               projectName={selection.name}
               worktrees={worktrees}
+              onFocusAgent={handleSelectAgent}
             />
           </div>
         ) : selection?.type === "markdown" ? (

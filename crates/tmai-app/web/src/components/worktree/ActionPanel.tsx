@@ -14,6 +14,7 @@ interface ActionPanelProps {
   issues: IssueInfo[];
   onRefresh: () => void;
   onSelectNode: (name: string | null) => void;
+  onFocusAgent: (target: string) => void;
 }
 
 // Right-side action panel for selected branch
@@ -28,6 +29,7 @@ export function ActionPanel({
   issues,
   onRefresh,
   onSelectNode,
+  onFocusAgent,
 }: ActionPanelProps) {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -507,61 +509,30 @@ export function ActionPanel({
             </button>
           )}
 
-          {/* Worktree actions */}
-          {activeNode.isWorktree && activeNode.worktree && (
+          {/* Non-main branch/worktree actions (unified) */}
+          {!activeNode.isMain && (
             <>
-              {!activeNode.hasAgent && (
-                <button
-                  onClick={handleLaunchAgent}
-                  disabled={actionBusy}
-                  className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
-                >
-                  {actionBusy ? "Launching..." : "Launch Agent"}
-                </button>
+              {/* Worktree: Launch or Focus Agent */}
+              {activeNode.isWorktree && activeNode.worktree && (
+                activeNode.hasAgent && activeNode.worktree.agent_target ? (
+                  <button
+                    onClick={() => onFocusAgent(activeNode.worktree!.agent_target!)}
+                    className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25"
+                  >
+                    Focus Agent
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleLaunchAgent}
+                    disabled={actionBusy}
+                    className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
+                  >
+                    {actionBusy ? "Launching..." : "Launch Agent"}
+                  </button>
+                )
               )}
-              <hr className="border-white/5" />
-              {!confirmDelete ? (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="w-full rounded-lg bg-red-500/10 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/20"
-                >
-                  Delete Worktree
-                </button>
-              ) : (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
-                  <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={forceDelete}
-                      onChange={(e) => setForceDelete(e.target.checked)}
-                      className="accent-red-500"
-                    />
-                    Force delete
-                  </label>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={handleDeleteWorktree}
-                      disabled={actionBusy}
-                      className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
-                    >
-                      {actionBusy ? "..." : "Confirm"}
-                    </button>
-                    <button
-                      onClick={() => { setConfirmDelete(false); setForceDelete(false); }}
-                      className="text-xs text-zinc-500 hover:text-zinc-300"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
 
-          {/* Plain branch actions */}
-          {!activeNode.isWorktree && !activeNode.isMain && (
-            <>
-              {/* Push to parent: merge this branch into its parent */}
+              {/* AI Merge / Create PR */}
               {activeNode.ahead > 0 && (
                 <>
                   <button
@@ -584,64 +555,73 @@ export function ActionPanel({
                   </button>
                 </>
               )}
+
+              {/* Behind warning */}
               {activeNode.behind > 0 && (
                 <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-                  {activeNode.behind} commit{activeNode.behind !== 1 ? "s" : ""} behind main
+                  {activeNode.behind} commit{activeNode.behind !== 1 ? "s" : ""} behind {baseBranch}
                 </div>
               )}
-              {/* Create worktree from this branch */}
-              {!showNewWorktree ? (
-                <button
-                  onClick={() => setShowNewWorktree(true)}
-                  className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
-                >
-                  Create Worktree
-                </button>
-              ) : (
-                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
-                  <div className="mb-1 text-[11px] text-zinc-500">
-                    from: <span className="text-emerald-400">{activeNode.name}</span>
-                  </div>
-                  {(nodeDepth.get(activeNode.name) ?? 0) + 1 >= branchDepthWarning && (
-                    <div className="mb-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400">
-                      This will be {(nodeDepth.get(activeNode.name) ?? 0) + 1} levels deep from main. Consider merging the parent branch first.
+
+              {/* Create worktree (only for non-worktree branches) */}
+              {!activeNode.isWorktree && (
+                <>
+                  {!showNewWorktree ? (
+                    <button
+                      onClick={() => setShowNewWorktree(true)}
+                      className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+                    >
+                      Create Worktree
+                    </button>
+                  ) : (
+                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
+                      <div className="mb-1 text-[11px] text-zinc-500">
+                        from: <span className="text-emerald-400">{activeNode.name}</span>
+                      </div>
+                      {(nodeDepth.get(activeNode.name) ?? 0) + 1 >= branchDepthWarning && (
+                        <div className="mb-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400">
+                          This will be {(nodeDepth.get(activeNode.name) ?? 0) + 1} levels deep from main. Consider merging the parent branch first.
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newWtName}
+                          onChange={(e) => {
+                            setNewWtName(e.target.value);
+                            setNewWtError("");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleCreateWorktree(activeNode.name);
+                            if (e.key === "Escape") { setShowNewWorktree(false); setNewWtName(""); }
+                          }}
+                          placeholder="worktree name"
+                          className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
+                        />
+                        <button
+                          onClick={() => handleCreateWorktree(activeNode.name)}
+                          disabled={!newWtName.trim() || actionBusy}
+                          className="rounded px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30"
+                        >
+                          Go
+                        </button>
+                      </div>
+                      {newWtError && <span className="text-[10px] text-red-400">{newWtError}</span>}
                     </div>
                   )}
-                  <div className="flex items-center gap-1">
-                    <input
-                      autoFocus
-                      type="text"
-                      value={newWtName}
-                      onChange={(e) => {
-                        setNewWtName(e.target.value);
-                        setNewWtError("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleCreateWorktree(activeNode.name);
-                        if (e.key === "Escape") { setShowNewWorktree(false); setNewWtName(""); }
-                      }}
-                      placeholder="worktree name"
-                      className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
-                    />
-                    <button
-                      onClick={() => handleCreateWorktree(activeNode.name)}
-                      disabled={!newWtName.trim() || actionBusy}
-                      className="rounded px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30"
-                    >
-                      Go
-                    </button>
-                  </div>
-                  {newWtError && <span className="text-[10px] text-red-400">{newWtError}</span>}
-                </div>
+                </>
               )}
+
+              {/* Delete */}
               <hr className="border-white/5" />
               {!confirmDelete ? (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  disabled={activeNode.isCurrent}
+                  disabled={!activeNode.isWorktree && activeNode.isCurrent}
                   className="w-full rounded-lg bg-red-500/10 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-30"
                 >
-                  Delete Branch
+                  Delete {activeNode.isWorktree ? "Worktree" : "Branch"}
                 </button>
               ) : (
                 <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
@@ -652,11 +632,11 @@ export function ActionPanel({
                       onChange={(e) => setForceDelete(e.target.checked)}
                       className="accent-red-500"
                     />
-                    Force delete (unmerged)
+                    Force delete{!activeNode.isWorktree ? " (unmerged)" : ""}
                   </label>
                   <div className="mt-2 flex gap-2">
                     <button
-                      onClick={handleDeleteBranch}
+                      onClick={activeNode.isWorktree ? handleDeleteWorktree : handleDeleteBranch}
                       disabled={actionBusy}
                       className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
                     >
