@@ -60,21 +60,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
-  // Focus the hidden input when agent is selected or panel gains focus.
-  // Skip if the user has an active text selection (to avoid stealing focus
-  // during copy/select operations).
-  const focusInput = useCallback(() => {
-    const sel = window.getSelection();
-    if (sel && sel.toString().length > 0) return;
-    setFocused(true);
-    // Delay to ensure the hidden input is rendered
-    requestAnimationFrame(() => inputRef.current?.focus());
+  // Toggle passthrough mode (button-controlled only)
+  const togglePassthrough = useCallback(() => {
+    setFocused((prev) => {
+      const next = !prev;
+      if (next) {
+        requestAnimationFrame(() => inputRef.current?.focus());
+      }
+      return next;
+    });
   }, []);
-
-  // Auto-focus on mount (agent selected from sidebar)
-  useEffect(() => {
-    focusInput();
-  }, [agentId, focusInput]);
 
   // Polling interval: faster when focused for interactive feel
   const pollInterval = focused ? 500 : 2000;
@@ -149,8 +144,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
       // Esc: blur the panel
       if (e.key === "Escape" && !e.ctrlKey) {
-        setFocused(false);
-        inputRef.current?.blur();
+        togglePassthrough();
         return;
       }
 
@@ -189,10 +183,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   return (
     <div
       ref={containerRef}
-      onClick={focusInput}
-      className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
-        focused ? "ring-1 ring-cyan-500/30 ring-inset" : ""
-      }`}
+      className="relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none"
     >
       {/* IME input — positioned at bottom-left so the candidate window appears there */}
       {focused && (
@@ -212,7 +203,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
               e.currentTarget.value = "";
             }
           }}
-          onBlur={() => setFocused(false)}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -247,8 +237,19 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Footer: auto-scroll toggle + focus hint */}
-      <div className="flex items-center border-t border-white/5 px-3 py-1">
+      {/* Footer status bar */}
+      <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1">
+        <button
+          onClick={togglePassthrough}
+          className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+            focused
+              ? "bg-cyan-500/20 text-cyan-400"
+              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
+          }`}
+          title={focused ? "Passthrough: ON (Esc to toggle)" : "Passthrough: OFF"}
+        >
+          {focused ? "⌨ Pass" : "⌨ Off"}
+        </button>
         <button
           onClick={() => setAutoScroll((v) => !v)}
           className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
@@ -260,13 +261,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         >
           {autoScroll ? "⇩ Auto" : "⇩ Off"}
         </button>
-        <div className="flex-1 text-center text-[11px]">
-          {focused ? (
-            <span className="text-cyan-500/60">PASSTHROUGH · Esc to unfocus</span>
-          ) : content ? (
-            <span className="text-zinc-600">Click to interact</span>
-          ) : null}
-        </div>
+        <div className="flex-1" />
+        {focused && (
+          <span className="text-[10px] text-zinc-600">Esc to toggle</span>
+        )}
       </div>
     </div>
   );
