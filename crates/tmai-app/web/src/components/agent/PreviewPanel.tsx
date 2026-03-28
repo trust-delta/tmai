@@ -62,14 +62,17 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
   // Toggle passthrough mode (button-controlled only)
   const togglePassthrough = useCallback(() => {
-    setFocused((prev) => {
-      const next = !prev;
-      if (next) {
-        requestAnimationFrame(() => inputRef.current?.focus());
-      }
-      return next;
-    });
+    setFocused((prev) => !prev);
   }, []);
+
+  // Focus/blur the hidden input when passthrough mode changes
+  useEffect(() => {
+    if (focused) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      inputRef.current?.blur();
+    }
+  }, [focused]);
 
   // Polling interval: faster when focused for interactive feel
   const pollInterval = focused ? 500 : 2000;
@@ -183,33 +186,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   return (
     <div
       ref={containerRef}
-      className="relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none"
+      className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
+        focused ? "ring-1 ring-cyan-500/30 ring-inset" : ""
+      }`}
     >
-      {/* IME input — positioned at bottom-left so the candidate window appears there */}
-      {focused && (
-        <input
-          ref={inputRef}
-          type="text"
-          className="absolute bottom-6 left-3 w-px bg-transparent text-transparent caret-transparent outline-none"
-          style={{ fontSize: "13px", lineHeight: "1.35" }}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={(e) => {
-            setComposing(false);
-            const value = e.currentTarget.value;
-            if (value) {
-              sendPassthrough({ chars: value });
-              e.currentTarget.value = "";
-            }
-          }}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-        />
-      )}
-
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
@@ -236,6 +216,30 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Hidden IME input — outside scroll container to avoid interfering with text selection */}
+      <input
+        ref={inputRef}
+        type="text"
+        className="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
+        style={{ bottom: "2rem", left: "0.75rem" }}
+        onKeyDown={handleKeyDown}
+        onInput={handleInput}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={(e) => {
+          setComposing(false);
+          const value = e.currentTarget.value;
+          if (value) {
+            sendPassthrough({ chars: value });
+            e.currentTarget.value = "";
+          }
+        }}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        tabIndex={-1}
+      />
 
       {/* Footer status bar */}
       <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1">
