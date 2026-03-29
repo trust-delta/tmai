@@ -366,6 +366,9 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         );
     }
 
+    // Reconnect to any surviving Codex app-server instances from previous tmai sessions
+    tmai::web::reconnect_codex_ws(&core).await;
+
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
 

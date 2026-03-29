@@ -1448,6 +1448,8 @@ async fn start_codex_app_server_sync(cwd: &str) -> Option<String> {
         if let Some(url) = line.strip_prefix("  listening on: ") {
             let url = url.trim().to_string();
             tracing::info!(url = %url, "Codex app-server started");
+            // Record URL for reconnection after tmai restart
+            save_codex_ws_url(&url);
             return Some(url);
         }
     }
@@ -1455,6 +1457,65 @@ async fn start_codex_app_server_sync(cwd: &str) -> Option<String> {
     tracing::warn!("Codex app-server did not report listening URL");
     let _ = child.kill().await;
     None
+}
+
+/// Save codex app-server URL to state dir for reconnection after restart.
+fn save_codex_ws_url(url: &str) {
+    let state_dir = tmai_core::ipc::protocol::state_dir();
+    let ws_dir = state_dir.join("codex-ws");
+    let _ = std::fs::create_dir_all(&ws_dir);
+    // Use port as filename for dedup
+    if let Some(port) = url.rsplit(':').next() {
+        let _ = std::fs::write(ws_dir.join(format!("{}.url", port)), url);
+    }
+}
+
+/// Load previously recorded codex app-server URLs and connect to any that are still alive.
+pub async fn reconnect_codex_ws(core: &Arc<TmaiCore>) {
+    let state_dir = tmai_core::ipc::protocol::state_dir();
+    let ws_dir = state_dir.join("codex-ws");
+    let entries = match std::fs::read_dir(&ws_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("url") {
+            continue;
+        }
+        let url = match std::fs::read_to_string(&path) {
+            Ok(u) => u.trim().to_string(),
+            Err(_) => continue,
+        };
+
+        // Check if the app-server is still reachable (quick TCP connect)
+        let reachable = if let Some(addr) = url.strip_prefix("ws://") {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                tokio::net::TcpStream::connect(addr),
+            )
+            .await
+            .map(|r| r.is_ok())
+            .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if reachable {
+            tracing::info!(url = %url, "Reconnecting to existing Codex app-server");
+            // Use a synthetic pane_id — will be matched via target fallback
+            let pane_id = format!(
+                "codex-ws-reconnect-{}",
+                path.file_stem().unwrap_or_default().to_string_lossy()
+            );
+            connect_codex_ws(core, &pane_id, &url);
+        } else {
+            // App-server is dead, clean up the URL file
+            tracing::debug!(url = %url, "Codex app-server no longer reachable, removing");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Connect a WebSocket client to an already-running Codex app-server.
