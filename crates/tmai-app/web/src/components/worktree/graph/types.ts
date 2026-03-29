@@ -66,6 +66,7 @@ export interface BranchNode {
   ahead: number;
   behind: number;
   remote: RemoteTrackingInfo | null;
+  isRemoteOnly: boolean;
 }
 
 export interface GraphCommit {

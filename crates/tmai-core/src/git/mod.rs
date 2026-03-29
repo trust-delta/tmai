@@ -403,6 +403,9 @@ pub struct BranchListResult {
     /// Remote tracking info per branch
     #[serde(default)]
     pub remote_tracking: HashMap<String, RemoteTrackingInfo>,
+    /// Remote-only branches (no local counterpart), e.g., "origin/fix-hook-script"
+    #[serde(default)]
+    pub remote_only_branches: Vec<String>,
     /// Last fetch timestamp (Unix seconds), None if never fetched
     pub last_fetch: Option<u64>,
 }
@@ -464,6 +467,9 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
     // Compute remote tracking info
     let remote_tracking = fetch_remote_tracking(repo_dir).await;
 
+    // Get remote-only branches (no local counterpart)
+    let remote_only_branches = fetch_remote_only_branches(repo_dir, &branches).await;
+
     // Get last fetch timestamp
     let last_fetch = fetch_head_time(repo_dir);
 
@@ -474,6 +480,7 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
         parents,
         ahead_behind: ab_map,
         remote_tracking,
+        remote_only_branches,
         last_fetch,
     })
 }
@@ -534,6 +541,45 @@ async fn fetch_remote_tracking(repo_dir: &str) -> HashMap<String, RemoteTracking
     }
 
     result
+}
+
+/// Fetch remote branches that have no local counterpart
+///
+/// Returns short names like "origin/fix-hook-script", excluding HEAD and
+/// branches that match any local branch name.
+async fn fetch_remote_only_branches(repo_dir: &str, local_branches: &[String]) -> Vec<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "branch", "-r", "--format=%(refname:short)"])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let Some(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    let local_set: std::collections::HashSet<&str> =
+        local_branches.iter().map(|s| s.as_str()).collect();
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            if s.is_empty() || s.contains("->") {
+                return false;
+            }
+            // Extract short name after "origin/" (or any remote prefix)
+            let short = s.split('/').skip(1).collect::<Vec<_>>().join("/");
+            !local_set.contains(short.as_str())
+        })
+        .collect()
 }
 
 /// Parse git upstream:track format
