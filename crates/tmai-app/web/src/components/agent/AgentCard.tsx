@@ -62,13 +62,13 @@ function buildConnectionTooltip(
   if (channels.has_websocket) detectMethods.push("WebSocket");
   if (channels.has_ipc) detectMethods.push("IPC");
   if (channels.has_tmux) detectMethods.push("tmux");
-  if (detectMethods.length === 0) detectMethods.push("なし");
+  if (detectMethods.length === 0) detectMethods.push("None");
 
   const sendLabels: Record<string, string> = {
     Ipc: "IPC",
     Tmux: "tmux",
     PtyInject: "PTY inject",
-    None: "なし",
+    None: "None",
   };
   const sendLabel = sendLabels[sendCapability] ?? sendCapability;
 
@@ -81,7 +81,7 @@ function buildConnectionTooltip(
           ? "WebSocket"
           : "tmux";
 
-  return `検出: ${detectMethods.join(" + ")} (現在: ${activeLabel})\n送信: ${sendLabel}`;
+  return `Detect: ${detectMethods.join(" + ")} (active: ${activeLabel})\nSend: ${sendLabel}`;
 }
 
 /// Resolve effective auto-approve state: override > global
