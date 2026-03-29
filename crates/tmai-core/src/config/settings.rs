@@ -345,6 +345,10 @@ pub struct WebSettings {
     /// Web server port
     #[serde(default = "default_web_port")]
     pub port: u16,
+
+    /// Show terminal cursor overlay in preview panel
+    #[serde(default = "default_show_cursor")]
+    pub show_cursor: bool,
 }
 
 fn default_web_enabled() -> bool {
@@ -355,11 +359,16 @@ fn default_web_port() -> u16 {
     9876
 }
 
+fn default_show_cursor() -> bool {
+    true
+}
+
 impl Default for WebSettings {
     fn default() -> Self {
         Self {
             enabled: default_web_enabled(),
             port: default_web_port(),
+            show_cursor: default_show_cursor(),
         }
     }
 }

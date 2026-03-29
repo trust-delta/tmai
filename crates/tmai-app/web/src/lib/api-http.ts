@@ -600,7 +600,9 @@ export const api = {
       body: JSON.stringify(input),
     }),
   getPreview: (target: string) =>
-    apiFetch<{ content: string }>(`/agents/${encodeURIComponent(target)}/preview`),
+    apiFetch<{ content: string; cursor_x?: number; cursor_y?: number }>(
+      `/agents/${encodeURIComponent(target)}/preview`,
+    ),
 
   // Spawn
   spawnPty: (req: SpawnRequest) =>
@@ -786,6 +788,14 @@ export const api = {
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
   updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
     apiFetch("/settings/spawn", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
+  // Preview settings
+  getPreviewSettings: () => apiFetch<{ show_cursor: boolean }>("/settings/preview"),
+  updatePreviewSettings: (params: { show_cursor: boolean }) =>
+    apiFetch("/settings/preview", {
       method: "PUT",
       body: JSON.stringify(params),
     }),

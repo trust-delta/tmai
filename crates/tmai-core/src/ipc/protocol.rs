@@ -97,6 +97,12 @@ pub struct WrapState {
     pub last_output: u64,
     /// Timestamp of last input (Unix millis)
     pub last_input: u64,
+    /// Terminal cursor column (0-indexed, from VT100 parser)
+    #[serde(default)]
+    pub cursor_col: u16,
+    /// Terminal cursor row (0-indexed, from VT100 parser)
+    #[serde(default)]
+    pub cursor_row: u16,
     /// Process ID of the wrapped command
     pub pid: u32,
     /// Tmux pane ID (if known)
@@ -130,6 +136,8 @@ impl Default for WrapState {
             team_name: None,
             team_member_name: None,
             is_team_lead: false,
+            cursor_col: 0,
+            cursor_row: 0,
         }
     }
 }
@@ -372,5 +380,29 @@ mod tests {
             }
             _ => panic!("Expected StateUpdate"),
         }
+    }
+
+    #[test]
+    fn test_wrap_state_cursor_fields_default_to_zero() {
+        let json = r#"{
+            "status": "idle",
+            "last_output": 0,
+            "last_input": 0,
+            "pid": 100
+        }"#;
+        let state: WrapState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.cursor_col, 0);
+        assert_eq!(state.cursor_row, 0);
+    }
+
+    #[test]
+    fn test_wrap_state_cursor_fields_roundtrip() {
+        let mut state = WrapState::processing(1234);
+        state.cursor_col = 42;
+        state.cursor_row = 10;
+        let json = serde_json::to_string(&state).unwrap();
+        let decoded: WrapState = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.cursor_col, 42);
+        assert_eq!(decoded.cursor_row, 10);
     }
 }

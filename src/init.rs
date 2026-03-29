@@ -80,10 +80,10 @@ fn claude_settings_path() -> Result<PathBuf> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
-/// Connection timeout for HTTP hooks in milliseconds.
+/// Connection timeout for HTTP hooks in seconds.
 /// Short timeout prevents Claude Code from stalling when tmai is not running.
 /// 2 seconds is more than enough for localhost connections.
-const HOOK_TIMEOUT_MS: u64 = 2000;
+const HOOK_TIMEOUT_SECS: u64 = 2;
 
 /// Build a tmai hook entry for a given event (new wrapper format)
 ///
@@ -107,7 +107,7 @@ fn build_hook_entry(event: &str, token: &str, port: u16, include_tmux_pane: bool
         json!(format!("http://localhost:{}/hooks/event", port)),
     );
     hook.insert("headers".to_string(), json!(headers));
-    hook.insert("timeout".to_string(), json!(HOOK_TIMEOUT_MS));
+    hook.insert("timeout".to_string(), json!(HOOK_TIMEOUT_SECS));
     if include_tmux_pane {
         hook.insert("allowedEnvVars".to_string(), json!(["TMUX_PANE"]));
     }
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(hooks[0]["headers"]["Authorization"], "Bearer test-token");
         assert_eq!(hooks[0]["headers"]["X-Tmai-Pane-Id"], "$TMUX_PANE");
         assert_eq!(hooks[0]["statusMessage"], "tmai: PreToolUse");
-        assert_eq!(hooks[0]["timeout"], HOOK_TIMEOUT_MS);
+        assert_eq!(hooks[0]["timeout"], HOOK_TIMEOUT_SECS);
     }
 
     #[test]

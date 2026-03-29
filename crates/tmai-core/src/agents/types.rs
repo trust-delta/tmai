@@ -596,6 +596,10 @@ pub struct MonitoredAgent {
     pub hook_tool_name: Option<String>,
     /// Tool input from hook event (for structured auto-approve in slow path)
     pub hook_tool_input: Option<serde_json::Value>,
+    /// Terminal cursor column (0-indexed)
+    pub cursor_x: Option<u32>,
+    /// Terminal cursor row (0-indexed, absolute within full capture output)
+    pub cursor_y: Option<u32>,
 }
 
 impl MonitoredAgent {
@@ -651,6 +655,8 @@ impl MonitoredAgent {
             model_id: None,
             hook_tool_name: None,
             hook_tool_input: None,
+            cursor_x: None,
+            cursor_y: None,
         }
     }
 

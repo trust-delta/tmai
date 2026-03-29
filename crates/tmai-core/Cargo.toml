@@ -36,6 +36,7 @@ tokio-tungstenite = { version = "0.29", features = ["connect"] }
 futures-util = "0.3"
 notify = "8"
 bytes = "1"
+vt100 = "0.16"
 
 [dev-dependencies]
 pretty_assertions = "1"

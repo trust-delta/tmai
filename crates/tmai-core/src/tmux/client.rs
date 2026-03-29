@@ -190,6 +190,47 @@ impl TmuxClient {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// Get terminal cursor position for a pane.
+    ///
+    /// Returns `(cursor_x, absolute_cursor_y)`:
+    /// - `cursor_x`: column, 0-indexed
+    /// - `absolute_cursor_y`: absolute row in the full capture output (history + visible),
+    ///   suitable for use with `capture_pane_full` output
+    pub fn get_cursor_position(&self, target: &str) -> Result<(u32, u32)> {
+        validate_target(target)?;
+        let output = Command::new("tmux")
+            .args([
+                "display-message",
+                "-p",
+                "-t",
+                target,
+                "#{cursor_x} #{cursor_y} #{history_size}",
+            ])
+            .output()
+            .context("Failed to execute tmux display-message for cursor")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "tmux display-message (cursor) failed for {}: {}",
+                target,
+                stderr
+            );
+        }
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        let text = text.trim();
+        let parts: Vec<&str> = text.split(' ').collect();
+        if parts.len() != 3 {
+            anyhow::bail!("unexpected cursor position format: {:?}", text);
+        }
+        let x: u32 = parts[0].parse().context("failed to parse cursor_x")?;
+        let y: u32 = parts[1].parse().context("failed to parse cursor_y")?;
+        let history: u32 = parts[2].parse().context("failed to parse history_size")?;
+        let absolute_y = history + y;
+        Ok((x, absolute_y))
+    }
+
     /// Sends keys to a specific pane
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
         validate_target(target)?;

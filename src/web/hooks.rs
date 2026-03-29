@@ -6,6 +6,7 @@
 //! Uses a separate auth token from the main web API (hooks_token).
 
 use axum::{
+    body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
@@ -40,11 +41,27 @@ struct HookEventResponse {
 /// - **PreToolUse**: `hookSpecificOutput.permissionDecision` for auto-approval
 /// - **TeammateIdle/TaskCompleted**: `continue` + `stopReason` for stop control
 /// - Other events: empty 200 OK
+///
+/// Parse hook payload from raw bytes, bypassing Content-Type requirement.
+///
+/// Claude Code's HTTP hooks may not send `Content-Type: application/json`,
+/// causing axum's `Json` extractor to return 415 Unsupported Media Type.
+/// By accepting raw bytes and deserializing manually, we handle any Content-Type.
 pub async fn hook_event(
     State(core): State<Arc<TmaiCore>>,
     headers: HeaderMap,
-    Json(payload): Json<HookEventPayload>,
+    body: Bytes,
 ) -> impl IntoResponse {
+    let payload: HookEventPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            debug!("Hook event rejected: invalid JSON payload: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid JSON"})),
+            );
+        }
+    };
     // Validate hook token from Authorization header
     let token_valid = headers
         .get("authorization")

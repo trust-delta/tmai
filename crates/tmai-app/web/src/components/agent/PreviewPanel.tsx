@@ -57,6 +57,28 @@ const MONO_FONT_STACK =
   "'Liberation Mono', 'Courier New', " +
   "'Symbols Nerd Font Mono', monospace";
 
+// Terminal column width of a character (full-width CJK = 2, others = 1).
+// Matches wcwidth behavior for common Unicode ranges.
+function charColumns(cp: number): number {
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+    (cp >= 0x2e80 && cp <= 0x303e) || // CJK Radicals, Kangxi, Ideographic
+    (cp >= 0x3041 && cp <= 0x33bf) || // Hiragana, Katakana, Bopomofo, CJK compat
+    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Unified Ideographs Extension A
+    (cp >= 0x4e00 && cp <= 0xa4cf) || // CJK Unified Ideographs, Yi
+    (cp >= 0xac00 && cp <= 0xd7af) || // Hangul Syllables
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+    (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+    (cp >= 0xff01 && cp <= 0xff60) || // Fullwidth Forms
+    (cp >= 0xffe0 && cp <= 0xffe6) || // Fullwidth Signs
+    (cp >= 0x20000 && cp <= 0x2fffd) || // CJK Ext B-F
+    (cp >= 0x30000 && cp <= 0x3fffd) // CJK Ext G+
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
 // Consecutive Box Drawing horizontal characters (U+2500–U+257F runs of 4+)
 const HLINE_RUN_RE = /[\u2500-\u257f]{4,}/g;
 
@@ -132,8 +154,16 @@ function trimPreviewContent(raw: string, cols: number): string {
 // Renders capture-pane output with ANSI colors and forwards keystrokes
 // to the agent's terminal. Passthrough is button-controlled.
 // IME (Japanese, Chinese, etc.) is supported via a hidden input element.
+// Cursor position from the backend (terminal cursor, 0-indexed)
+interface CursorPos {
+  x: number;
+  y: number;
+}
+
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
+  const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
+  const [showCursor, setShowCursor] = useState(true);
   const [focused, setFocused] = useState(true);
   const [composing, setComposing] = useState(false);
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
@@ -181,9 +211,18 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
+  // Load cursor visibility setting from server
+  useEffect(() => {
+    api
+      .getPreviewSettings()
+      .then((s) => setShowCursor(s.show_cursor))
+      .catch(() => {});
+  }, []);
+
   // Reset state when switching agents (autoScroll restored from per-agent map)
   useEffect(() => {
     setContent("");
+    setCursorPos(null);
     setFocused(true);
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
@@ -221,6 +260,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
       setContent(data.content);
+      if (data.cursor_x != null && data.cursor_y != null) {
+        setCursorPos({ x: data.cursor_x, y: data.cursor_y });
+      } else {
+        setCursorPos(null);
+      }
     } catch {
       // Agent may not have content yet
     }
@@ -232,14 +276,26 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return () => clearInterval(interval);
   }, [fetchPreview, pollInterval]);
 
-  // Send passthrough input then immediately refresh the preview
+  // Pending passthrough refresh timers (cleared on agent switch / unmount)
+  const passthroughTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      for (const t of passthroughTimers.current) clearTimeout(t);
+      passthroughTimers.current = [];
+    };
+  }, [agentId]);
+
+  // Send passthrough input then refresh preview with two-stage fetch
+  // for responsive cursor tracking
   const sendPassthrough = useCallback(
     (input: { chars?: string; key?: string }) => {
       api
         .passthrough(agentId, input)
         .then(() => {
-          // Small delay for tmux to process, then fetch updated content
-          setTimeout(fetchPreview, 30);
+          // Two-stage fetch: fast attempt + delayed retry for cursor accuracy
+          const t1 = setTimeout(fetchPreview, 50);
+          const t2 = setTimeout(fetchPreview, 200);
+          passthroughTimers.current.push(t1, t2);
         })
         .catch(() => {});
     },
@@ -304,10 +360,59 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     ],
   );
 
-  const html = useMemo(
-    () => ansi.ansi_to_html(trimPreviewContent(content, cols)),
-    [ansi, content, cols],
-  );
+  // Inject cursor marker into ANSI HTML at the cursor position.
+  // Counts visible characters (skipping HTML tags/entities) to find the exact column.
+  const htmlWithCursor = useMemo(() => {
+    const base = ansi.ansi_to_html(trimPreviewContent(content, cols));
+    if (!cursorPos || !showCursor) return base;
+
+    const lines = base.split("\n");
+    if (cursorPos.y >= lines.length) return base;
+
+    const line = lines[cursorPos.y];
+    let col = 0; // column count (full-width chars = 2)
+    let inTag = false;
+    let insertAt = line.length;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === "<") {
+        inTag = true;
+        continue;
+      }
+      if (line[i] === ">") {
+        inTag = false;
+        continue;
+      }
+      if (inTag) continue;
+      if (col >= cursorPos.x) {
+        insertAt = i;
+        break;
+      }
+      // Skip HTML entities like &amp; (counts as 1 char)
+      let ch = line[i];
+      if (ch === "&") {
+        const semi = line.indexOf(";", i);
+        if (semi > i && semi - i < 10) {
+          // Decode common entities to get the actual character
+          const entity = line.slice(i, semi + 1);
+          if (entity === "&amp;") ch = "&";
+          else if (entity === "&lt;") ch = "<";
+          else if (entity === "&gt;") ch = ">";
+          else if (entity === "&quot;") ch = '"';
+          i = semi;
+        }
+      }
+      col += charColumns(ch.codePointAt(0) ?? 0);
+    }
+
+    const marker =
+      '<span data-tmai-cursor="1" style="display:inline-block;width:0;height:0;vertical-align:top;overflow:hidden"></span>';
+    lines[cursorPos.y] = line.slice(0, insertAt) + marker + line.slice(insertAt);
+    return lines.join("\n");
+  }, [ansi, content, cols, cursorPos, showCursor]);
+  const html = htmlWithCursor;
+
+  // Cursor overlay position, read from the injected marker element
+  const [cursorStyle, setCursorStyle] = useState<React.CSSProperties | null>(null);
 
   // Set innerHTML via ref to bypass React's DOM diffing, which destroys text selection.
   // Also handles auto-scroll after content update to ensure correct ordering.
@@ -317,13 +422,40 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       const sel = window.getSelection();
       const hasSelection = sel && sel.toString().length > 0;
       if (!hasSelection) {
-        contentRef.current.innerHTML = DOMPurify.sanitize(html);
+        contentRef.current.innerHTML = DOMPurify.sanitize(html, {
+          ADD_ATTR: ["data-tmai-cursor"],
+        });
       }
     }
     if (autoScroll) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [html, autoScroll]);
+
+    // Read cursor position from the injected marker's offsetTop/offsetLeft
+    if (!cursorPos || !contentRef.current) {
+      setCursorStyle(null);
+      return;
+    }
+    const marker = contentRef.current.querySelector("[data-tmai-cursor]") as HTMLElement | null;
+    const charSpan = measureRef.current;
+    if (!marker || !charSpan) {
+      setCursorStyle(null);
+      return;
+    }
+    const charW = charSpan.getBoundingClientRect().width;
+    if (charW <= 0) {
+      setCursorStyle(null);
+      return;
+    }
+
+    const lineH = 13 * 1.35;
+    setCursorStyle({
+      left: `${marker.offsetLeft}px`,
+      top: `${marker.offsetTop}px`,
+      width: `${charW}px`,
+      height: `${lineH}px`,
+    });
+  }, [html, autoScroll, cursorPos]);
 
   return (
     <div
@@ -367,12 +499,19 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         </span>
         {content ? (
           <div
-            className="ansi-preview m-0 cursor-text select-text whitespace-pre-wrap break-words"
+            className="ansi-preview relative m-0 cursor-text select-text whitespace-pre-wrap break-words"
             style={{
               fontFamily: MONO_FONT_STACK,
             }}
           >
             <div ref={contentRef} />
+            {cursorStyle && focused && showCursor && (
+              <div
+                className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
+                style={cursorStyle}
+                aria-hidden="true"
+              />
+            )}
           </div>
         ) : (
           <span className="text-zinc-600">Waiting for output...</span>
@@ -433,6 +572,19 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
         >
           {autoScroll ? "⇩ Auto" : "⇩ Off"}
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setShowCursor((v) => !v)}
+          className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+            showCursor
+              ? "bg-cyan-500/15 text-cyan-400"
+              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
+          }`}
+          title={showCursor ? "Cursor: ON" : "Cursor: OFF"}
+        >
+          {showCursor ? "▮ Cursor" : "▯ Cursor"}
         </button>
         <div className="flex-1" />
         <span className="text-[10px] text-zinc-600">

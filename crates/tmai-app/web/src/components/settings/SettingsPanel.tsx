@@ -16,6 +16,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [spawnSettings, setSpawnSettings] = useState<SpawnSettings | null>(null);
   const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(null);
   const [usageSettings, setUsageSettings] = useState<UsageSettings | null>(null);
+  const [previewShowCursor, setPreviewShowCursor] = useState(true);
   const [newPattern, setNewPattern] = useState("");
 
   const refreshProjects = useCallback(() => {
@@ -39,6 +40,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     refreshSpawnSettings();
     refreshAutoApprove();
     refreshUsageSettings();
+    api
+      .getPreviewSettings()
+      .then((s) => setPreviewShowCursor(s.show_cursor))
+      .catch(() => {});
   }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove, refreshUsageSettings]);
 
   // Add a project directory
@@ -442,6 +447,47 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
             </div>
           </section>
         )}
+
+        {/* Preview section */}
+        <section>
+          <h3 className="text-sm font-medium text-zinc-300">Preview</h3>
+          <p className="mt-1 text-xs text-zinc-600">Terminal preview panel display options.</p>
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <label className="flex items-center justify-between gap-3">
+              <div className="flex-1">
+                <span className="text-sm text-zinc-300">Show cursor overlay</span>
+                <p className="text-[11px] text-zinc-600 mt-0.5">
+                  Display the terminal cursor position in the preview panel. Can also be toggled
+                  per-session from the preview footer.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const prev = previewShowCursor;
+                  const next = !prev;
+                  setPreviewShowCursor(next);
+                  try {
+                    await api.updatePreviewSettings({ show_cursor: next });
+                  } catch (_e) {
+                    setPreviewShowCursor(prev);
+                  }
+                }}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  previewShowCursor ? "bg-cyan-500/40" : "bg-white/10"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                    previewShowCursor
+                      ? "translate-x-[18px] bg-cyan-400"
+                      : "translate-x-0.5 bg-zinc-500"
+                  }`}
+                />
+              </button>
+            </label>
+          </div>
+        </section>
 
         {/* Projects section */}
         <section>

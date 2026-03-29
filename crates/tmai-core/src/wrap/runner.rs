@@ -100,6 +100,9 @@ impl PtyRunner {
         // Create exfil detector
         let exfil_detector = Arc::new(ExfilDetector::new(&self.config.exfil_detection, child_pid));
 
+        // Create VT100 parser for cursor position tracking
+        let vt_parser = Arc::new(parking_lot::Mutex::new(vt100::Parser::new(rows, cols, 0)));
+
         // Flag for shutdown
         let running = Arc::new(AtomicBool::new(true));
 
@@ -138,6 +141,7 @@ impl PtyRunner {
         // Thread: Read from PTY master -> write to stdout
         let analyzer_out = analyzer.clone();
         let exfil_detector_out = exfil_detector.clone();
+        let vt_parser_out = vt_parser.clone();
         let running_out = running.clone();
         let output_thread = thread::spawn(move || {
             let mut stdout = std::io::stdout();
@@ -152,6 +156,9 @@ impl PtyRunner {
                             break;
                         }
                         let _ = stdout.flush();
+
+                        // Feed raw bytes to VT100 parser for cursor tracking
+                        vt_parser_out.lock().process(&buf[..n]);
 
                         // Process for state detection (convert to string, ignoring invalid UTF-8)
                         if let Ok(s) = std::str::from_utf8(&buf[..n]) {
@@ -210,6 +217,7 @@ impl PtyRunner {
 
         // Thread: Periodic state update via IPC with change detection
         let analyzer_state = analyzer.clone();
+        let vt_parser_state = vt_parser.clone();
         let running_state = running.clone();
         let state_thread = thread::spawn(move || {
             let mut last_state: Option<WrapState> = None;
@@ -217,7 +225,12 @@ impl PtyRunner {
             while running_state.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
 
-                let state = analyzer_state.lock().get_state();
+                let mut state = analyzer_state.lock().get_state();
+
+                // Enrich state with cursor position from VT100 parser
+                let (cursor_row, cursor_col) = vt_parser_state.lock().screen().cursor_position();
+                state.cursor_row = cursor_row;
+                state.cursor_col = cursor_col;
 
                 // Only send if state has changed
                 let should_send = match &last_state {
@@ -236,6 +249,7 @@ impl PtyRunner {
         // Instead of using SIGWINCH signal handler (which requires unsafe TLS access),
         // we poll for terminal size changes. This is simpler and avoids undefined behavior.
         let running_resize = running.clone();
+        let vt_parser_resize = vt_parser.clone();
         let pty_master = pair.master;
         let resize_thread = thread::spawn(move || {
             let mut last_size: Option<(u16, u16)> = get_terminal_size();
@@ -252,6 +266,8 @@ impl PtyRunner {
                             pixel_width: 0,
                             pixel_height: 0,
                         });
+                        // Keep VT100 parser in sync with terminal size
+                        vt_parser_resize.lock().screen_mut().set_size(rows, cols);
                     }
                     last_size = current_size;
                 }
@@ -283,6 +299,8 @@ fn states_equal(a: &WrapState, b: &WrapState) -> bool {
         && a.choices == b.choices
         && a.multi_select == b.multi_select
         && a.cursor_position == b.cursor_position
+        && a.cursor_col == b.cursor_col
+        && a.cursor_row == b.cursor_row
         && a.pid == b.pid
         && a.pane_id == b.pane_id
 }

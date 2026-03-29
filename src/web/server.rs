@@ -131,6 +131,10 @@ impl WebServer {
                 "/settings/usage",
                 get(api::get_usage_settings).put(api::update_usage_settings),
             )
+            .route(
+                "/settings/preview",
+                get(api::get_preview_settings).put(api::update_preview_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),
