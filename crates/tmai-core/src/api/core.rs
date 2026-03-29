@@ -14,6 +14,7 @@ use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
 use crate::pty::PtyRegistry;
+use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
 
 use super::events::CoreEvent;
@@ -45,6 +46,8 @@ pub struct TmaiCore {
     hook_token: Option<String>,
     /// PTY session registry for spawned agents
     pty_registry: Arc<PtyRegistry>,
+    /// Runtime adapter (tmux, standalone, etc.)
+    runtime: Option<Arc<dyn RuntimeAdapter>>,
 }
 
 impl TmaiCore {
@@ -60,6 +63,7 @@ impl TmaiCore {
         session_pane_map: SessionPaneMap,
         hook_token: Option<String>,
         pty_registry: Arc<PtyRegistry>,
+        runtime: Option<Arc<dyn RuntimeAdapter>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -74,6 +78,7 @@ impl TmaiCore {
             session_pane_map,
             hook_token,
             pty_registry,
+            runtime,
         }
     }
 
@@ -160,6 +165,11 @@ impl TmaiCore {
         &self.pty_registry
     }
 
+    /// Access the runtime adapter (if set)
+    pub fn runtime(&self) -> Option<&Arc<dyn RuntimeAdapter>> {
+        self.runtime.as_ref()
+    }
+
     /// Validate a hook authentication token (constant-time comparison)
     pub fn validate_hook_token(&self, token: &str) -> bool {
         match &self.hook_token {
@@ -207,6 +217,7 @@ mod tests {
             session_pane_map,
             None,
             crate::pty::PtyRegistry::new(),
+            None,
         );
 
         assert_eq!(core.settings().poll_interval_ms, 500);
@@ -231,6 +242,7 @@ mod tests {
             session_pane_map,
             None,
             crate::pty::PtyRegistry::new(),
+            None,
         );
 
         // raw_state should return the same Arc
@@ -257,6 +269,7 @@ mod tests {
             session_pane_map,
             Some("test-token-123".to_string()),
             crate::pty::PtyRegistry::new(),
+            None,
         );
 
         assert!(core.validate_hook_token("test-token-123"));

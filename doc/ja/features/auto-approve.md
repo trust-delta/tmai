@@ -150,6 +150,18 @@ allow_patterns = [
 ]
 ```
 
+### 承認タイプのフィルタリング
+
+特定の承認タイプのみに自動承認を制限（AIモードに適用）:
+
+```toml
+[auto_approve]
+mode = "ai"
+allowed_types = ["file_edit", "shell_command"]
+```
+
+利用可能なタイプ: `file_edit`, `file_create`, `file_delete`, `shell_command`, `mcp_tool`, `user_question`
+
 ## 安全性
 
 ### ルールエンジン
@@ -289,8 +301,26 @@ allow_format_lint = false
 enabled = true   # mode = "ai" と同等
 ```
 
+## WebUI設定
+
+Auto-approveモードはWebUIの設定パネルから変更可能です：
+
+1. ステータスバーの設定ボタン（⚙）をクリック
+2. Auto-approveモードを変更（Off / Rules / AI / Hybrid）
+3. 変更は即座に反映
+
+エージェントごとのAuto-approveオーバーライドも、エージェントアクションボタンから利用可能です。
+
+### APIエンドポイント
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/settings/auto-approve` | 現在のモードを取得 |
+| PUT | `/api/settings/auto-approve` | モードを変更 |
+| PUT | `/api/agents/{id}/auto-approve` | エージェントごとのオーバーライド |
+
 ## 次のステップ
 
 - [設定リファレンス](../reference/config.md) - 設定オプション一覧
 - [外部送信検知](./exfil-detection.md) - セキュリティ監視
-- [Web Remote Control](./web-remote.md) - リモート承認のフォールバック
+- [モバイルリモートコントロール](./web-remote.md) - リモート承認のフォールバック

@@ -260,6 +260,29 @@ impl StatusDetector for ClaudeCodeDetector {
             .with_matched_text(title);
         }
 
+        // 11. Content-based idle prompt detection (❯ or ›)
+        //     When no title is available (e.g., PTY-spawned agents without tmux),
+        //     the ❯ prompt at the end of content indicates idle state.
+        {
+            let recent_lines: Vec<&str> = content
+                .lines()
+                .rev()
+                .filter(|l| !l.trim().is_empty())
+                .take(5)
+                .collect();
+            if recent_lines
+                .iter()
+                .any(|l| l.trim() == "❯" || l.trim() == "›")
+            {
+                return DetectionResult::new(
+                    AgentStatus::Idle,
+                    "content_idle_prompt",
+                    DetectionConfidence::Medium,
+                )
+                .with_matched_text("❯");
+            }
+        }
+
         // No indicator - default to Processing
         DetectionResult::new(
             AgentStatus::Processing {

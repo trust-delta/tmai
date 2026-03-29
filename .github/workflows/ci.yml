@@ -55,6 +55,29 @@ jobs:
       - name: Verify assets were built
         run: test -f src/web/assets/index.html
 
+  frontend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/tmai-app/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: crates/tmai-app/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Biome lint & format
+        run: npx biome check src/
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+      - name: Build
+        run: pnpm build
+
   guard:
     name: gitignore guard
     runs-on: ubuntu-latest

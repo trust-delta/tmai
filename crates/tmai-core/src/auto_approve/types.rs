@@ -48,6 +48,10 @@ pub struct JudgmentRequest {
     pub cwd: String,
     /// Agent type (e.g., "claude_code")
     pub agent_type: String,
+    /// Structured tool name from hook event (bypasses screen parsing when available)
+    pub hook_tool_name: Option<String>,
+    /// Structured tool input from hook event (bypasses screen parsing when available)
+    pub hook_tool_input: Option<serde_json::Value>,
 }
 
 /// Decision made by the judgment provider

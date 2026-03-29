@@ -147,16 +147,32 @@ git worktree remove ../myproject-feature-a
 | Flexibility | Add/remove dynamically while running |
 | Simplicity | tmai doesn't force worktrees - use when you want |
 
+## WebUI Worktree Management
+
+In the WebUI, worktrees can be created and managed visually:
+
+1. **Register your project** in the Settings panel
+2. **Select the project** in the sidebar to open the Branch Graph
+3. **Create worktrees** from any branch via the Action Panel
+4. **Launch agents** directly into worktrees from the UI
+5. **View diffs** between worktree and base branch
+6. **AI merge/PR** — Delegate merge or PR creation to an AI agent
+
+Worktrees created via the UI are placed under `.claude/worktrees/<name>/` in the repository.
+
+See [Worktree Management](../features/worktree-ui.md) for detailed WebUI documentation.
+
 ## tmai's Philosophy
 
-tmai "monitors" rather than "manages" worktrees.
+tmai supports both "monitor" and "manage" approaches:
 
-- Create worktrees however you like
-- Don't have to use them at all
-- Add anytime if you do use them
-- No changes to your existing workflow
+- **WebUI**: Full worktree lifecycle management from the dashboard
+- **CLI**: Create worktrees however you like — tmai auto-detects them
+- Add/remove dynamically while running
+- No changes to your existing workflow required
 
 ## Next Steps
 
+- [Worktree Management UI](../features/worktree-ui.md) - WebUI worktree features
 - [Multi-Agent Monitoring](./multi-agent.md) - Basic multi-agent monitoring
 - [Best Practices](../guides/best-practices.md) - Recommended workflows

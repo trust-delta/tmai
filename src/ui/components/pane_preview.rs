@@ -84,8 +84,19 @@ impl PanePreview {
                 // When wrapping, raw lines expand to multiple visual lines, so we
                 // can't slice by available_height. Instead, pass all trimmed content
                 // to ratatui and use Paragraph::scroll to pin to the bottom.
-                let trimmed_content: String =
-                    content_lines[..total_lines.min(content_lines.len())].join("\n");
+                // Truncate horizontal-rule lines to available_width to prevent
+                // ugly double-line wrapping (e.g. Claude Code's ─── separators).
+                let trimmed_content: String = content_lines[..total_lines.min(content_lines.len())]
+                    .iter()
+                    .map(|line| {
+                        if Self::is_horizontal_rule(line) {
+                            Self::truncate_line(line, available_width)
+                        } else {
+                            line.to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
                 let styled_text = match trimmed_content.as_str().into_text() {
                     Ok(text) => text,
@@ -179,6 +190,53 @@ impl PanePreview {
             AgentStatus::Offline => Color::DarkGray,
             _ => Color::Gray,
         }
+    }
+
+    /// Check if a line consists primarily of horizontal box-drawing characters.
+    /// Matches lines like "─────" or "━━━━━" that Claude Code uses as separators.
+    fn is_horizontal_rule(line: &str) -> bool {
+        let mut visible_count = 0u32;
+        let mut rule_count = 0u32;
+        let mut chars = line.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            // Skip ANSI escape sequences
+            if c == '\x1b' {
+                if chars.peek() == Some(&'[') {
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if !c.is_whitespace() {
+                visible_count += 1;
+                if matches!(
+                    c,
+                    '─' | '━'
+                        | '═'
+                        | '╌'
+                        | '╍'
+                        | '┄'
+                        | '┅'
+                        | '┈'
+                        | '┉'
+                        | '⎯'
+                        | '―'
+                        | '—'
+                ) {
+                    rule_count += 1;
+                }
+            }
+        }
+
+        // At least 4 visible chars, and >80% are horizontal-rule characters
+        visible_count >= 4 && rule_count * 5 >= visible_count * 4
     }
 
     /// Truncate a string to fit within max_width (considering Unicode width and ANSI codes)
@@ -288,6 +346,34 @@ mod tests {
     fn test_empty_content() {
         let content = "";
         assert_eq!(effective_line_count(content), 0);
+    }
+
+    #[test]
+    fn test_is_horizontal_rule_box_drawing() {
+        assert!(PanePreview::is_horizontal_rule("────────────────────"));
+        assert!(PanePreview::is_horizontal_rule("━━━━━━━━━━━━━━━━━━━━"));
+        assert!(PanePreview::is_horizontal_rule("═══════════════════"));
+    }
+
+    #[test]
+    fn test_is_horizontal_rule_with_ansi() {
+        // ANSI codes should be ignored in the check
+        assert!(PanePreview::is_horizontal_rule(
+            "\x1b[90m──────────────\x1b[0m"
+        ));
+    }
+
+    #[test]
+    fn test_is_horizontal_rule_rejects_text() {
+        assert!(!PanePreview::is_horizontal_rule("hello world"));
+        assert!(!PanePreview::is_horizontal_rule("── title ──"));
+        assert!(!PanePreview::is_horizontal_rule("abc"));
+    }
+
+    #[test]
+    fn test_is_horizontal_rule_short() {
+        // Too short to be a rule
+        assert!(!PanePreview::is_horizontal_rule("──"));
     }
 
     #[test]

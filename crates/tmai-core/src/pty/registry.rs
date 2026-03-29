@@ -21,8 +21,6 @@ impl PtyRegistry {
     }
 
     /// Spawn a new agent process and register the session.
-    ///
-    /// Returns the session on success.
     pub fn spawn_session(
         &self,
         command: &str,

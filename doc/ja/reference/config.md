@@ -26,8 +26,12 @@ enabled = true
 scan_interval = 5
 
 [auto_approve]
-enabled = true
+mode = "hybrid"
 model = "haiku"
+
+[auto_approve.rules]
+allow_read = true
+allow_tests = true
 ```
 
 ## セクション
@@ -166,6 +170,60 @@ enabled = true  # mode = "ai" と同等
 
 詳細は [Auto-Approve](../features/auto-approve.md) を参照。
 
+### [audit]
+
+検出監査ログの設定。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `enabled` | bool | `false` | 監査ログの有効化（`--audit` CLIフラグでも有効化可能） |
+| `max_size_bytes` | integer | `10485760` | ローテーション前の最大ログファイルサイズ（10MB） |
+| `log_source_disagreement` | bool | `false` | 検出ソースが不一致の場合にログ出力 |
+
+出力先: `~/.local/share/tmai/audit/detection.ndjson`
+
+### [review]
+
+Fresh Session Review設定（エージェント完了時の自動コードレビュー）。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `enabled` | bool | `false` | 自動レビューを有効化 |
+| `agent` | string | `"claude_code"` | レビューエージェント: `claude_code`, `codex`, `gemini` |
+| `base_branch` | string | `"main"` | diff対象のベースブランチ |
+| `custom_instructions` | string | `""` | レビュープロンプトに追加するカスタム指示 |
+
+### [usage]
+
+サブスクリプション使用量トラッキングの設定。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `enabled` | bool | `false` | WebUIでの使用量監視を有効化 |
+| `auto_refresh_min` | integer | `0` | 自動更新間隔（分単位、0 = 手動のみ） |
+
+### [spawn]
+
+エージェント起動設定（WebUIスポーン機能）。
+
+| キー | 型 | デフォルト | 説明 |
+|-----|-----|---------|------|
+| `use_tmux_window` | bool | `false` | PTYの代わりにtmuxウィンドウでスポーン |
+| `tmux_window_name` | string | `"tmai-agents"` | スポーンされたエージェント用tmuxウィンドウ名 |
+
+### projects
+
+ブランチグラフとGitHub連携用の登録済みプロジェクトディレクトリ。
+
+```toml
+projects = [
+    "/home/user/myproject",
+    "/home/user/another-project"
+]
+```
+
+プロジェクトはWebUIの設定パネルからも管理可能です。
+
 ## 環境変数
 
 ### RUST_LOG
@@ -195,7 +253,9 @@ TMAI_CONFIG=/path/to/config.toml tmai
 
 | オプション | 説明 |
 |--------|-------------|
+| `--tmux` | TUIモード（デフォルトWebUIの代わりにratatui TUI） |
 | `--debug` | デバッグモードを有効化（詳細ログ） |
+| `--audit` | 検出監査ログを有効化 |
 | `--version` | バージョンを表示 |
 | `--help` | ヘルプを表示 |
 
@@ -203,11 +263,15 @@ TMAI_CONFIG=/path/to/config.toml tmai
 
 | コマンド | 説明 |
 |---------|------|
-| `tmai` | TUIモニターを起動 |
+| `tmai` | WebUIダッシュボードを起動（デフォルト） |
+| `tmai --tmux` | TUIモニターを起動（tmux必要） |
 | `tmai init` | Claude Code Hooks連携をセットアップ（推奨） |
 | `tmai init --force` | トークンを再生成しhooksを再追加 |
+| `tmai init --codex` | Codex CLI hooksもセットアップ |
 | `tmai uninit` | tmai hooksを削除しトークンを削除 |
 | `tmai wrap <command>` | PTYラッピングでエージェントを起動 |
+| `tmai demo` | デモモード（tmuxやエージェント不要） |
+| `tmai audit <subcommand>` | 監査ログ分析（stats, misdetections, disagreements） |
 
 #### initの例
 

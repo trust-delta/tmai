@@ -47,6 +47,10 @@ impl RuntimeAdapter for TmuxAdapter {
         self.client.capture_pane(target)
     }
 
+    fn capture_pane_full(&self, target: &str) -> Result<String> {
+        self.client.capture_pane_full(target)
+    }
+
     fn capture_pane_plain(&self, target: &str) -> Result<String> {
         self.client.capture_pane_plain(target)
     }

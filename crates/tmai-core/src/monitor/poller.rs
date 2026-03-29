@@ -1,6 +1,4 @@
 use anyhow::Result;
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -18,7 +16,7 @@ use crate::detectors::GeminiDetector;
 use crate::detectors::{get_detector, DetectionConfidence, DetectionContext, DetectionReason};
 use crate::git::GitCache;
 use crate::hooks::registry::HookRegistry;
-use crate::hooks::HookState;
+use crate::hooks::{HookState, HookStatus};
 use crate::ipc::protocol::{WrapApprovalType, WrapState, WrapStatus};
 use crate::ipc::server::IpcRegistry;
 use crate::state::{MonitorScope, SharedState, TeamSnapshot};
@@ -112,6 +110,34 @@ pub struct Poller {
     transcript_watcher: crate::transcript::TranscriptWatcher,
 }
 
+/// Check if a PID is a descendant (child, grandchild, ...) of any PID in the set.
+/// Walks up the process tree via /proc/{pid}/stat (max 5 levels to avoid loops).
+fn is_descendant_of_any(pid: u32, ancestor_pids: &HashSet<u32>) -> bool {
+    if ancestor_pids.contains(&pid) {
+        return true;
+    }
+    let mut current = pid;
+    for _ in 0..5 {
+        let ppid = std::fs::read_to_string(format!("/proc/{}/stat", current))
+            .ok()
+            .and_then(|stat| {
+                stat.split_whitespace()
+                    .nth(3)
+                    .and_then(|s| s.parse::<u32>().ok())
+            });
+        match ppid {
+            Some(p) if p > 1 => {
+                if ancestor_pids.contains(&p) {
+                    return true;
+                }
+                current = p;
+            }
+            _ => break,
+        }
+    }
+    false
+}
+
 impl Poller {
     /// Create a new poller
     pub fn new(
@@ -174,6 +200,17 @@ impl Poller {
 
     /// Run the polling loop
     async fn run(mut self, tx: mpsc::Sender<PollMessage>) {
+        // Initialize grace periods for already-registered agents (e.g., restored PTY sessions)
+        // so they don't immediately drop to Idle on the first poll.
+        {
+            let state = self.state.read();
+            for (id, agent) in &state.agents {
+                if matches!(agent.status, AgentStatus::Processing { .. }) {
+                    self.grace_periods.insert(id.clone(), Instant::now());
+                }
+            }
+        }
+
         let normal_interval = self.settings.poll_interval_ms;
         let fast_interval = self.settings.passthrough_poll_interval_ms;
         let mut backoff_ms: u64 = 0;
@@ -214,11 +251,25 @@ impl Poller {
                         // Remove expired grace periods (> 30s old to avoid unbounded growth)
                         self.grace_periods
                             .retain(|_, ts| ts.elapsed().as_secs() < 30);
-                        // Remove stale hook entries (> 5 minutes without events)
-                        const HOOK_STALE_MS: u64 = 300_000;
+                        // Remove stale hook entries (> 2 minutes without events),
+                        // but only if the process is confirmed dead.
+                        // This prevents premature removal when hooks are slow.
+                        const HOOK_STALE_MS: u64 = 120_000;
                         {
                             let mut reg = self.hook_registry.write();
-                            reg.retain(|_, state| state.is_fresh(HOOK_STALE_MS));
+                            reg.retain(|_pane_id, state| {
+                                if state.is_fresh(HOOK_STALE_MS) {
+                                    return true; // Still fresh, keep
+                                }
+                                // Stale — check process liveness before removing
+                                if let Some(pid) = state.pid {
+                                    if std::path::Path::new(&format!("/proc/{}", pid)).exists() {
+                                        // Process alive, keep entry (hooks may resume)
+                                        return true;
+                                    }
+                                }
+                                false // Stale + dead process, remove
+                            });
                         }
                     }
 
@@ -304,25 +355,44 @@ impl Poller {
         // In standalone mode (or when panes are empty), synthesize PaneInfo
         // from HookRegistry entries that have no matching pane.
         // This allows hook-only agents to appear in the agent list.
-        // Dedup by cwd: if multiple registry entries share the same cwd
-        // (e.g., hook event and auto-discovery for the same Claude Code instance),
-        // prefer the non-discovered (hook) entry. Session_id can differ even for
-        // the same process (context restart / compaction creates new session_ids).
+        // Dedup by session_id: if multiple registry entries share the same
+        // session_id (e.g., hook event and auto-discovery for the same instance),
+        // prefer the non-discovered (hook) entry. Different sessions with the
+        // same cwd are distinct agents and must all appear.
         {
             let hook_reg = self.hook_registry.read();
-            let existing_pane_ids: HashSet<String> =
-                all_panes.iter().map(|p| p.pane_id.clone()).collect();
+            let existing_pane_ids: HashSet<String> = all_panes
+                .iter()
+                .flat_map(|p| [p.pane_id.clone(), p.target.clone()])
+                .collect();
+            // Collect PIDs of existing tmux panes for dedup.
+            let existing_pane_pids: HashSet<u32> = all_panes
+                .iter()
+                .filter(|p| p.pid > 0)
+                .map(|p| p.pid)
+                .collect();
 
-            // Track which cwds we've already synthesized
-            let mut synthesized_cwds: HashSet<String> = HashSet::new();
+            // Track which session_ids and PIDs we've already synthesized.
+            // Both are needed because Claude Code can change session_id
+            // within the same process (context restart / compaction).
+            let mut synthesized_sids: HashSet<String> = HashSet::new();
+            let mut synthesized_pids: HashSet<u32> = HashSet::new();
 
-            // Collect cwds of PTY-spawned agents — these are managed separately
-            // and should not get duplicate synthesized PaneInfo entries
+            // Collect identifiers of PTY-spawned agents — these are managed
+            // separately via sync_pty_sessions and should not get duplicates.
+            // Also collect their cwds to prevent hook synthesis for the same dir.
+            let mut pty_cwds: HashSet<String> = HashSet::new();
             {
                 let app_state = self.state.read();
                 for agent in app_state.agents.values() {
+                    if let Some(sid) = &agent.pty_session_id {
+                        synthesized_sids.insert(sid.clone());
+                    }
                     if agent.pty_session_id.is_some() {
-                        synthesized_cwds.insert(agent.cwd.clone());
+                        if agent.pid > 0 {
+                            synthesized_pids.insert(agent.pid);
+                        }
+                        pty_cwds.insert(agent.cwd.clone());
                     }
                 }
             }
@@ -334,15 +404,52 @@ impl Poller {
 
             for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
                 if !existing_pane_ids.contains(*pane_id) {
-                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
-
-                    // Skip if we already have a PaneInfo for this cwd
-                    if synthesized_cwds.contains(&cwd) {
+                    // Skip very stale entries (no activity for 2 minutes)
+                    // These are leftover from previous tmai sessions
+                    if !hook_state.is_fresh(120_000) {
                         continue;
                     }
-                    synthesized_cwds.insert(cwd.clone());
+                    let sid = &hook_state.session_id;
+                    let pid = hook_state.pid.unwrap_or(0);
+
+                    let hook_cwd = hook_state.cwd.as_deref().unwrap_or("");
+                    // Skip Codex WS synthetic entries when a Codex agent with the
+                    // same cwd already exists in the pane list (via tmux pane or
+                    // another hook entry). The WS hook state enriches the existing
+                    // agent's detection; it should not create a duplicate.
+                    if pane_id.starts_with("codex-ws-") && !hook_cwd.is_empty() {
+                        let codex_already_present = all_panes
+                            .iter()
+                            .any(|p| p.cwd == hook_cwd && !p.pane_id.starts_with("codex-ws-"));
+                        if codex_already_present {
+                            continue;
+                        }
+                    }
+                    // Skip if we already have an entry for this session_id, PID,
+                    // if a PTY agent with the same cwd exists, or if this PID
+                    // is a child of an existing tmux pane process
+                    let is_pane_child = pid > 0 && is_descendant_of_any(pid, &existing_pane_pids);
+                    if synthesized_sids.contains(sid)
+                        || (pid > 0 && synthesized_pids.contains(&pid))
+                        || is_pane_child
+                        || (!hook_cwd.is_empty() && pty_cwds.contains(hook_cwd))
+                    {
+                        continue;
+                    }
+                    synthesized_sids.insert(sid.clone());
+                    if pid > 0 {
+                        synthesized_pids.insert(pid);
+                    }
+
+                    let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
 
                     // Synthesize a PaneInfo for this hook-only agent
+                    // Use source_agent from HookState to determine the correct command name
+                    let agent_cmd = hook_state
+                        .source_agent
+                        .as_ref()
+                        .map(|a| a.command().to_string())
+                        .unwrap_or_else(|| "claude".to_string());
                     let pane_idx = (idx + 1) as u32;
                     let target = format!("hook:0.{}", pane_idx);
                     all_panes.push(PaneInfo {
@@ -351,8 +458,8 @@ impl Poller {
                         window_index: 0,
                         pane_index: pane_idx,
                         pane_id: (*pane_id).clone(),
-                        window_name: "claude".to_string(),
-                        command: "claude".to_string(),
+                        window_name: agent_cmd.clone(),
+                        command: agent_cmd,
                         pid: hook_state.pid.unwrap_or(0),
                         title: String::new(),
                         cwd,
@@ -391,7 +498,11 @@ impl Poller {
                 // Read state from each registry
                 let hook_state = {
                     let registry = self.hook_registry.read();
-                    registry.get(&pane.pane_id).cloned()
+                    // Look up by pane_id first (HTTP hooks), then by target (WS hooks)
+                    registry
+                        .get(&pane.pane_id)
+                        .or_else(|| registry.get(&pane.target))
+                        .cloned()
                 };
                 let wrap_state = {
                     let registry = self.ipc_registry.read();
@@ -401,6 +512,9 @@ impl Poller {
 
                 // Hook freshness threshold: 30 seconds
                 const HOOK_FRESHNESS_MS: u64 = 30_000;
+                // Processing timeout: if Processing with no event for this long,
+                // assume Stop event was missed and check process liveness
+                const PROCESSING_TIMEOUT_MS: u64 = 120_000;
                 let has_fresh_hook = hook_state
                     .as_ref()
                     .map(|hs| hs.is_fresh(HOOK_FRESHNESS_MS))
@@ -436,7 +550,7 @@ impl Poller {
                     (String::new(), plain)
                 };
 
-                // Fallback chain for empty content (standalone/web-only mode):
+                // Fallback chain for empty content (standalone/webui mode):
                 // 1. transcript preview (D-2) — richest
                 // 2. activity log (D-1) — lightweight
                 if content.trim().is_empty() {
@@ -487,7 +601,45 @@ impl Poller {
                 let (status, context_warning, detection_reason) = if has_fresh_hook {
                     // Tier 1: Hook-based detection
                     let hs = hook_state.as_ref().unwrap();
-                    let status = hook_state_to_agent_status(hs);
+                    let mut status = hook_state_to_agent_status(hs);
+
+                    // Processing timeout guard: if Processing for too long without
+                    // any new hook event, the Stop event was likely missed.
+                    // Check process liveness and demote to Idle if stale.
+                    if matches!(status, AgentStatus::Processing { .. })
+                        && !hs.is_fresh(PROCESSING_TIMEOUT_MS)
+                    {
+                        // Verify process is still alive before demoting
+                        let process_alive = hs
+                            .pid
+                            .map(|pid| std::path::Path::new(&format!("/proc/{}", pid)).exists())
+                            .unwrap_or(true); // assume alive if PID unknown
+
+                        if !process_alive {
+                            tracing::debug!(
+                                pane_id = %pane.pane_id,
+                                pid = ?hs.pid,
+                                last_event_age_ms = hs.last_event_at,
+                                "Hook Processing timeout: process dead, demoting to Idle"
+                            );
+                            status = AgentStatus::Idle;
+                            // Also update the hook registry to prevent repeated timeout checks
+                            let mut reg = self.hook_registry.write();
+                            if let Some(state) = reg.get_mut(&pane.pane_id) {
+                                state.status = HookStatus::Idle;
+                                state.last_tool = None;
+                                state.touch();
+                            }
+                        } else {
+                            tracing::debug!(
+                                pane_id = %pane.pane_id,
+                                elapsed_ms = %crate::hooks::types::current_time_millis()
+                                    .saturating_sub(hs.last_event_at),
+                                "Hook Processing stale but process alive, keeping Processing"
+                            );
+                        }
+                    }
+
                     let matched_text = hs.last_tool.as_ref().map(|t| format!("tool: {}", t));
                     let reason = DetectionReason {
                         rule: "http_hook".to_string(),
@@ -678,12 +830,25 @@ impl Poller {
                 agent.last_content_ansi = content_ansi;
                 agent.context_warning = context_warning;
                 agent.detection_reason = detection_reason;
+                // Track all available connection channels independently
+                let is_real_tmux_pane = !pane.session.starts_with("hook")
+                    && !pane.session.starts_with("discovered")
+                    && !pane.session.starts_with("pty");
+                let is_ws_source = hook_state
+                    .as_ref()
+                    .map(|hs| hs.session_id.starts_with("codex-ws-"))
+                    .unwrap_or(false);
+                // connection_channels: whether channel *exists* (not just fresh)
+                let hook_registered = hook_state.is_some();
+                agent.connection_channels = crate::agents::ConnectionChannels {
+                    has_tmux: is_real_tmux_pane,
+                    has_ipc: wrap_state.is_some(),
+                    has_hook: hook_registered && !is_ws_source,
+                    has_websocket: hook_registered && is_ws_source,
+                };
+
+                // detection_source: which method was actually used for this poll cycle
                 agent.detection_source = if has_fresh_hook {
-                    // Codex WS entries have session_id starting with "codex-ws-"
-                    let is_ws_source = hook_state
-                        .as_ref()
-                        .map(|hs| hs.session_id.starts_with("codex-ws-"))
-                        .unwrap_or(false);
                     if is_ws_source {
                         DetectionSource::WebSocket
                     } else {
@@ -710,10 +875,34 @@ impl Poller {
                 }
 
                 // Propagate hook-tracked metrics (subagent count, compaction count)
+                // and structured tool data for auto-approve slow path
                 if let Some(hs) = hook_state.as_ref() {
                     agent.active_subagents = hs.active_subagents;
                     agent.compaction_count = hs.compaction_count;
+                    agent.model_id = hs.model_id.clone();
+                    // Propagate tool_name/tool_input for AwaitingApproval slow path
+                    if hs.status == crate::hooks::types::HookStatus::AwaitingApproval {
+                        agent.hook_tool_name = hs.last_tool.clone();
+                        agent.hook_tool_input = hs.last_context.tool_input.clone();
+                    }
                 }
+
+                // Determine send capability (best available tier)
+                agent.send_capability = if wrap_state.is_some() {
+                    // Tier 1: IPC — tmai wrap holds PTY master
+                    crate::agents::SendCapability::Ipc
+                } else if !pane.session.starts_with("hook")
+                    && !pane.session.starts_with("discovered")
+                {
+                    // Tier 2: tmux send-keys — real tmux pane
+                    crate::agents::SendCapability::Tmux
+                } else if pane.pid > 0 && crate::pty_inject::is_tiocsti_available() {
+                    // Tier 3: PTY inject — PID known AND TIOCSTI enabled
+                    crate::agents::SendCapability::PtyInject
+                } else {
+                    // No send path available (PID unknown or TIOCSTI disabled)
+                    crate::agents::SendCapability::None
+                };
 
                 agents.push(agent);
             }
@@ -1312,6 +1501,12 @@ impl Poller {
                     } else {
                         // Still within debounce window - override agent status for UI stability
                         if let Some(committed) = self.previous_statuses.get(&agent.target) {
+                            tracing::trace!(
+                                target = %agent.target,
+                                detected = %current_status_name,
+                                shown = %committed.status,
+                                "Debounce: suppressing status flicker"
+                            );
                             agent.status = committed.full_status.clone();
                         }
                     }
@@ -1449,6 +1644,16 @@ impl Poller {
                 agent.is_worktree = Some(info.is_worktree);
                 agent.git_common_dir = info.common_dir.clone();
                 agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
+
+                // Detect base branch for worktrees that don't have one set
+                if info.is_worktree && agent.worktree_base_branch.is_none() {
+                    if let Some(ref common_dir) = info.common_dir {
+                        let repo_dir = crate::git::strip_git_suffix(common_dir);
+                        if let Some(branch_info) = crate::git::list_branches(repo_dir).await {
+                            agent.worktree_base_branch = Some(branch_info.default_branch);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1484,23 +1689,50 @@ impl Poller {
             let mut to_remove = Vec::new();
             for key in &discovered_keys {
                 if let Some(discovered_state) = reg.get(key) {
-                    let discovered_cwd = discovered_state.cwd.as_deref().unwrap_or("");
-                    // Check if another (non-discovered) entry has the same cwd
+                    let discovered_sid = &discovered_state.session_id;
+                    let discovered_pid = discovered_state.pid;
+                    // Check if another (non-discovered) entry matches by
+                    // session_id or PID. Do NOT match by cwd alone — multiple
+                    // sessions can share the same working directory.
                     let has_hook_entry = reg.iter().any(|(k, hs)| {
-                        !k.starts_with("discovered:")
-                            && hs.cwd.as_deref().unwrap_or("") == discovered_cwd
-                            && !discovered_cwd.is_empty()
+                        if k.starts_with("discovered:") {
+                            return false;
+                        }
+                        hs.session_id == *discovered_sid
+                            || (discovered_pid.is_some() && hs.pid == discovered_pid)
                     });
                     if has_hook_entry {
-                        to_remove.push(key.clone());
+                        // Transfer PID to the hook entry before removing
+                        if let Some(pid) = discovered_pid {
+                            let hook_key = reg
+                                .iter()
+                                .find(|(k, hs)| {
+                                    !k.starts_with("discovered:")
+                                        && (hs.session_id == *discovered_sid || hs.pid == Some(pid))
+                                })
+                                .map(|(k, _)| k.clone());
+                            if let Some(hk) = hook_key {
+                                to_remove.push((key.clone(), Some((hk, pid))));
+                                continue;
+                            }
+                        }
+                        to_remove.push((key.clone(), None));
                     }
                 }
             }
             drop(reg);
             if !to_remove.is_empty() {
                 let mut reg = self.hook_registry.write();
-                for key in &to_remove {
+                for (key, pid_transfer) in &to_remove {
                     reg.remove(key);
+                    // Transfer PID from discovered entry to the hook entry
+                    if let Some((hook_key, pid)) = pid_transfer {
+                        if let Some(hook_state) = reg.get_mut(hook_key) {
+                            if hook_state.pid.is_none() {
+                                hook_state.pid = Some(*pid);
+                            }
+                        }
+                    }
                     tracing::debug!(
                         pane_id = %key,
                         "Removed discovered entry superseded by hook registration"
@@ -1511,15 +1743,38 @@ impl Poller {
 
         let (new_sessions, disappeared_pids) = self.session_scanner.scan();
 
+        // Keep discovered entries fresh so they don't expire from the
+        // 30-second hook freshness window. Without this, discovered
+        // sessions with no hook events would fall through to capture-pane
+        // fallback (which returns empty for synthesized panes) → Processing.
+        {
+            let mut reg = self.hook_registry.write();
+            for (key, state) in reg.iter_mut() {
+                if key.starts_with("discovered:") {
+                    state.last_event_at = crate::hooks::types::current_time_millis();
+                }
+            }
+        }
+
         for session in new_sessions {
             let pane_id = format!("discovered:{}", session.pid);
 
-            // Skip if this cwd is already known via hooks
+            // Skip if this PID or session_id is already known via hooks
+            // or as a tmux pane (prevents double-counting in webui+tmux mode).
             let already_known = {
                 let reg = self.hook_registry.read();
-                reg.iter().any(|(k, hs)| {
-                    !k.starts_with("discovered:") && hs.cwd.as_deref() == Some(session.cwd.as_str())
-                })
+                let known_via_hooks = reg.iter().any(|(k, hs)| {
+                    !k.starts_with("discovered:")
+                        && (hs.session_id == session.session_id || hs.pid == Some(session.pid))
+                });
+                let known_via_pane = {
+                    let state = self.state.read();
+                    state
+                        .agents
+                        .values()
+                        .any(|a| a.pid == session.pid && !a.target.starts_with("discovered:"))
+                };
+                known_via_hooks || known_via_pane
             };
             if already_known {
                 tracing::debug!(
@@ -1530,9 +1785,70 @@ impl Poller {
                 continue;
             }
 
+            // In standalone/webui mode, check if a hook entry with pid=None
+            // exists that could be the same process. This handles the case
+            // where hook events arrived before session_discovery but without
+            // PID info. Only one pid=None entry should exist per cwd in this
+            // mode, so cwd-based matching is safe.
+            // In tmux mode, multiple agents can share the same cwd, so this
+            // merge is skipped to avoid misattributing PIDs.
+            let mut merged = false;
+            if self.settings.webui {
+                let proc_cwd = std::fs::read_link(format!("/proc/{}/cwd", session.pid))
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
+
+                let mut reg = self.hook_registry.write();
+                let matching_key = reg
+                    .iter()
+                    .find(|(k, hs)| {
+                        if k.starts_with("discovered:") || hs.pid.is_some() {
+                            return false;
+                        }
+                        // Match by cwd if hook entry has one
+                        if let Some(hook_cwd) = &hs.cwd {
+                            return hook_cwd == &session.cwd;
+                        }
+                        // Match by /proc/{pid}/cwd if hook entry has no cwd
+                        if let Some(ref pc) = proc_cwd {
+                            return pc == &session.cwd;
+                        }
+                        false
+                    })
+                    .map(|(k, _)| k.clone());
+                if let Some(key) = matching_key {
+                    if let Some(state) = reg.get_mut(&key) {
+                        state.pid = Some(session.pid);
+                        if state.cwd.is_none() {
+                            state.cwd = Some(session.cwd.clone());
+                        }
+                        // Extract model_id if not yet known
+                        if state.model_id.is_none() {
+                            if let Some(ref path) = state.transcript_path {
+                                state.model_id = crate::transcript::parser::extract_model_id(path);
+                            }
+                        }
+                        tracing::debug!(
+                            pid = session.pid,
+                            pane_id = %key,
+                            "Merged discovered PID into existing hook entry"
+                        );
+                        merged = true;
+                    }
+                }
+            }
+            if merged {
+                self.session_scanner.known_pids_mut().insert(session.pid);
+                continue;
+            }
+
             // Register in HookRegistry so the synthesize logic picks it up
             let mut state = HookState::new(session.session_id.clone(), Some(session.cwd.clone()));
             state.transcript_path = session.transcript_path;
+            // Extract model_id from transcript if available
+            if let Some(ref path) = state.transcript_path {
+                state.model_id = crate::transcript::parser::extract_model_id(path);
+            }
             state.pid = Some(session.pid);
             let mut reg = self.hook_registry.write();
             reg.insert(pane_id.clone(), state);
@@ -1571,6 +1887,15 @@ impl Poller {
                     .entry(common_dir.clone())
                     .or_default()
                     .push(agent);
+            }
+        }
+
+        // Also include registered projects (even without agents)
+        {
+            let state = self.state.read();
+            for project_path in &state.registered_projects {
+                let git_dir = format!("{}/.git", project_path);
+                repo_agents.entry(git_dir).or_default();
             }
         }
 
@@ -1633,14 +1958,28 @@ impl Poller {
                 })
                 .collect();
 
+            // Determine default branch from main worktree entry
+            let default_branch = worktrees
+                .iter()
+                .find(|wt| wt.is_main)
+                .and_then(|wt| wt.branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+
             // Fetch diff stats for non-main worktrees (lightweight, parallel)
+            // Use agent's worktree_base_branch if available, otherwise default branch
             let diff_futures: Vec<_> = worktrees
                 .iter()
                 .enumerate()
                 .filter(|(_, wt)| !wt.is_main)
                 .map(|(idx, wt)| {
                     let path = wt.path.clone();
-                    async move { (idx, git::fetch_diff_stat(&path, "main").await) }
+                    // Find linked agent's base branch setting
+                    let base = repo_agents_list
+                        .iter()
+                        .find(|a| std::path::Path::new(&a.cwd).starts_with(&path))
+                        .and_then(|a| a.worktree_base_branch.clone())
+                        .unwrap_or_else(|| default_branch.clone());
+                    async move { (idx, git::fetch_diff_stat(&path, &base).await) }
                 })
                 .collect();
 
@@ -1708,14 +2047,9 @@ pub fn detect_agent_from_pane(
     Some(agent)
 }
 
+/// Re-export from utils for local use
 fn strip_ansi(input: &str) -> String {
-    // Remove OSC and CSI sequences for detection logic.
-    static OSC_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap());
-    static CSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap());
-
-    let without_osc = OSC_RE.replace_all(input, "");
-    CSI_RE.replace_all(&without_osc, "").to_string()
+    crate::utils::strip_ansi(input)
 }
 
 /// Build `AgentTeamInfo` for a team member, finding their current in-progress task.

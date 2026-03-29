@@ -1,6 +1,6 @@
 # PTY Wrapping
 
-High-precision state detection through PTY proxy.
+High-precision state detection through PTY proxy. Works in both WebUI (default) and TUI (`--tmux`) modes.
 
 > **Note**: For Claude Code, [HTTP Hooks](./hooks.md) are now the recommended primary detection method. PTY wrapping remains useful for exfil detection, full AskUserQuestion parsing, and non-Claude agents.
 
@@ -141,8 +141,8 @@ Session ID identification uses a two-phase approach:
 tmai shows which detection method is being used in the status bar:
 
 - `◈ Hook` - HTTP Hooks (highest precision, Claude Code only)
-- `◉ IPC` - PTY wrapping via IPC socket (high precision)
-- `○ capture` - capture-pane (traditional)
+- `⊙ IPC` - PTY wrapping via IPC socket (high precision)
+- `● capture` - capture-pane (traditional)
 
 ## Next Steps
 

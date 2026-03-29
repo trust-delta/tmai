@@ -7,5 +7,8 @@ pub mod fetcher;
 pub mod parser;
 pub mod types;
 
-pub use fetcher::{fetch_usage, usage_channel, UsageSnapshotReceiver, UsageSnapshotSender};
+pub use fetcher::{
+    fetch_usage, fetch_usage_auto, fetch_usage_pty, usage_channel, UsageSnapshotReceiver,
+    UsageSnapshotSender,
+};
 pub use types::{UsageMeter, UsageSnapshot};

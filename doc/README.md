@@ -1,12 +1,40 @@
 # tmai Documentation
 
-A tool for monitoring and controlling multiple AI agents (Claude Code, Codex CLI, Gemini CLI) running in tmux.
+Tactful Multi Agent Interface — a WebUI dashboard for monitoring and controlling multiple AI coding agents (Claude Code, Codex CLI, Gemini CLI). Optional TUI mode available via `--tmux`.
 
 **[日本語版はこちら](./ja/README.md)**
 
 ## Getting Started
 
 - [Getting Started](./getting-started.md) - Installation to first monitoring
+
+## WebUI Features
+
+Desktop WebUI features (default mode).
+
+- [WebUI Overview](./features/webui-overview.md) - Architecture, layout, and real-time updates
+- [Branch Graph](./features/branch-graph.md) - Interactive Git commit graph with lane-based visualization
+- [GitHub Integration](./features/github-integration.md) - PR status, CI checks, and issue tracking
+- [Worktree Management](./features/worktree-ui.md) - Create, delete, and manage Git worktrees from the UI
+- [Terminal Panel](./features/terminal-panel.md) - Full terminal with xterm.js and WebSocket I/O
+- [Agent Spawn](./features/agent-spawn.md) - Launch new agents from the WebUI
+- [Markdown Viewer](./features/markdown-viewer.md) - Browse and edit project documentation
+- [File Browser](./features/file-browser.md) - Directory browser with file viewing and editing
+- [Security Panel](./features/security-panel.md) - Security scanning and vulnerability detection
+- [Usage Tracking](./features/usage-tracking.md) - Token usage monitoring for Claude subscriptions
+
+## Core Features
+
+Features available in both WebUI and TUI modes.
+
+- [Claude Code Hooks](./features/hooks.md) - Event-driven state detection via HTTP hooks (recommended)
+- [PTY Wrapping](./features/pty-wrapping.md) - High-precision state detection via PTY proxy
+- [Auto-Approve](./features/auto-approve.md) - AI-powered automatic approval
+- [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring and visualization
+- [AskUserQuestion Support](./features/ask-user-question.md) - Number key selection
+- [Exfil Detection](./features/exfil-detection.md) - Security monitoring for data transmission
+- [Mobile Remote Control](./features/web-remote.md) - Smartphone control via QR code
+- [Fresh Session Review](./features/fresh-session-review.md) - Automatic code review on agent completion
 
 ## Workflows
 
@@ -17,18 +45,6 @@ Use-case specific guides.
 - [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Git worktree workflow
 - [Remote Approval](./workflows/remote-approval.md) - Approve from your smartphone
 
-## Features
-
-Detailed feature documentation.
-
-- [Claude Code Hooks](./features/hooks.md) - Event-driven state detection via HTTP hooks (recommended)
-- [PTY Wrapping](./features/pty-wrapping.md) - High-precision state detection via PTY proxy
-- [AskUserQuestion Support](./features/ask-user-question.md) - Number key selection
-- [Exfil Detection](./features/exfil-detection.md) - Security monitoring
-- [Web Remote Control](./features/web-remote.md) - Smartphone control via QR code
-- [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
-- [Auto-Approve](./features/auto-approve.md) - AI-powered automatic approval
-
 ## Guides
 
 - [tmai's Strengths](./guides/strengths.md) - What makes tmai unique
@@ -36,6 +52,7 @@ Detailed feature documentation.
 
 ## Reference
 
-- [Keybindings](./reference/keybindings.md)
-- [Configuration](./reference/config.md)
-- [Web API](./reference/web-api.md)
+- [Configuration](./reference/config.md) - Config file options and CLI flags
+- [TUI Mode](./features/tui-mode.md) - ratatui terminal UI for tmux users
+- [Keybindings](./reference/keybindings.md) - TUI keyboard shortcuts
+- [Web API](./reference/web-api.md) - REST API, SSE events, and WebSocket endpoints

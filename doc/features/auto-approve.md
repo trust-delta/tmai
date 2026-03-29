@@ -303,8 +303,26 @@ allow_format_lint = false
 enabled = true   # Equivalent to mode = "ai"
 ```
 
+## WebUI Settings
+
+Auto-approve mode can be changed from the WebUI Settings panel:
+
+1. Click the settings button (⚙) in the status bar
+2. Change the auto-approve mode (Off / Rules / AI / Hybrid)
+3. Changes take effect immediately
+
+Per-agent auto-approve override is also available via the agent action buttons.
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/auto-approve` | Get current mode |
+| PUT | `/api/settings/auto-approve` | Change mode |
+| PUT | `/api/agents/{id}/auto-approve` | Per-agent override |
+
 ## Next Steps
 
 - [Configuration Reference](../reference/config.md) - Full config options
 - [Exfil Detection](./exfil-detection.md) - Security monitoring
-- [Web Remote Control](./web-remote.md) - Remote approval fallback
+- [Mobile Remote Control](./web-remote.md) - Remote approval fallback

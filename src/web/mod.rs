@@ -3,6 +3,7 @@
 //! Provides REST API and SSE for real-time agent monitoring and control.
 
 mod api;
+pub use api::reconnect_codex_ws;
 pub mod auth;
 mod events;
 pub mod hooks;

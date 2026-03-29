@@ -62,6 +62,7 @@ impl App {
             let mut s = state.write();
             s.show_activity_name = settings.ui.show_activity_name;
             s.line_wrap = settings.ui.line_wrap;
+            s.registered_projects = settings.projects.clone();
         }
         let command_sender = CommandSender::new(ipc_server, runtime, state.clone());
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -387,7 +388,7 @@ impl App {
                                     let elapsed = chrono::Utc::now() - t;
                                     elapsed.num_minutes() >= i64::from(interval_min)
                                 })
-                                .unwrap_or(false)
+                                .unwrap_or(true)
                     };
                     if should_fetch {
                         self.trigger_usage_fetch();
@@ -1702,6 +1703,7 @@ impl App {
                             let req = tmai_core::worktree::WorktreeCreateRequest {
                                 repo_path,
                                 branch_name,
+                                dir_name: None,
                                 base_branch: None,
                             };
                             tokio::spawn(async move {

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tmai-core", "."]
+members = ["crates/tmai-core", "crates/tmai-app", "."]
 resolver = "2"
 
 [package]
@@ -8,7 +8,7 @@ version = "0.20.0"
 edition = "2021"
 rust-version = "1.91"
 authors = ["TrustDelta"]
-description = "Tmux Multi Agent Interface - Monitor and control AI agents in tmux"
+description = "Tactful Multi Agent Interface - Monitor and control multiple AI coding agents"
 repository = "https://github.com/trust-delta/tmai"
 license = "MIT"
 readme = "README.md"

@@ -172,6 +172,67 @@ fn truncate_for_preview(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Extract model ID from a transcript JSONL file.
+///
+/// Reads the first few lines looking for an assistant message with `message.model`.
+/// Returns the model ID string (e.g., "claude-opus-4-6").
+pub fn extract_model_id(path: &str) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    // Only scan first 20 lines — model appears in first assistant message
+    for line in std::io::BufRead::lines(reader).take(20) {
+        let line = line.ok()?;
+        let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        if value.get("type")?.as_str()? == "assistant" {
+            if let Some(model) = value
+                .get("message")
+                .and_then(|m| m.get("model"))
+                .and_then(|m| m.as_str())
+            {
+                return Some(model.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Convert a model ID to a short display name (e.g., "claude-opus-4-6" → "Opus 4.6")
+pub fn model_display_name(model_id: &str) -> String {
+    // Common model ID patterns
+    if model_id.contains("opus") {
+        if model_id.contains("4-6") {
+            "Opus 4.6".to_string()
+        } else if model_id.contains("4-5") {
+            "Opus 4.5".to_string()
+        } else {
+            "Opus".to_string()
+        }
+    } else if model_id.contains("sonnet") {
+        if model_id.contains("4-6") {
+            "Sonnet 4.6".to_string()
+        } else if model_id.contains("4-5") {
+            "Sonnet 4.5".to_string()
+        } else if model_id.contains("3-5") || model_id.contains("3.5") {
+            "Sonnet 3.5".to_string()
+        } else {
+            "Sonnet".to_string()
+        }
+    } else if model_id.contains("haiku") {
+        if model_id.contains("4-5") {
+            "Haiku 4.5".to_string()
+        } else {
+            "Haiku".to_string()
+        }
+    } else {
+        // Fallback: use last meaningful segment
+        model_id
+            .split(['/', '-'])
+            .next_back()
+            .unwrap_or(model_id)
+            .to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +320,35 @@ mod tests {
     fn test_parse_unknown_type() {
         let line = r#"{"type":"system","data":"info"}"#;
         assert!(parse_jsonl_line(line).is_none());
+    }
+
+    #[test]
+    fn test_model_display_name() {
+        assert_eq!(model_display_name("claude-opus-4-6"), "Opus 4.6");
+        assert_eq!(model_display_name("claude-sonnet-4-6"), "Sonnet 4.6");
+        assert_eq!(
+            model_display_name("claude-sonnet-4-5-20250514"),
+            "Sonnet 4.5"
+        );
+        assert_eq!(model_display_name("claude-haiku-4-5-20251001"), "Haiku 4.5");
+        assert_eq!(model_display_name("claude-opus-4-5-20250918"), "Opus 4.5");
+        assert_eq!(
+            model_display_name("claude-3-5-sonnet-20241022"),
+            "Sonnet 3.5"
+        );
+        assert_eq!(model_display_name("gpt-4o"), "4o");
+    }
+
+    #[test]
+    fn test_extract_model_id_from_file() {
+        use std::io::Write;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, r#"{{"type":"user","message":{{"content":"hi"}}}}"#).unwrap();
+            writeln!(f, r#"{{"type":"assistant","message":{{"model":"claude-opus-4-6","content":[{{"type":"text","text":"hello"}}]}}}}"#).unwrap();
+        }
+        assert_eq!(extract_model_id(&path), Some("claude-opus-4-6".to_string()));
     }
 }

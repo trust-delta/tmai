@@ -7,6 +7,7 @@ pub mod command_sender;
 pub mod config;
 pub mod detectors;
 pub mod git;
+pub mod github;
 pub mod hooks;
 pub mod ipc;
 pub mod monitor;

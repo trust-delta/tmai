@@ -113,7 +113,7 @@ impl fmt::Display for ReviewAgent {
 }
 
 /// Request to launch a fresh-session code review
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ReviewRequest {
     /// tmux target of the agent that completed work (e.g., "main:0.1")
     pub target: String,

@@ -8,12 +8,73 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use tmai_core::agents::{AgentStatus, ApprovalType};
-use tmai_core::api::{ApiError, TmaiCore};
+use tmai_core::api::{AgentSnapshot, ApiError, TmaiCore};
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
     (status, Json(serde_json::json!({"error": message})))
+}
+
+/// Shell-quote a string for safe embedding in tmux send-keys commands.
+/// Wraps in single quotes and escapes any embedded single quotes.
+/// Control characters (bytes < 0x20 except \n) are stripped before quoting.
+fn shell_quote(s: &str) -> String {
+    // Strip control characters (bytes < 0x20) except newline (\n = 0x0A)
+    let sanitized: String = s
+        .chars()
+        .filter(|&c| c as u32 >= 0x20 || c == '\n')
+        .collect();
+    // If it contains no shell-special characters, return as-is
+    if sanitized
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'/')
+    {
+        return sanitized;
+    }
+    // Wrap in single quotes, escaping embedded single quotes: ' → '\''
+    format!("'{}'", sanitized.replace('\'', "'\\''"))
+}
+
+/// Check whether a canonical path falls within the user's HOME directory
+/// or any registered project directory. Returns true if allowed.
+fn is_path_within_allowed_scope(path: &std::path::Path, core: Option<&TmaiCore>) -> bool {
+    let canonical = match path.canonicalize() {
+        Ok(p) => p,
+        // If the path doesn't exist yet, try canonicalizing the parent
+        Err(_) => {
+            if let Some(parent) = path.parent() {
+                match parent.canonicalize() {
+                    Ok(p) => p.join(path.file_name().unwrap_or_default()),
+                    Err(_) => return false,
+                }
+            } else {
+                return false;
+            }
+        }
+    };
+
+    // Allow anything under HOME
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(home_canonical) = home.canonicalize() {
+            if canonical.starts_with(&home_canonical) {
+                return true;
+            }
+        }
+    }
+
+    // Allow anything under registered project directories
+    if let Some(core) = core {
+        for project in core.list_projects() {
+            let project_path = std::path::Path::new(&project);
+            if let Ok(proj_canonical) = project_path.canonicalize() {
+                if canonical.starts_with(&proj_canonical) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Convert ApiError to HTTP status + JSON error
@@ -50,57 +111,29 @@ pub struct KeyRequest {
     pub key: String,
 }
 
+/// Passthrough request body — sends raw input to an agent's terminal
+#[derive(Debug, Deserialize)]
+pub struct PassthroughRequest {
+    /// For character input: the literal text to send
+    #[serde(default)]
+    pub chars: Option<String>,
+    /// For special keys: tmux key name (e.g. "Enter", "Up", "C-c")
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+/// Per-agent auto-approve override request
+#[derive(Debug, Deserialize)]
+pub struct AutoApproveOverrideRequest {
+    /// None = follow global, Some(true) = force enable, Some(false) = force disable
+    pub enabled: Option<bool>,
+}
+
 /// Preview response
 #[derive(Debug, Serialize)]
 pub struct PreviewResponse {
     pub content: String,
     pub lines: usize,
-}
-
-/// Agent information for API response
-#[derive(Debug, Serialize)]
-pub struct AgentInfo {
-    pub id: String,
-    pub agent_type: String,
-    pub status: StatusInfo,
-    pub cwd: String,
-    pub session: String,
-    pub window_name: String,
-    pub needs_attention: bool,
-    pub is_virtual: bool,
-    pub team: Option<AgentTeamInfoResponse>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub mode: String,
-    /// Git branch name (if in a git repo)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_branch: Option<String>,
-    /// Whether the git working tree has uncommitted changes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_dirty: Option<bool>,
-    /// Whether this directory is a git worktree (not the main repo)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_worktree: Option<bool>,
-    /// Auto-approve judgment phase: "judging", "approved_rule", "approved_ai", or "manual_required"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_approve_phase: Option<String>,
-    /// Absolute path to the shared git common directory (for repository grouping)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_common_dir: Option<String>,
-    /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub worktree_name: Option<String>,
-    /// PTY session ID if this agent was spawned via the PTY spawn API
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pty_session_id: Option<String>,
-}
-
-/// Team information associated with an agent for API response
-#[derive(Debug, Serialize)]
-pub struct AgentTeamInfoResponse {
-    pub team_name: String,
-    pub member_name: String,
-    pub is_lead: bool,
-    pub current_task: Option<TaskSummaryResponse>,
 }
 
 /// Summary of a task for API response
@@ -159,124 +192,6 @@ pub(crate) struct TeamTaskResponse {
     owner: Option<String>,
     blocks: Vec<String>,
     blocked_by: Vec<String>,
-}
-
-/// Status information for API response
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
-pub enum StatusInfo {
-    #[serde(rename = "idle")]
-    Idle,
-    #[serde(rename = "processing")]
-    Processing { message: Option<String> },
-    #[serde(rename = "awaiting_approval")]
-    AwaitingApproval {
-        approval_type: String,
-        details: String,
-        choices: Option<Vec<String>>,
-        multi_select: Option<bool>,
-    },
-    #[serde(rename = "error")]
-    Error { message: String },
-    #[serde(rename = "offline")]
-    Offline,
-    #[serde(rename = "unknown")]
-    Unknown,
-}
-
-impl From<&AgentStatus> for StatusInfo {
-    fn from(status: &AgentStatus) -> Self {
-        match status {
-            AgentStatus::Idle => StatusInfo::Idle,
-            AgentStatus::Processing { activity } => StatusInfo::Processing {
-                message: Some(activity.clone()),
-            },
-            AgentStatus::AwaitingApproval {
-                approval_type,
-                details,
-            } => {
-                let (type_name, choices, multi_select) = match approval_type {
-                    ApprovalType::FileEdit => ("file_edit".to_string(), None, None),
-                    ApprovalType::FileCreate => ("file_create".to_string(), None, None),
-                    ApprovalType::FileDelete => ("file_delete".to_string(), None, None),
-                    ApprovalType::ShellCommand => ("shell_command".to_string(), None, None),
-                    ApprovalType::McpTool => ("mcp_tool".to_string(), None, None),
-                    ApprovalType::UserQuestion {
-                        choices,
-                        multi_select,
-                        ..
-                    } => (
-                        "user_question".to_string(),
-                        Some(choices.clone()),
-                        Some(*multi_select),
-                    ),
-                    ApprovalType::Other(_) => ("other".to_string(), None, None),
-                };
-                StatusInfo::AwaitingApproval {
-                    approval_type: type_name,
-                    details: details.clone(),
-                    choices,
-                    multi_select,
-                }
-            }
-            AgentStatus::Error { message } => StatusInfo::Error {
-                message: message.clone(),
-            },
-            AgentStatus::Offline => StatusInfo::Offline,
-            AgentStatus::Unknown => StatusInfo::Unknown,
-        }
-    }
-}
-
-/// Convert agent team info to API response format
-fn convert_team_info(team_info: &tmai_core::agents::AgentTeamInfo) -> AgentTeamInfoResponse {
-    AgentTeamInfoResponse {
-        team_name: team_info.team_name.clone(),
-        member_name: team_info.member_name.clone(),
-        is_lead: team_info.is_lead,
-        current_task: team_info
-            .current_task
-            .as_ref()
-            .map(|t| TaskSummaryResponse {
-                id: t.id.clone(),
-                subject: t.subject.clone(),
-                status: t.status.to_string(),
-            }),
-    }
-}
-
-/// Build AgentInfo from an AgentSnapshot
-///
-/// Shared helper used by both the REST API and SSE events.
-pub(super) fn build_agent_info(snapshot: &tmai_core::api::AgentSnapshot) -> AgentInfo {
-    use tmai_core::auto_approve::AutoApprovePhase;
-
-    let mode = snapshot.mode.to_string();
-    let auto_approve_phase = snapshot.auto_approve_phase.as_ref().map(|p| match p {
-        AutoApprovePhase::Judging => "judging".to_string(),
-        AutoApprovePhase::ApprovedByRule => "approved_rule".to_string(),
-        AutoApprovePhase::ApprovedByAi => "approved_ai".to_string(),
-        AutoApprovePhase::ManualRequired(_) => "manual_required".to_string(),
-    });
-    AgentInfo {
-        id: snapshot.id.clone(),
-        agent_type: snapshot.agent_type.short_name().to_string(),
-        status: StatusInfo::from(&snapshot.status),
-        cwd: snapshot.display_cwd.clone(),
-        session: snapshot.session.clone(),
-        window_name: snapshot.window_name.clone(),
-        needs_attention: snapshot.needs_attention(),
-        is_virtual: snapshot.is_virtual,
-        team: snapshot.team_info.as_ref().map(convert_team_info),
-        mode,
-        git_branch: snapshot.git_branch.clone(),
-        git_dirty: snapshot.git_dirty,
-        is_worktree: snapshot.is_worktree,
-        auto_approve_phase,
-        git_common_dir: snapshot.git_common_dir.clone(),
-        worktree_name: snapshot.worktree_name.clone(),
-        pty_session_id: snapshot.pty_session_id.clone(),
-    }
 }
 
 /// Build a TeamInfoResponse from a TeamSnapshot
@@ -364,9 +279,8 @@ pub struct SubmitRequest {
 }
 
 /// Get all agents
-pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentInfo>> {
-    let agents: Vec<AgentInfo> = core.list_agents().iter().map(build_agent_info).collect();
-    Json(agents)
+pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentSnapshot>> {
+    Json(core.list_agents())
 }
 
 /// Approve an agent action (send approval keys)
@@ -445,40 +359,122 @@ pub async fn send_key(
         })
 }
 
-/// Get preview content (pane capture) for an agent
+/// PUT /api/agents/{id}/auto-approve — set per-agent auto-approve override
+///
+/// Body: `{"enabled": true}` to force enable, `{"enabled": false}` to force disable,
+/// `{"enabled": null}` to follow global setting.
+pub async fn set_auto_approve(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<AutoApproveOverrideRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    core.set_auto_approve_override(&id, req.enabled)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(api_error_to_http)
+}
+
+/// POST /api/agents/{id}/passthrough — send raw input to agent terminal
+///
+/// Uses tmux send-keys directly for reliable passthrough. Falls back to
+/// CommandSender for non-tmux agents.
+/// Accepts either `chars` (literal text) or `key` (tmux key name).
+#[allow(deprecated)]
+pub async fn passthrough_input(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<PassthroughRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Resolve the tmux target — agent id may be "hook:0.x" (not a valid tmux target)
+    // so we need to find the actual tmux pane target from the agent's target field
+    let tmux_target = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state
+            .agents
+            .get(&id)
+            .map(|a| a.target.clone())
+            .filter(|t| !t.starts_with("hook:") && !t.starts_with("discovered:"))
+    };
+
+    // Use CommandSender (which goes through RuntimeAdapter) for all agents.
+    // This handles IPC -> tmux send-keys -> PTY inject fallback chain automatically.
+    let send_target = tmux_target.as_deref().unwrap_or(&id);
+    let cmd = core
+        .raw_command_sender()
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+    if let Some(ref chars) = req.chars {
+        cmd.send_keys_literal(send_target, chars)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+    if let Some(ref key) = req.key {
+        cmd.send_keys(send_target, key)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+
+    Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
+/// Kill an agent (terminate PTY session or tmux pane)
+pub async fn kill_agent(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: kill agent_id={}", id);
+    core.kill_pane(&id)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| {
+            tracing::warn!("API: kill failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Get preview content (pane capture) for an agent.
+///
+/// Returns ANSI-colored output when capture-pane is available (tmux runtime),
+/// falling back to plain text from last_content or activity log.
 #[allow(deprecated)]
 pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
-    // Check if agent exists and try to get content from AppState first
-    // (Poller already populates last_content with fallback chain:
-    //  capture-pane > transcript > activity log)
-    let agent_content = {
+    // Look up agent target for capture-pane (id may differ from tmux target)
+    let (agent_target, agent_content) = {
         let state = core.raw_state().read();
-        state
-            .agents
-            .get(&id)
-            .map(|a| a.last_content.clone())
-            .filter(|c| !c.trim().is_empty())
+        match state.agents.get(&id) {
+            Some(a) => (Some(a.target.clone()), Some(a.last_content.clone())),
+            None => (None, None),
+        }
     };
 
-    if let Some(content) = agent_content {
+    // Try capture-pane with ANSI colors first (via tmux target)
+    if let Some(ref target) = agent_target {
+        if let Some(cmd) = core.raw_command_sender() {
+            if let Ok(content) = cmd.runtime().capture_pane_full(target) {
+                if !content.trim().is_empty() {
+                    let lines = content.lines().count();
+                    return Ok(Json(PreviewResponse { content, lines }));
+                }
+            }
+        }
+    }
+
+    // Fallback: plain text from last_content
+    if let Some(content) = agent_content.filter(|c| !c.trim().is_empty()) {
         let lines = content.lines().count();
         return Ok(Json(PreviewResponse { content, lines }));
     }
 
-    // Agent exists check (if not found in state, try the facade)
+    // Agent exists check
     if core.get_agent(&id).is_err() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Fallback: try capture_pane_plain directly
+    // Fallback: try capture_pane directly with the id as target
     let cmd = core
         .raw_command_sender()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match cmd.runtime().capture_pane_plain(&id) {
+    match cmd.runtime().capture_pane(&id) {
         Ok(content) => {
             let display_content = if content.trim().is_empty() {
                 // Fallback: try activity log from hooks via pane_id mapping
@@ -574,15 +570,6 @@ pub async fn get_team_tasks(
 // Worktree endpoints
 // =========================================================
 
-/// Worktree creation request body
-#[derive(Debug, Deserialize)]
-pub struct WorktreeCreateRequestBody {
-    pub repo_path: String,
-    pub branch_name: String,
-    #[serde(default)]
-    pub base_branch: Option<String>,
-}
-
 /// Default agent type for launch
 fn default_agent_type() -> String {
     "claude".to_string()
@@ -593,35 +580,6 @@ pub async fn get_worktrees(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<Vec<tmai_core::api::WorktreeSnapshot>> {
     Json(core.list_worktrees())
-}
-
-/// Create a new worktree
-pub async fn create_worktree(
-    State(core): State<Arc<TmaiCore>>,
-    Json(req): Json<WorktreeCreateRequestBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Verify the repo_path exists in our known worktrees (prevent arbitrary path writes)
-    let repo_exists = core.list_worktrees().iter().any(|wt| {
-        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
-    });
-    if !repo_exists {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
-
-    let create_req = tmai_core::worktree::WorktreeCreateRequest {
-        repo_path: strip_git_suffix(&req.repo_path).to_string(),
-        branch_name: req.branch_name,
-        base_branch: req.base_branch,
-    };
-
-    match core.create_worktree(&create_req).await {
-        Ok(result) => Ok(Json(serde_json::json!({
-            "status": "ok",
-            "path": result.path,
-            "branch": result.branch,
-        }))),
-        Err(e) => Err(api_error_to_http(e)),
-    }
 }
 
 /// Worktree delete request body (uses repo_path for unambiguous identification)
@@ -643,12 +601,35 @@ pub async fn delete_worktree(
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid worktree name"));
     }
 
-    // Verify the repo_path exists in our known worktrees
-    let repo_exists = core.list_worktrees().iter().any(|wt| {
-        wt.repo_path == req.repo_path || strip_git_suffix(&wt.repo_path) == req.repo_path
-    });
-    if !repo_exists {
+    // Verify the repo_path is a valid directory
+    let repo_dir = strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    // Verify repo_path is among known projects or worktrees
+    {
+        let repo_canonical = std::path::Path::new(repo_dir)
+            .canonicalize()
+            .map_err(|_| json_error(StatusCode::BAD_REQUEST, "Invalid repository path"))?;
+        let projects = core.list_projects();
+        #[allow(deprecated)]
+        let worktree_paths: Vec<String> = {
+            let state = core.raw_state().read();
+            state.agents.values().map(|a| a.cwd.clone()).collect()
+        };
+        let is_known = projects.iter().chain(worktree_paths.iter()).any(|p| {
+            std::path::Path::new(tmai_core::git::strip_git_suffix(p))
+                .canonicalize()
+                .map(|c| c == repo_canonical)
+                .unwrap_or(false)
+        });
+        if !is_known {
+            return Err(json_error(
+                StatusCode::FORBIDDEN,
+                "Repository path is not a known project or worktree",
+            ));
+        }
     }
 
     let del_req = tmai_core::worktree::WorktreeDeleteRequest {
@@ -670,11 +651,16 @@ pub struct WorktreeLaunchRequestBody {
     pub worktree_name: String,
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
+    /// Unused — kept for backward compatibility with older frontends.
     #[serde(default)]
+    #[allow(dead_code)]
     pub session: Option<String>,
 }
 
-/// Launch an agent in a worktree
+/// Launch an agent in a worktree.
+///
+/// Resolves the worktree path, then delegates to the same spawn pipeline
+/// used by `/api/spawn` so it works in both tmux and standalone modes.
 pub async fn launch_agent_in_worktree(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<WorktreeLaunchRequestBody>,
@@ -701,12 +687,12 @@ pub async fn launch_agent_in_worktree(
         None => return Err(json_error(StatusCode::NOT_FOUND, "Worktree not found")),
     };
 
-    // Parse agent type
-    let agent_type = match req.agent_type.as_str() {
-        "claude" | "claude_code" => tmai_core::agents::AgentType::ClaudeCode,
-        "codex" | "codex_cli" => tmai_core::agents::AgentType::CodexCli,
-        "gemini" | "gemini_cli" => tmai_core::agents::AgentType::GeminiCli,
-        "opencode" | "open_code" => tmai_core::agents::AgentType::OpenCode,
+    // Map agent_type string to command name
+    let command = match req.agent_type.as_str() {
+        "claude" | "claude_code" => "claude",
+        "codex" | "codex_cli" => "codex",
+        "gemini" | "gemini_cli" => "gemini",
+        "opencode" | "open_code" => "opencode",
         other => {
             return Err(json_error(
                 StatusCode::BAD_REQUEST,
@@ -715,14 +701,35 @@ pub async fn launch_agent_in_worktree(
         }
     };
 
-    core.launch_agent_in_worktree(&wt_path, &agent_type, req.session.as_deref())
-        .map(|target| {
-            Json(serde_json::json!({
-                "status": "ok",
-                "target": target,
-            }))
-        })
-        .map_err(api_error_to_http)
+    // Worktree already exists — just cd into it and launch the agent
+    let spawn_req = SpawnRequest {
+        command: command.to_string(),
+        args: vec![],
+        cwd: wt_path,
+        rows: default_rows(),
+        cols: default_cols(),
+        force_pty: false,
+    };
+
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let tmux_avail = is_tmux_available();
+
+    let result = if use_tmux && tmux_avail {
+        spawn_in_tmux(&core, &spawn_req).await
+    } else {
+        spawn_in_pty(&core, &spawn_req).await
+    };
+
+    result.map(|Json(resp)| {
+        Json(serde_json::json!({
+            "status": "ok",
+            "target": resp.session_id,
+        }))
+    })
 }
 
 /// Worktree diff request body
@@ -779,7 +786,350 @@ pub async fn get_worktree_diff(
 }
 
 // =========================================================
-// PTY spawn endpoint
+// Project management endpoints
+// =========================================================
+
+/// List registered project directories
+pub async fn get_projects(State(core): State<Arc<TmaiCore>>) -> Json<Vec<String>> {
+    Json(core.list_projects())
+}
+
+/// Add project request body
+#[derive(Debug, Deserialize)]
+pub struct AddProjectRequest {
+    pub path: String,
+}
+
+/// Register a new project directory
+pub async fn add_project(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<AddProjectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match core.add_project(&req.path) {
+        Ok(()) => Ok(Json(serde_json::json!({"ok": true}))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+/// Remove project request body
+#[derive(Debug, Deserialize)]
+pub struct RemoveProjectRequest {
+    pub path: String,
+}
+
+/// Directory entry for the tree browser
+#[derive(Debug, Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_git: bool,
+}
+
+/// List subdirectories at a given path for the directory tree browser.
+/// Query param: ?path=/some/dir (defaults to home directory)
+pub async fn list_directories(
+    State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<DirEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let base = params
+        .get("path")
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or(home);
+
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(&base, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
+
+    if !base.is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Not a directory: {}", base.display()),
+        ));
+    }
+
+    let mut entries = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(&base) else {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            &format!("Cannot read directory: {}", base.display()),
+        ));
+    };
+
+    for entry in read_dir.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden dirs except common ones
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        let is_git = path.join(".git").exists();
+        entries.push(DirEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_git,
+        });
+    }
+
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(Json(entries))
+}
+
+/// Remove a registered project directory
+pub async fn remove_project(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<RemoveProjectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match core.remove_project(&req.path) {
+        Ok(()) => Ok(Json(serde_json::json!({"ok": true}))),
+        Err(e) => Err(api_error_to_http(e)),
+    }
+}
+
+// =========================================================
+// Spawn settings endpoint
+// =========================================================
+
+/// Response body for spawn settings
+#[derive(Debug, Serialize)]
+pub struct SpawnSettingsResponse {
+    /// Whether to spawn in tmux windows (vs internal PTY)
+    pub use_tmux_window: bool,
+    /// Whether tmux is available as a runtime
+    pub tmux_available: bool,
+    /// Window name for tmux-spawned agents
+    pub tmux_window_name: String,
+}
+
+/// Request body for updating spawn settings
+#[derive(Debug, Deserialize)]
+pub struct UpdateSpawnSettingsRequest {
+    /// Whether to spawn in tmux windows
+    pub use_tmux_window: bool,
+    /// Window name for tmux-spawned agents (optional, keeps current if omitted)
+    #[serde(default)]
+    pub tmux_window_name: Option<String>,
+}
+
+/// GET /api/settings/spawn — get spawn settings
+pub async fn get_spawn_settings(State(core): State<Arc<TmaiCore>>) -> Json<SpawnSettingsResponse> {
+    let (use_tmux_window, tmux_window_name) = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        (state.spawn_in_tmux, state.spawn_tmux_window_name.clone())
+    };
+    let tmux_available = is_tmux_available();
+
+    Json(SpawnSettingsResponse {
+        use_tmux_window,
+        tmux_available,
+        tmux_window_name,
+    })
+}
+
+/// PUT /api/settings/spawn — update spawn settings
+pub async fn update_spawn_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<UpdateSpawnSettingsRequest>,
+) -> Json<serde_json::Value> {
+    {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        s.spawn_in_tmux = req.use_tmux_window;
+        if let Some(ref name) = req.tmux_window_name {
+            if !name.is_empty() {
+                s.spawn_tmux_window_name = name.clone();
+            }
+        }
+    }
+    // Persist to config.toml
+    tmai_core::config::Settings::save_toml_value(
+        "spawn",
+        "use_tmux_window",
+        toml_edit::Value::from(req.use_tmux_window),
+    );
+    if let Some(ref name) = req.tmux_window_name {
+        if !name.is_empty() {
+            tmai_core::config::Settings::save_toml_value(
+                "spawn",
+                "tmux_window_name",
+                toml_edit::Value::from(name.as_str()),
+            );
+        }
+    }
+
+    tracing::info!(
+        "Spawn settings updated: use_tmux_window={} window_name={:?}",
+        req.use_tmux_window,
+        req.tmux_window_name
+    );
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
+// Auto-approve settings endpoint
+// =========================================================
+
+/// Response body for auto-approve settings
+#[derive(Debug, Serialize)]
+pub struct AutoApproveSettingsResponse {
+    /// Current effective mode
+    pub mode: String,
+    /// Whether the service is running
+    pub running: bool,
+    /// Rule presets
+    pub rules: RuleSettingsResponse,
+}
+
+/// Rule presets included in the auto-approve response
+#[derive(Debug, Serialize)]
+pub struct RuleSettingsResponse {
+    pub allow_read: bool,
+    pub allow_tests: bool,
+    pub allow_fetch: bool,
+    pub allow_git_readonly: bool,
+    pub allow_format_lint: bool,
+    pub allow_patterns: Vec<String>,
+}
+
+/// Request body for updating auto-approve settings
+#[derive(Debug, Deserialize)]
+pub struct UpdateAutoApproveRequest {
+    /// Mode: "off", "rules", "ai", "hybrid"
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Rule preset updates (partial)
+    #[serde(default)]
+    pub rules: Option<UpdateRuleSettingsRequest>,
+}
+
+/// Partial update for rule presets
+#[derive(Debug, Deserialize)]
+pub struct UpdateRuleSettingsRequest {
+    pub allow_read: Option<bool>,
+    pub allow_tests: Option<bool>,
+    pub allow_fetch: Option<bool>,
+    pub allow_git_readonly: Option<bool>,
+    pub allow_format_lint: Option<bool>,
+    pub allow_patterns: Option<Vec<String>>,
+}
+
+/// GET /api/settings/auto-approve — get current auto-approve settings
+pub async fn get_auto_approve_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<AutoApproveSettingsResponse> {
+    let aa = &core.settings().auto_approve;
+    let mode = serde_json::to_value(aa.effective_mode())
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", aa.effective_mode()).to_lowercase());
+    let running = aa.effective_mode() != tmai_core::auto_approve::types::AutoApproveMode::Off;
+
+    let rules = RuleSettingsResponse {
+        allow_read: aa.rules.allow_read,
+        allow_tests: aa.rules.allow_tests,
+        allow_fetch: aa.rules.allow_fetch,
+        allow_git_readonly: aa.rules.allow_git_readonly,
+        allow_format_lint: aa.rules.allow_format_lint,
+        allow_patterns: aa.rules.allow_patterns.clone(),
+    };
+
+    Json(AutoApproveSettingsResponse {
+        mode,
+        running,
+        rules,
+    })
+}
+
+/// PUT /api/settings/auto-approve — update auto-approve settings (persisted to config.toml)
+pub async fn update_auto_approve_settings(
+    Json(req): Json<UpdateAutoApproveRequest>,
+) -> Json<serde_json::Value> {
+    // Persist mode change (normalize to lowercase for serde compat)
+    if let Some(ref mode) = req.mode {
+        let mode_lower = mode.to_lowercase();
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "mode",
+            toml_edit::Value::from(mode_lower.as_str()),
+        );
+        tracing::info!("Auto-approve mode updated to '{mode_lower}' (restart to apply)");
+    }
+
+    // Persist rule preset changes
+    if let Some(ref rules) = req.rules {
+        if let Some(v) = rules.allow_read {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_read",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_tests {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_tests",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_fetch {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_fetch",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_git_readonly {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_git_readonly",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_format_lint {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_format_lint",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(ref patterns) = rules.allow_patterns {
+            let arr = patterns
+                .iter()
+                .map(|s| toml_edit::Value::from(s.as_str()))
+                .collect::<toml_edit::Array>();
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_patterns",
+                toml_edit::Value::Array(arr),
+            );
+        }
+        tracing::info!("Auto-approve rules updated (restart to apply)");
+    }
+
+    Json(serde_json::json!({"ok": true, "restart_required": true}))
+}
+
+// =========================================================
+// Agent spawn endpoint
 // =========================================================
 
 /// Spawn request body
@@ -794,6 +1144,9 @@ pub struct SpawnRequest {
     pub rows: u16,
     #[serde(default = "default_cols")]
     pub cols: u16,
+    /// Force PTY spawn even when tmux mode is enabled (e.g., for worktree)
+    #[serde(default)]
+    pub force_pty: bool,
 }
 
 /// Default working directory for spawn
@@ -821,7 +1174,7 @@ pub struct SpawnResponse {
     pub command: String,
 }
 
-/// POST /api/spawn — spawn an agent in a new PTY session
+/// POST /api/spawn — spawn an agent (tmux window or PTY session)
 pub async fn spawn_agent(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<SpawnRequest>,
@@ -847,16 +1200,198 @@ pub async fn spawn_agent(
         ));
     }
 
-    let args: Vec<&str> = req.args.iter().map(|s| s.as_str()).collect();
+    // Check if we should spawn in tmux
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let tmux_avail = is_tmux_available();
+
+    // Shell commands (bash/sh/zsh) always use PTY — tmux wrap is for AI agents
+    let is_shell = matches!(req.command.as_str(), "bash" | "sh" | "zsh");
+
+    if use_tmux && tmux_avail && !req.force_pty && !is_shell {
+        spawn_in_tmux(&core, &req).await
+    } else {
+        spawn_in_pty(&core, &req).await
+    }
+}
+
+/// Check if tmux is available (running inside tmux and tmux command exists)
+fn is_tmux_available() -> bool {
+    std::env::var("TMUX").is_ok()
+        && std::process::Command::new("tmux")
+            .arg("list-sessions")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+}
+
+/// Get the current tmux session name from $TMUX environment variable
+fn current_tmux_session() -> Option<String> {
+    // $TMUX format: /path/to/socket,pid,session_index
+    // We need to ask tmux for the session name
+    let output = std::process::Command::new("tmux")
+        .args(["display-message", "-p", "#{session_name}"])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Find an existing tmux window by name in a session.
+/// Returns the window target (e.g., "session-1:2") if found.
+fn find_tmux_window(session: &str, window_name: &str) -> Option<String> {
+    let output = std::process::Command::new("tmux")
+        .args([
+            "list-windows",
+            "-t",
+            session,
+            "-F",
+            "#{window_index}:#{window_name}",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some((idx, name)) = line.split_once(':') {
+            if name == window_name {
+                return Some(format!("{}:{}", session, idx));
+            }
+        }
+    }
+    None
+}
+
+/// Spawn an agent in a tmux window (detected by poller like a normal pane)
+async fn spawn_in_tmux(
+    core: &Arc<TmaiCore>,
+    req: &SpawnRequest,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let tmux = tmai_core::tmux::TmuxClient::new();
+
+    // Determine the tmux session to use.
+    // Prefer current_tmux_session() since it always returns the real tmux session.
+    // AppState.current_session or agent.session may be "hook"/"pty" (non-tmux).
+    let session_name = current_tmux_session()
+        .or_else(|| {
+            #[allow(deprecated)]
+            let state = core.raw_state().read();
+            state.current_session.clone().or_else(|| {
+                state
+                    .agent_order
+                    .iter()
+                    .filter_map(|key| state.agents.get(key))
+                    .find(|a| a.session != "hook" && a.session != "pty")
+                    .map(|a| a.session.clone())
+            })
+        })
+        .unwrap_or_else(|| "main".to_string());
+
+    let window_name = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_tmux_window_name.clone()
+    };
+
+    // Reuse existing window with the same name, or create a new one
+    let pane_target = find_tmux_window(&session_name, &window_name)
+        .and_then(|target| {
+            // Split existing window to add a pane
+            tmux.split_window(&target, &req.cwd).ok()
+        })
+        .or_else(|| {
+            // No existing window — create a new one
+            tmux.new_window(&session_name, &req.cwd, Some(&window_name))
+                .ok()
+        })
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create tmux window or split pane",
+            )
+        })?;
+
+    // For Codex: start app-server first, add --remote to command
+    let codex_ws_url = if req.command == "codex" {
+        start_codex_app_server_sync(&req.cwd).await
+    } else {
+        None
+    };
+
+    // Build command with args (shell-quote each arg to prevent splitting)
+    let mut all_args: Vec<String> = req.args.iter().map(|a| shell_quote(a)).collect();
+    if let Some(ref url) = codex_ws_url {
+        all_args.push("--remote".to_string());
+        all_args.push(shell_quote(url));
+    }
+    let quoted_command = shell_quote(&req.command);
+    let full_command = if all_args.is_empty() {
+        quoted_command
+    } else {
+        format!("{} {}", quoted_command, all_args.join(" "))
+    };
+
+    // Run the command via tmai wrap for monitoring
+    tmux.run_command_wrapped(&pane_target, &full_command)
+        .map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to run command: {}", e),
+            )
+        })?;
+
+    tracing::info!(
+        "API: spawned in tmux window '{}' target={} command={}",
+        window_name,
+        pane_target,
+        req.command
+    );
+
+    // Connect WS client to the running app-server
+    if let Some(ref ws_url) = codex_ws_url {
+        connect_codex_ws(core, &pane_target, ws_url);
+    }
+
+    // The agent will be discovered by the poller on the next cycle.
+    Ok(Json(SpawnResponse {
+        session_id: pane_target,
+        pid: 0, // poller will discover the actual PID
+        command: req.command.clone(),
+    }))
+}
+
+/// Spawn an agent in an internal PTY session (with WebSocket streaming)
+async fn spawn_in_pty(
+    core: &Arc<TmaiCore>,
+    req: &SpawnRequest,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let mut extra_args: Vec<String> = Vec::new();
     let rows = if req.rows > 0 { req.rows } else { 24 };
     let cols = if req.cols > 0 { req.cols } else { 80 };
 
-    tracing::info!(
-        "API: spawn command={} args={:?} cwd={}",
-        req.command,
-        req.args,
-        req.cwd
-    );
+    // For Codex: start app-server first, then launch codex with --remote
+    let codex_ws_url = if req.command == "codex" {
+        start_codex_app_server_sync(&req.cwd).await
+    } else {
+        None
+    };
+    if let Some(ref url) = codex_ws_url {
+        extra_args.push("--remote".to_string());
+        extra_args.push(url.clone());
+    }
+
+    let mut all_args: Vec<&str> = req.args.iter().map(|s| s.as_str()).collect();
+    for a in &extra_args {
+        all_args.push(a.as_str());
+    }
 
     // Build environment variables so spawned agents can call tmai CLI
     let (api_token, api_port) = {
@@ -872,7 +1407,7 @@ pub async fn spawn_agent(
 
     match core
         .pty_registry()
-        .spawn_session(&req.command, &args, &req.cwd, rows, cols, &env)
+        .spawn_session(&req.command, &all_args, &req.cwd, rows, cols, &env)
     {
         Ok(session) => {
             let session_id = session.id.clone();
@@ -919,12 +1454,17 @@ pub async fn spawn_agent(
                     agent.worktree_name = tmai_core::git::extract_claude_worktree_name(&req.cwd);
                 }
                 s.agents.insert(session_id.clone(), agent);
-                s.agent_order.push(session_id);
+                s.agent_order.push(session_id.clone());
             }
             core.notify_agents_updated();
 
+            // For Codex: connect WS client to the already-running app-server
+            if let Some(ref ws_url) = codex_ws_url {
+                connect_codex_ws(core, &session_id, ws_url);
+            }
+
             tracing::info!(
-                "API: spawned session_id={} pid={}",
+                "API: spawned PTY session_id={} pid={}",
                 response.session_id,
                 response.pid
             );
@@ -938,6 +1478,537 @@ pub async fn spawn_agent(
             ))
         }
     }
+}
+
+/// Start a Codex app-server and return its WebSocket URL.
+///
+/// Launches `codex app-server --listen ws://127.0.0.1:0`, reads the actual
+/// port from stderr, and returns the URL. The process keeps running in the
+/// background for the lifetime of the codex session.
+async fn start_codex_app_server_sync(cwd: &str) -> Option<String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    // Use process_group(0) to detach app-server from tmai's process group,
+    // so it survives tmai restarts. Codex --remote depends on app-server staying alive.
+    let mut child = match tokio::process::Command::new("codex")
+        .args(["app-server", "--listen", "ws://127.0.0.1:0"])
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to start Codex app-server: {}", e);
+            return None;
+        }
+    };
+
+    let stderr = child.stderr.take()?;
+    let mut reader = BufReader::new(stderr).lines();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+
+    for _ in 0..10 {
+        let line = tokio::select! {
+            result = reader.next_line() => match result {
+                Ok(Some(l)) => l,
+                _ => break,
+            },
+            _ = tokio::time::sleep_until(deadline) => break,
+        };
+        if let Some(url) = line.strip_prefix("  listening on: ") {
+            let url = url.trim().to_string();
+            tracing::info!(url = %url, "Codex app-server started");
+            // Record URL for reconnection after tmai restart
+            save_codex_ws_url(&url);
+            return Some(url);
+        }
+    }
+
+    tracing::warn!("Codex app-server did not report listening URL");
+    let _ = child.kill().await;
+    None
+}
+
+/// Save codex app-server URL to state dir for reconnection after restart.
+fn save_codex_ws_url(url: &str) {
+    let state_dir = tmai_core::ipc::protocol::state_dir();
+    let ws_dir = state_dir.join("codex-ws");
+    let _ = std::fs::create_dir_all(&ws_dir);
+    // Use port as filename for dedup
+    if let Some(port) = url.rsplit(':').next() {
+        let _ = std::fs::write(ws_dir.join(format!("{}.url", port)), url);
+    }
+}
+
+/// Load previously recorded codex app-server URLs and connect to any that are still alive.
+pub async fn reconnect_codex_ws(core: &Arc<TmaiCore>) {
+    let state_dir = tmai_core::ipc::protocol::state_dir();
+    let ws_dir = state_dir.join("codex-ws");
+    let entries = match std::fs::read_dir(&ws_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("url") {
+            continue;
+        }
+        let url = match std::fs::read_to_string(&path) {
+            Ok(u) => u.trim().to_string(),
+            Err(_) => continue,
+        };
+
+        // Check if the app-server is still reachable (quick TCP connect)
+        let reachable = if let Some(addr) = url.strip_prefix("ws://") {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                tokio::net::TcpStream::connect(addr),
+            )
+            .await
+            .map(|r| r.is_ok())
+            .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if reachable {
+            tracing::info!(url = %url, "Reconnecting to existing Codex app-server");
+            // Use a synthetic pane_id — will be matched via target fallback
+            let pane_id = format!(
+                "codex-ws-reconnect-{}",
+                path.file_stem().unwrap_or_default().to_string_lossy()
+            );
+            connect_codex_ws(core, &pane_id, &url);
+        } else {
+            // App-server is dead, clean up the URL file
+            tracing::debug!(url = %url, "Codex app-server no longer reachable, removing");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
+/// Connect a WebSocket client to an already-running Codex app-server.
+fn connect_codex_ws(core: &Arc<TmaiCore>, pane_id: &str, ws_url: &str) {
+    let config = tmai_core::codex_ws::client::CodexWsClientConfig {
+        url: ws_url.to_string(),
+        pane_id: Some(pane_id.to_string()),
+    };
+    let registry = core.hook_registry().clone();
+    let event_tx = core.event_sender();
+    #[allow(deprecated)]
+    let state = core.raw_state().clone();
+
+    tracing::info!(
+        pane_id,
+        url = ws_url,
+        "Connecting WS client to Codex app-server"
+    );
+    tokio::spawn(async move {
+        tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
+    });
+}
+
+// =========================================================
+// Git branch listing endpoint
+// =========================================================
+
+/// Query params for branch listing
+#[derive(Debug, Deserialize)]
+pub struct BranchQueryParams {
+    pub repo: String,
+}
+
+/// GET /api/git/branches — list branches for a repository
+pub async fn list_branches(
+    axum::extract::Query(params): axum::extract::Query<BranchQueryParams>,
+) -> Result<Json<tmai_core::git::BranchListResult>, (StatusCode, Json<serde_json::Value>)> {
+    if !std::path::Path::new(&params.repo).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", params.repo),
+        ));
+    }
+
+    tmai_core::git::list_branches(&params.repo)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list branches"))
+        .map(Json)
+}
+
+/// Commit log query params
+#[derive(Debug, Deserialize)]
+pub struct CommitLogParams {
+    pub repo: String,
+    pub base: String,
+    pub branch: String,
+}
+
+/// Query params for diff stat endpoint
+#[derive(Debug, Deserialize)]
+pub struct DiffStatParams {
+    pub repo: String,
+    pub branch: String,
+    pub base: String,
+}
+
+/// GET /api/git/diff-stat — get diff statistics between two branches
+pub async fn git_diff_stat(
+    axum::extract::Query(params): axum::extract::Query<DiffStatParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    let result =
+        tmai_core::git::fetch_branch_diff_stat(repo_dir, &params.branch, &params.base).await;
+    match result {
+        Some(s) => Ok(Json(serde_json::json!({
+            "files_changed": s.files_changed,
+            "insertions": s.insertions,
+            "deletions": s.deletions,
+        }))),
+        None => Ok(Json(serde_json::json!(null))),
+    }
+}
+
+/// GET /api/git/diff — get full diff between two branches
+pub async fn git_branch_diff(
+    axum::extract::Query(params): axum::extract::Query<DiffStatParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !tmai_core::git::is_safe_git_ref(&params.branch)
+        || !tmai_core::git::is_safe_git_ref(&params.base)
+    {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    let diff_spec = format!("{}...{}", params.base, params.branch);
+    let output = tokio::process::Command::new("git")
+        .args(["-C", repo_dir, "diff", &diff_spec])
+        .output()
+        .await
+        .map_err(|e| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("git diff failed: {}", e),
+            )
+        })?;
+    let raw = &output.stdout;
+    const MAX_DIFF_BYTES: usize = 1_048_576; // 1MB
+    let truncated = raw.len() > MAX_DIFF_BYTES;
+    let diff_bytes = if truncated {
+        &raw[..MAX_DIFF_BYTES]
+    } else {
+        raw.as_slice()
+    };
+    let diff = String::from_utf8_lossy(diff_bytes).to_string();
+    let summary =
+        tmai_core::git::fetch_branch_diff_stat(repo_dir, &params.branch, &params.base).await;
+    Ok(Json(serde_json::json!({
+        "diff": if diff.is_empty() { None } else { Some(diff) },
+        "truncated": truncated,
+        "summary": summary.map(|s| serde_json::json!({
+            "files_changed": s.files_changed,
+            "insertions": s.insertions,
+            "deletions": s.deletions,
+        })),
+    })))
+}
+
+/// Get commit log between two branches
+pub async fn git_log(
+    axum::extract::Query(params): axum::extract::Query<CommitLogParams>,
+) -> Result<Json<Vec<tmai_core::git::CommitEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    let commits = tmai_core::git::log_commits(repo_dir, &params.base, &params.branch, 20).await;
+    Ok(Json(commits))
+}
+
+/// Graph query params
+#[derive(Debug, Deserialize)]
+pub struct GraphQueryParams {
+    pub repo: String,
+    #[serde(default = "default_graph_limit")]
+    pub limit: usize,
+}
+
+/// Default limit for graph commits
+fn default_graph_limit() -> usize {
+    100
+}
+
+/// GET /api/git/graph — get full commit graph for lane visualization
+pub async fn git_graph(
+    axum::extract::Query(params): axum::extract::Query<GraphQueryParams>,
+) -> Result<Json<tmai_core::git::GraphData>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::log_graph(repo_dir, params.limit)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to get graph"))
+        .map(Json)
+}
+
+/// Delete branch request body
+#[derive(Debug, Deserialize)]
+pub struct DeleteBranchRequest {
+    pub repo_path: String,
+    pub branch: String,
+    #[serde(default)]
+    pub force: bool,
+    #[serde(default)]
+    pub delete_remote: bool,
+}
+
+/// Delete a local git branch
+pub async fn delete_branch(
+    Json(req): Json<DeleteBranchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !tmai_core::git::is_safe_git_ref(&req.branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::delete_branch(repo_dir, &req.branch, req.force, req.delete_remote)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Checkout branch request body
+#[derive(Debug, Deserialize)]
+pub struct CheckoutRequest {
+    pub repo_path: String,
+    pub branch: String,
+}
+
+/// Checkout (switch to) a branch
+pub async fn checkout_branch(
+    Json(req): Json<CheckoutRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate branch name to prevent command injection
+    if !tmai_core::git::is_safe_git_ref(&req.branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::checkout_branch(repo_dir, &req.branch)
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Create branch request body
+#[derive(Debug, Deserialize)]
+pub struct CreateBranchRequest {
+    pub repo_path: String,
+    pub name: String,
+    pub base: Option<String>,
+}
+
+/// Create a new local branch (without checking it out)
+pub async fn create_branch(
+    Json(req): Json<CreateBranchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate branch name to prevent command injection
+    if !tmai_core::git::is_safe_git_ref(&req.name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    if let Some(ref base) = req.base {
+        if !tmai_core::git::is_safe_git_ref(base) {
+            return Err(json_error(
+                StatusCode::BAD_REQUEST,
+                "Invalid base branch name",
+            ));
+        }
+    }
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::create_branch(repo_dir, &req.name, req.base.as_deref())
+        .await
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Fetch request body
+#[derive(Debug, Deserialize)]
+pub struct FetchRequest {
+    pub repo_path: String,
+    pub remote: Option<String>,
+}
+
+/// Fetch from a remote
+pub async fn git_fetch(
+    Json(req): Json<FetchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::fetch_remote(repo_dir, req.remote.as_deref())
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Pull request body
+#[derive(Debug, Deserialize)]
+pub struct PullRequest {
+    pub repo_path: String,
+}
+
+/// Pull from upstream (fast-forward only)
+pub async fn git_pull(
+    Json(req): Json<PullRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::pull(repo_dir)
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+/// Merge request body
+#[derive(Debug, Deserialize)]
+pub struct MergeRequest {
+    pub repo_path: String,
+    pub branch: String,
+}
+
+/// Merge a branch into the current branch
+pub async fn git_merge(
+    Json(req): Json<MergeRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::git::merge_branch(repo_dir, &req.branch)
+        .await
+        .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
+// =========================================================
+// Worktree spawn endpoint
+// =========================================================
+
+/// Request body for worktree spawn
+#[derive(Debug, Deserialize)]
+pub struct WorktreeSpawnRequest {
+    /// Worktree name (also used as branch name)
+    pub name: String,
+    /// Repository path
+    pub cwd: String,
+    /// Base branch to create worktree from (defaults to current HEAD)
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+}
+
+/// POST /api/spawn/worktree — create git worktree then spawn claude in it
+pub async fn spawn_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeSpawnRequest>,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate cwd
+    if !std::path::Path::new(&req.cwd).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", req.cwd),
+        ));
+    }
+
+    // Validate worktree name
+    if !tmai_core::git::is_valid_worktree_name(&req.name) {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Invalid worktree name: {}", req.name),
+        ));
+    }
+
+    // Create git worktree using tmai-core
+    // Directory and branch both use the user-provided name (consistent with PATH 1)
+    let wt_req = tmai_core::worktree::WorktreeCreateRequest {
+        repo_path: req.cwd.clone(),
+        branch_name: req.name.clone(),
+        dir_name: None,
+        base_branch: req.base_branch.clone(),
+    };
+
+    let wt_result = tmai_core::worktree::create_worktree(&wt_req)
+        .await
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+
+    tracing::info!(
+        "API: created worktree '{}' at {} (branch: {})",
+        req.name,
+        wt_result.path,
+        wt_result.branch
+    );
+
+    // Spawn claude in the worktree directory
+    let spawn_req = SpawnRequest {
+        command: "claude".to_string(),
+        args: vec![],
+        cwd: wt_result.path,
+        rows: req.rows,
+        cols: req.cols,
+        force_pty: false,
+    };
+
+    // Resolve the effective base branch for metadata
+    let effective_base = req.base_branch.clone();
+
+    // Use tmux if available, otherwise PTY
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let result = if use_tmux && is_tmux_available() {
+        spawn_in_tmux(&core, &spawn_req).await
+    } else {
+        spawn_in_pty(&core, &spawn_req).await
+    };
+
+    // Set worktree_base_branch on the spawned agent
+    if let Ok(ref resp) = result {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        if let Some(agent) = s.agents.get_mut(&resp.session_id) {
+            agent.worktree_base_branch = effective_base;
+        }
+    }
+
+    result
 }
 
 // =========================================================
@@ -1042,6 +2113,411 @@ pub async fn send_to_agent(
     })))
 }
 
+// =========================================================
+// Security scan endpoints
+// =========================================================
+
+/// POST /api/security/scan — run a security scan and return results
+pub async fn security_scan(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<tmai_core::security::ScanResult> {
+    Json(core.security_scan())
+}
+
+/// GET /api/security/last — return cached scan result (no new scan)
+pub async fn last_security_scan(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<Option<tmai_core::security::ScanResult>> {
+    Json(core.last_security_scan())
+}
+
+// ── Usage ──
+
+/// GET /api/usage — return cached usage snapshot
+pub async fn get_usage(State(core): State<Arc<TmaiCore>>) -> Json<tmai_core::usage::UsageSnapshot> {
+    Json(core.get_usage())
+}
+
+/// POST /api/usage/fetch — trigger a background usage fetch
+pub async fn trigger_usage_fetch(State(core): State<Arc<TmaiCore>>) -> StatusCode {
+    core.fetch_usage();
+    StatusCode::ACCEPTED
+}
+
+/// Usage settings response
+#[derive(Debug, Serialize)]
+pub struct UsageSettingsResponse {
+    pub enabled: bool,
+    pub auto_refresh_min: u32,
+}
+
+/// Usage settings update request
+#[derive(Debug, Deserialize)]
+pub struct UsageSettingsRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub auto_refresh_min: Option<u32>,
+}
+
+/// GET /api/settings/usage — get usage settings
+pub async fn get_usage_settings(State(core): State<Arc<TmaiCore>>) -> Json<UsageSettingsResponse> {
+    let s = core.settings();
+    Json(UsageSettingsResponse {
+        enabled: s.usage.enabled,
+        auto_refresh_min: s.usage.auto_refresh_min,
+    })
+}
+
+/// PUT /api/settings/usage — update usage settings and persist
+pub async fn update_usage_settings(
+    Json(req): Json<UsageSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(enabled) = req.enabled {
+        tmai_core::config::Settings::save_toml_value(
+            "usage",
+            "enabled",
+            toml_edit::Value::from(enabled),
+        );
+    }
+    if let Some(interval) = req.auto_refresh_min {
+        tmai_core::config::Settings::save_toml_value(
+            "usage",
+            "auto_refresh_min",
+            toml_edit::Value::from(interval as i64),
+        );
+    }
+    Json(serde_json::json!({"ok": true}))
+}
+
+/// Query params for PR listing
+#[derive(Debug, Deserialize)]
+pub struct PrQueryParams {
+    pub repo: String,
+}
+
+/// GET /api/github/prs — list open PRs for a repository
+pub async fn list_prs(
+    axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
+) -> Result<
+    Json<std::collections::HashMap<String, tmai_core::github::PrInfo>>,
+    (StatusCode, Json<serde_json::Value>),
+> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_open_prs(repo_dir)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to list PRs (is gh CLI authenticated?)",
+            )
+        })
+        .map(Json)
+}
+
+/// Query params for CI checks
+#[derive(Debug, Deserialize)]
+pub struct ChecksQueryParams {
+    pub repo: String,
+    pub branch: String,
+}
+
+/// GET /api/github/checks — list CI checks for a branch
+pub async fn list_checks(
+    axum::extract::Query(params): axum::extract::Query<ChecksQueryParams>,
+) -> Result<Json<tmai_core::github::CiSummary>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_checks(repo_dir, &params.branch)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list checks"))
+        .map(Json)
+}
+
+/// GET /api/github/issues — list open issues for a repository
+pub async fn list_issues(
+    axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
+) -> Result<Json<Vec<tmai_core::github::IssueInfo>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::list_issues(repo_dir)
+        .await
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list issues"))
+        .map(Json)
+}
+
+/// Query params for PR detail endpoints
+#[derive(Debug, Deserialize)]
+pub struct PrDetailParams {
+    pub repo: String,
+    pub pr_number: u64,
+}
+
+/// Query params for CI log endpoint
+#[derive(Debug, Deserialize)]
+pub struct CiLogParams {
+    pub repo: String,
+    pub run_id: u64,
+}
+
+/// GET /api/github/pr/comments — fetch comments and reviews for a PR
+pub async fn get_pr_comments(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<Vec<tmai_core::github::PrComment>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_comments(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR comments",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/pr/files — fetch changed files for a PR
+pub async fn get_pr_files(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<Vec<tmai_core::github::PrChangedFile>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_files(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR files",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/pr/merge-status — fetch merge readiness status for a PR
+pub async fn get_pr_merge_status(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<tmai_core::github::PrMergeStatus>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_merge_status(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR merge status",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/ci/failure-log — fetch failure log for a CI run
+pub async fn get_ci_failure_log(
+    axum::extract::Query(params): axum::extract::Query<CiLogParams>,
+) -> Result<Json<tmai_core::github::CiFailureLog>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_ci_failure_log(repo_dir, params.run_id)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch CI failure log",
+            )
+        })
+        .map(Json)
+}
+
+// =========================================================
+// File read/write/tree endpoints
+// =========================================================
+
+/// Query params for file read
+#[derive(Debug, Deserialize)]
+pub struct FileReadParams {
+    pub path: String,
+}
+
+/// GET /api/files/read — read any text file's content
+pub async fn read_file(
+    State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(params): axum::extract::Query<FileReadParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let path = std::path::Path::new(&params.path);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(path, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
+    if !path.is_file() {
+        return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
+    }
+    // Limit file size to 1MB
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    if metadata.len() > 1_048_576 {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "File too large (max 1MB)",
+        ));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|_| json_error(StatusCode::BAD_REQUEST, "Not a text file (binary content)"))?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let editable = OPENABLE_EXTENSIONS.contains(&ext);
+    Ok(Json(
+        serde_json::json!({ "path": params.path, "content": content, "editable": editable }),
+    ))
+}
+
+/// Request body for file write
+#[derive(Debug, Deserialize)]
+pub struct FileWriteRequest {
+    pub path: String,
+    pub content: String,
+}
+
+/// POST /api/files/write — write content to a file
+pub async fn write_file(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<FileWriteRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let path = std::path::Path::new(&req.path);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(path, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
+    // Security: only allow writing .md, .json, .toml, .txt, .yaml, .yml files
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !matches!(ext, "md" | "json" | "toml" | "txt" | "yaml" | "yml") {
+        return Err(json_error(StatusCode::FORBIDDEN, "File type not allowed"));
+    }
+    // Must be an existing file (no creating new files via this endpoint)
+    if !path.is_file() {
+        return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
+    }
+    std::fs::write(path, &req.content)
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+/// Query params for markdown file tree
+#[derive(Debug, Deserialize)]
+pub struct MdTreeParams {
+    pub root: String,
+}
+
+/// Entry in the file tree
+#[derive(Debug, Serialize)]
+pub struct MdTreeEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub openable: bool,
+    pub children: Option<Vec<MdTreeEntry>>,
+}
+
+/// File extensions that can be opened (read/write) in the markdown panel
+const OPENABLE_EXTENSIONS: &[&str] = &["md", "json", "toml", "txt", "yaml", "yml"];
+
+/// GET /api/files/md-tree — list markdown files in a directory tree
+pub async fn md_tree(
+    State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(params): axum::extract::Query<MdTreeParams>,
+) -> Result<Json<Vec<MdTreeEntry>>, (StatusCode, Json<serde_json::Value>)> {
+    let root = std::path::Path::new(&params.root);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(root, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
+    if !root.is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Directory not found"));
+    }
+    let entries =
+        scan_md_tree(root, 0).map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e))?;
+    Ok(Json(entries))
+}
+
+/// Recursively scan a directory for all files (max depth 5)
+fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>, String> {
+    if depth > 5 {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+
+    let mut items: Vec<_> = read_dir.filter_map(|e| e.ok()).collect();
+    items.sort_by_key(|e| e.file_name());
+
+    for entry in items {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden directories (except .claude)
+        if name.starts_with('.') && name != ".claude" {
+            continue;
+        }
+        // Skip bulky directories
+        if matches!(name.as_str(), "node_modules" | "target" | "dist" | ".git") {
+            continue;
+        }
+
+        if path.is_dir() {
+            let children = scan_md_tree(&path, depth + 1)?;
+            if !children.is_empty() {
+                entries.push(MdTreeEntry {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    is_dir: true,
+                    openable: false,
+                    children: Some(children),
+                });
+            }
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let openable = OPENABLE_EXTENSIONS.contains(&ext);
+            entries.push(MdTreeEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                openable,
+                children: None,
+            });
+        }
+    }
+    Ok(entries)
+}
+
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)
@@ -1055,6 +2531,7 @@ mod tests {
     use axum::Router;
     use http::Request;
     use http_body_util::BodyExt;
+    use tmai_core::agents::AgentStatus;
     use tmai_core::api::{has_checkbox_format, TmaiCoreBuilder};
     use tmai_core::command_sender::CommandSender;
     use tmai_core::state::SharedState;
@@ -1086,6 +2563,8 @@ mod tests {
             .route("/agents/{id}/preview", get(get_preview))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
+            .route("/security/scan", post(security_scan))
+            .route("/security/last", get(last_security_scan))
             .with_state(core)
     }
 
@@ -1300,7 +2779,8 @@ mod tests {
         let agents: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0]["id"], "main:0.0");
-        assert_eq!(agents[0]["status"]["type"], "idle");
+        // AgentStatus uses serde externally tagged: unit variants serialize as strings
+        assert_eq!(agents[0]["status"], "Idle");
     }
 
     #[tokio::test]
@@ -1351,6 +2831,45 @@ mod tests {
         assert!(!is_valid_team_name("team name"));
     }
 
+    #[tokio::test]
+    async fn test_security_last_initially_null() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/security/last")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(result.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_security_scan_returns_ok() {
+        let app = test_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/security/scan")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(result["risks"].is_array());
+        assert!(result["scanned_at"].is_string());
+        assert!(result["files_scanned"].is_number());
+    }
+
     #[test]
     fn test_has_checkbox_format() {
         assert!(has_checkbox_format(&[
@@ -1361,5 +2880,34 @@ mod tests {
             "Option A".to_string(),
             "Option B".to_string(),
         ]));
+    }
+
+    #[test]
+    fn test_shell_quote_strips_control_chars() {
+        // Normal strings pass through
+        assert_eq!(shell_quote("hello"), "hello");
+        // Control chars (e.g. \x01, \x1b) are stripped
+        assert_eq!(shell_quote("he\x01llo"), "hello");
+        assert_eq!(shell_quote("ab\x1bcd"), "abcd");
+        // Newlines are preserved
+        assert_eq!(shell_quote("a\nb"), "'a\nb'");
+        // Tab (0x09) is a control char and stripped
+        assert_eq!(shell_quote("a\tb"), "ab");
+        // Shell-special chars get quoted
+        assert_eq!(shell_quote("hello world"), "'hello world'");
+        // Single quotes are escaped
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_is_path_within_allowed_scope() {
+        // HOME directory should be allowed
+        if let Some(home) = dirs::home_dir() {
+            let test_path = home.join("some_file.txt");
+            assert!(is_path_within_allowed_scope(&test_path, None));
+        }
+        // Root paths outside HOME should be rejected
+        let outside = std::path::Path::new("/etc/passwd");
+        assert!(!is_path_within_allowed_scope(outside, None));
     }
 }
