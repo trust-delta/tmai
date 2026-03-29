@@ -66,7 +66,7 @@ export function ActionPanel({
     setDiffData(null);
     setDiffLoading(false);
     setShowNewWorktree(false);
-  }, []);
+  }, [activeNode.name]);
 
   // Fetch CI checks when branch changes
   useEffect(() => {
