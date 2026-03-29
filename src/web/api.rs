@@ -1349,9 +1349,14 @@ async fn spawn_in_pty(
                     agent.worktree_name = tmai_core::git::extract_claude_worktree_name(&req.cwd);
                 }
                 s.agents.insert(session_id.clone(), agent);
-                s.agent_order.push(session_id);
+                s.agent_order.push(session_id.clone());
             }
             core.notify_agents_updated();
+
+            // For Codex: start app-server and connect via WebSocket for status detection
+            if req.command == "codex" {
+                spawn_codex_app_server(core, &session_id, &req.cwd);
+            }
 
             tracing::info!(
                 "API: spawned PTY session_id={} pid={}",
@@ -1366,6 +1371,61 @@ async fn spawn_in_pty(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 &format!("Failed to spawn: {}", e),
             ))
+        }
+    }
+}
+
+/// Start a Codex app-server in the background and connect via WebSocket.
+///
+/// Finds a free port, launches `codex app-server --listen ws://127.0.0.1:PORT`,
+/// and spawns a WebSocket client task for status detection.
+fn spawn_codex_app_server(core: &Arc<TmaiCore>, session_id: &str, cwd: &str) {
+    // Find a free port by binding to :0
+    let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener.local_addr().map(|a| a.port()).unwrap_or(0),
+        Err(_) => return,
+    };
+    if port == 0 {
+        return;
+    }
+
+    let ws_url = format!("ws://127.0.0.1:{}", port);
+    let cwd_owned = cwd.to_string();
+
+    // Launch codex app-server as a background child process
+    match std::process::Command::new("codex")
+        .args(["app-server", "--listen", &ws_url])
+        .current_dir(&cwd_owned)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_child) => {
+            tracing::info!(
+                session_id = session_id,
+                url = %ws_url,
+                "Started Codex app-server for WS detection"
+            );
+
+            // Connect WebSocket client for status detection
+            let config = tmai_core::codex_ws::client::CodexWsClientConfig {
+                url: ws_url,
+                pane_id: Some(session_id.to_string()),
+            };
+            let registry = core.hook_registry().clone();
+            let event_tx = core.event_sender();
+            #[allow(deprecated)]
+            let state = core.raw_state().clone();
+
+            tokio::spawn(async move {
+                // Brief delay to let app-server start listening
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
+            });
+        }
+        Err(e) => {
+            tracing::warn!("Failed to start Codex app-server: {}", e);
         }
     }
 }

@@ -56,8 +56,14 @@ const MONO_FONT_STACK =
   "'Liberation Mono', 'Courier New', " +
   "'Symbols Nerd Font Mono', monospace";
 
-// Box Drawing horizontal characters (U+2500–U+257F range commonly used for lines)
-const HLINE_RE = /^[\u2500-\u257f]+$/;
+// Box Drawing horizontal character class (U+2500–U+257F)
+const HLINE_CHAR_RE = /[\u2500-\u257f]/g;
+
+// Line is considered a "horizontal rule" if box-drawing chars make up ≥50% of visible content
+function isHorizontalRule(visible: string): boolean {
+  const matches = visible.match(HLINE_CHAR_RE);
+  return matches != null && matches.length >= visible.length * 0.5;
+}
 
 // ANSI escape patterns (constructed via RegExp to avoid control-char lint)
 const ESC = "\x1b";
@@ -75,7 +81,7 @@ function trimPreviewContent(raw: string, cols: number): string {
   return trimmed.replace(/^.*$/gm, (line) => {
     // Strip ANSI escapes to measure visible length
     const visible = line.replace(CSI_RE, "").replace(OSC_RE, "");
-    if (HLINE_RE.test(visible) && visible.length > cols) {
+    if (isHorizontalRule(visible) && visible.length > cols) {
       // Truncate: keep only `cols` visible chars while preserving leading ANSI
       const leadAnsi = line.match(LEAD_CSI_RE)?.[0] ?? "";
       const trailAnsi = line.match(TRAIL_CSI_RE)?.[0] ?? "";
@@ -204,9 +210,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   );
 
   // Auto-scroll to bottom (toggleable, default on)
-
-  // Scroll handler (reserved for future use, auto-scroll is button-controlled only)
-  const handleScroll = useCallback(() => {}, []);
+  // Scroll up → auto OFF, scroll to bottom → auto ON
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    setAutoScroll(atBottom);
+  }, [setAutoScroll]);
 
   // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
