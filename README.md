@@ -70,7 +70,7 @@ Detailed guides, configuration reference, and workflows are available in [doc/](
 | **Getting Started** | [Installation & First Steps](./doc/getting-started.md) |
 | **WebUI Features** | [Overview](./doc/features/webui-overview.md) - [Branch Graph](./doc/features/branch-graph.md) - [GitHub Integration](./doc/features/github-integration.md) - [Worktree UI](./doc/features/worktree-ui.md) - [Terminal](./doc/features/terminal-panel.md) - [Agent Spawn](./doc/features/agent-spawn.md) |
 | **More Features** | [Markdown Viewer](./doc/features/markdown-viewer.md) - [Security Panel](./doc/features/security-panel.md) - [Usage Tracking](./doc/features/usage-tracking.md) - [File Browser](./doc/features/file-browser.md) |
-| **Core Features** | [Hooks](./doc/features/hooks.md) - [Auto-Approve](./doc/features/auto-approve.md) - [Agent Teams](./doc/features/agent-teams.md) - [Mobile Remote](./doc/features/web-remote.md) - [PTY Wrapping](./doc/features/pty-wrapping.md) - [Fresh Session Review](./doc/features/fresh-session-review.md) |
+| **Core Features** | [Hooks](./doc/features/hooks.md) - [Auto-Approve](./doc/features/auto-approve.md) - [Agent Teams](./doc/features/agent-teams.md) - [Mobile Remote](./doc/features/web-remote.md) - [PTY Wrapping](./doc/features/pty-wrapping.md) - [Fresh Session Review](./doc/features/fresh-session-review.md) - [TUI Mode](./doc/features/tui-mode.md) |
 | **Workflows** | [Multi-agent](./doc/workflows/multi-agent.md) - [Worktree Parallel](./doc/workflows/worktree-parallel.md) - [Remote Approval](./doc/workflows/remote-approval.md) |
 | **Reference** | [Config](./doc/reference/config.md) - [Keybindings](./doc/reference/keybindings.md) - [Web API](./doc/reference/web-api.md) |
 

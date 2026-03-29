@@ -53,5 +53,6 @@ Use-case specific guides.
 ## Reference
 
 - [Configuration](./reference/config.md) - Config file options and CLI flags
+- [TUI Mode](./features/tui-mode.md) - ratatui terminal UI for tmux users
 - [Keybindings](./reference/keybindings.md) - TUI keyboard shortcuts
 - [Web API](./reference/web-api.md) - REST API, SSE events, and WebSocket endpoints

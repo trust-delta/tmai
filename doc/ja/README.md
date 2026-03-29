@@ -53,5 +53,6 @@ WebUIとTUIの両モードで利用可能な機能。
 ## リファレンス
 
 - [設定ファイル](./reference/config.md) - 設定オプションとCLIフラグ
+- [TUIモード](./features/tui-mode.md) - tmuxユーザー向けratauiターミナルUI
 - [キーバインド一覧](./reference/keybindings.md) - TUIキーボードショートカット
 - [Web API](./reference/web-api.md) - REST API、SSEイベント、WebSocketエンドポイント
