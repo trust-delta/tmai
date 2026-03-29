@@ -172,7 +172,9 @@ function PrCommentsView({ projectPath, prNumber }: { projectPath: string; prNumb
               )}
             </div>
           )}
-          <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">{comment.body}</div>
+          <div className="mt-2 whitespace-pre-wrap break-words text-sm text-zinc-300">
+            {comment.body}
+          </div>
         </div>
       ))}
     </div>
@@ -228,7 +230,7 @@ function PrFilesView({ projectPath, prNumber }: { projectPath: string; prNumber:
             key={file.path}
             className="flex items-center gap-2 rounded bg-white/[0.03] px-3 py-1.5 text-xs"
           >
-            <span className="flex-1 truncate font-mono text-zinc-300">{file.path}</span>
+            <span className="flex-1 break-all font-mono text-zinc-300">{file.path}</span>
             <span className="shrink-0 text-emerald-400">+{file.additions}</span>
             <span className="shrink-0 text-red-400">-{file.deletions}</span>
           </div>
@@ -364,7 +366,7 @@ function CiLogView({ projectPath, runId }: { projectPath: string; runId: number 
   return (
     <pre
       ref={preRef}
-      className="overflow-auto rounded-lg bg-zinc-900/80 p-4 text-[11px] leading-relaxed font-mono text-zinc-300"
+      className="max-w-full overflow-auto rounded-lg bg-zinc-900/80 p-4 text-[11px] leading-relaxed font-mono text-zinc-300"
     >
       {stripAnsi(logData.log_text)}
     </pre>
@@ -403,7 +405,7 @@ export function DetailPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-auto p-4">
         {view.kind === "diff" && (
           <DiffView projectPath={projectPath} activeNode={activeNode} branches={branches} />
         )}
