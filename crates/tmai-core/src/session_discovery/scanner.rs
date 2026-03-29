@@ -14,6 +14,9 @@ pub struct SessionDiscoveryScanner {
     known_pids: HashSet<u32>,
     /// Claude sessions directory path
     sessions_dir: PathBuf,
+    /// Skip process name verification (for testing)
+    #[cfg(test)]
+    skip_process_check: bool,
 }
 
 impl Default for SessionDiscoveryScanner {
@@ -33,6 +36,8 @@ impl SessionDiscoveryScanner {
         Self {
             known_pids: HashSet::new(),
             sessions_dir,
+            #[cfg(test)]
+            skip_process_check: false,
         }
     }
 
@@ -81,7 +86,11 @@ impl SessionDiscoveryScanner {
             }
 
             // Verify the process is actually Claude Code (not an MCP server or other child)
-            if !is_claude_code_process(session.pid) {
+            #[cfg(test)]
+            let skip = self.skip_process_check;
+            #[cfg(not(test))]
+            let skip = false;
+            if !skip && !is_claude_code_process(session.pid) {
                 debug!(
                     pid = session.pid,
                     "Skipping session: process is not Claude Code"
@@ -280,6 +289,7 @@ mod tests {
 
         let mut scanner = SessionDiscoveryScanner::new();
         scanner.sessions_dir = sessions_dir;
+        scanner.skip_process_check = true;
 
         // First scan: should discover the session
         let (new, disappeared) = scanner.scan();

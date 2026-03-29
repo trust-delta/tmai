@@ -222,6 +222,8 @@ pub struct HookState {
     pub pid: Option<u32>,
     /// Model ID extracted from transcript (cached after first read)
     pub model_id: Option<String>,
+    /// Token usage from WS-connected agents (input_tokens, output_tokens)
+    pub token_usage: Option<(u64, u64)>,
 }
 
 impl HookState {
@@ -241,6 +243,7 @@ impl HookState {
             activity_log: Vec::new(),
             pid: None,
             model_id: None,
+            token_usage: None,
         }
     }
 

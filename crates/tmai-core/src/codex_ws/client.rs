@@ -200,6 +200,8 @@ fn handle_text_message(
     state: &SharedState,
     resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
 ) {
+    tracing::trace!(text, "Codex WS raw message");
+
     let msg = match CodexWsMessage::parse(text) {
         Ok(msg) => msg,
         Err(e) => {

@@ -507,6 +507,16 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
                     },
                     details: String::new(),
                 }
+            } else if hs.last_context.event_name == "codex_ws_command_approval" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::ShellCommand,
+                    details: tool_info,
+                }
+            } else if hs.last_context.event_name == "codex_ws_file_approval" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::FileEdit,
+                    details: tool_info,
+                }
             } else {
                 AgentStatus::AwaitingApproval {
                     approval_type: ApprovalType::Other("Approval".to_string()),
@@ -594,7 +604,7 @@ fn summarize_tool_input(tool_name: &str, tool_input: Option<&serde_json::Value>)
 
 /// Truncate a string to max_len characters, appending "..." if truncated.
 /// Uses char-based counting to avoid panicking on multi-byte UTF-8 boundaries.
-fn truncate_string(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate_string(s: &str, max_len: usize) -> String {
     // Take only the first line for multi-line strings
     let first_line = s.lines().next().unwrap_or(s);
     let char_count = first_line.chars().count();
@@ -610,7 +620,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 }
 
 /// Add a ToolActivity entry to HookState, maintaining MAX_ACTIVITY_LOG limit
-fn push_activity(state: &mut HookState, activity: ToolActivity) {
+pub(crate) fn push_activity(state: &mut HookState, activity: ToolActivity) {
     state.activity_log.push(activity);
     if state.activity_log.len() > MAX_ACTIVITY_LOG {
         state.activity_log.remove(0);
