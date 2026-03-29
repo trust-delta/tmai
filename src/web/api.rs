@@ -1271,6 +1271,11 @@ async fn spawn_in_tmux(
         req.command
     );
 
+    // For Codex: start app-server and connect via WebSocket for status detection
+    if req.command == "codex" {
+        spawn_codex_app_server(core, &pane_target, &req.cwd);
+    }
+
     // The agent will be discovered by the poller on the next cycle.
     Ok(Json(SpawnResponse {
         session_id: pane_target,
