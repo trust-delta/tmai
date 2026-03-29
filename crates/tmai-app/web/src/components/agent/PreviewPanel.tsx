@@ -224,12 +224,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       // through the hidden input's onInput handler and be sent as passthrough
       if (e.ctrlKey && e.key === "v") return;
 
-      // Esc: switch to select mode
-      if (e.key === "Escape" && !e.ctrlKey) {
-        enterSelectMode();
-        return;
-      }
-
       const tmuxKey = toTmuxKey(e.nativeEvent);
       if (tmuxKey) {
         e.preventDefault();
@@ -243,7 +237,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         sendPassthrough({ chars: e.key });
       }
     },
-    [composing, enterSelectMode, sendPassthrough],
+    [composing, sendPassthrough],
   );
 
   // Handle IME confirmed text via input event
@@ -374,7 +368,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           }`}
           title={
             focused
-              ? "Input mode — keystrokes sent to agent (click or Esc for select mode)"
+              ? "Input mode — keystrokes sent to agent (click for select mode)"
               : "Select mode — click to copy text (click for input mode)"
           }
         >
@@ -395,7 +389,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         </button>
         <div className="flex-1" />
         <span className="text-[10px] text-zinc-600">
-          {focused ? "Esc / click to select" : "click ⌨ to input"}
+          {focused ? "click to select" : "click ⌨ to input"}
         </span>
       </div>
     </div>
