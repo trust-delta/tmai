@@ -14,6 +14,7 @@ import { DetailPanel, type DetailView } from "./DetailPanel";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
 import type { BranchNode } from "./graph/types";
+import { IssuesPanel } from "./IssuesPanel";
 
 interface BranchGraphProps {
   projectPath: string;
@@ -54,6 +55,8 @@ export function BranchGraph({
   const [issues, setIssues] = useState<IssueInfo[]>([]);
   const [graphLimit, setGraphLimit] = useState(200);
   const [detailView, setDetailView] = useState<DetailView | null>(null);
+  const [showIssues, setShowIssues] = useState(false);
+  const [selectedIssue, setSelectedIssue] = useState<IssueInfo | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef<number | null>(null);
 
@@ -300,6 +303,18 @@ export function BranchGraph({
     return () => clearInterval(interval);
   }, [projectPath]);
 
+  // Handle start-work completion: switch back to graph, refresh, select new branch
+  const handleStartWorkDone = useCallback(
+    (worktreeName: string) => {
+      setShowIssues(false);
+      setSelectedIssue(null);
+      refreshBranches();
+      // Select the new branch after data refreshes
+      setTimeout(() => setSelectedNode(worktreeName), 500);
+    },
+    [refreshBranches],
+  );
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
@@ -330,17 +345,45 @@ export function BranchGraph({
             <path d="M4 6 C4 8, 8 8, 12 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
           </svg>
           <h2 className="text-lg font-semibold text-zinc-100">{projectName}</h2>
+          {/* Tab switcher */}
+          <div className="flex gap-1 rounded-lg bg-white/5 p-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setShowIssues(false);
+                setSelectedIssue(null);
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                !showIssues ? "bg-white/10 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Branches
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowIssues(true)}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                showIssues ? "bg-white/10 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Issues{issues.length > 0 ? ` (${issues.length})` : ""}
+            </button>
+          </div>
           <span className="text-xs text-zinc-500">
-            {branchCount} branch{branchCount !== 1 ? "es" : ""}
-            {(() => {
-              const wtCount = projectWorktrees.filter((w) => !w.is_main).length;
-              if (wtCount === 0) return null;
-              return ` (${wtCount} worktree${wtCount !== 1 ? "s" : ""})`;
-            })()}
-            {graphData && (
+            {!showIssues && (
               <>
-                {" \u00B7 "}
-                {graphData.commits.length} commit{graphData.commits.length !== 1 ? "s" : ""}
+                {branchCount} branch{branchCount !== 1 ? "es" : ""}
+                {(() => {
+                  const wtCount = projectWorktrees.filter((w) => !w.is_main).length;
+                  if (wtCount === 0) return null;
+                  return ` (${wtCount} worktree${wtCount !== 1 ? "s" : ""})`;
+                })()}
+                {graphData && (
+                  <>
+                    {" \u00B7 "}
+                    {graphData.commits.length} commit{graphData.commits.length !== 1 ? "s" : ""}
+                  </>
+                )}
               </>
             )}
           </span>
@@ -366,115 +409,148 @@ export function BranchGraph({
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Graph canvas */}
-        <div ref={scrollRef} className="flex-1 overflow-auto p-6">
-          {layout && layout.lanes.length > 0 ? (
-            <LaneGraph
-              layout={layout}
-              selectedBranch={selectedNode}
-              repoPath={projectPath}
-              defaultBranch={branches?.default_branch ?? "main"}
-              collapsedLanes={collapsedLanes}
-              prMap={prMap}
-              onSelectBranch={selectBranch}
-              onToggleCollapse={toggleCollapse}
+        {showIssues ? (
+          <>
+            {/* Issues list (replaces graph) */}
+            <IssuesPanel
+              issues={issues}
+              selectedIssue={selectedIssue}
+              onSelectIssue={setSelectedIssue}
             />
-          ) : (
-            <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
-              {graphData?.commits.length === 0
-                ? "No commits found"
-                : "Only the default branch exists"}
+
+            {/* Action panel in issue mode */}
+            <ActionPanel
+              activeNode={activeNode ?? nodes[0]}
+              branches={branches}
+              projectPath={projectPath}
+              nodeDepth={nodeDepth}
+              branchDepthWarning={BRANCH_DEPTH_WARNING}
+              prInfo={undefined}
+              targetPrs={[]}
+              issues={issues}
+              onRefresh={refreshBranches}
+              onSelectNode={setSelectedNode}
+              onFocusAgent={onFocusAgent}
+              onOpenDetail={setDetailView}
+              issueMode
+              selectedIssue={selectedIssue}
+              defaultBranch={branches?.default_branch ?? "main"}
+              onStartWorkDone={handleStartWorkDone}
+            />
+          </>
+        ) : (
+          <>
+            {/* Graph canvas */}
+            <div ref={scrollRef} className="flex-1 overflow-auto p-6">
+              {layout && layout.lanes.length > 0 ? (
+                <LaneGraph
+                  layout={layout}
+                  selectedBranch={selectedNode}
+                  repoPath={projectPath}
+                  defaultBranch={branches?.default_branch ?? "main"}
+                  collapsedLanes={collapsedLanes}
+                  prMap={prMap}
+                  onSelectBranch={selectBranch}
+                  onToggleCollapse={toggleCollapse}
+                />
+              ) : (
+                <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
+                  {graphData?.commits.length === 0
+                    ? "No commits found"
+                    : "Only the default branch exists"}
+                </div>
+              )}
+
+              {/* Truncation indicator */}
+              {graphData && graphData.commits.length >= graphLimit && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      savedScrollTop.current = scrollRef.current?.scrollTop ?? null;
+                      setGraphLimit((prev) => prev + 200);
+                    }}
+                    className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    Load more commits ({graphLimit} shown)
+                  </button>
+                </div>
+              )}
+
+              {/* Inactive branches (not shown in graph) */}
+              {nodes.filter(
+                (n) =>
+                  !n.isMain &&
+                  !n.isWorktree &&
+                  !n.hasAgent &&
+                  !n.isDirty &&
+                  n.ahead === 0 &&
+                  !n.isCurrent,
+              ).length > 0 && (
+                <div className="mt-6 border-t border-white/5 pt-4">
+                  <div className="mb-2 text-[11px] text-zinc-600">Inactive branches</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {nodes
+                      .filter(
+                        (n) =>
+                          !n.isMain &&
+                          !n.isWorktree &&
+                          !n.hasAgent &&
+                          !n.isDirty &&
+                          n.ahead === 0 &&
+                          !n.isCurrent,
+                      )
+                      .map((n) => (
+                        <button
+                          type="button"
+                          key={n.name}
+                          onClick={() => selectBranch(n.name)}
+                          className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
+                            selectedNode === n.name
+                              ? "bg-cyan-500/15 text-cyan-400"
+                              : "bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                          }`}
+                        >
+                          {n.name}
+                          {n.behind > 0 && (
+                            <span className="ml-1 text-[10px] text-red-400">{n.behind}\u2193</span>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Truncation indicator */}
-          {graphData && graphData.commits.length >= graphLimit && (
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  savedScrollTop.current = scrollRef.current?.scrollTop ?? null;
-                  setGraphLimit((prev) => prev + 200);
-                }}
-                className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-              >
-                Load more commits ({graphLimit} shown)
-              </button>
-            </div>
-          )}
+            {/* Detail panel (middle, conditional) */}
+            {detailView && activeNode && (
+              <DetailPanel
+                view={detailView}
+                projectPath={projectPath}
+                activeNode={activeNode}
+                branches={branches}
+                onClose={() => setDetailView(null)}
+              />
+            )}
 
-          {/* Inactive branches (not shown in graph) */}
-          {nodes.filter(
-            (n) =>
-              !n.isMain &&
-              !n.isWorktree &&
-              !n.hasAgent &&
-              !n.isDirty &&
-              n.ahead === 0 &&
-              !n.isCurrent,
-          ).length > 0 && (
-            <div className="mt-6 border-t border-white/5 pt-4">
-              <div className="mb-2 text-[11px] text-zinc-600">Inactive branches</div>
-              <div className="flex flex-wrap gap-1.5">
-                {nodes
-                  .filter(
-                    (n) =>
-                      !n.isMain &&
-                      !n.isWorktree &&
-                      !n.hasAgent &&
-                      !n.isDirty &&
-                      n.ahead === 0 &&
-                      !n.isCurrent,
-                  )
-                  .map((n) => (
-                    <button
-                      type="button"
-                      key={n.name}
-                      onClick={() => selectBranch(n.name)}
-                      className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
-                        selectedNode === n.name
-                          ? "bg-cyan-500/15 text-cyan-400"
-                          : "bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
-                      }`}
-                    >
-                      {n.name}
-                      {n.behind > 0 && (
-                        <span className="ml-1 text-[10px] text-red-400">{n.behind}\u2193</span>
-                      )}
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Detail panel (middle, conditional) */}
-        {detailView && activeNode && (
-          <DetailPanel
-            view={detailView}
-            projectPath={projectPath}
-            activeNode={activeNode}
-            branches={branches}
-            onClose={() => setDetailView(null)}
-          />
-        )}
-
-        {/* Action panel (right side) */}
-        {activeNode && (
-          <ActionPanel
-            activeNode={activeNode}
-            branches={branches}
-            projectPath={projectPath}
-            nodeDepth={nodeDepth}
-            branchDepthWarning={BRANCH_DEPTH_WARNING}
-            prInfo={prMap[activeNode.name]}
-            targetPrs={targetPrMap[activeNode.name] ?? []}
-            issues={issues}
-            onRefresh={refreshBranches}
-            onSelectNode={setSelectedNode}
-            onFocusAgent={onFocusAgent}
-            onOpenDetail={setDetailView}
-          />
+            {/* Action panel (right side) */}
+            {activeNode && (
+              <ActionPanel
+                activeNode={activeNode}
+                branches={branches}
+                projectPath={projectPath}
+                nodeDepth={nodeDepth}
+                branchDepthWarning={BRANCH_DEPTH_WARNING}
+                prInfo={prMap[activeNode.name]}
+                targetPrs={targetPrMap[activeNode.name] ?? []}
+                issues={issues}
+                onRefresh={refreshBranches}
+                onSelectNode={setSelectedNode}
+                onFocusAgent={onFocusAgent}
+                onOpenDetail={setDetailView}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

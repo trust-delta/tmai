@@ -2330,6 +2330,26 @@ pub async fn get_pr_merge_status(
         .map(Json)
 }
 
+/// POST /api/github/ci/rerun — re-run failed CI checks
+pub async fn rerun_failed_checks(
+    Json(body): Json<CiLogParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&body.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::rerun_failed_checks(repo_dir, body.run_id)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to re-run checks (may lack actions:write permission)",
+            )
+        })
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+}
+
 /// GET /api/github/ci/failure-log — fetch failure log for a CI run
 pub async fn get_ci_failure_log(
     axum::extract::Query(params): axum::extract::Query<CiLogParams>,
