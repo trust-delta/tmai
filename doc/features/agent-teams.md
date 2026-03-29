@@ -97,8 +97,19 @@ See [Web API Reference](../reference/web-api.md) for details.
 - **Detection method**: Team member mapping relies on command-line argument matching (`--agent-id`). If agents are started without this flag, the heuristic fallback may not always match correctly.
 - **File-based scanning**: Team data is read from filesystem (`~/.claude/teams/`, `~/.claude/tasks/`). Changes are detected on the next scan interval.
 
+## WebUI
+
+In the WebUI dashboard, teams are displayed in the sidebar alongside agents. Team data is updated in real-time via SSE events:
+
+- **`teams`** — Team structure and task summary updates
+- **`teammate_idle`** — Notification when a team member becomes idle
+- **`task_completed`** — Notification when a task is completed
+
+The WebUI shows team members grouped under their team name, with task progress indicators.
+
 ## Next Steps
 
 - [Multi-Agent Monitoring](../workflows/multi-agent.md) - General multi-agent workflow
+- [WebUI Overview](./webui-overview.md) - Dashboard features
 - [Web API Reference](../reference/web-api.md) - Teams API documentation
 - [Configuration Reference](../reference/config.md) - Teams configuration options

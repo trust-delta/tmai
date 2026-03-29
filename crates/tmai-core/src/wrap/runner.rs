@@ -77,6 +77,8 @@ impl PtyRunner {
         // Build command
         let mut cmd = CommandBuilder::new(&self.config.command);
         cmd.args(&self.config.args);
+        // Remove JSC_SIGNAL_FOR_GC — Bun misinterprets it as a CLI option
+        cmd.env_remove("JSC_SIGNAL_FOR_GC");
 
         // Set working directory to current directory
         if let Ok(cwd) = std::env::current_dir() {

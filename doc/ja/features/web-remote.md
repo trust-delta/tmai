@@ -1,6 +1,8 @@
-# Web Remote Control
+# モバイルリモートコントロール
 
 QRコードでスマホからAIエージェントを操作。
+
+> **Note**: このドキュメントはモバイル最適化されたリモートコントロールインターフェースについて説明しています。デスクトップWebUIダッシュボードの全機能については[WebUI概要](./webui-overview.md)を参照してください。
 
 ## 概要
 
@@ -198,5 +200,6 @@ mirroredモードを使用していない場合：
 
 ## 次のステップ
 
+- [WebUI概要](./webui-overview.md) - デスクトップWebUIダッシュボード
 - [Web APIリファレンス](../reference/web-api.md) - 完全なAPIドキュメント
 - [スマホから承認ワークフロー](../workflows/remote-approval.md) - 使用シナリオ

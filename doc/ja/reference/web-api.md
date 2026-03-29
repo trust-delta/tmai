@@ -1,359 +1,858 @@
 # Web APIリファレンス
 
-Web Remote ControlのREST API。
+tmaiの完全なREST API、SSEイベント、WebSocketエンドポイント。
 
 ## ベースURL
 
 ```
-http://<host>:<port>/?token=<token>
+http://localhost:9876
 ```
 
-デフォルトポート：`9876`
-
-すべてのAPIエンドポイントにはクエリパラメータとしてトークンが必要です。
+デフォルトポート: `9876`（設定の`[web] port`で変更可能）。
 
 ## 認証
 
-すべてのリクエストにトークンを含める必要があります：
+すべてのAPIエンドポイントにトークン認証が必要です：
 
+- **推奨**: `Authorization: Bearer <token>` ヘッダー
+- **フォールバック**: `?token=<token>` クエリパラメータ（SSE EventSource用）
+
+トークンは起動時に生成され、ブラウザURLに表示されます。
+
+Hookエンドポイントは別のトークン（`~/.config/tmai/hooks_token`）を使用します。
+
+## エラーレスポンス
+
+| ステータス | 説明 |
+|----------|------|
+| `400` | リクエスト不正（入力無効、パストラバーサル、バリデーションエラー） |
+| `401` | トークン無効または欠落 |
+| `404` | リソースが見つからない |
+| `500` | サーバー内部エラー |
+
+エラーボディ:
+
+```json
+{
+  "error": "エラーの説明"
+}
 ```
-GET /api/agents?token=abc123
-POST /api/agents/1/approve?token=abc123
-```
 
-トークンはQRコードのURLに表示されます。
+---
 
-## エンドポイント
+## エージェント操作
 
 ### GET /api/agents
 
 監視中の全エージェントを一覧表示。
 
-**レスポンス：**
+**レスポンス**: `AgentSnapshot[]`
 
-```json
-{
-  "agents": [
-    {
-      "id": "0",
-      "name": "dev:claude",
-      "status": "awaiting_approval",
-      "approval_type": "user_question",
-      "details": "どのアプローチを好みますか？",
-      "choices": ["async/await", "callbacks", "promises"],
-      "multi_select": false,
-      "cursor_position": 1,
-      "detection_source": "pty"
-    },
-    {
-      "id": "1",
-      "name": "dev:codex",
-      "status": "processing",
-      "detection_source": "capture"
-    }
-  ]
-}
-```
-
-**Agentオブジェクト：**
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `id` | string | ユニークなエージェント識別子 |
-| `name` | string | 表示名（session:window） |
-| `status` | string | `processing`, `idle`, `awaiting_approval` |
-| `approval_type` | string? | 必要な承認のタイプ |
-| `details` | string? | 承認リクエストの説明 |
-| `choices` | string[]? | AskUserQuestionの選択肢 |
-| `multi_select` | bool? | 複数選択が有効か |
-| `cursor_position` | number? | 現在の選択位置（1-indexed） |
-| `detection_source` | string | `pty`または`capture` |
-
-### POST /api/agents/:id/approve
-
-エージェントに承認（y）を送信。
-
-**リクエスト：**
-
-```
-POST /api/agents/0/approve?token=abc123
-```
-
-**レスポンス：**
-
-```json
-{
-  "success": true
-}
-```
-
-### POST /api/agents/:id/select
-
-AskUserQuestionの選択肢を選択。
-
-**リクエスト：**
-
-```
-POST /api/agents/0/select?token=abc123
-Content-Type: application/json
-
-{
-  "option": 2
-}
-```
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `option` | number | 選択肢番号（1-indexed） |
-
-**レスポンス：**
-
-```json
-{
-  "success": true
-}
-```
-
-### POST /api/agents/:id/submit
-
-複数選択を確定。
-
-**リクエスト：**
-
-```
-POST /api/agents/0/submit?token=abc123
-Content-Type: application/json
-
-{
-  "selections": [1, 3]
-}
-```
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `selections` | number[] | 選択した選択肢番号（1-indexed） |
-
-**レスポンス：**
-
-```json
-{
-  "success": true
-}
-```
-
-### POST /api/agents/:id/input
-
-エージェントにテキスト入力を送信。
-
-**リクエスト：**
-
-```
-POST /api/agents/0/input?token=abc123
-Content-Type: application/json
-
-{
-  "text": "https://api.example.com"
-}
-```
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `text` | string | 送信するテキスト |
-
-**レスポンス：**
-
-```json
-{
-  "success": true
-}
-```
-
-### GET /api/agents/:id/preview
+### GET /api/agents/{id}/preview
 
 エージェントのペイン内容を取得。
 
-**リクエスト：**
-
-```
-GET /api/agents/0/preview?token=abc123
-```
-
-**レスポンス：**
+**レスポンス**:
 
 ```json
 {
-  "content": "$ claude\n\nWelcome to Claude Code...\n\n> Working on task..."
+  "content": "$ claude\nWelcome to Claude Code...",
+  "lines": 42
+}
+```
+
+### GET /api/agents/{id}/output
+
+エージェントの生出力を取得（PTYセッション用）。
+
+**レスポンス**:
+
+```json
+{
+  "session_id": "a1b2c3d4",
+  "output": "...",
+  "bytes": 4096
+}
+```
+
+### POST /api/agents/{id}/approve
+
+エージェントに承認（y + Enter）を送信。
+
+**レスポンス**: `{"status": "ok"}`
+
+### POST /api/agents/{id}/select
+
+AskUserQuestionの選択肢を選択。
+
+**リクエスト**:
+
+```json
+{
+  "choice": 2
 }
 ```
 
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
-| `content` | string | ペイン内容（ANSIコード除去済み） |
+| `choice` | number | 選択肢番号（1-indexed） |
+
+### POST /api/agents/{id}/submit
+
+複数選択を確定。
+
+**リクエスト**:
+
+```json
+{
+  "selected_choices": [1, 3]
+}
+```
+
+### POST /api/agents/{id}/input
+
+エージェントにテキスト入力を送信。
+
+**リクエスト**:
+
+```json
+{
+  "text": "hello world"
+}
+```
+
+### POST /api/agents/{id}/key
+
+エージェントに特殊キーを送信。
+
+**リクエスト**:
+
+```json
+{
+  "key": "Enter"
+}
+```
+
+### POST /api/agents/{id}/passthrough
+
+生のターミナル入力（文字列またはキー）を送信。
+
+**リクエスト**:
+
+```json
+{
+  "chars": "ls -la",
+  "key": "Enter"
+}
+```
+
+両フィールドはオプション — どちらか一方または両方を送信。
+
+### PUT /api/agents/{id}/auto-approve
+
+エージェントごとのAuto-approveオーバーライドを設定。
+
+**リクエスト**:
+
+```json
+{
+  "enabled": true
+}
+```
+
+### POST /api/agents/{id}/kill
+
+エージェントプロセスを終了。
+
+**レスポンス**: `{"status": "ok"}`
+
+### POST /api/agents/{from}/send-to/{to}
+
+あるエージェントから別のエージェントにテキストを送信。
+
+**リクエスト**:
+
+```json
+{
+  "text": "Check the auth module"
+}
+```
+
+**レスポンス**:
+
+```json
+{
+  "status": "ok",
+  "method": "ipc"
+}
+```
+
+---
+
+## Teams
+
+### GET /api/teams
+
+検出された全Agent Teamsを一覧表示。
+
+**レスポンス**:
+
+```json
+[
+  {
+    "name": "my-project",
+    "description": "プロジェクトの説明",
+    "task_summary": {
+      "total": 5,
+      "completed": 2,
+      "in_progress": 1,
+      "pending": 2
+    },
+    "members": [
+      {
+        "name": "team-lead",
+        "agent_type": "general-purpose",
+        "is_lead": true,
+        "pane_target": "main:0.1",
+        "current_task": {
+          "id": "1",
+          "subject": "Implement auth",
+          "status": "in_progress"
+        }
+      }
+    ],
+    "worktree_names": ["feature-a"]
+  }
+]
+```
+
+### GET /api/teams/{name}/tasks
+
+特定チームのタスク一覧を取得。
+
+**レスポンス**:
+
+```json
+[
+  {
+    "id": "1",
+    "subject": "Implement auth module",
+    "description": "...",
+    "active_form": "Implementing auth",
+    "status": "completed",
+    "owner": "team-lead",
+    "blocks": [],
+    "blocked_by": []
+  }
+]
+```
+
+---
+
+## ワークツリー
+
+### GET /api/worktrees
+
+全ワークツリーを一覧表示。**レスポンス**: `WorktreeSnapshot[]`
+
+### POST /api/worktrees
+
+新しいワークツリーを作成。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "branch_name": "feature-xyz",
+  "base_branch": "main"
+}
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `repo_path` | string | はい | リポジトリパス |
+| `branch_name` | string | はい | ワークツリー用ブランチ名 |
+| `base_branch` | string | いいえ | ベースブランチ（デフォルト: 現在のブランチ） |
+
+**レスポンス**: `{"status": "ok", "path": "...", "branch": "..."}`
+
+### POST /api/worktrees/delete
+
+ワークツリーを削除。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "worktree_name": "feature-xyz",
+  "force": false
+}
+```
+
+### POST /api/worktrees/launch
+
+ワークツリー内でエージェントを起動。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "worktree_name": "feature-xyz",
+  "agent_type": "claude",
+  "session": null
+}
+```
+
+### POST /api/worktrees/diff
+
+ワークツリーとベースブランチ間の差分を取得。
+
+**リクエスト**:
+
+```json
+{
+  "worktree_path": "/home/user/myrepo/.claude/worktrees/feature-xyz",
+  "base_branch": "main"
+}
+```
+
+**レスポンス**: `{"diff": "...", "summary": "..."}`
+
+---
+
+## Git操作
+
+### GET /api/git/branches
+
+親関係付きブランチ一覧。
+
+**クエリ**: `?repo=/path/to/repo`
+
+**レスポンス**: `BranchListResult`（親情報、トラッキング状態、ahead/behindカウント付きブランチ）
+
+### GET /api/git/log
+
+ブランチのコミットログを取得。
+
+**クエリ**: `?repo=/path/to/repo&base=main&branch=feature-a`
+
+**レスポンス**: `CommitEntry[]`
+
+### GET /api/git/graph
+
+レーンベース可視化用のコミットグラフデータを取得。
+
+**クエリ**: `?repo=/path/to/repo&limit=100`
+
+**レスポンス**: レーン、行、接続を含むグラフレイアウトデータ。
+
+### POST /api/git/branches/create
+
+新しいブランチを作成。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "name": "feature-new",
+  "base": "main"
+}
+```
+
+### POST /api/git/branches/delete
+
+ブランチを削除。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "branch": "feature-old",
+  "force": false
+}
+```
+
+### POST /api/git/checkout
+
+ブランチを切り替え。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "branch": "feature-a"
+}
+```
+
+### POST /api/git/fetch
+
+リモートからフェッチ。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "remote": "origin"
+}
+```
+
+### POST /api/git/pull
+
+リモートからプル。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo"
+}
+```
+
+### POST /api/git/merge
+
+ブランチをマージ。
+
+**リクエスト**:
+
+```json
+{
+  "repo_path": "/home/user/myrepo",
+  "branch": "feature-a"
+}
+```
+
+---
+
+## GitHub連携
+
+`gh` CLIのインストールと認証が必要です。
+
+### GET /api/github/prs
+
+オープンなPull Requestを一覧表示。
+
+**クエリ**: `?repo=/path/to/repo`
+
+**レスポンス**: `HashMap<branch_name, PrInfo>` — ブランチ名をキーとしたPR情報。
+
+### GET /api/github/checks
+
+ブランチのCIチェック状態を一覧表示。
+
+**クエリ**: `?repo=/path/to/repo&branch=feature-a`
+
+**レスポンス**: ロールアップステータスと個別チェックを含む`CiSummary`。
+
+### GET /api/github/issues
+
+リポジトリのIssueを一覧表示。
+
+**クエリ**: `?repo=/path/to/repo`
+
+**レスポンス**: タイトル、ラベル、状態、番号を含む`IssueInfo[]`。
+
+---
+
+## ファイル操作
+
+### GET /api/files/read
+
+ファイルを読み取り（最大1MB）。
+
+**クエリ**: `?path=/path/to/file`
+
+**レスポンス**:
+
+```json
+{
+  "path": "/path/to/file",
+  "content": "ファイル内容...",
+  "editable": true
+}
+```
+
+`editable`フラグはサポートされるファイルタイプ（`.md`, `.json`, `.toml`, `.txt`, `.yaml`, `.yml`）で`true`。
+
+### POST /api/files/write
+
+ファイル内容を書き込み（サポートされるファイルタイプのみ、既存ファイルのみ）。
+
+**リクエスト**:
+
+```json
+{
+  "path": "/path/to/file.md",
+  "content": "新しい内容"
+}
+```
+
+### GET /api/files/md-tree
+
+ディレクトリ内のmarkdown/設定ファイルのファイルツリーを取得。
+
+**クエリ**: `?root=/path/to/project`
+
+**レスポンス**:
+
+```json
+[
+  {
+    "name": "CLAUDE.md",
+    "path": "/path/to/project/CLAUDE.md",
+    "is_dir": false,
+    "openable": true,
+    "children": null
+  },
+  {
+    "name": "doc",
+    "path": "/path/to/project/doc",
+    "is_dir": true,
+    "openable": false,
+    "children": [...]
+  }
+]
+```
+
+---
+
+## プロジェクト
+
+### GET /api/projects
+
+登録済みプロジェクトディレクトリを一覧表示。
+
+**レスポンス**: `string[]`（絶対パス）
+
+### POST /api/projects
+
+プロジェクトディレクトリを追加。
+
+**リクエスト**:
+
+```json
+{
+  "path": "/home/user/myproject"
+}
+```
+
+### POST /api/projects/remove
+
+登録済みプロジェクトを削除。
+
+**リクエスト**:
+
+```json
+{
+  "path": "/home/user/myproject"
+}
+```
+
+### GET /api/directories
+
+ディレクトリ内容を一覧表示。
+
+**クエリ**: `?path=/home/user`（オプション、デフォルトはホームディレクトリ）
+
+**レスポンス**:
+
+```json
+[
+  {
+    "name": "myproject",
+    "path": "/home/user/myproject",
+    "is_git": true
+  }
+]
+```
+
+---
+
+## スポーン
+
+### POST /api/spawn
+
+PTYセッションでエージェントをスポーン。
+
+**リクエスト**:
+
+```json
+{
+  "command": "claude",
+  "args": [],
+  "cwd": "/home/user/project",
+  "rows": 24,
+  "cols": 80,
+  "force_pty": false
+}
+```
+
+許可されるコマンド: `claude`, `codex`, `gemini`, `bash`, `sh`, `zsh`
+
+**レスポンス**:
+
+```json
+{
+  "session_id": "a1b2c3d4-...",
+  "pid": 12345,
+  "command": "claude"
+}
+```
+
+### POST /api/spawn/worktree
+
+新しいワークツリーでエージェントをスポーン。
+
+**リクエスト**:
+
+```json
+{
+  "name": "feature-xyz",
+  "cwd": "/home/user/myrepo",
+  "base_branch": "main",
+  "rows": 24,
+  "cols": 80
+}
+```
+
+---
+
+## 設定
+
+### GET /api/settings/spawn
+
+スポーン設定を取得。
+
+**レスポンス**:
+
+```json
+{
+  "use_tmux_window": false,
+  "tmux_available": true,
+  "tmux_window_name": "tmai-agents"
+}
+```
+
+### PUT /api/settings/spawn
+
+スポーン設定を更新。
+
+**リクエスト**:
+
+```json
+{
+  "use_tmux_window": true,
+  "tmux_window_name": "my-agents"
+}
+```
+
+### GET /api/settings/auto-approve
+
+Auto-approve設定を取得。
+
+**レスポンス**:
+
+```json
+{
+  "mode": "hybrid",
+  "running": true
+}
+```
+
+### PUT /api/settings/auto-approve
+
+Auto-approveモードを変更。
+
+**リクエスト**:
+
+```json
+{
+  "mode": "rules"
+}
+```
+
+モード: `off`, `rules`, `ai`, `hybrid`
+
+### GET /api/settings/usage
+
+使用量トラッキング設定を取得。
+
+**レスポンス**:
+
+```json
+{
+  "enabled": true,
+  "auto_refresh_min": 5
+}
+```
+
+### PUT /api/settings/usage
+
+使用量トラッキング設定を更新。
+
+**リクエスト**:
+
+```json
+{
+  "enabled": true,
+  "auto_refresh_min": 10
+}
+```
+
+---
+
+## セキュリティ
+
+### POST /api/security/scan
+
+セキュリティスキャンを実行。
+
+**レスポンス**: リスク、スキャン済みファイル、タイムスタンプを含む`ScanResult`。
+
+### GET /api/security/last
+
+最後のスキャン結果（キャッシュ）を取得。
+
+**レスポンス**: `ScanResult` またはスキャン未実行の場合`null`。
+
+---
+
+## 使用量
+
+### GET /api/usage
+
+現在の使用量メーターデータを取得。
+
+**レスポンス**: メーター値、パーセンテージ、リセット情報を含む`UsageSnapshot`。
+
+### POST /api/usage/fetch
+
+プロバイダーからの使用量データ取得をトリガー。
+
+**レスポンス**: `202 Accepted`
+
+---
+
+## SSEイベント
 
 ### GET /api/events
 
 リアルタイム更新のためのServer-Sent Eventsストリーム。
 
-**リクエスト：**
+**認証**: クエリパラメータ（`?token=<token>`）、EventSourceはヘッダーを設定できないため。
 
-```
-GET /api/events?token=abc123
-```
+**Keep-alive**: 15秒間隔。
 
-**レスポンス：**
+**イベントタイプ**:
 
-```
-event: agents
-data: {"agents":[...]}
+| イベント | ペイロード | 説明 |
+|---------|---------|------|
+| `agents` | `AgentSnapshot[]` | エージェントのステータス変化（重複排除済み） |
+| `teams` | `TeamInfoResponse[]` | チーム構造の更新 |
+| `teammate_idle` | `{team_name, member_name}` | チームメンバーがアイドルになった |
+| `task_completed` | `{team_name, task_id, task_subject}` | タスク完了 |
+| `context_compacting` | `{target, compaction_count}` | エージェントのコンテキスト圧縮 |
+| `usage` | `UsageSnapshot` | 使用量メーターの更新 |
+| `worktree_created` | `{target, worktree}` | ワークツリー作成 |
+| `worktree_removed` | `{target, worktree}` | ワークツリー削除 |
+| `review_launched` | `{source_target, review_target}` | コードレビュー開始 |
+| `review_completed` | `{source_target, summary}` | コードレビュー完了 |
 
-event: teams
-data: {"teams":[...]}
-```
+---
 
-| イベント | 説明 |
-|---------|------|
-| `agents` | エージェントの状態が変化した時に送信 |
-| `teams` | チーム/タスクのデータが変化した時に送信 |
+## WebSocketターミナル
 
-### GET /api/teams
+### ANY /api/agents/{id}/terminal
 
-検出されたAgent Teamsをタスクサマリー付きで一覧表示。
+インタラクティブターミナルI/O用WebSocket接続。
 
-**リクエスト：**
+**認証**: クエリパラメータ（`?token=<token>`）。
 
-```
-GET /api/teams?token=abc123
-```
+**プロトコル**:
 
-**レスポンス：**
+| 方向 | フレームタイプ | 内容 |
+|------|-------------|------|
+| サーバー → クライアント | Binary | 生PTY出力（ANSIエスケープ） |
+| クライアント → サーバー | Binary | 生キーボード入力バイト |
+| クライアント → サーバー | Text (JSON) | コントロールメッセージ |
 
-```json
-{
-  "teams": [
-    {
-      "name": "my-project",
-      "members": [
-        {
-          "name": "team-lead",
-          "agent_type": "general-purpose"
-        },
-        {
-          "name": "researcher",
-          "agent_type": "Explore"
-        }
-      ],
-      "task_summary": {
-        "total": 5,
-        "completed": 2,
-        "in_progress": 1,
-        "pending": 2
-      }
-    }
-  ]
-}
-```
-
-### GET /api/teams/:name/tasks
-
-特定チームのタスク一覧を取得。
-
-**リクエスト：**
-
-```
-GET /api/teams/my-project/tasks?token=abc123
-```
-
-**レスポンス：**
+**コントロールメッセージ**:
 
 ```json
 {
-  "tasks": [
-    {
-      "id": "1",
-      "subject": "Implement auth module",
-      "status": "completed",
-      "owner": "researcher"
-    },
-    {
-      "id": "2",
-      "subject": "Write tests",
-      "status": "in_progress",
-      "owner": "team-lead"
-    }
-  ]
+  "type": "resize",
+  "cols": 120,
+  "rows": 40
 }
 ```
 
-## エラーレスポンス
+**機能**:
+- 接続時のスクロールバックバッファリプレイ
+- 切断時の自動クリーンアップ
 
-### 401 Unauthorized
-
-無効または欠落したトークン。
-
-```json
-{
-  "error": "Invalid token"
-}
-```
-
-### 404 Not Found
-
-エージェントが見つからない。
-
-```json
-{
-  "error": "Agent not found"
-}
-```
-
-### 500 Internal Server Error
-
-サーバーエラー（ログを確認）。
-
-```json
-{
-  "error": "Internal server error"
-}
-```
-
-## ステータス値
-
-| ステータス | 説明 |
-|----------|------|
-| `processing` | エージェントが作業中 |
-| `idle` | エージェントが入力待ち |
-| `awaiting_approval` | エージェントがユーザー承認待ち |
-
-## 承認タイプ
-
-| タイプ | 説明 |
-|------|------|
-| `file_edit` | ファイル編集の承認 |
-| `shell_command` | シェルコマンドの実行 |
-| `mcp_tool` | MCPツールの使用 |
-| `user_question` | AskUserQuestion |
-| `yes_no` | シンプルなYes/No確認 |
-| `other` | その他の承認タイプ |
-
-## 検出ソース
-
-| ソース | 説明 |
-|--------|------|
-| `hook` | Claude Code HTTP Hooks（最高精度） |
-| `pty` | PTYラッピング（高精度） |
-| `capture` | tmux capture-pane（従来方式） |
+---
 
 ## Hookエンドポイント
 
+Claude Code hookイベント用の内部エンドポイント。`tmai init`で設定されます。
+
 ### POST /hooks/event
 
-Claude Codeのhookイベントを受信する内部エンドポイント。`tmai init` で自動的に設定され、Web APIとは別の認証トークンを使用します。
+Claude Code hookイベントを受信。
 
-**認証**: `Authorization: Bearer <hooks_token>`（Web APIトークンではない）
+**認証**: `Authorization: Bearer <hooks_token>`（Web APIトークンとは別）
 
-このエンドポイントは手動で使用するものではなく、Claude Codeのhookシステムから自動的に呼び出されます。
+**リクエスト**: Claude Codeからの`HookEventPayload`
 
-## 例：curl
+**レスポンス**（イベントにより異なる）:
+
+- **PreToolUse**: Auto-approve判定を返却
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "approved",
+    "permissionDecisionReason": "tmai auto-approve: rules:allow_read"
+  }
+}
+```
+
+- **TeammateIdle / TaskCompleted**: 継続シグナルを返却
+
+```json
+{
+  "continue": true,
+  "stopReason": null
+}
+```
+
+- **その他のイベント**: `{}`
+
+### POST /hooks/review-complete
+
+レビュー完了通知を受信。
+
+**認証**: `Authorization: Bearer <hooks_token>`
+
+**リクエスト**:
+
+```json
+{
+  "source_target": "main:0.1",
+  "summary": "レビューサマリー..."
+}
+```
+
+---
+
+## 例
 
 ```bash
 TOKEN="your-token-here"
@@ -363,26 +862,37 @@ BASE="http://localhost:9876"
 curl "$BASE/api/agents?token=$TOKEN"
 
 # 承認
-curl -X POST "$BASE/api/agents/0/approve?token=$TOKEN"
-
-# 選択肢2を選択
-curl -X POST "$BASE/api/agents/0/select?token=$TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"option": 2}'
+curl -X POST "$BASE/api/agents/main:0.1/approve" \
+  -H "Authorization: Bearer $TOKEN"
 
 # テキスト送信
-curl -X POST "$BASE/api/agents/0/input?token=$TOKEN" \
+curl -X POST "$BASE/api/agents/main:0.1/input" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text": "hello"}'
 
+# ブランチ一覧
+curl "$BASE/api/git/branches?repo=/path/to/repo&token=$TOKEN"
+
+# ワークツリー作成
+curl -X POST "$BASE/api/worktrees" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repo_path":"/path/to/repo","branch_name":"feature-xyz","base_branch":"main"}'
+
+# SSEストリーム
+curl "$BASE/api/events?token=$TOKEN"
+
+# エージェントスポーン
+curl -X POST "$BASE/api/spawn" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"claude","cwd":"/path/to/project"}'
+
+# セキュリティスキャン
+curl -X POST "$BASE/api/security/scan" \
+  -H "Authorization: Bearer $TOKEN"
+
 # チーム一覧
 curl "$BASE/api/teams?token=$TOKEN"
-
-# チームタスク取得
-curl "$BASE/api/teams/my-project/tasks?token=$TOKEN"
 ```
-
-## 次のステップ
-
-- [Web Remote Control](../features/web-remote.md) - 機能概要
-- [設定リファレンス](./config.md) - 設定オプション

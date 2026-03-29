@@ -510,6 +510,17 @@ impl SessionList {
             ),
         ]);
 
+        // Send capability indicator (show icon next to detection label)
+        let send_color = if agent.send_capability.can_send() {
+            Color::DarkGray
+        } else {
+            Color::Red
+        };
+        line1_spans.push(Span::styled(
+            format!("{}", agent.send_capability.icon()),
+            Style::default().fg(send_color),
+        ));
+
         // 2) Team badge
         if let Some(ref team_info) = agent.team_info {
             line1_spans.push(Span::styled(

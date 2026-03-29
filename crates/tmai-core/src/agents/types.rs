@@ -10,7 +10,7 @@ use crate::teams::TaskStatus;
 ///
 /// Displayed as: ○=low, ◐=medium, ●=high
 ///
-/// Note: ○ (Low) shares the same glyph as `DetectionSource::CapturePane` icon,
+/// Note: ● (High) shares the same glyph as `DetectionSource::CapturePane` icon,
 /// but they appear in different UI positions (effort is next to mode, detection
 /// source is in the status column) so there is no visual ambiguity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +58,20 @@ impl fmt::Display for AgentMode {
     }
 }
 
+/// Which communication channels are currently available for this agent.
+/// Each channel is independently tracked (not mutually exclusive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ConnectionChannels {
+    /// tmux pane exists (capture-pane and send-keys available)
+    pub has_tmux: bool,
+    /// IPC socket connected (PTY wrapper via Unix domain socket)
+    pub has_ipc: bool,
+    /// HTTP hook events being received (Claude Code Hooks)
+    pub has_hook: bool,
+    /// Codex CLI WebSocket connected
+    pub has_websocket: bool,
+}
+
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DetectionSource {
@@ -77,9 +91,9 @@ impl DetectionSource {
     pub fn icon(&self) -> char {
         match self {
             DetectionSource::HttpHook => '◈',
-            DetectionSource::IpcSocket => '◉',
+            DetectionSource::IpcSocket => '⊙',
             DetectionSource::WebSocket => '◆',
-            DetectionSource::CapturePane => '○',
+            DetectionSource::CapturePane => '●',
         }
     }
 
@@ -91,6 +105,47 @@ impl DetectionSource {
             DetectionSource::WebSocket => "WS",
             DetectionSource::CapturePane => "capture",
         }
+    }
+}
+
+/// Best available method for sending keystrokes to this agent
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SendCapability {
+    /// IPC connection available (PTY master held by tmai wrap)
+    Ipc,
+    /// tmux send-keys available (agent runs in a tmux pane)
+    Tmux,
+    /// PTY inject available (TIOCSTI via /proc/{pid}/fd/0, kernel support required)
+    PtyInject,
+    /// No send path available (detection only)
+    #[default]
+    None,
+}
+
+impl SendCapability {
+    /// Get icon for this send capability
+    pub fn icon(&self) -> char {
+        match self {
+            SendCapability::Ipc => '⇋',
+            SendCapability::Tmux => '⇉',
+            SendCapability::PtyInject => '⇝',
+            SendCapability::None => '⊘',
+        }
+    }
+
+    /// Get short label for this send capability
+    pub fn label(&self) -> &'static str {
+        match self {
+            SendCapability::Ipc => "IPC",
+            SendCapability::Tmux => "tmux",
+            SendCapability::PtyInject => "PTY",
+            SendCapability::None => "none",
+        }
+    }
+
+    /// Whether this agent can receive keystrokes
+    pub fn can_send(&self) -> bool {
+        !matches!(self, SendCapability::None)
     }
 }
 
@@ -521,12 +576,26 @@ pub struct MonitoredAgent {
     pub git_common_dir: Option<String>,
     /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
     pub worktree_name: Option<String>,
+    /// Base branch the worktree was forked from (set at spawn time)
+    pub worktree_base_branch: Option<String>,
     /// Number of active subagents (from hook SubagentStart/Stop tracking)
     pub active_subagents: u32,
     /// Number of context compactions in this session (from hook PreCompact tracking)
     pub compaction_count: u32,
     /// PTY session ID if this agent was spawned via the PTY spawn API
     pub pty_session_id: Option<String>,
+    /// Best available method for sending keystrokes to this agent
+    pub send_capability: SendCapability,
+    /// Per-agent auto-approve override: None = follow global setting, Some(bool) = override
+    pub auto_approve_override: Option<bool>,
+    /// Which communication channels are currently available
+    pub connection_channels: ConnectionChannels,
+    /// Model ID extracted from transcript (e.g., "claude-opus-4-6")
+    pub model_id: Option<String>,
+    /// Tool name from hook event (for structured auto-approve in slow path)
+    pub hook_tool_name: Option<String>,
+    /// Tool input from hook event (for structured auto-approve in slow path)
+    pub hook_tool_input: Option<serde_json::Value>,
 }
 
 impl MonitoredAgent {
@@ -572,9 +641,16 @@ impl MonitoredAgent {
             auto_approve_phase: None,
             git_common_dir: None,
             worktree_name: None,
+            worktree_base_branch: None,
             active_subagents: 0,
             compaction_count: 0,
             pty_session_id: None,
+            send_capability: SendCapability::default(),
+            auto_approve_override: None,
+            connection_channels: ConnectionChannels::default(),
+            model_id: None,
+            hook_tool_name: None,
+            hook_tool_input: None,
         }
     }
 
@@ -607,8 +683,28 @@ impl MonitoredAgent {
     }
 
     /// Get the display name for the agent
+    ///
+    /// For non-tmux agents (hook or PTY-spawned), derives a readable name
+    /// from the working directory (project name) instead of "hook:0.N" or "pty:0.0".
+    /// Uses worktree name or git branch as qualifier when available.
     pub fn display_name(&self) -> String {
-        format!("{}:{}.{}", self.session, self.window_index, self.pane_index)
+        if self.session == "hook" || self.session == "pty" {
+            let project = std::path::Path::new(&self.cwd)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| self.session.clone());
+
+            // Prefer worktree name, then git branch as qualifier
+            if let Some(wt) = &self.worktree_name {
+                format!("{} [{}]", project, wt)
+            } else if let Some(branch) = &self.git_branch {
+                format!("{} [{}]", project, branch)
+            } else {
+                project
+            }
+        } else {
+            format!("{}:{}.{}", self.session, self.window_index, self.pane_index)
+        }
     }
 }
 
@@ -856,5 +952,122 @@ mod tests {
             Some(AgentType::CodexCli),
             "node with 'codex cli' title should be detected as Codex"
         );
+    }
+
+    #[test]
+    fn test_display_name_tmux_agent() {
+        let agent = MonitoredAgent::new(
+            "main:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "main".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "main:0.1");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_project_name() {
+        let agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "tmai");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_with_branch() {
+        let mut agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        agent.git_branch = Some("feat/hooks".to_string());
+        assert_eq!(agent.display_name(), "tmai [feat/hooks]");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_with_worktree() {
+        let mut agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/home/user/works/tmai".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        agent.worktree_name = Some("feat-auth".to_string());
+        agent.git_branch = Some("feat/auth".to_string());
+        // worktree_name takes priority over git_branch
+        assert_eq!(agent.display_name(), "tmai [feat-auth]");
+    }
+
+    #[test]
+    fn test_display_name_hook_agent_unknown_cwd() {
+        let agent = MonitoredAgent::new(
+            "hook:0.1".to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/unknown".to_string(),
+            1234,
+            "hook".to_string(),
+            "claude".to_string(),
+            0,
+            1,
+        );
+        assert_eq!(agent.display_name(), "unknown");
+    }
+
+    #[test]
+    fn test_display_name_pty_agent_project_name() {
+        let mut agent = MonitoredAgent::new(
+            "some-uuid".to_string(),
+            AgentType::ClaudeCode,
+            "bash".to_string(),
+            "/home/user/works/tmai".to_string(),
+            5678,
+            "pty".to_string(),
+            "bash".to_string(),
+            0,
+            0,
+        );
+        agent.git_branch = Some("dev/tmai-app".to_string());
+        assert_eq!(agent.display_name(), "tmai [dev/tmai-app]");
+    }
+
+    #[test]
+    fn test_display_name_pty_agent_no_branch() {
+        let agent = MonitoredAgent::new(
+            "some-uuid".to_string(),
+            AgentType::Custom("bash".to_string()),
+            "bash".to_string(),
+            "/home/user/works/myproject".to_string(),
+            5678,
+            "pty".to_string(),
+            "bash".to_string(),
+            0,
+            0,
+        );
+        assert_eq!(agent.display_name(), "myproject");
     }
 }

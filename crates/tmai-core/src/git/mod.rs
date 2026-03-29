@@ -278,6 +278,34 @@ pub async fn fetch_diff_stat(dir: &str, base_branch: &str) -> Option<DiffSummary
     parse_shortstat(&text)
 }
 
+/// Fetch diff statistics between two explicit branches (not using HEAD)
+pub async fn fetch_branch_diff_stat(
+    dir: &str,
+    branch: &str,
+    base_branch: &str,
+) -> Option<DiffSummary> {
+    if !is_safe_git_ref(base_branch) || !is_safe_git_ref(branch) {
+        return None;
+    }
+    let diff_spec = format!("{}...{}", base_branch, branch);
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", dir, "diff", "--shortstat", &diff_spec])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_shortstat(&text)
+}
+
 /// Parse `git diff --shortstat` output into DiffSummary
 ///
 /// Example input: " 3 files changed, 45 insertions(+), 12 deletions(-)\n"
@@ -346,7 +374,440 @@ pub async fn fetch_full_diff(dir: &str, base_branch: &str) -> Option<String> {
     }
 }
 
+/// Remote tracking info for a branch
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteTrackingInfo {
+    /// Remote tracking branch name (e.g., "origin/main")
+    pub remote_branch: String,
+    /// Commits ahead of remote (need to push)
+    pub ahead: usize,
+    /// Commits behind remote (need to pull)
+    pub behind: usize,
+}
+
+/// Result of listing branches for a repository
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BranchListResult {
+    /// Detected default branch (main, master, etc.)
+    pub default_branch: String,
+    /// Currently checked-out branch (HEAD)
+    pub current_branch: Option<String>,
+    /// All local branch names
+    pub branches: Vec<String>,
+    /// Parent branch map: branch_name → closest ancestor branch
+    #[serde(default)]
+    pub parents: HashMap<String, String>,
+    /// Ahead/behind counts vs default branch: branch_name → (ahead, behind)
+    #[serde(default)]
+    pub ahead_behind: HashMap<String, (usize, usize)>,
+    /// Remote tracking info per branch
+    #[serde(default)]
+    pub remote_tracking: HashMap<String, RemoteTrackingInfo>,
+    /// Last fetch timestamp (Unix seconds), None if never fetched
+    pub last_fetch: Option<u64>,
+}
+
+/// List branches for a repository and detect the default branch
+pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
+    // List local branches
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "branch", "--format=%(refname:short)"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let branches: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Detect default branch: try symbolic-ref, then fallback to main/master
+    let default_branch = detect_default_branch(repo_dir).await.unwrap_or_else(|| {
+        if branches.contains(&"main".to_string()) {
+            "main".to_string()
+        } else if branches.contains(&"master".to_string()) {
+            "master".to_string()
+        } else {
+            branches
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "main".to_string())
+        }
+    });
+
+    // Get current HEAD branch
+    let current_branch = fetch_branch(repo_dir).await;
+
+    // Compute parent branch map
+    let parents = compute_branch_parents(repo_dir, &branches, &default_branch).await;
+
+    // Compute ahead/behind vs default branch for each branch
+    let mut ab_map = HashMap::new();
+    for branch in &branches {
+        if branch == &default_branch {
+            continue;
+        }
+        if let Some((a, b)) = ahead_behind(repo_dir, branch, &default_branch).await {
+            ab_map.insert(branch.clone(), (a, b));
+        }
+    }
+
+    // Compute remote tracking info
+    let remote_tracking = fetch_remote_tracking(repo_dir).await;
+
+    // Get last fetch timestamp
+    let last_fetch = fetch_head_time(repo_dir);
+
+    Some(BranchListResult {
+        default_branch,
+        current_branch,
+        branches,
+        parents,
+        ahead_behind: ab_map,
+        remote_tracking,
+        last_fetch,
+    })
+}
+
+/// Fetch remote tracking info for all local branches
+///
+/// Uses `git for-each-ref` to get upstream tracking and ahead/behind counts.
+async fn fetch_remote_tracking(repo_dir: &str) -> HashMap<String, RemoteTrackingInfo> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "for-each-ref",
+                "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)",
+                "refs/heads/",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let mut result = HashMap::new();
+
+    let Some(output) = output else {
+        return result;
+    };
+    if !output.status.success() {
+        return result;
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let branch = parts[0].trim();
+        let upstream = parts[1].trim();
+        let track = parts.get(2).map(|s| s.trim()).unwrap_or("");
+
+        if upstream.is_empty() {
+            continue;
+        }
+
+        // Parse track: e.g., "[ahead 3]", "[behind 2]", "[ahead 3, behind 2]"
+        let (ahead, behind) = parse_track(track);
+
+        result.insert(
+            branch.to_string(),
+            RemoteTrackingInfo {
+                remote_branch: upstream.to_string(),
+                ahead,
+                behind,
+            },
+        );
+    }
+
+    result
+}
+
+/// Parse git upstream:track format
+///
+/// Examples: "[ahead 3]", "[behind 2]", "[ahead 3, behind 2]", "[gone]", ""
+fn parse_track(track: &str) -> (usize, usize) {
+    let mut ahead = 0usize;
+    let mut behind = 0usize;
+
+    // Strip brackets
+    let inner = track
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+
+    for part in inner.split(',') {
+        let part = part.trim();
+        if let Some(n) = part.strip_prefix("ahead ") {
+            ahead = n.trim().parse().unwrap_or(0);
+        } else if let Some(n) = part.strip_prefix("behind ") {
+            behind = n.trim().parse().unwrap_or(0);
+        }
+    }
+
+    (ahead, behind)
+}
+
+/// Get FETCH_HEAD modification time as Unix timestamp
+fn fetch_head_time(repo_dir: &str) -> Option<u64> {
+    let fetch_head = std::path::Path::new(repo_dir).join(".git/FETCH_HEAD");
+    let meta = std::fs::metadata(fetch_head).ok()?;
+    let modified = meta.modified().ok()?;
+    modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+/// Compute parent branch for each non-default branch
+///
+/// Strategy: first check reflog for "Created from <branch>" (exact match),
+/// then fall back to closest ancestor via `git merge-base --is-ancestor`.
+async fn compute_branch_parents(
+    repo_dir: &str,
+    branches: &[String],
+    default_branch: &str,
+) -> HashMap<String, String> {
+    let branch_set: std::collections::HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
+    let mut parents = HashMap::new();
+
+    for branch in branches {
+        if branch == default_branch {
+            continue;
+        }
+
+        // 1. Try reflog: "branch: Created from <name>"
+        if let Some(parent) =
+            reflog_created_from(repo_dir, branch, &branch_set, default_branch).await
+        {
+            parents.insert(branch.clone(), parent);
+            continue;
+        }
+
+        // 2. Fallback: closest ancestor by commit count
+        let mut best_parent = default_branch.to_string();
+        let mut best_count = u32::MAX;
+
+        for candidate in branches {
+            if candidate == branch {
+                continue;
+            }
+
+            let is_ancestor = tokio::time::timeout(
+                GIT_TIMEOUT,
+                Command::new("git")
+                    .args([
+                        "-C",
+                        repo_dir,
+                        "merge-base",
+                        "--is-ancestor",
+                        candidate,
+                        branch,
+                    ])
+                    .output(),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+            if !is_ancestor {
+                continue;
+            }
+
+            // Check if candidate is a genuine parent (not a child branch).
+            // If merge-base(candidate, branch) == candidate HEAD, then candidate
+            // is entirely contained in branch's history — it's a child, not a parent.
+            let merge_base = git_output(repo_dir, &["merge-base", candidate, branch]).await;
+            let candidate_head = git_output(repo_dir, &["rev-parse", candidate]).await;
+            if let (Some(mb), Some(ch)) = (&merge_base, &candidate_head) {
+                if mb == ch {
+                    // candidate HEAD is the merge-base → candidate is behind branch
+                    continue;
+                }
+            }
+
+            // Count how far branch has diverged from candidate
+            let count = git_output(
+                repo_dir,
+                &["rev-list", "--count", &format!("{}..{}", candidate, branch)],
+            )
+            .await
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(u32::MAX);
+
+            if count < best_count {
+                best_count = count;
+                best_parent = candidate.clone();
+            }
+        }
+
+        parents.insert(branch.clone(), best_parent);
+    }
+
+    parents
+}
+
+/// Check reflog for the branch creation source
+///
+/// Parses the last reflog entry for "Created from <branch_name>".
+/// When source is "HEAD", resolves by finding which known branch was
+/// at the same commit using `git branch --points-at`.
+/// Run a git command and return trimmed stdout, or None on failure/timeout
+async fn git_output(repo_dir: &str, args: &[&str]) -> Option<String> {
+    let mut cmd_args = vec!["-C", repo_dir];
+    cmd_args.extend_from_slice(args);
+    tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&cmd_args).output())
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
+async fn reflog_created_from(
+    repo_dir: &str,
+    branch: &str,
+    known_branches: &std::collections::HashSet<&str>,
+    default_branch: &str,
+) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "reflog", "show", branch, "--format=%H %gs"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let last_line = text.lines().last()?;
+
+    // Format: "<sha> branch: Created from <source>"
+    let (sha, action) = last_line.split_once(' ')?;
+    let raw_source = action.strip_prefix("branch: Created from ")?.trim();
+    let source = raw_source.strip_prefix("refs/heads/").unwrap_or(raw_source);
+
+    if source == "HEAD" {
+        // Resolve HEAD: find which known branch was at the same commit
+        resolve_branch_at_commit(repo_dir, sha, branch, known_branches, default_branch).await
+    } else if known_branches.contains(source) {
+        Some(source.to_string())
+    } else {
+        None
+    }
+}
+
+/// Find which known branch was at a given commit
+///
+/// Uses `git branch --points-at <sha>` and picks the best match:
+/// default_branch preferred, otherwise first known branch found.
+async fn resolve_branch_at_commit(
+    repo_dir: &str,
+    sha: &str,
+    exclude_branch: &str,
+    known_branches: &std::collections::HashSet<&str>,
+    default_branch: &str,
+) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "branch",
+                "--points-at",
+                sha,
+                "--format=%(refname:short)",
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let candidates: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && *l != exclude_branch && known_branches.contains(l))
+        .collect();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Prefer default branch among candidates
+    if candidates.contains(&default_branch) {
+        Some(default_branch.to_string())
+    } else {
+        Some(candidates[0].to_string())
+    }
+}
+
+/// Detect the default remote branch via symbolic-ref
+async fn detect_default_branch(repo_dir: &str) -> Option<String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(3),
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "--short",
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let refname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // "origin/main" -> "main"
+    refname
+        .strip_prefix("origin/")
+        .map(|s| s.to_string())
+        .or(Some(refname))
+        .filter(|s| !s.is_empty())
+}
+
 /// Validate a worktree name (alphanumeric, hyphens, and underscores only, max 64 chars)
+///
+/// Slashes are rejected: use flat names (`feature-auth`) for the directory,
+/// and let the branch name use a prefix (`worktree-feature-auth`).
 pub fn is_valid_worktree_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
@@ -366,6 +827,145 @@ pub fn extract_claude_worktree_name(cwd: &str) -> Option<String> {
     // Take up to the next '/' or end of string
     let name = after.split('/').next().filter(|s| !s.is_empty())?;
     Some(name.to_string())
+}
+
+/// A single commit entry from git log
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CommitEntry {
+    pub sha: String,
+    pub subject: String,
+    pub body: String,
+}
+
+/// Get commit log between two branches (base..branch)
+///
+/// Returns list of CommitEntry with sha, subject, and full body.
+pub async fn log_commits(
+    repo_dir: &str,
+    base: &str,
+    branch: &str,
+    max_count: usize,
+) -> Vec<CommitEntry> {
+    if !is_safe_git_ref(base) || !is_safe_git_ref(branch) {
+        return Vec::new();
+    }
+
+    // Use record separator (ASCII 0x1E) to split commits
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "log",
+                "--format=%h\t%s\t%b%x1e",
+                &format!("--max-count={}", max_count),
+                &format!("{}..{}", base, branch),
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .split('\x1e')
+            .filter_map(|entry| {
+                let entry = entry.trim();
+                if entry.is_empty() {
+                    return None;
+                }
+                let mut parts = entry.splitn(3, '\t');
+                let sha = parts.next()?.trim().to_string();
+                let subject = parts.next()?.trim().to_string();
+                let body = parts.next().unwrap_or("").trim().to_string();
+                Some(CommitEntry { sha, subject, body })
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A single commit in the full graph (all branches)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GraphCommit {
+    pub sha: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub subject: String,
+    pub authored_date: i64,
+}
+
+/// Full graph data for lane-based visualization
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GraphData {
+    pub commits: Vec<GraphCommit>,
+}
+
+/// Get full commit graph across all branches for lane-based visualization
+///
+/// Uses `git log --all --topo-order` to get commits from all branches
+/// with parent SHAs, ref decorations, and timestamps.
+pub async fn log_graph(repo_dir: &str, max_commits: usize) -> Option<GraphData> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "log",
+                "--all",
+                "--topo-order",
+                &format!("--max-count={}", max_commits),
+                "--format=%H\t%P\t%D\t%s\t%at",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let commits: Vec<GraphCommit> = stdout
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.splitn(5, '\t');
+            let sha = parts.next()?.to_string();
+            let parents: Vec<String> = parts
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+            let refs: Vec<String> = parts
+                .next()
+                .unwrap_or("")
+                .split(", ")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let subject = parts.next().unwrap_or("").to_string();
+            let authored_date = parts.next().unwrap_or("0").parse::<i64>().unwrap_or(0);
+            Some(GraphCommit {
+                sha,
+                parents,
+                refs,
+                subject,
+                authored_date,
+            })
+        })
+        .collect();
+
+    Some(GraphData { commits })
 }
 
 /// Strip `/.git` or `/.git/` suffix from a path to get the repository root
@@ -401,6 +1001,230 @@ pub fn repo_name_from_common_dir(common_dir: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(trimmed)
         .to_string()
+}
+
+/// Delete a local branch
+///
+/// Uses `git branch -d` (safe delete, requires branch to be merged).
+/// With `force=true`, uses `git branch -D` (force delete).
+/// Returns Ok(()) on success, Err(message) on failure.
+pub async fn delete_branch(repo_dir: &str, branch: &str, force: bool) -> Result<(), String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let flag = if force { "-D" } else { "-d" };
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "branch", flag, branch])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git command timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.trim().to_string());
+    }
+
+    // Best-effort: delete the remote tracking branch
+    delete_remote_branch(repo_dir, branch).await;
+
+    Ok(())
+}
+
+/// Delete a remote tracking branch (best-effort, never fails the caller).
+///
+/// Runs `git push origin --delete <branch>`. Silently ignores errors
+/// (e.g., no remote, branch not pushed, network issues).
+async fn delete_remote_branch(repo_dir: &str, branch: &str) {
+    let _ = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "push", "origin", "--delete", branch])
+            .output(),
+    )
+    .await;
+}
+
+/// Checkout (switch to) a local branch
+///
+/// Uses `git checkout <branch>`. Fails if there are uncommitted changes
+/// that conflict with the target branch.
+pub async fn checkout_branch(repo_dir: &str, branch: &str) -> Result<(), String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "checkout", branch])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git command timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Create a new local branch (without checking it out)
+///
+/// Uses `git branch <name> [base]`.
+pub async fn create_branch(repo_dir: &str, name: &str, base: Option<&str>) -> Result<(), String> {
+    if !is_safe_git_ref(name) {
+        return Err("Invalid branch name".to_string());
+    }
+    if let Some(b) = base {
+        if !is_safe_git_ref(b) {
+            return Err("Invalid base branch name".to_string());
+        }
+    }
+
+    let mut args = vec!["-C", repo_dir, "branch", name];
+    if let Some(b) = base {
+        args.push(b);
+    }
+
+    let output = tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&args).output())
+        .await
+        .map_err(|_| "Git command timed out".to_string())?
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Fetch from a remote (default: origin)
+pub async fn fetch_remote(repo_dir: &str, remote: Option<&str>) -> Result<String, String> {
+    let remote = remote.unwrap_or("origin");
+    if !is_safe_git_ref(remote) {
+        return Err("Invalid remote name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(30), // fetch can be slow
+        Command::new("git")
+            .args(["-C", repo_dir, "fetch", remote, "--prune"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git fetch timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        // git fetch outputs to stderr even on success
+        Ok(format!("{}{}", stdout.trim(), stderr.trim()))
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Pull from upstream (fetch + merge)
+pub async fn pull(repo_dir: &str) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new("git")
+            .args(["-C", repo_dir, "pull", "--ff-only"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git pull timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(format!("{}\n{}", stdout.trim(), stderr.trim())
+            .trim()
+            .to_string())
+    }
+}
+
+/// Merge a branch into the current branch
+pub async fn merge_branch(repo_dir: &str, branch: &str) -> Result<String, String> {
+    if !is_safe_git_ref(branch) {
+        return Err("Invalid branch name".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(15),
+        Command::new("git")
+            .args(["-C", repo_dir, "merge", branch, "--no-edit"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Git merge timed out".to_string())?
+    .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(format!("{}\n{}", stdout.trim(), stderr.trim())
+            .trim()
+            .to_string())
+    }
+}
+
+/// Get ahead/behind counts relative to a base branch
+///
+/// Returns (ahead, behind) commit counts.
+pub async fn ahead_behind(repo_dir: &str, branch: &str, base: &str) -> Option<(usize, usize)> {
+    if !is_safe_git_ref(branch) || !is_safe_git_ref(base) {
+        return None;
+    }
+
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("{}...{}", base, branch),
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = text.trim().split('\t').collect();
+    if parts.len() == 2 {
+        let behind = parts[0].parse().ok()?;
+        let ahead = parts[1].parse().ok()?;
+        Some((ahead, behind))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -587,7 +1411,7 @@ branch refs/heads/main
         assert!(!is_valid_worktree_name("a|b"));
         assert!(!is_valid_worktree_name("a&b"));
 
-        // Invalid: path traversal
+        // Invalid: path traversal and slashes
         assert!(!is_valid_worktree_name("../../../etc"));
         assert!(!is_valid_worktree_name("foo/bar"));
 
@@ -623,5 +1447,26 @@ branch refs/heads/main
         assert!(!is_safe_git_ref(""));
         assert!(!is_safe_git_ref("-flag"));
         assert!(!is_safe_git_ref("--exec=evil"));
+    }
+
+    #[tokio::test]
+    async fn test_log_graph_returns_data_for_this_repo() {
+        // Use this repo itself as test subject
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let result = log_graph(repo, 10).await;
+        // Should succeed (we're in a git repo)
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert!(!data.commits.is_empty());
+        // First commit should have a SHA
+        assert!(!data.commits[0].sha.is_empty());
+        // authored_date should be non-zero (valid timestamp)
+        assert!(data.commits[0].authored_date > 0);
+    }
+
+    #[tokio::test]
+    async fn test_log_graph_invalid_dir_returns_none() {
+        let result = log_graph("/nonexistent/path", 10).await;
+        assert!(result.is_none());
     }
 }

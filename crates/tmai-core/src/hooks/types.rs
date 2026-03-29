@@ -220,6 +220,10 @@ pub struct HookState {
     pub activity_log: Vec<ToolActivity>,
     /// Process ID of the Claude Code instance (for PTY injection)
     pub pid: Option<u32>,
+    /// Model ID extracted from transcript (cached after first read)
+    pub model_id: Option<String>,
+    /// Token usage from WS-connected agents (input_tokens, output_tokens)
+    pub token_usage: Option<(u64, u64)>,
 }
 
 impl HookState {
@@ -238,6 +242,8 @@ impl HookState {
             transcript_path: None,
             activity_log: Vec::new(),
             pid: None,
+            model_id: None,
+            token_usage: None,
         }
     }
 
@@ -254,7 +260,7 @@ impl HookState {
 }
 
 /// Get current time in milliseconds (reuses ipc::protocol pattern)
-fn current_time_millis() -> u64 {
+pub fn current_time_millis() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

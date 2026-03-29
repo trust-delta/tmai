@@ -54,6 +54,39 @@ impl RuleEngine {
         }
     }
 
+    /// Parse screen context to extract operation and target (public for service use)
+    pub fn parse_screen_context(&self, screen_context: &str) -> (Option<String>, Option<String>) {
+        let parsed = Self::parse_context(screen_context);
+        (parsed.operation, parsed.target)
+    }
+
+    /// Evaluate allow rules from pre-parsed screen context (public for service use)
+    pub fn judge_from_parsed(
+        &self,
+        screen_context: &str,
+        operation: Option<&str>,
+        target: Option<&str>,
+    ) -> JudgmentResult {
+        let start = std::time::Instant::now();
+        if let Some(rule) = self.check_allow(screen_context, operation, target) {
+            JudgmentResult {
+                decision: JudgmentDecision::Approve,
+                reasoning: format!("Allowed by rule: {}", rule),
+                model: format!("rules:{}", rule.split(':').next().unwrap_or("allow")),
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                usage: None,
+            }
+        } else {
+            JudgmentResult {
+                decision: JudgmentDecision::Uncertain,
+                reasoning: "No matching allow rule".to_string(),
+                model: "rules:abstain".to_string(),
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                usage: None,
+            }
+        }
+    }
+
     /// Parse the screen context to extract operation and target
     fn parse_context(screen_context: &str) -> ParsedContext {
         // Claude Code approval prompts follow patterns like:
@@ -460,6 +493,8 @@ mod tests {
             screen_context: screen_context.to_string(),
             cwd: "/tmp/project".to_string(),
             agent_type: "claude_code".to_string(),
+            hook_tool_name: None,
+            hook_tool_input: None,
         }
     }
 

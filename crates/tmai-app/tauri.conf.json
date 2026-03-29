@@ -1,0 +1,37 @@
+{
+  "productName": "tmai",
+  "version": "0.20.0",
+  "identifier": "com.tmai.app",
+  "build": {
+    "beforeDevCommand": "pnpm --cwd web dev",
+    "beforeBuildCommand": "pnpm --cwd web build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "tmai — AI Agent Cockpit",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true,
+        "decorations": true,
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "appimage"
+    ]
+  }
+}

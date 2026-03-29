@@ -137,35 +137,54 @@ async fn connect_and_run(
     // Reset backoff on successful connection
     // (handled by the caller resetting backoff isn't needed since we loop)
 
-    // Message processing loop
-    while let Some(msg_result) = read.next().await {
-        let msg = match msg_result {
-            Ok(msg) => msg,
-            Err(e) => {
-                error!(error = %e, "WebSocket read error");
-                return Err(e.into());
-            }
-        };
+    // Message processing loop with periodic keep-alive touch
+    // to maintain hook state freshness while connected
+    let mut keepalive = tokio::time::interval(Duration::from_secs(10));
+    keepalive.tick().await; // skip first immediate tick
 
-        match msg {
-            Message::Text(text) => {
-                handle_text_message(
-                    &text,
-                    config,
-                    hook_registry,
-                    event_tx,
-                    state,
-                    resolved_pane_id,
-                );
+    loop {
+        tokio::select! {
+            msg_result = read.next() => {
+                let msg = match msg_result {
+                    Some(Ok(msg)) => msg,
+                    Some(Err(e)) => {
+                        error!(error = %e, "WebSocket read error");
+                        return Err(e.into());
+                    }
+                    None => break,
+                };
+
+                match msg {
+                    Message::Text(text) => {
+                        handle_text_message(
+                            &text,
+                            config,
+                            hook_registry,
+                            event_tx,
+                            state,
+                            resolved_pane_id,
+                        );
+                    }
+                    Message::Ping(data) => {
+                        let _ = write.send(Message::Pong(data)).await;
+                    }
+                    Message::Close(_) => {
+                        info!(url = %config.url, "Received close frame");
+                        break;
+                    }
+                    _ => {}
+                }
             }
-            Message::Ping(data) => {
-                let _ = write.send(Message::Pong(data)).await;
+            _ = keepalive.tick() => {
+                // Touch hook state to keep it fresh while WS is connected
+                let pane_id = resolved_pane_id.lock();
+                if let Some(ref pid) = *pane_id {
+                    let mut reg = hook_registry.write();
+                    if let Some(hs) = reg.get_mut(pid) {
+                        hs.touch();
+                    }
+                }
             }
-            Message::Close(_) => {
-                info!(url = %config.url, "Received close frame");
-                break;
-            }
-            _ => {}
         }
     }
 
@@ -181,6 +200,8 @@ fn handle_text_message(
     state: &SharedState,
     resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
 ) {
+    tracing::trace!(text, "Codex WS raw message");
+
     let msg = match CodexWsMessage::parse(text) {
         Ok(msg) => msg,
         Err(e) => {

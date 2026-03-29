@@ -1,5 +1,7 @@
 //! PTY session — spawns a command in a pseudo-terminal and provides
 //! broadcast-based output streaming and input injection.
+//!
+//! Holds the PTY master FD directly. Child is killed on drop.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -68,9 +70,9 @@ impl ScrollbackBuffer {
 pub struct PtySession {
     /// Unique session identifier
     pub id: String,
-    /// Writer end of the PTY master (input injection)
+    /// PTY master writer
     writer: parking_lot::Mutex<Box<dyn Write + Send>>,
-    /// PTY master handle (for resize)
+    /// PTY master (for resize)
     master: parking_lot::Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     /// Broadcast sender for raw PTY output
     output_tx: broadcast::Sender<Bytes>,
@@ -91,6 +93,7 @@ impl PtySession {
     ///
     /// Starts a background thread that reads PTY output and broadcasts it.
     /// Optional `env` pairs are set as environment variables in the child.
+    /// Child is killed on drop.
     pub fn spawn(
         command: &str,
         args: &[&str],
@@ -113,6 +116,8 @@ impl PtySession {
         let mut cmd = CommandBuilder::new(command);
         cmd.args(args);
         cmd.cwd(cwd);
+        // Remove JSC_SIGNAL_FOR_GC — Bun misinterprets it as a CLI option
+        cmd.env_remove("JSC_SIGNAL_FOR_GC");
         for (key, val) in env {
             cmd.env(key, val);
         }
@@ -161,7 +166,7 @@ impl PtySession {
         let running_out = running.clone();
         let session_for_output = session.clone();
         thread::spawn(move || {
-            Self::output_loop(master_reader, output_tx, running_out, session_for_output);
+            Self::reader_loop(master_reader, output_tx, running_out, session_for_output);
         });
 
         // Background thread: wait for child exit
@@ -173,8 +178,8 @@ impl PtySession {
         Ok(session)
     }
 
-    /// Read loop: PTY master → broadcast channel + scrollback buffer
-    fn output_loop(
+    /// Generic read loop: reader → broadcast channel + scrollback buffer
+    fn reader_loop(
         mut reader: Box<dyn Read + Send>,
         tx: broadcast::Sender<Bytes>,
         running: Arc<AtomicBool>,
@@ -186,14 +191,12 @@ impl PtySession {
                 Ok(0) => break, // EOF
                 Ok(n) => {
                     let data = Bytes::copy_from_slice(&buf[..n]);
-                    // Append to scrollback buffer
                     session.scrollback.lock().push(data.clone());
-                    // Broadcast to live subscribers (ignore errors if none)
                     let _ = tx.send(data);
                 }
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
-                        tracing::debug!("PTY output read error: {}", e);
+                        tracing::debug!("PTY read error: {}", e);
                         break;
                     }
                 }
@@ -229,33 +232,28 @@ impl PtySession {
     }
 
     /// Get the accumulated scrollback buffer for replay on reconnect.
-    ///
-    /// Returns a single `Bytes` containing all buffered output (up to
-    /// SCROLLBACK_MAX_BYTES). The caller should send this before
-    /// forwarding live broadcast messages.
     pub fn scrollback_snapshot(&self) -> Bytes {
         self.scrollback.lock().snapshot()
     }
 
     /// Write input bytes to the PTY
     pub fn write_input(&self, data: &[u8]) -> Result<()> {
-        let mut writer = self.writer.lock();
-        writer.write_all(data).context("Failed to write to PTY")?;
-        writer.flush().context("Failed to flush PTY writer")?;
+        let mut w = self.writer.lock();
+        w.write_all(data).context("Failed to write to PTY")?;
+        w.flush().context("Failed to flush PTY writer")?;
         Ok(())
     }
 
     /// Resize the PTY terminal
     pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
-        let master = self.master.lock();
-        master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .context("Failed to resize PTY")?;
+        let m = self.master.lock();
+        m.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .context("Failed to resize PTY")?;
         Ok(())
     }
 
@@ -334,16 +332,22 @@ mod tests {
         let session = PtySession::spawn("echo", &["hello world"], "/tmp", 24, 80, &[])
             .expect("Failed to spawn echo");
 
-        // Wait for output to be buffered
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        let snapshot = session.scrollback_snapshot();
-        let text = String::from_utf8_lossy(&snapshot);
-        assert!(
-            text.contains("hello world"),
-            "Expected 'hello world' in scrollback: {}",
-            text
-        );
+        // Poll for output with timeout (more reliable than fixed sleep)
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let snapshot = session.scrollback_snapshot();
+            let text = String::from_utf8_lossy(&snapshot);
+            if text.contains("hello world") {
+                break;
+            }
+            if tokio::time::Instant::now() > deadline {
+                panic!(
+                    "Expected 'hello world' in scrollback within 3s, got: {}",
+                    text
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     #[test]

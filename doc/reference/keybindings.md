@@ -1,4 +1,6 @@
-# Keybindings
+# Keybindings (TUI Mode)
+
+These keybindings apply to the TUI mode (`tmai --tmux`). In the WebUI (default mode), use standard browser interactions: click, scroll, and keyboard input in the terminal panel.
 
 ## Basic Operations
 

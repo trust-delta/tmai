@@ -2,16 +2,29 @@
 
 What tmai excels at and features unique to tmai.
 
-## 1. Single-Pane Operation
+## 1. Unified WebUI Dashboard
 
-tmai lets you approve **without attaching** to agent panes.
+tmai provides a full-featured WebUI for managing AI agents — no terminal switching needed.
+
+- **Branch graph** — GitKraken-style lane-based commit visualization with PR/CI status
+- **GitHub integration** — PR review status, CI checks, and issue tracking
+- **Worktree management** — Create, delete, and manage worktrees visually
+- **Interactive terminal** — Full xterm.js terminal with WebSocket I/O
+- **Security scanning** — Detect configuration vulnerabilities
+- **Usage tracking** — Monitor subscription token consumption
+
+Launch with a single command: `tmai` — Chrome App Mode opens automatically.
+
+## 2. Single-Pane Operation
+
+Approve **without attaching** to agent panes — in both WebUI and TUI modes.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Typical tools                                               │
 │                                                             │
 │  Monitor → Attach → Type y → Detach → Monitor               │
-│           (3 steps)                                         │
+│           (3 steps per agent)                               │
 │                                                             │
 │  Problem: Can't see other agents while operating            │
 └─────────────────────────────────────────────────────────────┘
@@ -19,171 +32,84 @@ tmai lets you approve **without attaching** to agent panes.
 ┌─────────────────────────────────────────────────────────────┐
 │ tmai                                                        │
 │                                                             │
-│  Press y while monitoring                                   │
+│  Click approve (WebUI) or press y (TUI)                     │
 │  (1 step)                                                   │
 │                                                             │
 │  Benefit: Respond immediately while seeing all agents       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Impact**:
-- Approve 3 agents: Other tools 9 operations → tmai 6 operations
-- No context switching
-- Full visibility even during emergencies
-
-## 2. Full AskUserQuestion Support
+## 3. Full AskUserQuestion Support
 
 Complete support for Claude Code's `AskUserQuestion` tool.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Claude Code question                                        │
-│                                                             │
-│  Which approach do you prefer?                              │
-│                                                             │
-│  1. Use async/await                                        │
-│  2. Use callbacks                                          │
-│  3. Use promises                                           │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+- Direct selection with number keys (1-9) or click (WebUI)
+- Multi-select with Space key toggle (TUI) or checkboxes (WebUI)
+- Free-text input via input bar
 
-tmai operation: Just press "1"
-```
+**Other tools**: Most only support y/n approval, no option selection.
 
-- Direct selection with number keys (1-9)
-- All keys support full-width input (IME on)
-- Multi-select with Space key toggle
-
-**Other tools**: Most only support y/n approval, no option selection
-
-## 3. Low Adoption Barrier
+## 4. Low Adoption Barrier
 
 tmai can be adopted **without changing your existing workflow**.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Adopting other tools                                        │
-│                                                             │
-│  Previous method:                                           │
-│    tmux → claude                                            │
-│                                                             │
-│  After tool adoption:                                       │
-│    Tool-specific command to create session                  │
-│    → Workflow change required                               │
-└─────────────────────────────────────────────────────────────┘
+- **WebUI (default)**: No tmux required. Just `tmai init && tmai`
+- **TUI mode**: Add tmai alongside existing tmux setup
+- **Hooks**: One-time `tmai init` — then use `claude` normally
+- No changes to how you start or use AI agents
 
-┌─────────────────────────────────────────────────────────────┐
-│ Adopting tmai                                               │
-│                                                             │
-│  Previous method:                                           │
-│    tmux → claude                                            │
-│                                                             │
-│  After tmai:                                                │
-│    tmux → claude (unchanged)                                │
-│    + tmai in another pane                                   │
-│                                                             │
-│  → No workflow change                                       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Impact**:
-- Start with "just monitoring"
-- Gradual team adoption possible
-- Keep existing environment and scripts
-
-## 4. Flexible Worktree Support
-
-tmai "monitors" rather than "manages", so it doesn't force any workflow.
-
-- Use worktrees or not - your choice
-- Add/remove dynamically while running
-- Proceed your own way
-
-Details: [Parallel Development with Worktrees](../workflows/worktree-parallel.md)
+Start with "just monitoring" and adopt features gradually.
 
 ## 5. 3-Tier High-Precision Detection
 
 tmai uses a 3-tier detection strategy for maximum accuracy:
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ Priority 1: HTTP Hooks (recommended)                        │
-│                                                             │
-│  tmai init → Claude Code sends events directly              │
-│                                                             │
-│  Event-driven, highest precision, zero latency, no wrapper  │
-└─────────────────────────────────────────────────────────────┘
+| Priority | Method | Precision | Requirements |
+|----------|--------|-----------|-------------|
+| 1 | **HTTP Hooks** | Event-driven (highest) | `tmai init` + web server |
+| 2 | **IPC Socket** | Real-time (high) | `tmai wrap` |
+| 3 | **capture-pane** | Polling (moderate) | tmux only |
 
-┌─────────────────────────────────────────────────────────────┐
-│ Priority 2: IPC (PTY Wrapping)                              │
-│                                                             │
-│  tmai wrap claude → Direct I/O → reports via IPC socket     │
-│                                                             │
-│  High precision + exfil detection + AskUserQuestion parsing │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ Priority 3: capture-pane (fallback)                         │
-│                                                             │
-│  tmux capture-pane → Parse screen text → Estimate state     │
-│                                                             │
-│  No setup required, works with any agent                    │
-└─────────────────────────────────────────────────────────────┘
-```
+Automatic fallback ensures detection works regardless of setup.
 
 Details: [Claude Code Hooks](../features/hooks.md) | [PTY Wrapping](../features/pty-wrapping.md)
 
-## 6. Exfil Detection (Security)
+## 6. AI-Delegated Git Operations
 
-Detect and log external data transmission by AI agents.
+Delegate complex Git operations to AI agents from the branch graph:
 
-Detection targets:
-- HTTP requests (curl, wget, etc.)
-- File transfers (scp, rsync, etc.)
-- Cloud CLIs (aws, gcloud, etc.)
-- API keys, credential patterns
+- **AI Merge** — Spawn an agent with merge context and conflict resolution instructions
+- **AI Create PR** — Agent creates a PR with correct base branch
 
-```
-INFO  External transmission detected command="curl" pid=12345
-WARN  Sensitive data in transmission command="curl" sensitive_type="API Key"
-```
+The AI handles the operation autonomously while you monitor from the dashboard.
 
-Details: [Exfil Detection](../features/exfil-detection.md)
+## 7. Security Monitoring
 
-## 7. Web Remote Control
+Two layers of security:
 
-Operate via smartphone by scanning a QR code.
+- **Security Panel** — Static analysis of Claude Code settings and MCP configs for vulnerabilities
+- **Exfil Detection** — Runtime monitoring for external data transmission (PTY wrap mode)
 
-- Agent list display
-- y/n approval
+Details: [Security Panel](../features/security-panel.md) | [Exfil Detection](../features/exfil-detection.md)
+
+## 8. Mobile Remote Control
+
+Operate via smartphone by scanning a QR code (TUI mode) or opening the URL on any device.
+
+- Agent list with real-time updates
+- Approval buttons
 - AskUserQuestion selection
 - Text input
 
-Approve from anywhere, even while away.
+Details: [Mobile Remote Control](../features/web-remote.md)
 
-Details: [Web Remote Control](../features/web-remote.md)
-
-## 8. Agent Teams Visualization
+## 9. Agent Teams Visualization
 
 Monitor Claude Code Agent Teams structure and task progress.
 
 - View all teams and their members
 - Track task status (pending, in progress, completed)
-- See which team member is working on what
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Team: my-project                                            │
-│                                                             │
-│  team-lead     [Processing]  Task: Implement auth module    │
-│  researcher    [Idle]        Task: Write tests (completed)  │
-│  tester        [Approval]    Task: Run integration tests    │
-│                                                             │
-│  Progress: ████████░░ 3/5 tasks                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Keys: `t` for task overlay, `T` for team overview.
+- Real-time updates via SSE
 
 Details: [Agent Teams](../features/agent-teams.md)
 
@@ -191,11 +117,12 @@ Details: [Agent Teams](../features/agent-teams.md)
 
 | Strength | Description |
 |----------|-------------|
+| WebUI dashboard | Full-featured web interface with branch graph, GitHub, worktrees |
 | Single-pane operation | Operate immediately without attaching |
-| AskUserQuestion | Direct option selection with number keys |
-| Low adoption barrier | No changes to existing workflow |
-| Flexibility | Use worktrees freely |
+| AskUserQuestion | Direct option selection |
+| Low adoption barrier | No workflow changes required |
 | 3-tier detection | Hooks → IPC → capture-pane fallback |
-| Security | Exfil detection |
+| AI Git operations | Delegate merge and PR creation |
+| Security | Config scanning + runtime exfil detection |
 | Remote operation | Approve from smartphone |
 | Agent Teams | Visualize team structure and task progress |

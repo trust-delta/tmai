@@ -34,8 +34,10 @@ impl JsonRpcRequest {
 /// JSON-RPC 2.0 response message (received from Codex app-server)
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcResponse {
+    /// Some Codex versions omit this field
     #[allow(dead_code)]
-    pub jsonrpc: String,
+    #[serde(default)]
+    pub jsonrpc: Option<String>,
     #[allow(dead_code)]
     pub id: Option<u64>,
     pub result: Option<serde_json::Value>,
@@ -52,8 +54,10 @@ pub struct JsonRpcError {
 /// JSON-RPC 2.0 notification (no id field)
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcNotification {
+    /// Some Codex versions omit this field
     #[allow(dead_code)]
-    pub jsonrpc: String,
+    #[serde(default)]
+    pub jsonrpc: Option<String>,
     pub method: String,
     pub params: Option<serde_json::Value>,
 }
@@ -90,11 +94,17 @@ pub enum CodexEvent {
     /// A new turn started (user prompt submitted)
     TurnStarted,
 
-    /// An item started processing
+    /// An item started processing.
+    /// Item types: "commandExecution", "fileChange", "agentMessage",
+    /// "userMessage", "plan", "reasoning"
     ItemStarted {
-        /// Item type (e.g., "message", "function_call", "function_call_output")
+        /// Item type (e.g., "commandExecution", "fileChange", "agentMessage")
         item_type: String,
-        /// For function_call items, the function/command name
+        /// For commandExecution items: the command string
+        command: Option<String>,
+        /// For fileChange items: the file path
+        file_path: Option<String>,
+        /// Generic name fallback
         name: Option<String>,
     },
 
@@ -114,6 +124,8 @@ pub enum CodexEvent {
     ItemCompleted {
         /// Item type
         item_type: String,
+        /// Output/result text (for activity log)
+        output: Option<String>,
     },
 
     /// A turn completed
@@ -134,6 +146,12 @@ pub enum CodexEvent {
     ThreadStarted {
         /// Working directory
         cwd: Option<String>,
+    },
+
+    /// Streaming delta (content being generated)
+    StreamingDelta {
+        /// The full method name (e.g., "item/agentMessage/delta")
+        method: String,
     },
 
     /// Unknown/unrecognized event
@@ -157,18 +175,38 @@ pub fn parse_codex_event(notification: &JsonRpcNotification) -> CodexEvent {
         "turn/started" => CodexEvent::TurnStarted,
 
         "item/started" => {
-            let item_type = params
-                .and_then(|p| p.get("item"))
-                .and_then(|item| item.get("type"))
+            let item = params.and_then(|p| p.get("item"));
+            let item_type = item
+                .and_then(|i| i.get("type"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("unknown")
                 .to_string();
-            let name = params
-                .and_then(|p| p.get("item"))
-                .and_then(|item| item.get("name"))
+            // Extract fields based on item type
+            let command = if item_type == "commandExecution" {
+                item.and_then(|i| i.get("command"))
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
+            let file_path = if item_type == "fileChange" {
+                item.and_then(|i| i.get("filePath"))
+                    .or_else(|| item.and_then(|i| i.get("file_path")))
+                    .and_then(|f| f.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
+            let name = item
+                .and_then(|i| i.get("name"))
                 .and_then(|n| n.as_str())
                 .map(|s| s.to_string());
-            CodexEvent::ItemStarted { item_type, name }
+            CodexEvent::ItemStarted {
+                item_type,
+                command,
+                file_path,
+                name,
+            }
         }
 
         "item/commandExecution/requestApproval" => {
@@ -197,13 +235,18 @@ pub fn parse_codex_event(notification: &JsonRpcNotification) -> CodexEvent {
         }
 
         "item/completed" => {
-            let item_type = params
-                .and_then(|p| p.get("item"))
-                .and_then(|item| item.get("type"))
+            let item = params.and_then(|p| p.get("item"));
+            let item_type = item
+                .and_then(|i| i.get("type"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("unknown")
                 .to_string();
-            CodexEvent::ItemCompleted { item_type }
+            let output = item
+                .and_then(|i| i.get("output"))
+                .or_else(|| item.and_then(|i| i.get("result")))
+                .and_then(|o| o.as_str())
+                .map(|s| s.to_string());
+            CodexEvent::ItemCompleted { item_type, output }
         }
 
         "turn/completed" => {
@@ -243,6 +286,16 @@ pub fn parse_codex_event(notification: &JsonRpcNotification) -> CodexEvent {
                 .map(|s| s.to_string());
             CodexEvent::ThreadStarted { cwd }
         }
+
+        // Streaming delta events — content being generated
+        "item/agentMessage/delta"
+        | "item/plan/delta"
+        | "item/reasoning/summaryTextDelta"
+        | "item/reasoning/textDelta"
+        | "item/commandExecution/outputDelta"
+        | "item/fileChange/outputDelta" => CodexEvent::StreamingDelta {
+            method: method.to_string(),
+        },
 
         _ => CodexEvent::Unknown {
             method: method.to_string(),
@@ -294,7 +347,7 @@ mod tests {
     #[test]
     fn test_parse_turn_started() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/started".to_string(),
             params: Some(serde_json::json!({})),
         };
@@ -302,14 +355,15 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_item_started_function_call() {
+    fn test_parse_item_started_command_execution() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/started".to_string(),
             params: Some(serde_json::json!({
                 "item": {
-                    "type": "function_call",
-                    "name": "shell"
+                    "type": "commandExecution",
+                    "command": "git status",
+                    "cwd": "/home/user/project"
                 }
             })),
         };
@@ -317,8 +371,57 @@ mod tests {
         assert_eq!(
             event,
             CodexEvent::ItemStarted {
-                item_type: "function_call".to_string(),
-                name: Some("shell".to_string()),
+                item_type: "commandExecution".to_string(),
+                command: Some("git status".to_string()),
+                file_path: None,
+                name: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_item_started_file_change() {
+        let notif = JsonRpcNotification {
+            jsonrpc: Some("2.0".to_string()),
+            method: "item/started".to_string(),
+            params: Some(serde_json::json!({
+                "item": {
+                    "type": "fileChange",
+                    "filePath": "src/main.rs"
+                }
+            })),
+        };
+        let event = parse_codex_event(&notif);
+        assert_eq!(
+            event,
+            CodexEvent::ItemStarted {
+                item_type: "fileChange".to_string(),
+                command: None,
+                file_path: Some("src/main.rs".to_string()),
+                name: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_item_started_agent_message() {
+        let notif = JsonRpcNotification {
+            jsonrpc: Some("2.0".to_string()),
+            method: "item/started".to_string(),
+            params: Some(serde_json::json!({
+                "item": {
+                    "type": "agentMessage"
+                }
+            })),
+        };
+        let event = parse_codex_event(&notif);
+        assert_eq!(
+            event,
+            CodexEvent::ItemStarted {
+                item_type: "agentMessage".to_string(),
+                command: None,
+                file_path: None,
+                name: None,
             }
         );
     }
@@ -326,7 +429,7 @@ mod tests {
     #[test]
     fn test_parse_command_approval() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/commandExecution/requestApproval".to_string(),
             params: Some(serde_json::json!({
                 "command": "rm -rf /tmp/test"
@@ -344,7 +447,7 @@ mod tests {
     #[test]
     fn test_parse_file_change_approval() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/fileChange/requestApproval".to_string(),
             params: Some(serde_json::json!({
                 "file_path": "/tmp/test.rs"
@@ -362,7 +465,7 @@ mod tests {
     #[test]
     fn test_parse_turn_completed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/completed".to_string(),
             params: Some(serde_json::json!({
                 "status": "completed"
@@ -380,7 +483,7 @@ mod tests {
     #[test]
     fn test_parse_turn_completed_failed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/completed".to_string(),
             params: Some(serde_json::json!({
                 "status": "failed"
@@ -398,7 +501,7 @@ mod tests {
     #[test]
     fn test_parse_token_usage() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "thread/tokenUsage/updated".to_string(),
             params: Some(serde_json::json!({
                 "input_tokens": 1500,
@@ -418,7 +521,7 @@ mod tests {
     #[test]
     fn test_parse_thread_started() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "thread/started".to_string(),
             params: Some(serde_json::json!({
                 "cwd": "/home/user/project"
@@ -436,7 +539,7 @@ mod tests {
     #[test]
     fn test_parse_unknown_event() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "some/future/event".to_string(),
             params: None,
         };
@@ -452,11 +555,12 @@ mod tests {
     #[test]
     fn test_parse_item_completed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/completed".to_string(),
             params: Some(serde_json::json!({
                 "item": {
-                    "type": "function_call_output"
+                    "type": "commandExecution",
+                    "output": "On branch main\nnothing to commit"
                 }
             })),
         };
@@ -464,7 +568,48 @@ mod tests {
         assert_eq!(
             event,
             CodexEvent::ItemCompleted {
-                item_type: "function_call_output".to_string(),
+                item_type: "commandExecution".to_string(),
+                output: Some("On branch main\nnothing to commit".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_item_completed_no_output() {
+        let notif = JsonRpcNotification {
+            jsonrpc: Some("2.0".to_string()),
+            method: "item/completed".to_string(),
+            params: Some(serde_json::json!({
+                "item": {
+                    "type": "agentMessage"
+                }
+            })),
+        };
+        let event = parse_codex_event(&notif);
+        assert_eq!(
+            event,
+            CodexEvent::ItemCompleted {
+                item_type: "agentMessage".to_string(),
+                output: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_streaming_delta() {
+        let notif = JsonRpcNotification {
+            jsonrpc: Some("2.0".to_string()),
+            method: "item/agentMessage/delta".to_string(),
+            params: Some(serde_json::json!({
+                "itemId": "msg_001",
+                "delta": "Hello"
+            })),
+        };
+        let event = parse_codex_event(&notif);
+        assert_eq!(
+            event,
+            CodexEvent::StreamingDelta {
+                method: "item/agentMessage/delta".to_string(),
             }
         );
     }

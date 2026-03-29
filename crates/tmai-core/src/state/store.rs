@@ -451,6 +451,9 @@ pub struct AppState {
     pub create_process: Option<CreateProcessState>,
     /// Confirmation dialog state (None if not showing)
     pub confirmation_state: Option<ConfirmationState>,
+    /// Registered project directories (persisted to config.toml)
+    pub registered_projects: Vec<String>,
+
     /// Error message to display
     pub error_message: Option<String>,
     /// Last poll timestamp
@@ -483,6 +486,11 @@ pub struct AppState {
     pub worktree_diff_content: Option<String>,
     /// Whether a diff is currently being loaded
     pub worktree_diff_loading: bool,
+
+    /// Whether to spawn agents in tmux windows (runtime toggle, init from config)
+    pub spawn_in_tmux: bool,
+    /// Tmux window name for spawned agents (runtime, init from config)
+    pub spawn_tmux_window_name: String,
 }
 
 impl AppState {
@@ -507,6 +515,7 @@ impl AppState {
             target_to_pane_id: HashMap::new(),
             create_process: None,
             confirmation_state: None,
+            registered_projects: Vec::new(),
             error_message: None,
             last_poll: None,
             running: true,
@@ -519,6 +528,8 @@ impl AppState {
             worktree_create_repo_path: None,
             worktree_diff_content: None,
             worktree_diff_loading: false,
+            spawn_in_tmux: false,
+            spawn_tmux_window_name: "tmai-agents".to_string(),
         }
     }
 
@@ -637,14 +648,38 @@ impl AppState {
                 existing.is_virtual = agent.is_virtual;
                 existing.detection_source = agent.detection_source;
                 // Git info (set by poller's update_git_info / apply_cached_git_info)
-                existing.git_branch = agent.git_branch;
-                existing.git_dirty = agent.git_dirty;
-                existing.is_worktree = agent.is_worktree;
-                existing.git_common_dir = agent.git_common_dir;
-                existing.worktree_name = agent.worktree_name;
+                // Only overwrite with Some values to prevent flickering on cache miss
+                if agent.git_branch.is_some() {
+                    existing.git_branch = agent.git_branch;
+                }
+                if agent.git_dirty.is_some() {
+                    existing.git_dirty = agent.git_dirty;
+                }
+                if agent.is_worktree.is_some() {
+                    existing.is_worktree = agent.is_worktree;
+                }
+                if agent.git_common_dir.is_some() {
+                    existing.git_common_dir = agent.git_common_dir;
+                }
+                if agent.worktree_name.is_some() {
+                    existing.worktree_name = agent.worktree_name;
+                }
+                // Preserve worktree_base_branch (set at spawn time or by poller, not every poll)
+                if agent.worktree_base_branch.is_some() {
+                    existing.worktree_base_branch = agent.worktree_base_branch;
+                }
                 // Hook-tracked metrics
                 existing.active_subagents = agent.active_subagents;
                 existing.compaction_count = agent.compaction_count;
+                // Send capability (re-evaluated each poll)
+                existing.send_capability = agent.send_capability;
+                // Connection channels (re-evaluated each poll)
+                existing.connection_channels = agent.connection_channels;
+                // Model ID (from transcript, cached after first read)
+                if agent.model_id.is_some() {
+                    existing.model_id = agent.model_id;
+                }
+                // Preserve per-agent auto-approve override (set by user, not by poller)
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)
                 if !matches!(

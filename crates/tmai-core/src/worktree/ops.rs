@@ -37,10 +37,11 @@ pub async fn create_worktree(
         }
     }
 
+    let dir_name = req.dir_name.as_deref().unwrap_or(&req.branch_name);
     let worktree_dir = Path::new(&req.repo_path)
         .join(".claude")
         .join("worktrees")
-        .join(&req.branch_name);
+        .join(dir_name);
 
     // Ensure parent directory exists
     let parent = worktree_dir
@@ -114,9 +115,12 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
         }
     }
 
+    // Detect the branch name before removing the worktree
+    let worktree_path_str = worktree_dir.to_string_lossy().to_string();
+    let branch_name = detect_worktree_branch(&req.repo_path, &worktree_path_str).await;
+
     // Run git worktree remove
     let mut args = vec!["-C", &req.repo_path, "worktree", "remove"];
-    let worktree_path_str = worktree_dir.to_string_lossy().to_string();
     args.push(&worktree_path_str);
     if req.force {
         args.push("--force");
@@ -135,7 +139,59 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
         return Err(WorktreeOpsError::GitError(stderr));
     }
 
+    // Delete the associated branch (best-effort, don't fail if branch is already gone)
+    if let Some(ref branch) = branch_name {
+        let _ = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args(["-C", &req.repo_path, "branch", "-D", branch])
+                .output(),
+        )
+        .await;
+
+        // Also delete the remote tracking branch (best-effort)
+        let _ = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args(["-C", &req.repo_path, "push", "origin", "--delete", branch])
+                .output(),
+        )
+        .await;
+    }
+
     Ok(())
+}
+
+/// Detect the branch checked out in a worktree via `git worktree list --porcelain`
+async fn detect_worktree_branch(repo_path: &str, worktree_path: &str) -> Option<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_path, "worktree", "list", "--porcelain"])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    // Parse porcelain output: blocks separated by blank lines
+    // Each block: "worktree <path>\nHEAD <sha>\nbranch refs/heads/<name>\n"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut in_target = false;
+    for line in stdout.lines() {
+        if line.starts_with("worktree ") {
+            in_target = line.trim_start_matches("worktree ") == worktree_path;
+        } else if in_target && line.starts_with("branch refs/heads/") {
+            return Some(line.trim_start_matches("branch refs/heads/").to_string());
+        } else if line.is_empty() {
+            in_target = false;
+        }
+    }
+    None
 }
 
 /// Check if a worktree has no uncommitted changes
@@ -285,6 +341,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-test".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -305,6 +362,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path,
             branch_name: "feat-from-main".to_string(),
+            dir_name: None,
             base_branch: Some("HEAD".to_string()),
         };
 
@@ -317,6 +375,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: "/tmp/fake".to_string(),
             branch_name: "bad; rm -rf /".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -329,6 +388,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: "/tmp/fake".to_string(),
             branch_name: "valid-name".to_string(),
+            dir_name: None,
             base_branch: Some("--exec=evil".to_string()),
         };
 
@@ -344,6 +404,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-dup".to_string(),
+            dir_name: None,
             base_branch: None,
         };
 
@@ -363,6 +424,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-delete-me".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         create_worktree(&create_req).await.unwrap();
@@ -401,6 +463,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-dirty".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         let wt = create_worktree(&create_req).await.unwrap();
@@ -439,6 +502,7 @@ mod tests {
         let create_req = WorktreeCreateRequest {
             repo_path: repo_path.clone(),
             branch_name: "feat-force".to_string(),
+            dir_name: None,
             base_branch: None,
         };
         let wt = create_worktree(&create_req).await.unwrap();

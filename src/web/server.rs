@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
-    routing::{any, get, post},
+    routing::{any, get, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -75,18 +75,61 @@ impl WebServer {
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))
             .route("/agents/{id}/key", post(api::send_key))
+            .route("/agents/{id}/auto-approve", put(api::set_auto_approve))
+            .route("/agents/{id}/kill", post(api::kill_agent))
+            .route("/agents/{id}/passthrough", post(api::passthrough_input))
             .route("/agents/{id}/preview", get(api::get_preview))
             .route("/teams", get(api::get_teams))
             .route("/teams/{name}/tasks", get(api::get_team_tasks))
             .route("/worktrees", get(api::get_worktrees))
-            .route("/worktrees", post(api::create_worktree))
             .route("/worktrees/delete", post(api::delete_worktree))
             .route("/worktrees/launch", post(api::launch_agent_in_worktree))
             .route("/worktrees/diff", post(api::get_worktree_diff))
+            .route("/git/diff-stat", get(api::git_diff_stat))
+            .route("/git/diff", get(api::git_branch_diff))
+            .route("/git/branches/delete", post(api::delete_branch))
+            .route("/git/log", get(api::git_log))
+            .route("/git/graph", get(api::git_graph))
+            .route("/git/branches/create", post(api::create_branch))
+            .route("/git/checkout", post(api::checkout_branch))
+            .route("/git/fetch", post(api::git_fetch))
+            .route("/git/pull", post(api::git_pull))
+            .route("/github/prs", get(api::list_prs))
+            .route("/github/checks", get(api::list_checks))
+            .route("/github/issues", get(api::list_issues))
+            .route("/github/pr/comments", get(api::get_pr_comments))
+            .route("/github/pr/files", get(api::get_pr_files))
+            .route("/github/pr/merge-status", get(api::get_pr_merge_status))
+            .route("/github/ci/failure-log", get(api::get_ci_failure_log))
+            .route("/git/merge", post(api::git_merge))
+            .route("/projects", get(api::get_projects).post(api::add_project))
+            .route("/projects/remove", post(api::remove_project))
+            .route("/directories", get(api::list_directories))
+            .route("/files/read", get(api::read_file))
+            .route("/files/write", post(api::write_file))
+            .route("/files/md-tree", get(api::md_tree))
+            .route(
+                "/settings/spawn",
+                get(api::get_spawn_settings).put(api::update_spawn_settings),
+            )
+            .route(
+                "/settings/auto-approve",
+                get(api::get_auto_approve_settings).put(api::update_auto_approve_settings),
+            )
             .route("/spawn", post(api::spawn_agent))
+            .route("/spawn/worktree", post(api::spawn_worktree))
+            .route("/git/branches", get(api::list_branches))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))
             .route("/agents/{id}/terminal", any(ws::ws_terminal))
+            .route("/security/scan", post(api::security_scan))
+            .route("/security/last", get(api::last_security_scan))
+            .route("/usage", get(api::get_usage))
+            .route("/usage/fetch", post(api::trigger_usage_fetch))
+            .route(
+                "/settings/usage",
+                get(api::get_usage_settings).put(api::update_usage_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 /// Severity level for a security risk
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Severity {
     Low,
     Medium,
@@ -24,7 +24,7 @@ impl fmt::Display for Severity {
 }
 
 /// Category of a security risk
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum SecurityCategory {
     /// Permission-related risks (allowlist, denylist, global enables)
     Permissions,
@@ -90,7 +90,7 @@ impl fmt::Display for SettingsSource {
 }
 
 /// A single security risk finding
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SecurityRisk {
     /// Unique rule identifier (e.g., "PERM-001")
     pub rule_id: String,
@@ -103,13 +103,22 @@ pub struct SecurityRisk {
     /// Detailed description
     pub detail: String,
     /// Where this risk was found
+    #[serde(serialize_with = "serialize_source_as_string")]
     pub source: SettingsSource,
     /// The matched value that triggered the risk (if applicable)
     pub matched_value: Option<String>,
 }
 
+/// Serialize SettingsSource as its Display string for clean JSON output
+fn serialize_source_as_string<S: serde::Serializer>(
+    source: &SettingsSource,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&source.to_string())
+}
+
 /// Result of a security scan
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     /// All discovered risks
     pub risks: Vec<SecurityRisk>,
@@ -226,5 +235,53 @@ mod tests {
 
         assert!(result.is_clean());
         assert_eq!(result.max_severity(), None);
+    }
+
+    #[test]
+    fn test_scan_result_serialization() {
+        let result = ScanResult {
+            risks: vec![SecurityRisk {
+                rule_id: "PERM-001".to_string(),
+                severity: Severity::Critical,
+                category: SecurityCategory::Permissions,
+                summary: "Test risk".to_string(),
+                detail: "Details here".to_string(),
+                source: SettingsSource::UserGlobal,
+                matched_value: Some("enableAllProjectMcpServers: true".to_string()),
+            }],
+            scanned_at: chrono::Utc::now(),
+            scanned_projects: vec![PathBuf::from("/home/user/project")],
+            files_scanned: 5,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json["risks"].is_array());
+        assert_eq!(json["risks"][0]["rule_id"], "PERM-001");
+        assert_eq!(json["risks"][0]["severity"], "Critical");
+        assert_eq!(json["risks"][0]["category"], "Permissions");
+        // source is serialized as Display string, not tagged enum
+        assert_eq!(json["risks"][0]["source"], "~/.claude/settings.json");
+        assert!(json["scanned_at"].is_string());
+        assert_eq!(json["files_scanned"], 5);
+    }
+
+    #[test]
+    fn test_security_risk_serialization_null_matched_value() {
+        let risk = SecurityRisk {
+            rule_id: "MCP-001".to_string(),
+            severity: Severity::Medium,
+            category: SecurityCategory::McpServer,
+            summary: "No version pin".to_string(),
+            detail: "Details".to_string(),
+            source: SettingsSource::ProjectMcp(PathBuf::from("/project")),
+            matched_value: None,
+        };
+
+        let json = serde_json::to_value(&risk).unwrap();
+        assert_eq!(json["severity"], "Medium");
+        assert_eq!(json["category"], "McpServer");
+        assert!(json["matched_value"].is_null());
+        // ProjectMcp source serialized with Display
+        assert!(json["source"].as_str().unwrap().contains("mcp.json"));
     }
 }

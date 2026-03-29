@@ -14,7 +14,7 @@ use std::sync::Arc;
 use super::RuntimeAdapter;
 use crate::tmux::PaneInfo;
 
-/// RuntimeAdapter for standalone (web-only) mode without tmux.
+/// RuntimeAdapter for standalone (webui) mode without tmux.
 ///
 /// Agents are tracked via an internal registry populated by hook events.
 /// Synthetic targets use the format `standalone:0.{id}` to satisfy

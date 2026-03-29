@@ -142,6 +142,20 @@ impl TmuxClient {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
+    /// Captures the full scrollback of a pane (all history + visible area)
+    pub fn capture_pane_full(&self, target: &str) -> Result<String> {
+        validate_target(target)?;
+        let output = Command::new("tmux")
+            .args(["capture-pane", "-p", "-t", target, "-S", "-", "-e"])
+            .output()
+            .context("Failed to execute tmux capture-pane")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux capture-pane (full) failed for {}: {}", target, stderr);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
     /// Captures the content of a specific pane without ANSI codes
     pub fn capture_pane_plain(&self, target: &str) -> Result<String> {
         validate_target(target)?;

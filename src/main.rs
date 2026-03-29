@@ -87,14 +87,19 @@ async fn main() -> Result<()> {
     settings.merge_cli(&cli);
     settings.validate();
 
-    // Web-only mode: skip TUI, run web server + monitoring loop only
-    if cli.web_only {
-        setup_logging(cli.debug, false); // stderr output (no TUI to corrupt)
-        return run_web_only_mode(settings).await;
+    // Tmux TUI mode: ratatui TUI with tmux backend (opt-in via --tmux)
+    if cli.tmux {
+        setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
+        return run_tmux_mode(settings, cli).await;
     }
 
-    setup_logging(cli.debug, true); // file output (prevents TUI screen corruption)
+    // Default: WebUI mode
+    setup_logging(cli.debug, true); // file output (WebUI mode)
+    run_webui_mode(settings, cli.debug).await
+}
 
+/// Run in tmux TUI mode (ratatui TUI with tmux backend, opt-in via --tmux)
+async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Start IPC server
     let ipc_server = IpcServer::start()
         .await
@@ -139,7 +144,8 @@ async fn main() -> Result<()> {
         .with_ipc_server(ipc_server.clone())
         .with_command_sender(core_cmd_sender)
         .with_hook_registry(hook_registry)
-        .with_session_pane_map(session_pane_map);
+        .with_session_pane_map(session_pane_map)
+        .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
         if settings.web.enabled {
@@ -178,13 +184,12 @@ async fn main() -> Result<()> {
 
     // Start review service if enabled
     if settings.review.enabled {
-        // Build notification info for review completion reporting
         let review_notification = if settings.web.enabled {
             core.hook_token().map(|token| {
                 std::sync::Arc::new(tmai_core::review::types::ReviewNotification {
                     port: settings.web.port,
                     token: token.to_string(),
-                    source_target: String::new(), // filled per-request
+                    source_target: String::new(),
                 })
             })
         } else {
@@ -223,7 +228,8 @@ async fn main() -> Result<()> {
                 runtime.clone(),
                 app.shared_state(),
             )
-            .with_hook_registry(core.hook_registry().clone()),
+            .with_hook_registry(core.hook_registry().clone())
+            .with_pty_registry(core.pty_registry().clone()),
             audit_tx,
         );
         service.start();
@@ -232,11 +238,19 @@ async fn main() -> Result<()> {
     app.run().await
 }
 
-/// Run in web-only mode (no tmux, no TUI — hooks/IPC + web server only)
-async fn run_web_only_mode(settings: Settings) -> Result<()> {
+/// Run in WebUI mode (default — hooks/IPC + web server, no TUI)
+async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     use tmai_core::runtime::StandaloneAdapter;
 
-    eprintln!("tmai: starting in web-only mode (no tmux required)");
+    eprintln!("tmai: starting in WebUI mode (no tmux required)");
+
+    // Create audit event channel (if audit enabled)
+    let (audit_tx, audit_rx) = if settings.audit.enabled {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
 
     // Start IPC server
     let ipc_server = IpcServer::start()
@@ -244,24 +258,33 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
         .context("Failed to start IPC server")?;
     let ipc_server = Arc::new(ipc_server);
 
-    // Create standalone runtime (no tmux)
-    let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+    // Use TmuxAdapter if tmux is available, otherwise StandaloneAdapter
+    let runtime: Arc<dyn RuntimeAdapter> = if std::env::var("TMUX").is_ok() {
+        eprintln!("tmai: tmux detected, using TmuxAdapter for capture-pane support");
+        Arc::new(tmai_core::runtime::TmuxAdapter::new(settings.capture_lines))
+    } else {
+        Arc::new(StandaloneAdapter::new())
+    };
 
     // Create shared state
     let state = tmai_core::state::AppState::shared();
     {
         let mut s = state.write();
         s.show_activity_name = settings.ui.show_activity_name;
+        s.registered_projects = settings.projects.clone();
+        s.spawn_in_tmux = settings.spawn.use_tmux_window;
+        s.spawn_tmux_window_name = settings.spawn.tmux_window_name.clone();
     }
 
     // Create hook registry and load token
     let hook_registry = tmai_core::hooks::new_hook_registry();
 
-    // Create command sender (IPC → PTY inject → standalone error)
+    // Create command sender (PTY session → IPC → tmux → PTY inject)
     let cmd_sender = Arc::new(
         CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
             .with_hook_registry(hook_registry.clone()),
     );
+    // Note: pty_registry is attached after core is built (see below)
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
     let hook_token = tmai::init::load_hook_token();
 
@@ -271,7 +294,8 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
         .with_ipc_server(ipc_server.clone())
         .with_command_sender(cmd_sender)
         .with_hook_registry(hook_registry.clone())
-        .with_session_pane_map(session_pane_map);
+        .with_session_pane_map(session_pane_map)
+        .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
         eprintln!("tmai: hook token loaded, hook endpoint enabled");
@@ -280,11 +304,15 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
         eprintln!("tmai: no hook token found — run `tmai init` to enable hooks");
     }
 
+    if let Some(ref tx) = audit_tx {
+        core_builder = core_builder.with_audit_sender(tx.clone());
+    }
+
     let core = Arc::new(core_builder.build());
 
-    // Start web server (required for web-only mode)
+    // Start web server (required for WebUI mode)
     if !settings.web.enabled {
-        anyhow::bail!("web-only mode requires web server to be enabled ([web] enabled = true)");
+        anyhow::bail!("WebUI mode requires web server to be enabled ([web] enabled = true)");
     }
 
     let token = tmai::web::auth::generate_token();
@@ -297,10 +325,50 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     let web_server = WebServer::new(settings.clone(), core.clone(), token.clone());
     web_server.start();
 
-    eprintln!(
-        "tmai: web server running at http://localhost:{}/?token={}",
-        port, token
-    );
+    let url = format!("http://localhost:{port}/?token={token}");
+    eprintln!("tmai: web server running at {url}");
+
+    // Open in Chrome App Mode (Windows browser via WSL interop)
+    // In debug mode, enable Chrome remote debugging for DevTools MCP
+    open_in_browser(&url, debug);
+
+    // Start auto-approve service if mode is not Off
+    if settings.auto_approve.effective_mode()
+        != tmai_core::auto_approve::types::AutoApproveMode::Off
+    {
+        let service = tmai_core::auto_approve::AutoApproveService::new(
+            settings.auto_approve.clone(),
+            state.clone(),
+            CommandSender::new(Some(ipc_server.clone()), runtime.clone(), state.clone())
+                .with_hook_registry(core.hook_registry().clone())
+                .with_pty_registry(core.pty_registry().clone()),
+            audit_tx,
+        );
+        service.start();
+        eprintln!(
+            "tmai: auto-approve service started (mode: {:?})",
+            settings.auto_approve.effective_mode()
+        );
+    }
+
+    // Start Codex CLI app-server WebSocket connections if configured
+    if !settings.codex_ws.connections.is_empty() {
+        let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
+            &settings.codex_ws.connections,
+            core.hook_registry().clone(),
+            core.event_sender(),
+            state.clone(),
+        );
+        codex_ws_service.start();
+        eprintln!(
+            "tmai: codex WS service started ({} connection(s))",
+            settings.codex_ws.connections.len()
+        );
+    }
+
+    // Reconnect to any surviving Codex app-server instances from previous tmai sessions
+    tmai::web::reconnect_codex_ws(&core).await;
+
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
 
@@ -312,7 +380,7 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
         runtime,
         ipc_registry,
         hook_registry,
-        None,
+        audit_rx,
     );
     poller = poller.with_event_tx(core.event_sender().clone());
 
@@ -356,6 +424,88 @@ async fn run_web_only_mode(settings: Settings) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Chrome remote debugging port for DevTools MCP connection
+const CHROME_DEBUG_PORT: u16 = 9222;
+
+/// Open URL in browser, preferring Chrome App Mode for standalone window experience.
+///
+/// Tries chrome/chromium --app= first (standalone window, no tabs/address bar),
+/// then falls back to xdg-open. On WSL2, uses Windows browser via interop.
+///
+/// When `debug` is true, launches Chrome as a separate process with
+/// `--remote-debugging-port=9222` and a dedicated user-data-dir so that
+/// Chrome DevTools MCP can connect even when Chrome is already running.
+fn open_in_browser(url: &str, debug: bool) {
+    use std::process::Command;
+
+    /// Chrome executable paths to try
+    struct ChromeCandidate {
+        path: &'static str,
+        is_windows: bool,
+    }
+
+    let candidates = [
+        ChromeCandidate {
+            path: "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+            is_windows: true,
+        },
+        ChromeCandidate {
+            path: "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+            is_windows: true,
+        },
+        ChromeCandidate {
+            path: "google-chrome",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "google-chrome-stable",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "chromium",
+            is_windows: false,
+        },
+        ChromeCandidate {
+            path: "chromium-browser",
+            is_windows: false,
+        },
+    ];
+
+    for candidate in &candidates {
+        let mut cmd = Command::new(candidate.path);
+        cmd.arg(format!("--app={url}"));
+
+        if debug {
+            cmd.arg(format!("--remote-debugging-port={CHROME_DEBUG_PORT}"));
+            // Use a dedicated profile so Chrome starts as a new process
+            // (existing Chrome ignores --remote-debugging-port)
+            // Windows Chrome needs a Windows path; Linux Chrome uses a Linux path
+            let user_data_dir = if candidate.is_windows {
+                r"C:\Temp\tmai-chrome-debug".to_string()
+            } else {
+                "/tmp/tmai-chrome-debug".to_string()
+            };
+            cmd.arg(format!("--user-data-dir={user_data_dir}"));
+        }
+
+        if cmd.spawn().is_ok() {
+            eprintln!("tmai: opened in Chrome App Mode");
+            if debug {
+                eprintln!("tmai: Chrome DevTools Protocol on port {CHROME_DEBUG_PORT} (for MCP)");
+            }
+            return;
+        }
+    }
+
+    // Fallback: xdg-open (opens default browser with full UI)
+    if Command::new("xdg-open").arg(url).spawn().is_ok() {
+        eprintln!("tmai: opened in default browser");
+        return;
+    }
+
+    eprintln!("tmai: could not open browser automatically — open the URL manually");
 }
 
 /// Run in wrap mode (PTY proxy for AI agent)

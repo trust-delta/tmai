@@ -3,15 +3,24 @@ use std::sync::Arc;
 
 use crate::hooks::registry::HookRegistry;
 use crate::ipc::server::IpcServer;
+use crate::pty::registry::PtyRegistry;
 use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
+use crate::utils::keys::tmux_key_to_bytes;
 
-/// Unified command sender with 3-tier fallback: IPC → PTY inject → RuntimeAdapter
+/// Unified command sender with 4-tier fallback: PTY session → IPC → RuntimeAdapter (tmux) → PTY inject
+///
+/// Tier priority follows reliability:
+/// - **PTY session**: Direct write to spawned PTY session — most reliable for WebUI-spawned agents
+/// - **IPC**: `tmai wrap` provides PTY master — most reliable for wrapped agents
+/// - **tmux send-keys**: tmux native mechanism — reliable when tmux is available
+/// - **PTY inject**: TIOCSTI via `/proc/{pid}/fd/0` — last resort, requires kernel support
 pub struct CommandSender {
     ipc_server: Option<Arc<IpcServer>>,
     runtime: Arc<dyn RuntimeAdapter>,
     app_state: SharedState,
     hook_registry: Option<HookRegistry>,
+    pty_registry: Option<Arc<PtyRegistry>>,
 }
 
 impl CommandSender {
@@ -26,17 +35,57 @@ impl CommandSender {
             runtime,
             app_state,
             hook_registry: None,
+            pty_registry: None,
         }
     }
 
-    /// Attach a HookRegistry for PTY injection (Tier 2) PID resolution
+    /// Attach a HookRegistry for PTY injection PID resolution
     pub fn with_hook_registry(mut self, registry: HookRegistry) -> Self {
         self.hook_registry = Some(registry);
         self
     }
 
-    /// Send keys via IPC → PTY inject → runtime adapter
+    /// Attach a PtyRegistry for direct PTY session writes
+    pub fn with_pty_registry(mut self, registry: Arc<PtyRegistry>) -> Self {
+        self.pty_registry = Some(registry);
+        self
+    }
+
+    /// Try writing directly to a PTY session (for WebUI-spawned agents)
+    fn try_pty_session_write(&self, target: &str, data: &[u8]) -> bool {
+        if let Some(ref registry) = self.pty_registry {
+            // target may be the session_id directly
+            if let Some(session) = registry.get(target) {
+                if session.is_running() {
+                    return session.write_input(data).is_ok();
+                }
+            }
+            // Also check via pty_session_id in agent state
+            let session_id = {
+                let state = self.app_state.read();
+                state
+                    .agents
+                    .get(target)
+                    .and_then(|a| a.pty_session_id.clone())
+            };
+            if let Some(sid) = session_id {
+                if let Some(session) = registry.get(&sid) {
+                    if session.is_running() {
+                        return session.write_input(data).is_ok();
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Send keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write (convert tmux key names to bytes)
+        let key_bytes = tmux_key_to_bytes(keys);
+        if self.try_pty_session_write(target, &key_bytes) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -45,18 +94,25 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection via /proc/{pid}/fd/0
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_keys(target, keys).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection via /proc/{pid}/fd/0 (TIOCSTI)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text(pid, keys).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text(pid, keys);
             }
         }
-        // Tier 3: RuntimeAdapter (tmux send-keys / standalone error)
-        self.runtime.send_keys(target, keys)
+        anyhow::bail!("All send_keys tiers failed for target {}", target)
     }
 
-    /// Send literal keys via IPC → PTY inject → runtime adapter
+    /// Send literal keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write (literal = raw bytes, no key name conversion)
+        if self.try_pty_session_write(target, keys.as_bytes()) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -65,18 +121,27 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection (literal text, no key-name conversion)
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_keys_literal(target, keys).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection (literal text)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text_literal(pid, keys).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text_literal(pid, keys);
             }
         }
-        // Tier 3: RuntimeAdapter
-        self.runtime.send_keys_literal(target, keys)
+        anyhow::bail!("All send_keys_literal tiers failed for target {}", target)
     }
 
-    /// Send text + Enter via IPC → PTY inject → runtime adapter
+    /// Send text + Enter via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
+        // Tier 0: Direct PTY session write (text + carriage return)
+        let mut data = text.as_bytes().to_vec();
+        data.push(b'\r');
+        if self.try_pty_session_write(target, &data) {
+            return Ok(());
+        }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
@@ -85,14 +150,17 @@ impl CommandSender {
                 }
             }
         }
-        // Tier 2: PTY injection (text + Enter)
+        // Tier 2: RuntimeAdapter (tmux send-keys)
+        if self.runtime.send_text_and_enter(target, text).is_ok() {
+            return Ok(());
+        }
+        // Tier 3: PTY injection (text + Enter)
         if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 && crate::pty_inject::inject_text_and_enter(pid, text).is_ok() {
-                return Ok(());
+            if pid > 0 {
+                return crate::pty_inject::inject_text_and_enter(pid, text);
             }
         }
-        // Tier 3: RuntimeAdapter
-        self.runtime.send_text_and_enter(target, text)
+        anyhow::bail!("All send_text_and_enter tiers failed for target {}", target)
     }
 
     /// Access the runtime adapter for direct operations (focus_pane, kill_pane, etc.)
@@ -129,8 +197,14 @@ impl CommandSender {
             }
         }
 
-        // Fallback: check MonitoredAgent.pid in AppState
+        // Fallback: check MonitoredAgent.pid in AppState (direct lookup by agent ID)
         let state = self.app_state.read();
+        if let Some(agent) = state.agents.get(target) {
+            if agent.pid > 0 {
+                return Some(agent.pid);
+            }
+        }
+        // Also try matching by target field (for tmux-based agents)
         for agent in state.agents.values() {
             if agent.target == target && agent.pid > 0 {
                 return Some(agent.pid);

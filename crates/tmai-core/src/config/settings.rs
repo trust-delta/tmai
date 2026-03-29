@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Tmux Multi Agent Interface")]
+#[command(author, version, about = "Tactful Multi Agent Interface")]
 pub struct Config {
     /// Enable debug mode
     #[arg(short, long, global = true)]
@@ -31,9 +31,9 @@ pub struct Config {
     #[arg(long)]
     pub audit: bool,
 
-    /// Web-only mode: run without tmux, using hooks/IPC only (no TUI)
+    /// Tmux TUI mode: use ratatui TUI with tmux backend (default is WebUI)
     #[arg(long)]
-    pub web_only: bool,
+    pub tmux: bool,
 
     /// Subcommand
     #[command(subcommand)]
@@ -270,6 +270,18 @@ pub struct Settings {
     /// Git worktree settings
     #[serde(default)]
     pub worktree: WorktreeSettings,
+
+    /// Agent spawn settings
+    #[serde(default)]
+    pub spawn: SpawnSettings,
+
+    /// Registered project directories (absolute paths)
+    #[serde(default)]
+    pub projects: Vec<String>,
+
+    /// WebUI mode (default). False when --tmux flag is used.
+    #[serde(skip)]
+    pub webui: bool,
 }
 
 fn default_poll_interval() -> u64 {
@@ -590,6 +602,9 @@ pub struct UsageSettings {
     /// Auto-refresh interval in minutes (0 = disabled, manual `U` key only)
     #[serde(default)]
     pub auto_refresh_min: u32,
+    /// Enable usage monitoring in WebUI
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 /// Fresh Session Review settings
@@ -706,6 +721,10 @@ pub struct WorktreeSettings {
     /// Timeout for each setup command in seconds (default: 300 = 5 minutes)
     #[serde(default = "default_setup_timeout")]
     pub setup_timeout_secs: u64,
+
+    /// Branch depth at which to show a warning (default: 3 = great-grandchild of main)
+    #[serde(default = "default_branch_depth_warning")]
+    pub branch_depth_warning: u32,
 }
 
 /// Default setup timeout (5 minutes)
@@ -713,11 +732,45 @@ fn default_setup_timeout() -> u64 {
     300
 }
 
+/// Default branch depth warning threshold
+fn default_branch_depth_warning() -> u32 {
+    3
+}
+
 impl Default for WorktreeSettings {
     fn default() -> Self {
         Self {
             setup_commands: Vec::new(),
             setup_timeout_secs: default_setup_timeout(),
+            branch_depth_warning: default_branch_depth_warning(),
+        }
+    }
+}
+
+/// Agent spawn settings (how new agents are started from the Web UI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpawnSettings {
+    /// When true and tmux is available, spawn agents in a tmux window
+    /// instead of an internal PTY session. The agent appears as a normal
+    /// tmux pane detected by the poller.
+    #[serde(default)]
+    pub use_tmux_window: bool,
+
+    /// Name of the tmux window for spawned agents
+    #[serde(default = "default_spawn_window_name")]
+    pub tmux_window_name: String,
+}
+
+/// Default tmux window name for spawned agents
+fn default_spawn_window_name() -> String {
+    "tmai-agents".to_string()
+}
+
+impl Default for SpawnSettings {
+    fn default() -> Self {
+        Self {
+            use_tmux_window: false,
+            tmux_window_name: default_spawn_window_name(),
         }
     }
 }
@@ -761,6 +814,9 @@ impl Default for Settings {
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
             worktree: WorktreeSettings::default(),
+            spawn: SpawnSettings::default(),
+            projects: Vec::new(),
+            webui: true,
         }
     }
 }
@@ -812,6 +868,9 @@ impl Settings {
         if cli.audit {
             self.audit.enabled = true;
         }
+        if cli.tmux {
+            self.webui = false;
+        }
     }
 
     /// Resolve the config file path (first existing, or default location).
@@ -854,6 +913,94 @@ impl Settings {
             doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         doc[section][key] = toml_edit::value(value);
+
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!(?path, %e, "Failed to create config directory");
+                return;
+            }
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
+    /// Update a string or bool value within a TOML section, preserving formatting.
+    pub fn save_toml_value(section: &str, key: &str, value: toml_edit::Value) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+        if !doc.contains_table(section) {
+            doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        doc[section][key] = toml_edit::value(value);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
+    /// Update a value within a nested TOML subsection (e.g. `[auto_approve.rules]`).
+    pub fn save_toml_nested_value(
+        section: &str,
+        subsection: &str,
+        key: &str,
+        value: toml_edit::Value,
+    ) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+        if !doc.contains_table(section) {
+            doc[section] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        if doc[section]
+            .as_table()
+            .is_none_or(|t| !t.contains_table(subsection))
+        {
+            doc[section][subsection] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        doc[section][subsection][key] = toml_edit::value(value);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write config file");
+        }
+    }
+
+    /// Persist the projects list to config.toml
+    pub fn save_projects(projects: &[String]) {
+        let Some(path) = Self::config_path() else {
+            tracing::debug!("No config path available, skipping save");
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            tracing::debug!(?path, %e, "Could not read config, starting fresh");
+            String::new()
+        });
+        let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(?path, %e, "Failed to parse config, starting fresh");
+                toml_edit::DocumentMut::default()
+            }
+        };
+
+        let mut arr = toml_edit::Array::new();
+        for p in projects {
+            arr.push(p.as_str());
+        }
+        doc["projects"] = toml_edit::value(arr);
 
         if let Some(parent) = path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
@@ -939,5 +1086,42 @@ mod tests {
         assert_eq!(settings.poll_interval_ms, 1000);
         assert_eq!(settings.capture_lines, 200);
         assert!(!settings.ui.show_preview);
+    }
+
+    #[test]
+    fn test_auto_approve_rules_defaults() {
+        let rules = RuleSettings::default();
+        assert!(rules.allow_read);
+        assert!(rules.allow_tests);
+        assert!(rules.allow_fetch);
+        assert!(rules.allow_git_readonly);
+        assert!(rules.allow_format_lint);
+        assert!(rules.allow_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_auto_approve_rules_deserialization() {
+        let toml = r#"
+            [auto_approve]
+            mode = "rules"
+
+            [auto_approve.rules]
+            allow_read = true
+            allow_tests = false
+            allow_fetch = true
+            allow_git_readonly = false
+            allow_format_lint = true
+            allow_patterns = ["cargo build.*", "npm run build"]
+        "#;
+
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        let rules = &settings.auto_approve.rules;
+        assert!(rules.allow_read);
+        assert!(!rules.allow_tests);
+        assert!(rules.allow_fetch);
+        assert!(!rules.allow_git_readonly);
+        assert!(rules.allow_format_lint);
+        assert_eq!(rules.allow_patterns.len(), 2);
+        assert_eq!(rules.allow_patterns[0], "cargo build.*");
     }
 }

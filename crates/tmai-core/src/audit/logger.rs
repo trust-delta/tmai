@@ -55,11 +55,11 @@ impl AuditLogger {
 
         // Serialize and write
         if let Ok(json) = serde_json::to_string(event) {
-            if writeln!(writer, "{}", json).is_ok() {
-                let _ = writer.flush();
-            } else {
-                // Write failed, try to reopen on next call
+            if let Err(e) = writeln!(writer, "{}", json) {
+                tracing::warn!("Audit log write failed: {}, will retry on next event", e);
                 self.writer = None;
+            } else {
+                let _ = writer.flush();
             }
         }
 

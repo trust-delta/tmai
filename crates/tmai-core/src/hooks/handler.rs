@@ -63,6 +63,11 @@ pub fn handle_hook_event(
                 if payload.cwd.is_some() {
                     state.cwd = payload.cwd.clone();
                 }
+                // Resolve PID if not yet known
+                if state.pid.is_none() && !payload.session_id.is_empty() {
+                    state.pid =
+                        crate::session_discovery::resolve_pid_for_session(&payload.session_id);
+                }
                 state.last_context = ctx;
                 save_transcript_path(state, payload);
                 state.touch();
@@ -70,6 +75,7 @@ pub fn handle_hook_event(
                 let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
+                state.pid = crate::session_discovery::resolve_pid_for_session(&payload.session_id);
                 save_transcript_path(&mut state, payload);
                 reg.insert(pane_id.to_string(), state);
             }
@@ -420,10 +426,21 @@ pub fn resolve_pane_id(
         if !cwd.is_empty() {
             let app_state = state.read();
             // First, check for PTY-spawned agents with matching cwd — these should
-            // receive hook events directly since they are tmai-managed processes
-            for agent in app_state.agents.values() {
-                if agent.cwd == cwd && agent.pty_session_id.is_some() {
-                    return Some(agent.id.clone());
+            // receive hook events directly since they are tmai-managed processes.
+            // If multiple PTY agents share the same cwd, prefer the first one
+            // (stable: agent_order is deterministic).
+            for id in &app_state.agent_order {
+                if let Some(agent) = app_state.agents.get(id) {
+                    if agent.cwd == cwd && agent.pty_session_id.is_some() {
+                        let resolved = agent.id.clone();
+                        drop(app_state);
+                        // Persist mapping for future lookups (avoids re-matching)
+                        if !session_id.is_empty() {
+                            let mut map = session_pane_map.write();
+                            map.insert(session_id.to_string(), resolved.clone());
+                        }
+                        return Some(resolved);
+                    }
                 }
             }
             // Then fall back to tmux pane_id mapping
@@ -438,9 +455,14 @@ pub fn resolve_pane_id(
     }
 
     // Strategy 4: use session_id as synthetic pane_id (standalone mode)
-    // When no tmux is available, session_id serves as the unique identifier
+    // When no tmux is available, session_id serves as the unique identifier.
+    // Persist this mapping so subsequent events for the same session_id
+    // are resolved via Strategy 2 (deterministic).
     if !session_id.is_empty() {
-        return Some(format!("hook-{}", session_id));
+        let synthetic = format!("hook-{}", session_id);
+        let mut map = session_pane_map.write();
+        map.insert(session_id.to_string(), synthetic.clone());
+        return Some(synthetic);
     }
 
     None
@@ -485,6 +507,16 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
                     },
                     details: String::new(),
                 }
+            } else if hs.last_context.event_name == "codex_ws_command_approval" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::ShellCommand,
+                    details: tool_info,
+                }
+            } else if hs.last_context.event_name == "codex_ws_file_approval" {
+                AgentStatus::AwaitingApproval {
+                    approval_type: ApprovalType::FileEdit,
+                    details: tool_info,
+                }
             } else {
                 AgentStatus::AwaitingApproval {
                     approval_type: ApprovalType::Other("Approval".to_string()),
@@ -498,11 +530,23 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
     }
 }
 
-/// Save transcript_path from payload to HookState if present
+/// Save transcript_path from payload to HookState if present,
+/// and extract model_id from the transcript on first set.
 fn save_transcript_path(state: &mut HookState, payload: &HookEventPayload) {
     if let Some(ref path) = payload.transcript_path {
         if !path.is_empty() && state.transcript_path.is_none() {
             state.transcript_path = Some(path.clone());
+            // Extract model_id from the transcript file (first assistant message)
+            if state.model_id.is_none() {
+                state.model_id = crate::transcript::parser::extract_model_id(path);
+            }
+        }
+    }
+    // Retry model extraction if transcript exists but model wasn't found yet
+    // (assistant message may not have been written at SessionStart time)
+    if state.model_id.is_none() {
+        if let Some(ref path) = state.transcript_path {
+            state.model_id = crate::transcript::parser::extract_model_id(path);
         }
     }
 }
@@ -560,7 +604,7 @@ fn summarize_tool_input(tool_name: &str, tool_input: Option<&serde_json::Value>)
 
 /// Truncate a string to max_len characters, appending "..." if truncated.
 /// Uses char-based counting to avoid panicking on multi-byte UTF-8 boundaries.
-fn truncate_string(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate_string(s: &str, max_len: usize) -> String {
     // Take only the first line for multi-line strings
     let first_line = s.lines().next().unwrap_or(s);
     let char_count = first_line.chars().count();
@@ -576,7 +620,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 }
 
 /// Add a ToolActivity entry to HookState, maintaining MAX_ACTIVITY_LOG limit
-fn push_activity(state: &mut HookState, activity: ToolActivity) {
+pub(crate) fn push_activity(state: &mut HookState, activity: ToolActivity) {
     state.activity_log.push(activity);
     if state.activity_log.len() > MAX_ACTIVITY_LOG {
         state.activity_log.remove(0);

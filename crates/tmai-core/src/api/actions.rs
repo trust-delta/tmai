@@ -14,7 +14,7 @@ const MAX_TEXT_LENGTH: usize = 1024;
 
 /// Allowed special key names for send_key
 const ALLOWED_KEYS: &[&str] = &[
-    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BSpace",
+    "Enter", "Escape", "Space", "Up", "Down", "Left", "Right", "Tab", "BTab", "BSpace",
 ];
 
 /// Check if choices use checkbox format ([ ], [x], [X], [×], [✔])
@@ -295,10 +295,10 @@ impl TmaiCore {
             });
         }
 
-        let is_virtual = {
+        let (is_virtual, has_pty) = {
             let state = self.state().read();
             match state.agents.get(target) {
-                Some(a) => a.is_virtual,
+                Some(a) => (a.is_virtual, a.pty_session_id.is_some()),
                 None => {
                     return Err(ApiError::AgentNotFound {
                         target: target.to_string(),
@@ -313,13 +313,48 @@ impl TmaiCore {
             });
         }
 
-        let cmd = self.require_command_sender()?;
-        cmd.send_keys(target, key)?;
+        // PTY-spawned agents: write directly to PTY session
+        if has_pty {
+            if let Some(session) = self.pty_registry().get(target) {
+                let data = crate::utils::keys::tmux_key_to_bytes(key);
+                session.write_input(&data).map_err(ApiError::CommandError)?;
+            } else {
+                // PTY session gone — agent may have exited
+                return Err(ApiError::CommandError(anyhow::anyhow!(
+                    "PTY session not found for agent"
+                )));
+            }
+        } else {
+            let cmd = self.require_command_sender()?;
+            cmd.send_keys(target, key)?;
+        }
 
         self.audit_helper()
             .maybe_emit_input(target, "special_key", "api_input", None);
 
         Ok(())
+    }
+
+    /// Toggle per-agent auto-approve override.
+    ///
+    /// - `None` → follow global setting (default)
+    /// - `Some(true)` → force enabled for this agent
+    /// - `Some(false)` → force disabled for this agent
+    pub fn set_auto_approve_override(
+        &self,
+        target: &str,
+        enabled: Option<bool>,
+    ) -> Result<(), ApiError> {
+        let mut state = self.state().write();
+        match state.agents.get_mut(target) {
+            Some(agent) => {
+                agent.auto_approve_override = enabled;
+                Ok(())
+            }
+            None => Err(ApiError::AgentNotFound {
+                target: target.to_string(),
+            }),
+        }
     }
 
     /// Focus on a specific pane in tmux
@@ -498,8 +533,8 @@ impl TmaiCore {
         &self,
         req: &crate::worktree::WorktreeDeleteRequest,
     ) -> Result<(), ApiError> {
-        // Check for running agents in this worktree
-        {
+        // Check for running agents in this worktree (skip if force)
+        if !req.force {
             let state = self.state().read();
             let worktree_path = std::path::Path::new(&req.repo_path)
                 .join(".claude")
@@ -605,10 +640,67 @@ impl TmaiCore {
         Ok(target)
     }
 
-    /// Kill a specific pane in tmux
+    // =========================================================
+    // Usage actions
+    // =========================================================
+
+    /// Get the cached usage snapshot from state.
+    pub fn get_usage(&self) -> crate::usage::UsageSnapshot {
+        self.state().read().usage.clone()
+    }
+
+    /// Start a background usage fetch.
+    ///
+    /// If a fetch is already in progress, this is a no-op.
+    /// On completion, updates state and emits `CoreEvent::UsageUpdated`.
+    pub fn fetch_usage(&self) {
+        // Check and set fetching flag atomically
+        {
+            let mut state = self.state().write();
+            if state.usage.fetching {
+                return;
+            }
+            state.usage.fetching = true;
+        }
+
+        let state = self.state().clone();
+        let event_tx = self.event_sender();
+
+        // Determine if tmux is available by checking runtime
+        let tmux_session = self.runtime().and_then(|_rt| {
+            // If runtime supports tmux, try to get a session name from agents
+            let s = self.state().read();
+            s.agent_order
+                .first()
+                .and_then(|key| s.agents.get(key))
+                .map(|a| a.session.clone())
+        });
+
+        tokio::spawn(async move {
+            let result = crate::usage::fetch_usage_auto(tmux_session.as_deref()).await;
+
+            let mut s = state.write();
+            match result {
+                Ok(snapshot) => {
+                    s.usage = snapshot;
+                    s.usage.fetching = false;
+                    s.usage.error = None;
+                }
+                Err(e) => {
+                    tracing::warn!("Usage fetch failed: {e}");
+                    s.usage.fetching = false;
+                    s.usage.error = Some(e.to_string());
+                }
+            }
+            drop(s);
+            let _ = event_tx.send(super::events::CoreEvent::UsageUpdated);
+        });
+    }
+
+    /// Kill a specific agent (PTY session or tmux pane)
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual
-        {
+        let has_pty = {
             let state = self.state().read();
             match state.agents.get(target) {
                 Some(a) if a.is_virtual => {
@@ -616,18 +708,33 @@ impl TmaiCore {
                         target: target.to_string(),
                     });
                 }
-                Some(_) => {}
+                Some(a) => a.pty_session_id.is_some(),
                 None => {
                     return Err(ApiError::AgentNotFound {
                         target: target.to_string(),
                     });
                 }
             }
-        }
+        };
 
-        let cmd = self.require_command_sender()?;
-        cmd.runtime().kill_pane(target)?;
-        Ok(())
+        if has_pty {
+            // PTY-spawned agent: kill the child process
+            if let Some(session) = self.pty_registry().get(target) {
+                session.kill();
+            }
+            // Remove from agent list
+            {
+                let mut state = self.state().write();
+                state.agents.remove(target);
+                state.agent_order.retain(|id| id != target);
+            }
+            self.notify_agents_updated();
+            Ok(())
+        } else {
+            let cmd = self.require_command_sender()?;
+            cmd.runtime().kill_pane(target)?;
+            Ok(())
+        }
     }
 
     /// Sync PTY-spawned agent statuses with actual PTY session liveness
@@ -652,14 +759,35 @@ impl TmaiCore {
             }
 
             if dead_ids.contains(id) {
-                // Process exited
+                // Process exited — set Offline and clean up mappings
                 agent.status = crate::agents::AgentStatus::Offline;
                 changed = true;
+                // Remove from session_pane_map to prevent stale routing
+                if let Some(sid) = &agent.pty_session_id {
+                    let mut spm = self.session_pane_map().write();
+                    spm.remove(sid);
+                }
                 continue;
             }
 
-            // Try to apply hook-derived status (PTY agent's ID is used as pane_id)
-            if let Some(hook_state) = hook_reg.get(id) {
+            // Try to apply hook-derived status.
+            // PTY agent's ID is a session_id (UUID), but HookRegistry keys are
+            // pane_ids from resolve_pane_id(). Try: direct match, then
+            // session_pane_map lookup, then scan by session_id.
+            let hook_state_ref = hook_reg
+                .get(id)
+                .or_else(|| {
+                    // Lookup via session_pane_map (session_id → pane_id)
+                    let spm = self.session_pane_map().read();
+                    let sid = agent.pty_session_id.as_deref().unwrap_or(id);
+                    spm.get(sid).and_then(|pane_id| hook_reg.get(pane_id))
+                })
+                .or_else(|| {
+                    // Scan HookRegistry for matching session_id
+                    let sid = agent.pty_session_id.as_deref().unwrap_or(id);
+                    hook_reg.values().find(|hs| hs.session_id == sid)
+                });
+            if let Some(hook_state) = hook_state_ref {
                 let new_status = crate::hooks::handler::hook_status_to_agent_status(hook_state);
                 if agent.status != new_status {
                     agent.status = new_status;
@@ -675,16 +803,30 @@ impl TmaiCore {
                 continue;
             }
 
-            // No hook state yet — just upgrade from "Starting..."
-            if matches!(
-                &agent.status,
-                crate::agents::AgentStatus::Processing { activity } if activity == "Starting..."
-            ) && self.pty_registry().get(id).is_some()
-            {
-                agent.status = crate::agents::AgentStatus::Processing {
-                    activity: String::new(),
+            // No hook state — detect status from PTY scrollback (capture-pane equivalent)
+            if let Some(session) = self.pty_registry().get(id) {
+                let snapshot = session.scrollback_snapshot();
+                let raw_text = String::from_utf8_lossy(&snapshot);
+                // Take last ~4KB for detection (equivalent to capture-pane last N lines)
+                let tail = if raw_text.len() > 4096 {
+                    let start = raw_text.floor_char_boundary(raw_text.len() - 4096);
+                    &raw_text[start..]
+                } else {
+                    &raw_text
                 };
-                changed = true;
+                let content = crate::utils::strip_ansi(tail);
+                let detector = crate::detectors::get_detector(&agent.agent_type);
+                let new_status = detector.detect_status("", &content);
+                if agent.status != new_status {
+                    agent.status = new_status;
+                    agent.detection_source = crate::agents::DetectionSource::CapturePane;
+                    changed = true;
+                }
+                // Update last_content for preview
+                if agent.last_content != content {
+                    agent.last_content = content;
+                    changed = true;
+                }
             }
         }
 

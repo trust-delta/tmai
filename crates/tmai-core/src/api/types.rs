@@ -7,7 +7,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::agents::{
-    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel,
+    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel, SendCapability,
 };
 use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
@@ -65,9 +65,11 @@ pub struct AgentSnapshot {
     pub status: AgentStatus,
     /// Pane title
     pub title: String,
-    /// Last captured content (plain text)
+    /// Last captured content (plain text) — skipped in JSON serialization (use preview API)
+    #[serde(skip)]
     pub last_content: String,
-    /// Last captured content with ANSI codes (for preview rendering)
+    /// Last captured content with ANSI codes (for preview rendering) — skipped in JSON
+    #[serde(skip)]
     pub last_content_ansi: String,
     /// Working directory
     pub cwd: String,
@@ -120,6 +122,9 @@ pub struct AgentSnapshot {
     /// Worktree name extracted from `.claude/worktrees/{name}` in cwd
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_name: Option<String>,
+    /// Base branch the worktree was forked from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_base_branch: Option<String>,
     /// Display name (e.g., "main:0.1")
     pub display_name: String,
     /// Agent definition info from `.claude/agents/*.md`
@@ -134,6 +139,19 @@ pub struct AgentSnapshot {
     /// PTY session ID if this agent was spawned via the PTY spawn API
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pty_session_id: Option<String>,
+    /// Best available method for sending keystrokes to this agent
+    pub send_capability: SendCapability,
+    /// Per-agent auto-approve override: None = follow global, Some(bool) = override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_approve_override: Option<bool>,
+    /// Which communication channels are currently available
+    pub connection_channels: crate::agents::ConnectionChannels,
+    /// Model ID (e.g., "claude-opus-4-6")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    /// Model display name (e.g., "Opus 4.6")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_display_name: Option<String>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -201,11 +219,20 @@ impl AgentSnapshot {
             auto_approve_phase: agent.auto_approve_phase.clone(),
             git_common_dir: agent.git_common_dir.clone(),
             worktree_name: agent.worktree_name.clone(),
+            worktree_base_branch: agent.worktree_base_branch.clone(),
             display_name: agent.display_name(),
             agent_definition: None,
             active_subagents: agent.active_subagents,
             compaction_count: agent.compaction_count,
             pty_session_id: agent.pty_session_id.clone(),
+            send_capability: agent.send_capability,
+            auto_approve_override: agent.auto_approve_override,
+            connection_channels: agent.connection_channels,
+            model_display_name: agent
+                .model_id
+                .as_deref()
+                .map(crate::transcript::parser::model_display_name),
+            model_id: agent.model_id.clone(),
         }
     }
 

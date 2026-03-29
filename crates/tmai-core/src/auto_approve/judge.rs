@@ -8,9 +8,6 @@ use super::types::{
     JudgmentDecision, JudgmentOutput, JudgmentRequest, JudgmentResult, JudgmentUsage,
 };
 
-/// JSON schema for the claude CLI output
-const JUDGMENT_SCHEMA: &str = r#"{"type":"object","properties":{"decision":{"type":"string","enum":["approve","reject","uncertain"]},"reasoning":{"type":"string"}},"required":["decision","reasoning"]}"#;
-
 /// Trait for judgment providers (extensible for future rule-based/hybrid approaches)
 pub trait JudgmentProvider: Send + Sync {
     /// Judge whether an approval request should be auto-approved
@@ -69,7 +66,10 @@ Rules:
   - Privilege escalation attempts
   - The action seems suspicious or unrelated to development
 
-- When unsure, return "uncertain" (safer than wrong approval)"#,
+- When unsure, return "uncertain" (safer than wrong approval)
+
+Reply with ONLY a JSON object (no markdown, no explanation outside JSON):
+{{"decision": "approve"|"reject"|"uncertain", "reasoning": "brief explanation"}}"#,
             approval_type = request.approval_type,
             details = request.details,
             cwd = request.cwd,
@@ -88,16 +88,8 @@ impl JudgmentProvider for ClaudeHaikuJudge {
         let command = self.custom_command.as_deref().unwrap_or("claude");
 
         let mut child = tokio::process::Command::new(command)
-            .args([
-                "-p",
-                "--no-session-persistence",
-                "--model",
-                &self.model,
-                "--output-format",
-                "json",
-                "--json-schema",
-                JUDGMENT_SCHEMA,
-            ])
+            .args(["-p", "--model", &self.model, "--output-format", "json"])
+            .env_remove("JSC_SIGNAL_FOR_GC")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -205,19 +197,35 @@ impl ClaudeHaikuJudge {
             return Ok(output);
         }
 
-        // Try parsing as claude CLI JSON format: {"type":"result","result":[...]}
-        // or just the result array
+        // Try parsing as claude CLI JSON format: {"type":"result","result":"..."}
         if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(stdout) {
-            // Extract text from result content blocks
             let text = Self::extract_text_from_claude_json(&wrapper);
             if let Some(text) = text {
+                // Try direct parse of extracted text
                 if let Ok(output) = serde_json::from_str::<JudgmentOutput>(&text) {
+                    return Ok(output);
+                }
+                // Try extracting JSON from text (e.g. ```json ... ``` blocks)
+                if let Some(output) = Self::extract_json_from_text(&text) {
                     return Ok(output);
                 }
             }
         }
 
         anyhow::bail!("Could not parse claude output as JudgmentOutput")
+    }
+
+    /// Extract a JudgmentOutput JSON from free-form text (e.g. ```json ... ``` blocks)
+    fn extract_json_from_text(text: &str) -> Option<JudgmentOutput> {
+        // Find first '{' and last '}' to extract JSON
+        let start = text.find('{')?;
+        let end = text.rfind('}')?;
+        if start < end {
+            let json_str = &text[start..=end];
+            serde_json::from_str::<JudgmentOutput>(json_str).ok()
+        } else {
+            None
+        }
     }
 
     /// Extract text content from claude CLI JSON response

@@ -7,8 +7,10 @@ use std::fmt;
 pub struct WorktreeCreateRequest {
     /// Absolute path to the main repository
     pub repo_path: String,
-    /// Branch name (= worktree directory name)
+    /// Branch name for the new worktree
     pub branch_name: String,
+    /// Directory name under `.claude/worktrees/` (defaults to branch_name if None)
+    pub dir_name: Option<String>,
     /// Branch to fork from (default: HEAD)
     pub base_branch: Option<String>,
 }
@@ -78,6 +80,7 @@ mod tests {
         let req = WorktreeCreateRequest {
             repo_path: "/home/user/project".to_string(),
             branch_name: "feat-auth".to_string(),
+            dir_name: None,
             base_branch: Some("main".to_string()),
         };
         assert_eq!(req.repo_path, "/home/user/project");
