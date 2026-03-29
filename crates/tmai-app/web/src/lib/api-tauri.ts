@@ -171,6 +171,11 @@ export const api = {
   updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
     httpApi.updateSpawnSettings(params),
 
+  // Preview settings
+  getPreviewSettings: () => httpApi.getPreviewSettings(),
+  updatePreviewSettings: (params: { show_cursor: boolean }) =>
+    httpApi.updatePreviewSettings(params),
+
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
   getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),

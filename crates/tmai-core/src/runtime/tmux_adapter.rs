@@ -59,6 +59,10 @@ impl RuntimeAdapter for TmuxAdapter {
         self.client.get_pane_title(target)
     }
 
+    fn get_cursor_position(&self, target: &str) -> Result<Option<(u32, u32)>> {
+        self.client.get_cursor_position(target).map(Some)
+    }
+
     // --- Control ---
 
     fn send_keys(&self, target: &str, keys: &str) -> Result<()> {

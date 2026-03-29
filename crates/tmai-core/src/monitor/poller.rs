@@ -887,6 +887,12 @@ impl Poller {
                     }
                 }
 
+                // Propagate cursor position from IPC (VT100 parser in PTY wrapper)
+                if let Some(ref ws) = wrap_state {
+                    agent.cursor_x = Some(ws.cursor_col.into());
+                    agent.cursor_y = Some(ws.cursor_row.into());
+                }
+
                 // Determine send capability (best available tier)
                 agent.send_capability = if wrap_state.is_some() {
                     // Tier 1: IPC — tmai wrap holds PTY master

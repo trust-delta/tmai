@@ -134,6 +134,12 @@ pub struct AutoApproveOverrideRequest {
 pub struct PreviewResponse {
     pub content: String,
     pub lines: usize,
+    /// Terminal cursor column (0-indexed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_x: Option<u32>,
+    /// Terminal cursor row (0-indexed, absolute within full capture output)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_y: Option<u32>,
 }
 
 /// Summary of a task for API response
@@ -437,12 +443,18 @@ pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
+    let show_cursor = core.settings().web.show_cursor;
+
     // Look up agent target for capture-pane (id may differ from tmux target)
-    let (agent_target, agent_content) = {
+    let (agent_target, agent_content, agent_cursor) = {
         let state = core.raw_state().read();
         match state.agents.get(&id) {
-            Some(a) => (Some(a.target.clone()), Some(a.last_content.clone())),
-            None => (None, None),
+            Some(a) => (
+                Some(a.target.clone()),
+                Some(a.last_content.clone()),
+                (a.cursor_x, a.cursor_y),
+            ),
+            None => (None, None, (None, None)),
         }
     };
 
@@ -452,16 +464,38 @@ pub async fn get_preview(
             if let Ok(content) = cmd.runtime().capture_pane_full(target) {
                 if !content.trim().is_empty() {
                     let lines = content.lines().count();
-                    return Ok(Json(PreviewResponse { content, lines }));
+                    // Query cursor position from runtime (tmux or IPC)
+                    let (cursor_x, cursor_y) = if show_cursor {
+                        let cursor_result = cmd.runtime().get_cursor_position(target);
+                        tracing::debug!("cursor query for {}: {:?}", target, cursor_result);
+                        cursor_result
+                            .ok()
+                            .flatten()
+                            .map(|(x, y)| (Some(x), Some(y)))
+                            .unwrap_or((None, None))
+                    } else {
+                        (None, None)
+                    };
+                    return Ok(Json(PreviewResponse {
+                        content,
+                        lines,
+                        cursor_x,
+                        cursor_y,
+                    }));
                 }
             }
         }
     }
 
-    // Fallback: plain text from last_content
+    // Fallback: plain text from last_content (use cached cursor from IPC)
     if let Some(content) = agent_content.filter(|c| !c.trim().is_empty()) {
         let lines = content.lines().count();
-        return Ok(Json(PreviewResponse { content, lines }));
+        return Ok(Json(PreviewResponse {
+            content,
+            lines,
+            cursor_x: if show_cursor { agent_cursor.0 } else { None },
+            cursor_y: if show_cursor { agent_cursor.1 } else { None },
+        }));
     }
 
     // Agent exists check
@@ -500,6 +534,8 @@ pub async fn get_preview(
             Ok(Json(PreviewResponse {
                 content: display_content,
                 lines,
+                cursor_x: None,
+                cursor_y: None,
             }))
         }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -2542,6 +2578,45 @@ fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>,
 /// Re-export for convenience
 fn strip_git_suffix(path: &str) -> &str {
     tmai_core::git::strip_git_suffix(path)
+}
+
+// =========================================================
+// Preview settings
+// =========================================================
+
+/// Response for GET /api/settings/preview
+#[derive(Debug, Serialize)]
+pub struct PreviewSettingsResponse {
+    pub show_cursor: bool,
+}
+
+/// Request for PUT /api/settings/preview
+#[derive(Debug, Deserialize)]
+pub struct PreviewSettingsRequest {
+    pub show_cursor: Option<bool>,
+}
+
+/// GET /api/settings/preview
+pub async fn get_preview_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<PreviewSettingsResponse> {
+    Json(PreviewSettingsResponse {
+        show_cursor: core.settings().web.show_cursor,
+    })
+}
+
+/// PUT /api/settings/preview — update preview settings and persist
+pub async fn update_preview_settings(
+    Json(req): Json<PreviewSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(v) = req.show_cursor {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "show_cursor",
+            toml_edit::Value::from(v),
+        );
+    }
+    Json(serde_json::json!({"ok": true}))
 }
 
 #[cfg(test)]

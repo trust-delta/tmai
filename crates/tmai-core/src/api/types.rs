@@ -152,6 +152,12 @@ pub struct AgentSnapshot {
     /// Model display name (e.g., "Opus 4.6")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_display_name: Option<String>,
+    /// Terminal cursor column (0-indexed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_x: Option<u32>,
+    /// Terminal cursor row (0-indexed, absolute within full capture output)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_y: Option<u32>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -233,6 +239,8 @@ impl AgentSnapshot {
                 .as_deref()
                 .map(crate::transcript::parser::model_display_name),
             model_id: agent.model_id.clone(),
+            cursor_x: agent.cursor_x,
+            cursor_y: agent.cursor_y,
         }
     }
 
@@ -443,6 +451,29 @@ mod tests {
 
         let snapshot = AgentSnapshot::from_agent(&agent);
         assert!(snapshot.needs_attention());
+    }
+
+    #[test]
+    fn test_agent_snapshot_cursor_fields() {
+        let mut agent = test_agent("main:0.0");
+        agent.cursor_x = Some(42);
+        agent.cursor_y = Some(10);
+
+        let snapshot = AgentSnapshot::from_agent(&agent);
+        assert_eq!(snapshot.cursor_x, Some(42));
+        assert_eq!(snapshot.cursor_y, Some(10));
+
+        // Verify JSON serialization includes cursor when present
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("\"cursor_x\":42"));
+        assert!(json.contains("\"cursor_y\":10"));
+
+        // Verify cursor is omitted from JSON when None
+        let agent_no_cursor = test_agent("main:0.1");
+        let snap_no_cursor = AgentSnapshot::from_agent(&agent_no_cursor);
+        let json_no_cursor = serde_json::to_string(&snap_no_cursor).unwrap();
+        assert!(!json_no_cursor.contains("cursor_x"));
+        assert!(!json_no_cursor.contains("cursor_y"));
     }
 
     #[test]

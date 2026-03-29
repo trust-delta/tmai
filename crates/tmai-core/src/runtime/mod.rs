@@ -55,6 +55,12 @@ pub trait RuntimeAdapter: Send + Sync {
     /// Get the title of a pane.
     fn get_pane_title(&self, target: &str) -> Result<String>;
 
+    /// Get terminal cursor position (col, row) for a pane, both 0-indexed.
+    /// Returns None if the runtime does not support cursor queries.
+    fn get_cursor_position(&self, _target: &str) -> Result<Option<(u32, u32)>> {
+        Ok(None)
+    }
+
     // =========================================================
     // Control
     // =========================================================
