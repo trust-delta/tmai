@@ -1398,8 +1398,8 @@ fn spawn_codex_app_server(core: &Arc<TmaiCore>, session_id: &str, cwd: &str) {
             .args(["app-server", "--listen", "ws://127.0.0.1:0"])
             .current_dir(&cwd_owned)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()
         {
             Ok(c) => c,
@@ -1409,14 +1409,14 @@ fn spawn_codex_app_server(core: &Arc<TmaiCore>, session_id: &str, cwd: &str) {
             }
         };
 
-        // Read stdout lines to find the actual listening URL
-        let stdout = match child.stdout.take() {
+        // Codex app-server prints the listening URL to stderr
+        let stderr = match child.stderr.take() {
             Some(s) => s,
             None => return,
         };
 
         use tokio::io::{AsyncBufReadExt, BufReader};
-        let mut reader = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stderr).lines();
         let mut ws_url: Option<String> = None;
 
         // Read up to 10 lines with a 5-second timeout to find the port

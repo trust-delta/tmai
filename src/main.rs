@@ -758,8 +758,8 @@ async fn start_codex_app_server(
         .args(["app-server", "--listen", "ws://127.0.0.1:0"])
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
     {
         Ok(c) => c,
@@ -769,12 +769,13 @@ async fn start_codex_app_server(
         }
     };
 
-    let stdout = match child.stdout.take() {
+    // Codex app-server prints the listening URL to stderr
+    let stderr = match child.stderr.take() {
         Some(s) => s,
         None => return,
     };
 
-    let mut reader = BufReader::new(stdout).lines();
+    let mut reader = BufReader::new(stderr).lines();
     let mut ws_url: Option<String> = None;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
 
