@@ -183,6 +183,26 @@ export function ActionPanel({
     }
   }, [actionBusy, projectPath, activeNode.name, forceDelete, focusAfterDelete, onRefresh]);
 
+  // Checkout a remote-only branch (creates local tracking branch)
+  const handleCheckoutRemote = useCallback(async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      // Extract short name from "origin/branch-name"
+      const shortName = activeNode.name.includes("/")
+        ? activeNode.name.split("/").slice(1).join("/")
+        : activeNode.name;
+      await api.checkoutBranch(projectPath, shortName);
+      onRefresh();
+      onSelectNode(shortName);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Failed to checkout branch");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [actionBusy, projectPath, activeNode.name, onRefresh, onSelectNode]);
+
   // Resolve the base branch for merge/PR operations
   const baseBranch = activeNode.parent ?? branches?.default_branch ?? "main";
 
@@ -818,8 +838,20 @@ export function ActionPanel({
             </button>
           )}
 
+          {/* Remote-only branch actions */}
+          {activeNode.isRemoteOnly && (
+            <button
+              type="button"
+              onClick={handleCheckoutRemote}
+              disabled={actionBusy}
+              className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
+            >
+              {actionBusy ? "Checking out..." : "Checkout (Create Local Branch)"}
+            </button>
+          )}
+
           {/* Non-main branch/worktree actions (unified) */}
-          {!activeNode.isMain && (
+          {!activeNode.isMain && !activeNode.isRemoteOnly && (
             <>
               {/* Focus Agent (worktree or any branch with agent) */}
               {activeNode.agentTarget ? (

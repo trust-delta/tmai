@@ -365,6 +365,7 @@ export interface BranchListResponse {
   parents: Record<string, string>;
   ahead_behind: Record<string, [number, number]>;
   remote_tracking: Record<string, RemoteTrackingInfo>;
+  remote_only_branches: string[];
   last_fetch: number | null;
 }
 

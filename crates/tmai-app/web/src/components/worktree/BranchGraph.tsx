@@ -156,6 +156,7 @@ export function BranchGraph({
       ahead: 0,
       behind: 0,
       remote: rtMap[defaultBranch] ?? null,
+      isRemoteOnly: false,
     });
 
     for (const wt of projectWorktrees) {
@@ -177,6 +178,7 @@ export function BranchGraph({
         ahead: ab?.[0] ?? 0,
         behind: ab?.[1] ?? 0,
         remote: rtMap[branchName] ?? null,
+        isRemoteOnly: false,
       });
     }
 
@@ -201,8 +203,32 @@ export function BranchGraph({
             ahead: ab?.[0] ?? 0,
             behind: ab?.[1] ?? 0,
             remote: rtMap[b] ?? null,
+            isRemoteOnly: false,
           });
         }
+      }
+    }
+
+    // Add remote-only branches (no local counterpart)
+    if (branches?.remote_only_branches) {
+      for (const rb of branches.remote_only_branches) {
+        result.push({
+          name: rb,
+          parent: defaultBranch,
+          isWorktree: false,
+          isMain: false,
+          isCurrent: false,
+          isDirty: false,
+          hasAgent: false,
+          agentTarget: null,
+          agentStatus: null,
+          diffSummary: null,
+          worktree: null,
+          ahead: 0,
+          behind: 0,
+          remote: null,
+          isRemoteOnly: true,
+        });
       }
     }
 
@@ -482,6 +508,7 @@ export function BranchGraph({
                 (n) =>
                   !n.isMain &&
                   !n.isWorktree &&
+                  !n.isRemoteOnly &&
                   !n.hasAgent &&
                   !n.isDirty &&
                   n.ahead === 0 &&
@@ -495,6 +522,7 @@ export function BranchGraph({
                         (n) =>
                           !n.isMain &&
                           !n.isWorktree &&
+                          !n.isRemoteOnly &&
                           !n.hasAgent &&
                           !n.isDirty &&
                           n.ahead === 0 &&
@@ -515,6 +543,32 @@ export function BranchGraph({
                           {n.behind > 0 && (
                             <span className="ml-1 text-[10px] text-red-400">{n.behind}\u2193</span>
                           )}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Remote-only branches (no local counterpart) */}
+              {nodes.filter((n) => n.isRemoteOnly).length > 0 && (
+                <div className="mt-6 border-t border-white/5 pt-4">
+                  <div className="mb-2 text-[11px] text-zinc-600">Remote branches</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {nodes
+                      .filter((n) => n.isRemoteOnly)
+                      .map((n) => (
+                        <button
+                          type="button"
+                          key={n.name}
+                          onClick={() => selectBranch(n.name)}
+                          className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
+                            selectedNode === n.name
+                              ? "bg-purple-500/15 text-purple-400"
+                              : "bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                          }`}
+                        >
+                          <span className="mr-1 text-[10px] text-purple-500/60">remote</span>
+                          {n.name}
                         </button>
                       ))}
                   </div>
