@@ -93,6 +93,7 @@ export function BranchGraph({
   }, [branches, initialSelected]);
 
   // Close detail panel when branch selection changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on selection change
   useEffect(() => {
     setDetailView(null);
   }, [selectedNode]);
@@ -145,7 +146,7 @@ export function BranchGraph({
       agentStatus:
         mainWt?.agent_status ??
         (branchAgentMap.has(defaultBranch)
-          ? statusName(branchAgentMap.get(defaultBranch)!.status)
+          ? statusName(branchAgentMap.get(defaultBranch)?.status ?? "unknown")
           : null),
       diffSummary: null,
       worktree: mainWt ?? null,

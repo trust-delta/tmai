@@ -32,6 +32,7 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
         <span className="text-xs text-zinc-500">{sessionId.slice(0, 8)}</span>
       </div>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs mouse events for selection mode */}
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden bg-[#09090b] p-1"

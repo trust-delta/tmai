@@ -76,7 +76,7 @@ function shrinkHorizontalRuns(visible: string, cols: number): string {
   const runs: { index: number; length: number }[] = [];
   HLINE_RUN_RE.lastIndex = 0;
   for (const m of visible.matchAll(HLINE_RUN_RE)) {
-    runs.push({ index: m.index!, length: m[0].length });
+    if (m.index != null) runs.push({ index: m.index, length: m[0].length });
   }
   if (runs.length === 0) return visible;
 

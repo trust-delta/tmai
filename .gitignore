@@ -2,6 +2,8 @@
 /target
 web/node_modules/
 web/tsconfig.tsbuildinfo
+crates/tmai-app/web/node_modules/
+crates/tmai-app/web/tsconfig.tsbuildinfo
 
 # AI assistants
 CLAUDE.md
