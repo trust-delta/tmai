@@ -473,7 +473,11 @@ impl Poller {
                 // Read state from each registry
                 let hook_state = {
                     let registry = self.hook_registry.read();
-                    registry.get(&pane.pane_id).cloned()
+                    // Look up by pane_id first (HTTP hooks), then by target (WS hooks)
+                    registry
+                        .get(&pane.pane_id)
+                        .or_else(|| registry.get(&pane.target))
+                        .cloned()
                 };
                 let wrap_state = {
                     let registry = self.ipc_registry.read();
