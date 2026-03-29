@@ -1415,12 +1415,15 @@ async fn spawn_in_pty(
 async fn start_codex_app_server_sync(cwd: &str) -> Option<String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
+    // Use process_group(0) to detach app-server from tmai's process group,
+    // so it survives tmai restarts. Codex --remote depends on app-server staying alive.
     let mut child = match tokio::process::Command::new("codex")
         .args(["app-server", "--listen", "ws://127.0.0.1:0"])
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
+        .process_group(0)
         .spawn()
     {
         Ok(c) => c,

@@ -402,6 +402,11 @@ impl Poller {
 
             for (idx, (pane_id, hook_state)) in entries.iter().enumerate() {
                 if !existing_pane_ids.contains(*pane_id) {
+                    // Skip very stale entries (no activity for 2 minutes)
+                    // These are leftover from previous tmai sessions
+                    if !hook_state.is_fresh(120_000) {
+                        continue;
+                    }
                     let sid = &hook_state.session_id;
                     let pid = hook_state.pid.unwrap_or(0);
 
