@@ -1377,57 +1377,82 @@ async fn spawn_in_pty(
 
 /// Start a Codex app-server in the background and connect via WebSocket.
 ///
-/// Finds a free port, launches `codex app-server --listen ws://127.0.0.1:PORT`,
-/// and spawns a WebSocket client task for status detection.
+/// Uses `--listen ws://127.0.0.1:0` so the OS picks a free port, then
+/// parses the actual port from stdout (`listening on: ws://...`).
 fn spawn_codex_app_server(core: &Arc<TmaiCore>, session_id: &str, cwd: &str) {
-    // Find a free port by binding to :0
-    let port = match std::net::TcpListener::bind("127.0.0.1:0") {
-        Ok(listener) => listener.local_addr().map(|a| a.port()).unwrap_or(0),
-        Err(_) => return,
-    };
-    if port == 0 {
-        return;
-    }
-
-    let ws_url = format!("ws://127.0.0.1:{}", port);
+    let session_id = session_id.to_string();
     let cwd_owned = cwd.to_string();
+    let registry = core.hook_registry().clone();
+    let event_tx = core.event_sender();
+    #[allow(deprecated)]
+    let state = core.raw_state().clone();
 
-    // Launch codex app-server as a background child process
-    match std::process::Command::new("codex")
-        .args(["app-server", "--listen", &ws_url])
-        .current_dir(&cwd_owned)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        Ok(_child) => {
-            tracing::info!(
-                session_id = session_id,
-                url = %ws_url,
-                "Started Codex app-server for WS detection"
-            );
+    tokio::spawn(async move {
+        // Launch with :0 so the OS assigns a free port
+        let mut child = match tokio::process::Command::new("codex")
+            .args(["app-server", "--listen", "ws://127.0.0.1:0"])
+            .current_dir(&cwd_owned)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to start Codex app-server: {}", e);
+                return;
+            }
+        };
 
-            // Connect WebSocket client for status detection
-            let config = tmai_core::codex_ws::client::CodexWsClientConfig {
-                url: ws_url,
-                pane_id: Some(session_id.to_string()),
+        // Read stdout lines to find the actual listening URL
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => return,
+        };
+
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut reader = BufReader::new(stdout).lines();
+        let mut ws_url: Option<String> = None;
+
+        // Read up to 10 lines with a 5-second timeout to find the port
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        for _ in 0..10 {
+            let line = tokio::select! {
+                result = reader.next_line() => match result {
+                    Ok(Some(l)) => l,
+                    _ => break,
+                },
+                _ = tokio::time::sleep_until(deadline) => break,
             };
-            let registry = core.hook_registry().clone();
-            let event_tx = core.event_sender();
-            #[allow(deprecated)]
-            let state = core.raw_state().clone();
+            // Look for: "  listening on: ws://127.0.0.1:PORT"
+            if let Some(url) = line.strip_prefix("  listening on: ") {
+                ws_url = Some(url.trim().to_string());
+                break;
+            }
+        }
 
-            tokio::spawn(async move {
-                // Brief delay to let app-server start listening
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
-            });
-        }
-        Err(e) => {
-            tracing::warn!("Failed to start Codex app-server: {}", e);
-        }
-    }
+        let ws_url = match ws_url {
+            Some(url) => url,
+            None => {
+                tracing::warn!("Codex app-server did not report listening URL");
+                let _ = child.kill().await;
+                return;
+            }
+        };
+
+        tracing::info!(
+            session_id = %session_id,
+            url = %ws_url,
+            "Codex app-server ready, connecting WS client"
+        );
+
+        let config = tmai_core::codex_ws::client::CodexWsClientConfig {
+            url: ws_url,
+            pane_id: Some(session_id),
+        };
+
+        tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
+    });
 }
 
 // =========================================================
