@@ -76,12 +76,12 @@ Detailed guides, configuration reference, and workflows are available in [doc/](
 
 ## Supported Agents
 
-| Agent | Detection | Hooks | PTY Wrap |
+| Agent | Detection | Extra | PTY Wrap |
 |-------|-----------|-------|----------|
-| Claude Code | Yes | Yes | Yes |
-| OpenCode | Yes | - | Yes |
-| Codex CLI | Yes | - | Yes |
-| Gemini CLI | Yes | - | Yes |
+| Claude Code | Yes | HTTP Hooks | Yes |
+| Codex CLI | Yes | WebSocket (app-server) | Yes |
+| OpenCode | Yes | — | Yes |
+| Gemini CLI | Yes | — | Yes |
 
 ## Screenshots
 

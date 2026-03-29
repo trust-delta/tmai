@@ -88,11 +88,11 @@ tmai --tmux
 
 ## 対応エージェント
 
-| エージェント | 検出 | Hooks | PTYラップ |
+| エージェント | 検出 | Extra | PTYラップ |
 |--------------|------|-------|-----------|
-| Claude Code | ✅ | ✅ | ✅ |
+| Claude Code | ✅ | HTTP Hooks | ✅ |
+| Codex CLI | ✅ | WebSocket (app-server) | ✅ |
 | OpenCode | ✅ | — | ✅ |
-| Codex CLI | ✅ | — | ✅ |
 | Gemini CLI | ✅ | — | ✅ |
 
 ## スクリーンショット
