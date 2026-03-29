@@ -1208,10 +1208,7 @@ pub async fn spawn_agent(
     };
     let tmux_avail = is_tmux_available();
 
-    // Shell commands (bash/sh/zsh) always use PTY — tmux wrap is for AI agents
-    let is_shell = matches!(req.command.as_str(), "bash" | "sh" | "zsh");
-
-    if use_tmux && tmux_avail && !req.force_pty && !is_shell {
+    if use_tmux && tmux_avail && !req.force_pty {
         spawn_in_tmux(&core, &req).await
     } else {
         spawn_in_pty(&core, &req).await
@@ -1339,14 +1336,18 @@ async fn spawn_in_tmux(
         format!("{} {}", quoted_command, all_args.join(" "))
     };
 
-    // Run the command via tmai wrap for monitoring
-    tmux.run_command_wrapped(&pane_target, &full_command)
-        .map_err(|e| {
-            json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Failed to run command: {}", e),
-            )
-        })?;
+    // Shell commands don't need tmai wrap — the tmux pane already starts a shell
+    let is_shell = matches!(req.command.as_str(), "bash" | "sh" | "zsh");
+    if !is_shell {
+        // Run AI agent commands via tmai wrap for monitoring
+        tmux.run_command_wrapped(&pane_target, &full_command)
+            .map_err(|e| {
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("Failed to run command: {}", e),
+                )
+            })?;
+    }
 
     tracing::info!(
         "API: spawned in tmux window '{}' target={} command={}",
