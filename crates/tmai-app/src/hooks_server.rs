@@ -2,6 +2,7 @@
 // Receives hook events from Claude Code via POST /hooks/event
 
 use axum::{
+    body::Bytes,
     extract::{Json, State},
     http::StatusCode,
     routing::post,
@@ -33,11 +34,14 @@ pub struct HookServerState {
 }
 
 /// Handle incoming hook event
+///
+/// Accepts raw bytes instead of `Json<T>` to avoid 415 errors when
+/// Claude Code's HTTP hooks don't send `Content-Type: application/json`.
 #[allow(dead_code)]
 pub async fn handle_hook_event(
     State(state): State<HookServerState>,
     headers: axum::http::HeaderMap,
-    Json(payload): Json<Value>,
+    body: Bytes,
 ) -> Result<Json<Value>, StatusCode> {
     // Validate token
     let token = headers
@@ -48,6 +52,9 @@ pub async fn handle_hook_event(
     if token != state.token {
         return Err(StatusCode::UNAUTHORIZED);
     }
+
+    // Parse JSON payload manually (Content-Type agnostic)
+    let payload: Value = serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Process hook event (delegate to core)
     tracing::debug!("Hook event received: {:?}", payload);

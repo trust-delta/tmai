@@ -6,6 +6,7 @@
 //! Uses a separate auth token from the main web API (hooks_token).
 
 use axum::{
+    body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
@@ -36,6 +37,9 @@ struct HookEventResponse {
 
 /// POST /hooks/event — receive a hook event from Claude Code
 ///
+/// Accepts raw bytes instead of axum's `Json` extractor to avoid 415 errors
+/// when Claude Code's HTTP hooks don't send `Content-Type: application/json`.
+///
 /// Returns structured JSON responses for events that support it:
 /// - **PreToolUse**: `hookSpecificOutput.permissionDecision` for auto-approval
 /// - **TeammateIdle/TaskCompleted**: `continue` + `stopReason` for stop control
@@ -43,8 +47,18 @@ struct HookEventResponse {
 pub async fn hook_event(
     State(core): State<Arc<TmaiCore>>,
     headers: HeaderMap,
-    Json(payload): Json<HookEventPayload>,
+    body: Bytes,
 ) -> impl IntoResponse {
+    let payload: HookEventPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            debug!("Hook event rejected: invalid JSON payload: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid JSON"})),
+            );
+        }
+    };
     // Validate hook token from Authorization header
     let token_valid = headers
         .get("authorization")
