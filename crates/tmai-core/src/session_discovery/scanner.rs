@@ -80,6 +80,15 @@ impl SessionDiscoveryScanner {
                 continue;
             }
 
+            // Verify the process is actually Claude Code (not an MCP server or other child)
+            if !is_claude_code_process(session.pid) {
+                debug!(
+                    pid = session.pid,
+                    "Skipping session: process is not Claude Code"
+                );
+                continue;
+            }
+
             current_pids.insert(session.pid);
 
             // If this is a new PID, report it
@@ -122,6 +131,23 @@ impl SessionDiscoveryScanner {
     /// Get mutable access to known PIDs (for merging externally discovered PIDs)
     pub fn known_pids_mut(&mut self) -> &mut HashSet<u32> {
         &mut self.known_pids
+    }
+}
+
+/// Check if a PID is actually a Claude Code process (not an MCP server or subagent).
+///
+/// Reads `/proc/{pid}/cmdline` and checks if the command contains "claude".
+/// MCP servers (shadcn, etc.) are child processes with their own session files
+/// but should not be treated as Claude Code agents.
+fn is_claude_code_process(pid: u32) -> bool {
+    let cmdline_path = format!("/proc/{}/cmdline", pid);
+    match std::fs::read(&cmdline_path) {
+        Ok(data) => {
+            // /proc/pid/cmdline uses NUL as delimiter
+            let cmdline = String::from_utf8_lossy(&data).to_lowercase();
+            cmdline.contains("claude")
+        }
+        Err(_) => false,
     }
 }
 
