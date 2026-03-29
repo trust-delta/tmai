@@ -101,10 +101,6 @@ Detailed guides, configuration reference, and workflows are available in [doc/](
   <img src="assets/mobile-ask-user-question.jpg" alt="Mobile Remote - AskUserQuestion" width="280">
 </p>
 
-## Acknowledgments
-
-Inspired by [tmuxcc](https://github.com/nyanko3141592/tmuxcc).
-
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.

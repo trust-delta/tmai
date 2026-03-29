@@ -113,10 +113,6 @@ tmai --tmux
   <img src="assets/mobile-ask-user-question.jpg" alt="モバイルリモート - AskUserQuestion" width="280">
 </p>
 
-## 謝辞
-
-[tmuxcc](https://github.com/nyanko3141592/tmuxcc) にインスピレーションを受けました。
-
 ## コントリビューション
 
 [CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md) をご覧ください。
