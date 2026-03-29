@@ -19,7 +19,7 @@
     "ansi_up": "^6.0.6",
     "clsx": "^2",
     "dompurify": "^3.3.3",
-    "lucide-react": "^0.511",
+    "lucide-react": "^1.7",
     "react": "^19",
     "react-dom": "^19",
     "react-markdown": "^10.1.0",
