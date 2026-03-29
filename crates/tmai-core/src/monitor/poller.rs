@@ -361,8 +361,10 @@ impl Poller {
         // same cwd are distinct agents and must all appear.
         {
             let hook_reg = self.hook_registry.read();
-            let existing_pane_ids: HashSet<String> =
-                all_panes.iter().map(|p| p.pane_id.clone()).collect();
+            let existing_pane_ids: HashSet<String> = all_panes
+                .iter()
+                .flat_map(|p| [p.pane_id.clone(), p.target.clone()])
+                .collect();
             // Collect PIDs of existing tmux panes for dedup.
             let existing_pane_pids: HashSet<u32> = all_panes
                 .iter()
