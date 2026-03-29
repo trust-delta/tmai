@@ -148,6 +148,15 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
                 .output(),
         )
         .await;
+
+        // Also delete the remote tracking branch (best-effort)
+        let _ = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args(["-C", &req.repo_path, "push", "origin", "--delete", branch])
+                .output(),
+        )
+        .await;
     }
 
     Ok(())

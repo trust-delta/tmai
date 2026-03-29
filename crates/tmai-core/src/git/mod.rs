@@ -1024,12 +1024,29 @@ pub async fn delete_branch(repo_dir: &str, branch: &str, force: bool) -> Result<
     .map_err(|_| "Git command timed out".to_string())?
     .map_err(|e| format!("Failed to run git: {}", e))?;
 
-    if output.status.success() {
-        Ok(())
-    } else {
+    if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(stderr.trim().to_string())
+        return Err(stderr.trim().to_string());
     }
+
+    // Best-effort: delete the remote tracking branch
+    delete_remote_branch(repo_dir, branch).await;
+
+    Ok(())
+}
+
+/// Delete a remote tracking branch (best-effort, never fails the caller).
+///
+/// Runs `git push origin --delete <branch>`. Silently ignores errors
+/// (e.g., no remote, branch not pushed, network issues).
+async fn delete_remote_branch(repo_dir: &str, branch: &str) {
+    let _ = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "push", "origin", "--delete", branch])
+            .output(),
+    )
+    .await;
 }
 
 /// Checkout (switch to) a local branch
