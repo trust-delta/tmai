@@ -887,7 +887,10 @@ impl Poller {
                     }
                 }
 
-                // Propagate cursor position from IPC (VT100 parser in PTY wrapper)
+                // Propagate cursor position from IPC (VT100 parser in PTY wrapper).
+                // cursor_row is screen-relative (VT100 parser uses scrollback=0),
+                // which matches the visible content returned by capture_pane for
+                // wrapped agents. No history_size offset is needed here (unlike tmux mode).
                 if let Some(ref ws) = wrap_state {
                     agent.cursor_x = Some(ws.cursor_col.into());
                     agent.cursor_y = Some(ws.cursor_row.into());

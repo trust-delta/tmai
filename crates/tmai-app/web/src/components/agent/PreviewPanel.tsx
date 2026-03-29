@@ -276,6 +276,15 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return () => clearInterval(interval);
   }, [fetchPreview, pollInterval]);
 
+  // Pending passthrough refresh timers (cleared on agent switch / unmount)
+  const passthroughTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      for (const t of passthroughTimers.current) clearTimeout(t);
+      passthroughTimers.current = [];
+    };
+  }, [agentId]);
+
   // Send passthrough input then refresh preview with two-stage fetch
   // for responsive cursor tracking
   const sendPassthrough = useCallback(
@@ -284,8 +293,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         .passthrough(agentId, input)
         .then(() => {
           // Two-stage fetch: fast attempt + delayed retry for cursor accuracy
-          setTimeout(fetchPreview, 50);
-          setTimeout(fetchPreview, 200);
+          const t1 = setTimeout(fetchPreview, 50);
+          const t2 = setTimeout(fetchPreview, 200);
+          passthroughTimers.current.push(t1, t2);
         })
         .catch(() => {});
     },

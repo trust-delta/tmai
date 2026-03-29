@@ -443,7 +443,7 @@ pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
-    let show_cursor = core.settings().web.show_cursor;
+    let show_cursor = read_show_cursor();
 
     // Look up agent target for capture-pane (id may differ from tmux target)
     let (agent_target, agent_content, agent_cursor) = {
@@ -2596,12 +2596,17 @@ pub struct PreviewSettingsRequest {
     pub show_cursor: Option<bool>,
 }
 
+/// Read show_cursor from config file (reflects latest saved value)
+fn read_show_cursor() -> bool {
+    tmai_core::config::Settings::load(None)
+        .map(|s| s.web.show_cursor)
+        .unwrap_or(true)
+}
+
 /// GET /api/settings/preview
-pub async fn get_preview_settings(
-    State(core): State<Arc<TmaiCore>>,
-) -> Json<PreviewSettingsResponse> {
+pub async fn get_preview_settings() -> Json<PreviewSettingsResponse> {
     Json(PreviewSettingsResponse {
-        show_cursor: core.settings().web.show_cursor,
+        show_cursor: read_show_cursor(),
     })
 }
 

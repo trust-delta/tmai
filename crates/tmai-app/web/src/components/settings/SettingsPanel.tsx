@@ -464,11 +464,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               <button
                 type="button"
                 onClick={async () => {
-                  const next = !previewShowCursor;
+                  const prev = previewShowCursor;
+                  const next = !prev;
                   setPreviewShowCursor(next);
                   try {
                     await api.updatePreviewSettings({ show_cursor: next });
-                  } catch (_e) {}
+                  } catch (_e) {
+                    setPreviewShowCursor(prev);
+                  }
                 }}
                 className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                   previewShowCursor ? "bg-cyan-500/40" : "bg-white/10"
