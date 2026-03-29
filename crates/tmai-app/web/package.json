@@ -33,7 +33,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^4",
+    "@vitejs/plugin-react": "^5",
     "tailwindcss": "^4",
     "typescript": "~5.8",
     "vite": "^6"
