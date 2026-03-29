@@ -29,7 +29,8 @@ pub fn translate_event(
                 }
                 state.touch();
             } else {
-                let state = HookState::new(format!("codex-ws-{}", pane_id), cwd.clone());
+                let mut state = HookState::new(format!("codex-ws-{}", pane_id), cwd.clone());
+                state.source_agent = Some(crate::agents::AgentType::CodexCli);
                 reg.insert(pane_id.to_string(), state);
             }
             debug!(pane_id, ?cwd, "Codex WS: thread started");

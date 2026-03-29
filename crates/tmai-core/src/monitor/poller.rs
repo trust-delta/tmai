@@ -432,6 +432,12 @@ impl Poller {
                     let cwd = hook_state.cwd.as_deref().unwrap_or("/unknown").to_string();
 
                     // Synthesize a PaneInfo for this hook-only agent
+                    // Use source_agent from HookState to determine the correct command name
+                    let agent_cmd = hook_state
+                        .source_agent
+                        .as_ref()
+                        .map(|a| a.command().to_string())
+                        .unwrap_or_else(|| "claude".to_string());
                     let pane_idx = (idx + 1) as u32;
                     let target = format!("hook:0.{}", pane_idx);
                     all_panes.push(PaneInfo {
@@ -440,8 +446,8 @@ impl Poller {
                         window_index: 0,
                         pane_index: pane_idx,
                         pane_id: (*pane_id).clone(),
-                        window_name: "claude".to_string(),
-                        command: "claude".to_string(),
+                        window_name: agent_cmd.clone(),
+                        command: agent_cmd,
                         pid: hook_state.pid.unwrap_or(0),
                         title: String::new(),
                         cwd,

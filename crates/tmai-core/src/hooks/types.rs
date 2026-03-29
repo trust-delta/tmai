@@ -224,6 +224,8 @@ pub struct HookState {
     pub model_id: Option<String>,
     /// Token usage from WS-connected agents (input_tokens, output_tokens)
     pub token_usage: Option<(u64, u64)>,
+    /// Source agent type (set by WS translators to override default Claude detection)
+    pub source_agent: Option<crate::agents::AgentType>,
 }
 
 impl HookState {
@@ -244,6 +246,7 @@ impl HookState {
             pid: None,
             model_id: None,
             token_usage: None,
+            source_agent: None,
         }
     }
 
