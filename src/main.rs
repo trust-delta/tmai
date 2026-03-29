@@ -388,31 +388,12 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
     pty_sync_interval.tick().await; // skip first tick
 
-    // Track which codex agents already have app-server connections
-    let mut codex_ws_targets: std::collections::HashSet<String> = std::collections::HashSet::new();
-
     // Main loop: process poll messages and update state until shutdown
     loop {
         tokio::select! {
             msg = poll_rx.recv() => {
                 match msg {
                     Some(tmai_core::monitor::PollMessage::AgentsUpdated(agents)) => {
-                        // Auto-start Codex app-server WS for newly discovered codex agents
-                        for agent in &agents {
-                            if agent.agent_type == tmai_core::agents::AgentType::CodexCli
-                                && !codex_ws_targets.contains(&agent.target)
-                            {
-                                codex_ws_targets.insert(agent.target.clone());
-                                let cwd = agent.cwd.clone();
-                                let target = agent.target.clone();
-                                let registry = core.hook_registry().clone();
-                                let event_tx = core.event_sender();
-                                let ws_state = state.clone();
-                                tokio::spawn(async move {
-                                    start_codex_app_server(&target, &cwd, registry, event_tx, ws_state).await;
-                                });
-                            }
-                        }
                         {
                             let mut s = state.write();
                             s.update_agents(agents);
@@ -739,75 +720,4 @@ fn urlencoded(s: &str) -> String {
         .replace('/', "%2F")
         .replace(':', "%3A")
         .replace(' ', "%20")
-}
-
-/// Start a Codex app-server and connect a WebSocket client for status detection.
-///
-/// Launches `codex app-server --listen ws://127.0.0.1:0`, reads the actual port
-/// from stdout, then runs the WS client loop.
-async fn start_codex_app_server(
-    pane_id: &str,
-    cwd: &str,
-    registry: tmai_core::hooks::registry::HookRegistry,
-    event_tx: tokio::sync::broadcast::Sender<tmai_core::api::CoreEvent>,
-    state: tmai_core::state::SharedState,
-) {
-    use tokio::io::{AsyncBufReadExt, BufReader};
-
-    let mut child = match tokio::process::Command::new("codex")
-        .args(["app-server", "--listen", "ws://127.0.0.1:0"])
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(pane_id, "Failed to start Codex app-server: {}", e);
-            return;
-        }
-    };
-
-    // Codex app-server prints the listening URL to stderr
-    let stderr = match child.stderr.take() {
-        Some(s) => s,
-        None => return,
-    };
-
-    let mut reader = BufReader::new(stderr).lines();
-    let mut ws_url: Option<String> = None;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
-
-    for _ in 0..10 {
-        let line = tokio::select! {
-            result = reader.next_line() => match result {
-                Ok(Some(l)) => l,
-                _ => break,
-            },
-            _ = tokio::time::sleep_until(deadline) => break,
-        };
-        if let Some(url) = line.strip_prefix("  listening on: ") {
-            ws_url = Some(url.trim().to_string());
-            break;
-        }
-    }
-
-    let ws_url = match ws_url {
-        Some(url) => url,
-        None => {
-            tracing::warn!(pane_id, "Codex app-server did not report listening URL");
-            let _ = child.kill().await;
-            return;
-        }
-    };
-
-    tracing::info!(pane_id, url = %ws_url, "Codex app-server ready, connecting WS client");
-
-    let config = tmai_core::codex_ws::client::CodexWsClientConfig {
-        url: ws_url,
-        pane_id: Some(pane_id.to_string()),
-    };
-
-    tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
 }
