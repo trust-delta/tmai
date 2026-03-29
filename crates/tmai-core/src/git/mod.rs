@@ -581,6 +581,11 @@ async fn compute_branch_parents(
     branches: &[String],
     default_branch: &str,
 ) -> HashMap<String, String> {
+    // Skip expensive O(n^2) ancestor computation when branch count is too high
+    if branches.len() > 30 {
+        return HashMap::new();
+    }
+
     let branch_set: std::collections::HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
     let mut parents = HashMap::new();
 
@@ -1007,8 +1012,14 @@ pub fn repo_name_from_common_dir(common_dir: &str) -> String {
 ///
 /// Uses `git branch -d` (safe delete, requires branch to be merged).
 /// With `force=true`, uses `git branch -D` (force delete).
+/// With `delete_remote=true`, also deletes the remote tracking branch (best-effort).
 /// Returns Ok(()) on success, Err(message) on failure.
-pub async fn delete_branch(repo_dir: &str, branch: &str, force: bool) -> Result<(), String> {
+pub async fn delete_branch(
+    repo_dir: &str,
+    branch: &str,
+    force: bool,
+    delete_remote: bool,
+) -> Result<(), String> {
     if !is_safe_git_ref(branch) {
         return Err("Invalid branch name".to_string());
     }
@@ -1029,8 +1040,10 @@ pub async fn delete_branch(repo_dir: &str, branch: &str, force: bool) -> Result<
         return Err(stderr.trim().to_string());
     }
 
-    // Best-effort: delete the remote tracking branch
-    delete_remote_branch(repo_dir, branch).await;
+    // Best-effort: delete the remote tracking branch only when opted in
+    if delete_remote {
+        delete_remote_branch(repo_dir, branch).await;
+    }
 
     Ok(())
 }

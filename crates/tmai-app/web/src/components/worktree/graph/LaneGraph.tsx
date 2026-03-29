@@ -282,13 +282,7 @@ export function LaneGraph({
                   strokeOpacity={0.5}
                   strokeDasharray="6 3"
                 />
-                <path
-                  d={arrowD}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={1.5}
-                  strokeOpacity={0.6}
-                />
+                <path d={arrowD} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
               </g>
             );
           })}

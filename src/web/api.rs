@@ -17,15 +17,64 @@ fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json
 
 /// Shell-quote a string for safe embedding in tmux send-keys commands.
 /// Wraps in single quotes and escapes any embedded single quotes.
+/// Control characters (bytes < 0x20 except \n) are stripped before quoting.
 fn shell_quote(s: &str) -> String {
+    // Strip control characters (bytes < 0x20) except newline (\n = 0x0A)
+    let sanitized: String = s
+        .chars()
+        .filter(|&c| c as u32 >= 0x20 || c == '\n')
+        .collect();
     // If it contains no shell-special characters, return as-is
-    if s.bytes()
+    if sanitized
+        .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'/')
     {
-        return s.to_string();
+        return sanitized;
     }
     // Wrap in single quotes, escaping embedded single quotes: ' → '\''
-    format!("'{}'", s.replace('\'', "'\\''"))
+    format!("'{}'", sanitized.replace('\'', "'\\''"))
+}
+
+/// Check whether a canonical path falls within the user's HOME directory
+/// or any registered project directory. Returns true if allowed.
+fn is_path_within_allowed_scope(path: &std::path::Path, core: Option<&TmaiCore>) -> bool {
+    let canonical = match path.canonicalize() {
+        Ok(p) => p,
+        // If the path doesn't exist yet, try canonicalizing the parent
+        Err(_) => {
+            if let Some(parent) = path.parent() {
+                match parent.canonicalize() {
+                    Ok(p) => p.join(path.file_name().unwrap_or_default()),
+                    Err(_) => return false,
+                }
+            } else {
+                return false;
+            }
+        }
+    };
+
+    // Allow anything under HOME
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(home_canonical) = home.canonicalize() {
+            if canonical.starts_with(&home_canonical) {
+                return true;
+            }
+        }
+    }
+
+    // Allow anything under registered project directories
+    if let Some(core) = core {
+        for project in core.list_projects() {
+            let project_path = std::path::Path::new(&project);
+            if let Ok(proj_canonical) = project_path.canonicalize() {
+                if canonical.starts_with(&proj_canonical) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Convert ApiError to HTTP status + JSON error
@@ -347,30 +396,19 @@ pub async fn passthrough_input(
             .filter(|t| !t.starts_with("hook:") && !t.starts_with("discovered:"))
     };
 
-    if let Some(target) = tmux_target {
-        // Direct tmux send-keys for reliable passthrough
-        let tmux = tmai_core::tmux::TmuxClient::new();
-        if let Some(ref chars) = req.chars {
-            tmux.send_keys_literal(&target, chars)
-                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
-        }
-        if let Some(ref key) = req.key {
-            tmux.send_keys(&target, key)
-                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
-        }
-    } else {
-        // Fallback for non-tmux agents (PTY sessions, etc.)
-        let cmd = core
-            .raw_command_sender()
-            .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
-        if let Some(ref chars) = req.chars {
-            cmd.send_keys_literal(&id, chars)
-                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
-        }
-        if let Some(ref key) = req.key {
-            cmd.send_keys(&id, key)
-                .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
-        }
+    // Use CommandSender (which goes through RuntimeAdapter) for all agents.
+    // This handles IPC -> tmux send-keys -> PTY inject fallback chain automatically.
+    let send_target = tmux_target.as_deref().unwrap_or(&id);
+    let cmd = core
+        .raw_command_sender()
+        .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+    if let Some(ref chars) = req.chars {
+        cmd.send_keys_literal(send_target, chars)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+    if let Some(ref key) = req.key {
+        cmd.send_keys(send_target, key)
+            .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     }
 
     Ok(Json(serde_json::json!({"status": "ok"})))
@@ -569,6 +607,31 @@ pub async fn delete_worktree(
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
     }
 
+    // Verify repo_path is among known projects or worktrees
+    {
+        let repo_canonical = std::path::Path::new(repo_dir)
+            .canonicalize()
+            .map_err(|_| json_error(StatusCode::BAD_REQUEST, "Invalid repository path"))?;
+        let projects = core.list_projects();
+        #[allow(deprecated)]
+        let worktree_paths: Vec<String> = {
+            let state = core.raw_state().read();
+            state.agents.values().map(|a| a.cwd.clone()).collect()
+        };
+        let is_known = projects.iter().chain(worktree_paths.iter()).any(|p| {
+            std::path::Path::new(tmai_core::git::strip_git_suffix(p))
+                .canonicalize()
+                .map(|c| c == repo_canonical)
+                .unwrap_or(false)
+        });
+        if !is_known {
+            return Err(json_error(
+                StatusCode::FORBIDDEN,
+                "Repository path is not a known project or worktree",
+            ));
+        }
+    }
+
     let del_req = tmai_core::worktree::WorktreeDeleteRequest {
         repo_path: strip_git_suffix(&req.repo_path).to_string(),
         worktree_name: req.worktree_name,
@@ -765,6 +828,7 @@ pub struct DirEntry {
 /// List subdirectories at a given path for the directory tree browser.
 /// Query param: ?path=/some/dir (defaults to home directory)
 pub async fn list_directories(
+    State(core): State<Arc<TmaiCore>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<DirEntry>>, (StatusCode, Json<serde_json::Value>)> {
     let home = dirs::home_dir().unwrap_or_default();
@@ -773,6 +837,14 @@ pub async fn list_directories(
         .filter(|p| !p.is_empty())
         .map(std::path::PathBuf::from)
         .unwrap_or(home);
+
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(&base, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
 
     if !base.is_dir() {
         return Err(json_error(
@@ -1260,10 +1332,11 @@ async fn spawn_in_tmux(
         all_args.push("--remote".to_string());
         all_args.push(shell_quote(url));
     }
+    let quoted_command = shell_quote(&req.command);
     let full_command = if all_args.is_empty() {
-        req.command.clone()
+        quoted_command
     } else {
-        format!("{} {}", req.command, all_args.join(" "))
+        format!("{} {}", quoted_command, all_args.join(" "))
     };
 
     // Run the command via tmai wrap for monitoring
@@ -1620,11 +1693,20 @@ pub async fn git_branch_diff(
                 &format!("git diff failed: {}", e),
             )
         })?;
-    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = &output.stdout;
+    const MAX_DIFF_BYTES: usize = 1_048_576; // 1MB
+    let truncated = raw.len() > MAX_DIFF_BYTES;
+    let diff_bytes = if truncated {
+        &raw[..MAX_DIFF_BYTES]
+    } else {
+        raw.as_slice()
+    };
+    let diff = String::from_utf8_lossy(diff_bytes).to_string();
     let summary =
         tmai_core::git::fetch_branch_diff_stat(repo_dir, &params.branch, &params.base).await;
     Ok(Json(serde_json::json!({
         "diff": if diff.is_empty() { None } else { Some(diff) },
+        "truncated": truncated,
         "summary": summary.map(|s| serde_json::json!({
             "files_changed": s.files_changed,
             "insertions": s.insertions,
@@ -1681,6 +1763,8 @@ pub struct DeleteBranchRequest {
     pub branch: String,
     #[serde(default)]
     pub force: bool,
+    #[serde(default)]
+    pub delete_remote: bool,
 }
 
 /// Delete a local git branch
@@ -1696,7 +1780,7 @@ pub async fn delete_branch(
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
     }
 
-    tmai_core::git::delete_branch(repo_dir, &req.branch, req.force)
+    tmai_core::git::delete_branch(repo_dir, &req.branch, req.force, req.delete_remote)
         .await
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -1713,6 +1797,10 @@ pub struct CheckoutRequest {
 pub async fn checkout_branch(
     Json(req): Json<CheckoutRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate branch name to prevent command injection
+    if !tmai_core::git::is_safe_git_ref(&req.branch) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
     let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
     if !std::path::Path::new(repo_dir).is_dir() {
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
@@ -1736,6 +1824,18 @@ pub struct CreateBranchRequest {
 pub async fn create_branch(
     Json(req): Json<CreateBranchRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate branch name to prevent command injection
+    if !tmai_core::git::is_safe_git_ref(&req.name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    if let Some(ref base) = req.base {
+        if !tmai_core::git::is_safe_git_ref(base) {
+            return Err(json_error(
+                StatusCode::BAD_REQUEST,
+                "Invalid base branch name",
+            ));
+        }
+    }
     let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
     if !std::path::Path::new(repo_dir).is_dir() {
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
@@ -2262,9 +2362,17 @@ pub struct FileReadParams {
 
 /// GET /api/files/read — read any text file's content
 pub async fn read_file(
+    State(core): State<Arc<TmaiCore>>,
     axum::extract::Query(params): axum::extract::Query<FileReadParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let path = std::path::Path::new(&params.path);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(path, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
     if !path.is_file() {
         return Err(json_error(StatusCode::NOT_FOUND, "File not found"));
     }
@@ -2295,9 +2403,17 @@ pub struct FileWriteRequest {
 
 /// POST /api/files/write — write content to a file
 pub async fn write_file(
+    State(core): State<Arc<TmaiCore>>,
     Json(req): Json<FileWriteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let path = std::path::Path::new(&req.path);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(path, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
     // Security: only allow writing .md, .json, .toml, .txt, .yaml, .yml files
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if !matches!(ext, "md" | "json" | "toml" | "txt" | "yaml" | "yml") {
@@ -2333,9 +2449,17 @@ const OPENABLE_EXTENSIONS: &[&str] = &["md", "json", "toml", "txt", "yaml", "yml
 
 /// GET /api/files/md-tree — list markdown files in a directory tree
 pub async fn md_tree(
+    State(core): State<Arc<TmaiCore>>,
     axum::extract::Query(params): axum::extract::Query<MdTreeParams>,
 ) -> Result<Json<Vec<MdTreeEntry>>, (StatusCode, Json<serde_json::Value>)> {
     let root = std::path::Path::new(&params.root);
+    // Path traversal protection: must be within HOME or a registered project
+    if !is_path_within_allowed_scope(root, Some(&core)) {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "Path is outside allowed scope",
+        ));
+    }
     if !root.is_dir() {
         return Err(json_error(StatusCode::NOT_FOUND, "Directory not found"));
     }
@@ -2756,5 +2880,34 @@ mod tests {
             "Option A".to_string(),
             "Option B".to_string(),
         ]));
+    }
+
+    #[test]
+    fn test_shell_quote_strips_control_chars() {
+        // Normal strings pass through
+        assert_eq!(shell_quote("hello"), "hello");
+        // Control chars (e.g. \x01, \x1b) are stripped
+        assert_eq!(shell_quote("he\x01llo"), "hello");
+        assert_eq!(shell_quote("ab\x1bcd"), "abcd");
+        // Newlines are preserved
+        assert_eq!(shell_quote("a\nb"), "'a\nb'");
+        // Tab (0x09) is a control char and stripped
+        assert_eq!(shell_quote("a\tb"), "ab");
+        // Shell-special chars get quoted
+        assert_eq!(shell_quote("hello world"), "'hello world'");
+        // Single quotes are escaped
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_is_path_within_allowed_scope() {
+        // HOME directory should be allowed
+        if let Some(home) = dirs::home_dir() {
+            let test_path = home.join("some_file.txt");
+            assert!(is_path_within_allowed_scope(&test_path, None));
+        }
+        // Root paths outside HOME should be rejected
+        let outside = std::path::Path::new("/etc/passwd");
+        assert!(!is_path_within_allowed_scope(outside, None));
     }
 }

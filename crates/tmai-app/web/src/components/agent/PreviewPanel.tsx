@@ -1,4 +1,5 @@
 import { AnsiUp } from "ansi_up";
+import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
@@ -316,7 +317,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       const sel = window.getSelection();
       const hasSelection = sel && sel.toString().length > 0;
       if (!hasSelection) {
-        contentRef.current.innerHTML = html;
+        contentRef.current.innerHTML = DOMPurify.sanitize(html);
       }
     }
     if (autoScroll) {

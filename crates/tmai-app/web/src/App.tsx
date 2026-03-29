@@ -37,14 +37,14 @@ export function App() {
       .then((projects) => {
         setRegisteredProjects(projects);
         // Set first project as default if not set
-        if (projects.length > 0 && !currentProject) {
-          setCurrentProject(projects[0]);
+        if (projects.length > 0) {
+          setCurrentProject((prev) => prev ?? projects[0]);
         }
       })
       .catch((_e) => {
         toast.error("Failed to load projects");
       });
-  }, [currentProject, toast]);
+  }, [toast]);
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);

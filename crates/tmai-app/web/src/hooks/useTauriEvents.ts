@@ -18,15 +18,22 @@ export function useTauriEvents(onEvent: (event: CoreEvent) => void): { isListeni
   );
 
   useEffect(() => {
+    let active = true;
     let unsubscribe: UnlistenFn | null = null;
 
     listen<CoreEvent>("core-event", handleEvent)
       .then((fn) => {
-        unsubscribe = fn;
+        if (active) {
+          unsubscribe = fn;
+        } else {
+          // Cleanup ran before listen resolved — unlisten immediately
+          fn();
+        }
       })
       .catch((_e) => {});
 
     return () => {
+      active = false;
       if (unsubscribe) {
         unsubscribe();
       }

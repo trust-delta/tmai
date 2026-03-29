@@ -1,5 +1,5 @@
 // Comprehensive event handler for all CoreEvent types from Tauri
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
 export interface AppEventHandlers {
@@ -24,97 +24,103 @@ export interface AppEventHandlers {
   onUsageUpdated?: () => void;
 }
 
-export function useAppEvents(handlers: AppEventHandlers) {
-  const handleEvent = useCallback(
-    (event: CoreEvent) => {
-      switch (event.type) {
-        case "agents-updated":
-          handlers.onAgentsUpdated?.();
-          break;
-        case "agent-status-changed":
-          if (event.data && typeof event.data === "object" && "target" in event.data) {
-            handlers.onAgentStatusChanged?.((event.data as { target: string }).target);
-          }
-          break;
-        case "agent-appeared":
-          if (event.data && typeof event.data === "object" && "target" in event.data) {
-            handlers.onAgentAppeared?.((event.data as { target: string }).target);
-          }
-          break;
-        case "agent-disappeared":
-          if (event.data && typeof event.data === "object" && "target" in event.data) {
-            handlers.onAgentDisappeared?.((event.data as { target: string }).target);
-          }
-          break;
-        case "teams-updated":
-          handlers.onTeamsUpdated?.();
-          break;
-        case "teammate-idle":
-          if (event.data && typeof event.data === "object") {
-            const data = event.data as { team_name?: string; member_name?: string };
-            handlers.onTeammateIdle?.(data.team_name || "", data.member_name || "");
-          }
-          break;
-        case "task-completed":
-          if (event.data && typeof event.data === "object" && "task_id" in event.data) {
-            handlers.onTaskCompleted?.((event.data as { task_id: string }).task_id);
-          }
-          break;
-        case "config-changed":
-          handlers.onConfigChanged?.();
-          break;
-        case "worktree-created":
-          if (event.data && typeof event.data === "object" && "name" in event.data) {
-            handlers.onWorktreeCreated?.((event.data as { name: string }).name);
-          }
-          break;
-        case "worktree-removed":
-          if (event.data && typeof event.data === "object" && "name" in event.data) {
-            handlers.onWorktreeRemoved?.((event.data as { name: string }).name);
-          }
-          break;
-        case "instructions-loaded":
-          handlers.onInstructionsLoaded?.();
-          break;
-        case "agent-stopped":
-          if (event.data && typeof event.data === "object") {
-            const data = event.data as { target?: string; reason?: string };
-            handlers.onAgentStopped?.(data.target || "", data.reason);
-          }
-          break;
-        case "context-compacting":
-          if (event.data && typeof event.data === "object") {
-            const data = event.data as { target?: string; count?: number };
-            handlers.onContextCompacting?.(data.target || "", data.count);
-          }
-          break;
-        case "review-ready":
-          handlers.onReviewReady?.();
-          break;
-        case "review-launched":
-          handlers.onReviewLaunched?.();
-          break;
-        case "review-completed":
-          handlers.onReviewCompleted?.();
-          break;
-        case "worktree-setup-completed":
-          if (event.data && typeof event.data === "object" && "name" in event.data) {
-            handlers.onWorktreeSetupCompleted?.((event.data as { name: string }).name);
-          }
-          break;
-        case "worktree-setup-failed":
-          if (event.data && typeof event.data === "object") {
-            const data = event.data as { name?: string; error?: string };
-            handlers.onWorktreeSetupFailed?.(data.name || "", data.error);
-          }
-          break;
-        case "usage-updated":
-          handlers.onUsageUpdated?.();
-          break;
+// Dispatch a CoreEvent to the appropriate handler via ref (stable identity)
+function dispatchEvent(handlers: AppEventHandlers, event: CoreEvent) {
+  switch (event.type) {
+    case "agents-updated":
+      handlers.onAgentsUpdated?.();
+      break;
+    case "agent-status-changed":
+      if (event.data && typeof event.data === "object" && "target" in event.data) {
+        handlers.onAgentStatusChanged?.((event.data as { target: string }).target);
       }
-    },
-    [handlers],
-  );
+      break;
+    case "agent-appeared":
+      if (event.data && typeof event.data === "object" && "target" in event.data) {
+        handlers.onAgentAppeared?.((event.data as { target: string }).target);
+      }
+      break;
+    case "agent-disappeared":
+      if (event.data && typeof event.data === "object" && "target" in event.data) {
+        handlers.onAgentDisappeared?.((event.data as { target: string }).target);
+      }
+      break;
+    case "teams-updated":
+      handlers.onTeamsUpdated?.();
+      break;
+    case "teammate-idle":
+      if (event.data && typeof event.data === "object") {
+        const data = event.data as { team_name?: string; member_name?: string };
+        handlers.onTeammateIdle?.(data.team_name || "", data.member_name || "");
+      }
+      break;
+    case "task-completed":
+      if (event.data && typeof event.data === "object" && "task_id" in event.data) {
+        handlers.onTaskCompleted?.((event.data as { task_id: string }).task_id);
+      }
+      break;
+    case "config-changed":
+      handlers.onConfigChanged?.();
+      break;
+    case "worktree-created":
+      if (event.data && typeof event.data === "object" && "name" in event.data) {
+        handlers.onWorktreeCreated?.((event.data as { name: string }).name);
+      }
+      break;
+    case "worktree-removed":
+      if (event.data && typeof event.data === "object" && "name" in event.data) {
+        handlers.onWorktreeRemoved?.((event.data as { name: string }).name);
+      }
+      break;
+    case "instructions-loaded":
+      handlers.onInstructionsLoaded?.();
+      break;
+    case "agent-stopped":
+      if (event.data && typeof event.data === "object") {
+        const data = event.data as { target?: string; reason?: string };
+        handlers.onAgentStopped?.(data.target || "", data.reason);
+      }
+      break;
+    case "context-compacting":
+      if (event.data && typeof event.data === "object") {
+        const data = event.data as { target?: string; count?: number };
+        handlers.onContextCompacting?.(data.target || "", data.count);
+      }
+      break;
+    case "review-ready":
+      handlers.onReviewReady?.();
+      break;
+    case "review-launched":
+      handlers.onReviewLaunched?.();
+      break;
+    case "review-completed":
+      handlers.onReviewCompleted?.();
+      break;
+    case "worktree-setup-completed":
+      if (event.data && typeof event.data === "object" && "name" in event.data) {
+        handlers.onWorktreeSetupCompleted?.((event.data as { name: string }).name);
+      }
+      break;
+    case "worktree-setup-failed":
+      if (event.data && typeof event.data === "object") {
+        const data = event.data as { name?: string; error?: string };
+        handlers.onWorktreeSetupFailed?.(data.name || "", data.error);
+      }
+      break;
+    case "usage-updated":
+      handlers.onUsageUpdated?.();
+      break;
+  }
+}
+
+export function useAppEvents(handlers: AppEventHandlers) {
+  // Store handlers in a ref so the callback has a stable identity
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  const handleEvent = useCallback((event: CoreEvent) => {
+    dispatchEvent(handlersRef.current, event);
+  }, []);
 
   useTauriEvents(handleEvent);
 }

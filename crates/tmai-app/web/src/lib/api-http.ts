@@ -564,28 +564,30 @@ export const api = {
   },
 
   // Agent actions
-  approve: (target: string) => apiFetch(`/agents/${target}/approve`, { method: "POST" }),
+  approve: (target: string) =>
+    apiFetch(`/agents/${encodeURIComponent(target)}/approve`, { method: "POST" }),
   selectChoice: (target: string, choice: number) =>
-    apiFetch(`/agents/${target}/select`, {
+    apiFetch(`/agents/${encodeURIComponent(target)}/select`, {
       method: "POST",
       body: JSON.stringify({ choice }),
     }),
   submitSelection: (target: string, choices: number[]) =>
-    apiFetch(`/agents/${target}/submit`, {
+    apiFetch(`/agents/${encodeURIComponent(target)}/submit`, {
       method: "POST",
       body: JSON.stringify({ choices }),
     }),
   sendText: (target: string, text: string) =>
-    apiFetch(`/agents/${target}/input`, {
+    apiFetch(`/agents/${encodeURIComponent(target)}/input`, {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
   sendKey: (target: string, key: string) =>
-    apiFetch(`/agents/${target}/key`, {
+    apiFetch(`/agents/${encodeURIComponent(target)}/key`, {
       method: "POST",
       body: JSON.stringify({ key }),
     }),
-  killAgent: (target: string) => apiFetch(`/agents/${target}/kill`, { method: "POST" }),
+  killAgent: (target: string) =>
+    apiFetch(`/agents/${encodeURIComponent(target)}/kill`, { method: "POST" }),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
       method: "PUT",
@@ -682,10 +684,15 @@ export const api = {
     apiFetch<CiFailureLog>(
       `/github/ci/failure-log?repo=${encodeURIComponent(repoPath)}&run_id=${runId}`,
     ),
-  deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
+  deleteBranch: (repoPath: string, branch: string, force?: boolean, deleteRemote?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",
-      body: JSON.stringify({ repo_path: repoPath, branch, force: force ?? false }),
+      body: JSON.stringify({
+        repo_path: repoPath,
+        branch,
+        force: force ?? false,
+        delete_remote: deleteRemote ?? false,
+      }),
     }),
   createBranch: (repoPath: string, name: string, base?: string) =>
     apiFetch("/git/branches/create", {
@@ -847,7 +854,7 @@ export function connectTerminal(
   agentId: string,
   onData: (data: Uint8Array) => void,
 ): { ws: WebSocket; send: (data: string | ArrayBuffer) => void } {
-  const wsUrl = `${config.baseUrl.replace("http", "ws")}/api/agents/${agentId}/terminal?token=${config.token}`;
+  const wsUrl = `${config.baseUrl.replace("http", "ws")}/api/agents/${encodeURIComponent(agentId)}/terminal?token=${config.token}`;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
 

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 // Keyboard shortcuts map
 export const KEYBOARD_SHORTCUTS = {
@@ -21,7 +21,12 @@ interface ShortcutHandler {
   requiresAlt?: boolean;
 }
 
+// Register keyboard shortcuts with a stable event listener.
+// Handlers are stored in a ref so the listener never needs to be re-attached.
 export function useKeyboardShortcuts(handlers: ShortcutHandler[]) {
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Check if focus is on an input element
@@ -36,7 +41,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandler[]) {
         return;
       }
 
-      for (const handler of handlers) {
+      for (const handler of handlersRef.current) {
         const keyMatch =
           handler.keys.includes(event.key.toLowerCase()) ||
           handler.keys.includes(event.code.toLowerCase());
@@ -57,5 +62,5 @@ export function useKeyboardShortcuts(handlers: ShortcutHandler[]) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handlers]);
+  }, []);
 }

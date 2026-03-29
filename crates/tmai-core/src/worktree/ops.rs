@@ -140,20 +140,13 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
     }
 
     // Delete the associated branch (best-effort, don't fail if branch is already gone)
+    // Use safe delete (-d) by default; only force delete (-D) when req.force is true
     if let Some(ref branch) = branch_name {
+        let flag = if req.force { "-D" } else { "-d" };
         let _ = tokio::time::timeout(
             GIT_TIMEOUT,
             Command::new("git")
-                .args(["-C", &req.repo_path, "branch", "-D", branch])
-                .output(),
-        )
-        .await;
-
-        // Also delete the remote tracking branch (best-effort)
-        let _ = tokio::time::timeout(
-            GIT_TIMEOUT,
-            Command::new("git")
-                .args(["-C", &req.repo_path, "push", "origin", "--delete", branch])
+                .args(["-C", &req.repo_path, "branch", flag, branch])
                 .output(),
         )
         .await;

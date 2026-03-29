@@ -216,16 +216,27 @@ impl ClaudeHaikuJudge {
     }
 
     /// Extract a JudgmentOutput JSON from free-form text (e.g. ```json ... ``` blocks)
+    ///
+    /// Iterates over each `{` position and attempts to parse from there,
+    /// returning the first successfully parsed JSON object. This handles
+    /// cases where multiple JSON objects or surrounding text exist.
     fn extract_json_from_text(text: &str) -> Option<JudgmentOutput> {
-        // Find first '{' and last '}' to extract JSON
-        let start = text.find('{')?;
-        let end = text.rfind('}')?;
-        if start < end {
-            let json_str = &text[start..=end];
-            serde_json::from_str::<JudgmentOutput>(json_str).ok()
-        } else {
-            None
+        let mut search_from = 0;
+        while let Some(start) = text[search_from..].find('{') {
+            let start = search_from + start;
+            let candidate = &text[start..];
+            if let Ok(output) = serde_json::from_str::<JudgmentOutput>(candidate) {
+                return Some(output);
+            }
+            // Also try with a stream deserializer to handle trailing text
+            let mut de =
+                serde_json::Deserializer::from_str(candidate).into_iter::<JudgmentOutput>();
+            if let Some(Ok(output)) = de.next() {
+                return Some(output);
+            }
+            search_from = start + 1;
         }
+        None
     }
 
     /// Extract text content from claude CLI JSON response
