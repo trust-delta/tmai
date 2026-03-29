@@ -245,6 +245,54 @@ export function LaneGraph({
             );
           })}
 
+          {/* PR merge-target dashed arrows: from PR branch tip → target (base) lane header */}
+          {Object.values(prMap).map((pr) => {
+            const srcLane = lanes.find((l) => l.branch === pr.head_branch);
+            const tgtLane = lanes.find((l) => l.branch === pr.base_branch);
+            if (!srcLane || !tgtLane) return null;
+            if (srcLane.laneIndex === tgtLane.laneIndex) return null;
+
+            const srcRange = laneYRange.get(srcLane.laneIndex);
+            if (!srcRange) return null;
+
+            const fromX = laneX(srcLane.laneIndex);
+            const toX = laneX(tgtLane.laneIndex);
+            // Start from the tip (topmost commit) of the PR branch
+            const fromY = srcRange.minY;
+            // End at the header area of the target lane
+            const toY = 28;
+
+            const color = pr.is_draft ? "rgb(161,161,170)" : "rgb(74,222,128)";
+
+            // Curved path for visual clarity
+            const midY = (fromY + toY) / 2;
+            const d = `M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`;
+
+            // Arrowhead pointing at target lane header
+            const arrowSize = 4;
+            const arrowD = `M ${toX - arrowSize} ${toY + arrowSize * 1.5} L ${toX} ${toY} L ${toX + arrowSize} ${toY + arrowSize * 1.5}`;
+
+            return (
+              <g key={`pr-target-${pr.number}`}>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.5}
+                  strokeDasharray="6 3"
+                />
+                <path
+                  d={arrowD}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.6}
+                />
+              </g>
+            );
+          })}
+
           {/* Fork/Merge lines */}
           {connections.map((conn, _i) => {
             const fromX = laneX(conn.fromLane);
