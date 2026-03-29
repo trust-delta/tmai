@@ -407,7 +407,8 @@ export function BranchGraph({
                 {graphData && (
                   <>
                     {" \u00B7 "}
-                    {graphData.commits.length} commit{graphData.commits.length !== 1 ? "s" : ""}
+                    {graphData.total_count} commit
+                    {graphData.total_count !== 1 ? "s" : ""}
                   </>
                 )}
               </>

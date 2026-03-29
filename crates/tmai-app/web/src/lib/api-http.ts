@@ -379,6 +379,7 @@ export interface GraphCommit {
 
 export interface GraphData {
   commits: GraphCommit[];
+  total_count: number;
 }
 
 export interface PrInfo {

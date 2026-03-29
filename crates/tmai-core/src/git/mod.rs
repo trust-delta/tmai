@@ -952,6 +952,8 @@ pub struct GraphCommit {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GraphData {
     pub commits: Vec<GraphCommit>,
+    /// Total commit count across all branches (independent of max_commits limit)
+    pub total_count: usize,
 }
 
 /// Get full commit graph across all branches for lane-based visualization
@@ -1016,7 +1018,28 @@ pub async fn log_graph(repo_dir: &str, max_commits: usize) -> Option<GraphData> 
         })
         .collect();
 
-    Some(GraphData { commits })
+    // Get total commit count (fast, no log parsing)
+    let total_count = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "rev-list", "--all", "--count"])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .and_then(|o| {
+        String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .parse::<usize>()
+            .ok()
+    })
+    .unwrap_or(commits.len());
+
+    Some(GraphData {
+        commits,
+        total_count,
+    })
 }
 
 /// Strip `/.git` or `/.git/` suffix from a path to get the repository root
