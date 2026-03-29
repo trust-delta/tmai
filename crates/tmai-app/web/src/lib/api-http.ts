@@ -424,6 +424,7 @@ export interface IssueInfo {
   state: string;
   url: string;
   labels: IssueLabel[];
+  assignees: string[];
 }
 
 export interface PrComment {
@@ -684,6 +685,11 @@ export const api = {
     apiFetch<CiFailureLog>(
       `/github/ci/failure-log?repo=${encodeURIComponent(repoPath)}&run_id=${runId}`,
     ),
+  rerunFailedChecks: (repoPath: string, runId: number) =>
+    apiFetch<{ status: string }>("/github/ci/rerun", {
+      method: "POST",
+      body: JSON.stringify({ repo: repoPath, run_id: runId }),
+    }),
   deleteBranch: (repoPath: string, branch: string, force?: boolean, deleteRemote?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",

@@ -101,6 +101,7 @@ impl WebServer {
             .route("/github/pr/files", get(api::get_pr_files))
             .route("/github/pr/merge-status", get(api::get_pr_merge_status))
             .route("/github/ci/failure-log", get(api::get_ci_failure_log))
+            .route("/github/ci/rerun", post(api::rerun_failed_checks))
             .route("/git/merge", post(api::git_merge))
             .route("/projects", get(api::get_projects).post(api::add_project))
             .route("/projects/remove", post(api::remove_project))

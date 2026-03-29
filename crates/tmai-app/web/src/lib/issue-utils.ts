@@ -10,6 +10,16 @@ export function extractIssueNumbers(branch: string): number[] {
   return nums;
 }
 
+/// Generate a worktree name from an issue (e.g., {number: 42, title: "Add login"} → "42-add-login")
+export function issueToWorktreeName(issue: { number: number; title: string }): string {
+  const slug = issue.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50);
+  return slug ? `${issue.number}-${slug}` : `${issue.number}`;
+}
+
 /// Extract issue references from text (e.g., "Fixes #42", "closes #7", "resolves #123")
 export function extractIssueRefs(text: string): number[] {
   const nums: number[] = [];

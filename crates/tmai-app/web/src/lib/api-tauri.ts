@@ -122,6 +122,8 @@ export const api = {
   getPrMergeStatus: (repoPath: string, prNumber: number) =>
     httpApi.getPrMergeStatus(repoPath, prNumber),
   getCiFailureLog: (repoPath: string, runId: number) => httpApi.getCiFailureLog(repoPath, runId),
+  rerunFailedChecks: (repoPath: string, runId: number) =>
+    httpApi.rerunFailedChecks(repoPath, runId),
   deleteBranch: (repoPath: string, branch: string, force?: boolean, deleteRemote?: boolean) =>
     httpApi.deleteBranch(repoPath, branch, force, deleteRemote),
   createBranch: (repoPath: string, name: string, base?: string) =>

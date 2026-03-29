@@ -392,6 +392,13 @@ pub struct IssueInfo {
     pub state: String,
     pub url: String,
     pub labels: Vec<IssueLabel>,
+    pub assignees: Vec<String>,
+}
+
+/// Raw assignee from `gh issue list`
+#[derive(Debug, serde::Deserialize)]
+struct GhAssignee {
+    login: String,
 }
 
 /// Raw issue from `gh issue list`
@@ -402,6 +409,8 @@ struct GhIssueEntry {
     state: String,
     url: String,
     labels: Vec<IssueLabel>,
+    #[serde(default)]
+    assignees: Vec<GhAssignee>,
 }
 
 /// Fetch open issues for a repository using gh CLI (cached with 30s TTL)
@@ -425,7 +434,7 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
                 "--state",
                 "open",
                 "--json",
-                "number,title,state,url,labels",
+                "number,title,state,url,labels,assignees",
                 "--limit",
                 "50",
             ])
@@ -450,6 +459,7 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
             state: e.state,
             url: e.url,
             labels: e.labels,
+            assignees: e.assignees.into_iter().map(|a| a.login).collect(),
         })
         .collect();
 
@@ -784,6 +794,28 @@ pub async fn get_ci_failure_log(repo_dir: &str, run_id: u64) -> Option<CiFailure
         run_id,
         log_text: text,
     })
+}
+
+/// Re-run failed jobs for a CI workflow run
+///
+/// Uses `gh run rerun <run_id> --failed` to re-trigger only failed jobs.
+pub async fn rerun_failed_checks(repo_dir: &str, run_id: u64) -> Option<()> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args(["run", "rerun", &run_id.to_string(), "--failed"])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if output.status.success() {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Extract issue numbers from a branch name

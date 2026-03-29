@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
   api,
@@ -7,7 +7,7 @@ import {
   type IssueInfo,
   type PrInfo,
 } from "@/lib/api";
-import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
+import { extractIssueNumbers, extractIssueRefs, issueToWorktreeName } from "@/lib/issue-utils";
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
 import type { DetailView } from "./DetailPanel";
 import type { BranchNode } from "./graph/types";
@@ -25,6 +25,11 @@ interface ActionPanelProps {
   onSelectNode: (name: string | null) => void;
   onFocusAgent: (target: string) => void;
   onOpenDetail: (view: DetailView | null) => void;
+  // Issue mode (when Issues tab is active)
+  issueMode?: boolean;
+  selectedIssue?: IssueInfo | null;
+  defaultBranch?: string;
+  onStartWorkDone?: (worktreeName: string) => void;
 }
 
 // Right-side action panel for selected branch
@@ -41,6 +46,10 @@ export function ActionPanel({
   onSelectNode,
   onFocusAgent,
   onOpenDetail,
+  issueMode,
+  selectedIssue,
+  defaultBranch,
+  onStartWorkDone,
 }: ActionPanelProps) {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -50,11 +59,17 @@ export function ActionPanel({
   const [ciSummary, setCiSummary] = useState<CiSummary | null>(null);
   const [ciLoading, setCiLoading] = useState(false);
   const [ciExpanded, setCiExpanded] = useState(false);
+  const [rerunBusy, setRerunBusy] = useState(false);
   const [branchDiffStat, setBranchDiffStat] = useState<{
     files_changed: number;
     insertions: number;
     deletions: number;
   } | null>(null);
+  // Issue start-work form state
+  const [startWorkName, setStartWorkName] = useState("");
+  const [startWorkBusy, setStartWorkBusy] = useState(false);
+  const [startWorkError, setStartWorkError] = useState<string | null>(null);
+  const startWorkInputRef = useRef<HTMLInputElement>(null);
 
   // Reset all ephemeral state when branch changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on branch name change
@@ -74,10 +89,27 @@ export function ActionPanel({
     setCiLoading(true);
     api
       .listChecks(projectPath, activeNode.name)
-      .then(setCiSummary)
+      .then((data) => {
+        setCiSummary(data);
+        // Auto-expand CI checks when there are failures
+        if (data && data.rollup === "FAILURE") {
+          setCiExpanded(true);
+        }
+      })
       .catch(() => setCiSummary(null))
       .finally(() => setCiLoading(false));
   }, [activeNode.name, projectPath]);
+
+  // Pre-fill start-work name when issue selection changes
+  useEffect(() => {
+    if (selectedIssue) {
+      setStartWorkName(issueToWorktreeName(selectedIssue));
+      setStartWorkError(null);
+      setStartWorkBusy(false);
+      // Focus the input after render
+      setTimeout(() => startWorkInputRef.current?.focus(), 50);
+    }
+  }, [selectedIssue]);
 
   // Fetch diff stat vs parent branch when branch changes (for non-main branches without worktree diffSummary)
   useEffect(() => {
@@ -196,6 +228,154 @@ export function ActionPanel({
   const handleWorktreeCancel = useCallback(() => {
     setShowNewWorktree(false);
   }, []);
+
+  // Re-run failed CI checks
+  const handleRerunFailed = useCallback(async () => {
+    if (!ciSummary || rerunBusy) return;
+    const failedRunIds = ciSummary.checks
+      .filter((c) => c.conclusion === "failure" && c.run_id != null)
+      .map((c) => c.run_id as number);
+    if (failedRunIds.length === 0) return;
+    setRerunBusy(true);
+    try {
+      await Promise.all(failedRunIds.map((id) => api.rerunFailedChecks(projectPath, id)));
+      // Re-fetch CI after a short delay for status to update
+      setTimeout(() => {
+        api
+          .listChecks(projectPath, activeNode.name)
+          .then((data) => {
+            setCiSummary(data);
+            if (data && data.rollup === "FAILURE") setCiExpanded(true);
+          })
+          .catch(() => {});
+      }, 2000);
+    } catch {
+      setActionError("Failed to re-run checks");
+    } finally {
+      setRerunBusy(false);
+    }
+  }, [ciSummary, rerunBusy, projectPath, activeNode.name]);
+
+  // Start work on an issue: create worktree + launch agent
+  const handleStartWork = useCallback(async () => {
+    if (!selectedIssue || startWorkBusy || !startWorkName.trim()) return;
+    const trimmed = startWorkName.trim();
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed) || trimmed.length > 64) {
+      setStartWorkError("a-z, 0-9, -, _ only (max 64)");
+      return;
+    }
+    setStartWorkBusy(true);
+    setStartWorkError(null);
+    try {
+      const base = defaultBranch ?? "main";
+      await api.spawnWorktree({ name: trimmed, cwd: projectPath, base_branch: base });
+      // Auto-launch agent with issue context
+      try {
+        await api.launchWorktreeAgent(projectPath, trimmed);
+      } catch {
+        // Worktree created but agent launch failed — still consider success
+      }
+      onStartWorkDone?.(trimmed);
+    } catch (e) {
+      setStartWorkError(e instanceof Error ? e.message : "Failed to create worktree");
+    } finally {
+      setStartWorkBusy(false);
+    }
+  }, [selectedIssue, startWorkBusy, startWorkName, defaultBranch, projectPath, onStartWorkDone]);
+
+  // Issue mode: show issue details + start work form
+  if (issueMode) {
+    return (
+      <div className="w-80 shrink-0 overflow-y-auto border-l border-white/5 bg-black/20">
+        <div className="p-4">
+          {selectedIssue ? (
+            <>
+              {/* Issue header */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold text-green-400">
+                    #{selectedIssue.number}
+                  </span>
+                  <a
+                    href={selectedIssue.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                  >
+                    open in GitHub
+                  </a>
+                </div>
+                <h3 className="mt-1 text-sm font-medium text-zinc-100">{selectedIssue.title}</h3>
+                {/* Labels */}
+                {selectedIssue.labels.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selectedIssue.labels.map((label) => (
+                      <span
+                        key={label.name}
+                        className="rounded-full px-1.5 py-0.5 text-[10px]"
+                        style={{
+                          backgroundColor: `#${label.color}22`,
+                          color: `#${label.color}`,
+                        }}
+                      >
+                        {label.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* Assignees */}
+                {selectedIssue.assignees.length > 0 && (
+                  <div className="mt-2 text-[11px] text-zinc-500">
+                    Assigned: {selectedIssue.assignees.join(", ")}
+                  </div>
+                )}
+              </div>
+
+              {/* Start Work form */}
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                <div className="mb-2 text-[11px] font-medium text-emerald-400">Start Work</div>
+                <div className="mb-1.5 text-[11px] text-zinc-500">
+                  base: <span className="text-emerald-400">{defaultBranch ?? "main"}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={startWorkInputRef}
+                    type="text"
+                    value={startWorkName}
+                    onChange={(e) => {
+                      setStartWorkName(e.target.value);
+                      setStartWorkError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleStartWork();
+                    }}
+                    placeholder="worktree name"
+                    className="flex-1 rounded bg-black/30 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
+                  />
+                </div>
+                <div className="mt-1 text-[10px] text-zinc-600">
+                  Creates worktree + launches agent
+                </div>
+                {startWorkError && (
+                  <div className="mt-1 text-[10px] text-red-400">{startWorkError}</div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleStartWork}
+                  disabled={!startWorkName.trim() || startWorkBusy}
+                  className="mt-2 w-full rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30 disabled:opacity-40"
+                >
+                  {startWorkBusy ? "Creating..." : "Create & Launch Agent"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-zinc-500">Select an issue to start work</div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-80 shrink-0 overflow-y-auto border-l border-white/5 bg-black/20">
@@ -444,6 +624,19 @@ export function ActionPanel({
                   })}
                 </div>
               )}
+              {/* Re-run failed checks button */}
+              {ciExpanded &&
+                ciSummary.rollup === "FAILURE" &&
+                ciSummary.checks.some((c) => c.conclusion === "failure" && c.run_id != null) && (
+                  <button
+                    type="button"
+                    onClick={handleRerunFailed}
+                    disabled={rerunBusy}
+                    className="mt-1.5 w-full rounded bg-red-500/10 px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                  >
+                    {rerunBusy ? "Re-running..." : "Re-run failed checks"}
+                  </button>
+                )}
             </div>
           )}
           {ciSummary &&
