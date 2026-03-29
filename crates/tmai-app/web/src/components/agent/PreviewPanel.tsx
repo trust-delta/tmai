@@ -56,23 +56,55 @@ const MONO_FONT_STACK =
   "'Liberation Mono', 'Courier New', " +
   "'Symbols Nerd Font Mono', monospace";
 
-// Box Drawing horizontal character class (U+2500–U+257F)
-const HLINE_CHAR_RE = /[\u2500-\u257f]/g;
-
-// Line is considered a "horizontal rule" if box-drawing chars make up ≥50% of visible content
-function isHorizontalRule(visible: string): boolean {
-  const matches = visible.match(HLINE_CHAR_RE);
-  return matches != null && matches.length >= visible.length * 0.5;
-}
+// Consecutive Box Drawing horizontal characters (U+2500–U+257F runs of 4+)
+const HLINE_RUN_RE = /[\u2500-\u257f]{4,}/g;
 
 // ANSI escape patterns (constructed via RegExp to avoid control-char lint)
 const ESC = "\x1b";
 const CSI_RE = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
 const OSC_RE = new RegExp(`${ESC}\\][^\\x07${ESC}]*(?:\\x07|${ESC}\\\\)`, "g");
-const LEAD_CSI_RE = new RegExp(`^(${ESC}\\[[0-9;?]*[ -/]*[@-~])*`);
-const TRAIL_CSI_RE = new RegExp(`(${ESC}\\[[0-9;?]*[ -/]*[@-~])*$`);
 
-// Trim trailing blank lines and truncate Box Drawing horizontal lines to fit container width
+// Shrink Box Drawing horizontal runs so the line fits within `cols` columns.
+// Text portions are preserved; only the ──── runs get shortened.
+function shrinkHorizontalRuns(visible: string, cols: number): string {
+  if (visible.length <= cols) return visible;
+
+  const excess = visible.length - cols;
+
+  // Collect all runs
+  const runs: { index: number; length: number }[] = [];
+  HLINE_RUN_RE.lastIndex = 0;
+  for (const m of visible.matchAll(HLINE_RUN_RE)) {
+    runs.push({ index: m.index!, length: m[0].length });
+  }
+  if (runs.length === 0) return visible;
+
+  const totalRunChars = runs.reduce((s, r) => s + r.length, 0);
+  if (totalRunChars <= excess) {
+    // Even removing all runs isn't enough — just trim to cols
+    return visible.slice(0, cols);
+  }
+
+  // Shrink each run proportionally to its share of the total run length
+  const newLengths = runs.map((r) => {
+    const shrink = Math.ceil((r.length / totalRunChars) * excess);
+    return Math.max(1, r.length - shrink);
+  });
+
+  // Rebuild the string with shortened runs
+  let result = "";
+  let pos = 0;
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i];
+    result += visible.slice(pos, run.index);
+    result += visible.slice(run.index, run.index + newLengths[i]);
+    pos = run.index + run.length;
+  }
+  result += visible.slice(pos);
+  return result;
+}
+
+// Trim trailing blank lines and shrink Box Drawing horizontal runs to fit container width
 function trimPreviewContent(raw: string, cols: number): string {
   // Strip trailing blank lines (may contain ANSI escapes but no visible chars)
   const trimmed = raw.replace(/(\s*\n)*\s*$/, "");
@@ -81,13 +113,17 @@ function trimPreviewContent(raw: string, cols: number): string {
   return trimmed.replace(/^.*$/gm, (line) => {
     // Strip ANSI escapes to measure visible length
     const visible = line.replace(CSI_RE, "").replace(OSC_RE, "");
-    if (isHorizontalRule(visible) && visible.length > cols) {
-      // Truncate: keep only `cols` visible chars while preserving leading ANSI
-      const leadAnsi = line.match(LEAD_CSI_RE)?.[0] ?? "";
-      const trailAnsi = line.match(TRAIL_CSI_RE)?.[0] ?? "";
-      return leadAnsi + visible.slice(0, cols) + trailAnsi;
-    }
-    return line;
+    if (visible.length <= cols) return line;
+    // Only process lines that contain box-drawing runs
+    if (!HLINE_RUN_RE.test(visible)) return line;
+    HLINE_RUN_RE.lastIndex = 0;
+
+    // Rebuild line: replace visible content with shrunk version, keep ANSI intact
+    const shrunk = shrinkHorizontalRuns(visible, cols);
+    // Re-attach leading/trailing ANSI sequences from original line
+    const leadAnsi = line.match(new RegExp(`^(${ESC}\\[[0-9;?]*[ -/]*[@-~])*`))?.[0] ?? "";
+    const trailAnsi = line.match(new RegExp(`(${ESC}\\[[0-9;?]*[ -/]*[@-~])*$`))?.[0] ?? "";
+    return leadAnsi + shrunk + trailAnsi;
   });
 }
 
