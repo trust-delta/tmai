@@ -23,6 +23,7 @@
 - **Auto-approve** — Automatic approval with 4 modes: Rules / AI / Hybrid / Off
 - **Agent Teams** — Visualize Claude Code Agent Teams and task progress
 - **Inter-agent messaging** — Send text between agents
+- **Cursor tracking** — Terminal cursor overlay in preview (tmux + IPC/VT100, CJK-aware)
 
 ### 3-Tier State Detection
 

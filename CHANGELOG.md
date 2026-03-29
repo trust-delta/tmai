@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Terminal cursor tracking in preview panel** (#119)
+  - Two-tier detection: tmux `display-message` (cursor_x/cursor_y/history_size) or `vt100` crate for IPC/wrap mode
+  - Cyan block cursor overlay with DOM marker injection (handles line wrapping and CJK full-width characters)
+  - Configurable: Settings panel toggle (persists to config.toml) + per-session footer toggle
+  - `[web] show_cursor = true` config option, `GET/PUT /api/settings/preview` endpoints
+- **Spawn bash terminal in tmux** (#117) — Open a shell in the tmux pane environment
+- **Git panel enhancements** (#116)
+  - CI re-run button for failed checks
+  - Issues panel with GitHub issue listing
+  - Create worktree from issue (auto-names branch from issue title)
+
+### Fixed
+
+- HTTP hook 415 errors: accept raw bytes instead of requiring `Content-Type: application/json` (#119)
+- Hook timeout unit corrected from milliseconds to seconds in `tmai init` (#119)
+
+### Dependencies
+
+- vt100 0.16 (new: terminal cursor tracking)
+- @vitejs/plugin-react, lucide-react, tailwindcss, @tailwindcss/vite (frontend bumps)
+- toml_edit 0.25.5, uuid 1.23, ureq 3.3, toml 1.1 (Rust bumps)
+
+## [0.20.0] - 2026-03-27
+
+### Added
+
+- Git worktree orchestration (Phase B-1 + B-2): create, delete, diff, branch management
+- Context compaction tracking and subagent count from hook events (♻×N, ⑂N display)
+- WebUI-first React frontend with glassmorphism design (#105)
+- PTY spawn + xterm.js + inter-agent communication (Phase E/F)
+- PTY stdin injection for web-only mode input (Phase E)
+- Standalone content access (Phase D)
+- RuntimeAdapter trait + web-only mode (Phase C-1)
+- React + Vite WebUI (Phase C-2)
+
+### Fixed
+
+- rustls-webpki CRL matching vulnerability (updated to 0.103.10)
+- HTTP hook timeout to prevent Claude Code stall when tmai is not running (#91)
+
+### Dependencies
+
+- tokio-tungstenite 0.29, notify 8.2, once_cell 1.21.4, tempfile 3.27
+- clap 4.6, image 0.25.10, tracing-subscriber 0.3.23, futures-util 0.3.32
+
 ## [0.19.0] - 2026-03-14
 
 ### Added
