@@ -34,8 +34,10 @@ impl JsonRpcRequest {
 /// JSON-RPC 2.0 response message (received from Codex app-server)
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcResponse {
+    /// Some Codex versions omit this field
     #[allow(dead_code)]
-    pub jsonrpc: String,
+    #[serde(default)]
+    pub jsonrpc: Option<String>,
     #[allow(dead_code)]
     pub id: Option<u64>,
     pub result: Option<serde_json::Value>,
@@ -52,8 +54,10 @@ pub struct JsonRpcError {
 /// JSON-RPC 2.0 notification (no id field)
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcNotification {
+    /// Some Codex versions omit this field
     #[allow(dead_code)]
-    pub jsonrpc: String,
+    #[serde(default)]
+    pub jsonrpc: Option<String>,
     pub method: String,
     pub params: Option<serde_json::Value>,
 }
@@ -294,7 +298,7 @@ mod tests {
     #[test]
     fn test_parse_turn_started() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/started".to_string(),
             params: Some(serde_json::json!({})),
         };
@@ -304,7 +308,7 @@ mod tests {
     #[test]
     fn test_parse_item_started_function_call() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/started".to_string(),
             params: Some(serde_json::json!({
                 "item": {
@@ -326,7 +330,7 @@ mod tests {
     #[test]
     fn test_parse_command_approval() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/commandExecution/requestApproval".to_string(),
             params: Some(serde_json::json!({
                 "command": "rm -rf /tmp/test"
@@ -344,7 +348,7 @@ mod tests {
     #[test]
     fn test_parse_file_change_approval() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/fileChange/requestApproval".to_string(),
             params: Some(serde_json::json!({
                 "file_path": "/tmp/test.rs"
@@ -362,7 +366,7 @@ mod tests {
     #[test]
     fn test_parse_turn_completed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/completed".to_string(),
             params: Some(serde_json::json!({
                 "status": "completed"
@@ -380,7 +384,7 @@ mod tests {
     #[test]
     fn test_parse_turn_completed_failed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "turn/completed".to_string(),
             params: Some(serde_json::json!({
                 "status": "failed"
@@ -398,7 +402,7 @@ mod tests {
     #[test]
     fn test_parse_token_usage() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "thread/tokenUsage/updated".to_string(),
             params: Some(serde_json::json!({
                 "input_tokens": 1500,
@@ -418,7 +422,7 @@ mod tests {
     #[test]
     fn test_parse_thread_started() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "thread/started".to_string(),
             params: Some(serde_json::json!({
                 "cwd": "/home/user/project"
@@ -436,7 +440,7 @@ mod tests {
     #[test]
     fn test_parse_unknown_event() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "some/future/event".to_string(),
             params: None,
         };
@@ -452,7 +456,7 @@ mod tests {
     #[test]
     fn test_parse_item_completed() {
         let notif = JsonRpcNotification {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: Some("2.0".to_string()),
             method: "item/completed".to_string(),
             params: Some(serde_json::json!({
                 "item": {
