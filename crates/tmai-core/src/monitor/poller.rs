@@ -413,6 +413,18 @@ impl Poller {
                     let pid = hook_state.pid.unwrap_or(0);
 
                     let hook_cwd = hook_state.cwd.as_deref().unwrap_or("");
+                    // Skip Codex WS synthetic entries when a Codex agent with the
+                    // same cwd already exists in the pane list (via tmux pane or
+                    // another hook entry). The WS hook state enriches the existing
+                    // agent's detection; it should not create a duplicate.
+                    if pane_id.starts_with("codex-ws-") && !hook_cwd.is_empty() {
+                        let codex_already_present = all_panes
+                            .iter()
+                            .any(|p| p.cwd == hook_cwd && !p.pane_id.starts_with("codex-ws-"));
+                        if codex_already_present {
+                            continue;
+                        }
+                    }
                     // Skip if we already have an entry for this session_id, PID,
                     // if a PTY agent with the same cwd exists, or if this PID
                     // is a child of an existing tmux pane process
