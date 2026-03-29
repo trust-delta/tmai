@@ -226,6 +226,46 @@ pub struct CiCheck {
     pub url: String,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub run_id: Option<u64>,
+}
+
+/// A comment on a pull request (conversation comment or review comment)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+    pub url: String,
+    /// "comment" for conversation comments, "review" for review comments
+    pub comment_type: String,
+    /// File path (review comments only)
+    pub path: Option<String>,
+    /// Diff context (review comments only)
+    pub diff_hunk: Option<String>,
+}
+
+/// A file changed in a pull request
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrChangedFile {
+    pub path: String,
+    pub additions: u64,
+    pub deletions: u64,
+}
+
+/// Merge readiness status for a pull request
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrMergeStatus {
+    pub mergeable: String,
+    pub merge_state_status: String,
+    pub review_decision: Option<String>,
+    pub check_status: Option<String>,
+}
+
+/// CI failure log output (truncated to 50KB)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CiFailureLog {
+    pub run_id: u64,
+    pub log_text: String,
 }
 
 /// CI checks summary for a branch
@@ -248,6 +288,7 @@ struct GhRunEntry {
     head_branch: String,
     created_at: Option<String>,
     updated_at: Option<String>,
+    database_id: Option<u64>,
 }
 
 /// Fetch CI checks for a specific branch
@@ -267,7 +308,7 @@ pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
                 "--branch",
                 branch,
                 "--json",
-                "name,status,conclusion,url,headBranch,createdAt,updatedAt",
+                "name,status,conclusion,url,headBranch,createdAt,updatedAt,databaseId",
                 "--limit",
                 "10",
             ])
@@ -296,6 +337,7 @@ pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
             url: e.url,
             started_at: e.created_at,
             completed_at: e.updated_at,
+            run_id: e.database_id,
         })
         .collect();
 
@@ -424,6 +466,324 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
     }
 
     Some(issues)
+}
+
+/// Fetch comments and reviews for a pull request
+///
+/// Combines conversation comments and review comments into a single timeline,
+/// sorted by created_at.
+pub async fn get_pr_comments(repo_dir: &str, pr_number: u64) -> Option<Vec<PrComment>> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "pr",
+                "view",
+                &pr_number.to_string(),
+                "--json",
+                "comments,reviews",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+
+    let mut result = Vec::new();
+
+    // Conversation comments: {author:{login}, body, createdAt, url}
+    if let Some(comments) = json.get("comments").and_then(|v| v.as_array()) {
+        for c in comments {
+            let author = c
+                .pointer("/author/login")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let body = c
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let created_at = c
+                .get("createdAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let url = c
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            result.push(PrComment {
+                author,
+                body,
+                created_at,
+                url,
+                comment_type: "comment".to_string(),
+                path: None,
+                diff_hunk: None,
+            });
+        }
+    }
+
+    // Reviews: {author:{login}, body, state, comments:[{path, body, diffHunk, createdAt, url}]}
+    if let Some(reviews) = json.get("reviews").and_then(|v| v.as_array()) {
+        for r in reviews {
+            let review_author = r
+                .pointer("/author/login")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            // Top-level review body (if non-empty)
+            let review_body = r
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !review_body.is_empty() {
+                let review_state = r
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let created_at = r
+                    .get("submittedAt")
+                    .or_else(|| r.get("createdAt"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                result.push(PrComment {
+                    author: review_author.clone(),
+                    body: format!("[{}] {}", review_state, review_body),
+                    created_at,
+                    url: String::new(),
+                    comment_type: "review".to_string(),
+                    path: None,
+                    diff_hunk: None,
+                });
+            }
+
+            // Inline review comments
+            if let Some(comments) = r.get("comments").and_then(|v| v.as_array()) {
+                for c in comments {
+                    let body = c
+                        .get("body")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let created_at = c
+                        .get("createdAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let url = c
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let path = c
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let diff_hunk = c
+                        .get("diffHunk")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    result.push(PrComment {
+                        author: review_author.clone(),
+                        body,
+                        created_at,
+                        url,
+                        comment_type: "review".to_string(),
+                        path,
+                        diff_hunk,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by created_at
+    result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    Some(result)
+}
+
+/// Fetch changed files for a pull request
+pub async fn get_pr_files(repo_dir: &str, pr_number: u64) -> Option<Vec<PrChangedFile>> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args(["pr", "view", &pr_number.to_string(), "--json", "files"])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    #[derive(serde::Deserialize)]
+    struct FilesResponse {
+        files: Vec<GhFileEntry>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct GhFileEntry {
+        path: String,
+        additions: u64,
+        deletions: u64,
+    }
+
+    let resp: FilesResponse = serde_json::from_slice(&output.stdout).ok()?;
+
+    Some(
+        resp.files
+            .into_iter()
+            .map(|f| PrChangedFile {
+                path: f.path,
+                additions: f.additions,
+                deletions: f.deletions,
+            })
+            .collect(),
+    )
+}
+
+/// Fetch merge readiness status for a pull request
+pub async fn get_pr_merge_status(repo_dir: &str, pr_number: u64) -> Option<PrMergeStatus> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "pr",
+                "view",
+                &pr_number.to_string(),
+                "--json",
+                "mergeable,mergeStateStatus,reviewDecision,statusCheckRollup",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+
+    let mergeable = json
+        .get("mergeable")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_string();
+
+    let merge_state_status = json
+        .get("mergeStateStatus")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_string();
+
+    let review_decision = json
+        .get("reviewDecision")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Compute check status from statusCheckRollup
+    let check_status = json
+        .get("statusCheckRollup")
+        .and_then(|v| v.as_array())
+        .map(|checks| {
+            if checks.is_empty() {
+                return "UNKNOWN".to_string();
+            }
+            let has_failure = checks.iter().any(|c| {
+                matches!(
+                    c.get("conclusion").and_then(|v| v.as_str()),
+                    Some("FAILURE") | Some("TIMED_OUT") | Some("CANCELLED")
+                )
+            });
+            if has_failure {
+                return "FAILURE".to_string();
+            }
+            let has_pending = checks.iter().any(|c| {
+                matches!(
+                    c.get("status").and_then(|v| v.as_str()),
+                    Some("IN_PROGRESS")
+                        | Some("QUEUED")
+                        | Some("WAITING")
+                        | Some("PENDING")
+                        | Some("REQUESTED")
+                )
+            });
+            if has_pending {
+                return "PENDING".to_string();
+            }
+            "SUCCESS".to_string()
+        });
+
+    Some(PrMergeStatus {
+        mergeable,
+        merge_state_status,
+        review_decision,
+        check_status,
+    })
+}
+
+/// Maximum size for CI failure log output (50KB)
+const CI_LOG_MAX_BYTES: usize = 50 * 1024;
+
+/// Fetch failure log for a CI run
+///
+/// Uses `gh run view --log-failed` which returns plain text (not JSON).
+/// Output is truncated to 50KB.
+pub async fn get_ci_failure_log(repo_dir: &str, run_id: u64) -> Option<CiFailureLog> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(30), // longer timeout for log fetching
+        Command::new("gh")
+            .args(["run", "view", &run_id.to_string(), "--log-failed"])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    if output.stdout.is_empty() {
+        return None;
+    }
+
+    // Truncate to 50KB
+    let text = if output.stdout.len() > CI_LOG_MAX_BYTES {
+        let truncated = &output.stdout[..CI_LOG_MAX_BYTES];
+        // Find last valid UTF-8 boundary
+        let s = String::from_utf8_lossy(truncated);
+        format!("{}\n\n... (truncated, showing first 50KB)", s)
+    } else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    Some(CiFailureLog {
+        run_id,
+        log_text: text,
+    })
 }
 
 /// Extract issue numbers from a branch name

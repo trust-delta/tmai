@@ -117,6 +117,11 @@ export const api = {
   listPrs: (repoPath: string) => httpApi.listPrs(repoPath),
   listChecks: (repoPath: string, branch: string) => httpApi.listChecks(repoPath, branch),
   listIssues: (repoPath: string) => httpApi.listIssues(repoPath),
+  getPrComments: (repoPath: string, prNumber: number) => httpApi.getPrComments(repoPath, prNumber),
+  getPrFiles: (repoPath: string, prNumber: number) => httpApi.getPrFiles(repoPath, prNumber),
+  getPrMergeStatus: (repoPath: string, prNumber: number) =>
+    httpApi.getPrMergeStatus(repoPath, prNumber),
+  getCiFailureLog: (repoPath: string, runId: number) => httpApi.getCiFailureLog(repoPath, runId),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     httpApi.deleteBranch(repoPath, branch, force),
   createBranch: (repoPath: string, name: string, base?: string) =>

@@ -6,11 +6,10 @@ import {
   type CiSummary,
   type IssueInfo,
   type PrInfo,
-  type WorktreeDiffResponse,
 } from "@/lib/api";
 import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
-import { DiffViewer } from "./DiffViewer";
+import type { DetailView } from "./DetailPanel";
 import type { BranchNode } from "./graph/types";
 
 interface ActionPanelProps {
@@ -25,6 +24,7 @@ interface ActionPanelProps {
   onRefresh: () => void;
   onSelectNode: (name: string | null) => void;
   onFocusAgent: (target: string) => void;
+  onOpenDetail: (view: DetailView | null) => void;
 }
 
 // Right-side action panel for selected branch
@@ -40,13 +40,12 @@ export function ActionPanel({
   onRefresh,
   onSelectNode,
   onFocusAgent,
+  onOpenDetail,
 }: ActionPanelProps) {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
-  const [diffData, setDiffData] = useState<WorktreeDiffResponse | null>(null);
-  const [diffLoading, setDiffLoading] = useState(false);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [ciSummary, setCiSummary] = useState<CiSummary | null>(null);
   const [ciLoading, setCiLoading] = useState(false);
@@ -63,8 +62,6 @@ export function ActionPanel({
     setActionError(null);
     setConfirmDelete(false);
     setForceDelete(false);
-    setDiffData(null);
-    setDiffLoading(false);
     setShowNewWorktree(false);
   }, [activeNode.name]);
 
@@ -105,30 +102,6 @@ export function ActionPanel({
       activeNode.parent ?? branches?.current_branch ?? branches?.default_branch ?? "main";
     onSelectNode(target);
   }, [activeNode.parent, branches, onSelectNode]);
-
-  const handleViewDiff = useCallback(async () => {
-    setDiffLoading(true);
-    try {
-      let data: WorktreeDiffResponse;
-      if (activeNode.worktree) {
-        data = await api.getWorktreeDiff(activeNode.worktree.path);
-      } else {
-        const base = activeNode.parent ?? branches?.default_branch ?? "main";
-        data = await api.gitBranchDiff(projectPath, activeNode.name, base);
-      }
-      setDiffData(data);
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to load diff");
-    } finally {
-      setDiffLoading(false);
-    }
-  }, [
-    activeNode.worktree,
-    activeNode.parent,
-    activeNode.name,
-    branches?.default_branch,
-    projectPath,
-  ]);
 
   const handleLaunchAgent = useCallback(async () => {
     if (!activeNode.worktree || actionBusy) return;
@@ -351,6 +324,30 @@ export function ActionPanel({
                   )}
                 </div>
               )}
+              {/* PR detail buttons */}
+              <div className="mt-1.5 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => onOpenDetail({ kind: "pr-comments", prNumber: prInfo.number })}
+                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                >
+                  Comments
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenDetail({ kind: "pr-files", prNumber: prInfo.number })}
+                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                >
+                  Files
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenDetail({ kind: "merge-status", prNumber: prInfo.number })}
+                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                >
+                  Merge
+                </button>
+              </div>
             </div>
           )}
           {/* CI checks */}
@@ -391,41 +388,59 @@ export function ActionPanel({
               </button>
               {ciExpanded && (
                 <div className="mt-1.5 flex flex-col gap-1">
-                  {ciSummary.checks.map((check) => (
-                    <a
-                      key={check.name + check.url}
-                      href={check.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded bg-white/[0.03] px-2 py-1 text-[11px] transition-colors hover:bg-white/[0.06]"
-                    >
-                      <span
-                        className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                          check.conclusion === "success"
-                            ? "bg-green-400"
-                            : check.conclusion === "failure"
-                              ? "bg-red-400"
-                              : check.status === "in_progress" || check.status === "queued"
-                                ? "bg-yellow-400"
-                                : "bg-zinc-600"
-                        }`}
-                      />
-                      <span className="truncate text-zinc-300">{check.name}</span>
-                      <span
-                        className={`ml-auto shrink-0 text-[10px] ${
-                          check.conclusion === "success"
-                            ? "text-green-400"
-                            : check.conclusion === "failure"
-                              ? "text-red-400"
-                              : check.status === "in_progress"
-                                ? "text-yellow-400"
-                                : "text-zinc-600"
-                        }`}
+                  {ciSummary.checks.map((check) => {
+                    const isFailed = check.conclusion === "failure";
+                    const canViewLog = isFailed && check.run_id != null;
+                    return (
+                      <button
+                        type="button"
+                        key={check.name + check.url}
+                        onClick={() => {
+                          if (canViewLog && check.run_id != null) {
+                            onOpenDetail({
+                              kind: "ci-log",
+                              runId: check.run_id,
+                              checkName: check.name,
+                            });
+                          } else {
+                            window.open(check.url, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                        className="flex items-center gap-1.5 rounded bg-white/[0.03] px-2 py-1 text-left text-[11px] transition-colors hover:bg-white/[0.06]"
                       >
-                        {check.conclusion ?? check.status}
-                      </span>
-                    </a>
-                  ))}
+                        <span
+                          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                            check.conclusion === "success"
+                              ? "bg-green-400"
+                              : check.conclusion === "failure"
+                                ? "bg-red-400"
+                                : check.status === "in_progress" || check.status === "queued"
+                                  ? "bg-yellow-400"
+                                  : "bg-zinc-600"
+                          }`}
+                        />
+                        <span className="truncate text-zinc-300">{check.name}</span>
+                        {canViewLog && (
+                          <span className="text-[9px] text-red-400/60" title="View failure log">
+                            log
+                          </span>
+                        )}
+                        <span
+                          className={`ml-auto shrink-0 text-[10px] ${
+                            check.conclusion === "success"
+                              ? "text-green-400"
+                              : check.conclusion === "failure"
+                                ? "text-red-400"
+                                : check.status === "in_progress"
+                                  ? "text-yellow-400"
+                                  : "text-zinc-600"
+                          }`}
+                        >
+                          {check.conclusion ?? check.status}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -602,11 +617,10 @@ export function ActionPanel({
           {!activeNode.isMain && (
             <button
               type="button"
-              onClick={handleViewDiff}
-              disabled={diffLoading}
-              className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+              onClick={() => onOpenDetail({ kind: "diff" })}
+              className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
             >
-              {diffLoading ? "Loading..." : "View Diff"}
+              View Diff
             </button>
           )}
 
@@ -775,16 +789,6 @@ export function ActionPanel({
           <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
             {actionError}
           </div>
-        )}
-
-        {/* Inline diff viewer */}
-        {diffData?.diff && (
-          <div className="mt-4">
-            <DiffViewer diff={diffData.diff} />
-          </div>
-        )}
-        {diffData && !diffData.diff && !diffLoading && (
-          <div className="mt-4 text-center text-xs text-zinc-500">No changes vs base branch</div>
         )}
       </div>
     </div>

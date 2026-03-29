@@ -10,6 +10,7 @@ import {
   type WorktreeSnapshot,
 } from "@/lib/api";
 import { ActionPanel } from "./ActionPanel";
+import { DetailPanel, type DetailView } from "./DetailPanel";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
 import type { BranchNode } from "./graph/types";
@@ -52,6 +53,7 @@ export function BranchGraph({
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
   const [issues, setIssues] = useState<IssueInfo[]>([]);
   const [graphLimit, setGraphLimit] = useState(200);
+  const [detailView, setDetailView] = useState<DetailView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef<number | null>(null);
 
@@ -89,6 +91,11 @@ export function BranchGraph({
       setInitialSelected(true);
     }
   }, [branches, initialSelected]);
+
+  // Close detail panel when branch selection changes
+  useEffect(() => {
+    setDetailView(null);
+  }, [selectedNode]);
 
   // Restore scroll position after "Load more" re-renders the graph
   useLayoutEffect(() => {
@@ -277,6 +284,21 @@ export function BranchGraph({
     }
   }, [refreshBusy, projectPath, fetchData]);
 
+  // Auto-refresh PR/Issues data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!projectPath) return;
+      Promise.all([
+        api.listPrs(projectPath).catch(() => ({})),
+        api.listIssues(projectPath).catch(() => []),
+      ]).then(([prResult, issueResult]) => {
+        if (prResult) setPrMap(prResult as Record<string, PrInfo>);
+        if (issueResult) setIssues(issueResult as IssueInfo[]);
+      });
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [projectPath]);
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
@@ -425,6 +447,17 @@ export function BranchGraph({
           )}
         </div>
 
+        {/* Detail panel (middle, conditional) */}
+        {detailView && activeNode && (
+          <DetailPanel
+            view={detailView}
+            projectPath={projectPath}
+            activeNode={activeNode}
+            branches={branches}
+            onClose={() => setDetailView(null)}
+          />
+        )}
+
         {/* Action panel (right side) */}
         {activeNode && (
           <ActionPanel
@@ -439,6 +472,7 @@ export function BranchGraph({
             onRefresh={refreshBranches}
             onSelectNode={setSelectedNode}
             onFocusAgent={onFocusAgent}
+            onOpenDetail={setDetailView}
           />
         )}
       </div>

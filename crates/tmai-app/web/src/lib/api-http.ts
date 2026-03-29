@@ -404,6 +404,7 @@ export interface CiCheck {
   url: string;
   started_at: string | null;
   completed_at: string | null;
+  run_id: number | null;
 }
 
 export interface CiSummary {
@@ -423,6 +424,34 @@ export interface IssueInfo {
   state: string;
   url: string;
   labels: IssueLabel[];
+}
+
+export interface PrComment {
+  author: string;
+  body: string;
+  created_at: string;
+  url: string;
+  comment_type: string;
+  path: string | null;
+  diff_hunk: string | null;
+}
+
+export interface PrChangedFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface PrMergeStatus {
+  mergeable: string;
+  merge_state_status: string;
+  review_decision: string | null;
+  check_status: string | null;
+}
+
+export interface CiFailureLog {
+  run_id: number;
+  log_text: string;
 }
 
 export interface MdTreeEntry {
@@ -637,6 +666,22 @@ export const api = {
     ),
   listIssues: (repoPath: string) =>
     apiFetch<IssueInfo[]>(`/github/issues?repo=${encodeURIComponent(repoPath)}`),
+  getPrComments: (repoPath: string, prNumber: number) =>
+    apiFetch<PrComment[]>(
+      `/github/pr/comments?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
+    ),
+  getPrFiles: (repoPath: string, prNumber: number) =>
+    apiFetch<PrChangedFile[]>(
+      `/github/pr/files?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
+    ),
+  getPrMergeStatus: (repoPath: string, prNumber: number) =>
+    apiFetch<PrMergeStatus>(
+      `/github/pr/merge-status?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
+    ),
+  getCiFailureLog: (repoPath: string, runId: number) =>
+    apiFetch<CiFailureLog>(
+      `/github/ci/failure-log?repo=${encodeURIComponent(repoPath)}&run_id=${runId}`,
+    ),
   deleteBranch: (repoPath: string, branch: string, force?: boolean) =>
     apiFetch("/git/branches/delete", {
       method: "POST",

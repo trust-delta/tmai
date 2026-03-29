@@ -1987,6 +1987,100 @@ pub async fn list_issues(
         .map(Json)
 }
 
+/// Query params for PR detail endpoints
+#[derive(Debug, Deserialize)]
+pub struct PrDetailParams {
+    pub repo: String,
+    pub pr_number: u64,
+}
+
+/// Query params for CI log endpoint
+#[derive(Debug, Deserialize)]
+pub struct CiLogParams {
+    pub repo: String,
+    pub run_id: u64,
+}
+
+/// GET /api/github/pr/comments — fetch comments and reviews for a PR
+pub async fn get_pr_comments(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<Vec<tmai_core::github::PrComment>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_comments(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR comments",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/pr/files — fetch changed files for a PR
+pub async fn get_pr_files(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<Vec<tmai_core::github::PrChangedFile>>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_files(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR files",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/pr/merge-status — fetch merge readiness status for a PR
+pub async fn get_pr_merge_status(
+    axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
+) -> Result<Json<tmai_core::github::PrMergeStatus>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_pr_merge_status(repo_dir, params.pr_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch PR merge status",
+            )
+        })
+        .map(Json)
+}
+
+/// GET /api/github/ci/failure-log — fetch failure log for a CI run
+pub async fn get_ci_failure_log(
+    axum::extract::Query(params): axum::extract::Query<CiLogParams>,
+) -> Result<Json<tmai_core::github::CiFailureLog>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_ci_failure_log(repo_dir, params.run_id)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch CI failure log",
+            )
+        })
+        .map(Json)
+}
+
 // =========================================================
 // File read/write/tree endpoints
 // =========================================================
