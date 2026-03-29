@@ -5579,7 +5579,7 @@ dependencies = [
 
 [[package]]
 name = "tmai"
-version = "0.20.0"
+version = "1.0.0"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -5626,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "tmai-app"
-version = "0.20.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -5648,7 +5648,7 @@ dependencies = [
 
 [[package]]
 name = "tmai-core"
-version = "0.20.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bytes",

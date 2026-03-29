@@ -5,699 +5,156 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+> **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
+> For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
+
+## [1.0.0] - 2026-03-30
+
+WebUI-first rewrite. The default mode is now a React + Vite web application with glassmorphism design.
+TUI mode remains available via `--tmux` flag.
 
 ### Added
 
-- **Terminal cursor tracking in preview panel** (#119)
-  - Two-tier detection: tmux `display-message` (cursor_x/cursor_y/history_size) or `vt100` crate for IPC/wrap mode
-  - Cyan block cursor overlay with DOM marker injection (handles line wrapping and CJK full-width characters)
-  - Configurable: Settings panel toggle (persists to config.toml) + per-session footer toggle
-  - `[web] show_cursor = true` config option, `GET/PUT /api/settings/preview` endpoints
-- **Spawn bash terminal in tmux** (#117) — Open a shell in the tmux pane environment
-- **Git panel enhancements** (#116)
-  - CI re-run button for failed checks
-  - Issues panel with GitHub issue listing
-  - Create worktree from issue (auto-names branch from issue title)
+- **WebUI-first frontend** — React 19 + Vite + Tailwind v4, glassmorphism design, Chrome App Mode auto-open
+- **Interactive terminal** — Full xterm.js terminal with WebGL rendering, WebSocket I/O, PTY spawn
+- **Branch graph** — GitKraken-style lane-based SVG commit graph with branch hierarchy
+- **GitHub integration** — PR status, CI checks (with re-run), issues panel, branch-to-issue linking, worktree-from-issue
+- **Terminal cursor tracking** — Cyan block cursor overlay in preview panel
+  - Two-tier detection: tmux `display-message` or `vt100` crate (IPC/wrap mode)
+  - DOM marker injection for accurate positioning (handles line wrapping and CJK full-width characters)
+  - Configurable via Settings panel (persists) or per-session footer toggle
+- **RuntimeAdapter trait** — Abstraction over tmux/standalone runtime; enables WebUI without tmux
+- **Standalone mode** — Hook/IPC-only operation, no tmux required
+- **PTY spawn API** — Launch agents directly from WebUI with xterm.js terminal
+- **Inter-agent messaging** — Send text between agents via `/agents/{from}/send-to/{to}`
+- **Spawn bash terminal** — Open shell in tmux pane environment
+- **Markdown viewer** — Browse and edit project documentation in-app
+- **Worktree orchestration** — Create, delete, diff, and launch agents in Git worktrees from WebUI
+- **Context compaction tracking** — Monitor compaction count (♻×N) and active subagents (⑂N) from hook events
+- **Codex CLI WebSocket integration** — Connect to `codex app-server` JSON-RPC 2.0 API for real-time monitoring
+- **Codex CLI hooks bridge** — `tmai codex-hook` + `tmai init --codex` for Codex event translation
+- **Preview settings API** — `GET/PUT /api/settings/preview` with `[web] show_cursor` config option
+
+### Changed
+
+- Default mode switched from TUI to WebUI (use `--tmux` for TUI)
+- Cargo workspace: 3-crate structure (tmai bin + tmai-core lib + tmai-app bin)
 
 ### Fixed
 
-- HTTP hook 415 errors: accept raw bytes instead of requiring `Content-Type: application/json` (#119)
-- Hook timeout unit corrected from milliseconds to seconds in `tmai init` (#119)
-
-### Dependencies
-
-- vt100 0.16 (new: terminal cursor tracking)
-- @vitejs/plugin-react, lucide-react, tailwindcss, @tailwindcss/vite (frontend bumps)
-- toml_edit 0.25.5, uuid 1.23, ureq 3.3, toml 1.1 (Rust bumps)
-
-## [0.20.0] - 2026-03-27
-
-### Added
-
-- Git worktree orchestration (Phase B-1 + B-2): create, delete, diff, branch management
-- Context compaction tracking and subagent count from hook events (♻×N, ⑂N display)
-- WebUI-first React frontend with glassmorphism design (#105)
-- PTY spawn + xterm.js + inter-agent communication (Phase E/F)
-- PTY stdin injection for web-only mode input (Phase E)
-- Standalone content access (Phase D)
-- RuntimeAdapter trait + web-only mode (Phase C-1)
-- React + Vite WebUI (Phase C-2)
-
-### Fixed
-
+- HTTP hook 415 errors: accept raw bytes instead of requiring `Content-Type: application/json`
+- Hook timeout unit corrected from milliseconds to seconds in `tmai init`
 - rustls-webpki CRL matching vulnerability (updated to 0.103.10)
-- HTTP hook timeout to prevent Claude Code stall when tmai is not running (#91)
+- HTTP hook timeout to prevent Claude Code stall when tmai is not running
 
 ### Dependencies
 
-- tokio-tungstenite 0.29, notify 8.2, once_cell 1.21.4, tempfile 3.27
-- clap 4.6, image 0.25.10, tracing-subscriber 0.3.23, futures-util 0.3.32
+- vt100 0.16 (terminal cursor tracking)
+- React 19, Vite 6, Tailwind v4, xterm.js 6, lucide-react
+- tokio-tungstenite 0.29, notify 8.2, clap 4.6, ureq 3.3
 
-## [0.19.0] - 2026-03-14
+---
 
-### Added
+## Legacy (TUI-era, v0.0.1–v0.20.0)
 
-- Codex CLI app-server WebSocket integration (Phase 1: read-only monitoring)
-  - Connect to `codex app-server --listen ws://IP:PORT` JSON-RPC 2.0 API for high-fidelity state detection (Processing/Idle/AwaitingApproval)
-  - Reuses existing HookRegistry so Poller's 3-tier detection works without changes
-  - `DetectionSource::WebSocket` (◆) for WS-detected agents
-  - Exponential backoff reconnection (1s → 60s cap, ±25% jitter), disconnect → capture-pane fallback
-  - `[[codex_ws.connections]]` config section for specifying app-server endpoints
+<details>
+<summary>Click to expand TUI-era changelog</summary>
 
-## [0.18.0] - 2026-03-11
+### v0.20.0 (2026-03-27)
 
-### Added
+- Git worktree orchestration (Phase B-1 + B-2)
+- Context compaction tracking and subagent count from hook events
 
-- Codex CLI hooks bridge integration (`tmai codex-hook` + `tmai init --codex`)
-  - Bridge command that translates Codex hook payloads to tmai format via HTTP loopback
-  - Supports both new engine (SessionStart/Stop) and HookPayload (AfterAgent/AfterToolUse) formats
-  - `tmai init --codex` / `tmai uninit --codex` for Codex config.toml management
-  - `$TMUX_PANE` forwarding for direct pane_id resolution
-  - Shell-safe path quoting and robust tmai-entry detection (marker + command suffix)
+### v0.19.0 (2026-03-14)
 
-## [0.17.0] - 2026-03-11
+- Codex CLI app-server WebSocket integration
 
-### Added
+### v0.18.0 (2026-03-11)
 
-- Effort level detection from Claude Code v2.1.72+ title icons (○=low, ◐=medium, ●=high)
-- Display effort level in TUI session list (normal and compact views)
-- `effort_level` field in AgentSnapshot Web API response
-- `InstructionsLoaded` event registration in `tmai init`
+- Codex CLI hooks bridge integration
 
-### Fixed
+### v0.17.0 (2026-03-11)
 
-- Remove circle spinners (◐◓◑◒) from PROCESSING_SPINNERS to prevent false-positive Processing detection when ◐ is used as effort level icon
-- Return empty JSON object `{}` instead of `null` from hook endpoint to fix Claude Code "JSON validation failed" errors
+- Effort level detection from Claude Code title icons
 
-## [0.16.0] - 2026-03-08
+### v0.16.0 (2026-03-08)
 
-### Added
+- PreToolUse hook-based auto-approve with rule engine
 
-- PreToolUse hook-based auto-approve: ルールエンジンによる即時権限判定（18.5秒→<1ms）
-- Claude Code v2.1.69+ hook新フィールド対応: InstructionsLoadedイベント、WorktreeInfo、TeammateIdle/TaskCompleted停止制御
-- シェルメタ文字ガード: 複合Bashコマンドの自動承認を防止
+### v0.15.0–v0.15.1 (2026-03-07)
 
-### Dependencies
+- Stepwise preview split offset, review pane auto-close
+- wezterm SSH domain fix
 
-- tokio 1.49→1.50, uuid 1.21→1.22, libc 0.2.182→0.2.183
-- toml 1.0.3→1.0.6, toml_edit 0.22→0.25
+### v0.14.0 (2026-03-06)
 
-## [0.15.1] - 2026-03-07
+- Fresh Session Review (hook-driven automatic code review)
+- `line_wrap` config option
 
-### Fixed
+### v0.13.0 (2026-03-05)
 
-- wezterm SSH domain: new AI session now opens in a new tab instead of splitting the current pane (#68)
+- New Claude Code hook events (ConfigChange, WorktreeCreate/Remove, PreCompact)
 
-### Improved
+### v0.12.0–v0.12.1 (2026-03-04)
 
-- README simplified: 250 → 90 lines, details moved to doc/
+- Worktree management (scan, list, create, overview screen)
 
-## [0.15.0] - 2026-03-07
+### v0.11.0–v0.11.1 (2026-03-02–03)
 
-### Added
+- Hook-as-Teacher detection validation
+- AskUserQuestion auto-approve fix
 
-- Stepwise preview split offset with Tab/Shift+Tab and auto-save to config (#67)
-- Review pane auto-close with TUI notification on completion (#66)
+### v0.10.0–v0.10.3 (2026-03-01–02)
 
-### Improved
+- Claude Code Hooks integration (event-driven detection)
+- Security Monitor (9 rules)
+- Hook payload format fixes
 
-- README simplified: details moved to doc/, concise feature list and categorized doc links
+### v0.9.0 (2026-03-01)
 
-## [0.14.0] - 2026-03-06
+- Security Monitor panel
 
-### Added
+### v0.8.0–v0.8.3 (2026-02-25–27)
 
-- Fresh Session Review: hook-driven automatic code review by a context-free agent on completion (#65)
-  - Configurable review agent (claude_code / codex / gemini)
-  - Auto-feedback sends review results back to original session
-  - Manual trigger via `R` key in TUI
-  - Shell injection hardening and UTF-8 safe diff truncation
-- `line_wrap` config option for preview pane word wrapping (#57)
+- Usage monitoring, auto-refresh
+- Agent definition scanner, Teams × Worktree mapping
 
-### Fixed
+### v0.7.0 (2026-02-25)
 
-- `preview_height` config was silently ignored in `with_preview_height()` (#64)
-- Clippy `manual_div_ceil` warning in preview pane
+- Agent definition scanner, TeammateIdle/TaskCompleted notifications
 
-## [0.13.0] - 2026-03-05
+### v0.6.0–v0.6.2 (2026-02-23–24)
 
-### Added
+- Facade API (TmaiCore), CoreEvent broadcast, Worktree monitoring, SortBy::Repository
 
-- Support new Claude Code hook events: ConfigChange, WorktreeCreate, WorktreeRemove, PreCompact, PostToolUseFailure
-- Add ConfigChanged, WorktreeCreated, WorktreeRemoved variants to CoreEvent
-- Extend `tmai init` to register 17 hook events (up from 12)
+### v0.5.0 (2026-02-21)
 
-## [0.12.1] - 2026-03-04
+- Cargo workspace化 (tmai-core lib crate分離)
 
-### Changed
+### v0.4.0–v0.4.5 (2026-02-19–21)
 
-- Sync README.ja.md with English version: hooks-first detection strategy, add documentation section, quick start with `tmai init`, and detection source icons
+- Auto-approve (AI model), Web Remote voice input, IPC upgrade restart
+- 4-mode auto-approve (Off/Rules/AI/Hybrid)
 
-## [0.12.0] - 2026-03-04
+### v0.3.0–v0.3.2 (2026-02-14–18)
 
-### Added
-- Worktree management: scan, list, and create git worktrees
-- Worktree Overview screen (`w` key): display worktrees grouped by repository with agent status, branch, and dirty indicators
-- Support Claude Code `--worktree` flag in session creation wizard
-- Periodic worktree scanning in Poller (every 30 polls)
+- Spinner grace period, git branch detection, demo mode
+- Codex/Gemini detector improvements
 
-### Security
-- Add worktree name validation to prevent command injection via shell metacharacters
+### v0.2.0–v0.2.10 (2026-02-06–13)
 
-### Fixed
-- Fix agent-to-worktree linking using `Path::starts_with` instead of `String::starts_with` to avoid false prefix matches
+- Agent Teams, IPC communication, detection audit log
+- Permission mode detection, processing activity display
+- Web API auth, external transmission detection
 
-## [0.11.1] - 2026-03-03
+### v0.1.0–v0.1.4 (2026-01-27–02-05)
 
-### Fixed
-- Fix AskUserQuestion being auto-approved: hook detection now correctly maps AskUserQuestion to UserQuestion type with multi-layer defense
+- Initial public release on crates.io
+- Web Remote Control, PTY wrapping, passthrough mode
+- Comprehensive documentation
 
-### Changed
-- Remove `.claude/` directory from git tracking
-- Simplify release flow — version bump directly on main
+### v0.0.1 (2026-01-25)
 
-### Added
-- Add CONTRIBUTING.md (EN + JA) with README links
+- Initial implementation
 
-## [0.11.0] - 2026-03-02
-
-### Added
-- Hook-as-Teacher detection validation: use hook events as ground truth to measure IPC/capture-pane detection accuracy
-  - `DetectionValidation` audit event logged on disagreement between hook and IPC/capture-pane results
-  - `HookContext` preserves rich event context (event_name, tool_input, permission_mode) for analysis
-  - `compute_validation_stats()` for accuracy analysis by rule and status
-  - Non-selected panes run capture-pane for validation when audit is enabled
-
-### Dependencies
-- Bump chrono from 0.4.43 to 0.4.44
-- Bump nix from 0.31.1 to 0.31.2
-
-## [0.10.3] - 2026-03-02
-
-### Fixed
-- Fix HookEventPayload deserialization: align with Claude Code's snake_case format (`hook_event_name` instead of `event`)
-- Fix empty "Tool: " display by preserving `last_tool` on PostToolUse instead of clearing it
-- Fix `processing_label()` truncating "Tool: Bash" to "Tool:" due to space-based word splitting
-
-## [0.10.2] - 2026-03-01
-
-### Fixed
-- Fix hooks format incompatibility with Claude Code: wrap hook entries in `{ hooks: [...] }` wrapper object (fixes validation error and missing hook events)
-- Support detection of both old and new format tmai entries for seamless migration
-
-## [0.10.1] - 2026-03-01
-
-### Fixed
-- Fix constant-time token validation leaking length via early return
-- Fix token file permission race condition (write-then-chmod → atomic OpenOptions with mode 0600)
-- Fix `tmai uninit` skipping token deletion when no hook entries found
-- Fix `tmai init` using hardcoded port instead of configured web.port
-- Fix log message not reflecting web.enabled state when hook token loaded
-
-### Changed
-- Soften "100% accurate" claims to "event-driven" / "highest precision" across all docs (EN/JA)
-- Fix detection source labels in docs to match implementation (◉ IPC, ○ capture)
-- Replace `cat` token exposure in troubleshooting docs with `test -s` + `ls -l`
-- Add `text` language tag to code fences in docs
-
-## [0.10.0] - 2026-03-01
-
-### Added
-- **Claude Code Hooks integration**: Event-driven agent state detection via HTTP hooks
-  - `tmai init` command: configure Claude Code to send hook events to tmai's web server
-  - `tmai uninit` command: remove tmai hooks and delete token
-  - 3-tier detection priority: Hooks → IPC Socket → capture-pane fallback
-  - `POST /hooks/event` endpoint with dedicated Bearer token authentication
-  - HookRegistry for tracking agent state from 12 Claude Code events
-  - Session-to-pane mapping with 3-tier pane ID resolution (header → session map → cwd match)
-  - `◈ Hook` (Cyan) detection source indicator in TUI
-  - Performance optimization: skip capture-pane for hook-tracked non-selected panes
-  - Stale hook entry cleanup (5-minute expiry)
-
-### Security
-- Hook token file restricted to owner-only permissions (0600)
-- Constant-time token comparison to prevent timing side-channel attacks
-
-### Changed
-- Documentation updated: Hooks is now the recommended default detection method for Claude Code
-- PTY wrapping repositioned as optional (for exfil detection and full AskUserQuestion parsing)
-
-## [0.9.0] - 2026-03-01
-
-### Added
-- **Security Monitor**: Scan Claude Code config files (settings.json, mcp.json, hooks) for security risks
-  - 9 rules: PERM-001–004, ENV-001–002, MCP-001, FILE-001, HOOK-001
-  - Detects dangerous allowlist entries, leaked secrets, unpinned npx, world-readable configs, background processes in hooks
-  - Full-screen TUI overlay (`S` key) with severity badges and scrollable findings
-  - Facade API: `security_scan()` / `last_security_scan()` on TmaiCore
-
-## [0.8.3] - 2026-02-27
-
-### Fixed
-- Add `--no-session-persistence` to auto-approve Claude CLI calls to prevent session file accumulation in `~/.claude/projects/`
-
-## [0.8.2] - 2026-02-27
-
-### Improved
-- Split claude_code detector into submodules and extract shared patterns (common error detection, box-drawing strip, safe tail) to reduce duplication across detectors
-
-### Fixed
-- Replace broken CLAUDE.md link with inline NAT mode instructions
-
-## [0.8.1] - 2026-02-26
-
-### Added
-- Optional auto-refresh for usage monitoring (`[usage] auto_refresh_min` config)
-
-## [0.8.0] - 2026-02-25
-
-### Added
-- **Usage monitoring**: Check Claude subscription usage (session / weekly limits) with `U` key, spawning a temporary Claude Code instance in a hidden tmux pane
-
-### Improved
-- Expand .gitignore with common exclusions
-
-## [0.7.0] - 2026-02-25
-
-### Added
-- **Agent definition scanner**: Parse `.claude/agents/*.md` frontmatter (name, description, model, isolation) with project/global precedence
-- **Teams × Worktree mapping**: Map team members to worktrees and display in team overview UI and web API
-- **TeammateIdle notification**: Emit CoreEvent when team member becomes idle, with toast in TUI status bar and web UI
-- **TaskCompleted notification**: Emit CoreEvent on task completion with progress display in TUI and SSE for web clients
-
-### Fixed
-- Persist audit logs to `~/.local/share/tmai/` instead of tmpfs (`XDG_RUNTIME_DIR`) to survive WSL/system restarts
-- Resolve duplicate crates.io publish causing CI failures
-
-## [0.6.2] - 2026-02-24
-
-### Fixed
-- Fix AskUserQuestion with large preview boxes being misdetected as Idle by using separator-based boundary detection
-- Fix crates.io publishing race condition by publishing workspace crates sequentially
-
-## [0.6.1] - 2026-02-24
-
-### Added
-- **Worktree monitoring**: Detect git worktree info (git_common_dir, worktree_name) and display enhanced badges `[WT: name @ branch]`
-- **SortBy::Repository**: Group agents by git repository, keeping main and worktrees together
-- **Sort key enabled**: `s` key now cycles sort mode (Team → Repository → Directory)
-- **Team overview worktree info**: Show worktree badges for mapped team members
-- **Web API worktree fields**: Add `git_common_dir` and `worktree_name` to agent API responses
-
-### Fixed
-- Git field propagation bug in `update_agents()` where git_branch, git_dirty, is_worktree were not copied to existing agents
-
-### Improved
-- crates.io publishing: Enable publishing for tmai-core
-
-## [0.6.0] - 2026-02-23
-
-### Added
-- **Facade API action methods**: `approve()`, `select_choice()`, `submit_selection()`, `send_text()`, `send_key()`, `focus_pane()`, `kill_pane()` をTmaiCoreに集約し、TUI/Web間の重複ロジックを一本化
-- **CoreEvent broadcast system**: `subscribe()` によるプッシュ型イベント配信。SSEをポーリングからbroadcastベースに置換
-- **`tmai audit` subcommand**: detection logの分析サブコマンドを追加
-
-### Changed
-- **Web API migration**: `ApiState`/`SseState` を `Arc<TmaiCore>` に置換し、全ハンドラをFacade経由に移行
-- **SSE push-based delivery**: `core.subscribe()` ベースのリアルタイムイベント配信に変更（teams用500msフォールバック維持）
-- **`has_checkbox_format()` unification**: TUI key_handlerとWeb APIで重複していた関数をtmai-coreに一本化
-
-### Fixed
-- doc-test内のcrate名修正 (`tmai` → `tmai_core`)
-
-### Dependencies
-- Bump anyhow from 1.0.101 to 1.0.102
-- Bump clap from 4.5.59 to 4.5.60
-
-## [0.5.0] - 2026-02-21
-
-### Changed
-- **Cargo workspace化**: ビジネスロジックを `tmai-core` lib crateに分離し、2-crate workspace構成に移行（Tauri GUI化の前段階）
-  - コアモジュール (agents, audit, auto_approve, config, detectors, ipc, monitor, state, teams, tmux, utils, wrap) を `crates/tmai-core/` に移動
-  - bin crate (`src/`) にはフロントエンド (demo, ui, web) のみ残留
-- **version-up スキル**: workspace構成に対応（2つのCargo.tomlのバージョン同期）
-
-## [0.4.5] - 2026-02-21
-
-### Added
-- **Web Remote voice input**: Add speech-to-text input via Web Speech API with modal UI, real-time interim display, and graceful degradation for unsupported browsers
-
-### Changed
-- Simplify branch strategy (main only, remove develop)
-
-## [0.4.4] - 2026-02-21
-
-### Added
-- **IPC upgrade restart (`W` key)**: Restart non-IPC Claude Code agents as PTY-wrapped (IPC) with `claude --resume`, preserving conversation context
-  - Phase 1: Non-invasive session ID lookup by matching capture-pane content against `.jsonl` files
-  - Phase 2: Probe marker fallback (sends a marker string to identify the session, with user warning about conversation pollution)
-  - New `session_lookup` module: phrase extraction, JSONL reverse lookup, probe search
-
-## [0.4.3] - 2026-02-21
-
-### Added
-- **Directory selection presets**: `base_directories` (auto-expand subdirs) and `pinned` (fixed paths) settings for NewProcess creation popup
-
-### Fixed
-- **AskUserQuestion preview format**: Detect new side-by-side layout with `›` cursor marker in both capture-pane and PTY wrap analyzers
-- **Choice text cleanup**: Strip preview box content (`│`) from choice labels to prevent garbage in web remote buttons
-
-## [0.4.2] - 2026-02-20
-
-### Added
-- **4-mode auto-approve**: Rule-based instant approval (Off/Rules/AI/Hybrid modes) with configurable allow patterns for read, test, fetch, git, and format/lint operations
-- **Worktree badge display**: Show git worktree indicators and detect custom spinner verbs in content
-
-### Fixed
-- **Settings menu filter**: Filter out Claude Code settings menu from approval detection to prevent false positives
-
-### Deps
-- Bump rand 0.9.2 → 0.10.0, clap 4.5.57 → 4.5.58, toml 0.9.11 → 1.0.1, uuid 1.20.0 → 1.21.0
-
-### Docs
-- Update auto-approve documentation for 4-mode system (EN/JA feature docs, config reference, README)
-
-## [0.4.1] - 2026-02-19
-
-### Changed
-- **Web UI modernization**: Redesign to shadcn/zinc-inspired aesthetic with flat colors, subtle borders, and clean typography; dark/light themes improved
-- **Header agent summary**: Show agent count and attention-needed count in header
-- **Scroll-to-attention FAB**: Floating button to cycle through agents needing approval
-- **Preview horizontal line formatting**: Box-drawing character lines (─━═) replaced with styled `<hr>` instead of wrapping across multiple lines
-
-### Fixed
-- **Special key button layout**: Replaced flex-wrap with CSS Grid (5-column) to prevent orphan button on mobile
-
-### Docs
-- **Web Remote screenshot**: Added real device mobile screenshot to README and feature docs
-
-## [0.4.0] - 2026-02-19
-
-### Added
-- **Auto-approve**: AI model (Claude Haiku) judges pending approval prompts and auto-approves low-risk operations; phase visualization in TUI (Judging/Approved/ManualRequired indicators)
-- **Mobile Web special key buttons**: Tab, Escape, Ctrl+C, arrow keys, and other special keys available as tap buttons in Web Remote
-- **Processing activity name display**: Show actual spinner verb (e.g., "Levitating…") in session list via `show_activity_name` config option
-- **Auto-approve usage tracking**: Token usage and cost (input/output/cache tokens, cost_usd) recorded in audit log for each AI judgment
-
-### Fixed
-- **Internal task format detection**: `has_in_progress_tasks` now supports Claude Code's `N tasks (X done, Y in progress, Z open)` format and `◼` indicator without `#N` prefix
-- **Auto-approve security**: Sanitize sensitive data (API keys, tokens) before sending screen context to AI; fix TOCTOU race in flight tracker; record screen_context for Uncertain judgments; truncate stdout on parse failure; validate custom_command path at startup
-- **Web UI accessibility**: Added aria-labels to all special key buttons
-
-### Docs
-- **Auto-approve documentation**: Added comprehensive auto-approve feature documentation to CLAUDE.md
-
-## [0.3.2]
-
-### Improved
-- **Codex CLI detector**: Specific approval patterns (exec/patch/MCP/network), Codex choice pattern, `Working (Ns)` elapsed time detection, confirm footer, context warning display
-- **Gemini CLI detector**: Title icon detection (◇/✦/⏲/✋), radio button / confirmation question patterns, Braille spinner, plan/yolo mode detection
-- **IPC activity enrichment**: Fall back to title-based activity extraction when screen detection returns Idle
-- **Processing label**: Display actual spinner verb (Compacting, Levitating, etc.) instead of generic "Processing"
-
-## [0.3.1]
-
-### Added
-- **Demo mode** (`tmai demo`): Built-in demo with simulated agents for recording GIFs without requiring live tmux sessions
-- **Demo GIF in README**: Added animated demo GIF to both English and Japanese READMEs
-
-### Changed
-- **CWD display**: Home directory path now displayed as `~` instead of full absolute path in TUI and Web UI
-
-## [0.3.0]
-
-### Added
-- **Spinner Grace Period (6s)**: Prevent Processing→Idle→Processing flicker during tool calls by maintaining Processing state for 6 seconds after spinner disappears (Approval/Error bypass immediately)
-- **Title Braille spinner fast path**: Skip content parsing when Braille spinner detected in title, returning Processing with High confidence (`title_braille_spinner_fast_path` rule)
-- **Docker-style session naming**: New sessions get memorable names like `amber-badger` instead of `ai-1707123456` (100 adjectives × 100 nouns, collision-safe)
-- **Git branch detection + badge**: Show `[branch]` badge on agents with git repository context (yellow=dirty, cyan=clean) in TUI session list, status bar, and Web UI
-- **Full-width key support**: All keyboard shortcuts now work with full-width input (IME on); full-width alphanumerics (ａ-ｚ, Ａ-Ｚ, ０-９) and full-width space automatically converted to half-width (except passthrough and input modes)
-
-### Improved
-- **Approval detection accuracy**: Narrowed search windows (AskUserQuestion: 30→15 lines, approval: 20→12 lines) to reduce false positives from conversation history; added trailing blank line stripping for tmux capture-pane padding
-
-### Changed
-- Detection rule `braille_spinner` superseded by `title_braille_spinner_fast_path` for title-based Braille detection (existing `braille_spinner` retained as content fallback)
-
-## [0.2.10]
-
-### Added
-- **Turn duration completion detection**: Detect `✻ Cooked for 1m 6s` pattern (8 past-tense verbs) as definitive Idle indicator
-- **Content-based Conversation compacted detection**: Detect `✻ Conversation compacted` in content as Idle (previously title-only)
-- **Built-in spinner verb list (185 verbs)**: All Claude Code v2.1.41 spinner verbs built into detector; matching verbs get High confidence (previously all Medium)
-- **Windows ASCII radio button support**: Detect `( )` / `(*)` patterns as multi-select indicators
-
-## [0.2.9]
-
-### Added
-- **Permission mode detection**: Detect Claude Code permission mode from title icons
-  - ⏸ Plan mode, ⇢ Delegate mode, ⏵⏵ Auto-approve (acceptEdits/bypassPermissions/dontAsk)
-  - New `AgentMode` enum with Display impl showing mode icon + label
-  - Displayed in TUI session list (after status label) and Web API (`mode` field)
-- **Content spinner `✳` support**: macOS/Ghostty uses ✳ as content spinner character
-  - Same char as idle indicator in title, but content spinner detection requires uppercase verb + ellipsis, preventing false positives
-- **Windows checkbox `[×]` support**: Multi-select detection for `[×]` checkbox format (Windows/fallback)
-
-### Changed
-- Processing spinner constants reorganized with documentation clarifying Claude Code actual spinners (⠂/⠐ only, 960ms interval) vs legacy compatibility chars
-
-## [0.2.8]
-
-### Added
-- **`n` key for No selection**: Select "No" choice in AskUserQuestion dialogs (word-boundary matching for accuracy)
-- **Number key support for proceed-prompt approvals**: 3-choice approvals (1. Yes / 2. Yes, don't ask / 3. No) now support number key navigation even without cursor marker (`❯`)
-- **Checkbox format support** (Claude Code v2.1.39): Multi-select detection for `[ ]` / `[x]` / `[✔]` checkbox format
-  - Enter to toggle checkboxes, Right+Enter to submit (replaces Space toggle / Down×N+Enter)
-  - Japanese keyword detection (`複数選択`, `enter to select`)
-- IPC activity enrichment with screen content context for better state detection
-
-### Changed
-- AskUserQuestion selection uses arrow key navigation instead of literal number key sending
-- `o` key removed (use `Space` on "Type something" choice or input mode `i` instead)
-- SelectionPopup overlay removed in favor of direct number key navigation
-- Multi-select number keys navigate only (no auto-toggle); use `Space` to toggle
-
-### Fixed
-- AskUserQuestion detection failure due to tmux trailing empty lines padding
-- Approval override: screen-based approval check on all non-Approval IPC states
-- Prevent entering passthrough/input mode without an agent selected
-- Window name set to agent command when creating new windows/panes
-- Audit log quality: debounce, content spinner verb fix, IPC override timing
-
-## [0.2.7]
-
-### Changed
-- **Detection source label**: Detection source now shown as `[IPC]` or `[capture]` text next to agent name instead of icon on detail line
-- **New process focus retention**: Creating new window/pane via New Process wizard no longer steals focus from tmai
-
-### Improved
-- **Codebase structure refactoring**: 4-part structural refactoring for maintainability
-  - `CommandSender`: Unified IPC→tmux fallback logic extracted from App
-  - `AuditHelper`: Audit event emission extracted with lock-free snapshot pattern
-  - `KeyHandler`: Key event resolution separated from execution (KeyAction enum)
-  - `AppState` sub-states: InputState, ViewState, SelectionState, WebState
-- Tracing output redirected to file in TUI mode to prevent screen corruption
-
-### Fixed
-- PTY wrapper deadlock when binary path contains `(deleted)` after upgrade
-- Agent detection for `tmai wrap <agent>` command format (word boundary matching)
-- Input echo suppression timing for IPC-originated remote keystrokes
-- IPC reconnection: stale connections cleaned up before re-registration
-
-## [0.2.6]
-
-### Added
-- **UserInputDuringProcessing audit event**: Detects potential false negatives in agent state detection
-  - Logs when user sends input while agent status is Processing (likely missed approval prompt)
-  - Sources: TUI input mode, passthrough mode (5s debounce), Web API `/input` endpoint
-  - Extended to normal mode: y-key, number-key, Enter-key when agent is not in AwaitingApproval
-  - Includes detection context (rule, confidence, screen content) for post-hoc analysis
-  - Cross-thread architecture: mpsc channel bridges UI/Web threads to Poller's audit logger
-- **Compacting status label**: Shows "Compacting" instead of "Processing" during `/compact` operation
-  - Detects `compacting` keyword in Processing activity text from spinner detection
-
-### Security
-- **XDG_RUNTIME_DIR for state directory**: Socket/state files now use `$XDG_RUNTIME_DIR/tmai` (preferred) or `/tmp/tmai-<UID>` (fallback)
-  - Prevents TOCTOU/symlink attacks in multi-user environments
-  - Symlink detection added to `ensure_state_dir()` before directory creation
-
-### Changed
-- IPC log messages downgraded from `info` to `debug` level (reduces noise in normal operation)
-- IPC client max reconnection backoff reduced from 5s to 2s for faster recovery
-
-### Fixed
-- **Agent detection for `tmai wrap <agent>`**: Agent name at end of cmdline (no trailing space) was not matched
-  - New `cmdline_contains_agent()` helper with word boundary matching (`/agent`, `agent `, or trailing `agent`)
-  - Fixes detection of wrapped agents like `tmai wrap claude`, `tmai wrap codex --model o3`
-- **Input echo false Processing**: Output immediately after user input (keyboard echo) no longer triggers Processing state
-  - 300ms grace period after input suppresses echo-induced state changes
-  - Applied to both local PTY input and IPC-originated remote keystrokes
-- **Blank preview after `/compact`**: Preview no longer shows empty area after terminal clear
-  - Trailing empty lines are trimmed before calculating visible content range
-  - Fixes issue where `capture-pane` returns content at top with empty lines below cursor
-- **C-key conversion**: Use bitmask (`c & 0x1f`) for Ctrl-key byte calculation
-  - Fixes incorrect bytes for uppercase (`C-A`) and special characters (`C-@`, `C-[`)
-- **IPC reconnection**: Old connections for the same pane_id are now removed before registering new ones
-  - Prevents stale connections from receiving keystrokes and cleanup conflicts
-
-## [0.2.5]
-
-### Added
-- **IPC communication**: PTY wrapper ↔ parent process communication migrated from file-based state to Unix domain socket (`/tmp/tmai/control.sock`)
-  - Bidirectional: state push (wrapper → parent) + keystroke forwarding (parent → wrapper via IPC direct PTY write)
-  - IPC-first with tmux fallback for all send_keys operations
-  - Exponential backoff reconnection in IPC client
-- **Detection audit log**: ndjson-format logging of detection events for debugging and precision analysis (`--audit` flag)
-  - Events: `StateChanged`, `AgentAppeared`, `AgentDisappeared`, `SourceDisagreement`
-  - Detection reasoning: each result includes rule name, confidence level (High/Medium/Low), and matched text
-  - 36 detection rules across 4 detectors (claude_code, codex, gemini, default)
-  - Log rotation at 10MB (`/tmp/tmai/audit/detection.ndjson`)
-  - Disabled by default; enable via `--audit` CLI flag or `[audit] enabled = true`
-- `[audit]` configuration section with `enabled`, `max_size_bytes`, `log_source_disagreement` options
-- Content-area spinner detection for Claude Code (`✶`, `✻`, `✽`, `*` + verb + `…` pattern)
-  - Fixes false idle during `/compact` when title still shows `✳` but content has active spinner
-
-### Changed
-- Detection source renamed: `DetectionSource::PtyStateFile` → `IpcSocket`
-- `src/wrap/state_file.rs` removed; types moved to `src/ipc/protocol.rs`
-
-### Fixed
-- False idle detection during Claude Code `/compact` operation
-  - Title shows `✳` (idle) while content shows active spinner verb (e.g., `✶ Spinning…`)
-  - Content spinner check now runs before title-based idle detection
-- Low-confidence fallback detections for `✻ Levitating…`, `* Working…` etc. upgraded to Medium confidence
-
-## [0.2.4]
-
-### Security
-- Web API now supports `Authorization: Bearer <token>` header authentication
-  - Header takes priority over query parameter when present
-  - Query parameter fallback preserved for SSE EventSource connections
-- Frontend `fetch()` calls migrated to use Authorization header instead of URL query parameter
-
-### Improved
-- Team member search optimized with HashMap-based cmdline cache (eliminates duplicate PID lookups)
-- Task summary counts pre-computed in TeamSnapshot (avoids per-frame iteration)
-- API operation logging added for state-changing endpoints (approve, select, submit, input)
-
-### Fixed
-- State directory creation race condition (TOCTOU) in PTY wrapper
-  - Now uses idempotent `create_dir_all` + metadata verification + permission auto-repair
-- Defensive digit parsing in key handler (`unwrap()` → `unwrap_or(0)`)
-
-### Added
-- Web API test suite with 12 test cases covering all endpoints
-  - Empty state, 404, 400, path traversal validation, agent state checks
-
-## [0.2.3]
-
-### Improved
-- Session list layout reorganized for better visibility
-  - Line 1: AI name, team badge, context warning, status label
-  - Line 2: Title (marquee), detection icon, pid, window/pane meta
-- "New Process" and "New Session/Window" options moved to the bottom of their respective lists
-
-## [0.2.2]
-
-### Improved
-- Session list display compressed from 4 lines to 2 lines per agent (50% vertical space reduction)
-
-### Added
-- CI workflow for develop → master pull requests
-
-## [0.2.1]
-
-### Improved
-- Directory group headers now show the **tail** of long paths instead of the head
-  - e.g., `...conversation-handoff-mcp` instead of `/home/trustdelta/wo...`
-  - Selected items still use marquee scrolling for full path visibility
-- Team members now display `activeForm` from task files as their title when processing
-  - e.g., "Fixing authentication bug" instead of the tmux pane title
-  - Falls back to pane title when `activeForm` is not available
-
-## [0.2.0]
-
-### Added
-- Agent Teams integration for Claude Code team monitoring
-  - Team overview screen (`T` key)
-  - Task overlay for team members (`t` key)
-  - Team structure and task progress visualization
-- Web API endpoints for teams (`/api/teams`, `/api/teams/{name}/tasks`)
-- SSE event type `teams` for real-time team updates
-- `[teams]` configuration section
-- Documentation updates for Agent Teams across all docs (EN/JA)
-
-### Changed
-- Sort (`s`) and monitor scope (`m`) keys temporarily disabled
-  - Sort fixed to Directory, scope fixed to AllSessions
-- Status bar: replaced `s:Sort`/`m:Scope` hints with `t:Tasks`/`T:Teams`
-- Help screen: `s` and `m` keys grayed out, Agent Teams section added
-
-### Fixed
-- Removed stale `n` (reject) key references from documentation
-- Removed stale "Reject" button from Web Remote documentation
-
-## [0.1.4]
-
-### Changed
-- Approval key now sends Enter instead of 'y' (matches Claude Code's cursor-based UI)
-- Removed rejection key 'n' (use number keys, input mode, or passthrough mode instead)
-
-### Added
-- Comprehensive documentation in `doc/` (English) and `doc/ja/` (Japanese)
-  - Feature guides: PTY wrapping, AskUserQuestion, Exfil detection, Web Remote
-  - Workflow guides: Single/Multi-agent monitoring, Worktree parallel dev, Remote approval
-  - Reference: Keybindings, Configuration, Web API
-
-## [0.1.3]
-
-### Added
-- External transmission detection for PTY wrap mode (security monitoring)
-- CHANGELOG.md
-
-### Fixed
-- Staircase newline display in PTY wrap mode
-
-## [0.1.2]
-
-### Changed
-- Localize UI to English
-
-## [0.1.0]
-
-Initial public release on crates.io.
-
-### Added
-- Web Remote Control for smartphone operation via QR code
-- PTY wrapping for high-precision agent state detection
-- WSL mirrored networking mode support
-- Detection source display (PTY vs capture-pane)
-- Tree-style target selection for new process creation
-- Split direction toggle (horizontal/vertical layout)
-- Collapsible group headers in session list
-- Custom spinnerVerbs detection for Claude Code
-- Agent list sorting feature
-- Passthrough mode for direct key input
-- Input mode for text entry
-- Create session/process feature with agent selection
-- cmdline-based agent detection
-- ANSI color support in preview
-- Open new tmux session in wezterm tab
-
-### Fixed
-- False agent detection for file managers (yazi, etc.)
-- Codex idle detection when slash command menu is shown
-- False positive in Codex approval detection
-- AskUserQuestion detection with multiple numbered lists
-- Session detection with multiple attached clients
-- Preview not showing bottom lines
-
-## [0.0.1]
-
-### Added
-- Initial implementation of tmai (Tmux Multi Agent Interface)
-- Monitor multiple AI agents (Claude Code, Codex CLI, Gemini CLI)
-- Real-time pane preview
-- Approval/rejection key shortcuts
-- AskUserQuestion selection support
+</details>
