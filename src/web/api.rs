@@ -443,7 +443,7 @@ pub async fn get_preview(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<PreviewResponse>, StatusCode> {
-    let show_cursor = read_show_cursor();
+    let show_cursor = core.settings().web.show_cursor;
 
     // Look up agent target for capture-pane (id may differ from tmux target)
     let (agent_target, agent_content, agent_cursor) = {
@@ -1006,6 +1006,9 @@ pub async fn update_spawn_settings(
         }
     }
 
+    // Reload live settings from config.toml
+    core.reload_settings();
+
     tracing::info!(
         "Spawn settings updated: use_tmux_window={} window_name={:?}",
         req.use_tmux_window,
@@ -1091,6 +1094,7 @@ pub async fn get_auto_approve_settings(
 
 /// PUT /api/settings/auto-approve — update auto-approve settings (persisted to config.toml)
 pub async fn update_auto_approve_settings(
+    State(core): State<Arc<TmaiCore>>,
     Json(req): Json<UpdateAutoApproveRequest>,
 ) -> Json<serde_json::Value> {
     // Persist mode change (normalize to lowercase for serde compat)
@@ -1161,7 +1165,10 @@ pub async fn update_auto_approve_settings(
         tracing::info!("Auto-approve rules updated (restart to apply)");
     }
 
-    Json(serde_json::json!({"ok": true, "restart_required": true}))
+    // Reload live settings from config.toml
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
 }
 
 // =========================================================
@@ -2208,6 +2215,7 @@ pub async fn get_usage_settings(State(core): State<Arc<TmaiCore>>) -> Json<Usage
 
 /// PUT /api/settings/usage — update usage settings and persist
 pub async fn update_usage_settings(
+    State(core): State<Arc<TmaiCore>>,
     Json(req): Json<UsageSettingsRequest>,
 ) -> Json<serde_json::Value> {
     if let Some(enabled) = req.enabled {
@@ -2224,6 +2232,10 @@ pub async fn update_usage_settings(
             toml_edit::Value::from(interval as i64),
         );
     }
+
+    // Reload live settings from config.toml
+    core.reload_settings();
+
     Json(serde_json::json!({"ok": true}))
 }
 
@@ -2596,22 +2608,18 @@ pub struct PreviewSettingsRequest {
     pub show_cursor: Option<bool>,
 }
 
-/// Read show_cursor from config file (reflects latest saved value)
-fn read_show_cursor() -> bool {
-    tmai_core::config::Settings::load(None)
-        .map(|s| s.web.show_cursor)
-        .unwrap_or(true)
-}
-
 /// GET /api/settings/preview
-pub async fn get_preview_settings() -> Json<PreviewSettingsResponse> {
+pub async fn get_preview_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<PreviewSettingsResponse> {
     Json(PreviewSettingsResponse {
-        show_cursor: read_show_cursor(),
+        show_cursor: core.settings().web.show_cursor,
     })
 }
 
 /// PUT /api/settings/preview — update preview settings and persist
 pub async fn update_preview_settings(
+    State(core): State<Arc<TmaiCore>>,
     Json(req): Json<PreviewSettingsRequest>,
 ) -> Json<serde_json::Value> {
     if let Some(v) = req.show_cursor {
@@ -2621,6 +2629,10 @@ pub async fn update_preview_settings(
             toml_edit::Value::from(v),
         );
     }
+
+    // Reload live settings from config.toml
+    core.reload_settings();
+
     Json(serde_json::json!({"ok": true}))
 }
 
