@@ -631,10 +631,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ worktree_path: worktreePath, base_branch: baseBranch ?? "main" }),
     }),
-  launchWorktreeAgent: (repoPath: string, worktreeName: string) =>
+  launchWorktreeAgent: (repoPath: string, worktreeName: string, initialPrompt?: string) =>
     apiFetch<{ status: string; target: string }>("/worktrees/launch", {
       method: "POST",
-      body: JSON.stringify({ repo_path: repoPath, worktree_name: worktreeName }),
+      body: JSON.stringify({
+        repo_path: repoPath,
+        worktree_name: worktreeName,
+        ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+      }),
     }),
   deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
     apiFetch("/worktrees/delete", {
