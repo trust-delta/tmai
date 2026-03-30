@@ -695,6 +695,9 @@ pub struct WorktreeLaunchRequestBody {
     pub worktree_name: String,
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
+    /// Optional initial prompt to pass as the first argument to the agent CLI.
+    #[serde(default)]
+    pub initial_prompt: Option<String>,
     /// Unused — kept for backward compatibility with older frontends.
     #[serde(default)]
     #[allow(dead_code)]
@@ -745,10 +748,16 @@ pub async fn launch_agent_in_worktree(
         }
     };
 
+    // Build args — pass initial prompt as first positional argument if provided
+    let args = match req.initial_prompt {
+        Some(ref prompt) if !prompt.is_empty() => vec![prompt.clone()],
+        _ => vec![],
+    };
+
     // Worktree already exists — just cd into it and launch the agent
     let spawn_req = SpawnRequest {
         command: command.to_string(),
-        args: vec![],
+        args,
         cwd: wt_path,
         rows: default_rows(),
         cols: default_cols(),

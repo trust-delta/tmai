@@ -292,31 +292,42 @@ export function ActionPanel({
   }, [ciSummary, rerunBusy, projectPath, activeNode.name]);
 
   // Start work on an issue: create worktree + launch agent
-  const handleStartWork = useCallback(async () => {
-    if (!selectedIssue || startWorkBusy || !startWorkName.trim()) return;
-    const trimmed = startWorkName.trim();
-    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed) || trimmed.length > 64) {
-      setStartWorkError("a-z, 0-9, -, _ only (max 64)");
-      return;
-    }
-    setStartWorkBusy(true);
-    setStartWorkError(null);
-    try {
-      const base = defaultBranch ?? "main";
-      await api.spawnWorktree({ name: trimmed, cwd: projectPath, base_branch: base });
-      // Auto-launch agent with issue context
-      try {
-        await api.launchWorktreeAgent(projectPath, trimmed);
-      } catch {
-        // Worktree created but agent launch failed — still consider success
+  // Build a resolve prompt from the selected issue
+  const buildResolvePrompt = useCallback(
+    (issue: IssueInfo) =>
+      `GitHub Issue #${issue.number} "${issue.title}" に対応してください。\n\nまず \`gh issue view ${issue.number}\` でissueの詳細を確認し、実装方針を立ててください。\n実装・テスト完了後、PRを作成してください（Closes #${issue.number} をPR本文に含めること）。`,
+    [],
+  );
+
+  // Create worktree + launch agent (optionally with initial prompt)
+  const handleStartWork = useCallback(
+    async (initialPrompt?: string) => {
+      if (!selectedIssue || startWorkBusy || !startWorkName.trim()) return;
+      const trimmed = startWorkName.trim();
+      if (!/^[a-zA-Z0-9_-]+$/.test(trimmed) || trimmed.length > 64) {
+        setStartWorkError("a-z, 0-9, -, _ only (max 64)");
+        return;
       }
-      onStartWorkDone?.(trimmed);
-    } catch (e) {
-      setStartWorkError(e instanceof Error ? e.message : "Failed to create worktree");
-    } finally {
-      setStartWorkBusy(false);
-    }
-  }, [selectedIssue, startWorkBusy, startWorkName, defaultBranch, projectPath, onStartWorkDone]);
+      setStartWorkBusy(true);
+      setStartWorkError(null);
+      try {
+        const base = defaultBranch ?? "main";
+        await api.spawnWorktree({ name: trimmed, cwd: projectPath, base_branch: base });
+        // Auto-launch agent (with optional initial prompt)
+        try {
+          await api.launchWorktreeAgent(projectPath, trimmed, initialPrompt);
+        } catch {
+          // Worktree created but agent launch failed — still consider success
+        }
+        onStartWorkDone?.(trimmed);
+      } catch (e) {
+        setStartWorkError(e instanceof Error ? e.message : "Failed to create worktree");
+      } finally {
+        setStartWorkBusy(false);
+      }
+    },
+    [selectedIssue, startWorkBusy, startWorkName, defaultBranch, projectPath, onStartWorkDone],
+  );
 
   // Find matching worktree for selected issue
   const matchingWorktree = (() => {
@@ -454,14 +465,27 @@ export function ActionPanel({
                   {startWorkError && (
                     <div className="mt-1 text-[10px] text-red-400">{startWorkError}</div>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleStartWork}
-                    disabled={!startWorkName.trim() || startWorkBusy}
-                    className="mt-2 w-full rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30 disabled:opacity-40"
-                  >
-                    {startWorkBusy ? "Creating..." : "Create & Launch Agent"}
-                  </button>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleStartWork()}
+                      disabled={!startWorkName.trim() || startWorkBusy}
+                      className="flex-1 rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30 disabled:opacity-40"
+                    >
+                      {startWorkBusy ? "Creating..." : "Launch Agent"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        selectedIssue && handleStartWork(buildResolvePrompt(selectedIssue))
+                      }
+                      disabled={!startWorkName.trim() || startWorkBusy}
+                      className="flex-1 rounded-lg bg-amber-500/20 px-3 py-2 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/30 disabled:opacity-40"
+                      title="Worktree作成 → issue内容を含むプロンプトでエージェント起動 → 実装・テスト・PR作成まで自動実行"
+                    >
+                      {startWorkBusy ? "Creating..." : "Create & Resolve ▶"}
+                    </button>
+                  </div>
                 </div>
               )}
             </>
