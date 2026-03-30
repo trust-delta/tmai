@@ -441,6 +441,7 @@ export function BranchGraph({
             {/* Issues list (replaces graph) */}
             <IssuesPanel
               issues={issues}
+              worktrees={projectWorktrees}
               selectedIssue={selectedIssue}
               onSelectIssue={setSelectedIssue}
             />
@@ -462,7 +463,13 @@ export function BranchGraph({
               issueMode
               selectedIssue={selectedIssue}
               defaultBranch={branches?.default_branch ?? "main"}
+              worktrees={projectWorktrees}
               onStartWorkDone={handleStartWorkDone}
+              onSelectWorktreeBranch={(branch) => {
+                setShowIssues(false);
+                setSelectedIssue(null);
+                setSelectedNode(branch);
+              }}
             />
           </>
         ) : (

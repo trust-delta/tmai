@@ -1,16 +1,41 @@
 import { useMemo, useState } from "react";
-import type { IssueInfo } from "@/lib/api";
+import type { IssueInfo, WorktreeSnapshot } from "@/lib/api";
+import { extractIssueNumbers } from "@/lib/issue-utils";
+
+// Worktree status matched to an issue
+interface IssueWorktreeStatus {
+  worktree: WorktreeSnapshot;
+  isAgentActive: boolean;
+}
 
 interface IssuesPanelProps {
   issues: IssueInfo[];
+  worktrees: WorktreeSnapshot[];
   selectedIssue: IssueInfo | null;
   onSelectIssue: (issue: IssueInfo | null) => void;
 }
 
 // Issues list panel — replaces the graph area when Issues tab is active
-export function IssuesPanel({ issues, selectedIssue, onSelectIssue }: IssuesPanelProps) {
+export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }: IssuesPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
+
+  // Build issue-number → worktree status map
+  const issueWorktreeMap = useMemo(() => {
+    const map = new Map<number, IssueWorktreeStatus>();
+    for (const wt of worktrees) {
+      if (wt.is_main) continue;
+      const branch = wt.branch ?? wt.name;
+      const nums = extractIssueNumbers(branch);
+      for (const num of nums) {
+        if (!map.has(num)) {
+          const isAgentActive = wt.agent_status === "in-progress" || wt.agent_status === "waiting";
+          map.set(num, { worktree: wt, isAgentActive });
+        }
+      }
+    }
+    return map;
+  }, [worktrees]);
 
   // Collect all unique labels for filter chips
   const allLabels = useMemo(() => {
@@ -106,6 +131,7 @@ export function IssuesPanel({ issues, selectedIssue, onSelectIssue }: IssuesPane
         <div className="flex flex-col gap-2">
           {filteredIssues.map((issue) => {
             const isSelected = selectedIssue?.number === issue.number;
+            const wtStatus = issueWorktreeMap.get(issue.number);
             return (
               <button
                 type="button"
@@ -122,7 +148,20 @@ export function IssuesPanel({ issues, selectedIssue, onSelectIssue }: IssuesPane
                     #{issue.number}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-zinc-200">{issue.title}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-zinc-200">{issue.title}</span>
+                      {wtStatus && (
+                        <span
+                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            wtStatus.isAgentActive
+                              ? "bg-cyan-500/15 text-cyan-400"
+                              : "bg-amber-500/15 text-amber-400"
+                          }`}
+                        >
+                          {wtStatus.isAgentActive ? "In Progress" : "Worktree"}
+                        </span>
+                      )}
+                    </div>
                     {/* Labels */}
                     {issue.labels.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
