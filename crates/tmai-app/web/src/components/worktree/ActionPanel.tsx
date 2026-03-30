@@ -55,6 +55,7 @@ export function ActionPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
+  const [deleteRemote, setDeleteRemote] = useState(true);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [ciSummary, setCiSummary] = useState<CiSummary | null>(null);
   const [ciLoading, setCiLoading] = useState(false);
@@ -78,6 +79,7 @@ export function ActionPanel({
     setActionError(null);
     setConfirmDelete(false);
     setForceDelete(false);
+    setDeleteRemote(true);
     setShowNewWorktree(false);
   }, [activeNode.name]);
 
@@ -173,7 +175,7 @@ export function ActionPanel({
     setActionBusy(true);
     setActionError(null);
     try {
-      await api.deleteBranch(projectPath, activeNode.name, forceDelete);
+      await api.deleteBranch(projectPath, activeNode.name, forceDelete, deleteRemote);
       focusAfterDelete();
       onRefresh();
     } catch (e) {
@@ -181,7 +183,15 @@ export function ActionPanel({
     } finally {
       setActionBusy(false);
     }
-  }, [actionBusy, projectPath, activeNode.name, forceDelete, focusAfterDelete, onRefresh]);
+  }, [
+    actionBusy,
+    projectPath,
+    activeNode.name,
+    forceDelete,
+    deleteRemote,
+    focusAfterDelete,
+    onRefresh,
+  ]);
 
   // Checkout a remote-only branch (creates local tracking branch)
   const handleCheckoutRemote = useCallback(async () => {
@@ -965,6 +975,17 @@ export function ActionPanel({
                     />
                     Force delete{!activeNode.isWorktree ? " (unmerged)" : ""}
                   </label>
+                  {!activeNode.isWorktree && activeNode.remote && (
+                    <label className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                      <input
+                        type="checkbox"
+                        checked={deleteRemote}
+                        onChange={(e) => setDeleteRemote(e.target.checked)}
+                        className="accent-red-500"
+                      />
+                      Also delete remote branch
+                    </label>
+                  )}
                   <div className="mt-2 flex gap-2">
                     <button
                       type="button"
@@ -979,6 +1000,7 @@ export function ActionPanel({
                       onClick={() => {
                         setConfirmDelete(false);
                         setForceDelete(false);
+                        setDeleteRemote(true);
                       }}
                       className="text-xs text-zinc-500 hover:text-zinc-300"
                     >
