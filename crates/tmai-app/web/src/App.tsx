@@ -119,7 +119,7 @@ export function App() {
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
 
   // Derive project context from selected agent for split view
-  const agentProjectPath = selectedAgent?.git_common_dir ?? null;
+  const agentProjectPath = selectedAgent?.git_common_dir ?? selectedAgent?.cwd ?? null;
   const agentProjectName = agentProjectPath
     ? (agentProjectPath
         .replace(/\/\.git\/?$/, "")
