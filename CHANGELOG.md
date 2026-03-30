@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.1.0] - 2026-03-30
+
+### Added
+
+- **Split-pane layout** — Conversation panel left, git/markdown panel right with draggable divider (#131)
+- **Worktree status badges on issues** — Show "In Progress" or "Worktree" badges on issues with linked worktrees, plus "Go to Worktree" navigation button (#130)
+- **Remote-only branches in git panel** — Display branches that exist only on remote (#121)
+
+### Fixed
+
+- Settings not hot-reloading after PUT API calls (#128)
+- Branch delete now offers checkbox to also delete remote tracking branch (#126)
+- Git panel header shows correct total commit count (#124)
+- Web assets rebuild for remote branches feature (#122)
+
+### Security
+
+- Update picomatch 4.0.3 → 4.0.4 (CVE fix) (#133)
+
 ## [1.0.0] - 2026-03-30
 
 WebUI-first rewrite. The default mode is now a React + Vite web application with glassmorphism design.
