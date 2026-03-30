@@ -2350,12 +2350,12 @@ impl App {
                 }
             },
             PlacementType::SplitPane => {
-                // Use target_pane (currently selected pane) for splitting
+                // Use target_pane (currently selected pane) for splitting with tiled layout
                 let pane = target_pane.unwrap_or_else(|| session.clone());
                 match self
                     .command_sender
                     .runtime()
-                    .split_window(&pane, &directory)
+                    .split_window_tiled(&pane, &directory)
                 {
                     Ok(t) => t,
                     Err(e) => {

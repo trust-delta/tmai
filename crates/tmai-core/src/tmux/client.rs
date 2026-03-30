@@ -498,6 +498,45 @@ impl TmuxClient {
         Ok(target)
     }
 
+    /// Split a window and apply tiled layout to distribute panes evenly.
+    /// Returns the new pane's target identifier (session:window.pane).
+    pub fn split_window_tiled(&self, session: &str, cwd: &str) -> Result<String> {
+        let target = self.split_window(session, cwd)?;
+        // Apply tiled layout so panes get balanced rows and columns
+        let _ = self.select_layout(session, "tiled");
+        Ok(target)
+    }
+
+    /// Apply a tmux layout to a window (e.g. "tiled", "even-horizontal", "even-vertical").
+    pub fn select_layout(&self, target: &str, layout: &str) -> Result<()> {
+        let output = Command::new("tmux")
+            .args(["select-layout", "-t", target, layout])
+            .output()
+            .context("Failed to execute tmux select-layout")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux select-layout failed: {}", stderr);
+        }
+        Ok(())
+    }
+
+    /// Count the number of panes in the window containing the target pane.
+    pub fn count_panes(&self, target: &str) -> Result<usize> {
+        let output = Command::new("tmux")
+            .args(["list-panes", "-t", target])
+            .output()
+            .context("Failed to execute tmux list-panes")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux list-panes failed: {}", stderr);
+        }
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        Ok(text.lines().filter(|l| !l.is_empty()).count())
+    }
+
     /// Run a command in a specific pane
     pub fn run_command(&self, target: &str, command: &str) -> Result<()> {
         validate_target(target)?;

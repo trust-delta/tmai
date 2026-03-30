@@ -367,9 +367,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     if (!cursorPos || !showCursor) return base;
 
     const lines = base.split("\n");
-    if (cursorPos.y >= lines.length) return base;
+    if (lines.length === 0) return base;
+    // Clamp cursor_y to content bounds instead of giving up
+    const clampedY = Math.min(cursorPos.y, lines.length - 1);
 
-    const line = lines[cursorPos.y];
+    const line = lines[clampedY];
     let col = 0; // column count (full-width chars = 2)
     let inTag = false;
     let insertAt = line.length;
@@ -406,7 +408,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
     const marker =
       '<span data-tmai-cursor="1" style="display:inline-block;width:0;height:0;vertical-align:top;overflow:hidden"></span>';
-    lines[cursorPos.y] = line.slice(0, insertAt) + marker + line.slice(insertAt);
+    lines[clampedY] = line.slice(0, insertAt) + marker + line.slice(insertAt);
     return lines.join("\n");
   }, [ansi, content, cols, cursorPos, showCursor]);
   const html = htmlWithCursor;

@@ -458,23 +458,31 @@ pub async fn get_preview(
         }
     };
 
-    // Try capture-pane with ANSI colors first (via tmux target)
+    // Try capture-pane with ANSI colors first (via tmux target).
+    // Query cursor BEFORE capture to reduce race conditions: if new content
+    // appears between the two calls, the cursor position still references a
+    // valid line in the (larger) captured output.
     if let Some(ref target) = agent_target {
         if let Some(cmd) = core.raw_command_sender() {
+            // Pre-query cursor position
+            let pre_cursor = if show_cursor {
+                let cursor_result = cmd.runtime().get_cursor_position(target);
+                tracing::debug!("cursor query for {}: {:?}", target, cursor_result);
+                cursor_result.ok().flatten()
+            } else {
+                None
+            };
+
             if let Ok(content) = cmd.runtime().capture_pane_full(target) {
                 if !content.trim().is_empty() {
                     let lines = content.lines().count();
-                    // Query cursor position from runtime (tmux or IPC)
-                    let (cursor_x, cursor_y) = if show_cursor {
-                        let cursor_result = cmd.runtime().get_cursor_position(target);
-                        tracing::debug!("cursor query for {}: {:?}", target, cursor_result);
-                        cursor_result
-                            .ok()
-                            .flatten()
-                            .map(|(x, y)| (Some(x), Some(y)))
-                            .unwrap_or((None, None))
-                    } else {
-                        (None, None)
+                    // Clamp cursor_y to captured content bounds
+                    let (cursor_x, cursor_y) = match pre_cursor {
+                        Some((x, y)) if lines > 0 => {
+                            let clamped_y = y.min((lines - 1) as u32);
+                            (Some(x), Some(clamped_y))
+                        }
+                        _ => (None, None),
                     };
                     return Ok(Json(PreviewResponse {
                         content,
@@ -1344,8 +1352,8 @@ async fn spawn_in_tmux(
     // Reuse existing window with the same name, or create a new one
     let pane_target = find_tmux_window(&session_name, &window_name)
         .and_then(|target| {
-            // Split existing window to add a pane
-            tmux.split_window(&target, &req.cwd).ok()
+            // Split existing window with tiled layout for balanced pane sizes
+            tmux.split_window_tiled(&target, &req.cwd).ok()
         })
         .or_else(|| {
             // No existing window — create a new one

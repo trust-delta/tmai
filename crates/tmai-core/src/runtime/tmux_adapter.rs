@@ -101,6 +101,18 @@ impl RuntimeAdapter for TmuxAdapter {
         self.client.split_window(session, cwd)
     }
 
+    fn split_window_tiled(&self, session: &str, cwd: &str) -> Result<String> {
+        self.client.split_window_tiled(session, cwd)
+    }
+
+    fn select_layout(&self, target: &str, layout: &str) -> Result<()> {
+        self.client.select_layout(target, layout)
+    }
+
+    fn count_panes(&self, target: &str) -> Result<usize> {
+        self.client.count_panes(target)
+    }
+
     fn run_command(&self, target: &str, command: &str) -> Result<()> {
         self.client.run_command(target, command)
     }

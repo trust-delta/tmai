@@ -103,6 +103,22 @@ pub trait RuntimeAdapter: Send + Sync {
         anyhow::bail!("window splitting not supported by {} runtime", self.name())
     }
 
+    /// Split a window and apply tiled layout for balanced pane sizes.
+    fn split_window_tiled(&self, session: &str, cwd: &str) -> Result<String> {
+        // Default: fall back to regular split_window
+        self.split_window(session, cwd)
+    }
+
+    /// Apply a layout to the window containing the target (e.g. "tiled").
+    fn select_layout(&self, _target: &str, _layout: &str) -> Result<()> {
+        Ok(()) // no-op for runtimes that don't support layouts
+    }
+
+    /// Count panes in the window containing the target.
+    fn count_panes(&self, _target: &str) -> Result<usize> {
+        Ok(0)
+    }
+
     /// Run a command in a pane (send text + Enter).
     fn run_command(&self, _target: &str, _command: &str) -> Result<()> {
         anyhow::bail!("command execution not supported by {} runtime", self.name())
