@@ -84,8 +84,10 @@ pub struct HookEventPayload {
     pub tool_input: Option<serde_json::Value>,
 
     /// Tool response/output (for PostToolUse)
+    /// Claude Code v2.1.87+ sends this as an object (e.g., {"stdout":"...","exitCode":0}),
+    /// not a plain string.
     #[serde(default)]
-    pub tool_response: Option<String>,
+    pub tool_response: Option<serde_json::Value>,
 
     /// Whether a stop hook is already active (for Stop / SubagentStop)
     #[serde(default)]
