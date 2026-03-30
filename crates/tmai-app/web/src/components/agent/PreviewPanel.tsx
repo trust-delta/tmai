@@ -490,12 +490,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
         focused && hasDomFocus ? "ring-1 ring-cyan-500/30 ring-inset" : ""
       }`}
-      onClick={() => {
-        // Restore input mode when clicking anywhere in the panel after losing focus
-        if (!hasDomFocus) {
-          enterInputMode();
-        }
-      }}
     >
       <div
         role="log"
@@ -507,8 +501,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           if (focused) enterSelectMode();
         }}
         onMouseUp={() => {
-          // If no text was selected (just a click), return to input mode
-          if (!focused) {
+          // If no text was selected (just a click), return to input mode.
+          // Also handles re-focus when clicking back from the right panel.
+          if (!focused || !hasDomFocus) {
             const sel = window.getSelection();
             if (!sel || sel.toString().length === 0) {
               enterInputMode();
