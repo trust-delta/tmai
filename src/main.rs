@@ -164,6 +164,9 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
 
     let core = Arc::new(core_builder.build());
 
+    // Auto-fetch usage stats if enabled in settings
+    core.start_initial_usage_fetch();
+
     // Share core with App for event broadcasting
     app.set_core(core.clone());
 
@@ -309,6 +312,9 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     }
 
     let core = Arc::new(core_builder.build());
+
+    // Auto-fetch usage stats if enabled in settings
+    core.start_initial_usage_fetch();
 
     // Start web server (required for WebUI mode)
     if !settings.web.enabled {

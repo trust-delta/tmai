@@ -41,6 +41,9 @@ async fn main() {
             let settings = Settings::default();
             let core = Arc::new(TmaiCoreBuilder::new(settings).build());
 
+            // Auto-fetch usage stats if enabled in settings
+            core.start_initial_usage_fetch();
+
             // Start event bridge
             let _event_bridge = events::start_event_bridge(core.clone(), app.app_handle().clone());
 
