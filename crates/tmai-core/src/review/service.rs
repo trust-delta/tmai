@@ -190,9 +190,9 @@ pub fn launch_review(
     let safe_branch = sanitize_name(request.branch.as_deref().unwrap_or("unknown"));
     let output_file = review_output_dir()?.join(format!("{safe_branch}.md"));
 
-    // Split the source agent's pane for the review (auto-closes when done)
+    // Split the source agent's pane for the review with tiled layout
     let review_target = tmux
-        .split_window(&request.target, &request.cwd)
+        .split_window_tiled(&request.target, &request.cwd)
         .context("Failed to split pane for review")?;
 
     // Build feedback target if auto_feedback is enabled
