@@ -224,6 +224,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setContent("");
     setCursorPos(null);
     setFocused(true);
+    setHasDomFocus(true);
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
   }, [agentId]);
@@ -236,6 +237,30 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Switch to select mode (passthrough OFF, text selection enabled)
   const enterSelectMode = useCallback(() => {
     setFocused(false);
+  }, []);
+
+  // Track whether the PreviewPanel's container has DOM focus (or contains the focused element).
+  // When the user clicks the right panel in split-pane view, the container loses focus
+  // and we should remove the focus ring and cursor overlay.
+  const [hasDomFocus, setHasDomFocus] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onFocusIn = () => setHasDomFocus(true);
+    const onFocusOut = (e: FocusEvent) => {
+      // Only lose focus if the new target is outside the container
+      if (!container.contains(e.relatedTarget as Node)) {
+        setHasDomFocus(false);
+        setFocused(false);
+      }
+    };
+    container.addEventListener("focusin", onFocusIn);
+    container.addEventListener("focusout", onFocusOut);
+    return () => {
+      container.removeEventListener("focusin", onFocusIn);
+      container.removeEventListener("focusout", onFocusOut);
+    };
   }, []);
 
   // Focus/blur the hidden input when mode changes
@@ -463,8 +488,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     <div
       ref={containerRef}
       className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none ${
-        focused ? "ring-1 ring-cyan-500/30 ring-inset" : ""
+        focused && hasDomFocus ? "ring-1 ring-cyan-500/30 ring-inset" : ""
       }`}
+      onClick={() => {
+        // Restore input mode when clicking anywhere in the panel after losing focus
+        if (!hasDomFocus) {
+          enterInputMode();
+        }
+      }}
     >
       <div
         role="log"
@@ -507,7 +538,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             }}
           >
             <div ref={contentRef} />
-            {cursorStyle && focused && showCursor && (
+            {cursorStyle && focused && hasDomFocus && showCursor && (
               <div
                 className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
                 style={cursorStyle}
