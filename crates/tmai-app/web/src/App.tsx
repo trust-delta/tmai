@@ -3,6 +3,7 @@ import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
+import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
@@ -15,6 +16,7 @@ import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgents } from "@/hooks/useAgents";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { api, isAiAgent, type Selection } from "@/lib/api";
 
@@ -29,6 +31,19 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown">("git");
+
+  // Split-pane layout state
+  const {
+    splitRatio,
+    splitEnabled,
+    setSplitEnabled,
+    isDragging,
+    isNarrowScreen,
+    containerRef,
+    onDividerMouseDown,
+    onDividerDoubleClick,
+  } = useSplitPane();
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
@@ -103,6 +118,18 @@ export function App() {
   // Derive selectedTarget string for components that need it
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
 
+  // Derive project context from selected agent for split view
+  const agentProjectPath = selectedAgent?.git_common_dir ?? null;
+  const agentProjectName = agentProjectPath
+    ? (agentProjectPath
+        .replace(/\/\.git\/?$/, "")
+        .replace(/\/+$/, "")
+        .split("/")
+        .pop() ?? agentProjectPath)
+    : null;
+  const showSplitView =
+    selection?.type === "agent" && agentProjectPath !== null && splitEnabled && !isNarrowScreen;
+
   // Keyboard shortcuts handlers
   useKeyboardShortcuts([
     {
@@ -129,6 +156,11 @@ export function App() {
           toast.info("Previous project");
         }
       },
+    },
+    {
+      keys: ["\\"],
+      description: "Toggle split view",
+      handler: () => setSplitEnabled(!splitEnabled),
     },
     {
       keys: ["]"],
@@ -245,6 +277,51 @@ export function App() {
               }}
             />
           </div>
+        ) : showSplitView && selectedAgent && agentProjectPath && agentProjectName ? (
+          <SplitPaneLayout
+            left={
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <AgentActions agent={selectedAgent} passthrough />
+                {sessionId ? (
+                  <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
+                    <TerminalPanel sessionId={sessionId} />
+                  </div>
+                ) : (
+                  <div
+                    key={selectedAgent.id}
+                    className="flex flex-1 flex-col overflow-hidden animate-fade-in"
+                  >
+                    <PreviewPanel agentId={selectedAgent.id} />
+                  </div>
+                )}
+              </div>
+            }
+            right={
+              rightPanelTab === "git" ? (
+                <BranchGraph
+                  key={agentProjectPath}
+                  projectPath={agentProjectPath}
+                  projectName={agentProjectName}
+                  worktrees={worktrees}
+                  agents={aiAgents}
+                  onFocusAgent={handleSelectAgent}
+                />
+              ) : (
+                <MarkdownPanel
+                  key={agentProjectPath}
+                  projectPath={agentProjectPath}
+                  projectName={agentProjectName}
+                />
+              )
+            }
+            rightTab={rightPanelTab}
+            onTabChange={setRightPanelTab}
+            splitRatio={splitRatio}
+            isDragging={isDragging}
+            containerRef={containerRef}
+            onDividerMouseDown={onDividerMouseDown}
+            onDividerDoubleClick={onDividerDoubleClick}
+          />
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden">
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}

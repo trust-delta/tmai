@@ -13,6 +13,7 @@ export function HelpOverlay({ isOpen, onClose }: HelpOverlayProps) {
       category: "Navigation",
       items: [
         { key: "?", description: "Toggle this help menu" },
+        { key: "\\", description: "Toggle split view" },
         { key: "[", description: "Previous project" },
         { key: "]", description: "Next project" },
         { key: "/", description: "Focus project search" },

@@ -5,6 +5,7 @@ export const KEYBOARD_SHORTCUTS = {
   helpToggle: "?",
   settingsToggle: "s",
   securityToggle: "sec",
+  splitToggle: "\\",
   projectNext: "]",
   projectPrev: "[",
   agentKill: "k",
