@@ -108,8 +108,14 @@ pub fn handle_hook_event(
             let input_summary = summarize_tool_input(&tool_name, payload.tool_input.as_ref());
             let response_summary = payload
                 .tool_response
-                .as_deref()
-                .map(|s| truncate_string(s, 200))
+                .as_ref()
+                .map(|v| {
+                    let s = v
+                        .as_str()
+                        .map(String::from)
+                        .unwrap_or_else(|| v.to_string());
+                    truncate_string(&s, 200)
+                })
                 .unwrap_or_default();
             let activity = ToolActivity {
                 tool_name,
