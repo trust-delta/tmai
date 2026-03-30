@@ -32,13 +32,17 @@ fi
 FRONTEND_DIR="crates/tmai-app/web"
 if git diff --cached --name-only | grep -q "^${FRONTEND_DIR}/src/"; then
     echo "Running frontend checks..."
-    if command -v pnpm >/dev/null 2>&1 && [ -d "$FRONTEND_DIR/node_modules" ]; then
-        (cd "$FRONTEND_DIR" && npx biome check src/ && npx tsc --noEmit)
-        if [ $? -ne 0 ]; then
-            echo "Frontend check failed. Fix lint/type errors before committing."
-            exit 1
-        fi
-    else
-        echo "Warning: pnpm or node_modules not found, skipping frontend checks."
+    if ! command -v pnpm >/dev/null 2>&1; then
+        echo "ERROR: pnpm not found. Install pnpm to run frontend checks."
+        exit 1
+    fi
+    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+        echo "node_modules not found, running pnpm install..."
+        (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile)
+    fi
+    (cd "$FRONTEND_DIR" && npx biome check src/ && npx tsc --noEmit)
+    if [ $? -ne 0 ]; then
+        echo "Frontend check failed. Fix lint/type errors before committing."
+        exit 1
     fi
 fi
