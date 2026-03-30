@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.1.1] - 2026-03-30
+
+### Fixed
+
+- Hook errors on every PostToolUse event — `tool_response` type changed from `String` to `Value` to match Claude Code v2.1.87+ payload format (#139)
+
+### Added
+
+- Issue-driven orchestration workflow guide (`doc/workflows/issue-driven-orchestration.md`)
+
 ## [1.1.0] - 2026-03-30
 
 ### Added
