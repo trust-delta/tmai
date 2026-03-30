@@ -5,7 +5,7 @@
 ![Rust](https://img.shields.io/badge/rust-1.91%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-<!-- screenshot: webui-dashboard.png -->
+![tmai WebUI Dashboard](doc/images/webui-dashboard.png)
 
 ## 機能
 
