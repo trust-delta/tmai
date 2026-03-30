@@ -20,7 +20,7 @@ Tactful Multi Agent Interface — AIコーディングエージェント（Claud
 - [エージェント起動](./features/agent-spawn.md) - WebUIから新しいエージェントを起動
 - [Markdownビューア](./features/markdown-viewer.md) - プロジェクトドキュメントの閲覧・編集
 - [ファイルブラウザ](./features/file-browser.md) - ディレクトリブラウザとファイル表示・編集
-- [セキュリティパネル](./features/security-panel.md) - セキュリティスキャンと脆弱性検出
+- [セキュリティパネル](./features/security-panel.md) - Claude Code設定の監査・リスク検出
 - [使用量トラッキング](./features/usage-tracking.md) - Claudeサブスクリプションのトークン使用量監視
 
 ## コア機能
@@ -40,9 +40,10 @@ WebUIとTUIの両モードで利用可能な機能。
 
 ユースケース別の使い方ガイド。
 
-- [単一エージェント監視](./workflows/single-agent.md) - 基本的な使い方
+- [Issue駆動オーケストレーション](./workflows/issue-driven-orchestration.md) - メインエージェントがissueを並列サブエージェントに分配 **(おすすめ)**
+- [ワークツリーで並列開発](./workflows/worktree-parallel.md) - Gitワークツリーを使った並列ブランチ開発
 - [マルチエージェント監視](./workflows/multi-agent.md) - 複数エージェントを同時に監視
-- [ワークツリーで並列開発](./workflows/worktree-parallel.md) - Gitワークツリーを使った並列開発
+- [単一エージェント監視](./workflows/single-agent.md) - 基本的な使い方
 - [スマホから承認](./workflows/remote-approval.md) - スマートフォンからリモート操作
 
 ## ガイド

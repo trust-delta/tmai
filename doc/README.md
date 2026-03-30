@@ -20,7 +20,7 @@ Desktop WebUI features (default mode).
 - [Agent Spawn](./features/agent-spawn.md) - Launch new agents from the WebUI
 - [Markdown Viewer](./features/markdown-viewer.md) - Browse and edit project documentation
 - [File Browser](./features/file-browser.md) - Directory browser with file viewing and editing
-- [Security Panel](./features/security-panel.md) - Security scanning and vulnerability detection
+- [Security Panel](./features/security-panel.md) - Claude Code config audit and risk detection
 - [Usage Tracking](./features/usage-tracking.md) - Token usage monitoring for Claude subscriptions
 
 ## Core Features
@@ -40,9 +40,10 @@ Features available in both WebUI and TUI modes.
 
 Use-case specific guides.
 
-- [Single Agent Monitoring](./workflows/single-agent.md) - Basic usage
+- [Issue-Driven Orchestration](./workflows/issue-driven-orchestration.md) - Main agent dispatches issues to parallel sub-agents via worktrees **(recommended)**
+- [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Git worktree workflow for parallel branches
 - [Multi-Agent Monitoring](./workflows/multi-agent.md) - Monitor multiple agents simultaneously
-- [Parallel Development with Worktrees](./workflows/worktree-parallel.md) - Git worktree workflow
+- [Single Agent Monitoring](./workflows/single-agent.md) - Basic usage
 - [Remote Approval](./workflows/remote-approval.md) - Approve from your smartphone
 
 ## Guides

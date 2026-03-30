@@ -130,6 +130,7 @@ tmai demo
 - [WebUI Overview](./features/webui-overview.md) - Dashboard layout and features
 - [Branch Graph](./features/branch-graph.md) - Git visualization
 - [GitHub Integration](./features/github-integration.md) - PR and CI monitoring
+- [Issue-Driven Orchestration](./workflows/issue-driven-orchestration.md) - Dispatch issues to parallel agents **(recommended workflow)**
 - [Claude Code Hooks](./features/hooks.md) - Detailed hooks documentation
 - [Multi-Agent Monitoring](./workflows/multi-agent.md) - Monitor multiple agents
 - [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring
