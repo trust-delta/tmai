@@ -104,8 +104,8 @@ export const api = {
   listWorktrees: () => httpApi.listWorktrees(),
   getWorktreeDiff: (worktreePath: string, baseBranch?: string) =>
     httpApi.getWorktreeDiff(worktreePath, baseBranch),
-  launchWorktreeAgent: (repoPath: string, worktreeName: string) =>
-    httpApi.launchWorktreeAgent(repoPath, worktreeName),
+  launchWorktreeAgent: (repoPath: string, worktreeName: string, initialPrompt?: string) =>
+    httpApi.launchWorktreeAgent(repoPath, worktreeName, initialPrompt),
   deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
     httpApi.deleteWorktree(repoPath, worktreeName, force),
 
