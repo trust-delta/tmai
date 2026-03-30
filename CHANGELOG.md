@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.1.2] - 2026-03-31
+
+### Added
+
+- **Create & Resolve button** — Launch agent with issue context and auto-PR directly from the git panel (#141)
+- WebUI dashboard screenshot in README
+
+### Fixed
+
+- Cursor overlay misalignment when tmux panes are horizontally split (#143)
+- Markdown panel root path not resolved in split-pane view (#146)
+- Conversation panel false focus ring when right panel has focus (#148)
+- Usage stats not auto-fetched on startup when enabled in settings (#149)
+- Pre-commit hook silently skipped frontend checks in worktrees — now auto-installs node_modules
+
 ## [1.1.1] - 2026-03-30
 
 ### Fixed
