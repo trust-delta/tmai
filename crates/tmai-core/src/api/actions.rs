@@ -697,6 +697,15 @@ impl TmaiCore {
         });
     }
 
+    /// Auto-fetch usage on startup if enabled in settings.
+    pub fn start_initial_usage_fetch(&self) {
+        let settings = self.settings();
+        if settings.usage.enabled {
+            tracing::info!("Usage monitoring enabled — starting initial fetch");
+            self.fetch_usage();
+        }
+    }
+
     /// Kill a specific agent (PTY session or tmux pane)
     pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
         // Validate agent exists and is not virtual
@@ -1096,5 +1105,31 @@ mod tests {
         // Agent exists but not in multi-select state — idempotent Ok
         let result = core.submit_selection("main:0.0", &[1]);
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_initial_usage_fetch_sets_fetching_when_enabled() {
+        let mut settings = Settings::default();
+        settings.usage.enabled = true;
+        let state = AppState::shared();
+        let core = TmaiCoreBuilder::new(settings)
+            .with_state(state.clone())
+            .build();
+        // Should set fetching=true since usage is enabled
+        core.start_initial_usage_fetch();
+        assert!(state.read().usage.fetching);
+    }
+
+    #[test]
+    fn test_initial_usage_fetch_noop_when_disabled() {
+        let mut settings = Settings::default();
+        settings.usage.enabled = false;
+        let state = AppState::shared();
+        let core = TmaiCoreBuilder::new(settings)
+            .with_state(state.clone())
+            .build();
+        core.start_initial_usage_fetch();
+        // Should not set fetching since usage is disabled
+        assert!(!state.read().usage.fetching);
     }
 }
