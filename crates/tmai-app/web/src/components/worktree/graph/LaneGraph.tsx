@@ -264,9 +264,8 @@ export function LaneGraph({
 
             const color = pr.is_draft ? "rgb(161,161,170)" : "rgb(74,222,128)";
 
-            // Curved path for visual clarity
-            const midY = (fromY + toY) / 2;
-            const d = `M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`;
+            // Straight line path for consistency with other connections
+            const d = `M ${fromX} ${fromY} L ${toX} ${toY}`;
 
             // Arrowhead pointing at target lane header
             const arrowSize = 4;
