@@ -2175,21 +2175,21 @@ pub async fn send_to_agent(
 }
 
 // =========================================================
-// Security scan endpoints
+// Config audit endpoints
 // =========================================================
 
-/// POST /api/security/scan — run a security scan and return results
-pub async fn security_scan(
+/// POST /api/config-audit/run — run a config audit and return results
+pub async fn config_audit(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<tmai_core::security::ScanResult> {
-    Json(core.security_scan())
+    Json(core.config_audit())
 }
 
-/// GET /api/security/last — return cached scan result (no new scan)
-pub async fn last_security_scan(
+/// GET /api/config-audit/last — return cached audit result (no new audit)
+pub async fn last_config_audit(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<Option<tmai_core::security::ScanResult>> {
-    Json(core.last_security_scan())
+    Json(core.last_config_audit())
 }
 
 // ── Usage ──
@@ -2693,8 +2693,8 @@ mod tests {
             .route("/agents/{id}/preview", get(get_preview))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
-            .route("/security/scan", post(security_scan))
-            .route("/security/last", get(last_security_scan))
+            .route("/config-audit/run", post(config_audit))
+            .route("/config-audit/last", get(last_config_audit))
             .with_state(core)
     }
 
@@ -2962,12 +2962,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_security_last_initially_null() {
+    async fn test_config_audit_last_initially_null() {
         let app = test_router();
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/security/last")
+                    .uri("/config-audit/last")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2980,13 +2980,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_security_scan_returns_ok() {
+    async fn test_config_audit_returns_ok() {
         let app = test_router();
         let response = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/security/scan")
+                    .uri("/config-audit/run")
                     .body(Body::empty())
                     .unwrap(),
             )

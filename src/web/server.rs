@@ -123,8 +123,8 @@ impl WebServer {
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))
             .route("/agents/{id}/terminal", any(ws::ws_terminal))
-            .route("/security/scan", post(api::security_scan))
-            .route("/security/last", get(api::last_security_scan))
+            .route("/config-audit/run", post(api::config_audit))
+            .route("/config-audit/last", get(api::last_config_audit))
             .route("/usage", get(api::get_usage))
             .route("/usage/fetch", post(api::trigger_usage_fetch))
             .route(

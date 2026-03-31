@@ -145,9 +145,9 @@ export const api = {
   addProject: (path: string) => httpApi.addProject(path),
   removeProject: (path: string) => httpApi.removeProject(path),
 
-  // Security scan
-  runSecurityScan: () => httpApi.runSecurityScan(),
-  lastSecurityScan: () => httpApi.lastSecurityScan(),
+  // Config audit
+  runConfigAudit: () => httpApi.runConfigAudit(),
+  lastConfigAudit: () => httpApi.lastConfigAudit(),
 
   // Usage
   getUsage: () => httpApi.getUsage(),

@@ -529,7 +529,9 @@ export type SecurityCategory =
   | "McpServer"
   | "Environment"
   | "Hooks"
-  | "FilePermissions";
+  | "FilePermissions"
+  | "CustomCommand"
+  | "InstructionFile";
 
 export interface SecurityRisk {
   rule_id: string;
@@ -750,9 +752,9 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
 
-  // Security scan
-  runSecurityScan: () => apiFetch<ScanResult>("/security/scan", { method: "POST" }),
-  lastSecurityScan: () => apiFetch<ScanResult | null>("/security/last"),
+  // Config audit
+  runConfigAudit: () => apiFetch<ScanResult>("/config-audit/run", { method: "POST" }),
+  lastConfigAudit: () => apiFetch<ScanResult | null>("/config-audit/last"),
 
   // Usage
   getUsage: () => apiFetch<UsageSnapshot>("/usage"),

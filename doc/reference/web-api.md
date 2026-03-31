@@ -707,19 +707,19 @@ Update usage tracking settings.
 
 ---
 
-## Security
+## Config Audit
 
-### POST /api/security/scan
+### POST /api/config-audit/run
 
-Run a security scan.
+Run a config audit.
 
 **Response**: `ScanResult` with risks, scanned files, and timestamp.
 
-### GET /api/security/last
+### GET /api/config-audit/last
 
-Get the last scan result (cached).
+Get the last audit result (cached).
 
-**Response**: `ScanResult` or `null` if no scan has been run.
+**Response**: `ScanResult` or `null` if no audit has been run.
 
 ---
 

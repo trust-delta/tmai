@@ -38,7 +38,7 @@ function countBySeverity(result: ScanResult, severity: SecuritySeverity): number
   return result.risks.filter((r) => r.severity === severity).length;
 }
 
-// Security scan panel displayed in the main area
+// Config audit panel displayed in the main area
 export function SecurityPanel({ onClose }: SecurityPanelProps) {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,7 +47,7 @@ export function SecurityPanel({ onClose }: SecurityPanelProps) {
   // Load cached scan result on mount
   useEffect(() => {
     api
-      .lastSecurityScan()
+      .lastConfigAudit()
       .then((result) => {
         if (result) setScanResult(result);
       })
@@ -59,10 +59,10 @@ export function SecurityPanel({ onClose }: SecurityPanelProps) {
     setLoading(true);
     setError("");
     try {
-      const result = await api.runSecurityScan();
+      const result = await api.runConfigAudit();
       setScanResult(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Scan failed");
+      setError(e instanceof Error ? e.message : "Audit failed");
     } finally {
       setLoading(false);
     }
@@ -75,14 +75,14 @@ export function SecurityPanel({ onClose }: SecurityPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-zinc-200">Security Scan</h2>
+          <h2 className="text-lg font-semibold text-zinc-200">Config Audit</h2>
           <button
             type="button"
             onClick={handleScan}
             disabled={loading}
             className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30 disabled:opacity-50"
           >
-            {loading ? "Scanning..." : "Scan"}
+            {loading ? "Auditing..." : "Audit"}
           </button>
         </div>
         <button
@@ -99,9 +99,9 @@ export function SecurityPanel({ onClose }: SecurityPanelProps) {
 
         {!scanResult ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-sm text-zinc-500">No scan results yet</p>
+            <p className="text-sm text-zinc-500">No audit results yet</p>
             <p className="mt-1 text-xs text-zinc-600">
-              Click Scan to check Claude Code settings for security risks
+              Click Audit to check Claude Code settings for security risks
             </p>
           </div>
         ) : (
