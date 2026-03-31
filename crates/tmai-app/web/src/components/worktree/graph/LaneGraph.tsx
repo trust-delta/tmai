@@ -273,11 +273,7 @@ export function LaneGraph({
               }
             }
 
-            const color = isMerged
-              ? srcLane.color // use branch color for merged
-              : pr.is_draft
-                ? "rgb(161,161,170)" // gray for draft
-                : "rgb(74,222,128)"; // green for open
+            const color = pr.is_draft ? "rgb(161,161,170)" : srcLane.color;
 
             const d = `M ${fromX} ${fromY} L ${toX} ${toY}`;
 
