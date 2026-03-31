@@ -13,4 +13,6 @@ pub mod registry;
 pub mod types;
 
 pub use registry::{new_hook_registry, new_session_pane_map, HookRegistry, SessionPaneMap};
-pub use types::{HookEventPayload, HookState, HookStatus, ToolActivity, WorktreeInfo};
+pub use types::{
+    HookEventPayload, HookState, HookStatus, StatuslineData, ToolActivity, WorktreeInfo,
+};

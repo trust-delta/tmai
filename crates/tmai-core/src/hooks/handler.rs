@@ -702,6 +702,79 @@ fn update_status(
     }
 }
 
+/// Process incoming statusline data and update the HookRegistry.
+///
+/// Statusline data provides reliable model info, cost metrics, context window
+/// usage, and session metadata. The data is merged into the existing HookState
+/// for the resolved pane_id, or a new entry is created if none exists.
+///
+/// Returns the resolved pane_id (for logging/debugging).
+pub fn handle_statusline(
+    data: super::types::StatuslineData,
+    pane_id: &str,
+    hook_registry: &HookRegistry,
+    session_pane_map: &SessionPaneMap,
+) -> Option<String> {
+    // Register session_id → pane_id mapping
+    if let Some(ref sid) = data.session_id {
+        if !sid.is_empty() {
+            let mut map = session_pane_map.write();
+            map.insert(sid.clone(), pane_id.to_string());
+        }
+    }
+
+    debug!(
+        pane_id,
+        session_id = ?data.session_id,
+        model = ?data.model.as_ref().and_then(|m| m.display_name.as_deref()),
+        cost_usd = ?data.cost.as_ref().and_then(|c| c.total_cost_usd),
+        context_used = ?data.context_window.as_ref().and_then(|c| c.used_percentage),
+        "Processing statusline data"
+    );
+
+    let mut reg = hook_registry.write();
+    if let Some(state) = reg.get_mut(pane_id) {
+        // Update model_id from statusline (more reliable than transcript parsing)
+        if let Some(ref model) = data.model {
+            if let Some(ref id) = model.id {
+                state.model_id = Some(id.clone());
+            }
+        }
+        // Update cwd from statusline
+        if let Some(ref cwd) = data.cwd {
+            state.cwd = Some(cwd.clone());
+        }
+        // Update transcript_path from statusline
+        if let Some(ref tp) = data.transcript_path {
+            state.transcript_path = Some(tp.clone());
+        }
+        // Store full statusline data
+        state.statusline = Some(data);
+        state.touch();
+    } else {
+        // Create new HookState from statusline data
+        let session_id = data.session_id.clone().unwrap_or_default();
+        let cwd = data.cwd.clone();
+        let mut state = super::types::HookState::new(session_id.clone(), cwd);
+        if let Some(ref model) = data.model {
+            if let Some(ref id) = model.id {
+                state.model_id = Some(id.clone());
+            }
+        }
+        if let Some(ref tp) = data.transcript_path {
+            state.transcript_path = Some(tp.clone());
+        }
+        // Resolve PID for PTY injection
+        if !session_id.is_empty() {
+            state.pid = crate::session_discovery::resolve_pid_for_session(&session_id);
+        }
+        state.statusline = Some(data);
+        reg.insert(pane_id.to_string(), state);
+    }
+
+    Some(pane_id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1691,6 +1764,86 @@ mod tests {
             reg.get("5").unwrap().active_subagents,
             0,
             "New session should reset subagent count"
+        );
+    }
+
+    #[test]
+    fn test_handle_statusline_new_entry() {
+        let registry = crate::hooks::new_hook_registry();
+        let map = crate::hooks::new_session_pane_map();
+
+        let data = super::super::types::StatuslineData {
+            cwd: Some("/home/user/project".to_string()),
+            session_id: Some("sess-abc".to_string()),
+            version: Some("2.1.59".to_string()),
+            model: Some(super::super::types::StatuslineModel {
+                id: Some("claude-opus-4-6".to_string()),
+                display_name: Some("Opus".to_string()),
+            }),
+            cost: Some(super::super::types::StatuslineCost {
+                total_cost_usd: Some(0.5),
+                total_lines_added: Some(100),
+                ..Default::default()
+            }),
+            context_window: Some(super::super::types::StatuslineContextWindow {
+                used_percentage: Some(25),
+                context_window_size: Some(200000),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        handle_statusline(data, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.model_id.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(state.cwd.as_deref(), Some("/home/user/project"));
+        assert!(state.statusline.is_some());
+
+        let sl = state.statusline.as_ref().unwrap();
+        assert_eq!(sl.version.as_deref(), Some("2.1.59"));
+        assert_eq!(sl.cost.as_ref().unwrap().total_cost_usd, Some(0.5));
+        assert_eq!(
+            sl.context_window.as_ref().unwrap().used_percentage,
+            Some(25)
+        );
+
+        // Check session_id → pane_id mapping was registered
+        let m = map.read();
+        assert_eq!(m.get("sess-abc").map(|s| s.as_str()), Some("5"));
+    }
+
+    #[test]
+    fn test_handle_statusline_updates_existing() {
+        let registry = crate::hooks::new_hook_registry();
+        let map = crate::hooks::new_session_pane_map();
+
+        // First: create via hook event
+        let payload = make_payload("SessionStart");
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        // Then: update via statusline
+        let data = super::super::types::StatuslineData {
+            session_id: Some("test-session".to_string()),
+            model: Some(super::super::types::StatuslineModel {
+                id: Some("claude-sonnet-4-6".to_string()),
+                display_name: Some("Sonnet".to_string()),
+            }),
+            version: Some("2.1.80".to_string()),
+            ..Default::default()
+        };
+
+        handle_statusline(data, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        // model_id should be updated from statusline
+        assert_eq!(state.model_id.as_deref(), Some("claude-sonnet-4-6"));
+        assert!(state.statusline.is_some());
+        assert_eq!(
+            state.statusline.as_ref().unwrap().version.as_deref(),
+            Some("2.1.80")
         );
     }
 }

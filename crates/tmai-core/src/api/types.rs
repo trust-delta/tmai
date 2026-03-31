@@ -158,6 +158,30 @@ pub struct AgentSnapshot {
     /// Terminal cursor row (0-indexed, absolute within full capture output)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_y: Option<u32>,
+    /// Session cost in USD (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    /// Session uptime in milliseconds (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// Total lines added (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lines_added: Option<u64>,
+    /// Total lines removed (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lines_removed: Option<u64>,
+    /// Context window used percentage (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_used_pct: Option<u8>,
+    /// Context window size (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window_size: Option<u64>,
+    /// Claude Code version string (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude_version: Option<String>,
+    /// Human-readable session name set via /rename (from statusline hook)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_name: Option<String>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -241,6 +265,14 @@ impl AgentSnapshot {
             model_id: agent.model_id.clone(),
             cursor_x: agent.cursor_x,
             cursor_y: agent.cursor_y,
+            cost_usd: agent.cost_usd,
+            duration_ms: agent.duration_ms,
+            lines_added: agent.lines_added,
+            lines_removed: agent.lines_removed,
+            context_used_pct: agent.context_used_pct,
+            context_window_size: agent.context_window_size,
+            claude_version: agent.claude_version.clone(),
+            session_name: agent.session_name.clone(),
         }
     }
 

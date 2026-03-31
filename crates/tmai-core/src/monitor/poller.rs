@@ -885,6 +885,21 @@ impl Poller {
                         agent.hook_tool_name = hs.last_tool.clone();
                         agent.hook_tool_input = hs.last_context.tool_input.clone();
                     }
+                    // Propagate statusline data (cost, context, version, session_name)
+                    if let Some(ref sl) = hs.statusline {
+                        if let Some(ref cost) = sl.cost {
+                            agent.cost_usd = cost.total_cost_usd;
+                            agent.duration_ms = cost.total_duration_ms;
+                            agent.lines_added = cost.total_lines_added;
+                            agent.lines_removed = cost.total_lines_removed;
+                        }
+                        if let Some(ref cw) = sl.context_window {
+                            agent.context_used_pct = cw.used_percentage;
+                            agent.context_window_size = cw.context_window_size;
+                        }
+                        agent.claude_version = sl.version.clone();
+                        agent.session_name = sl.session_name.clone();
+                    }
                 }
 
                 // Propagate cursor position from IPC (VT100 parser in PTY wrapper).

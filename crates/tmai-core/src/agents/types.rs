@@ -600,6 +600,22 @@ pub struct MonitoredAgent {
     pub cursor_x: Option<u32>,
     /// Terminal cursor row (0-indexed, absolute within full capture output)
     pub cursor_y: Option<u32>,
+    /// Session cost in USD (from statusline hook)
+    pub cost_usd: Option<f64>,
+    /// Session uptime in milliseconds (from statusline hook)
+    pub duration_ms: Option<u64>,
+    /// Total lines added (from statusline hook)
+    pub lines_added: Option<u64>,
+    /// Total lines removed (from statusline hook)
+    pub lines_removed: Option<u64>,
+    /// Context window used percentage (from statusline hook, more reliable than capture-pane)
+    pub context_used_pct: Option<u8>,
+    /// Context window size (from statusline hook)
+    pub context_window_size: Option<u64>,
+    /// Claude Code version string (from statusline hook)
+    pub claude_version: Option<String>,
+    /// Human-readable session name set via /rename (from statusline hook)
+    pub session_name: Option<String>,
 }
 
 impl MonitoredAgent {
@@ -657,6 +673,14 @@ impl MonitoredAgent {
             hook_tool_input: None,
             cursor_x: None,
             cursor_y: None,
+            cost_usd: None,
+            duration_ms: None,
+            lines_added: None,
+            lines_removed: None,
+            context_used_pct: None,
+            context_window_size: None,
+            claude_version: None,
+            session_name: None,
         }
     }
 
