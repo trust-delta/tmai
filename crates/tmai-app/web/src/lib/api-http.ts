@@ -397,6 +397,7 @@ export interface PrInfo {
   deletions: number;
   comments: number;
   reviews: number;
+  merge_commit_sha?: string;
 }
 
 export interface CiCheck {

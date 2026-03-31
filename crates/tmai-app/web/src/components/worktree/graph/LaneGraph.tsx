@@ -245,7 +245,8 @@ export function LaneGraph({
             );
           })}
 
-          {/* PR merge-target dashed arrows: from PR branch tip → target (base) lane header */}
+          {/* PR arrows: open PRs use dashed lines to base lane header,
+              merged PRs use solid lines to the actual merge commit */}
           {Object.values(prMap).map((pr) => {
             const srcLane = lanes.find((l) => l.branch === pr.head_branch);
             const tgtLane = lanes.find((l) => l.branch === pr.base_branch);
@@ -257,17 +258,29 @@ export function LaneGraph({
 
             const fromX = laneX(srcLane.laneIndex);
             const toX = laneX(tgtLane.laneIndex);
-            // Start from the tip (topmost commit) of the PR branch
             const fromY = srcRange.minY;
-            // End at the header area of the target lane
-            const toY = 28;
 
-            const color = pr.is_draft ? "rgb(161,161,170)" : "rgb(74,222,128)";
+            const isMerged = pr.state === "MERGED" && pr.merge_commit_sha;
 
-            // Straight line path for consistency with other connections
+            // For merged PRs, target the merge commit row; for open PRs, target lane header
+            let toY = 28;
+            if (isMerged) {
+              const mergeRow = rows.find(
+                (r) => r.kind === "commit" && r.sha === pr.merge_commit_sha,
+              );
+              if (mergeRow) {
+                toY = mergeRow.y;
+              }
+            }
+
+            const color = isMerged
+              ? srcLane.color // use branch color for merged
+              : pr.is_draft
+                ? "rgb(161,161,170)" // gray for draft
+                : "rgb(74,222,128)"; // green for open
+
             const d = `M ${fromX} ${fromY} L ${toX} ${toY}`;
 
-            // Arrowhead pointing at target lane header
             const arrowSize = 4;
             const arrowD = `M ${toX - arrowSize} ${toY + arrowSize * 1.5} L ${toX} ${toY} L ${toX + arrowSize} ${toY + arrowSize * 1.5}`;
 
@@ -278,8 +291,8 @@ export function LaneGraph({
                   fill="none"
                   stroke={color}
                   strokeWidth={1.5}
-                  strokeOpacity={0.5}
-                  strokeDasharray="6 3"
+                  strokeOpacity={isMerged ? 0.6 : 0.5}
+                  strokeDasharray={isMerged ? undefined : "6 3"}
                 />
                 <path d={arrowD} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
               </g>
