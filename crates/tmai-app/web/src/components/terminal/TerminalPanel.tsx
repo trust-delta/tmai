@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTerminal } from "@/hooks/useTerminal";
 import "@xterm/xterm/css/xterm.css";
 
@@ -26,6 +26,21 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
     setInputMode(false);
     setAttachable(false);
   }, [setAttachable]);
+
+  // In select mode, listen for Enter key on the container to switch to input mode
+  useEffect(() => {
+    if (inputMode) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        enterInputMode();
+      }
+    };
+    el.addEventListener("keydown", onKeyDown);
+    return () => el.removeEventListener("keydown", onKeyDown);
+  }, [inputMode, enterInputMode]);
 
   return (
     <section className="relative flex h-full w-full flex-col">
@@ -81,7 +96,7 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
         </button>
         <div className="flex-1" />
         <span className="text-[10px] text-zinc-600">
-          {inputMode ? "click to select" : "click ⌨ to input"}
+          {inputMode ? "click to select" : "Enter or click ⌨ to input"}
         </span>
       </div>
     </section>
