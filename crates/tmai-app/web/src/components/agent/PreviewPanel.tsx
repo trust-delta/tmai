@@ -263,6 +263,21 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, []);
 
+  // In select mode, listen for Enter key on the container to switch to input mode
+  useEffect(() => {
+    if (focused) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        enterInputMode();
+      }
+    };
+    container.addEventListener("keydown", onKeyDown);
+    return () => container.removeEventListener("keydown", onKeyDown);
+  }, [focused, enterInputMode]);
+
   // Focus/blur the hidden input when mode changes
   useEffect(() => {
     if (focused) {
@@ -616,7 +631,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         </button>
         <div className="flex-1" />
         <span className="text-[10px] text-zinc-600">
-          {focused ? "click to select" : "click ⌨ to input"}
+          {focused ? "click to select" : "Enter or click ⌨ to input"}
         </span>
       </div>
     </div>
