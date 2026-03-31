@@ -707,19 +707,19 @@ Update usage tracking settings.
 
 ---
 
-## Security
+## Config Audit
 
-### POST /api/security/scan
+### POST /api/config-audit/run
 
-Run a security scan.
+Run a config audit.
 
 **Response**: `ScanResult` with risks, scanned files, and timestamp.
 
-### GET /api/security/last
+### GET /api/config-audit/last
 
-Get the last scan result (cached).
+Get the last audit result (cached).
 
-**Response**: `ScanResult` or `null` if no scan has been run.
+**Response**: `ScanResult` or `null` if no audit has been run.
 
 ---
 
@@ -889,8 +889,8 @@ curl -X POST "$BASE/api/spawn" \
   -H "Content-Type: application/json" \
   -d '{"command":"claude","cwd":"/path/to/project"}'
 
-# Security scan
-curl -X POST "$BASE/api/security/scan" \
+# Config audit
+curl -X POST "$BASE/api/config-audit/run" \
   -H "Authorization: Bearer $TOKEN"
 
 # List teams

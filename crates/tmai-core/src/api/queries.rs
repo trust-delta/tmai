@@ -154,11 +154,11 @@ impl TmaiCore {
     // Security queries
     // =========================================================
 
-    /// Run a security scan and cache the result in state.
+    /// Run a config audit and cache the result in state.
     ///
     /// Acquires a read lock to gather project directories, releases it,
-    /// runs the scan (no lock held), then acquires a write lock to store the result.
-    pub fn security_scan(&self) -> crate::security::ScanResult {
+    /// runs the audit (no lock held), then acquires a write lock to store the result.
+    pub fn config_audit(&self) -> crate::security::ScanResult {
         // Gather project directories from agent working_dir fields
         let dirs: Vec<std::path::PathBuf> = {
             let state = self.state().read();
@@ -169,22 +169,22 @@ impl TmaiCore {
                 .collect()
         };
 
-        // Run scan without holding any lock
-        let result = crate::security::SecurityScanner::scan(&dirs);
+        // Run audit without holding any lock
+        let result = crate::security::ConfigAuditScanner::scan(&dirs);
 
         // Store result
         {
             let mut state = self.state().write();
-            state.security_scan = Some(result.clone());
+            state.config_audit = Some(result.clone());
         }
 
         result
     }
 
-    /// Get the last cached security scan result (no new scan).
-    pub fn last_security_scan(&self) -> Option<crate::security::ScanResult> {
+    /// Get the last cached config audit result (no new audit).
+    pub fn last_config_audit(&self) -> Option<crate::security::ScanResult> {
         let state = self.state().read();
-        state.security_scan.clone()
+        state.config_audit.clone()
     }
 
     // =========================================================

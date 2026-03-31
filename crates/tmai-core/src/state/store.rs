@@ -339,10 +339,10 @@ pub struct ViewState {
     pub task_overlay_scroll: u16,
     /// Team overview scroll offset
     pub team_overview_scroll: u16,
-    /// Whether the security overlay is shown
-    pub show_security_overlay: bool,
-    /// Security overlay scroll offset
-    pub security_overlay_scroll: u16,
+    /// Whether the config audit overlay is shown
+    pub show_audit_overlay: bool,
+    /// Config audit overlay scroll offset
+    pub audit_overlay_scroll: u16,
     /// Whether the worktree overview is shown
     pub show_worktree_overview: bool,
     /// Worktree overview scroll offset
@@ -371,14 +371,14 @@ impl Default for ViewState {
             show_qr: false,
             show_team_overview: false,
             show_task_overlay: false,
-            show_security_overlay: false,
+            show_audit_overlay: false,
             show_worktree_overview: false,
             show_diff_viewer: false,
             diff_viewer_scroll: 0,
             worktree_selected_index: None,
             task_overlay_scroll: 0,
             team_overview_scroll: 0,
-            security_overlay_scroll: 0,
+            audit_overlay_scroll: 0,
             worktree_overview_scroll: 0,
             preview_scroll: 0,
             spinner_frame: 0,
@@ -473,8 +473,8 @@ pub struct AppState {
     /// Claude Code subscription usage snapshot
     pub usage: UsageSnapshot,
 
-    /// Last security scan result (None if never scanned)
-    pub security_scan: Option<crate::security::ScanResult>,
+    /// Last config audit result (None if never audited)
+    pub config_audit: Option<crate::security::ScanResult>,
 
     /// Discovered worktree info per repository (populated by poller scan)
     pub worktree_info: Vec<RepoWorktreeInfo>,
@@ -523,7 +523,7 @@ impl AppState {
             line_wrap: false,
             notification: None,
             usage: UsageSnapshot::default(),
-            security_scan: None,
+            config_audit: None,
             worktree_info: Vec::new(),
             worktree_create_repo_path: None,
             worktree_diff_content: None,
@@ -1034,11 +1034,11 @@ impl AppState {
         }
     }
 
-    /// Toggle security overlay
-    pub fn toggle_security(&mut self) {
-        self.view.show_security_overlay = !self.view.show_security_overlay;
-        if self.view.show_security_overlay {
-            self.view.security_overlay_scroll = 0;
+    /// Toggle config audit overlay
+    pub fn toggle_audit(&mut self) {
+        self.view.show_audit_overlay = !self.view.show_audit_overlay;
+        if self.view.show_audit_overlay {
+            self.view.audit_overlay_scroll = 0;
         }
     }
 

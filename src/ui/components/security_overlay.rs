@@ -1,4 +1,4 @@
-//! Full-screen overlay showing security scan results.
+//! Full-screen overlay showing config audit results.
 
 use ratatui::{
     layout::Rect,
@@ -13,11 +13,11 @@ use ratatui::{
 use tmai_core::security::{ScanResult, Severity};
 use tmai_core::state::AppState;
 
-/// Full-screen overlay showing security scan results
+/// Full-screen overlay showing config audit results
 pub struct SecurityOverlay;
 
 impl SecurityOverlay {
-    /// Render the security overlay (full screen, like TeamOverview)
+    /// Render the config audit overlay (full screen, like TeamOverview)
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         let content_lines = Self::build_content(state);
         let total_lines = content_lines.len();
@@ -27,10 +27,10 @@ impl SecurityOverlay {
 
         // Clamp scroll to valid range
         let max_scroll = total_lines.saturating_sub(visible_height);
-        let scroll = (state.view.security_overlay_scroll as usize).min(max_scroll);
+        let scroll = (state.view.audit_overlay_scroll as usize).min(max_scroll);
 
         let block = Block::default()
-            .title(" Security Monitor (j/k to scroll, R to rescan, S or Esc to close) ")
+            .title(" Config Audit (j/k to scroll, R to rescan, S or Esc to close) ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Cyan));
@@ -60,23 +60,23 @@ impl SecurityOverlay {
         }
     }
 
-    /// Build the content lines for the security overlay
+    /// Build the content lines for the config audit overlay
     fn build_content(state: &AppState) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
 
-        lines.push(Self::title_line("Security Monitor"));
+        lines.push(Self::title_line("Config Audit"));
         lines.push(Line::from(""));
 
-        let scan_result = match &state.security_scan {
+        let scan_result = match &state.config_audit {
             Some(result) => result,
             None => {
                 lines.push(Line::from(Span::styled(
-                    "  No scan performed yet. Press R to scan.",
+                    "  No audit performed yet. Press R to audit.",
                     Style::default().fg(Color::DarkGray),
                 )));
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    "  Scans Claude Code config files for security risks:",
+                    "  Audits Claude Code config files for security risks:",
                     Style::default().fg(Color::DarkGray),
                 )));
                 lines.push(Line::from(Span::styled(
@@ -89,6 +89,14 @@ impl SecurityOverlay {
                 )));
                 lines.push(Line::from(Span::styled(
                     "    - Hook scripts",
+                    Style::default().fg(Color::DarkGray),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "    - Custom commands (.claude/commands/)",
+                    Style::default().fg(Color::DarkGray),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "    - CLAUDE.md (prompt injection detection)",
                     Style::default().fg(Color::DarkGray),
                 )));
                 return lines;
@@ -120,7 +128,7 @@ impl SecurityOverlay {
 
         if scan_result.is_clean() {
             lines.push(Line::from(Span::styled(
-                "  No security risks detected.",
+                "  No risks detected.",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -328,7 +336,7 @@ mod tests {
     #[test]
     fn test_build_content_clean_scan() {
         let mut state = AppState::new();
-        state.security_scan = Some(tmai_core::security::ScanResult {
+        state.config_audit = Some(tmai_core::security::ScanResult {
             risks: vec![],
             scanned_at: chrono::Utc::now(),
             scanned_projects: vec![],
@@ -339,13 +347,13 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.to_string()))
             .collect();
-        assert!(text.contains("No security risks detected"));
+        assert!(text.contains("No risks detected"));
     }
 
     #[test]
     fn test_build_content_with_risks() {
         let mut state = AppState::new();
-        state.security_scan = Some(tmai_core::security::ScanResult {
+        state.config_audit = Some(tmai_core::security::ScanResult {
             risks: vec![tmai_core::security::SecurityRisk {
                 rule_id: "PERM-001".to_string(),
                 severity: Severity::Critical,

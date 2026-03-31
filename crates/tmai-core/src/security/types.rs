@@ -1,4 +1,4 @@
-//! Security scan types — severity levels, categories, risk findings, and scan results.
+//! Config audit types — severity levels, categories, risk findings, and audit results.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -36,6 +36,10 @@ pub enum SecurityCategory {
     Hooks,
     /// File permission risks (world-readable config)
     FilePermissions,
+    /// Custom command risks (dangerous shell patterns)
+    CustomCommand,
+    /// Instruction file risks (prompt injection in CLAUDE.md)
+    InstructionFile,
 }
 
 impl fmt::Display for SecurityCategory {
@@ -46,6 +50,8 @@ impl fmt::Display for SecurityCategory {
             SecurityCategory::Environment => write!(f, "Environment"),
             SecurityCategory::Hooks => write!(f, "Hooks"),
             SecurityCategory::FilePermissions => write!(f, "File Permissions"),
+            SecurityCategory::CustomCommand => write!(f, "Custom Command"),
+            SecurityCategory::InstructionFile => write!(f, "Instruction File"),
         }
     }
 }
@@ -67,6 +73,10 @@ pub enum SettingsSource {
     ProjectMcp(PathBuf),
     /// Hook script file
     HookScript(PathBuf),
+    /// Custom command file (.claude/commands/)
+    CustomCommand(PathBuf),
+    /// CLAUDE.md instruction file
+    ClaudeMd(PathBuf),
 }
 
 impl fmt::Display for SettingsSource {
@@ -85,6 +95,8 @@ impl fmt::Display for SettingsSource {
                 write!(f, "{}", p.join(".claude/mcp.json").display())
             }
             SettingsSource::HookScript(p) => write!(f, "{}", p.display()),
+            SettingsSource::CustomCommand(p) => write!(f, "{}", p.display()),
+            SettingsSource::ClaudeMd(p) => write!(f, "{}", p.display()),
         }
     }
 }

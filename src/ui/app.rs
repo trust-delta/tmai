@@ -262,8 +262,8 @@ impl App {
                     return;
                 }
 
-                // Security overlay (full-screen, like help)
-                if state.view.show_security_overlay {
+                // Config audit overlay (full-screen, like help)
+                if state.view.show_audit_overlay {
                     SecurityOverlay::render(frame, frame.area(), &state);
                     return;
                 }
@@ -466,7 +466,7 @@ impl App {
             show_task_overlay,
             show_team_overview,
             show_worktree_overview,
-            show_security_overlay,
+            show_audit_overlay,
             is_input_mode,
             is_passthrough_mode,
             is_create_process_mode,
@@ -479,7 +479,7 @@ impl App {
                 state.view.show_task_overlay,
                 state.view.show_team_overview,
                 state.view.show_worktree_overview,
-                state.view.show_security_overlay,
+                state.view.show_audit_overlay,
                 state.is_input_mode(),
                 state.is_passthrough_mode(),
                 state.is_create_process_mode(),
@@ -529,9 +529,9 @@ impl App {
             return self.handle_worktree_overview_key(code);
         }
 
-        // Handle security overlay
-        if show_security_overlay {
-            return self.handle_security_overlay_key(code, modifiers);
+        // Handle config audit overlay
+        if show_audit_overlay {
+            return self.handle_audit_overlay_key(code, modifiers);
         }
 
         // Handle create process mode
@@ -761,17 +761,17 @@ impl App {
                 }
             }
 
-            // Security monitor (Shift+S)
+            // Config audit (Shift+S)
             KeyCode::Char('S') => {
-                // Toggle security overlay; on first open, trigger a scan
+                // Toggle audit overlay; on first open, trigger an audit
                 let needs_scan = {
                     let mut state = self.state.write();
-                    state.toggle_security();
-                    state.view.show_security_overlay && state.security_scan.is_none()
+                    state.toggle_audit();
+                    state.view.show_audit_overlay && state.config_audit.is_none()
                 };
                 if needs_scan {
                     if let Some(ref core) = self.core {
-                        core.security_scan();
+                        core.config_audit();
                     }
                 }
             }
@@ -1813,67 +1813,61 @@ impl App {
         Ok(())
     }
 
-    /// Handle keys when security overlay is shown
-    fn handle_security_overlay_key(
-        &mut self,
-        code: KeyCode,
-        modifiers: KeyModifiers,
-    ) -> Result<()> {
+    /// Handle keys when config audit overlay is shown
+    fn handle_audit_overlay_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
         match code {
-            // Close security overlay
+            // Close audit overlay
             KeyCode::Char('S') | KeyCode::Esc => {
                 let mut state = self.state.write();
-                state.view.show_security_overlay = false;
+                state.view.show_audit_overlay = false;
             }
             // Rescan
             KeyCode::Char('R') => {
                 if let Some(ref core) = self.core {
-                    core.security_scan();
+                    core.config_audit();
                 }
             }
             // Scroll down
             KeyCode::Char('j') | KeyCode::Down => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_add(1);
+                state.view.audit_overlay_scroll = state.view.audit_overlay_scroll.saturating_add(1);
             }
             // Scroll up
             KeyCode::Char('k') | KeyCode::Up => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_sub(1);
+                state.view.audit_overlay_scroll = state.view.audit_overlay_scroll.saturating_sub(1);
             }
             // Page down
             KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_add(10);
+                state.view.audit_overlay_scroll =
+                    state.view.audit_overlay_scroll.saturating_add(10);
             }
             KeyCode::PageDown => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_add(10);
+                state.view.audit_overlay_scroll =
+                    state.view.audit_overlay_scroll.saturating_add(10);
             }
             // Page up
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_sub(10);
+                state.view.audit_overlay_scroll =
+                    state.view.audit_overlay_scroll.saturating_sub(10);
             }
             KeyCode::PageUp => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll =
-                    state.view.security_overlay_scroll.saturating_sub(10);
+                state.view.audit_overlay_scroll =
+                    state.view.audit_overlay_scroll.saturating_sub(10);
             }
             // Jump to top
             KeyCode::Char('g') => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll = 0;
+                state.view.audit_overlay_scroll = 0;
             }
             // Jump to bottom
             KeyCode::Char('G') => {
                 let mut state = self.state.write();
-                state.view.security_overlay_scroll = u16::MAX;
+                state.view.audit_overlay_scroll = u16::MAX;
             }
             _ => {}
         }

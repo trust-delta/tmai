@@ -30,7 +30,7 @@ export function HelpOverlay({ isOpen, onClose }: HelpOverlayProps) {
       category: "Settings",
       items: [
         { key: "s", description: "Toggle settings panel" },
-        { key: "Ctrl+Shift+S", description: "Toggle security scan" },
+        { key: "Ctrl+Shift+S", description: "Toggle config audit" },
       ],
     },
   ];
