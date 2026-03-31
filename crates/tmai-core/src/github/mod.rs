@@ -77,6 +77,9 @@ pub struct PrInfo {
     pub comments: u64,
     /// Review count
     pub reviews: u64,
+    /// Merge commit SHA (only for merged PRs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_commit_sha: Option<String>,
 }
 
 /// Raw PR data from gh CLI JSON output
@@ -198,6 +201,7 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
             deletions: entry.deletions.unwrap_or(0),
             comments: entry.comments.map(|c| c.len() as u64).unwrap_or(0),
             reviews: entry.reviews.map(|r| r.len() as u64).unwrap_or(0),
+            merge_commit_sha: None,
         };
         map.insert(entry.head_ref_name, pr);
     }
@@ -212,6 +216,100 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
                 fetched_at: Instant::now(),
             },
         );
+    }
+
+    Some(map)
+}
+
+/// Raw merged PR data from gh CLI JSON output
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhMergedPrEntry {
+    number: u64,
+    title: String,
+    head_ref_name: String,
+    head_ref_oid: String,
+    base_ref_name: String,
+    url: String,
+    merge_commit: Option<GhMergeCommit>,
+}
+
+/// Merge commit info from gh CLI
+#[derive(Debug, serde::Deserialize)]
+struct GhMergeCommit {
+    oid: String,
+}
+
+/// Fetch recently merged PRs for branches that still exist locally.
+///
+/// Returns a map of head_branch -> PrInfo (with merge_commit_sha populated).
+/// Only returns PRs whose head_branch is in the provided `local_branches` set,
+/// so we avoid fetching irrelevant old merged PRs.
+pub async fn list_merged_prs(
+    repo_dir: &str,
+    local_branches: &[String],
+) -> Option<HashMap<String, PrInfo>> {
+    if local_branches.is_empty() {
+        return Some(HashMap::new());
+    }
+
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "pr",
+                "list",
+                "--state",
+                "merged",
+                "--json",
+                "number,title,headRefName,headRefOid,baseRefName,url,mergeCommit",
+                "--limit",
+                "30",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let entries: Vec<GhMergedPrEntry> = serde_json::from_slice(&output.stdout).ok()?;
+
+    // Build a set for O(1) lookup
+    let branch_set: std::collections::HashSet<&str> =
+        local_branches.iter().map(|s| s.as_str()).collect();
+
+    let mut map = HashMap::new();
+    for entry in entries {
+        // Only include PRs whose head branch still exists locally
+        if !branch_set.contains(entry.head_ref_name.as_str()) {
+            continue;
+        }
+
+        let merge_commit_sha = entry.merge_commit.map(|mc| mc.oid);
+
+        let pr = PrInfo {
+            number: entry.number,
+            title: entry.title,
+            state: "MERGED".to_string(),
+            head_branch: entry.head_ref_name.clone(),
+            head_sha: entry.head_ref_oid,
+            base_branch: entry.base_ref_name,
+            url: entry.url,
+            review_decision: None,
+            check_status: None,
+            is_draft: false,
+            additions: 0,
+            deletions: 0,
+            comments: 0,
+            reviews: 0,
+            merge_commit_sha,
+        };
+        map.insert(entry.head_ref_name, pr);
     }
 
     Some(map)

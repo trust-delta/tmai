@@ -2262,7 +2262,11 @@ pub struct PrQueryParams {
     pub repo: String,
 }
 
-/// GET /api/github/prs — list open PRs for a repository
+/// GET /api/github/prs — list open and merged PRs for a repository
+///
+/// Returns both open PRs and recently merged PRs whose head branch still
+/// exists locally. Merged PRs include `merge_commit_sha` for drawing
+/// merge lines in the git graph.
 pub async fn list_prs(
     axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
 ) -> Result<
@@ -2274,15 +2278,29 @@ pub async fn list_prs(
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
     }
 
-    tmai_core::github::list_open_prs(repo_dir)
+    let mut map = tmai_core::github::list_open_prs(repo_dir)
         .await
         .ok_or_else(|| {
             json_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to list PRs (is gh CLI authenticated?)",
             )
-        })
-        .map(Json)
+        })?;
+
+    // Fetch merged PRs for local branches (best-effort, don't fail if unavailable)
+    if let Some(branch_list) = tmai_core::git::list_branches(repo_dir).await {
+        let local_branches: Vec<String> = branch_list
+            .branches
+            .iter()
+            .filter(|b| !map.contains_key(b.as_str()))
+            .cloned()
+            .collect();
+        if let Some(merged) = tmai_core::github::list_merged_prs(repo_dir, &local_branches).await {
+            map.extend(merged);
+        }
+    }
+
+    Ok(Json(map))
 }
 
 /// Query params for CI checks
