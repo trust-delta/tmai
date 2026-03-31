@@ -155,6 +155,166 @@ pub struct HookEventPayload {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
+/// Statusline data received from Claude Code's statusline hook.
+///
+/// This data is sent periodically (after each assistant message, permission
+/// changes, and vim mode toggle) and provides reliable access to model info,
+/// cost metrics, context window usage, and session metadata.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineData {
+    /// Current working directory
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Claude Code session ID
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Human-readable session name (set via /rename)
+    #[serde(default)]
+    pub session_name: Option<String>,
+    /// Path to conversation transcript JSONL
+    #[serde(default)]
+    pub transcript_path: Option<String>,
+    /// Claude Code version string (e.g., "2.1.59")
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Whether total tokens exceed 200k threshold
+    #[serde(default)]
+    pub exceeds_200k_tokens: Option<bool>,
+    /// Model information
+    #[serde(default)]
+    pub model: Option<StatuslineModel>,
+    /// Workspace information
+    #[serde(default)]
+    pub workspace: Option<StatuslineWorkspace>,
+    /// Cost and duration metrics
+    #[serde(default)]
+    pub cost: Option<StatuslineCost>,
+    /// Context window usage
+    #[serde(default)]
+    pub context_window: Option<StatuslineContextWindow>,
+    /// Output style
+    #[serde(default)]
+    pub output_style: Option<StatuslineOutputStyle>,
+    /// Vim mode info (only when vim mode is enabled)
+    #[serde(default)]
+    pub vim: Option<StatuslineVim>,
+    /// Agent info (only when running with --agent flag)
+    #[serde(default)]
+    pub agent: Option<StatuslineAgent>,
+}
+
+/// Model identification from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineModel {
+    /// Model API ID (e.g., "claude-opus-4-6")
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Human-readable display name (e.g., "Opus")
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+/// Workspace information from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineWorkspace {
+    /// Current working directory
+    #[serde(default)]
+    pub current_dir: Option<String>,
+    /// Project directory (where Claude Code was launched)
+    #[serde(default)]
+    pub project_dir: Option<String>,
+    /// Additional directories added via /add-dir
+    #[serde(default)]
+    pub added_dirs: Option<Vec<String>>,
+}
+
+/// Cost and duration metrics from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineCost {
+    /// Session total cost in USD
+    #[serde(default)]
+    pub total_cost_usd: Option<f64>,
+    /// Session uptime in milliseconds
+    #[serde(default)]
+    pub total_duration_ms: Option<u64>,
+    /// Cumulative API response wait time in milliseconds
+    #[serde(default)]
+    pub total_api_duration_ms: Option<u64>,
+    /// Total lines of code added
+    #[serde(default)]
+    pub total_lines_added: Option<u64>,
+    /// Total lines of code removed
+    #[serde(default)]
+    pub total_lines_removed: Option<u64>,
+}
+
+/// Context window usage from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineContextWindow {
+    /// Cumulative input tokens across the session
+    #[serde(default)]
+    pub total_input_tokens: Option<u64>,
+    /// Cumulative output tokens across the session
+    #[serde(default)]
+    pub total_output_tokens: Option<u64>,
+    /// Model's context window size (e.g., 200000)
+    #[serde(default)]
+    pub context_window_size: Option<u64>,
+    /// Percentage of context window used (0-100, null early in session)
+    #[serde(default)]
+    pub used_percentage: Option<u8>,
+    /// Percentage of context window remaining (0-100, null early in session)
+    #[serde(default)]
+    pub remaining_percentage: Option<u8>,
+    /// Current API call token usage (null before first API call)
+    #[serde(default)]
+    pub current_usage: Option<StatuslineCurrentUsage>,
+}
+
+/// Current API call token usage breakdown
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct StatuslineCurrentUsage {
+    /// Input tokens in current context
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    /// Generated output tokens
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
+    /// Tokens written to cache
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u64>,
+    /// Tokens read from cache
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u64>,
+}
+
+/// Output style from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineOutputStyle {
+    /// Style name (e.g., "default", "Explanatory")
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Vim mode info from statusline
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineVim {
+    /// Current vim mode ("NORMAL" or "INSERT")
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+/// Agent info from statusline (when running with --agent)
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StatuslineAgent {
+    /// Agent name (e.g., "security-reviewer")
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Agent type identifier
+    #[serde(default, rename = "type")]
+    pub agent_type: Option<String>,
+}
+
 /// Internal status tracked per agent from hook events
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookStatus {
@@ -228,6 +388,8 @@ pub struct HookState {
     pub token_usage: Option<(u64, u64)>,
     /// Source agent type (set by WS translators to override default Claude detection)
     pub source_agent: Option<crate::agents::AgentType>,
+    /// Statusline data (updated periodically from statusline hook)
+    pub statusline: Option<StatuslineData>,
 }
 
 impl HookState {
@@ -249,6 +411,7 @@ impl HookState {
             model_id: None,
             token_usage: None,
             source_agent: None,
+            statusline: None,
         }
     }
 
@@ -543,5 +706,163 @@ mod tests {
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         let tool_input = payload.tool_input.unwrap();
         assert_eq!(tool_input["command"], "rm -rf /tmp/build");
+    }
+
+    /// Full statusline JSON deserialization
+    #[test]
+    fn test_statusline_data_deserialize_full() {
+        let json = r#"{
+            "cwd": "/home/user/project",
+            "session_id": "abc123",
+            "session_name": "my-session",
+            "transcript_path": "/path/to/transcript.jsonl",
+            "version": "2.1.59",
+            "exceeds_200k_tokens": false,
+            "model": {
+                "id": "claude-opus-4-6",
+                "display_name": "Opus"
+            },
+            "workspace": {
+                "current_dir": "/home/user/project",
+                "project_dir": "/home/user/project",
+                "added_dirs": ["/tmp/extra"]
+            },
+            "cost": {
+                "total_cost_usd": 0.01234,
+                "total_duration_ms": 45000,
+                "total_api_duration_ms": 2300,
+                "total_lines_added": 156,
+                "total_lines_removed": 23
+            },
+            "context_window": {
+                "total_input_tokens": 15234,
+                "total_output_tokens": 4521,
+                "context_window_size": 200000,
+                "used_percentage": 8,
+                "remaining_percentage": 92,
+                "current_usage": {
+                    "input_tokens": 8500,
+                    "output_tokens": 1200,
+                    "cache_creation_input_tokens": 5000,
+                    "cache_read_input_tokens": 2000
+                }
+            },
+            "output_style": { "name": "default" },
+            "vim": { "mode": "NORMAL" },
+            "agent": { "name": "security-reviewer", "type": "custom" }
+        }"#;
+        let data: StatuslineData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.cwd.as_deref(), Some("/home/user/project"));
+        assert_eq!(data.session_id.as_deref(), Some("abc123"));
+        assert_eq!(data.session_name.as_deref(), Some("my-session"));
+        assert_eq!(data.version.as_deref(), Some("2.1.59"));
+        assert_eq!(data.exceeds_200k_tokens, Some(false));
+
+        let model = data.model.as_ref().unwrap();
+        assert_eq!(model.id.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(model.display_name.as_deref(), Some("Opus"));
+
+        let cost = data.cost.as_ref().unwrap();
+        assert_eq!(cost.total_cost_usd, Some(0.01234));
+        assert_eq!(cost.total_duration_ms, Some(45000));
+        assert_eq!(cost.total_lines_added, Some(156));
+        assert_eq!(cost.total_lines_removed, Some(23));
+
+        let cw = data.context_window.as_ref().unwrap();
+        assert_eq!(cw.used_percentage, Some(8));
+        assert_eq!(cw.context_window_size, Some(200000));
+        let usage = cw.current_usage.as_ref().unwrap();
+        assert_eq!(usage.input_tokens, Some(8500));
+        assert_eq!(usage.cache_read_input_tokens, Some(2000));
+
+        let agent = data.agent.as_ref().unwrap();
+        assert_eq!(agent.name.as_deref(), Some("security-reviewer"));
+        assert_eq!(agent.agent_type.as_deref(), Some("custom"));
+
+        let vim = data.vim.as_ref().unwrap();
+        assert_eq!(vim.mode.as_deref(), Some("NORMAL"));
+    }
+
+    /// Minimal statusline JSON (only required fields)
+    #[test]
+    fn test_statusline_data_deserialize_minimal() {
+        let json = r#"{
+            "cwd": "/tmp",
+            "session_id": "s1"
+        }"#;
+        let data: StatuslineData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.cwd.as_deref(), Some("/tmp"));
+        assert!(data.model.is_none());
+        assert!(data.cost.is_none());
+        assert!(data.context_window.is_none());
+        assert!(data.vim.is_none());
+        assert!(data.agent.is_none());
+    }
+
+    /// Statusline with null context_window percentages (early in session)
+    #[test]
+    fn test_statusline_data_null_context_percentages() {
+        let json = r#"{
+            "cwd": "/tmp",
+            "session_id": "s1",
+            "context_window": {
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "context_window_size": 200000,
+                "used_percentage": null,
+                "remaining_percentage": null,
+                "current_usage": null
+            }
+        }"#;
+        let data: StatuslineData = serde_json::from_str(json).unwrap();
+        let cw = data.context_window.as_ref().unwrap();
+        assert_eq!(cw.used_percentage, None);
+        assert_eq!(cw.remaining_percentage, None);
+        assert_eq!(cw.current_usage, None);
+    }
+
+    /// Statusline serialization round-trip
+    #[test]
+    fn test_statusline_data_roundtrip() {
+        let data = StatuslineData {
+            cwd: Some("/tmp".to_string()),
+            session_id: Some("s1".to_string()),
+            model: Some(StatuslineModel {
+                id: Some("claude-opus-4-6".to_string()),
+                display_name: Some("Opus".to_string()),
+            }),
+            cost: Some(StatuslineCost {
+                total_cost_usd: Some(1.5),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: StatuslineData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.cwd, data.cwd);
+        assert_eq!(
+            parsed.model.as_ref().unwrap().id,
+            data.model.as_ref().unwrap().id
+        );
+        assert_eq!(
+            parsed.cost.as_ref().unwrap().total_cost_usd,
+            data.cost.as_ref().unwrap().total_cost_usd
+        );
+    }
+
+    /// HookState with statusline field
+    #[test]
+    fn test_hook_state_with_statusline() {
+        let mut state = HookState::new("s1".into(), Some("/tmp".into()));
+        assert!(state.statusline.is_none());
+
+        state.statusline = Some(StatuslineData {
+            version: Some("2.1.59".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(
+            state.statusline.as_ref().unwrap().version.as_deref(),
+            Some("2.1.59")
+        );
     }
 }

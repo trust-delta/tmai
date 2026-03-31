@@ -17,8 +17,8 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use tmai_core::api::{CoreEvent, TmaiCore};
-use tmai_core::hooks::handler::{handle_hook_event, resolve_pane_id};
-use tmai_core::hooks::HookEventPayload;
+use tmai_core::hooks::handler::{handle_hook_event, handle_statusline, resolve_pane_id};
+use tmai_core::hooks::{HookEventPayload, StatuslineData};
 
 /// Response body for hook events that support stop control
 ///
@@ -167,6 +167,75 @@ pub async fn hook_event(
         // All other events: empty response
         _ => (StatusCode::OK, Json(serde_json::json!({}))),
     }
+}
+
+/// POST /hooks/statusline — receive statusline data from Claude Code
+///
+/// Statusline data provides reliable model info, cost metrics, context window
+/// usage, and session metadata. Sent periodically by the statusline hook script.
+pub async fn statusline(
+    State(core): State<Arc<TmaiCore>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    let data: StatuslineData = match serde_json::from_slice(&body) {
+        Ok(d) => d,
+        Err(e) => {
+            debug!("Statusline rejected: invalid JSON payload: {}", e);
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
+    // Validate hook token from Authorization header
+    let token_valid = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|token| core.validate_hook_token(token))
+        .unwrap_or(false);
+
+    if !token_valid {
+        debug!("Statusline rejected: invalid or missing token");
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    // Extract pane_id from X-Tmai-Pane-Id header
+    let header_pane_id = headers.get("x-tmai-pane-id").and_then(|v| v.to_str().ok());
+
+    // Resolve pane_id using session_id from statusline data
+    let session_id = data.session_id.as_deref().unwrap_or("");
+    let cwd = data.cwd.as_deref();
+
+    #[allow(deprecated)]
+    let pane_id = match resolve_pane_id(
+        header_pane_id,
+        session_id,
+        cwd,
+        core.session_pane_map(),
+        core.raw_state(),
+    ) {
+        Some(id) => id,
+        None => {
+            warn!(
+                session_id = %session_id,
+                "Could not resolve pane_id for statusline data"
+            );
+            return StatusCode::OK;
+        }
+    };
+
+    // Process the statusline data (update HookRegistry)
+    handle_statusline(
+        data,
+        &pane_id,
+        core.hook_registry(),
+        core.session_pane_map(),
+    );
+
+    // Notify subscribers that agent state may have changed
+    core.notify_agents_updated();
+
+    StatusCode::OK
 }
 
 /// Payload for review completion notification
