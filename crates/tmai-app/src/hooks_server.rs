@@ -63,33 +63,6 @@ pub async fn handle_hook_event(
     Ok(Json(json!({ "status": "ok" })))
 }
 
-/// Handle incoming statusline data
-///
-/// Receives statusline JSON from Claude Code's statusline hook script.
-#[allow(dead_code)]
-pub async fn handle_statusline(
-    State(state): State<HookServerState>,
-    headers: axum::http::HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, StatusCode> {
-    // Validate token
-    let token = headers
-        .get("x-tmai-token")
-        .and_then(|h| h.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if token != state.token {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Parse statusline JSON
-    let _data: Value = serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    tracing::debug!("Statusline data received");
-
-    Ok(Json(json!({ "status": "ok" })))
-}
-
 /// Start the hook server
 #[allow(dead_code)]
 pub async fn start_hook_server(
@@ -102,7 +75,6 @@ pub async fn start_hook_server(
 
         let app = Router::new()
             .route("/hooks/event", post(handle_hook_event))
-            .route("/hooks/statusline", post(handle_statusline))
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
