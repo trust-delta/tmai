@@ -44,7 +44,7 @@ tmai wrap claude
 - 「AI Merge」や「AI Create PR」で操作を委任
 - ブランチ先端でCIステータスを直接確認
 
-### セキュリティスキャンを実行
+### 設定監査を実行
 
 定期的にClaude Code設定の脆弱性をスキャン：
 

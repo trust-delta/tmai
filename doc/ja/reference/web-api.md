@@ -707,17 +707,17 @@ Auto-approveモードを変更。
 
 ---
 
-## セキュリティ
+## 設定監査
 
-### POST /api/security/scan
+### POST /api/config-audit/run
 
-セキュリティスキャンを実行。
+設定監査を実行。
 
 **レスポンス**: リスク、スキャン済みファイル、タイムスタンプを含む`ScanResult`。
 
-### GET /api/security/last
+### GET /api/config-audit/last
 
-最後のスキャン結果（キャッシュ）を取得。
+最後の監査結果（キャッシュ）を取得。
 
 **レスポンス**: `ScanResult` またはスキャン未実行の場合`null`。
 
@@ -889,8 +889,8 @@ curl -X POST "$BASE/api/spawn" \
   -H "Content-Type: application/json" \
   -d '{"command":"claude","cwd":"/path/to/project"}'
 
-# セキュリティスキャン
-curl -X POST "$BASE/api/security/scan" \
+# 設定監査
+curl -X POST "$BASE/api/config-audit/run" \
   -H "Authorization: Bearer $TOKEN"
 
 # チーム一覧

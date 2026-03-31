@@ -889,8 +889,8 @@ curl -X POST "$BASE/api/spawn" \
   -H "Content-Type: application/json" \
   -d '{"command":"claude","cwd":"/path/to/project"}'
 
-# Security scan
-curl -X POST "$BASE/api/security/scan" \
+# Config audit
+curl -X POST "$BASE/api/config-audit/run" \
   -H "Authorization: Bearer $TOKEN"
 
 # List teams
