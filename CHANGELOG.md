@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.2.0] - 2026-04-01
+
+### Added
+
+- **Hybrid scrollback preview** — Live area uses capture-pane (ANSI), history area uses JSONL transcript. Resilient to context compaction and scrollback resets (#177)
+- **Hook-based auto-approve via Defer Permission** — PreToolUse hooks can defer tool execution for tmai's Rules/AI/Hybrid evaluation. Zero-latency, structured data, no keystroke injection (#178)
+- Documentation updates for hooks (PermissionDenied, TaskCreated events), terminal panel, worktree UI, and auto-approve
+
 ## [1.1.3] - 2026-04-01
 
 ### Added
