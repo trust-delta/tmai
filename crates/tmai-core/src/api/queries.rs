@@ -111,6 +111,48 @@ impl TmaiCore {
     }
 
     // =========================================================
+    // Transcript queries
+    // =========================================================
+
+    /// Get transcript records for an agent (used for hybrid scrollback preview).
+    ///
+    /// Returns parsed JSONL records from the agent's Claude Code conversation log.
+    /// The records are looked up by pane_id from the transcript registry.
+    pub fn get_transcript(
+        &self,
+        target: &str,
+    ) -> Result<Vec<crate::transcript::TranscriptRecord>, ApiError> {
+        // Verify agent exists and get pane_id
+        let pane_id = {
+            let state = self.state().read();
+            let agent = state
+                .agents
+                .get(target)
+                .ok_or_else(|| ApiError::AgentNotFound {
+                    target: target.to_string(),
+                })?;
+            // Use target_to_pane_id mapping, or fall back to using the target itself
+            state
+                .target_to_pane_id
+                .get(&agent.id)
+                .cloned()
+                .unwrap_or_else(|| agent.id.clone())
+        };
+
+        // Look up transcript records from the registry
+        let registry = match self.transcript_registry() {
+            Some(reg) => reg,
+            None => return Ok(Vec::new()),
+        };
+
+        let reg = registry.read();
+        Ok(reg
+            .get(&pane_id)
+            .map(|state| state.recent_records.clone())
+            .unwrap_or_default())
+    }
+
+    // =========================================================
     // Team queries
     // =========================================================
 
@@ -426,5 +468,60 @@ mod tests {
     fn test_is_running() {
         let core = TmaiCoreBuilder::new(Settings::default()).build();
         assert!(core.is_running());
+    }
+
+    #[test]
+    fn test_get_transcript_no_registry() {
+        // Without transcript registry, returns empty vec
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        let records = core.get_transcript("main:0.0").unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn test_get_transcript_agent_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.get_transcript("nonexistent");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_get_transcript_with_registry() {
+        use crate::transcript::types::TranscriptRecord;
+        use crate::transcript::watcher::new_transcript_registry;
+
+        let registry = new_transcript_registry();
+        // Insert test records
+        {
+            let mut reg = registry.write();
+            let mut state = crate::transcript::TranscriptState::new(
+                "/tmp/test.jsonl".to_string(),
+                "sess1".to_string(),
+                "main:0.0".to_string(),
+            );
+            state.push_records(vec![
+                TranscriptRecord::User {
+                    text: "Hello".to_string(),
+                },
+                TranscriptRecord::AssistantText {
+                    text: "Hi there".to_string(),
+                },
+            ]);
+            reg.insert("main:0.0".to_string(), state);
+        }
+
+        let app_state = AppState::shared();
+        {
+            let mut s = app_state.write();
+            s.update_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        }
+
+        let core = TmaiCoreBuilder::new(Settings::default())
+            .with_state(app_state)
+            .with_transcript_registry(registry)
+            .build();
+
+        let records = core.get_transcript("main:0.0").unwrap();
+        assert_eq!(records.len(), 2);
     }
 }

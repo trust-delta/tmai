@@ -181,6 +181,48 @@ impl Poller {
         }
     }
 
+    /// Create a new poller with a shared transcript registry
+    ///
+    /// Allows the transcript registry to be shared with TmaiCore for API access.
+    pub fn new_with_transcript_registry(
+        settings: Settings,
+        state: SharedState,
+        runtime: Arc<dyn crate::runtime::RuntimeAdapter>,
+        ipc_registry: IpcRegistry,
+        hook_registry: HookRegistry,
+        audit_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AuditEvent>>,
+        transcript_registry: crate::transcript::TranscriptRegistry,
+    ) -> Self {
+        let (current_session, current_window) = match runtime.get_current_location() {
+            Ok((session, window)) => (Some(session), Some(window)),
+            Err(_) => (None, None),
+        };
+
+        let audit_logger = AuditLogger::new(settings.audit.enabled, settings.audit.max_size_bytes);
+
+        Self {
+            runtime,
+            process_cache: Arc::new(ProcessCache::new()),
+            claude_settings_cache: Arc::new(ClaudeSettingsCache::new()),
+            settings,
+            state,
+            ipc_registry,
+            hook_registry,
+            current_session,
+            current_window,
+            audit_logger,
+            audit_event_rx,
+            previous_statuses: HashMap::new(),
+            pending_transitions: HashMap::new(),
+            previous_agent_ids: HashSet::new(),
+            grace_periods: HashMap::new(),
+            git_cache: GitCache::new(),
+            event_tx: None,
+            session_scanner: crate::session_discovery::SessionDiscoveryScanner::new(),
+            transcript_watcher: crate::transcript::TranscriptWatcher::new(transcript_registry),
+        }
+    }
+
     /// Set the core event sender for TeammateIdle/TaskCompleted notifications
     pub fn with_event_tx(mut self, tx: tokio::sync::broadcast::Sender<CoreEvent>) -> Self {
         self.event_tx = Some(tx);
