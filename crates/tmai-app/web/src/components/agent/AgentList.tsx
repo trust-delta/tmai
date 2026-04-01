@@ -17,6 +17,8 @@ interface AgentListProps {
   registeredProjects: string[];
   worktrees: WorktreeSnapshot[];
   onSpawned: (sessionId: string) => void;
+  splitPaneProjectPath: string | null;
+  splitPaneTab: "git" | "markdown" | null;
 }
 
 // Scrollable list of agents grouped by project and worktree
@@ -30,6 +32,8 @@ export function AgentList({
   registeredProjects,
   worktrees,
   onSpawned,
+  splitPaneProjectPath,
+  splitPaneTab,
 }: AgentListProps) {
   const projects = useMemo(
     () => groupByProject(agents, registeredProjects, worktrees),
@@ -67,6 +71,8 @@ export function AgentList({
           onSelectProject={onSelectProject}
           onSelectMarkdown={onSelectMarkdown}
           onSpawned={onSpawned}
+          splitPaneProjectPath={splitPaneProjectPath}
+          splitPaneTab={splitPaneTab}
         />
       ))}
     </div>

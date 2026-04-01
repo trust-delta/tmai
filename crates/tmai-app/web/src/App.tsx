@@ -99,22 +99,6 @@ export function App() {
     setShowSecurity(false);
   }, []);
 
-  // Select handler for worktrees (from BranchGraph click)
-
-  // Select handler for project branch graph
-  const handleSelectProject = useCallback((path: string, name: string) => {
-    setSelection({ type: "project", path, name });
-    setShowSettings(false);
-    setShowSecurity(false);
-  }, []);
-
-  // Select handler for project markdown viewer
-  const handleSelectMarkdown = useCallback((projectPath: string, projectName: string) => {
-    setSelection({ type: "markdown", projectPath, projectName });
-    setShowSettings(false);
-    setShowSecurity(false);
-  }, []);
-
   // Derive selectedTarget string for components that need it
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
 
@@ -129,6 +113,52 @@ export function App() {
     : null;
   const showSplitView =
     selection?.type === "agent" && agentProjectPath !== null && splitEnabled && !isNarrowScreen;
+
+  // Select handler for project branch graph
+  const handleSelectProject = useCallback(
+    (path: string, name: string) => {
+      // In split-pane mode with matching project, switch tab instead of going fullscreen
+      if (splitEnabled && !isNarrowScreen && selection?.type === "agent" && agentProjectPath) {
+        const matchesAgent = path === agentProjectPath;
+        if (matchesAgent) {
+          if (rightPanelTab === "git") {
+            // Already showing git tab — toggle split view off
+            setSplitEnabled(false);
+          } else {
+            setRightPanelTab("git");
+          }
+          return;
+        }
+      }
+      setSelection({ type: "project", path, name });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [splitEnabled, isNarrowScreen, selection, agentProjectPath, rightPanelTab, setSplitEnabled],
+  );
+
+  // Select handler for project markdown viewer
+  const handleSelectMarkdown = useCallback(
+    (projectPath: string, projectName: string) => {
+      // In split-pane mode with matching project, switch tab instead of going fullscreen
+      if (splitEnabled && !isNarrowScreen && selection?.type === "agent" && agentProjectPath) {
+        const matchesAgent = projectPath === agentProjectPath;
+        if (matchesAgent) {
+          if (rightPanelTab === "markdown") {
+            // Already showing markdown tab — toggle split view off
+            setSplitEnabled(false);
+          } else {
+            setRightPanelTab("markdown");
+          }
+          return;
+        }
+      }
+      setSelection({ type: "markdown", projectPath, projectName });
+      setShowSettings(false);
+      setShowSecurity(false);
+    },
+    [splitEnabled, isNarrowScreen, selection, agentProjectPath, rightPanelTab, setSplitEnabled],
+  );
 
   // Keyboard shortcuts handlers
   useKeyboardShortcuts([
@@ -221,6 +251,8 @@ export function App() {
           registeredProjects={registeredProjects}
           worktrees={worktrees}
           onSpawned={handleSpawned}
+          splitPaneProjectPath={showSplitView ? agentProjectPath : null}
+          splitPaneTab={showSplitView ? rightPanelTab : null}
         />
         <TerminalList
           terminals={terminals}
