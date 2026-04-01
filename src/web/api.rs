@@ -1987,6 +1987,9 @@ pub struct WorktreeSpawnRequest {
     /// Base branch to create worktree from (defaults to current HEAD)
     #[serde(default)]
     pub base_branch: Option<String>,
+    /// Optional initial prompt to send to the agent on launch
+    #[serde(default)]
+    pub initial_prompt: Option<String>,
     #[serde(default = "default_rows")]
     pub rows: u16,
     #[serde(default = "default_cols")]
@@ -2034,10 +2037,16 @@ pub async fn spawn_worktree(
         wt_result.branch
     );
 
+    // Build args — pass initial prompt as first positional argument if provided
+    let args = match req.initial_prompt {
+        Some(ref prompt) if !prompt.is_empty() => vec![prompt.clone()],
+        _ => vec![],
+    };
+
     // Spawn claude in the worktree directory
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
-        args: vec![],
+        args,
         cwd: wt_result.path,
         rows: req.rows,
         cols: req.cols,

@@ -619,6 +619,7 @@ export const api = {
     name: string;
     cwd: string;
     base_branch?: string;
+    initial_prompt?: string;
     rows?: number;
     cols?: number;
   }) =>
