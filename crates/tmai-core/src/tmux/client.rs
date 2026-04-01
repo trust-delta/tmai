@@ -563,7 +563,11 @@ impl TmuxClient {
             .unwrap_or_else(|_| "tmai".to_string());
 
         // Wrap the command with tmai wrap (quote path for spaces/special chars)
-        let wrapped_command = format!("\"{}\" wrap {}", tmai_path, command);
+        // Inject recommended env vars (e.g. CLAUDE_CODE_NO_FLICKER for virtualized scrollback)
+        let wrapped_command = format!(
+            "CLAUDE_CODE_NO_FLICKER=1 \"{}\" wrap {}",
+            tmai_path, command
+        );
 
         // Send the wrapped command
         self.send_keys_literal(target, &wrapped_command)?;

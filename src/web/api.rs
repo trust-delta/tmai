@@ -1464,6 +1464,8 @@ async fn spawn_in_pty(
     let env: Vec<(&str, &str)> = vec![
         ("TMAI_API_URL", api_url.as_str()),
         ("TMAI_TOKEN", api_token.as_str()),
+        // Reduce terminal flicker for Claude Code (virtualized scrollback)
+        ("CLAUDE_CODE_NO_FLICKER", "1"),
     ];
 
     match core
