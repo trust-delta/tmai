@@ -187,6 +187,33 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::ToolCallDeferred { defer_id, target, tool_name }) => {
+                            let data = serde_json::json!({
+                                "defer_id": defer_id,
+                                "target": target,
+                                "tool_name": tool_name,
+                            });
+                            let event = Event::default()
+                                .event("tool_call_deferred")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::ToolCallResolved { defer_id, target, decision, resolved_by }) => {
+                            let data = serde_json::json!({
+                                "defer_id": defer_id,
+                                "target": target,
+                                "decision": decision,
+                                "resolved_by": resolved_by,
+                            });
+                            let event = Event::default()
+                                .event("tool_call_resolved")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::AgentStopped { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })

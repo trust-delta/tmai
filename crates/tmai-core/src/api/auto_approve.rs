@@ -10,7 +10,9 @@
 use tracing::debug;
 
 use crate::auto_approve::rules::RuleEngine;
-use crate::auto_approve::types::{JudgmentDecision, PermissionDecision, PreToolUseDecision};
+use crate::auto_approve::types::{
+    AutoApproveMode, JudgmentDecision, PermissionDecision, PreToolUseDecision,
+};
 use crate::hooks::HookEventPayload;
 
 use super::core::TmaiCore;
@@ -25,17 +27,14 @@ impl TmaiCore {
     /// The decision maps to Claude Code's hook response format:
     /// - `Allow` → tool proceeds without permission prompt
     /// - `Deny` → tool call is cancelled
+    /// - `Defer` → tool paused, pending AI/human resolution (Hybrid mode)
     /// - `Ask` → normal permission prompt shown (fallback)
     pub fn evaluate_pre_tool_use(&self, payload: &HookEventPayload) -> Option<PreToolUseDecision> {
         let mode = self.settings().auto_approve.effective_mode();
         // Only Rules and Hybrid modes use the hook fast path.
         // Ai mode relies solely on AI judgment (too slow for synchronous hook response),
         // so it falls through to the legacy polling service.
-        if matches!(
-            mode,
-            crate::auto_approve::types::AutoApproveMode::Off
-                | crate::auto_approve::types::AutoApproveMode::Ai
-        ) {
+        if matches!(mode, AutoApproveMode::Off | AutoApproveMode::Ai) {
             return None;
         }
 
@@ -45,18 +44,22 @@ impl TmaiCore {
         }
 
         // Only rule-based evaluation in the hook path (instant, <1ms).
-        // AI judge is too slow for synchronous hook responses.
-        // For Hybrid/AI mode: rules fast path → uncertain falls through to "ask".
         let engine = RuleEngine::new(self.settings().auto_approve.rules.clone());
         let result = engine.judge_structured(tool_name, payload.tool_input.as_ref());
 
         let decision = match result.decision {
             JudgmentDecision::Approve => PermissionDecision::Allow,
             JudgmentDecision::Reject => PermissionDecision::Deny,
-            // Uncertain: fall through to normal permission prompt.
-            // In legacy mode, the polling service may still pick this up
-            // for AI escalation (Hybrid mode).
-            JudgmentDecision::Uncertain => PermissionDecision::Ask,
+            JudgmentDecision::Uncertain => {
+                match mode {
+                    // Hybrid mode: defer uncertain calls for AI/human resolution.
+                    // The HTTP handler will hold the connection and await resolution
+                    // from the DeferRegistry (AI judge or manual UI action).
+                    AutoApproveMode::Hybrid => PermissionDecision::Defer,
+                    // Rules-only mode: fall through to normal permission prompt.
+                    _ => PermissionDecision::Ask,
+                }
+            }
         };
 
         debug!(
@@ -195,15 +198,15 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_mode_uncertain_falls_through() {
+    fn test_hybrid_mode_uncertain_defers() {
         let core = core_with_mode(AutoApproveMode::Hybrid);
         let payload = pre_tool_use_payload(
             "Bash",
             serde_json::json!({"command": "npm install express"}),
         );
         let result = core.evaluate_pre_tool_use(&payload).unwrap();
-        // Uncertain in hook path → Ask (AI judge too slow for synchronous response)
-        assert_eq!(result.decision, PermissionDecision::Ask);
+        // Uncertain in Hybrid mode → Defer for AI/human resolution
+        assert_eq!(result.decision, PermissionDecision::Defer);
     }
 
     #[test]

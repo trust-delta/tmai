@@ -123,6 +123,8 @@ pub struct JudgmentResult {
 ///
 /// Claude Code v2.1.69+ supports returning permission decisions from
 /// PreToolUse hooks, enabling instant auto-approval without screen scraping.
+/// Claude Code v2.1.89+ adds `defer` for pausing tool execution pending
+/// external approval (AI judge or human review via tmai UI).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionDecision {
     /// Proceed without permission prompt
@@ -131,6 +133,11 @@ pub enum PermissionDecision {
     Deny,
     /// Show normal permission prompt to user (fallback)
     Ask,
+    /// Pause tool execution pending external resolution (v2.1.89+).
+    ///
+    /// The HTTP hook response blocks until tmai resolves the deferred call
+    /// via AI judgment or human review. On timeout, falls back to `ask`.
+    Defer,
 }
 
 impl PermissionDecision {
@@ -140,6 +147,7 @@ impl PermissionDecision {
             PermissionDecision::Allow => "allow",
             PermissionDecision::Deny => "deny",
             PermissionDecision::Ask => "ask",
+            PermissionDecision::Defer => "defer",
         }
     }
 }

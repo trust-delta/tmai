@@ -2705,6 +2705,69 @@ pub async fn update_preview_settings(
     Json(serde_json::json!({"ok": true}))
 }
 
+// =========================================================
+// Deferred tool call endpoints
+// =========================================================
+
+/// Request body for resolving a deferred tool call
+#[derive(Debug, Deserialize)]
+pub struct ResolveDeferRequest {
+    /// "allow" or "deny"
+    pub decision: String,
+    /// Optional reason for the decision
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// GET /api/defer — list pending deferred tool calls
+pub async fn list_deferred(State(core): State<Arc<TmaiCore>>) -> Json<serde_json::Value> {
+    let pending = core.defer_registry().list_pending();
+    Json(serde_json::json!({
+        "pending": pending,
+        "count": pending.len()
+    }))
+}
+
+/// POST /api/defer/{id}/resolve — approve or reject a deferred tool call
+pub async fn resolve_deferred(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<u64>,
+    Json(req): Json<ResolveDeferRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let decision = match req.decision.as_str() {
+        "allow" => tmai_core::auto_approve::PermissionDecision::Allow,
+        "deny" => tmai_core::auto_approve::PermissionDecision::Deny,
+        other => {
+            return Err(json_error(
+                StatusCode::BAD_REQUEST,
+                &format!("Invalid decision '{}': must be 'allow' or 'deny'", other),
+            ));
+        }
+    };
+
+    let reason = if req.reason.is_empty() {
+        format!("Manually {} via UI", req.decision)
+    } else {
+        req.reason
+    };
+
+    let resolution = tmai_core::auto_approve::DeferResolution {
+        decision,
+        reason,
+        resolved_by: "human".into(),
+    };
+
+    if core.defer_registry().resolve(id, resolution) {
+        tracing::info!(defer_id = id, decision = %req.decision, "Deferred call resolved via API");
+        Ok(Json(serde_json::json!({"status": "ok", "defer_id": id})))
+    } else {
+        Err(json_error(
+            StatusCode::NOT_FOUND,
+            &format!("Deferred call {} not found or already resolved", id),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
