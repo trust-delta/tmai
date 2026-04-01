@@ -19,8 +19,9 @@ pub enum TranscriptRecord {
     ToolResult { output_summary: String },
 }
 
-/// Maximum number of recent records to retain per transcript
-pub const MAX_RECENT_RECORDS: usize = 50;
+/// Maximum number of recent records to retain per transcript.
+/// Set high to preserve full session history for hybrid scrollback preview.
+pub const MAX_RECENT_RECORDS: usize = 10_000;
 
 /// Tracked state for a single transcript file
 #[derive(Debug, Clone)]
@@ -73,7 +74,7 @@ mod tests {
             "sess".to_string(),
             "5".to_string(),
         );
-        let records: Vec<TranscriptRecord> = (0..60)
+        let records: Vec<TranscriptRecord> = (0..10_050)
             .map(|i| TranscriptRecord::User {
                 text: format!("msg {}", i),
             })
