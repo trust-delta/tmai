@@ -329,14 +329,12 @@ export function BranchGraph({
     return () => clearInterval(interval);
   }, [projectPath]);
 
-  // Handle start-work completion: switch back to graph, refresh, select new branch
+  // Handle start-work completion: refresh data in background, stay on current tab
   const handleStartWorkDone = useCallback(
-    (worktreeName: string) => {
-      setShowIssues(false);
-      setSelectedIssue(null);
+    (_worktreeName: string) => {
+      // Don't switch tabs or clear selection — keep the issues panel stable.
+      // The ActionPanel will auto-detect the matching worktree and show its status.
       refreshBranches();
-      // Select the new branch after data refreshes
-      setTimeout(() => setSelectedNode(worktreeName), 500);
     },
     [refreshBranches],
   );
