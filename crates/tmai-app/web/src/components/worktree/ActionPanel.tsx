@@ -312,13 +312,12 @@ export function ActionPanel({
       setStartWorkError(null);
       try {
         const base = defaultBranch ?? "main";
-        await api.spawnWorktree({ name: trimmed, cwd: projectPath, base_branch: base });
-        // Auto-launch agent (with optional initial prompt)
-        try {
-          await api.launchWorktreeAgent(projectPath, trimmed, initialPrompt);
-        } catch {
-          // Worktree created but agent launch failed — still consider success
-        }
+        await api.spawnWorktree({
+          name: trimmed,
+          cwd: projectPath,
+          base_branch: base,
+          ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+        });
         onStartWorkDone?.(trimmed);
       } catch (e) {
         setStartWorkError(e instanceof Error ? e.message : "Failed to create worktree");
