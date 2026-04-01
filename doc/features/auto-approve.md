@@ -313,6 +313,24 @@ Auto-approve mode can be changed from the WebUI Settings panel:
 
 Per-agent auto-approve override is also available via the agent action buttons.
 
+## Future: Hook-Based Auto-Approve (Defer Permission)
+
+Claude Code v2.1.89 introduced [Defer Permission](https://code.claude.com/docs/en/hooks) — PreToolUse hooks can return `"defer"` to pause tool execution, allowing external approval.
+
+This enables a next-generation auto-approve architecture where:
+
+1. PreToolUse hook fires with structured JSON (tool name, arguments, file paths)
+2. tmai evaluates using the same Rules/AI/Hybrid engine
+3. Hook response returns approve, reject, or defer (for human review)
+
+Benefits over the current capture-pane/send-keys approach:
+- **Zero latency** — hook fires immediately, no polling delay
+- **Structured data** — no screen parsing ambiguity
+- **Reliable delivery** — hook response, not keystroke injection
+- **Conditional filtering** — use `"if": "Bash(git *)"` to target specific tools
+
+See [GitHub issue #176](https://github.com/trust-delta/tmai/issues/176) for implementation progress.
+
 ### API Endpoints
 
 | Method | Path | Description |

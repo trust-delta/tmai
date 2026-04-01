@@ -70,7 +70,7 @@ When hooks are active, tmai uses the hook state if it's fresh (within 30 seconds
 
 ### Hook Events
 
-tmai subscribes to 12 Claude Code events:
+tmai subscribes to 14 Claude Code events:
 
 | Event | tmai Action |
 |-------|-------------|
@@ -80,11 +80,13 @@ tmai subscribes to 12 Claude Code events:
 | `PostToolUse` | Set status → Processing |
 | `Notification` | Set status → AwaitingApproval (permission_prompt) |
 | `PermissionRequest` | Set status → AwaitingApproval |
+| `PermissionDenied` | Log permission denial to audit (v2.1.89+) |
 | `Stop` | Set status → Idle |
 | `SubagentStart` | Set status → Processing |
 | `SubagentStop` | Set status → Processing |
 | `TeammateIdle` | Emit team event |
 | `TaskCompleted` | Emit team event |
+| `TaskCreated` | Emit team event, track new background task (v2.1.86+) |
 | `SessionEnd` | Remove session from registry |
 
 ### Pane ID Resolution

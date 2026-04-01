@@ -70,7 +70,7 @@ hooksが有効な場合、hook状態が新鮮（30秒以内）であればそれ
 
 ### Hookイベント
 
-tmaiは12種類のClaude Codeイベントを購読します：
+tmaiは14種類のClaude Codeイベントを購読します：
 
 | イベント | tmaiの動作 |
 |---------|-----------|
@@ -80,10 +80,12 @@ tmaiは12種類のClaude Codeイベントを購読します：
 | `PostToolUse` | ステータス → Processing |
 | `Notification` | ステータス → AwaitingApproval（permission_prompt） |
 | `PermissionRequest` | ステータス → AwaitingApproval |
+| `PermissionDenied` | パーミッション拒否を監査ログに記録（v2.1.89+） |
 | `Stop` | ステータス → Idle |
 | `SubagentStart` | ステータス → Processing |
 | `SubagentStop` | ステータス → Processing |
 | `TeammateIdle` | チームイベントを発行 |
+| `TaskCreated` | チームイベント発行、新規バックグラウンドタスク追跡（v2.1.86+） |
 | `TaskCompleted` | チームイベントを発行 |
 | `SessionEnd` | レジストリからセッションを削除 |
 

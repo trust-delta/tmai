@@ -37,7 +37,8 @@ Click a worktree in the Branch Graph or sidebar to open the detail panel:
 | Action | Description |
 |--------|-------------|
 | **Launch Agent** | Spawn an AI agent (Claude Code) in this worktree |
-| **Delete** | Remove the worktree (with force option for dirty worktrees) |
+| **Create & Resolve** | Create a worktree from an issue and launch an agent with the resolve prompt (reads issue details via `gh`, implements, and creates a PR) |
+| **Delete** | Remove the worktree (supports both `.claude/worktrees/` and `.git/.claude/worktrees/` paths) |
 | **Refresh Diff** | Reload the diff against the base branch |
 | **View Diff** | Show the full diff with DiffViewer |
 

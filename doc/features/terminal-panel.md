@@ -70,6 +70,30 @@ Supports sending individual characters or special keys (e.g., `Enter`, `Tab`, `E
 | GET | `/api/agents/{id}/output` | Get agent output text |
 | POST | `/api/agents/{id}/passthrough` | Send raw terminal input |
 
+## Hybrid Scrollback Preview
+
+For agents running in tmux, the preview panel uses a hybrid approach combining two data sources:
+
+- **Live area (bottom)**: `tmux capture-pane` with ANSI escapes — shows the exact terminal appearance in real-time (spinners, colors, tool output folding)
+- **History area (top)**: Parsed from Claude Code's session JSONL transcript (`~/.claude/projects/<project>/<session-uuid>.jsonl`) — provides scrollable conversation history
+
+This design is resilient to scrollback resets caused by Claude Code's context compaction or plan mode clears. The JSONL transcript persists on disk regardless of terminal state, so the full conversation history remains scrollable even after compaction.
+
+### JSONL Transcript Format
+
+Each line is a JSON object with a `type` field:
+
+| Type | Content |
+|------|---------|
+| `user` | User prompt text |
+| `assistant_text` | Claude's response text |
+| `tool_use` | Tool name and input summary |
+| `tool_result` | Tool output summary |
+
+### Known Limitation: CLAUDE_CODE_NO_FLICKER
+
+Claude Code v2.1.89 introduced `CLAUDE_CODE_NO_FLICKER=1` for flicker-free rendering using the alternate screen buffer. This is **incompatible with `capture-pane`** — the live area will be empty when this env var is set. Hook and IPC detection are unaffected. tmai does not set this env var automatically.
+
 ## Related Documentation
 
 - [Agent Spawn](./agent-spawn.md) — Launching agents with PTY
