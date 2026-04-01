@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.1.3] - 2026-04-01
+
+### Added
+
+- Unified PR card design between source and target views with CI status labels (#172)
+- Sidebar icon state syncs with active right pane panel (#167)
+- Solid merge lines from merged PR branches to merge commit in git graph (#156)
+- Statusline hook integration for improved agent info accuracy (#155)
+- Press Enter to switch from select mode to input mode (#152)
+
+### Fixed
+
+- Issues tab now stays stable when spawning worktree from git panel (#171)
+- Worktree delete works for paths under .git/.claude/worktrees/ (#169)
+- Create & Resolve now sends initial prompt through spawnWorktree (#168)
+- Straight lines instead of curves for PR base dashed lines in git panel (#154)
+
+### Changed
+
+- Renamed Security Scan to Config Audit and extended scan targets (#153)
+
 ## [1.1.2] - 2026-03-31
 
 ### Added
