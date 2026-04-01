@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.2.1] - 2026-04-02
+
+### Fixed
+
+- Transcript record limit increased from 50 to 10,000 for full session scrollback (#179)
+- Initial transcript load now reads full session history instead of last 100 lines (#180)
+
 ## [1.2.0] - 2026-04-01
 
 ### Added
