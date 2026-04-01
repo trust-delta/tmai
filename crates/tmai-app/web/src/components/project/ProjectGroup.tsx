@@ -12,6 +12,8 @@ interface ProjectGroupProps {
   onSelectProject: (path: string, name: string) => void;
   onSelectMarkdown: (projectPath: string, projectName: string) => void;
   onSpawned: (sessionId: string) => void;
+  splitPaneProjectPath: string | null;
+  splitPaneTab: "git" | "markdown" | null;
 }
 
 // Collapsible project group containing worktree sub-groups
@@ -22,6 +24,8 @@ export function ProjectGroup({
   onSelectProject,
   onSelectMarkdown,
   onSpawned,
+  splitPaneProjectPath,
+  splitPaneTab,
 }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
@@ -49,9 +53,14 @@ export function ProjectGroup({
 
   // Derive selectedTarget for agent card highlighting
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
-  const isProjectSelected = selection?.type === "project" && selection.path === project.path;
+  // Icon is active when shown fullscreen OR in split-pane right panel
+  const isSplitForThisProject = splitPaneProjectPath === project.path;
+  const isProjectSelected =
+    (selection?.type === "project" && selection.path === project.path) ||
+    (isSplitForThisProject && splitPaneTab === "git");
   const isMarkdownSelected =
-    selection?.type === "markdown" && selection.projectPath === project.path;
+    (selection?.type === "markdown" && selection.projectPath === project.path) ||
+    (isSplitForThisProject && splitPaneTab === "markdown");
 
   // Spawn an agent in a specific directory
   const confirm = useConfirm();
