@@ -126,6 +126,8 @@ impl WebServer {
             .route("/agents/{id}/terminal", any(ws::ws_terminal))
             .route("/config-audit/run", post(api::config_audit))
             .route("/config-audit/last", get(api::last_config_audit))
+            .route("/defer", get(api::list_deferred))
+            .route("/defer/{id}/resolve", post(api::resolve_deferred))
             .route("/usage", get(api::get_usage))
             .route("/usage/fetch", post(api::trigger_usage_fetch))
             .route(

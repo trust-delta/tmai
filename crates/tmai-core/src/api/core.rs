@@ -10,6 +10,7 @@ use tokio::sync::broadcast;
 
 use crate::audit::helper::AuditHelper;
 use crate::audit::AuditEventSender;
+use crate::auto_approve::defer::DeferRegistry;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
@@ -52,6 +53,8 @@ pub struct TmaiCore {
     runtime: Option<Arc<dyn RuntimeAdapter>>,
     /// Transcript registry for JSONL conversation log monitoring
     transcript_registry: Option<TranscriptRegistry>,
+    /// Registry for deferred tool calls pending resolution
+    defer_registry: Arc<DeferRegistry>,
 }
 
 impl TmaiCore {
@@ -69,6 +72,7 @@ impl TmaiCore {
         pty_registry: Arc<PtyRegistry>,
         runtime: Option<Arc<dyn RuntimeAdapter>>,
         transcript_registry: Option<TranscriptRegistry>,
+        defer_registry: Arc<DeferRegistry>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -85,6 +89,7 @@ impl TmaiCore {
             pty_registry,
             runtime,
             transcript_registry,
+            defer_registry,
         }
     }
 
@@ -202,6 +207,11 @@ impl TmaiCore {
         self.transcript_registry.as_ref()
     }
 
+    /// Access the deferred tool call registry
+    pub fn defer_registry(&self) -> &Arc<DeferRegistry> {
+        &self.defer_registry
+    }
+
     /// Direct write access to settings (for testing)
     #[cfg(test)]
     pub(crate) fn settings_mut(&self) -> parking_lot::RwLockWriteGuard<'_, Arc<Settings>> {
@@ -257,6 +267,7 @@ mod tests {
             crate::pty::PtyRegistry::new(),
             None,
             None,
+            DeferRegistry::new(),
         );
 
         assert_eq!(core.settings().poll_interval_ms, 500);
@@ -283,6 +294,7 @@ mod tests {
             crate::pty::PtyRegistry::new(),
             None,
             None,
+            DeferRegistry::new(),
         );
 
         // raw_state should return the same Arc
@@ -311,6 +323,7 @@ mod tests {
             crate::pty::PtyRegistry::new(),
             None,
             None,
+            DeferRegistry::new(),
         );
 
         assert!(core.validate_hook_token("test-token-123"));

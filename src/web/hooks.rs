@@ -14,9 +14,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use tmai_core::api::{CoreEvent, TmaiCore};
+use tmai_core::auto_approve::types::PermissionDecision;
 use tmai_core::hooks::handler::{handle_hook_event, handle_statusline, resolve_pane_id};
 use tmai_core::hooks::{HookEventPayload, StatuslineData};
 
@@ -131,22 +133,109 @@ pub async fn hook_event(
         // PreToolUse: return permissionDecision for instant auto-approval
         "PreToolUse" => {
             if let Some(decision) = pre_tool_use_response {
-                let response = serde_json::json!({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": decision.decision.as_str(),
-                        "permissionDecisionReason": decision.reason
+                match decision.decision {
+                    // Defer: hold HTTP connection while awaiting AI/human resolution
+                    PermissionDecision::Defer => {
+                        let tool_name = payload
+                            .tool_name
+                            .clone()
+                            .unwrap_or_else(|| "unknown".into());
+                        let (defer_id, rx) = core.defer_registry().defer(
+                            payload.session_id.clone(),
+                            pane_id.clone(),
+                            tool_name.clone(),
+                            payload.tool_input.clone(),
+                            payload.cwd.clone(),
+                        );
+
+                        info!(
+                            defer_id,
+                            pane_id = %pane_id,
+                            tool = %tool_name,
+                            "Tool call deferred, awaiting resolution"
+                        );
+
+                        // Emit event so UI can show the pending deferred call
+                        let _ = core.event_sender().send(CoreEvent::ToolCallDeferred {
+                            defer_id,
+                            target: pane_id.clone(),
+                            tool_name: tool_name.clone(),
+                        });
+
+                        // Wait for resolution with timeout (default: 30s)
+                        let defer_timeout =
+                            Duration::from_secs(core.settings().auto_approve.timeout_secs);
+                        let resolution = tokio::time::timeout(defer_timeout, rx).await;
+
+                        match resolution {
+                            Ok(Ok(res)) => {
+                                let final_decision = res.decision.as_str();
+                                info!(
+                                    defer_id,
+                                    decision = final_decision,
+                                    resolved_by = %res.resolved_by,
+                                    "Deferred tool call resolved"
+                                );
+                                let _ = core.event_sender().send(CoreEvent::ToolCallResolved {
+                                    defer_id,
+                                    target: pane_id,
+                                    decision: final_decision.to_string(),
+                                    resolved_by: res.resolved_by.clone(),
+                                });
+                                let response = serde_json::json!({
+                                    "hookSpecificOutput": {
+                                        "hookEventName": "PreToolUse",
+                                        "permissionDecision": final_decision,
+                                        "permissionDecisionReason": res.reason
+                                    }
+                                });
+                                (StatusCode::OK, Json(response))
+                            }
+                            _ => {
+                                // Timeout or channel error: fall back to ask
+                                warn!(
+                                    defer_id,
+                                    "Deferred tool call timed out, falling back to ask"
+                                );
+                                core.defer_registry().remove(defer_id);
+                                let _ = core.event_sender().send(CoreEvent::ToolCallResolved {
+                                    defer_id,
+                                    target: pane_id,
+                                    decision: "ask".into(),
+                                    resolved_by: "timeout".into(),
+                                });
+                                let response = serde_json::json!({
+                                    "hookSpecificOutput": {
+                                        "hookEventName": "PreToolUse",
+                                        "permissionDecision": "ask",
+                                        "permissionDecisionReason": "Defer timed out"
+                                    }
+                                });
+                                (StatusCode::OK, Json(response))
+                            }
+                        }
                     }
-                });
-                info!(
-                    pane_id = %pane_id,
-                    tool = ?payload.tool_name,
-                    decision = decision.decision.as_str(),
-                    model = %decision.model,
-                    elapsed_ms = decision.elapsed_ms,
-                    "PreToolUse auto-approve"
-                );
-                (StatusCode::OK, Json(response))
+
+                    // Allow/Deny/Ask: return immediately
+                    _ => {
+                        let response = serde_json::json!({
+                            "hookSpecificOutput": {
+                                "hookEventName": "PreToolUse",
+                                "permissionDecision": decision.decision.as_str(),
+                                "permissionDecisionReason": decision.reason
+                            }
+                        });
+                        info!(
+                            pane_id = %pane_id,
+                            tool = ?payload.tool_name,
+                            decision = decision.decision.as_str(),
+                            model = %decision.model,
+                            elapsed_ms = decision.elapsed_ms,
+                            "PreToolUse auto-approve"
+                        );
+                        (StatusCode::OK, Json(response))
+                    }
+                }
             } else {
                 (StatusCode::OK, Json(serde_json::json!({})))
             }

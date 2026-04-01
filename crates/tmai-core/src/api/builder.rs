@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use crate::audit::AuditEventSender;
+use crate::auto_approve::defer::DeferRegistry;
 use crate::command_sender::CommandSender;
 use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
@@ -161,6 +162,7 @@ impl TmaiCoreBuilder {
             pty_registry,
             self.runtime,
             self.transcript_registry,
+            DeferRegistry::new(),
         )
     }
 }

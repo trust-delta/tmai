@@ -162,6 +162,28 @@ pub enum CoreEvent {
 
     /// Usage data was updated (after a fetch cycle)
     UsageUpdated,
+
+    /// A tool call was deferred for external resolution
+    ToolCallDeferred {
+        /// Unique deferred call ID
+        defer_id: u64,
+        /// Agent target/pane ID
+        target: String,
+        /// Tool name
+        tool_name: String,
+    },
+
+    /// A deferred tool call was resolved (approved/denied)
+    ToolCallResolved {
+        /// Unique deferred call ID
+        defer_id: u64,
+        /// Agent target/pane ID
+        target: String,
+        /// Resolution: "allow" or "deny"
+        decision: String,
+        /// Who resolved it (e.g., "human", "ai:haiku", "timeout")
+        resolved_by: String,
+    },
 }
 
 impl TmaiCore {
