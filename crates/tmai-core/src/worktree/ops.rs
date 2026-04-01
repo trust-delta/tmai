@@ -96,14 +96,26 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
         return Err(WorktreeOpsError::InvalidName(req.worktree_name.clone()));
     }
 
-    let worktree_dir = Path::new(&req.repo_path)
-        .join(".claude")
-        .join("worktrees")
-        .join(&req.worktree_name);
-
-    if !worktree_dir.exists() {
-        return Err(WorktreeOpsError::NotFound(req.worktree_name.clone()));
-    }
+    // Try both `<repo>/.claude/worktrees/<name>` and `<repo>/.git/.claude/worktrees/<name>`
+    // Claude Code may create worktrees under `.git/.claude/worktrees/`
+    let worktree_dir = {
+        let primary = Path::new(&req.repo_path)
+            .join(".claude")
+            .join("worktrees")
+            .join(&req.worktree_name);
+        if primary.exists() {
+            primary
+        } else {
+            let fallback = Path::new(&req.repo_path)
+                .join(".git/.claude/worktrees")
+                .join(&req.worktree_name);
+            if fallback.exists() {
+                fallback
+            } else {
+                return Err(WorktreeOpsError::NotFound(req.worktree_name.clone()));
+            }
+        }
+    };
 
     // Check for uncommitted changes unless force
     if !req.force {
