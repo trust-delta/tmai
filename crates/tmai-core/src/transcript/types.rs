@@ -1,7 +1,10 @@
 //! Types for transcript parsing and state tracking.
 
+use serde::Serialize;
+
 /// A parsed record from a Claude Code JSONL transcript
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum TranscriptRecord {
     /// User message
     User { text: String },

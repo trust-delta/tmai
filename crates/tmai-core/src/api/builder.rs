@@ -18,6 +18,7 @@ use crate::ipc::server::IpcServer;
 use crate::pty::PtyRegistry;
 use crate::runtime::RuntimeAdapter;
 use crate::state::{AppState, SharedState};
+use crate::transcript::TranscriptRegistry;
 
 use super::core::TmaiCore;
 
@@ -33,6 +34,7 @@ pub struct TmaiCoreBuilder {
     hook_token: Option<String>,
     pty_registry: Option<Arc<PtyRegistry>>,
     runtime: Option<Arc<dyn RuntimeAdapter>>,
+    transcript_registry: Option<TranscriptRegistry>,
 }
 
 impl TmaiCoreBuilder {
@@ -49,6 +51,7 @@ impl TmaiCoreBuilder {
             hook_token: None,
             pty_registry: None,
             runtime: None,
+            transcript_registry: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl TmaiCoreBuilder {
             hook_token: None,
             pty_registry: None,
             runtime: None,
+            transcript_registry: None,
         }
     }
 
@@ -122,6 +126,12 @@ impl TmaiCoreBuilder {
         self
     }
 
+    /// Set the transcript registry for JSONL conversation log monitoring
+    pub fn with_transcript_registry(mut self, registry: TranscriptRegistry) -> Self {
+        self.transcript_registry = Some(registry);
+        self
+    }
+
     /// Build the `TmaiCore` instance
     ///
     /// If no state was provided, a fresh `AppState::shared()` is created.
@@ -150,6 +160,7 @@ impl TmaiCoreBuilder {
             self.hook_token,
             pty_registry,
             self.runtime,
+            self.transcript_registry,
         )
     }
 }

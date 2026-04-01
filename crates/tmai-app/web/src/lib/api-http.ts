@@ -345,6 +345,13 @@ export interface WorktreeDiffResponse {
   summary: { files_changed: number; insertions: number; deletions: number } | null;
 }
 
+/// Transcript record from JSONL conversation log (discriminated union on `type`)
+export type TranscriptRecord =
+  | { type: "user"; text: string }
+  | { type: "assistant_text"; text: string }
+  | { type: "tool_use"; tool_name: string; input_summary: string }
+  | { type: "tool_result"; output_summary: string };
+
 // Discriminated union for sidebar selection
 export type Selection =
   | { type: "agent"; id: string }
@@ -608,6 +615,8 @@ export const api = {
     apiFetch<{ content: string; cursor_x?: number; cursor_y?: number }>(
       `/agents/${encodeURIComponent(target)}/preview`,
     ),
+  getTranscript: (target: string) =>
+    apiFetch<{ records: TranscriptRecord[] }>(`/agents/${encodeURIComponent(target)}/transcript`),
 
   // Spawn
   spawnPty: (req: SpawnRequest) =>

@@ -89,6 +89,7 @@ export const api = {
   passthrough: (target: string, input: { chars?: string; key?: string }) =>
     httpApi.passthrough(target, input),
   getPreview: (target: string) => httpApi.getPreview(target),
+  getTranscript: (target: string) => httpApi.getTranscript(target),
 
   // Spawn
   spawnPty: (req: SpawnRequest) => httpApi.spawnPty(req),

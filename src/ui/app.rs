@@ -130,14 +130,31 @@ impl App {
             .as_ref()
             .map(|c| c.hook_registry().clone())
             .unwrap_or_else(tmai_core::hooks::new_hook_registry);
-        let mut poller = Poller::new(
-            self.settings.clone(),
-            self.state.clone(),
-            self.command_sender.runtime().clone(),
-            ipc_registry,
-            hook_registry,
-            self.audit_event_rx.take(),
-        );
+        // Share transcript registry with TmaiCore if available
+        let transcript_registry = self
+            .core
+            .as_ref()
+            .and_then(|c| c.transcript_registry().cloned());
+        let mut poller = if let Some(t_reg) = transcript_registry {
+            Poller::new_with_transcript_registry(
+                self.settings.clone(),
+                self.state.clone(),
+                self.command_sender.runtime().clone(),
+                ipc_registry,
+                hook_registry,
+                self.audit_event_rx.take(),
+                t_reg,
+            )
+        } else {
+            Poller::new(
+                self.settings.clone(),
+                self.state.clone(),
+                self.command_sender.runtime().clone(),
+                ipc_registry,
+                hook_registry,
+                self.audit_event_rx.take(),
+            )
+        };
         // Pass event sender for TeammateIdle/TaskCompleted notifications
         if let Some(ref core) = self.core {
             poller = poller.with_event_tx(core.event_sender().clone());

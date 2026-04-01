@@ -2,6 +2,7 @@ import { AnsiUp } from "ansi_up";
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import type { TranscriptRecord } from "@/lib/api-http";
 
 interface PreviewPanelProps {
   agentId: string;
@@ -160,8 +161,43 @@ interface CursorPos {
   y: number;
 }
 
+/// Render a single transcript record as an HTML string for the history area
+function renderTranscriptRecord(record: TranscriptRecord): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}...` : s);
+
+  switch (record.type) {
+    case "user": {
+      const first = record.text.split("\n")[0] ?? record.text;
+      return `<span class="text-cyan-400">▶ User:</span> <span class="text-zinc-300">${esc(truncate(first, 120))}</span>`;
+    }
+    case "assistant_text": {
+      const lines = record.text.split("\n");
+      const rendered = lines
+        .slice(0, 5)
+        .map((l, i) => {
+          const t = esc(truncate(l, 120));
+          return i === 0
+            ? `<span class="text-emerald-400">◀</span> <span class="text-zinc-300">${t}</span>`
+            : `  <span class="text-zinc-300">${t}</span>`;
+        })
+        .join("\n");
+      return lines.length > 5 ? `${rendered}\n  <span class="text-zinc-500">...</span>` : rendered;
+    }
+    case "tool_use": {
+      const summary = record.input_summary ? `: ${esc(truncate(record.input_summary, 80))}` : "";
+      return `  <span class="text-amber-400">⚙ ${esc(record.tool_name)}</span><span class="text-zinc-400">${summary}</span>`;
+    }
+    case "tool_result": {
+      const first = record.output_summary.split("\n")[0] ?? record.output_summary;
+      return `  <span class="text-green-600">✓</span> <span class="text-zinc-500">${esc(truncate(first, 100))}</span>`;
+    }
+  }
+}
+
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
+  const [transcriptRecords, setTranscriptRecords] = useState<TranscriptRecord[]>([]);
   const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
   const [showCursor, setShowCursor] = useState(true);
   const [focused, setFocused] = useState(true);
@@ -222,6 +258,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Reset state when switching agents (autoScroll restored from per-agent map)
   useEffect(() => {
     setContent("");
+    setTranscriptRecords([]);
     setCursorPos(null);
     setFocused(true);
     setHasDomFocus(true);
@@ -316,8 +353,27 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return () => clearInterval(interval);
   }, [fetchPreview, pollInterval]);
 
+  // Fetch transcript records (slower cadence — history changes less often)
+  const fetchTranscript = useCallback(async () => {
+    try {
+      const data = await api.getTranscript(agentId);
+      if (data.records && data.records.length > 0) {
+        setTranscriptRecords(data.records);
+      }
+    } catch {
+      // Transcript not available (no hook connection, etc.)
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    fetchTranscript();
+    const interval = setInterval(fetchTranscript, 3000);
+    return () => clearInterval(interval);
+  }, [fetchTranscript]);
+
   // Pending passthrough refresh timers (cleared on agent switch / unmount)
   const passthroughTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear timers on agent switch
   useEffect(() => {
     return () => {
       for (const t of passthroughTimers.current) clearTimeout(t);
@@ -451,6 +507,12 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     lines[clampedY] = line.slice(0, insertAt) + marker + line.slice(insertAt);
     return lines.join("\n");
   }, [ansi, content, cols, cursorPos, showCursor]);
+  // Render transcript history as HTML (shown above live capture-pane output)
+  const transcriptHtml = useMemo(() => {
+    if (transcriptRecords.length === 0) return "";
+    return transcriptRecords.map(renderTranscriptRecord).join("\n");
+  }, [transcriptRecords]);
+
   const html = htmlWithCursor;
 
   // Cursor overlay position, read from the injected marker element
@@ -540,6 +602,17 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         >
           X
         </span>
+        {/* Transcript history (above live capture-pane) */}
+        {transcriptHtml && (
+          <div
+            className="ansi-preview m-0 select-text whitespace-pre-wrap break-words border-b border-white/10 pb-2 mb-2 opacity-80"
+            style={{ fontFamily: MONO_FONT_STACK }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(transcriptHtml),
+            }}
+          />
+        )}
+        {/* Live capture-pane output */}
         {content ? (
           <div
             className="ansi-preview relative m-0 cursor-text select-text whitespace-pre-wrap break-words"

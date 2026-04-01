@@ -139,12 +139,16 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             .with_hook_registry(hook_registry.clone()),
     );
 
+    // Create shared transcript registry for TUI mode
+    let tui_transcript_registry = tmai_core::transcript::watcher::new_transcript_registry();
+
     let mut core_builder = TmaiCoreBuilder::new(settings.clone())
         .with_state(app_state.clone())
         .with_ipc_server(ipc_server.clone())
         .with_command_sender(core_cmd_sender)
         .with_hook_registry(hook_registry)
         .with_session_pane_map(session_pane_map)
+        .with_transcript_registry(tui_transcript_registry)
         .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
@@ -291,6 +295,9 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
     let hook_token = tmai::init::load_hook_token();
 
+    // Create shared transcript registry (shared between Poller and TmaiCore)
+    let transcript_registry = tmai_core::transcript::watcher::new_transcript_registry();
+
     // Build TmaiCore facade
     let mut core_builder = TmaiCoreBuilder::new(settings.clone())
         .with_state(state.clone())
@@ -298,6 +305,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         .with_command_sender(cmd_sender)
         .with_hook_registry(hook_registry.clone())
         .with_session_pane_map(session_pane_map)
+        .with_transcript_registry(transcript_registry.clone())
         .with_runtime(runtime.clone());
 
     if let Some(token) = hook_token {
@@ -378,15 +386,16 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     eprintln!("tmai: waiting for hook events from Claude Code...");
     eprintln!("tmai: press Ctrl+C to stop");
 
-    // Start monitoring loop (Poller with standalone runtime)
+    // Start monitoring loop (Poller with standalone runtime + shared transcript registry)
     let ipc_registry = ipc_server.registry();
-    let mut poller = tmai_core::monitor::Poller::new(
+    let mut poller = tmai_core::monitor::Poller::new_with_transcript_registry(
         settings.clone(),
         state.clone(),
         runtime,
         ipc_registry,
         hook_registry,
         audit_rx,
+        transcript_registry,
     );
     poller = poller.with_event_tx(core.event_sender().clone());
 

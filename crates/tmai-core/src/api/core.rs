@@ -17,6 +17,7 @@ use crate::ipc::server::IpcServer;
 use crate::pty::PtyRegistry;
 use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
+use crate::transcript::TranscriptRegistry;
 
 use super::events::CoreEvent;
 
@@ -49,6 +50,8 @@ pub struct TmaiCore {
     pty_registry: Arc<PtyRegistry>,
     /// Runtime adapter (tmux, standalone, etc.)
     runtime: Option<Arc<dyn RuntimeAdapter>>,
+    /// Transcript registry for JSONL conversation log monitoring
+    transcript_registry: Option<TranscriptRegistry>,
 }
 
 impl TmaiCore {
@@ -65,6 +68,7 @@ impl TmaiCore {
         hook_token: Option<String>,
         pty_registry: Arc<PtyRegistry>,
         runtime: Option<Arc<dyn RuntimeAdapter>>,
+        transcript_registry: Option<TranscriptRegistry>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let audit_helper = AuditHelper::new(audit_tx, state.clone());
@@ -80,6 +84,7 @@ impl TmaiCore {
             hook_token,
             pty_registry,
             runtime,
+            transcript_registry,
         }
     }
 
@@ -192,6 +197,11 @@ impl TmaiCore {
         self.runtime.as_ref()
     }
 
+    /// Access the transcript registry (if configured)
+    pub fn transcript_registry(&self) -> Option<&TranscriptRegistry> {
+        self.transcript_registry.as_ref()
+    }
+
     /// Direct write access to settings (for testing)
     #[cfg(test)]
     pub(crate) fn settings_mut(&self) -> parking_lot::RwLockWriteGuard<'_, Arc<Settings>> {
@@ -246,6 +256,7 @@ mod tests {
             None,
             crate::pty::PtyRegistry::new(),
             None,
+            None,
         );
 
         assert_eq!(core.settings().poll_interval_ms, 500);
@@ -270,6 +281,7 @@ mod tests {
             session_pane_map,
             None,
             crate::pty::PtyRegistry::new(),
+            None,
             None,
         );
 
@@ -297,6 +309,7 @@ mod tests {
             session_pane_map,
             Some("test-token-123".to_string()),
             crate::pty::PtyRegistry::new(),
+            None,
             None,
         );
 

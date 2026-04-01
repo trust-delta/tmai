@@ -550,6 +550,31 @@ pub async fn get_preview(
     }
 }
 
+// =========================================================
+// Transcript
+// =========================================================
+
+/// Response for GET /api/agents/{id}/transcript
+#[derive(Debug, Serialize)]
+pub struct TranscriptResponse {
+    pub records: Vec<tmai_core::transcript::TranscriptRecord>,
+}
+
+/// Get transcript records for an agent (hybrid scrollback preview).
+///
+/// Returns parsed JSONL conversation records for rendering above
+/// the live capture-pane output.
+pub async fn get_transcript(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<TranscriptResponse>, StatusCode> {
+    match core.get_transcript(&id) {
+        Ok(records) => Ok(Json(TranscriptResponse { records })),
+        Err(tmai_core::api::ApiError::AgentNotFound { .. }) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
 /// Get all teams with their task summaries and member info
 #[allow(deprecated)]
 pub async fn get_teams(State(core): State<Arc<TmaiCore>>) -> Json<Vec<TeamInfoResponse>> {
@@ -2718,6 +2743,7 @@ mod tests {
             .route("/agents/{id}/input", post(send_text))
             .route("/agents/{id}/key", post(send_key))
             .route("/agents/{id}/preview", get(get_preview))
+            .route("/agents/{id}/transcript", get(get_transcript))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
             .route("/config-audit/run", post(config_audit))
