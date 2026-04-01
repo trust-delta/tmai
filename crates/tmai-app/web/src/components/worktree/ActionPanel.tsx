@@ -12,6 +12,7 @@ import { extractIssueNumbers, extractIssueRefs, issueToWorktreeName } from "@/li
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
 import type { DetailView } from "./DetailPanel";
 import type { BranchNode } from "./graph/types";
+import { PrCard } from "./PrCard";
 
 interface ActionPanelProps {
   activeNode: BranchNode;
@@ -244,7 +245,11 @@ export function ActionPanel({
       setActionBusy(true);
       setActionError(null);
       try {
-        await api.spawnPty({ command: "claude", args: [prompt], cwd: projectPath });
+        await api.spawnPty({
+          command: "claude",
+          args: [prompt],
+          cwd: projectPath,
+        });
       } catch (e) {
         setActionError(e instanceof Error ? e.message : "Failed to launch agent");
       } finally {
@@ -567,87 +572,8 @@ export function ActionPanel({
           )}
           {/* PR info */}
           {prInfo && (
-            <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <a
-                  href={prInfo.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-green-400 hover:underline"
-                >
-                  PR #{prInfo.number}
-                </a>
-                {prInfo.is_draft && (
-                  <span className="rounded bg-zinc-500/15 px-1 py-0.5 text-[10px] text-zinc-500">
-                    draft
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 truncate text-zinc-400">{prInfo.title}</div>
-              {prInfo.review_decision && (
-                <div className="mt-1 flex items-center gap-2">
-                  <span
-                    className={`text-[10px] ${
-                      prInfo.review_decision === "APPROVED"
-                        ? "text-green-400"
-                        : prInfo.review_decision === "CHANGES_REQUESTED"
-                          ? "text-orange-400"
-                          : "text-zinc-500"
-                    }`}
-                  >
-                    {prInfo.review_decision === "APPROVED"
-                      ? "Approved"
-                      : prInfo.review_decision === "CHANGES_REQUESTED"
-                        ? "Changes requested"
-                        : "Review required"}
-                  </span>
-                </div>
-              )}
-              {(prInfo.additions > 0 || prInfo.deletions > 0) && (
-                <div className="mt-0.5 text-[10px] text-zinc-600">
-                  <span className="text-emerald-400">+{prInfo.additions}</span>{" "}
-                  <span className="text-red-400">-{prInfo.deletions}</span>
-                </div>
-              )}
-              {(prInfo.reviews > 0 || prInfo.comments > 0) && (
-                <div className="mt-0.5 flex items-center gap-2 text-[10px] text-zinc-600">
-                  {prInfo.reviews > 0 && (
-                    <span>
-                      {prInfo.reviews} review{prInfo.reviews !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {prInfo.comments > 0 && (
-                    <span>
-                      {prInfo.comments} comment
-                      {prInfo.comments !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              )}
-              {/* PR detail buttons */}
-              <div className="mt-1.5 flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => onOpenDetail({ kind: "pr-comments", prNumber: prInfo.number })}
-                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-                >
-                  Comments
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenDetail({ kind: "pr-files", prNumber: prInfo.number })}
-                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-                >
-                  Files
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenDetail({ kind: "merge-status", prNumber: prInfo.number })}
-                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-                >
-                  Merge
-                </button>
-              </div>
+            <div className="mt-2">
+              <PrCard pr={prInfo} onOpenDetail={onOpenDetail} />
             </div>
           )}
           {/* CI checks */}
@@ -758,46 +684,9 @@ export function ActionPanel({
                 )}
             </div>
           )}
-          {ciSummary &&
-            ciSummary.checks.length === 0 &&
-            !ciLoading &&
-            (prInfo?.check_status ? (
-              <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${
-                    prInfo.check_status === "SUCCESS"
-                      ? "bg-green-400"
-                      : prInfo.check_status === "FAILURE"
-                        ? "bg-red-400"
-                        : prInfo.check_status === "PENDING"
-                          ? "bg-yellow-400"
-                          : "bg-zinc-600"
-                  }`}
-                />
-                <span
-                  className={
-                    prInfo.check_status === "SUCCESS"
-                      ? "text-green-400"
-                      : prInfo.check_status === "FAILURE"
-                        ? "text-red-400"
-                        : prInfo.check_status === "PENDING"
-                          ? "text-yellow-400"
-                          : "text-zinc-600"
-                  }
-                >
-                  {prInfo.check_status === "SUCCESS"
-                    ? "CI passed"
-                    : prInfo.check_status === "FAILURE"
-                      ? "CI failed"
-                      : prInfo.check_status === "PENDING"
-                        ? "CI running"
-                        : "CI unknown"}
-                </span>
-                <span className="text-[10px] text-zinc-600">(from PR)</span>
-              </div>
-            ) : (
-              <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
-            ))}
+          {ciSummary && ciSummary.checks.length === 0 && !ciLoading && !prInfo?.check_status && (
+            <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
+          )}
           {/* Linked issues */}
           {(() => {
             const nums = extractIssueNumbers(activeNode.name);
@@ -854,71 +743,21 @@ export function ActionPanel({
             </div>
             <div className="flex flex-col gap-1.5">
               {targetPrs.map((pr) => (
-                <div
+                <PrCard
                   key={pr.number}
-                  className="rounded-lg border border-white/5 bg-white/[0.03] p-2"
-                >
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <a
-                      href={pr.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-green-400 hover:underline"
-                    >
-                      #{pr.number}
-                    </a>
-                    {pr.is_draft && (
-                      <span className="rounded bg-zinc-500/15 px-1 py-0.5 text-[10px] text-zinc-500">
-                        draft
-                      </span>
-                    )}
-                    {pr.review_decision === "APPROVED" && (
-                      <span className="text-[10px] text-green-400">Approved</span>
-                    )}
-                    {pr.check_status === "SUCCESS" && (
-                      <span
-                        className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-green-400"
-                        title="CI passed"
-                      />
-                    )}
-                    {pr.check_status === "FAILURE" && (
-                      <span
-                        className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-red-400"
-                        title="CI failed"
-                      />
-                    )}
-                    {pr.check_status === "PENDING" && (
-                      <span
-                        className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-yellow-400"
-                        title="CI running"
-                      />
-                    )}
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px] text-zinc-400">{pr.title}</div>
-                  <div className="mt-0.5 text-[10px] text-zinc-600">
-                    {pr.head_branch} → {activeNode.name}
-                  </div>
-                  {(pr.additions > 0 || pr.deletions > 0) && (
-                    <div className="mt-0.5 text-[10px] text-zinc-600">
-                      <span className="text-emerald-400">+{pr.additions}</span>{" "}
-                      <span className="text-red-400">-{pr.deletions}</span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      confirmIfAgentActive("Merge", () =>
-                        delegateToAi(
-                          `Merge PR #${pr.number}. First run 'gh pr view ${pr.number} --json baseRefName -q .baseRefName' to verify base is '${activeNode.name}'. If base matches, run 'gh pr merge ${pr.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`,
-                        ),
-                      )
-                    }
-                    disabled={actionBusy}
-                    className="mt-1.5 w-full rounded bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
-                  >
-                    AI Merge PR #{pr.number}
-                  </button>
-                </div>
+                  pr={pr}
+                  onOpenDetail={onOpenDetail}
+                  showBranchFlow
+                  targetBranch={activeNode.name}
+                  onAiMerge={() =>
+                    confirmIfAgentActive("Merge", () =>
+                      delegateToAi(
+                        `Merge PR #${pr.number}. First run 'gh pr view ${pr.number} --json baseRefName -q .baseRefName' to verify base is '${activeNode.name}'. If base matches, run 'gh pr merge ${pr.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`,
+                      ),
+                    )
+                  }
+                  actionBusy={actionBusy}
+                />
               ))}
             </div>
           </div>
