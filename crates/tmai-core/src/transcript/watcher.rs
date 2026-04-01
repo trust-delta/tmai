@@ -24,8 +24,9 @@ pub fn new_transcript_registry() -> TranscriptRegistry {
 /// Maximum preview lines to render
 const MAX_PREVIEW_LINES: usize = 80;
 
-/// Number of tail lines to read on initial file open
-const INITIAL_TAIL_LINES: usize = 100;
+/// Number of tail lines to read on initial file open.
+/// Set high to load full session history for hybrid scrollback preview.
+const INITIAL_TAIL_LINES: usize = 50_000;
 
 /// Transcript watcher that monitors JSONL files for changes
 pub struct TranscriptWatcher {
