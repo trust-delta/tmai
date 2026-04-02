@@ -161,39 +161,7 @@ interface CursorPos {
   y: number;
 }
 
-/// Render a single transcript record as an HTML string for the history area
-function renderTranscriptRecord(record: TranscriptRecord): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}...` : s);
-
-  switch (record.type) {
-    case "user": {
-      const first = record.text.split("\n")[0] ?? record.text;
-      return `<span class="text-cyan-400">▶ User:</span> <span class="text-zinc-300">${esc(truncate(first, 120))}</span>`;
-    }
-    case "assistant_text": {
-      const lines = record.text.split("\n");
-      const rendered = lines
-        .slice(0, 5)
-        .map((l, i) => {
-          const t = esc(truncate(l, 120));
-          return i === 0
-            ? `<span class="text-emerald-400">◀</span> <span class="text-zinc-300">${t}</span>`
-            : `  <span class="text-zinc-300">${t}</span>`;
-        })
-        .join("\n");
-      return lines.length > 5 ? `${rendered}\n  <span class="text-zinc-500">...</span>` : rendered;
-    }
-    case "tool_use": {
-      const summary = record.input_summary ? `: ${esc(truncate(record.input_summary, 80))}` : "";
-      return `  <span class="text-amber-400">⚙ ${esc(record.tool_name)}</span><span class="text-zinc-400">${summary}</span>`;
-    }
-    case "tool_result": {
-      const first = record.output_summary.split("\n")[0] ?? record.output_summary;
-      return `  <span class="text-green-600">✓</span> <span class="text-zinc-500">${esc(truncate(first, 100))}</span>`;
-    }
-  }
-}
+import { TranscriptView } from "./TranscriptView";
 
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [content, setContent] = useState<string>("");
@@ -219,7 +187,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const transcriptRef = useRef<HTMLDivElement>(null);
 
   // Measure character columns that fit in the preview container
   const [cols, setCols] = useState(0);
@@ -508,18 +475,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     lines[clampedY] = line.slice(0, insertAt) + marker + line.slice(insertAt);
     return lines.join("\n");
   }, [ansi, content, cols, cursorPos, showCursor]);
-  // Render transcript history as HTML (shown above live capture-pane output)
-  const transcriptHtml = useMemo(() => {
-    if (transcriptRecords.length === 0) return "";
-    return transcriptRecords.map(renderTranscriptRecord).join("\n");
-  }, [transcriptRecords]);
-
-  // Set transcript HTML via ref (bypasses dangerouslySetInnerHTML lint)
-  useEffect(() => {
-    if (transcriptRef.current) {
-      transcriptRef.current.innerHTML = DOMPurify.sanitize(transcriptHtml);
-    }
-  }, [transcriptHtml]);
+  const hasTranscript = transcriptRecords.length > 0;
 
   const html = htmlWithCursor;
 
@@ -611,12 +567,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           X
         </span>
         {/* Transcript history (above live capture-pane) */}
-        {transcriptHtml && (
-          <div
-            ref={transcriptRef}
-            className="ansi-preview m-0 select-text whitespace-pre-wrap break-words border-b border-white/10 pb-2 mb-2 opacity-80"
-            style={{ fontFamily: MONO_FONT_STACK }}
-          />
+        {hasTranscript && (
+          <div className="select-text border-b border-white/10 pb-2 mb-2">
+            <TranscriptView records={transcriptRecords} />
+          </div>
         )}
         {/* Live capture-pane output */}
         {content ? (

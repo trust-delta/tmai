@@ -124,9 +124,7 @@ fn read_tail_lines(path: &str, state: &mut TranscriptState) -> std::io::Result<(
     let start = all_lines.len().saturating_sub(INITIAL_TAIL_LINES);
     let mut records = Vec::new();
     for line in &all_lines[start..] {
-        if let Some(record) = parse_jsonl_line(line) {
-            records.push(record);
-        }
+        records.extend(parse_jsonl_line(line));
     }
 
     state.push_records(records);
@@ -172,9 +170,7 @@ fn read_new_lines(state: &mut TranscriptState) -> std::io::Result<()> {
         if bytes_read == 0 {
             break;
         }
-        if let Some(record) = parse_jsonl_line(&line) {
-            new_records.push(record);
-        }
+        new_records.extend(parse_jsonl_line(&line));
     }
 
     if !new_records.is_empty() {

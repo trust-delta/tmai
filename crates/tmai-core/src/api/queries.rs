@@ -502,9 +502,13 @@ mod tests {
             state.push_records(vec![
                 TranscriptRecord::User {
                     text: "Hello".to_string(),
+                    uuid: None,
+                    timestamp: None,
                 },
                 TranscriptRecord::AssistantText {
                     text: "Hi there".to_string(),
+                    uuid: None,
+                    timestamp: None,
                 },
             ]);
             reg.insert("main:0.0".to_string(), state);

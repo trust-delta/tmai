@@ -347,10 +347,24 @@ export interface WorktreeDiffResponse {
 
 /// Transcript record from JSONL conversation log (discriminated union on `type`)
 export type TranscriptRecord =
-  | { type: "user"; text: string }
-  | { type: "assistant_text"; text: string }
-  | { type: "tool_use"; tool_name: string; input_summary: string }
-  | { type: "tool_result"; output_summary: string };
+  | { type: "user"; text: string; uuid?: string; timestamp?: string }
+  | { type: "assistant_text"; text: string; uuid?: string; timestamp?: string }
+  | { type: "thinking"; text: string; uuid?: string; timestamp?: string }
+  | {
+      type: "tool_use";
+      tool_name: string;
+      input_summary: string;
+      input_full?: Record<string, unknown>;
+      uuid?: string;
+      timestamp?: string;
+    }
+  | {
+      type: "tool_result";
+      output_summary: string;
+      is_error?: boolean;
+      uuid?: string;
+      timestamp?: string;
+    };
 
 // Discriminated union for sidebar selection
 export type Selection =

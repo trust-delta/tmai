@@ -18,11 +18,11 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
 
     for record in records {
         match record {
-            TranscriptRecord::User { text } => {
+            TranscriptRecord::User { text, .. } => {
                 let first_line = text.lines().next().unwrap_or(text);
                 lines.push(format!("▶ User: {}", truncate_chars(first_line, 120)));
             }
-            TranscriptRecord::AssistantText { text } => {
+            TranscriptRecord::AssistantText { text, .. } => {
                 // Show first few lines of assistant text
                 for (i, line) in text.lines().enumerate() {
                     if i >= 5 {
@@ -37,9 +37,14 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
                     }
                 }
             }
+            TranscriptRecord::Thinking { text, .. } => {
+                let first_line = text.lines().next().unwrap_or(text);
+                lines.push(format!("  💭 {}", truncate_chars(first_line, 100)));
+            }
             TranscriptRecord::ToolUse {
                 tool_name,
                 input_summary,
+                ..
             } => {
                 if input_summary.is_empty() {
                     lines.push(format!("  ⚙ {}", tool_name));
@@ -47,7 +52,7 @@ pub fn render_preview(records: &[TranscriptRecord], max_lines: usize) -> String 
                     lines.push(format!("  ⚙ {}: {}", tool_name, input_summary));
                 }
             }
-            TranscriptRecord::ToolResult { output_summary } => {
+            TranscriptRecord::ToolResult { output_summary, .. } => {
                 let first_line = output_summary.lines().next().unwrap_or(output_summary);
                 lines.push(format!("  ✓ {}", truncate_chars(first_line, 100)));
             }
@@ -72,9 +77,13 @@ mod tests {
         let records = vec![
             TranscriptRecord::User {
                 text: "Fix the bug in main.rs".to_string(),
+                uuid: None,
+                timestamp: None,
             },
             TranscriptRecord::AssistantText {
                 text: "I'll look at main.rs and fix the issue.".to_string(),
+                uuid: None,
+                timestamp: None,
             },
         ];
 
@@ -89,9 +98,15 @@ mod tests {
             TranscriptRecord::ToolUse {
                 tool_name: "Bash".to_string(),
                 input_summary: "cargo test".to_string(),
+                input_full: None,
+                uuid: None,
+                timestamp: None,
             },
             TranscriptRecord::ToolResult {
                 output_summary: "test result: ok".to_string(),
+                is_error: None,
+                uuid: None,
+                timestamp: None,
             },
         ];
 
@@ -101,10 +116,24 @@ mod tests {
     }
 
     #[test]
+    fn test_render_preview_thinking() {
+        let records = vec![TranscriptRecord::Thinking {
+            text: "Let me think about this problem...".to_string(),
+            uuid: None,
+            timestamp: None,
+        }];
+
+        let result = render_preview(&records, 100);
+        assert!(result.contains("💭 Let me think about this problem..."));
+    }
+
+    #[test]
     fn test_render_preview_max_lines() {
         let records: Vec<TranscriptRecord> = (0..20)
             .map(|i| TranscriptRecord::User {
                 text: format!("Message {}", i),
+                uuid: None,
+                timestamp: None,
             })
             .collect();
 

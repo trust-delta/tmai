@@ -7,16 +7,50 @@ use serde::Serialize;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TranscriptRecord {
     /// User message
-    User { text: String },
+    User {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
     /// Assistant text output
-    AssistantText { text: String },
+    AssistantText {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+    /// Claude's thinking/reasoning block
+    Thinking {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
     /// Tool use by the assistant
     ToolUse {
         tool_name: String,
         input_summary: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_full: Option<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
     },
     /// Tool result
-    ToolResult { output_summary: String },
+    ToolResult {
+        output_summary: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
 }
 
 /// Maximum number of recent records to retain per transcript.
@@ -77,6 +111,8 @@ mod tests {
         let records: Vec<TranscriptRecord> = (0..10_050)
             .map(|i| TranscriptRecord::User {
                 text: format!("msg {}", i),
+                uuid: None,
+                timestamp: None,
             })
             .collect();
         state.push_records(records);
