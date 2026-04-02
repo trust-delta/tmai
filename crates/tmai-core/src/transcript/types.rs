@@ -36,8 +36,10 @@ pub struct TranscriptState {
     pub recent_records: Vec<TranscriptRecord>,
     /// Last read position in the file (byte offset)
     pub last_read_pos: u64,
-    /// Cached preview text (regenerated on new records)
+    /// Cached preview text — plain (regenerated on new records)
     pub preview_text: String,
+    /// Cached preview text — ANSI-rich (regenerated on new records)
+    pub ansi_preview_text: String,
 }
 
 impl TranscriptState {
@@ -50,6 +52,7 @@ impl TranscriptState {
             recent_records: Vec::new(),
             last_read_pos: 0,
             preview_text: String::new(),
+            ansi_preview_text: String::new(),
         }
     }
 

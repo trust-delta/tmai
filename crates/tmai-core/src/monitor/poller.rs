@@ -108,6 +108,8 @@ pub struct Poller {
     session_scanner: crate::session_discovery::SessionDiscoveryScanner,
     /// Transcript watcher for JSONL conversation log monitoring
     transcript_watcher: crate::transcript::TranscriptWatcher,
+    /// Pipe-pane log registry for vt100-processed ANSI capture
+    pipe_log_registry: crate::tmux::PipeLogRegistry,
 }
 
 /// Check if a PID is a descendant (child, grandchild, ...) of any PID in the set.
@@ -178,6 +180,7 @@ impl Poller {
             transcript_watcher: crate::transcript::TranscriptWatcher::new(
                 crate::transcript::watcher::new_transcript_registry(),
             ),
+            pipe_log_registry: crate::tmux::pipe_log::new_pipe_log_registry(),
         }
     }
 
@@ -220,6 +223,7 @@ impl Poller {
             event_tx: None,
             session_scanner: crate::session_discovery::SessionDiscoveryScanner::new(),
             transcript_watcher: crate::transcript::TranscriptWatcher::new(transcript_registry),
+            pipe_log_registry: crate::tmux::pipe_log::new_pipe_log_registry(),
         }
     }
 
@@ -342,9 +346,10 @@ impl Poller {
                         self.discover_sessions();
                     }
 
-                    // Transcript polling (every 2 polls ≈ 1 second)
+                    // Transcript + pipe-log polling (every 2 polls ≈ 1 second)
                     if poll_count.is_multiple_of(2) {
                         self.transcript_watcher.poll_updates();
+                        self.poll_pipe_logs();
                     }
 
                     // Audit: track state transitions
@@ -592,32 +597,77 @@ impl Poller {
                     (String::new(), plain)
                 };
 
-                // Fallback chain for empty content (standalone/webui mode):
-                // 1. transcript preview (D-2) — richest
-                // 2. activity log (D-1) — lightweight
+                // Fallback chain for empty/degraded content:
+                //
+                // capture-pane may return only visible area (virtual scroll)
+                // or be completely empty (standalone mode). Fall through:
+                //
+                // 1. pipe-pane log (vt100-processed) — real ANSI from stream
+                // 2. JSONL ANSI renderer — synthesized ANSI from transcript
+                // 3. JSONL plain preview — minimal text
+                // 4. activity log — lightweight hook events
                 if content.trim().is_empty() {
-                    // Try transcript preview first
-                    let transcript_preview = {
+                    // Tier 1: pipe-pane log (ANSI)
+                    let pipe_ansi = {
+                        let p_reg = self.pipe_log_registry.read();
+                        p_reg
+                            .get(&pane.pane_id)
+                            .filter(|ps| !ps.ansi_output.is_empty())
+                            .map(|ps| ps.ansi_output.clone())
+                    };
+
+                    if let Some(ansi) = pipe_ansi {
+                        content_ansi = ansi;
+                        content = strip_ansi(&content_ansi);
+                    } else {
+                        // Tier 2: JSONL ANSI preview
+                        let transcript_previews = {
+                            let t_reg = self.transcript_watcher.registry().read();
+                            t_reg.get(&pane.pane_id).and_then(|ts| {
+                                if !ts.ansi_preview_text.is_empty() {
+                                    Some((
+                                        ts.ansi_preview_text.clone(),
+                                        ts.preview_text.clone(),
+                                    ))
+                                } else if !ts.preview_text.is_empty() {
+                                    // Tier 3: plain preview only
+                                    Some((
+                                        ts.preview_text.clone(),
+                                        ts.preview_text.clone(),
+                                    ))
+                                } else {
+                                    None
+                                }
+                            })
+                        };
+
+                        if let Some((ansi_preview, plain_preview)) = transcript_previews {
+                            content_ansi = ansi_preview;
+                            content = plain_preview;
+                        } else if let Some(ref hs) = hook_state {
+                            // Tier 4: activity log
+                            if !hs.activity_log.is_empty() {
+                                let log_text =
+                                    crate::hooks::handler::format_activity_log(&hs.activity_log);
+                                if !log_text.is_empty() {
+                                    content = log_text.clone();
+                                    content_ansi = log_text;
+                                }
+                            }
+                        }
+                    }
+                } else if content_ansi.is_empty() {
+                    // capture-pane plain succeeded but ANSI is missing:
+                    // enrich with JSONL ANSI if available
+                    let ansi_preview = {
                         let t_reg = self.transcript_watcher.registry().read();
                         t_reg
                             .get(&pane.pane_id)
-                            .filter(|ts| !ts.preview_text.is_empty())
-                            .map(|ts| ts.preview_text.clone())
+                            .filter(|ts| !ts.ansi_preview_text.is_empty())
+                            .map(|ts| ts.ansi_preview_text.clone())
                     };
-
-                    if let Some(preview) = transcript_preview {
-                        content = preview.clone();
-                        content_ansi = preview;
-                    } else if let Some(ref hs) = hook_state {
-                        // Fallback to activity log
-                        if !hs.activity_log.is_empty() {
-                            let log_text =
-                                crate::hooks::handler::format_activity_log(&hs.activity_log);
-                            if !log_text.is_empty() {
-                                content = log_text.clone();
-                                content_ansi = log_text;
-                            }
-                        }
+                    if let Some(ansi) = ansi_preview {
+                        content_ansi = ansi;
                     }
                 }
 
@@ -1736,6 +1786,21 @@ impl Poller {
                 agent.is_worktree = Some(info.is_worktree);
                 agent.git_common_dir = info.common_dir.clone();
                 agent.worktree_name = crate::git::extract_claude_worktree_name(&agent.cwd);
+            }
+        }
+    }
+
+    /// Poll all active pipe-pane log files for new data.
+    fn poll_pipe_logs(&self) {
+        let pane_ids: Vec<String> = {
+            let reg = self.pipe_log_registry.read();
+            reg.keys().cloned().collect()
+        };
+
+        for pane_id in pane_ids {
+            let mut reg = self.pipe_log_registry.write();
+            if let Some(state) = reg.get_mut(&pane_id) {
+                crate::tmux::pipe_log::poll_pipe_log(state);
             }
         }
     }

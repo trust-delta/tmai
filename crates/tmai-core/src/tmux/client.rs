@@ -572,6 +572,57 @@ impl TmuxClient {
         Ok(())
     }
 
+    /// Start piping pane output to a log file.
+    ///
+    /// Uses `tmux pipe-pane` to stream the raw byte output (including ANSI
+    /// escape codes) of a pane into a file. Unlike `capture-pane`, this
+    /// captures the live output stream and is unaffected by virtual scrolling.
+    ///
+    /// The log file is created at the given `log_path`. If pipe-pane is
+    /// already active for this pane, tmux silently replaces the old pipe.
+    pub fn start_pipe_pane(&self, target: &str, log_path: &str) -> Result<()> {
+        validate_target(target)?;
+        // Validate log_path: must be an absolute path with safe characters
+        if !log_path.starts_with('/') && !log_path.contains(":\\") && !log_path.starts_with("\\") {
+            anyhow::bail!("pipe-pane log_path must be absolute: {}", log_path);
+        }
+
+        let output = Command::new("tmux")
+            .args([
+                "pipe-pane",
+                "-o",
+                "-t",
+                target,
+                &format!("cat >> '{}'", log_path),
+            ])
+            .output()
+            .context("Failed to execute tmux pipe-pane")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux pipe-pane failed for {}: {}", target, stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Stop piping pane output (cancel an active pipe-pane).
+    pub fn stop_pipe_pane(&self, target: &str) -> Result<()> {
+        validate_target(target)?;
+        // Calling pipe-pane with no command cancels any existing pipe
+        let output = Command::new("tmux")
+            .args(["pipe-pane", "-t", target])
+            .output()
+            .context("Failed to execute tmux pipe-pane (stop)")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux pipe-pane (stop) failed for {}: {}", target, stderr);
+        }
+
+        Ok(())
+    }
+
     /// Kill a specific pane
     pub fn kill_pane(&self, target: &str) -> Result<()> {
         validate_target(target)?;

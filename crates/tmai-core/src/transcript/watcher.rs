@@ -9,6 +9,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tracing::debug;
 
+use super::ansi_renderer::render_ansi_preview;
 use super::parser::parse_jsonl_line;
 use super::renderer::render_preview;
 use super::types::TranscriptState;
@@ -66,8 +67,9 @@ impl TranscriptWatcher {
             debug!(path, error = %e, "Failed initial transcript read (file may not exist yet)");
         }
 
-        // Generate initial preview
+        // Generate initial previews (plain + ANSI)
         state.preview_text = render_preview(&state.recent_records, MAX_PREVIEW_LINES);
+        state.ansi_preview_text = render_ansi_preview(&state.recent_records, MAX_PREVIEW_LINES);
 
         let mut reg = self.registry.write();
         reg.insert(pane_id.to_string(), state);
@@ -185,6 +187,7 @@ fn read_new_lines(state: &mut TranscriptState) -> std::io::Result<()> {
         );
         state.push_records(new_records);
         state.preview_text = render_preview(&state.recent_records, MAX_PREVIEW_LINES);
+        state.ansi_preview_text = render_ansi_preview(&state.recent_records, MAX_PREVIEW_LINES);
     }
 
     state.last_read_pos = current_size;
