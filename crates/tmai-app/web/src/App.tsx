@@ -168,8 +168,9 @@ export function App() {
       handler: () => setShowHelp((v) => !v),
     },
     {
-      keys: ["s"],
+      keys: [","],
       description: "Toggle settings",
+      requiresCtrl: true,
       handler: () => {
         setShowSettings((v) => !v);
         setShowSecurity(false);
@@ -178,6 +179,7 @@ export function App() {
     {
       keys: ["["],
       description: "Previous project",
+      requiresCtrl: true,
       handler: () => {
         const newIndex = Math.max(0, currentProjectIndex - 1);
         setCurrentProjectIndex(newIndex);
@@ -195,6 +197,7 @@ export function App() {
     {
       keys: ["]"],
       description: "Next project",
+      requiresCtrl: true,
       handler: () => {
         const newIndex = Math.min(registeredProjects.length - 1, currentProjectIndex + 1);
         setCurrentProjectIndex(newIndex);

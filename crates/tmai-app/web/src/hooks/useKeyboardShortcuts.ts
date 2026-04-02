@@ -1,16 +1,12 @@
 import { useEffect, useRef } from "react";
 
-// Keyboard shortcuts map
+// Keyboard shortcuts map (WebUI uses modifier keys to avoid browser conflicts)
 export const KEYBOARD_SHORTCUTS = {
   helpToggle: "?",
-  settingsToggle: "s",
-  securityToggle: "sec",
+  settingsToggle: "Ctrl+,",
   splitToggle: "\\",
-  projectNext: "]",
-  projectPrev: "[",
-  agentKill: "k",
-  agentApprove: "a",
-  focusSearch: "/",
+  projectNext: "Ctrl+]",
+  projectPrev: "Ctrl+[",
 } as const;
 
 interface ShortcutHandler {

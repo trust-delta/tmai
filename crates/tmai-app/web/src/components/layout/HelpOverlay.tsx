@@ -14,24 +14,17 @@ export function HelpOverlay({ isOpen, onClose }: HelpOverlayProps) {
       items: [
         { key: "?", description: "Toggle this help menu" },
         { key: "\\", description: "Toggle split view" },
-        { key: "[", description: "Previous project" },
-        { key: "]", description: "Next project" },
-        { key: "/", description: "Focus project search" },
+        { key: "Ctrl+[", description: "Previous project" },
+        { key: "Ctrl+]", description: "Next project" },
       ],
     },
     {
       category: "Agent Control",
-      items: [
-        { key: "a", description: "Approve selected agent" },
-        { key: "k", description: "Kill selected agent" },
-      ],
+      items: [{ key: "Ctrl+Enter", description: "Approve selected agent" }],
     },
     {
       category: "Settings",
-      items: [
-        { key: "s", description: "Toggle settings panel" },
-        { key: "Ctrl+Shift+S", description: "Toggle config audit" },
-      ],
+      items: [{ key: "Ctrl+,", description: "Toggle settings panel" }],
     },
   ];
 
