@@ -219,6 +219,23 @@ export function ActionPanel({
     }
   }, [actionBusy, projectPath, activeNode.name, onRefresh, onSelectNode]);
 
+  // Move current branch into a worktree and checkout default branch
+  const handleMoveToWorktree = useCallback(async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const defBranch = branches?.default_branch ?? "main";
+      await api.moveToWorktree(projectPath, activeNode.name, defBranch);
+      onRefresh();
+      onSelectNode(activeNode.name);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Failed to move branch to worktree");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [actionBusy, projectPath, activeNode.name, branches?.default_branch, onRefresh, onSelectNode]);
+
   // Resolve the base branch for merge/PR operations
   const baseBranch = activeNode.parent ?? branches?.default_branch ?? "main";
 
@@ -858,6 +875,18 @@ export function ActionPanel({
                   {activeNode.behind} commit
                   {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch}
                 </div>
+              )}
+
+              {/* Move to Worktree (only for current non-worktree branches) */}
+              {!activeNode.isWorktree && activeNode.isCurrent && (
+                <button
+                  type="button"
+                  onClick={() => confirmIfAgentActive("Move", handleMoveToWorktree)}
+                  disabled={actionBusy}
+                  className="w-full rounded-lg bg-amber-500/15 px-3 py-2 text-left text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/25 disabled:opacity-50"
+                >
+                  {actionBusy ? "Moving..." : "Move to Worktree"}
+                </button>
               )}
 
               {/* Create worktree (only for non-worktree branches) */}

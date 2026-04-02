@@ -713,6 +713,82 @@ pub async fn delete_worktree(
         .map_err(api_error_to_http)
 }
 
+/// Worktree move request body — move an existing branch into a worktree
+#[derive(Debug, Deserialize)]
+pub struct WorktreeMoveRequestBody {
+    pub repo_path: String,
+    pub branch_name: String,
+    #[serde(default)]
+    pub dir_name: Option<String>,
+    pub default_branch: String,
+}
+
+/// Move a branch into a worktree
+pub async fn move_to_worktree(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeMoveRequestBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate branch name
+    if !tmai_core::git::is_valid_worktree_name(&req.branch_name) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
+    }
+    if !tmai_core::git::is_safe_git_ref(&req.default_branch) {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "Invalid default branch name",
+        ));
+    }
+
+    // Verify the repo_path is a valid directory
+    let repo_dir = strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    // Verify repo_path is among known projects
+    {
+        let repo_canonical = std::path::Path::new(repo_dir)
+            .canonicalize()
+            .map_err(|_| json_error(StatusCode::BAD_REQUEST, "Invalid repository path"))?;
+        let projects = core.list_projects();
+        #[allow(deprecated)]
+        let worktree_paths: Vec<String> = {
+            let state = core.raw_state().read();
+            state.agents.values().map(|a| a.cwd.clone()).collect()
+        };
+        let is_known = projects.iter().chain(worktree_paths.iter()).any(|p| {
+            std::path::Path::new(tmai_core::git::strip_git_suffix(p))
+                .canonicalize()
+                .map(|c| c == repo_canonical)
+                .unwrap_or(false)
+        });
+        if !is_known {
+            return Err(json_error(
+                StatusCode::FORBIDDEN,
+                "Repository path is not a known project or worktree",
+            ));
+        }
+    }
+
+    let move_req = tmai_core::worktree::WorktreeMoveRequest {
+        repo_path: strip_git_suffix(&req.repo_path).to_string(),
+        branch_name: req.branch_name,
+        dir_name: req.dir_name,
+        default_branch: req.default_branch,
+    };
+
+    core.move_to_worktree(&move_req)
+        .await
+        .map(|result| {
+            Json(serde_json::json!({
+                "status": "ok",
+                "path": result.path,
+                "branch": result.branch,
+            }))
+        })
+        .map_err(api_error_to_http)
+}
+
 /// Worktree launch request body (uses repo_path for unambiguous identification)
 #[derive(Debug, Deserialize)]
 pub struct WorktreeLaunchRequestBody {

@@ -10,7 +10,8 @@ use tokio::process::Command;
 use crate::git::is_valid_worktree_name;
 
 use super::types::{
-    WorktreeCreateRequest, WorktreeCreateResult, WorktreeDeleteRequest, WorktreeOpsError,
+    WorktreeCreateRequest, WorktreeCreateResult, WorktreeDeleteRequest, WorktreeMoveRequest,
+    WorktreeOpsError,
 };
 
 /// Timeout for git worktree commands
@@ -167,6 +168,149 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
     Ok(())
 }
 
+/// Move an existing branch from the main working tree into a worktree.
+///
+/// Steps:
+/// 1. Validate inputs
+/// 2. Auto-commit WIP changes if working tree is dirty
+/// 3. `git worktree add <path> <branch>` (existing branch, no -b)
+/// 4. `git checkout <default_branch>` in the main working tree
+pub async fn move_to_worktree(
+    req: &WorktreeMoveRequest,
+) -> Result<WorktreeCreateResult, WorktreeOpsError> {
+    // Validate branch name
+    if !is_valid_worktree_name(&req.branch_name) {
+        return Err(WorktreeOpsError::InvalidName(req.branch_name.clone()));
+    }
+    if !crate::git::is_safe_git_ref(&req.default_branch) {
+        return Err(WorktreeOpsError::InvalidName(format!(
+            "invalid default branch: {}",
+            req.default_branch
+        )));
+    }
+
+    let dir_name = req.dir_name.as_deref().unwrap_or(&req.branch_name);
+    let worktree_dir = Path::new(&req.repo_path)
+        .join(".claude")
+        .join("worktrees")
+        .join(dir_name);
+
+    if worktree_dir.exists() {
+        return Err(WorktreeOpsError::AlreadyExists(req.branch_name.clone()));
+    }
+
+    // Ensure parent directory exists
+    let parent = worktree_dir
+        .parent()
+        .ok_or_else(|| WorktreeOpsError::GitError("invalid worktree path".to_string()))?;
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|e| WorktreeOpsError::GitError(format!("failed to create directory: {}", e)))?;
+
+    let worktree_path = worktree_dir.to_string_lossy().to_string();
+
+    // Auto-commit WIP changes if working tree is dirty
+    if check_worktree_clean(&req.repo_path).await == Some(false) {
+        // Stage all changes
+        let add_output = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args(["-C", &req.repo_path, "add", "-A"])
+                .output(),
+        )
+        .await
+        .map_err(|_| WorktreeOpsError::GitError("git add timed out".to_string()))?
+        .map_err(|e| WorktreeOpsError::GitError(format!("failed to run git add: {}", e)))?;
+
+        if !add_output.status.success() {
+            let stderr = String::from_utf8_lossy(&add_output.stderr)
+                .trim()
+                .to_string();
+            return Err(WorktreeOpsError::GitError(format!(
+                "git add failed: {}",
+                stderr
+            )));
+        }
+
+        // Commit with WIP message
+        let commit_output = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args([
+                    "-C",
+                    &req.repo_path,
+                    "commit",
+                    "-m",
+                    &format!("WIP: move {} to worktree", req.branch_name),
+                ])
+                .output(),
+        )
+        .await
+        .map_err(|_| WorktreeOpsError::GitError("git commit timed out".to_string()))?
+        .map_err(|e| WorktreeOpsError::GitError(format!("failed to run git commit: {}", e)))?;
+
+        if !commit_output.status.success() {
+            let stderr = String::from_utf8_lossy(&commit_output.stderr)
+                .trim()
+                .to_string();
+            return Err(WorktreeOpsError::GitError(format!(
+                "git commit failed: {}",
+                stderr
+            )));
+        }
+    }
+
+    // Checkout the default branch first — git won't allow creating a worktree
+    // for a branch that's currently checked out in the main working tree.
+    let checkout_output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", &req.repo_path, "checkout", &req.default_branch])
+            .output(),
+    )
+    .await
+    .map_err(|_| WorktreeOpsError::GitError("git checkout timed out".to_string()))?
+    .map_err(|e| WorktreeOpsError::GitError(format!("failed to run git checkout: {}", e)))?;
+
+    if !checkout_output.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout_output.stderr)
+            .trim()
+            .to_string();
+        return Err(WorktreeOpsError::GitError(format!(
+            "checkout to {} failed: {}",
+            req.default_branch, stderr
+        )));
+    }
+
+    // Create worktree from existing branch (no -b flag)
+    let args = vec![
+        "-C",
+        &req.repo_path,
+        "worktree",
+        "add",
+        &worktree_path,
+        &req.branch_name,
+    ];
+
+    let output = tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&args).output())
+        .await
+        .map_err(|_| WorktreeOpsError::GitError("git worktree add timed out".to_string()))?
+        .map_err(|e| WorktreeOpsError::GitError(format!("failed to run git: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("already exists") {
+            return Err(WorktreeOpsError::AlreadyExists(req.branch_name.clone()));
+        }
+        return Err(WorktreeOpsError::GitError(stderr));
+    }
+
+    Ok(WorktreeCreateResult {
+        path: worktree_path,
+        branch: req.branch_name.clone(),
+    })
+}
+
 /// Detect the branch checked out in a worktree via `git worktree list --porcelain`
 async fn detect_worktree_branch(repo_path: &str, worktree_path: &str) -> Option<String> {
     let output = tokio::time::timeout(
@@ -284,14 +428,14 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    /// Initialize a bare-minimum git repo in a temp directory
+    /// Initialize a bare-minimum git repo in a temp directory with "main" as default branch
     async fn init_test_repo() -> (TempDir, PathBuf) {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().to_path_buf();
 
-        // git init
+        // git init with explicit main branch
         let status = Command::new("git")
-            .args(["-C", &repo.to_string_lossy(), "init"])
+            .args(["-C", &repo.to_string_lossy(), "init", "-b", "main"])
             .output()
             .await
             .unwrap();
@@ -608,5 +752,153 @@ mod tests {
 
         let result = run_setup_commands(&path, &[], 30).await;
         assert!(result.is_ok());
+    }
+
+    /// Helper: create a non-main branch with a commit in a test repo
+    async fn create_branch_with_commit(repo: &PathBuf, branch: &str) {
+        let repo_str = repo.to_string_lossy().to_string();
+        Command::new("git")
+            .args(["-C", &repo_str, "checkout", "-b", branch])
+            .output()
+            .await
+            .unwrap();
+        let file = repo.join(format!("{}.txt", branch));
+        tokio::fs::write(&file, format!("{} content\n", branch))
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["-C", &repo_str, "add", "."])
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["-C", &repo_str, "commit", "-m", &format!("add {}", branch)])
+            .output()
+            .await
+            .unwrap();
+    }
+
+    /// Helper: get the current branch name
+    async fn current_branch(repo: &PathBuf) -> String {
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &repo.to_string_lossy(),
+                "rev-parse",
+                "--abbrev-ref",
+                "HEAD",
+            ])
+            .output()
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[tokio::test]
+    async fn test_move_to_worktree_success() {
+        let (_tmp, repo) = init_test_repo().await;
+        let repo_path = repo.to_string_lossy().to_string();
+
+        // Create a feature branch (checked out)
+        create_branch_with_commit(&repo, "feat-move").await;
+        assert_eq!(current_branch(&repo).await, "feat-move");
+
+        let req = WorktreeMoveRequest {
+            repo_path: repo_path.clone(),
+            branch_name: "feat-move".to_string(),
+            dir_name: None,
+            default_branch: "main".to_string(),
+        };
+
+        let result = move_to_worktree(&req).await;
+        assert!(result.is_ok(), "move failed: {:?}", result.err());
+
+        let res = result.unwrap();
+        assert_eq!(res.branch, "feat-move");
+        assert!(Path::new(&res.path).exists());
+        assert!(res.path.contains(".claude/worktrees/feat-move"));
+
+        // Main working tree should now be on main/master
+        let branch = current_branch(&repo).await;
+        assert_eq!(branch, "main");
+    }
+
+    #[tokio::test]
+    async fn test_move_to_worktree_auto_commits_dirty() {
+        let (_tmp, repo) = init_test_repo().await;
+        let repo_path = repo.to_string_lossy().to_string();
+
+        // Create a feature branch
+        create_branch_with_commit(&repo, "feat-dirty-move").await;
+
+        // Make it dirty
+        let dirty_file = repo.join("uncommitted.txt");
+        tokio::fs::write(&dirty_file, "dirty content\n")
+            .await
+            .unwrap();
+
+        assert_eq!(check_worktree_clean(&repo_path).await, Some(false));
+
+        let req = WorktreeMoveRequest {
+            repo_path: repo_path.clone(),
+            branch_name: "feat-dirty-move".to_string(),
+            dir_name: None,
+            default_branch: "main".to_string(),
+        };
+
+        let result = move_to_worktree(&req).await;
+        assert!(result.is_ok(), "move failed: {:?}", result.err());
+
+        // After move, main working tree should be clean and on main
+        assert_eq!(current_branch(&repo).await, "main");
+    }
+
+    #[tokio::test]
+    async fn test_move_to_worktree_invalid_branch() {
+        let req = WorktreeMoveRequest {
+            repo_path: "/tmp/fake".to_string(),
+            branch_name: "bad; rm -rf /".to_string(),
+            dir_name: None,
+            default_branch: "main".to_string(),
+        };
+
+        let result = move_to_worktree(&req).await;
+        assert!(matches!(result, Err(WorktreeOpsError::InvalidName(_))));
+    }
+
+    #[tokio::test]
+    async fn test_move_to_worktree_invalid_default_branch() {
+        let req = WorktreeMoveRequest {
+            repo_path: "/tmp/fake".to_string(),
+            branch_name: "valid-name".to_string(),
+            dir_name: None,
+            default_branch: "--exec=evil".to_string(),
+        };
+
+        let result = move_to_worktree(&req).await;
+        assert!(matches!(result, Err(WorktreeOpsError::InvalidName(_))));
+    }
+
+    #[tokio::test]
+    async fn test_move_to_worktree_already_exists() {
+        let (_tmp, repo) = init_test_repo().await;
+        let repo_path = repo.to_string_lossy().to_string();
+
+        // Create a feature branch
+        create_branch_with_commit(&repo, "feat-dup-move").await;
+
+        // Pre-create the worktree directory
+        let wt_dir = repo.join(".claude").join("worktrees").join("feat-dup-move");
+        tokio::fs::create_dir_all(&wt_dir).await.unwrap();
+
+        let req = WorktreeMoveRequest {
+            repo_path: repo_path.clone(),
+            branch_name: "feat-dup-move".to_string(),
+            dir_name: None,
+            default_branch: "main".to_string(),
+        };
+
+        let result = move_to_worktree(&req).await;
+        assert!(matches!(result, Err(WorktreeOpsError::AlreadyExists(_))));
     }
 }

@@ -109,6 +109,8 @@ export const api = {
     httpApi.launchWorktreeAgent(repoPath, worktreeName, initialPrompt),
   deleteWorktree: (repoPath: string, worktreeName: string, force?: boolean) =>
     httpApi.deleteWorktree(repoPath, worktreeName, force),
+  moveToWorktree: (repoPath: string, branchName: string, defaultBranch: string, dirName?: string) =>
+    httpApi.moveToWorktree(repoPath, branchName, defaultBranch, dirName),
 
   // Git branches
   listBranches: (repoPath: string) => httpApi.listBranches(repoPath),

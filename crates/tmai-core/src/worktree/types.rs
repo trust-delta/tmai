@@ -62,6 +62,19 @@ impl fmt::Display for WorktreeOpsError {
 
 impl std::error::Error for WorktreeOpsError {}
 
+/// Request to move an existing branch into a worktree
+#[derive(Debug, Clone)]
+pub struct WorktreeMoveRequest {
+    /// Absolute path to the main repository
+    pub repo_path: String,
+    /// Branch name currently checked out in the main working tree
+    pub branch_name: String,
+    /// Directory name under `.claude/worktrees/` (defaults to branch_name if None)
+    pub dir_name: Option<String>,
+    /// Default branch to checkout after moving (e.g. "main")
+    pub default_branch: String,
+}
+
 /// Result of a successful worktree creation
 #[derive(Debug, Clone)]
 pub struct WorktreeCreateResult {
@@ -96,6 +109,19 @@ mod tests {
             force: false,
         };
         assert!(!req.force);
+    }
+
+    #[test]
+    fn test_move_request_construction() {
+        let req = WorktreeMoveRequest {
+            repo_path: "/home/user/project".to_string(),
+            branch_name: "feat-auth".to_string(),
+            dir_name: None,
+            default_branch: "main".to_string(),
+        };
+        assert_eq!(req.branch_name, "feat-auth");
+        assert_eq!(req.default_branch, "main");
+        assert!(req.dir_name.is_none());
     }
 
     #[test]

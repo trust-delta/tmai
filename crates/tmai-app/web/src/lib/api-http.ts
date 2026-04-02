@@ -676,6 +676,16 @@ export const api = {
         force: force ?? false,
       }),
     }),
+  moveToWorktree: (repoPath: string, branchName: string, defaultBranch: string, dirName?: string) =>
+    apiFetch<{ status: string; path: string; branch: string }>("/worktrees/move", {
+      method: "POST",
+      body: JSON.stringify({
+        repo_path: repoPath,
+        branch_name: branchName,
+        default_branch: defaultBranch,
+        ...(dirName ? { dir_name: dirName } : {}),
+      }),
+    }),
 
   // Git branches
   listBranches: (repoPath: string) =>
