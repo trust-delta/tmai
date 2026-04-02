@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.3.0] - 2026-04-03
+
+### Added
+
+- JSONL web-native rendering: react-markdown + remark-gfm based transcript view with collapsible thinking blocks, expandable tool details, and tool-specific color coding (#183)
+- Move to Worktree action for in-progress branches in git panel (#185)
+
+### Changed
+
+- Scope TUI-era keyboard shortcuts (h/j/k/l etc.) to TUI mode only in WebUI (#184)
+
+### Improved
+
+- TranscriptRecord now includes uuid, timestamp, thinking blocks, full tool input, and error status for richer data
+
 ## [1.2.1] - 2026-04-02
 
 ### Fixed
