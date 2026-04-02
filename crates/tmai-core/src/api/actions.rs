@@ -579,6 +579,69 @@ impl TmaiCore {
         Ok(())
     }
 
+    /// Move an existing branch into a worktree.
+    ///
+    /// Auto-commits WIP changes if dirty, creates the worktree, and checks out the default branch.
+    pub async fn move_to_worktree(
+        &self,
+        req: &crate::worktree::WorktreeMoveRequest,
+    ) -> Result<crate::worktree::types::WorktreeCreateResult, ApiError> {
+        let result = crate::worktree::move_to_worktree(req).await?;
+
+        // Emit worktree created event
+        let _ = self
+            .event_sender()
+            .send(super::events::CoreEvent::WorktreeCreated {
+                target: result.path.clone(),
+                worktree: Some(crate::hooks::types::WorktreeInfo {
+                    name: Some(result.branch.clone()),
+                    path: Some(result.path.clone()),
+                    branch: Some(result.branch.clone()),
+                    original_repo: Some(req.repo_path.clone()),
+                }),
+            });
+
+        // Run setup commands in background if configured
+        let setup_commands = self.settings().worktree.setup_commands.clone();
+        if !setup_commands.is_empty() {
+            let timeout = self.settings().worktree.setup_timeout_secs;
+            let wt_path = result.path.clone();
+            let branch = result.branch.clone();
+            let event_tx = self.event_sender();
+            tokio::spawn(async move {
+                match crate::worktree::run_setup_commands(&wt_path, &setup_commands, timeout).await
+                {
+                    Ok(()) => {
+                        tracing::info!(
+                            worktree = wt_path,
+                            branch = branch,
+                            "Worktree setup completed"
+                        );
+                        let _ = event_tx.send(super::events::CoreEvent::WorktreeSetupCompleted {
+                            worktree_path: wt_path,
+                            branch,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            worktree = wt_path,
+                            branch = branch,
+                            error = %e,
+                            "Worktree setup failed"
+                        );
+                        let _ = event_tx.send(super::events::CoreEvent::WorktreeSetupFailed {
+                            worktree_path: wt_path,
+                            branch,
+                            error: e,
+                        });
+                    }
+                }
+            });
+        }
+
+        Ok(result)
+    }
+
     /// Launch an agent in a worktree via tmux
     ///
     /// Creates a new tmux window in the worktree directory and starts the agent.
