@@ -330,15 +330,32 @@ fn merge_hooks(settings: &mut Value, token: &str, port: u16, include_tmux_pane: 
 /// MCP server name in Claude Code settings
 const MCP_SERVER_NAME: &str = "tmai";
 
-/// Add tmai MCP server to Claude Code's mcpServers configuration.
+/// Get the path to ~/.claude.json (Claude Code user-scope config for MCP servers)
+fn claude_json_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("Cannot determine home directory")?;
+    Ok(home.join(".claude.json"))
+}
+
+/// Add tmai MCP server to ~/.claude.json (user-scope MCP config).
 ///
-/// Returns true if the entry was added or updated.
-fn merge_mcp_server(settings: &mut Value) -> bool {
-    if !settings.is_object() {
-        *settings = json!({});
+/// Claude Code reads MCP servers from ~/.claude.json, NOT ~/.claude/settings.json.
+fn add_mcp_server_to_claude_json() -> Result<bool> {
+    let path = claude_json_path()?;
+
+    let mut config: Value = if path.exists() {
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse {}", path.display()))?
+    } else {
+        json!({})
+    };
+
+    if !config.is_object() {
+        config = json!({});
     }
 
-    let mcp_servers = settings
+    let mcp_servers = config
         .as_object_mut()
         .unwrap()
         .entry("mcpServers")
@@ -357,8 +374,7 @@ fn merge_mcp_server(settings: &mut Value) -> bool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         if !is_managed {
-            // User has their own "tmai" MCP server — leave it alone
-            return false;
+            return Ok(false);
         }
     }
 
@@ -377,12 +393,80 @@ fn merge_mcp_server(settings: &mut Value) -> bool {
 
     servers.insert(MCP_SERVER_NAME.to_string(), entry);
 
+    // Write back
+    let formatted = serde_json::to_string_pretty(&config)?;
+    fs::write(&path, formatted).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    Ok(true)
+}
+
+/// Remove tmai MCP server from ~/.claude.json.
+fn remove_mcp_server_from_claude_json() -> Result<bool> {
+    let path = claude_json_path()?;
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let mut config: Value = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
+
+    let Some(mcp_servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) else {
+        return Ok(false);
+    };
+
+    let should_remove = mcp_servers
+        .get(MCP_SERVER_NAME)
+        .and_then(|e| e.get("_tmai_managed"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !should_remove {
+        return Ok(false);
+    }
+
+    mcp_servers.remove(MCP_SERVER_NAME);
+
+    let formatted = serde_json::to_string_pretty(&config)?;
+    fs::write(&path, formatted).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    Ok(true)
+}
+
+/// Helper for tests: merge MCP server into a Value (does not touch filesystem)
+#[cfg(test)]
+fn merge_mcp_server(settings: &mut Value) -> bool {
+    if !settings.is_object() {
+        *settings = json!({});
+    }
+    let mcp_servers = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| json!({}));
+    if !mcp_servers.is_object() {
+        *mcp_servers = json!({});
+    }
+    let servers = mcp_servers.as_object_mut().unwrap();
+    if let Some(existing) = servers.get(MCP_SERVER_NAME) {
+        if !existing
+            .get("_tmai_managed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return false;
+        }
+    }
+    servers.insert(
+        MCP_SERVER_NAME.to_string(),
+        json!({"type": "stdio", "command": "tmai", "args": ["mcp"], "_tmai_managed": true}),
+    );
     true
 }
 
-/// Remove tmai MCP server from Claude Code settings.
-///
-/// Returns true if the entry was removed.
+/// Helper for tests: remove MCP server from a Value (does not touch filesystem)
+#[cfg(test)]
 fn remove_mcp_server(settings: &mut Value) -> bool {
     let Some(mcp_servers) = settings
         .get_mut("mcpServers")
@@ -390,20 +474,16 @@ fn remove_mcp_server(settings: &mut Value) -> bool {
     else {
         return false;
     };
-
-    // Only remove if it's tmai-managed
-    if let Some(entry) = mcp_servers.get(MCP_SERVER_NAME) {
-        if entry
-            .get("_tmai_managed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            mcp_servers.remove(MCP_SERVER_NAME);
-            return true;
-        }
+    if !mcp_servers
+        .get(MCP_SERVER_NAME)
+        .and_then(|e| e.get("_tmai_managed"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return false;
     }
-
-    false
+    mcp_servers.remove(MCP_SERVER_NAME);
+    true
 }
 
 fn remove_tmai_hooks(settings: &mut Value) -> usize {
@@ -444,8 +524,8 @@ pub fn run_uninit() -> Result<()> {
     // Remove tmai hooks
     let removed = remove_tmai_hooks(&mut settings);
 
-    // Remove tmai MCP server
-    let mcp_removed = remove_mcp_server(&mut settings);
+    // Remove tmai MCP server from ~/.claude.json
+    let mcp_removed = remove_mcp_server_from_claude_json().unwrap_or(false);
 
     // Remove statusLine config if it points to our script
     let mut statusline_removed = false;
@@ -545,10 +625,10 @@ pub fn run(force: bool) -> Result<()> {
     merge_statusline_config(&mut settings, &statusline_path);
     println!("Generated statusline script: {}", statusline_path.display());
 
-    // Step 3c: Add MCP server configuration
-    let mcp_added = merge_mcp_server(&mut settings);
+    // Step 3c: Add MCP server to ~/.claude.json (separate from hooks settings)
+    let mcp_added = add_mcp_server_to_claude_json().unwrap_or(false);
 
-    // Step 4: Write back settings
+    // Step 4: Write back settings (hooks + statusline to ~/.claude/settings.json)
     if let Some(parent) = settings_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -562,7 +642,29 @@ pub fn run(force: bool) -> Result<()> {
         settings_path.display()
     );
     if mcp_added {
-        println!("Added tmai MCP server to mcpServers");
+        println!("Added tmai MCP server to ~/.claude.json");
+    }
+
+    // Clean up legacy MCP entry from ~/.claude/settings.json (was incorrectly placed there before)
+    if let Some(obj) = settings.as_object_mut() {
+        if let Some(mcp) = obj.get_mut("mcpServers").and_then(|m| m.as_object_mut()) {
+            if mcp
+                .get("tmai")
+                .and_then(|e| e.get("_tmai_managed"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                mcp.remove("tmai");
+                // Re-write settings to remove the legacy entry
+                let formatted = serde_json::to_string_pretty(&settings)?;
+                fs::write(&settings_path, formatted)
+                    .with_context(|| format!("Failed to write {}", settings_path.display()))?;
+                println!(
+                    "Cleaned up legacy MCP entry from {}",
+                    settings_path.display()
+                );
+            }
+        }
     }
     println!("\nSetup complete! tmai will now receive hook events from Claude Code.");
     println!(
