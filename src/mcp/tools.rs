@@ -101,6 +101,9 @@ pub struct SpawnAgentParams {
 pub struct SpawnWorktreeParams {
     /// Worktree name
     pub name: String,
+    /// Repository path (optional, defaults to cwd or first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
     /// Base branch to fork from (defaults to main)
     #[serde(default)]
     pub base_branch: Option<String>,
@@ -260,7 +263,11 @@ impl TmaiMcpServer {
     /// Create a new git worktree and spawn an AI agent in it. Ideal for isolated feature work.
     #[tool(description = "Create a worktree and spawn an agent in it")]
     fn spawn_worktree(&self, Parameters(p): Parameters<SpawnWorktreeParams>) -> String {
-        let mut body = serde_json::json!({"name": p.name});
+        let cwd = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        let mut body = serde_json::json!({"name": p.name, "cwd": cwd});
         if let Some(base) = &p.base_branch {
             body["base_branch"] = serde_json::json!(base);
         }
