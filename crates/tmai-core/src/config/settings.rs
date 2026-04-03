@@ -74,6 +74,8 @@ pub enum Command {
     /// Bridge Codex CLI hook events to tmai (called by Codex, not by users)
     #[command(name = "codex-hook")]
     CodexHook,
+    /// Run MCP server on stdio (spawned by Claude Code as an MCP server)
+    Mcp,
     /// List all agents visible to tmai
     Agents,
     /// Get terminal output of another agent
@@ -171,6 +173,11 @@ impl Config {
     /// Check if running in codex-hook bridge mode
     pub fn is_codex_hook_mode(&self) -> bool {
         matches!(self.command, Some(Command::CodexHook))
+    }
+
+    /// Check if running in MCP server mode
+    pub fn is_mcp_mode(&self) -> bool {
+        matches!(self.command, Some(Command::Mcp))
     }
 
     /// Get audit subcommand

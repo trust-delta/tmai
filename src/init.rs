@@ -327,6 +327,84 @@ fn merge_hooks(settings: &mut Value, token: &str, port: u16, include_tmux_pane: 
 }
 
 /// Remove tmai hooks from settings
+/// MCP server name in Claude Code settings
+const MCP_SERVER_NAME: &str = "tmai";
+
+/// Add tmai MCP server to Claude Code's mcpServers configuration.
+///
+/// Returns true if the entry was added or updated.
+fn merge_mcp_server(settings: &mut Value) -> bool {
+    if !settings.is_object() {
+        *settings = json!({});
+    }
+
+    let mcp_servers = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| json!({}));
+
+    if !mcp_servers.is_object() {
+        *mcp_servers = json!({});
+    }
+
+    let servers = mcp_servers.as_object_mut().unwrap();
+
+    // If a "tmai" entry exists that is NOT tmai-managed, don't overwrite it
+    if let Some(existing) = servers.get(MCP_SERVER_NAME) {
+        let is_managed = existing
+            .get("_tmai_managed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !is_managed {
+            // User has their own "tmai" MCP server — leave it alone
+            return false;
+        }
+    }
+
+    // Resolve tmai binary path (use current executable path)
+    let tmai_command = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "tmai".to_string());
+
+    let entry = json!({
+        "command": tmai_command,
+        "args": ["mcp"],
+        "_tmai_managed": true
+    });
+
+    servers.insert(MCP_SERVER_NAME.to_string(), entry);
+
+    true
+}
+
+/// Remove tmai MCP server from Claude Code settings.
+///
+/// Returns true if the entry was removed.
+fn remove_mcp_server(settings: &mut Value) -> bool {
+    let Some(mcp_servers) = settings
+        .get_mut("mcpServers")
+        .and_then(|s| s.as_object_mut())
+    else {
+        return false;
+    };
+
+    // Only remove if it's tmai-managed
+    if let Some(entry) = mcp_servers.get(MCP_SERVER_NAME) {
+        if entry
+            .get("_tmai_managed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            mcp_servers.remove(MCP_SERVER_NAME);
+            return true;
+        }
+    }
+
+    false
+}
+
 fn remove_tmai_hooks(settings: &mut Value) -> usize {
     let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
         return 0;
@@ -365,6 +443,9 @@ pub fn run_uninit() -> Result<()> {
     // Remove tmai hooks
     let removed = remove_tmai_hooks(&mut settings);
 
+    // Remove tmai MCP server
+    let mcp_removed = remove_mcp_server(&mut settings);
+
     // Remove statusLine config if it points to our script
     let mut statusline_removed = false;
     if let Some(obj) = settings.as_object_mut() {
@@ -380,8 +461,8 @@ pub fn run_uninit() -> Result<()> {
         }
     }
 
-    if removed > 0 || statusline_removed {
-        // Write back settings if hooks or statusline were removed
+    if removed > 0 || statusline_removed || mcp_removed {
+        // Write back settings if anything was removed
         let formatted = serde_json::to_string_pretty(&settings)?;
         fs::write(&settings_path, formatted)
             .with_context(|| format!("Failed to write {}", settings_path.display()))?;
@@ -393,11 +474,14 @@ pub fn run_uninit() -> Result<()> {
                 settings_path.display()
             );
         }
+        if mcp_removed {
+            println!("Removed tmai MCP server from mcpServers");
+        }
         if statusline_removed {
             println!("Removed statusLine config from {}", settings_path.display());
         }
     } else {
-        println!("No tmai hook entries found in {}", settings_path.display());
+        println!("No tmai entries found in {}", settings_path.display());
     }
 
     // Remove statusline.sh script
@@ -460,6 +544,9 @@ pub fn run(force: bool) -> Result<()> {
     merge_statusline_config(&mut settings, &statusline_path);
     println!("Generated statusline script: {}", statusline_path.display());
 
+    // Step 3c: Add MCP server configuration
+    let mcp_added = merge_mcp_server(&mut settings);
+
     // Step 4: Write back settings
     if let Some(parent) = settings_path.parent() {
         fs::create_dir_all(parent)?;
@@ -473,6 +560,9 @@ pub fn run(force: bool) -> Result<()> {
         count,
         settings_path.display()
     );
+    if mcp_added {
+        println!("Added tmai MCP server to mcpServers");
+    }
     println!("\nSetup complete! tmai will now receive hook events from Claude Code.");
     println!(
         "Make sure to start tmai with web server enabled (port {}).",
@@ -955,5 +1045,97 @@ mod tests {
             stop[1]["hooks"][0]["headers"]["Authorization"],
             "Bearer new-token"
         );
+    }
+
+    #[test]
+    fn test_merge_mcp_server_empty_settings() {
+        let mut settings = json!({});
+        let added = merge_mcp_server(&mut settings);
+        assert!(added);
+
+        let mcp = settings["mcpServers"]["tmai"].as_object().unwrap();
+        assert!(mcp.contains_key("command"));
+        assert_eq!(mcp["args"], json!(["mcp"]));
+        assert_eq!(mcp["_tmai_managed"], json!(true));
+    }
+
+    #[test]
+    fn test_merge_mcp_server_preserves_others() {
+        let mut settings = json!({
+            "mcpServers": {
+                "other-server": {"command": "other", "args": []}
+            }
+        });
+        merge_mcp_server(&mut settings);
+
+        assert!(settings["mcpServers"]["other-server"].is_object());
+        assert!(settings["mcpServers"]["tmai"].is_object());
+    }
+
+    #[test]
+    fn test_remove_mcp_server() {
+        let mut settings = json!({
+            "mcpServers": {
+                "tmai": {"command": "tmai", "args": ["mcp"], "_tmai_managed": true},
+                "other": {"command": "other"}
+            }
+        });
+        let removed = remove_mcp_server(&mut settings);
+        assert!(removed);
+        assert!(!settings["mcpServers"]
+            .as_object()
+            .unwrap()
+            .contains_key("tmai"));
+        assert!(settings["mcpServers"]
+            .as_object()
+            .unwrap()
+            .contains_key("other"));
+    }
+
+    #[test]
+    fn test_remove_mcp_server_not_managed() {
+        let mut settings = json!({
+            "mcpServers": {
+                "tmai": {"command": "custom-tmai", "args": ["custom"]}
+            }
+        });
+        let removed = remove_mcp_server(&mut settings);
+        assert!(!removed);
+        // Should NOT remove user-defined tmai entry
+        assert!(settings["mcpServers"]
+            .as_object()
+            .unwrap()
+            .contains_key("tmai"));
+    }
+
+    #[test]
+    fn test_merge_mcp_server_skips_user_defined() {
+        let mut settings = json!({
+            "mcpServers": {
+                "tmai": {"command": "custom-tmai", "args": ["custom-arg"]}
+            }
+        });
+        let added = merge_mcp_server(&mut settings);
+        assert!(!added);
+        // Should NOT overwrite user-defined entry
+        assert_eq!(settings["mcpServers"]["tmai"]["command"], "custom-tmai");
+        assert_eq!(
+            settings["mcpServers"]["tmai"]["args"],
+            json!(["custom-arg"])
+        );
+    }
+
+    #[test]
+    fn test_merge_mcp_server_updates_managed() {
+        let mut settings = json!({
+            "mcpServers": {
+                "tmai": {"command": "old-path", "args": ["mcp"], "_tmai_managed": true}
+            }
+        });
+        let added = merge_mcp_server(&mut settings);
+        assert!(added);
+        // Should update the managed entry (new binary path)
+        assert_ne!(settings["mcpServers"]["tmai"]["command"], "old-path");
+        assert_eq!(settings["mcpServers"]["tmai"]["_tmai_managed"], true);
     }
 }
