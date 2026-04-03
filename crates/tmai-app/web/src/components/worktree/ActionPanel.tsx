@@ -9,6 +9,7 @@ import {
   type WorktreeSnapshot,
 } from "@/lib/api";
 import { extractIssueNumbers, extractIssueRefs, issueToWorktreeName } from "@/lib/issue-utils";
+import { branchStateBadgeClass, branchStateLabel, deriveBranchState } from "./branch-state";
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
 import type { DetailView } from "./DetailPanel";
 import type { BranchNode } from "./graph/types";
@@ -549,6 +550,17 @@ export function ActionPanel({
             {activeNode.isDirty && (
               <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">modified</span>
             )}
+            {/* Branch lifecycle state badge */}
+            {(() => {
+              const state = deriveBranchState(activeNode, prInfo);
+              const label = branchStateLabel(state);
+              if (!label) return null;
+              return (
+                <span className={`rounded px-1.5 py-0.5 ${branchStateBadgeClass(state)}`}>
+                  {label}
+                </span>
+              );
+            })()}
           </div>
           {(() => {
             const ds = activeNode.diffSummary ?? branchDiffStat;
@@ -805,169 +817,232 @@ export function ActionPanel({
             </button>
           )}
 
-          {/* Non-main branch/worktree actions (unified) */}
-          {!activeNode.isMain && !activeNode.isRemoteOnly && (
-            <>
-              {/* Focus Agent (worktree or any branch with agent) */}
-              {activeNode.agentTarget ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeNode.agentTarget) onFocusAgent(activeNode.agentTarget);
-                  }}
-                  className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25"
-                >
-                  Focus Agent
-                </button>
-              ) : (
-                activeNode.isWorktree &&
-                activeNode.worktree && (
-                  <button
-                    type="button"
-                    onClick={() => confirmIfAgentActive("Launch agent", handleLaunchAgent)}
-                    disabled={actionBusy}
-                    className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
-                  >
-                    {actionBusy ? "Launching..." : "Launch Agent"}
-                  </button>
-                )
-              )}
+          {/* Non-main branch/worktree actions (context-aware by branch state) */}
+          {!activeNode.isMain &&
+            !activeNode.isRemoteOnly &&
+            (() => {
+              const branchState = deriveBranchState(activeNode, prInfo);
+              const isMerged = branchState === "merged";
+              const isStale = branchState === "stale";
+              const hasOpenPr = branchState === "has-open-pr";
 
-              {/* Merge into parent / Create PR */}
-              {activeNode.ahead > 0 && (
+              return (
                 <>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      confirmIfAgentActive("Merge", () =>
-                        delegateToAi(
-                          prInfo
-                            ? `Merge PR #${prInfo.number}. First run 'gh pr view ${prInfo.number} --json baseRefName -q .baseRefName' to verify base is '${baseBranch}'. If base matches, run 'gh pr merge ${prInfo.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`
-                            : `Merge branch '${activeNode.name}' into '${baseBranch}'. First check 'gh pr list --head ${activeNode.name} --base ${baseBranch}'. If PR exists and its base is '${baseBranch}', run 'gh pr merge <number> --squash --delete-branch'. If no PR, run 'git checkout ${baseBranch} && git merge ${activeNode.name}'. Do not merge into any branch other than '${baseBranch}'.`,
-                        ),
-                      )
-                    }
-                    disabled={actionBusy}
-                    className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
-                  >
-                    {prInfo
-                      ? `AI Merge PR #${prInfo.number} into ${baseBranch}`
-                      : `AI Merge into ${baseBranch}`}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      delegateToAi(
-                        `Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`,
-                      )
-                    }
-                    disabled={actionBusy}
-                    className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
-                  >
-                    AI Create PR → {baseBranch}
-                  </button>
-                </>
-              )}
-
-              {/* Behind warning */}
-              {activeNode.behind > 0 && (
-                <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-                  {activeNode.behind} commit
-                  {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch}
-                </div>
-              )}
-
-              {/* Move to Worktree (only for current non-worktree branches) */}
-              {!activeNode.isWorktree && activeNode.isCurrent && (
-                <button
-                  type="button"
-                  onClick={() => confirmIfAgentActive("Move", handleMoveToWorktree)}
-                  disabled={actionBusy}
-                  className="w-full rounded-lg bg-amber-500/15 px-3 py-2 text-left text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/25 disabled:opacity-50"
-                >
-                  {actionBusy ? "Moving..." : "Move to Worktree"}
-                </button>
-              )}
-
-              {/* Create worktree (only for non-worktree branches) */}
-              {!activeNode.isWorktree &&
-                (!showNewWorktree ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowNewWorktree(true)}
-                    className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
-                  >
-                    Create Worktree
-                  </button>
-                ) : (
-                  <CreateWorktreeForm
-                    baseBranch={activeNode.name}
-                    depth={nodeDepth.get(activeNode.name) ?? 0}
-                    depthWarning={branchDepthWarning}
-                    projectPath={projectPath}
-                    onCreated={handleWorktreeCreated}
-                    onCancel={handleWorktreeCancel}
-                  />
-                ))}
-
-              {/* Delete */}
-              <hr className="border-white/5" />
-              {!confirmDelete ? (
-                <button
-                  type="button"
-                  onClick={() => confirmIfAgentActive("Delete", () => setConfirmDelete(true))}
-                  disabled={!activeNode.isWorktree && activeNode.isCurrent}
-                  className="w-full rounded-lg bg-red-500/10 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-30"
-                >
-                  Delete {activeNode.isWorktree ? "Worktree" : "Branch"}
-                </button>
-              ) : (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
-                  <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={forceDelete}
-                      onChange={(e) => setForceDelete(e.target.checked)}
-                      className="accent-red-500"
-                    />
-                    Force delete{!activeNode.isWorktree ? " (unmerged)" : ""}
-                  </label>
-                  {!activeNode.isWorktree && activeNode.remote && (
-                    <label className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
-                      <input
-                        type="checkbox"
-                        checked={deleteRemote}
-                        onChange={(e) => setDeleteRemote(e.target.checked)}
-                        className="accent-red-500"
-                      />
-                      Also delete remote branch
-                    </label>
+                  {/* Merged branch guidance */}
+                  {isMerged && (
+                    <div className="rounded-lg bg-purple-500/10 px-3 py-2 text-xs text-purple-400">
+                      This branch has been merged. You can safely delete it.
+                    </div>
                   )}
-                  <div className="mt-2 flex gap-2">
+
+                  {/* Stale branch guidance */}
+                  {isStale && (
+                    <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                      {activeNode.behind} commit
+                      {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch} — pull or rebase
+                      before resuming work.
+                    </div>
+                  )}
+
+                  {/* View PR link — prominent for open PR state */}
+                  {hasOpenPr && prInfo && (
+                    <a
+                      href={prInfo.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
+                    >
+                      View PR #{prInfo.number} on GitHub
+                    </a>
+                  )}
+
+                  {/* Focus Agent / Launch Agent — hidden for merged, disabled for stale */}
+                  {!isMerged &&
+                    (activeNode.agentTarget ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (activeNode.agentTarget) onFocusAgent(activeNode.agentTarget);
+                        }}
+                        disabled={isStale}
+                        className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-30"
+                        title={isStale ? "Pull from main before focusing agent" : undefined}
+                      >
+                        Focus Agent
+                      </button>
+                    ) : (
+                      activeNode.isWorktree &&
+                      activeNode.worktree && (
+                        <button
+                          type="button"
+                          onClick={() => confirmIfAgentActive("Launch agent", handleLaunchAgent)}
+                          disabled={actionBusy || isStale}
+                          className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-30"
+                          title={isStale ? "Pull from main before launching agent" : undefined}
+                        >
+                          {actionBusy ? "Launching..." : "Launch Agent"}
+                        </button>
+                      )
+                    ))}
+
+                  {/* Merge into parent / Create PR — hidden for merged and open-PR, disabled for stale */}
+                  {!isMerged && !hasOpenPr && activeNode.ahead > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          confirmIfAgentActive("Merge", () =>
+                            delegateToAi(
+                              prInfo
+                                ? `Merge PR #${prInfo.number}. First run 'gh pr view ${prInfo.number} --json baseRefName -q .baseRefName' to verify base is '${baseBranch}'. If base matches, run 'gh pr merge ${prInfo.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`
+                                : `Merge branch '${activeNode.name}' into '${baseBranch}'. First check 'gh pr list --head ${activeNode.name} --base ${baseBranch}'. If PR exists and its base is '${baseBranch}', run 'gh pr merge <number> --squash --delete-branch'. If no PR, run 'git checkout ${baseBranch} && git merge ${activeNode.name}'. Do not merge into any branch other than '${baseBranch}'.`,
+                            ),
+                          )
+                        }
+                        disabled={actionBusy || isStale}
+                        className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-30"
+                        title={isStale ? "Pull from main before merging" : undefined}
+                      >
+                        {prInfo
+                          ? `AI Merge PR #${prInfo.number} into ${baseBranch}`
+                          : `AI Merge into ${baseBranch}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          delegateToAi(
+                            `Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`,
+                          )
+                        }
+                        disabled={actionBusy || isStale}
+                        className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-30"
+                        title={isStale ? "Pull from main before creating PR" : undefined}
+                      >
+                        AI Create PR → {baseBranch}
+                      </button>
+                    </>
+                  )}
+
+                  {/* Behind warning — shown for non-merged branches (prominent in stale already handled above) */}
+                  {!isMerged && !isStale && activeNode.behind > 0 && (
+                    <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                      {activeNode.behind} commit
+                      {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch}
+                    </div>
+                  )}
+
+                  {/* Move to Worktree — hidden for merged branches */}
+                  {!isMerged && !activeNode.isWorktree && activeNode.isCurrent && (
                     <button
                       type="button"
-                      onClick={activeNode.isWorktree ? handleDeleteWorktree : handleDeleteBranch}
+                      onClick={() => confirmIfAgentActive("Move", handleMoveToWorktree)}
                       disabled={actionBusy}
-                      className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                      className="w-full rounded-lg bg-amber-500/15 px-3 py-2 text-left text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/25 disabled:opacity-50"
                     >
-                      {actionBusy ? "..." : "Confirm"}
+                      {actionBusy ? "Moving..." : "Move to Worktree"}
                     </button>
+                  )}
+
+                  {/* Create worktree — hidden for merged branches */}
+                  {!isMerged &&
+                    !activeNode.isWorktree &&
+                    (!showNewWorktree ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewWorktree(true)}
+                        className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+                      >
+                        Create Worktree
+                      </button>
+                    ) : (
+                      <CreateWorktreeForm
+                        baseBranch={activeNode.name}
+                        depth={nodeDepth.get(activeNode.name) ?? 0}
+                        depthWarning={branchDepthWarning}
+                        projectPath={projectPath}
+                        onCreated={handleWorktreeCreated}
+                        onCancel={handleWorktreeCancel}
+                      />
+                    ))}
+
+                  {/* Delete — primary for merged, confirmation-gated for open PR */}
+                  <hr className="border-white/5" />
+                  {!confirmDelete ? (
                     <button
                       type="button"
-                      onClick={() => {
-                        setConfirmDelete(false);
-                        setForceDelete(false);
-                        setDeleteRemote(true);
-                      }}
-                      className="text-xs text-zinc-500 hover:text-zinc-300"
+                      onClick={() =>
+                        hasOpenPr
+                          ? confirmIfAgentActive("Delete (PR is open)", () =>
+                              setConfirmDelete(true),
+                            )
+                          : confirmIfAgentActive("Delete", () => setConfirmDelete(true))
+                      }
+                      disabled={!activeNode.isWorktree && activeNode.isCurrent}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors disabled:opacity-30 ${
+                        isMerged
+                          ? "bg-red-500/20 font-medium text-red-400 hover:bg-red-500/30"
+                          : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                      }`}
                     >
-                      Cancel
+                      {isMerged
+                        ? `Delete ${activeNode.isWorktree ? "Worktree" : "Branch"} (merged)`
+                        : `Delete ${activeNode.isWorktree ? "Worktree" : "Branch"}`}
                     </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+                  ) : (
+                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
+                      {hasOpenPr && (
+                        <div className="mb-2 text-[11px] text-amber-400">
+                          Warning: PR #{prInfo?.number} is still open
+                        </div>
+                      )}
+                      <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                        <input
+                          type="checkbox"
+                          checked={forceDelete}
+                          onChange={(e) => setForceDelete(e.target.checked)}
+                          className="accent-red-500"
+                        />
+                        Force delete{!activeNode.isWorktree ? " (unmerged)" : ""}
+                      </label>
+                      {!activeNode.isWorktree && activeNode.remote && (
+                        <label className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                          <input
+                            type="checkbox"
+                            checked={deleteRemote}
+                            onChange={(e) => setDeleteRemote(e.target.checked)}
+                            className="accent-red-500"
+                          />
+                          Also delete remote branch
+                        </label>
+                      )}
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={
+                            activeNode.isWorktree ? handleDeleteWorktree : handleDeleteBranch
+                          }
+                          disabled={actionBusy}
+                          className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                        >
+                          {actionBusy ? "..." : "Confirm"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDelete(false);
+                            setForceDelete(false);
+                            setDeleteRemote(true);
+                          }}
+                          className="text-xs text-zinc-500 hover:text-zinc-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
           {/* Main branch actions */}
           {activeNode.isMain &&
