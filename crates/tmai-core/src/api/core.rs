@@ -168,8 +168,8 @@ impl TmaiCore {
         self.command_sender.as_ref()
     }
 
-    /// Borrow the audit helper (for action modules)
-    pub(crate) fn audit_helper(&self) -> &AuditHelper {
+    /// Borrow the audit helper (for action modules and hook handlers)
+    pub fn audit_helper(&self) -> &AuditHelper {
         &self.audit_helper
     }
 
