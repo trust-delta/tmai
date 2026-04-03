@@ -369,6 +369,7 @@ fn merge_mcp_server(settings: &mut Value) -> bool {
         .unwrap_or_else(|| "tmai".to_string());
 
     let entry = json!({
+        "type": "stdio",
         "command": tmai_command,
         "args": ["mcp"],
         "_tmai_managed": true
