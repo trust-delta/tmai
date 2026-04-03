@@ -64,15 +64,28 @@ pub struct SelectChoiceParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RepoParams {
+    /// Repository path (optional, defaults to first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct BranchParams {
     /// Branch name
     pub branch: String,
+    /// Repository path (optional, defaults to first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct PrNumberParams {
     /// Pull request number
     pub pr_number: u32,
+    /// Repository path (optional, defaults to first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -279,8 +292,15 @@ impl TmaiMcpServer {
 
     /// List open pull requests for the current repository with CI status and review state.
     #[tool(description = "List open pull requests")]
-    fn list_prs(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/github/prs") {
+    fn list_prs(&self, Parameters(p): Parameters<RepoParams>) -> String {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self
+            .client
+            .get::<serde_json::Value>(&format!("/github/prs?repo={}", encode(&repo)))
+        {
             Ok(prs) => format_json(&prs),
             Err(e) => format!("Error: {e}"),
         }
@@ -288,8 +308,15 @@ impl TmaiMcpServer {
 
     /// List open issues for the current repository.
     #[tool(description = "List open issues")]
-    fn list_issues(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/github/issues") {
+    fn list_issues(&self, Parameters(p): Parameters<RepoParams>) -> String {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self
+            .client
+            .get::<serde_json::Value>(&format!("/github/issues?repo={}", encode(&repo)))
+        {
             Ok(issues) => format_json(&issues),
             Err(e) => format!("Error: {e}"),
         }
@@ -298,10 +325,15 @@ impl TmaiMcpServer {
     /// Get CI check results for a branch.
     #[tool(description = "Get CI check results for a branch")]
     fn get_ci_status(&self, Parameters(p): Parameters<BranchParams>) -> String {
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/github/checks?branch={}", p.branch))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.get::<serde_json::Value>(&format!(
+            "/github/checks?branch={}&repo={}",
+            encode(&p.branch),
+            encode(&repo)
+        )) {
             Ok(checks) => format_json(&checks),
             Err(e) => format!("Error: {e}"),
         }
@@ -310,10 +342,15 @@ impl TmaiMcpServer {
     /// Get comments and reviews on a pull request.
     #[tool(description = "Get PR comments and reviews")]
     fn get_pr_comments(&self, Parameters(p): Parameters<PrNumberParams>) -> String {
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/github/pr/comments?pr={}", p.pr_number))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.get::<serde_json::Value>(&format!(
+            "/github/pr/comments?pr={}&repo={}",
+            p.pr_number,
+            encode(&repo)
+        )) {
             Ok(data) => format_json(&data),
             Err(e) => format!("Error: {e}"),
         }
@@ -322,10 +359,15 @@ impl TmaiMcpServer {
     /// Get the merge status of a pull request (mergeable, CI status, review decision).
     #[tool(description = "Get PR merge status")]
     fn get_pr_merge_status(&self, Parameters(p): Parameters<PrNumberParams>) -> String {
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/github/pr/merge-status?pr={}", p.pr_number))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.get::<serde_json::Value>(&format!(
+            "/github/pr/merge-status?pr={}&repo={}",
+            p.pr_number,
+            encode(&repo)
+        )) {
             Ok(data) => format_json(&data),
             Err(e) => format!("Error: {e}"),
         }
@@ -334,10 +376,15 @@ impl TmaiMcpServer {
     /// Get the CI failure log for debugging a failed check.
     #[tool(description = "Get CI failure log for a branch")]
     fn get_ci_failure_log(&self, Parameters(p): Parameters<BranchParams>) -> String {
-        match self
-            .client
-            .get_text(&format!("/github/ci/failure-log?branch={}", p.branch))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.get_text(&format!(
+            "/github/ci/failure-log?branch={}&repo={}",
+            encode(&p.branch),
+            encode(&repo)
+        )) {
             Ok(log) => log,
             Err(e) => format!("Error: {e}"),
         }
@@ -346,10 +393,14 @@ impl TmaiMcpServer {
     /// Rerun failed CI checks for a branch.
     #[tool(description = "Rerun failed CI checks")]
     fn rerun_ci(&self, Parameters(p): Parameters<BranchParams>) -> String {
-        match self
-            .client
-            .post_ok("/github/ci/rerun", &serde_json::json!({"branch": p.branch}))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.post_ok(
+            "/github/ci/rerun",
+            &serde_json::json!({"branch": p.branch, "repo": repo}),
+        ) {
             Ok(()) => format!("Rerunning failed checks for branch: {}", p.branch),
             Err(e) => format!("Error: {e}"),
         }
@@ -359,8 +410,15 @@ impl TmaiMcpServer {
 
     /// List git branches in the repository.
     #[tool(description = "List git branches")]
-    fn list_branches(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/git/branches") {
+    fn list_branches(&self, Parameters(p): Parameters<RepoParams>) -> String {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self
+            .client
+            .get::<serde_json::Value>(&format!("/git/branches?repo={}", encode(&repo)))
+        {
             Ok(branches) => format_json(&branches),
             Err(e) => format!("Error: {e}"),
         }
@@ -369,14 +427,29 @@ impl TmaiMcpServer {
     /// Get the diff statistics for a branch compared to its base.
     #[tool(description = "Get diff stats for a branch")]
     fn git_diff_stat(&self, Parameters(p): Parameters<BranchParams>) -> String {
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/git/diff-stat?branch={}", p.branch))
-        {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        match self.client.get::<serde_json::Value>(&format!(
+            "/git/diff-stat?branch={}&repo={}",
+            encode(&p.branch),
+            encode(&repo)
+        )) {
             Ok(data) => format_json(&data),
             Err(e) => format!("Error: {e}"),
         }
     }
+}
+
+/// URL-encode a string for query parameters
+fn encode(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('#', "%23")
+        .replace('&', "%26")
+        .replace('=', "%3D")
+        .replace('+', "%2B")
 }
 
 /// Format JSON value as pretty-printed string
