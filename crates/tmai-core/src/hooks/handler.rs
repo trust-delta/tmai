@@ -168,6 +168,18 @@ pub fn handle_hook_event(
             None
         }
 
+        event_names::PERMISSION_DENIED => {
+            // Permission was denied by the user; agent returns to processing
+            update_status(
+                hook_registry,
+                pane_id,
+                payload,
+                HookStatus::Processing,
+                payload.tool_name.clone().filter(|t| !t.is_empty()),
+            );
+            None
+        }
+
         event_names::STOP => {
             // Clear last_tool on stop (session returns to idle)
             let ctx = build_context(payload);
@@ -1007,6 +1019,68 @@ mod tests {
         let state = reg.get("5").unwrap();
         assert_eq!(state.status, HookStatus::AwaitingApproval);
         assert_eq!(state.last_tool.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn test_permission_denied_sets_processing() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+        // First set AwaitingApproval via PermissionRequest
+        handle_hook_event(
+            &make_payload_with_tool("PermissionRequest", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+        {
+            let reg = registry.read();
+            assert_eq!(reg.get("5").unwrap().status, HookStatus::AwaitingApproval);
+        }
+
+        // PermissionDenied should transition back to Processing
+        handle_hook_event(
+            &make_payload_with_tool("PermissionDenied", "Bash"),
+            "5",
+            &registry,
+            &map,
+        );
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert_eq!(state.last_tool.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn test_permission_denied_context_preserved() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        handle_hook_event(&make_payload("SessionStart"), "5", &registry, &map);
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PermissionDenied",
+            "session_id": "test-session",
+            "cwd": "/tmp/test",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "/etc/passwd"},
+            "permission_mode": "default"
+        }))
+        .unwrap();
+
+        handle_hook_event(&payload, "5", &registry, &map);
+
+        let reg = registry.read();
+        let state = reg.get("5").unwrap();
+        assert_eq!(state.status, HookStatus::Processing);
+        assert_eq!(state.last_tool.as_deref(), Some("Edit"));
+        assert_eq!(state.last_context.event_name, "PermissionDenied");
+        assert_eq!(
+            state.last_context.permission_mode.as_deref(),
+            Some("default")
+        );
     }
 
     /// UserPromptSubmit clears last_tool from previous cycle
