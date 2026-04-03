@@ -108,6 +108,21 @@ pub enum AuditEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
     },
+    /// User denied a permission request from Claude Code
+    PermissionDenied {
+        ts: u64,
+        pane_id: String,
+        agent_type: String,
+        /// Tool that was denied (e.g., "Bash", "Edit")
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        /// Tool input parameters at the time of denial
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_input: Option<serde_json::Value>,
+        /// Permission mode (e.g., "default", "plan")
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permission_mode: Option<String>,
+    },
     /// User sent input while agent was detected as Processing
     /// (possible false negative — detection may have missed an approval prompt)
     UserInputDuringProcessing {
@@ -234,6 +249,74 @@ mod tests {
             assert_eq!(capture_status, "processing");
         } else {
             panic!("Expected DetectionValidation");
+        }
+    }
+
+    #[test]
+    fn test_permission_denied_serde_roundtrip() {
+        let event = AuditEvent::PermissionDenied {
+            ts: 1234567890,
+            pane_id: "5".to_string(),
+            agent_type: "ClaudeCode".to_string(),
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({"command": "rm -rf /"})),
+            permission_mode: Some("default".to_string()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"event\":\"PermissionDenied\""));
+
+        let deserialized: AuditEvent = serde_json::from_str(&json).unwrap();
+        if let AuditEvent::PermissionDenied {
+            ts,
+            pane_id,
+            agent_type,
+            tool_name,
+            tool_input,
+            permission_mode,
+        } = deserialized
+        {
+            assert_eq!(ts, 1234567890);
+            assert_eq!(pane_id, "5");
+            assert_eq!(agent_type, "ClaudeCode");
+            assert_eq!(tool_name.as_deref(), Some("Bash"));
+            assert!(tool_input.is_some());
+            assert_eq!(permission_mode.as_deref(), Some("default"));
+        } else {
+            panic!("Expected PermissionDenied");
+        }
+    }
+
+    #[test]
+    fn test_permission_denied_serde_minimal() {
+        let event = AuditEvent::PermissionDenied {
+            ts: 100,
+            pane_id: "1".to_string(),
+            agent_type: "ClaudeCode".to_string(),
+            tool_name: None,
+            tool_input: None,
+            permission_mode: None,
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        // Optional None fields should be omitted
+        assert!(!json.contains("tool_name"));
+        assert!(!json.contains("tool_input"));
+        assert!(!json.contains("permission_mode"));
+
+        let deserialized: AuditEvent = serde_json::from_str(&json).unwrap();
+        if let AuditEvent::PermissionDenied {
+            tool_name,
+            tool_input,
+            permission_mode,
+            ..
+        } = deserialized
+        {
+            assert!(tool_name.is_none());
+            assert!(tool_input.is_none());
+            assert!(permission_mode.is_none());
+        } else {
+            panic!("Expected PermissionDenied");
         }
     }
 }

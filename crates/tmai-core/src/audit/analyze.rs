@@ -310,6 +310,7 @@ fn event_ts(event: &AuditEvent) -> u64 {
         | AuditEvent::AgentDisappeared { ts, .. }
         | AuditEvent::AutoApproveJudgment { ts, .. }
         | AuditEvent::DetectionValidation { ts, .. }
+        | AuditEvent::PermissionDenied { ts, .. }
         | AuditEvent::UserInputDuringProcessing { ts, .. } => *ts,
     }
 }
@@ -323,6 +324,7 @@ fn event_type_name(event: &AuditEvent) -> &'static str {
         AuditEvent::AgentDisappeared { .. } => "AgentDisappeared",
         AuditEvent::AutoApproveJudgment { .. } => "AutoApproveJudgment",
         AuditEvent::DetectionValidation { .. } => "DetectionValidation",
+        AuditEvent::PermissionDenied { .. } => "PermissionDenied",
         AuditEvent::UserInputDuringProcessing { .. } => "UserInputDuringProcessing",
     }
 }
@@ -336,6 +338,7 @@ fn event_agent_type(event: &AuditEvent) -> &str {
         | AuditEvent::AgentDisappeared { agent_type, .. }
         | AuditEvent::AutoApproveJudgment { agent_type, .. }
         | AuditEvent::DetectionValidation { agent_type, .. }
+        | AuditEvent::PermissionDenied { agent_type, .. }
         | AuditEvent::UserInputDuringProcessing { agent_type, .. } => agent_type,
     }
 }
@@ -606,6 +609,28 @@ mod tests {
         assert_eq!(summary.total, 1);
         assert_eq!(summary.ipc_total, 1);
         assert_eq!(summary.ipc_agreement_count, 1);
+    }
+
+    #[test]
+    fn test_compute_stats_includes_permission_denied() {
+        let events = vec![
+            AuditEvent::PermissionDenied {
+                ts: 5000,
+                pane_id: "1".to_string(),
+                agent_type: "ClaudeCode".to_string(),
+                tool_name: Some("Bash".to_string()),
+                tool_input: Some(serde_json::json!({"command": "rm -rf /"})),
+                permission_mode: Some("default".to_string()),
+            },
+            state_changed(1000, "rule_a", DetectionConfidence::High),
+        ];
+
+        let stats = compute_stats(&events);
+        assert_eq!(stats.total_events, 2);
+        assert_eq!(stats.by_event_type["PermissionDenied"], 1);
+        assert_eq!(stats.by_event_type["StateChanged"], 1);
+        assert_eq!(stats.ts_min, Some(1000));
+        assert_eq!(stats.ts_max, Some(5000));
     }
 
     #[test]

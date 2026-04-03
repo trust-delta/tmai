@@ -493,6 +493,30 @@ pub struct IssueInfo {
     pub assignees: Vec<String>,
 }
 
+/// A comment on a GitHub issue
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IssueComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+    pub url: String,
+}
+
+/// Detailed view of a single GitHub issue (includes body and comments)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IssueDetail {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub url: String,
+    pub body: String,
+    pub labels: Vec<IssueLabel>,
+    pub assignees: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub comments: Vec<IssueComment>,
+}
+
 /// Raw assignee from `gh issue list`
 #[derive(Debug, serde::Deserialize)]
 struct GhAssignee {
@@ -574,6 +598,96 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
     }
 
     Some(issues)
+}
+
+/// Fetch detailed information for a single GitHub issue (body, comments, metadata)
+pub async fn get_issue_detail(repo_dir: &str, issue_number: u64) -> Option<IssueDetail> {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "issue",
+                "view",
+                &issue_number.to_string(),
+                "--json",
+                "number,title,state,url,body,labels,assignees,createdAt,updatedAt,comments",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let val: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    parse_issue_detail_json(&val)
+}
+
+/// Parse gh issue view JSON into IssueDetail
+fn parse_issue_detail_json(val: &serde_json::Value) -> Option<IssueDetail> {
+    let number = val["number"].as_u64()?;
+    let title = val["title"].as_str()?.to_string();
+    let state = val["state"].as_str()?.to_string();
+    let url = val["url"].as_str()?.to_string();
+    let body = val["body"].as_str().unwrap_or("").to_string();
+    let created_at = val["createdAt"].as_str().unwrap_or("").to_string();
+    let updated_at = val["updatedAt"].as_str().unwrap_or("").to_string();
+
+    let labels: Vec<IssueLabel> = val["labels"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| {
+                    Some(IssueLabel {
+                        name: l["name"].as_str()?.to_string(),
+                        color: l["color"].as_str()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let assignees: Vec<String> = val["assignees"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a["login"].as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let comments: Vec<IssueComment> = val["comments"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| {
+                    Some(IssueComment {
+                        author: c["author"]["login"].as_str()?.to_string(),
+                        body: c["body"].as_str().unwrap_or("").to_string(),
+                        created_at: c["createdAt"].as_str().unwrap_or("").to_string(),
+                        url: c["url"].as_str().unwrap_or("").to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(IssueDetail {
+        number,
+        title,
+        state,
+        url,
+        body,
+        labels,
+        assignees,
+        created_at,
+        updated_at,
+        comments,
+    })
 }
 
 /// Fetch comments and reviews for a pull request
@@ -934,6 +1048,71 @@ pub fn extract_issue_numbers(branch: &str) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_issue_detail_json() {
+        let json = serde_json::json!({
+            "number": 159,
+            "title": "feat: add issue detail view",
+            "state": "OPEN",
+            "url": "https://github.com/test/repo/issues/159",
+            "body": "## Problem\n\nSome description here.",
+            "labels": [
+                {"name": "enhancement", "color": "a2eeef"}
+            ],
+            "assignees": [
+                {"login": "alice"},
+                {"login": "bob"}
+            ],
+            "createdAt": "2026-03-31T16:53:44Z",
+            "updatedAt": "2026-03-31T16:58:12Z",
+            "comments": [
+                {
+                    "author": {"login": "coderabbitai"},
+                    "body": "Review comment here",
+                    "createdAt": "2026-03-31T16:58:12Z",
+                    "url": "https://github.com/test/repo/issues/159#comment-1"
+                }
+            ]
+        });
+
+        let detail = parse_issue_detail_json(&json).expect("should parse valid JSON");
+        assert_eq!(detail.number, 159);
+        assert_eq!(detail.title, "feat: add issue detail view");
+        assert_eq!(detail.state, "OPEN");
+        assert_eq!(detail.body, "## Problem\n\nSome description here.");
+        assert_eq!(detail.labels.len(), 1);
+        assert_eq!(detail.labels[0].name, "enhancement");
+        assert_eq!(detail.assignees, vec!["alice", "bob"]);
+        assert_eq!(detail.comments.len(), 1);
+        assert_eq!(detail.comments[0].author, "coderabbitai");
+        assert_eq!(detail.created_at, "2026-03-31T16:53:44Z");
+        assert_eq!(detail.updated_at, "2026-03-31T16:58:12Z");
+    }
+
+    #[test]
+    fn test_parse_issue_detail_json_minimal() {
+        let json = serde_json::json!({
+            "number": 1,
+            "title": "minimal",
+            "state": "CLOSED",
+            "url": "https://example.com/issues/1"
+        });
+
+        let detail = parse_issue_detail_json(&json).expect("should parse minimal JSON");
+        assert_eq!(detail.number, 1);
+        assert_eq!(detail.state, "CLOSED");
+        assert!(detail.body.is_empty());
+        assert!(detail.labels.is_empty());
+        assert!(detail.assignees.is_empty());
+        assert!(detail.comments.is_empty());
+    }
+
+    #[test]
+    fn test_parse_issue_detail_json_missing_required() {
+        let json = serde_json::json!({"title": "no number"});
+        assert!(parse_issue_detail_json(&json).is_none());
+    }
 
     #[test]
     fn test_extract_issue_numbers() {

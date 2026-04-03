@@ -120,6 +120,8 @@ export const api = {
   listPrs: (repoPath: string) => httpApi.listPrs(repoPath),
   listChecks: (repoPath: string, branch: string) => httpApi.listChecks(repoPath, branch),
   listIssues: (repoPath: string) => httpApi.listIssues(repoPath),
+  getIssueDetail: (repoPath: string, issueNumber: number) =>
+    httpApi.getIssueDetail(repoPath, issueNumber),
   getPrComments: (repoPath: string, prNumber: number) => httpApi.getPrComments(repoPath, prNumber),
   getPrFiles: (repoPath: string, prNumber: number) => httpApi.getPrFiles(repoPath, prNumber),
   getPrMergeStatus: (repoPath: string, prNumber: number) =>

@@ -2450,6 +2450,33 @@ pub async fn list_issues(
         .map(Json)
 }
 
+/// Query params for issue detail endpoint
+#[derive(Debug, Deserialize)]
+pub struct IssueDetailParams {
+    pub repo: String,
+    pub issue_number: u64,
+}
+
+/// GET /api/github/issue/detail — fetch detailed info for a single issue
+pub async fn get_issue_detail(
+    axum::extract::Query(params): axum::extract::Query<IssueDetailParams>,
+) -> Result<Json<tmai_core::github::IssueDetail>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    tmai_core::github::get_issue_detail(repo_dir, params.issue_number)
+        .await
+        .ok_or_else(|| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch issue detail",
+            )
+        })
+        .map(Json)
+}
+
 /// Query params for PR detail endpoints
 #[derive(Debug, Deserialize)]
 pub struct PrDetailParams {

@@ -27,6 +27,7 @@ pub mod event_names {
     pub const PRE_COMPACT: &str = "PreCompact";
     pub const POST_TOOL_USE_FAILURE: &str = "PostToolUseFailure";
     pub const INSTRUCTIONS_LOADED: &str = "InstructionsLoaded";
+    pub const PERMISSION_DENIED: &str = "PermissionDenied";
 }
 
 /// Worktree information attached to hook events in `--worktree` sessions
@@ -704,6 +705,25 @@ mod tests {
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
         assert_eq!(payload.hook_event_name, "PermissionRequest");
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
+        let tool_input = payload.tool_input.unwrap();
+        assert_eq!(tool_input["command"], "rm -rf /tmp/build");
+    }
+
+    /// PermissionDenied payload with tool_name and tool_input
+    #[test]
+    fn test_hook_event_payload_deserialize_permission_denied() {
+        let json = r#"{
+            "hook_event_name": "PermissionDenied",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf /tmp/build"}
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "PermissionDenied");
+        assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
         let tool_input = payload.tool_input.unwrap();
         assert_eq!(tool_input["command"], "rm -rf /tmp/build");
     }

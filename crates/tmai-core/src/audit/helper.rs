@@ -109,6 +109,34 @@ impl AuditHelper {
         });
     }
 
+    /// Emit a PermissionDenied audit event when the user denies a tool permission
+    pub fn emit_permission_denied(
+        &self,
+        pane_id: &str,
+        agent_type: &str,
+        tool_name: Option<String>,
+        tool_input: Option<serde_json::Value>,
+        permission_mode: Option<String>,
+    ) {
+        let Some(ref tx) = self.tx else {
+            return;
+        };
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let _ = tx.send(AuditEvent::PermissionDenied {
+            ts,
+            pane_id: pane_id.to_string(),
+            agent_type: agent_type.to_string(),
+            tool_name,
+            tool_input,
+            permission_mode,
+        });
+    }
+
     /// Resolve pane_id from target using AppState mapping
     fn resolve_pane_id(&self, target: &str) -> String {
         let state = self.app_state.read();

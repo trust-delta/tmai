@@ -14,6 +14,7 @@ import { DetailPanel, type DetailView } from "./DetailPanel";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
 import type { BranchNode } from "./graph/types";
+import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssuesPanel } from "./IssuesPanel";
 
 interface BranchGraphProps {
@@ -443,6 +444,15 @@ export function BranchGraph({
               selectedIssue={selectedIssue}
               onSelectIssue={setSelectedIssue}
             />
+
+            {/* Issue detail panel (middle, conditional) */}
+            {selectedIssue && (
+              <IssueDetailPanel
+                issueNumber={selectedIssue.number}
+                projectPath={projectPath}
+                onClose={() => setSelectedIssue(null)}
+              />
+            )}
 
             {/* Action panel in issue mode */}
             <ActionPanel

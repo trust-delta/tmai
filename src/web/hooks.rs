@@ -125,6 +125,17 @@ pub async fn hook_event(
         let _ = core.event_sender().send(event);
     }
 
+    // Emit PermissionDenied audit event when a permission is denied
+    if event_name == "PermissionDenied" {
+        core.audit_helper().emit_permission_denied(
+            &pane_id,
+            "ClaudeCode",
+            payload.tool_name.clone(),
+            payload.tool_input.clone(),
+            payload.permission_mode.clone(),
+        );
+    }
+
     // Notify subscribers that agent state may have changed
     core.notify_agents_updated();
 
