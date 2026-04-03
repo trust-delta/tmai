@@ -388,6 +388,7 @@ export interface BranchListResponse {
   remote_tracking: Record<string, RemoteTrackingInfo>;
   remote_only_branches: string[];
   last_fetch: number | null;
+  last_commit_times: Record<string, number>;
 }
 
 export interface GraphCommit {
