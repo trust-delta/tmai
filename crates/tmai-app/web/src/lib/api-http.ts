@@ -451,6 +451,26 @@ export interface IssueInfo {
   assignees: string[];
 }
 
+export interface IssueComment {
+  author: string;
+  body: string;
+  created_at: string;
+  url: string;
+}
+
+export interface IssueDetail {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  body: string;
+  labels: IssueLabel[];
+  assignees: string[];
+  created_at: string;
+  updated_at: string;
+  comments: IssueComment[];
+}
+
 export interface PrComment {
   author: string;
   body: string;
@@ -714,6 +734,10 @@ export const api = {
     ),
   listIssues: (repoPath: string) =>
     apiFetch<IssueInfo[]>(`/github/issues?repo=${encodeURIComponent(repoPath)}`),
+  getIssueDetail: (repoPath: string, issueNumber: number) =>
+    apiFetch<IssueDetail>(
+      `/github/issue/detail?repo=${encodeURIComponent(repoPath)}&issue_number=${issueNumber}`,
+    ),
   getPrComments: (repoPath: string, prNumber: number) =>
     apiFetch<PrComment[]>(
       `/github/pr/comments?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
