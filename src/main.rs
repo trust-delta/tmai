@@ -42,6 +42,11 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Check for MCP server subcommand (stdio transport, no logging to stdout)
+    if cli.is_mcp_mode() {
+        return tmai::mcp::run().await;
+    }
+
     // Check for codex-hook bridge subcommand (no logging, fast path)
     if cli.is_codex_hook_mode() {
         let settings = Settings::load(cli.config.as_ref()).unwrap_or_default();
@@ -185,8 +190,13 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         }
 
         // Start web server in background
-        let web_server = WebServer::new(settings.clone(), core.clone(), token);
+        let web_server = WebServer::new(settings.clone(), core.clone(), token.clone());
         web_server.start();
+
+        // Write API connection info for MCP server
+        if let Err(e) = tmai::mcp::client::write_api_info(settings.web.port, &token) {
+            eprintln!("tmai: warning: failed to write API info: {e}");
+        }
     }
 
     // Start review service if enabled
@@ -339,6 +349,11 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     let web_server = WebServer::new(settings.clone(), core.clone(), token.clone());
     web_server.start();
 
+    // Write API connection info for MCP server and other external tools
+    if let Err(e) = tmai::mcp::client::write_api_info(port, &token) {
+        eprintln!("tmai: warning: failed to write API info: {e}");
+    }
+
     let url = format!("http://localhost:{port}/?token={token}");
     eprintln!("tmai: web server running at {url}");
 
@@ -437,6 +452,9 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             }
         }
     }
+
+    // Cleanup API connection info
+    tmai::mcp::client::remove_api_info();
 
     Ok(())
 }
