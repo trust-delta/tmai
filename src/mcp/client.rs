@@ -104,6 +104,27 @@ impl TmaiHttpClient {
         Ok(())
     }
 
+    /// Resolve the repository path: use the given repo, fall back to cwd, then first registered project.
+    pub fn resolve_repo(&self, repo: &Option<String>) -> Result<String> {
+        if let Some(r) = repo {
+            return Ok(r.clone());
+        }
+        // Fall back to current working directory (where the MCP server was spawned)
+        if let Ok(cwd) = std::env::current_dir() {
+            let cwd_str = cwd.to_string_lossy().to_string();
+            // Verify it's a git repo by checking for .git
+            if cwd.join(".git").exists() {
+                return Ok(cwd_str);
+            }
+        }
+        // Last resort: first registered project
+        let projects: Vec<String> = self.get("/projects")?;
+        projects
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No registered projects. Specify repo explicitly."))
+    }
+
     /// Make a GET request that returns raw text.
     pub fn get_text(&self, path: &str) -> Result<String> {
         let url = format!("{}/api{}", self.base_url, path);
