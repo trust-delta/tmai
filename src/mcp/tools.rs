@@ -113,9 +113,15 @@ pub struct SpawnWorktreeParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct WorktreePathParams {
-    /// Worktree path
-    pub path: String,
+pub struct WorktreeDeleteParams {
+    /// Worktree name (e.g., "174-feat-integrate-permissiondenied-hook")
+    pub worktree_name: String,
+    /// Repository path (optional, defaults to cwd or first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Force delete even if worktree has uncommitted changes
+    #[serde(default)]
+    pub force: bool,
 }
 
 // =========================================================
@@ -283,14 +289,28 @@ impl TmaiMcpServer {
         }
     }
 
-    /// Delete a git worktree.
+    /// Delete a git worktree by name.
     #[tool(description = "Delete a git worktree")]
-    fn delete_worktree(&self, Parameters(p): Parameters<WorktreePathParams>) -> String {
-        match self
-            .client
-            .post_ok("/worktrees/delete", &serde_json::json!({"path": p.path}))
-        {
-            Ok(()) => format!("Deleted worktree: {}", p.path),
+    fn delete_worktree(&self, Parameters(p): Parameters<WorktreeDeleteParams>) -> String {
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        // The API expects repo_path pointing to the .git directory
+        let repo_path = if repo.ends_with(".git") {
+            repo.clone()
+        } else {
+            format!("{}/.git", repo)
+        };
+        match self.client.post_ok(
+            "/worktrees/delete",
+            &serde_json::json!({
+                "repo_path": repo_path,
+                "worktree_name": p.worktree_name,
+                "force": p.force
+            }),
+        ) {
+            Ok(()) => format!("Deleted worktree: {}", p.worktree_name),
             Err(e) => format!("Error: {e}"),
         }
     }
