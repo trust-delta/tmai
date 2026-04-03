@@ -99,6 +99,7 @@ impl WebServer {
             .route("/github/prs", get(api::list_prs))
             .route("/github/checks", get(api::list_checks))
             .route("/github/issues", get(api::list_issues))
+            .route("/github/issue/detail", get(api::get_issue_detail))
             .route("/github/pr/comments", get(api::get_pr_comments))
             .route("/github/pr/files", get(api::get_pr_files))
             .route("/github/pr/merge-status", get(api::get_pr_merge_status))
