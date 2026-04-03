@@ -129,6 +129,19 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::TaskCreated { team_name, task_id, task_subject }) => {
+                            let data = serde_json::json!({
+                                "team_name": team_name,
+                                "task_id": task_id,
+                                "task_subject": task_subject,
+                            });
+                            let event = Event::default()
+                                .event("task_created")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::TaskCompleted { team_name, task_id, task_subject }) => {
                             let data = serde_json::json!({
                                 "team_name": team_name,

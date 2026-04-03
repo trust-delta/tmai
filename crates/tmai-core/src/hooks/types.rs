@@ -19,6 +19,7 @@ pub mod event_names {
     pub const SUBAGENT_START: &str = "SubagentStart";
     pub const SUBAGENT_STOP: &str = "SubagentStop";
     pub const TEAMMATE_IDLE: &str = "TeammateIdle";
+    pub const TASK_CREATED: &str = "TaskCreated";
     pub const TASK_COMPLETED: &str = "TaskCompleted";
     pub const SESSION_END: &str = "SessionEnd";
     pub const CONFIG_CHANGE: &str = "ConfigChange";
@@ -621,6 +622,32 @@ mod tests {
             Some("Add login and signup endpoints")
         );
         assert_eq!(payload.teammate_name.as_deref(), Some("implementer"));
+    }
+
+    /// TaskCreated payload — fires when a background task is created
+    #[test]
+    fn test_hook_event_payload_deserialize_task_created() {
+        let json = r#"{
+            "hook_event_name": "TaskCreated",
+            "session_id": "sess-1",
+            "cwd": "/tmp",
+            "permission_mode": "default",
+            "task_id": "task-001",
+            "task_subject": "Implement feature",
+            "task_description": "Add login functionality",
+            "teammate_name": "implementer",
+            "team_name": "my-project"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "TaskCreated");
+        assert_eq!(payload.task_id.as_deref(), Some("task-001"));
+        assert_eq!(payload.task_subject.as_deref(), Some("Implement feature"));
+        assert_eq!(
+            payload.task_description.as_deref(),
+            Some("Add login functionality")
+        );
+        assert_eq!(payload.teammate_name.as_deref(), Some("implementer"));
+        assert_eq!(payload.team_name.as_deref(), Some("my-project"));
     }
 
     /// SessionStart payload (minimal — only common fields)

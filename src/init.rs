@@ -291,6 +291,7 @@ fn target_events() -> &'static [&'static str] {
         "SubagentStart",
         "SubagentStop",
         "TeammateIdle",
+        "TaskCreated",
         "TaskCompleted",
         "SessionEnd",
         "ConfigChange",
@@ -1083,8 +1084,8 @@ mod tests {
 
     #[test]
     fn test_target_events_count() {
-        // Should have 18 target events
-        assert_eq!(target_events().len(), 18);
+        // Should have 19 target events
+        assert_eq!(target_events().len(), 19);
     }
 
     #[test]
