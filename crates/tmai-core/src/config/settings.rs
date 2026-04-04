@@ -278,6 +278,10 @@ pub struct Settings {
     #[serde(default)]
     pub worktree: WorktreeSettings,
 
+    /// Workflow automation settings
+    #[serde(default)]
+    pub workflow: WorkflowSettings,
+
     /// Agent spawn settings
     #[serde(default)]
     pub spawn: SpawnSettings,
@@ -791,6 +795,15 @@ impl Default for WorktreeSettings {
     }
 }
 
+/// Workflow automation settings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkflowSettings {
+    /// Automatically rebase open worktree branches onto main after a PR merge
+    /// (default: false)
+    #[serde(default)]
+    pub auto_rebase_on_merge: bool,
+}
+
 /// Agent spawn settings (how new agents are started from the Web UI)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnSettings {
@@ -858,6 +871,7 @@ impl Default for Settings {
             review: ReviewSettings::default(),
             codex_ws: CodexWsSettings::default(),
             worktree: WorktreeSettings::default(),
+            workflow: WorkflowSettings::default(),
             spawn: SpawnSettings::default(),
             projects: Vec::new(),
             webui: true,

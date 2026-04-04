@@ -1456,6 +1456,247 @@ pub async fn ahead_behind(repo_dir: &str, branch: &str, base: &str) -> Option<(u
     }
 }
 
+/// Resolve the SHA of origin/<default_branch> HEAD (from local refs, no fetch).
+pub async fn resolve_remote_head(repo_dir: &str) -> Option<String> {
+    let default_branch = detect_default_branch(repo_dir).await?;
+    let remote_ref = format!("origin/{}", default_branch);
+
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_dir, "rev-parse", &remote_ref])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if sha.is_empty() {
+        None
+    } else {
+        Some(sha)
+    }
+}
+
+// ── Auto-rebase service ──────────────────────────────────────────────
+
+/// Result of a single branch rebase attempt
+#[derive(Debug, Clone)]
+pub struct RebaseResult {
+    /// Branch name that was rebased
+    pub branch: String,
+    /// Worktree path
+    pub worktree_path: String,
+    /// Whether the rebase succeeded (clean rebase + force-push)
+    pub success: bool,
+    /// Error message if rebase failed (e.g., conflicts)
+    pub error: Option<String>,
+}
+
+/// Rebase all tmai-managed worktree branches onto the default branch after a merge.
+///
+/// Only rebases branches that:
+/// - Live in a `.claude/worktrees/` directory (tmai-managed)
+/// - Have their PR base branch set to the default branch (e.g., main)
+/// - Are behind the default branch
+///
+/// For each eligible branch: fetch, rebase onto default, force-push if clean.
+/// Returns a list of results for each attempted rebase.
+pub async fn rebase_worktree_branches(
+    repo_dir: &str,
+    open_prs: &std::collections::HashMap<String, crate::github::PrInfo>,
+) -> Vec<RebaseResult> {
+    let default_branch = match detect_default_branch(repo_dir).await {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    // Fetch latest from remote first
+    let _ = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new("git")
+            .args(["-C", repo_dir, "fetch", "origin", &default_branch])
+            .output(),
+    )
+    .await;
+
+    let worktrees = list_worktrees(repo_dir).await;
+    let mut results = Vec::new();
+
+    for wt in &worktrees {
+        // Skip main worktree and bare repos
+        if wt.is_main || wt.is_bare {
+            continue;
+        }
+
+        // Only rebase tmai-managed worktrees (under .claude/worktrees/)
+        if extract_claude_worktree_name(&wt.path).is_none() {
+            continue;
+        }
+
+        let branch = match &wt.branch {
+            Some(b) => b.clone(),
+            None => continue, // detached HEAD
+        };
+
+        // Skip if no open PR for this branch
+        let pr = match open_prs.get(&branch) {
+            Some(pr) => pr,
+            None => continue,
+        };
+
+        // Only rebase branches whose PR targets the default branch
+        if pr.base_branch != default_branch {
+            continue;
+        }
+
+        // Check if branch is behind default
+        let behind =
+            match ahead_behind(&wt.path, &branch, &format!("origin/{}", default_branch)).await {
+                Some((_, behind)) if behind > 0 => behind,
+                _ => continue, // up-to-date or error
+            };
+
+        tracing::info!(
+            branch = %branch,
+            behind = behind,
+            worktree = %wt.path,
+            "auto-rebasing worktree branch onto {}",
+            default_branch
+        );
+
+        let result = rebase_single_branch(&wt.path, &branch, &default_branch).await;
+        results.push(result);
+    }
+
+    results
+}
+
+/// Rebase a single branch in its worktree onto origin/<default_branch>.
+/// If clean, force-push. If conflicts, abort rebase and report.
+async fn rebase_single_branch(
+    worktree_path: &str,
+    branch: &str,
+    default_branch: &str,
+) -> RebaseResult {
+    let target = format!("origin/{}", default_branch);
+
+    // Run git rebase
+    let rebase_output = tokio::time::timeout(
+        Duration::from_secs(60),
+        Command::new("git")
+            .args(["-C", worktree_path, "rebase", &target])
+            .output(),
+    )
+    .await;
+
+    let rebase_ok = match &rebase_output {
+        Ok(Ok(o)) => o.status.success(),
+        _ => false,
+    };
+
+    if !rebase_ok {
+        // Abort the failed rebase
+        let _ = tokio::time::timeout(
+            Duration::from_secs(10),
+            Command::new("git")
+                .args(["-C", worktree_path, "rebase", "--abort"])
+                .output(),
+        )
+        .await;
+
+        let error_msg = match rebase_output {
+            Ok(Ok(o)) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                format!("{}\n{}", stdout.trim(), stderr.trim())
+                    .trim()
+                    .to_string()
+            }
+            Ok(Err(e)) => format!("Failed to run git: {}", e),
+            Err(_) => "Git rebase timed out".to_string(),
+        };
+
+        tracing::warn!(
+            branch = %branch,
+            worktree = %worktree_path,
+            error = %error_msg,
+            "rebase conflict, aborted"
+        );
+
+        return RebaseResult {
+            branch: branch.to_string(),
+            worktree_path: worktree_path.to_string(),
+            success: false,
+            error: Some(error_msg),
+        };
+    }
+
+    // Force-push the rebased branch
+    let push_output = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new("git")
+            .args([
+                "-C",
+                worktree_path,
+                "push",
+                "--force-with-lease",
+                "origin",
+                branch,
+            ])
+            .output(),
+    )
+    .await;
+
+    let push_ok = match &push_output {
+        Ok(Ok(o)) => o.status.success(),
+        _ => false,
+    };
+
+    if !push_ok {
+        let error_msg = match push_output {
+            Ok(Ok(o)) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                format!("force-push failed: {}", stderr.trim())
+            }
+            Ok(Err(e)) => format!("Failed to run git push: {}", e),
+            Err(_) => "Git push timed out".to_string(),
+        };
+
+        tracing::warn!(
+            branch = %branch,
+            worktree = %worktree_path,
+            error = %error_msg,
+            "rebase succeeded but push failed"
+        );
+
+        return RebaseResult {
+            branch: branch.to_string(),
+            worktree_path: worktree_path.to_string(),
+            success: false,
+            error: Some(error_msg),
+        };
+    }
+
+    tracing::info!(
+        branch = %branch,
+        worktree = %worktree_path,
+        "rebase + force-push succeeded"
+    );
+
+    RebaseResult {
+        branch: branch.to_string(),
+        worktree_path: worktree_path.to_string(),
+        success: true,
+        error: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1833,5 +2074,50 @@ branch refs/heads/main
         )
         .await;
         assert_eq!(parent, "main");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_remote_head_invalid_dir() {
+        let result = resolve_remote_head("/nonexistent/path").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_rebase_worktree_branches_no_worktrees() {
+        // With an invalid repo dir, rebase should return empty
+        let prs = std::collections::HashMap::new();
+        let results = rebase_worktree_branches("/nonexistent/path", &prs).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_rebase_worktree_branches_empty_prs() {
+        // Even with a valid repo, no open PRs means nothing to rebase
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let prs = std::collections::HashMap::new();
+        let results = rebase_worktree_branches(repo, &prs).await;
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_rebase_result_fields() {
+        let result = RebaseResult {
+            branch: "feat-x".to_string(),
+            worktree_path: "/tmp/wt".to_string(),
+            success: true,
+            error: None,
+        };
+        assert!(result.success);
+        assert!(result.error.is_none());
+        assert_eq!(result.branch, "feat-x");
+
+        let fail_result = RebaseResult {
+            branch: "feat-y".to_string(),
+            worktree_path: "/tmp/wt2".to_string(),
+            success: false,
+            error: Some("CONFLICT in file.rs".to_string()),
+        };
+        assert!(!fail_result.success);
+        assert!(fail_result.error.unwrap().contains("CONFLICT"));
     }
 }
