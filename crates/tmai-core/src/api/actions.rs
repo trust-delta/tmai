@@ -1261,6 +1261,7 @@ mod tests {
                 }),
                 is_dirty: Some(false),
                 diff_summary: None,
+                agent_pending: false,
             }],
         }];
     }

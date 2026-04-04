@@ -2172,8 +2172,13 @@ pub async fn git_merge(
 /// Request body for worktree spawn
 #[derive(Debug, Deserialize)]
 pub struct WorktreeSpawnRequest {
-    /// Worktree name (also used as branch name)
-    pub name: String,
+    /// Worktree name (optional if issue_number is provided — auto-generated from issue title)
+    #[serde(default)]
+    pub name: Option<String>,
+    /// GitHub issue number. When set, fetches issue title/body to auto-generate the
+    /// worktree name (if not given) and compose a resolve prompt with issue context.
+    #[serde(default)]
+    pub issue_number: Option<u64>,
     /// Repository path
     pub cwd: String,
     /// Base branch to create worktree from (defaults to current HEAD)
@@ -2201,19 +2206,21 @@ pub async fn spawn_worktree(
         ));
     }
 
+    // Resolve worktree name and initial prompt from issue context if provided
+    let (resolved_name, resolved_prompt) = resolve_issue_context(&req).await?;
+
     // Validate worktree name
-    if !tmai_core::git::is_valid_worktree_name(&req.name) {
+    if !tmai_core::git::is_valid_worktree_name(&resolved_name) {
         return Err(json_error(
             StatusCode::BAD_REQUEST,
-            &format!("Invalid worktree name: {}", req.name),
+            &format!("Invalid worktree name: {}", resolved_name),
         ));
     }
 
     // Create git worktree using tmai-core
-    // Directory and branch both use the user-provided name (consistent with PATH 1)
     let wt_req = tmai_core::worktree::WorktreeCreateRequest {
         repo_path: req.cwd.clone(),
-        branch_name: req.name.clone(),
+        branch_name: resolved_name.clone(),
         dir_name: None,
         base_branch: req.base_branch.clone(),
     };
@@ -2224,15 +2231,16 @@ pub async fn spawn_worktree(
 
     tracing::info!(
         "API: created worktree '{}' at {} (branch: {})",
-        req.name,
+        resolved_name,
         wt_result.path,
         wt_result.branch
     );
 
-    // Build args — pass initial prompt as first positional argument if provided
-    let args = match req.initial_prompt {
-        Some(ref prompt) if !prompt.is_empty() => vec![prompt.clone()],
-        _ => vec![],
+    // Build args — pass resolved prompt as first positional argument if provided
+    let args = if !resolved_prompt.is_empty() {
+        vec![resolved_prompt]
+    } else {
+        vec![]
     };
 
     // Spawn claude in the worktree directory
@@ -2275,6 +2283,77 @@ pub async fn spawn_worktree(
     }
 
     result
+}
+
+/// Resolve worktree name and initial prompt from issue context.
+///
+/// When `issue_number` is provided, fetches the issue via `gh` and:
+/// - auto-generates a worktree name from `{issue_number}-{slugified-title}` if `name` is absent
+/// - composes an initial prompt with the issue context (title + body) if `initial_prompt` is absent
+async fn resolve_issue_context(
+    req: &WorktreeSpawnRequest,
+) -> Result<(String, String), (StatusCode, Json<serde_json::Value>)> {
+    match req.issue_number {
+        Some(issue_number) => {
+            let issue = tmai_core::github::get_issue_detail(&req.cwd, issue_number)
+                .await
+                .ok_or_else(|| {
+                    json_error(
+                        StatusCode::BAD_REQUEST,
+                        &format!("Failed to fetch GitHub issue #{issue_number}. Is `gh` authenticated and is this a GitHub repository?"),
+                    )
+                })?;
+
+            // Auto-generate name: {issue_number}-{slugified-title}
+            let name = match &req.name {
+                Some(n) if !n.is_empty() => n.clone(),
+                _ => {
+                    // Max slug portion: 64 (worktree name limit) - issue_number digits - 1 (hyphen)
+                    let prefix = format!("{}-", issue_number);
+                    let max_slug = 64_usize.saturating_sub(prefix.len());
+                    let slug =
+                        tmai_core::utils::namegen::slugify_for_branch(&issue.title, max_slug);
+                    if slug.is_empty() {
+                        return Err(json_error(
+                            StatusCode::BAD_REQUEST,
+                            &format!("Could not generate valid worktree name from issue #{issue_number} title"),
+                        ));
+                    }
+                    format!("{prefix}{slug}")
+                }
+            };
+
+            // Compose initial prompt with issue context if not explicitly provided
+            let prompt = match &req.initial_prompt {
+                Some(p) if !p.is_empty() => p.clone(),
+                _ => {
+                    let body_section = if issue.body.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n\n## Issue Body\n{}", issue.body)
+                    };
+                    format!(
+                        "Resolve GitHub issue #{number}: {title}{body}\n\nCreate PR: \"{title} (#{number})\"",
+                        number = issue_number,
+                        title = issue.title,
+                        body = body_section,
+                    )
+                }
+            };
+
+            Ok((name, prompt))
+        }
+        None => {
+            let name = req.name.clone().ok_or_else(|| {
+                json_error(
+                    StatusCode::BAD_REQUEST,
+                    "Either 'name' or 'issue_number' must be provided",
+                )
+            })?;
+            let prompt = req.initial_prompt.clone().unwrap_or_default();
+            Ok((name, prompt))
+        }
+    }
 }
 
 // =========================================================
