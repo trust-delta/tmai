@@ -28,6 +28,7 @@ Desktop WebUI features (default mode).
 Features available in both WebUI and TUI modes.
 
 - [Claude Code Hooks](./features/hooks.md) - Event-driven state detection via HTTP hooks (recommended)
+- [MCP Server](./features/mcp-server.md) - Expose tmai as an MCP server for agent orchestration
 - [PTY Wrapping](./features/pty-wrapping.md) - High-precision state detection via PTY proxy
 - [Auto-Approve](./features/auto-approve.md) - AI-powered automatic approval
 - [Agent Teams](./features/agent-teams.md) - Claude Code team monitoring and visualization
