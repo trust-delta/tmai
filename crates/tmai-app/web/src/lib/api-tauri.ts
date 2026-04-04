@@ -183,6 +183,13 @@ export const api = {
   updatePreviewSettings: (params: { show_cursor: boolean }) =>
     httpApi.updatePreviewSettings(params),
 
+  // Notification settings
+  getNotificationSettings: () => httpApi.getNotificationSettings(),
+  updateNotificationSettings: (params: {
+    notify_on_idle?: boolean;
+    notify_idle_threshold_secs?: number;
+  }) => httpApi.updateNotificationSettings(params),
+
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
   getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),
