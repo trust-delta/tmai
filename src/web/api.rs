@@ -1930,6 +1930,10 @@ pub struct DeleteBranchRequest {
 }
 
 /// Delete a local git branch
+///
+/// When force is not requested, automatically uses force-delete (`-D`) for
+/// branches whose PR has been squash-merged — `git branch -d` would reject
+/// them because the original commits don't exist on the target branch.
 pub async fn delete_branch(
     Json(req): Json<DeleteBranchRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -1942,7 +1946,15 @@ pub async fn delete_branch(
         return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
     }
 
-    tmai_core::git::delete_branch(repo_dir, &req.branch, req.force, req.delete_remote)
+    // Auto-force for squash-merged branches: git branch -d fails because the
+    // original commits don't appear in the target branch after squash merge.
+    let force = if req.force {
+        true
+    } else {
+        tmai_core::github::has_merged_pr(repo_dir, &req.branch).await
+    };
+
+    tmai_core::git::delete_branch(repo_dir, &req.branch, force, req.delete_remote)
         .await
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
