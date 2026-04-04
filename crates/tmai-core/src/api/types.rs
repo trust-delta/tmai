@@ -64,8 +64,10 @@ pub struct SendPromptResult {
 /// never need to hold a read lock beyond the query call.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSnapshot {
-    /// Unique identifier (session:window.pane)
+    /// Stable identifier that persists across tmux pane recycling
     pub id: String,
+    /// tmux pane target (e.g., "main:0.1") — may be recycled by tmux
+    pub pane_id: String,
     /// tmux target identifier
     pub target: String,
     /// Type of agent
@@ -230,7 +232,8 @@ impl AgentSnapshot {
     /// Convert a `MonitoredAgent` reference into an owned snapshot
     pub fn from_agent(agent: &crate::agents::MonitoredAgent) -> Self {
         Self {
-            id: agent.id.clone(),
+            id: agent.stable_id.clone(),
+            pane_id: agent.id.clone(),
             target: agent.target.clone(),
             agent_type: agent.agent_type.clone(),
             status: agent.status.clone(),
@@ -476,7 +479,8 @@ mod tests {
 
         let snapshot = AgentSnapshot::from_agent(&agent);
 
-        assert_eq!(snapshot.id, "main:0.0");
+        assert_eq!(snapshot.id.len(), 8); // stable UUID short hash
+        assert_eq!(snapshot.pane_id, "main:0.0");
         assert_eq!(snapshot.target, "main:0.0");
         assert!(matches!(snapshot.agent_type, AgentType::ClaudeCode));
         assert!(matches!(snapshot.status, AgentStatus::Idle));

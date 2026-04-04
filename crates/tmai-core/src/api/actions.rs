@@ -51,65 +51,49 @@ impl TmaiCore {
     /// Approve an agent action (send approval keys based on agent type).
     ///
     /// Returns `Ok(())` if approval was sent or the agent was already not awaiting.
-    pub fn approve(&self, target: &str) -> Result<(), ApiError> {
+    pub fn approve(&self, id: &str) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         let (is_awaiting, agent_type, is_virtual) = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) => (
-                    matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
-                    a.agent_type.clone(),
-                    a.is_virtual,
-                ),
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    })
-                }
-            }
+            let a = state.agents.get(&target).unwrap();
+            (
+                matches!(&a.status, AgentStatus::AwaitingApproval { .. }),
+                a.agent_type.clone(),
+                a.is_virtual,
+            )
         };
 
         if is_virtual {
-            return Err(ApiError::VirtualAgent {
-                target: target.to_string(),
-            });
+            return Err(ApiError::VirtualAgent { target });
         }
 
         if !is_awaiting {
-            // Already handled — idempotent success
             return Ok(());
         }
 
         let cmd = self.require_command_sender()?;
         let detector = get_detector(&agent_type);
-        cmd.send_keys(target, detector.approval_keys())?;
+        cmd.send_keys(&target, detector.approval_keys())?;
         Ok(())
     }
 
     /// Select a choice for a UserQuestion prompt.
     ///
     /// `choice` is 1-indexed (1 = first option, N+1 = "Other").
-    pub fn select_choice(&self, target: &str, choice: usize) -> Result<(), ApiError> {
+    pub fn select_choice(&self, id: &str, choice: usize) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         // Virtual agents cannot receive key input
         {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) if a.is_virtual => {
-                    return Err(ApiError::VirtualAgent {
-                        target: target.to_string(),
-                    });
-                }
-                Some(_) => {}
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    });
-                }
+            let a = state.agents.get(&target).unwrap();
+            if a.is_virtual {
+                return Err(ApiError::VirtualAgent { target });
             }
         }
 
         let question_info = {
             let state = self.state().read();
-            state.agents.get(target).and_then(|agent| {
+            state.agents.get(&target).and_then(|agent| {
                 if let AgentStatus::AwaitingApproval {
                     approval_type:
                         ApprovalType::UserQuestion {
@@ -136,12 +120,12 @@ impl TmaiCore {
                 let steps = choice as i32 - cursor as i32;
                 let key = if steps > 0 { "Down" } else { "Up" };
                 for _ in 0..steps.unsigned_abs() {
-                    cmd.send_keys(target, key)?;
+                    cmd.send_keys(&target, key)?;
                 }
 
                 // Confirm: single-select always, multi-select only for checkbox toggle
                 if !multi_select || has_checkbox_format(&choices) {
-                    cmd.send_keys(target, "Enter")?;
+                    cmd.send_keys(&target, "Enter")?;
                 }
 
                 Ok(())
@@ -157,32 +141,20 @@ impl TmaiCore {
     /// Submit multi-select choices (checkbox or legacy format).
     ///
     /// `selected_choices` is a list of 1-indexed choice numbers.
-    pub fn submit_selection(
-        &self,
-        target: &str,
-        selected_choices: &[usize],
-    ) -> Result<(), ApiError> {
+    pub fn submit_selection(&self, id: &str, selected_choices: &[usize]) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         // Virtual agents cannot receive key input
         {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) if a.is_virtual => {
-                    return Err(ApiError::VirtualAgent {
-                        target: target.to_string(),
-                    });
-                }
-                Some(_) => {}
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    });
-                }
+            let a = state.agents.get(&target).unwrap();
+            if a.is_virtual {
+                return Err(ApiError::VirtualAgent { target });
             }
         }
 
         let multi_info = {
             let state = self.state().read();
-            state.agents.get(target).and_then(|agent| {
+            state.agents.get(&target).and_then(|agent| {
                 if let AgentStatus::AwaitingApproval {
                     approval_type:
                         ApprovalType::UserQuestion {
@@ -224,22 +196,22 @@ impl TmaiCore {
                         let steps = choice as i32 - current_pos as i32;
                         let key = if steps > 0 { "Down" } else { "Up" };
                         for _ in 0..steps.unsigned_abs() {
-                            cmd.send_keys(target, key)?;
+                            cmd.send_keys(&target, key)?;
                         }
                         // Enter to toggle checkbox
-                        cmd.send_keys(target, "Enter")?;
+                        cmd.send_keys(&target, "Enter")?;
                         current_pos = choice;
                     }
                     // Right + Enter to submit
-                    cmd.send_keys(target, "Right")?;
-                    cmd.send_keys(target, "Enter")?;
+                    cmd.send_keys(&target, "Right")?;
+                    cmd.send_keys(&target, "Enter")?;
                 } else {
                     // Legacy format: navigate past all choices then Enter
                     let downs_needed = choices.len().saturating_sub(cursor_pos.saturating_sub(1));
                     for _ in 0..downs_needed {
-                        cmd.send_keys(target, "Down")?;
+                        cmd.send_keys(&target, "Down")?;
                     }
-                    cmd.send_keys(target, "Enter")?;
+                    cmd.send_keys(&target, "Enter")?;
                 }
                 Ok(())
             }
@@ -251,7 +223,7 @@ impl TmaiCore {
     /// Send text input to an agent followed by Enter.
     ///
     /// Includes a 50ms delay between text and Enter to prevent paste-burst issues.
-    pub async fn send_text(&self, target: &str, text: &str) -> Result<(), ApiError> {
+    pub async fn send_text(&self, id: &str, text: &str) -> Result<(), ApiError> {
         if text.chars().count() > MAX_TEXT_LENGTH {
             return Err(ApiError::InvalidInput {
                 message: format!(
@@ -261,31 +233,23 @@ impl TmaiCore {
             });
         }
 
+        let target = self.resolve_agent_key(id)?;
         let is_virtual = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) => a.is_virtual,
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    })
-                }
-            }
+            state.agents.get(&target).unwrap().is_virtual
         };
 
         if is_virtual {
-            return Err(ApiError::VirtualAgent {
-                target: target.to_string(),
-            });
+            return Err(ApiError::VirtualAgent { target });
         }
 
         let cmd = self.require_command_sender()?;
-        cmd.send_keys_literal(target, text)?;
+        cmd.send_keys_literal(&target, text)?;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        cmd.send_keys(target, "Enter")?;
+        cmd.send_keys(&target, "Enter")?;
 
         self.audit_helper()
-            .maybe_emit_input(target, "input_text", "api_input", None);
+            .maybe_emit_input(&target, "input_text", "api_input", None);
 
         Ok(())
     }
@@ -298,11 +262,7 @@ impl TmaiCore {
     /// - **Other** (AwaitingApproval, Error, Unknown): queues like Processing.
     ///
     /// Returns a JSON-serializable status indicating the action taken.
-    pub async fn send_prompt(
-        &self,
-        target: &str,
-        prompt: &str,
-    ) -> Result<SendPromptResult, ApiError> {
+    pub async fn send_prompt(&self, id: &str, prompt: &str) -> Result<SendPromptResult, ApiError> {
         if prompt.chars().count() > MAX_TEXT_LENGTH {
             return Err(ApiError::InvalidInput {
                 message: format!(
@@ -312,28 +272,20 @@ impl TmaiCore {
             });
         }
 
+        let target = self.resolve_agent_key(id)?;
         let (status, is_virtual) = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) => (a.status.clone(), a.is_virtual),
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    })
-                }
-            }
+            let a = state.agents.get(&target).unwrap();
+            (a.status.clone(), a.is_virtual)
         };
 
         if is_virtual {
-            return Err(ApiError::VirtualAgent {
-                target: target.to_string(),
-            });
+            return Err(ApiError::VirtualAgent { target });
         }
 
         match status {
             AgentStatus::Idle | AgentStatus::Offline => {
-                // Send immediately — Idle agents accept input; Offline panes may restart
-                self.send_text(target, prompt).await?;
+                self.send_text(&target, prompt).await?;
                 let action = if status.is_idle() {
                     "sent"
                 } else {
@@ -345,7 +297,6 @@ impl TmaiCore {
                 })
             }
             _ => {
-                // Processing, AwaitingApproval, Error, Unknown — queue the prompt
                 let queue_size = {
                     let mut state = self.state().write();
                     let queue = state.prompt_queue.entry(target.to_string()).or_default();
@@ -369,49 +320,40 @@ impl TmaiCore {
     }
 
     /// Send a special key to an agent (whitelist-validated).
-    pub fn send_key(&self, target: &str, key: &str) -> Result<(), ApiError> {
+    pub fn send_key(&self, id: &str, key: &str) -> Result<(), ApiError> {
         if !ALLOWED_KEYS.contains(&key) {
             return Err(ApiError::InvalidInput {
                 message: "Invalid key name".to_string(),
             });
         }
 
+        let target = self.resolve_agent_key(id)?;
         let (is_virtual, has_pty) = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) => (a.is_virtual, a.pty_session_id.is_some()),
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    })
-                }
-            }
+            let a = state.agents.get(&target).unwrap();
+            (a.is_virtual, a.pty_session_id.is_some())
         };
 
         if is_virtual {
-            return Err(ApiError::VirtualAgent {
-                target: target.to_string(),
-            });
+            return Err(ApiError::VirtualAgent { target });
         }
 
-        // PTY-spawned agents: write directly to PTY session
         if has_pty {
-            if let Some(session) = self.pty_registry().get(target) {
+            if let Some(session) = self.pty_registry().get(&target) {
                 let data = crate::utils::keys::tmux_key_to_bytes(key);
                 session.write_input(&data).map_err(ApiError::CommandError)?;
             } else {
-                // PTY session gone — agent may have exited
                 return Err(ApiError::CommandError(anyhow::anyhow!(
                     "PTY session not found for agent"
                 )));
             }
         } else {
             let cmd = self.require_command_sender()?;
-            cmd.send_keys(target, key)?;
+            cmd.send_keys(&target, key)?;
         }
 
         self.audit_helper()
-            .maybe_emit_input(target, "special_key", "api_input", None);
+            .maybe_emit_input(&target, "special_key", "api_input", None);
 
         Ok(())
     }
@@ -423,43 +365,28 @@ impl TmaiCore {
     /// - `Some(false)` → force disabled for this agent
     pub fn set_auto_approve_override(
         &self,
-        target: &str,
+        id: &str,
         enabled: Option<bool>,
     ) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         let mut state = self.state().write();
-        match state.agents.get_mut(target) {
-            Some(agent) => {
-                agent.auto_approve_override = enabled;
-                Ok(())
-            }
-            None => Err(ApiError::AgentNotFound {
-                target: target.to_string(),
-            }),
-        }
+        state.agents.get_mut(&target).unwrap().auto_approve_override = enabled;
+        Ok(())
     }
 
     /// Focus on a specific pane in tmux
-    pub fn focus_pane(&self, target: &str) -> Result<(), ApiError> {
-        // Validate agent exists and is not virtual
+    pub fn focus_pane(&self, id: &str) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) if a.is_virtual => {
-                    return Err(ApiError::VirtualAgent {
-                        target: target.to_string(),
-                    });
-                }
-                Some(_) => {}
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    });
-                }
+            let a = state.agents.get(&target).unwrap();
+            if a.is_virtual {
+                return Err(ApiError::VirtualAgent { target });
             }
         }
 
         let cmd = self.require_command_sender()?;
-        cmd.runtime().focus_pane(target)?;
+        cmd.runtime().focus_pane(&target)?;
         Ok(())
     }
 
@@ -467,17 +394,12 @@ impl TmaiCore {
     ///
     /// Directly launches a review session in a new tmux window (blocking I/O
     /// is offloaded to `spawn_blocking`). Works regardless of `review.enabled`.
-    pub fn request_review(&self, target: &str) -> Result<(), ApiError> {
+    pub fn request_review(&self, id: &str) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         let (cwd, branch) = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) => (a.cwd.clone(), a.git_branch.clone()),
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    })
-                }
-            }
+            let a = state.agents.get(&target).unwrap();
+            (a.cwd.clone(), a.git_branch.clone())
         };
 
         let request = crate::review::ReviewRequest {
@@ -887,41 +809,33 @@ impl TmaiCore {
     }
 
     /// Kill a specific agent (PTY session or tmux pane)
-    pub fn kill_pane(&self, target: &str) -> Result<(), ApiError> {
-        // Validate agent exists and is not virtual
+    pub fn kill_pane(&self, id: &str) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
         let has_pty = {
             let state = self.state().read();
-            match state.agents.get(target) {
-                Some(a) if a.is_virtual => {
-                    return Err(ApiError::VirtualAgent {
-                        target: target.to_string(),
-                    });
-                }
-                Some(a) => a.pty_session_id.is_some(),
-                None => {
-                    return Err(ApiError::AgentNotFound {
-                        target: target.to_string(),
-                    });
-                }
+            let a = state.agents.get(&target).unwrap();
+            if a.is_virtual {
+                return Err(ApiError::VirtualAgent {
+                    target: target.clone(),
+                });
             }
+            a.pty_session_id.is_some()
         };
 
         if has_pty {
-            // PTY-spawned agent: kill the child process
-            if let Some(session) = self.pty_registry().get(target) {
+            if let Some(session) = self.pty_registry().get(&target) {
                 session.kill();
             }
-            // Remove from agent list
             {
                 let mut state = self.state().write();
-                state.agents.remove(target);
-                state.agent_order.retain(|id| id != target);
+                state.agents.remove(&target);
+                state.agent_order.retain(|k| k != &target);
             }
             self.notify_agents_updated();
             Ok(())
         } else {
             let cmd = self.require_command_sender()?;
-            cmd.runtime().kill_pane(target)?;
+            cmd.runtime().kill_pane(&target)?;
             Ok(())
         }
     }

@@ -522,6 +522,8 @@ pub struct TeamTaskSummaryItem {
 pub struct MonitoredAgent {
     /// Unique identifier (session:window.pane)
     pub id: String,
+    /// Stable identifier that persists across tmux pane recycling (UUID short hash)
+    pub stable_id: String,
     /// tmux target identifier
     pub target: String,
     /// Type of agent
@@ -632,8 +634,10 @@ impl MonitoredAgent {
         window_index: u32,
         pane_index: u32,
     ) -> Self {
+        let stable_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         Self {
             id: target.clone(),
+            stable_id,
             target,
             agent_type,
             status: AgentStatus::Unknown,

@@ -413,15 +413,13 @@ pub async fn passthrough_input(
     Path(id): Path<String>,
     Json(req): Json<PassthroughRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Resolve the tmux target — agent id may be "hook:0.x" (not a valid tmux target)
-    // so we need to find the actual tmux pane target from the agent's target field
+    // Resolve the user-supplied ID to internal key, then find tmux target
     let tmux_target = {
         #[allow(deprecated)]
         let state = core.raw_state().read();
-        state
-            .agents
-            .get(&id)
-            .map(|a| a.target.clone())
+        tmai_core::api::TmaiCore::resolve_agent_key_in_state(&state, &id)
+            .ok()
+            .and_then(|key| state.agents.get(&key).map(|a| a.target.clone()))
             .filter(|t| !t.starts_with("hook:") && !t.starts_with("discovered:"))
     };
 
@@ -468,10 +466,16 @@ pub async fn get_preview(
 ) -> Result<Json<PreviewResponse>, StatusCode> {
     let show_cursor = core.settings().web.show_cursor;
 
+    // Resolve the user-supplied ID to internal key
+    let resolved_key = {
+        let state = core.raw_state().read();
+        tmai_core::api::TmaiCore::resolve_agent_key_in_state(&state, &id).ok()
+    };
+
     // Look up agent target for capture-pane (id may differ from tmux target)
     let (agent_target, agent_content, agent_cursor) = {
         let state = core.raw_state().read();
-        match state.agents.get(&id) {
+        match resolved_key.as_deref().and_then(|k| state.agents.get(k)) {
             Some(a) => (
                 Some(a.target.clone()),
                 Some(a.last_content.clone()),
@@ -1630,6 +1634,7 @@ async fn spawn_in_pty(
                 agent.status = tmai_core::agents::AgentStatus::Processing {
                     activity: "Starting...".to_string(),
                 };
+                agent.stable_id = session_id.clone();
                 agent.pty_session_id = Some(session_id.clone());
                 if let Some(ref info) = git_info {
                     agent.git_branch = Some(info.branch.clone());
@@ -2397,9 +2402,11 @@ pub async fn get_agent_output(
     State(core): State<Arc<TmaiCore>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Resolve stable_id/pane_id to internal key, then try PTY lookup by key
+    let resolved = core.resolve_agent_key(&id).unwrap_or_else(|_| id.clone());
     let session = core
         .pty_registry()
-        .get(&id)
+        .get(&resolved)
         .ok_or_else(|| json_error(StatusCode::NOT_FOUND, "PTY session not found"))?;
 
     let snapshot = session.scrollback_snapshot();
@@ -2425,11 +2432,13 @@ pub async fn send_to_agent(
     Path((from, to)): Path<(String, String)>,
     Json(req): Json<SendToRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Validate source exists (either PTY or regular agent)
-    let source_exists = core.pty_registry().get(&from).is_some() || core.get_agent(&from).is_ok();
-    if !source_exists {
-        return Err(json_error(StatusCode::NOT_FOUND, "Source agent not found"));
-    }
+    // Resolve both agent IDs
+    let from_key = core
+        .resolve_agent_key(&from)
+        .map_err(|_| json_error(StatusCode::NOT_FOUND, "Source agent not found"))?;
+    let to_key = core
+        .resolve_agent_key(&to)
+        .map_err(|_| json_error(StatusCode::NOT_FOUND, "Target agent not found"))?;
 
     // Validate text length
     if req.text.len() > 10240 {
@@ -2438,9 +2447,10 @@ pub async fn send_to_agent(
             "Text too long (max 10KB)",
         ));
     }
+    let _ = &from_key; // ensure source is valid
 
     // Try PTY write first (for PTY-spawned targets)
-    if let Some(target_session) = core.pty_registry().get(&to) {
+    if let Some(target_session) = core.pty_registry().get(&to_key) {
         target_session
             .write_input(req.text.as_bytes())
             .map_err(|e| {
@@ -3433,7 +3443,8 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let agents: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["id"], "main:0.0");
+        assert_eq!(agents[0]["id"].as_str().unwrap().len(), 8); // stable UUID short hash
+        assert_eq!(agents[0]["pane_id"], "main:0.0");
         // AgentStatus uses serde externally tagged: unit variants serialize as strings
         assert_eq!(agents[0]["status"], "Idle");
     }

@@ -8,6 +8,45 @@ use super::types::{AgentDefinitionInfo, AgentSnapshot, ApiError, TeamSummary, Te
 
 impl TmaiCore {
     // =========================================================
+    // Agent ID resolution
+    // =========================================================
+
+    /// Resolve a user-supplied ID to the internal HashMap key.
+    ///
+    /// Accepts any of: stable_id (UUID short hash), internal key (target/session_id),
+    /// or pty_session_id. Returns the HashMap key used in `state.agents`.
+    pub fn resolve_agent_key(&self, id: &str) -> Result<String, ApiError> {
+        let state = self.state().read();
+        Self::resolve_agent_key_in_state(&state, id)
+    }
+
+    /// Resolve agent ID within an already-locked state (avoids double-lock).
+    pub fn resolve_agent_key_in_state(
+        state: &crate::state::AppState,
+        id: &str,
+    ) -> Result<String, ApiError> {
+        // 1) Direct HashMap key match (existing behavior)
+        if state.agents.contains_key(id) {
+            return Ok(id.to_string());
+        }
+        // 2) Match by stable_id
+        if let Some((key, _)) = state.agents.iter().find(|(_, a)| a.stable_id == id) {
+            return Ok(key.clone());
+        }
+        // 3) Match by pty_session_id
+        if let Some((key, _)) = state
+            .agents
+            .iter()
+            .find(|(_, a)| a.pty_session_id.as_deref() == Some(id))
+        {
+            return Ok(key.clone());
+        }
+        Err(ApiError::AgentNotFound {
+            target: id.to_string(),
+        })
+    }
+
+    // =========================================================
     // Agent queries
     // =========================================================
 
@@ -27,21 +66,15 @@ impl TmaiCore {
             .collect()
     }
 
-    /// Get a single agent snapshot by target ID.
-    pub fn get_agent(&self, target: &str) -> Result<AgentSnapshot, ApiError> {
+    /// Get a single agent snapshot by any accepted ID form (stable_id, target, pty_session_id).
+    pub fn get_agent(&self, id: &str) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
+        let key = Self::resolve_agent_key_in_state(&state, id)?;
         let defs = &state.agent_definitions;
-        state
-            .agents
-            .get(target)
-            .map(|a| {
-                let mut snap = AgentSnapshot::from_agent(a);
-                snap.agent_definition = Self::match_agent_definition(a, defs);
-                snap
-            })
-            .ok_or_else(|| ApiError::AgentNotFound {
-                target: target.to_string(),
-            })
+        let a = state.agents.get(&key).unwrap();
+        let mut snap = AgentSnapshot::from_agent(a);
+        snap.agent_definition = Self::match_agent_definition(a, defs);
+        Ok(snap)
     }
 
     /// Get the currently selected agent snapshot.
@@ -87,27 +120,17 @@ impl TmaiCore {
     // =========================================================
 
     /// Get the ANSI preview content for an agent.
-    pub fn get_preview(&self, target: &str) -> Result<String, ApiError> {
+    pub fn get_preview(&self, id: &str) -> Result<String, ApiError> {
         let state = self.state().read();
-        state
-            .agents
-            .get(target)
-            .map(|a| a.last_content_ansi.clone())
-            .ok_or_else(|| ApiError::AgentNotFound {
-                target: target.to_string(),
-            })
+        let key = Self::resolve_agent_key_in_state(&state, id)?;
+        Ok(state.agents.get(&key).unwrap().last_content_ansi.clone())
     }
 
     /// Get the plain-text content for an agent.
-    pub fn get_content(&self, target: &str) -> Result<String, ApiError> {
+    pub fn get_content(&self, id: &str) -> Result<String, ApiError> {
         let state = self.state().read();
-        state
-            .agents
-            .get(target)
-            .map(|a| a.last_content.clone())
-            .ok_or_else(|| ApiError::AgentNotFound {
-                target: target.to_string(),
-            })
+        let key = Self::resolve_agent_key_in_state(&state, id)?;
+        Ok(state.agents.get(&key).unwrap().last_content.clone())
     }
 
     // =========================================================
@@ -120,18 +143,14 @@ impl TmaiCore {
     /// The records are looked up by pane_id from the transcript registry.
     pub fn get_transcript(
         &self,
-        target: &str,
+        id: &str,
     ) -> Result<Vec<crate::transcript::TranscriptRecord>, ApiError> {
         // Verify agent exists and get pane_id
         let pane_id = {
             let state = self.state().read();
-            let agent = state
-                .agents
-                .get(target)
-                .ok_or_else(|| ApiError::AgentNotFound {
-                    target: target.to_string(),
-                })?;
-            // Use target_to_pane_id mapping, or fall back to using the target itself
+            let key = Self::resolve_agent_key_in_state(&state, id)?;
+            let agent = state.agents.get(&key).unwrap();
+            // Use target_to_pane_id mapping, or fall back to using the internal key
             state
                 .target_to_pane_id
                 .get(&agent.id)
@@ -392,7 +411,7 @@ mod tests {
 
         let result = core.get_agent("main:0.0");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().id, "main:0.0");
+        assert_eq!(result.unwrap().pane_id, "main:0.0");
     }
 
     #[test]
@@ -440,7 +459,7 @@ mod tests {
 
         let attention = core.agents_needing_attention();
         assert_eq!(attention.len(), 1);
-        assert_eq!(attention[0].id, "main:0.1");
+        assert_eq!(attention[0].pane_id, "main:0.1");
     }
 
     #[test]
@@ -527,5 +546,60 @@ mod tests {
 
         let records = core.get_transcript("main:0.0").unwrap();
         assert_eq!(records.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_agent_key_by_internal_key() {
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        // Direct HashMap key lookup
+        assert_eq!(core.resolve_agent_key("main:0.0").unwrap(), "main:0.0");
+    }
+
+    #[test]
+    fn test_resolve_agent_key_by_stable_id() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let stable_id = agent.stable_id.clone();
+        let core = make_core_with_agents(vec![agent]);
+        // Lookup by stable_id
+        assert_eq!(core.resolve_agent_key(&stable_id).unwrap(), "main:0.0");
+    }
+
+    #[test]
+    fn test_resolve_agent_key_by_pty_session_id() {
+        let mut agent = test_agent("pty-session-123", AgentStatus::Idle);
+        agent.pty_session_id = Some("pty-session-123".to_string());
+        let core = make_core_with_agents(vec![agent]);
+        // Lookup by pty_session_id
+        assert_eq!(
+            core.resolve_agent_key("pty-session-123").unwrap(),
+            "pty-session-123"
+        );
+    }
+
+    #[test]
+    fn test_resolve_agent_key_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        assert!(matches!(
+            core.resolve_agent_key("nonexistent"),
+            Err(ApiError::AgentNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn test_stable_id_is_unique_per_agent() {
+        let a1 = test_agent("main:0.0", AgentStatus::Idle);
+        let a2 = test_agent("main:0.1", AgentStatus::Idle);
+        assert_ne!(a1.stable_id, a2.stable_id);
+        assert_eq!(a1.stable_id.len(), 8);
+        assert_eq!(a2.stable_id.len(), 8);
+    }
+
+    #[test]
+    fn test_agent_snapshot_returns_stable_id_as_primary() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let stable_id = agent.stable_id.clone();
+        let snapshot = AgentSnapshot::from_agent(&agent);
+        assert_eq!(snapshot.id, stable_id);
+        assert_eq!(snapshot.pane_id, "main:0.0");
     }
 }
