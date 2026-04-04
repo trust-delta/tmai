@@ -9,7 +9,8 @@ use tmai_core::api::TmaiCoreBuilder;
 use tmai_core::command_sender::CommandSender;
 use tmai_core::config::{Config, Settings};
 use tmai_core::ipc::server::IpcServer;
-use tmai_core::runtime::{RuntimeAdapter, TmuxAdapter};
+use tmai_core::runtime::RuntimeAdapter;
+use tmai_core::tmux::TmuxClient;
 use tmai_core::wrap::{
     runner::{get_pane_id, PtyRunnerConfig},
     PtyRunner,
@@ -120,7 +121,8 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     };
 
     // Create runtime adapter (tmux for TUI mode)
-    let runtime: Arc<dyn RuntimeAdapter> = Arc::new(TmuxAdapter::new(settings.capture_lines));
+    let runtime: Arc<dyn RuntimeAdapter> =
+        Arc::new(TmuxClient::with_capture_lines(settings.capture_lines));
 
     // Run the application with web server
     let mut app = App::new(
@@ -275,10 +277,10 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         .context("Failed to start IPC server")?;
     let ipc_server = Arc::new(ipc_server);
 
-    // Use TmuxAdapter if tmux is available, otherwise StandaloneAdapter
+    // Use TmuxClient if tmux is available, otherwise StandaloneAdapter
     let runtime: Arc<dyn RuntimeAdapter> = if std::env::var("TMUX").is_ok() {
-        eprintln!("tmai: tmux detected, using TmuxAdapter for capture-pane support");
-        Arc::new(tmai_core::runtime::TmuxAdapter::new(settings.capture_lines))
+        eprintln!("tmai: tmux detected, using TmuxClient for capture-pane support");
+        Arc::new(TmuxClient::with_capture_lines(settings.capture_lines))
     } else {
         Arc::new(StandaloneAdapter::new())
     };

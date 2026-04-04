@@ -4,6 +4,7 @@ use regex::Regex;
 use std::process::Command;
 
 use super::pane::PaneInfo;
+use crate::runtime::RuntimeAdapter;
 
 /// Regex pattern for validating tmux target format (session:window.pane)
 static TARGET_PATTERN: Lazy<Regex> =
@@ -609,6 +610,104 @@ impl TmuxClient {
         let window_index = window_str.parse().context("Invalid window index")?;
 
         Ok((session.to_string(), window_index))
+    }
+}
+
+impl RuntimeAdapter for TmuxClient {
+    fn list_all_panes(&self) -> Result<Vec<PaneInfo>> {
+        TmuxClient::list_all_panes(self)
+    }
+
+    fn list_panes(&self) -> Result<Vec<PaneInfo>> {
+        TmuxClient::list_panes(self)
+    }
+
+    fn list_sessions(&self) -> Result<Vec<String>> {
+        TmuxClient::list_sessions(self)
+    }
+
+    fn is_available(&self) -> bool {
+        TmuxClient::is_available(self)
+    }
+
+    fn capture_pane(&self, target: &str) -> Result<String> {
+        TmuxClient::capture_pane(self, target)
+    }
+
+    fn capture_pane_full(&self, target: &str) -> Result<String> {
+        TmuxClient::capture_pane_full(self, target)
+    }
+
+    fn capture_pane_plain(&self, target: &str) -> Result<String> {
+        TmuxClient::capture_pane_plain(self, target)
+    }
+
+    fn get_pane_title(&self, target: &str) -> Result<String> {
+        TmuxClient::get_pane_title(self, target)
+    }
+
+    fn get_cursor_position(&self, target: &str) -> Result<Option<(u32, u32)>> {
+        TmuxClient::get_cursor_position(self, target).map(Some)
+    }
+
+    fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
+        TmuxClient::send_keys(self, target, keys)
+    }
+
+    fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
+        TmuxClient::send_keys_literal(self, target, keys)
+    }
+
+    fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
+        TmuxClient::send_text_and_enter(self, target, text)
+    }
+
+    fn focus_pane(&self, target: &str) -> Result<()> {
+        TmuxClient::focus_pane(self, target)
+    }
+
+    fn kill_pane(&self, target: &str) -> Result<()> {
+        TmuxClient::kill_pane(self, target)
+    }
+
+    fn create_session(&self, name: &str, cwd: &str, window_name: Option<&str>) -> Result<()> {
+        TmuxClient::create_session(self, name, cwd, window_name)
+    }
+
+    fn new_window(&self, session: &str, cwd: &str, window_name: Option<&str>) -> Result<String> {
+        TmuxClient::new_window(self, session, cwd, window_name)
+    }
+
+    fn split_window(&self, session: &str, cwd: &str) -> Result<String> {
+        TmuxClient::split_window(self, session, cwd)
+    }
+
+    fn split_window_tiled(&self, session: &str, cwd: &str) -> Result<String> {
+        TmuxClient::split_window_tiled(self, session, cwd)
+    }
+
+    fn select_layout(&self, target: &str, layout: &str) -> Result<()> {
+        TmuxClient::select_layout(self, target, layout)
+    }
+
+    fn count_panes(&self, target: &str) -> Result<usize> {
+        TmuxClient::count_panes(self, target)
+    }
+
+    fn run_command(&self, target: &str, command: &str) -> Result<()> {
+        TmuxClient::run_command(self, target, command)
+    }
+
+    fn run_command_wrapped(&self, target: &str, command: &str) -> Result<()> {
+        TmuxClient::run_command_wrapped(self, target, command)
+    }
+
+    fn get_current_location(&self) -> Result<(String, u32)> {
+        TmuxClient::get_current_location(self)
+    }
+
+    fn name(&self) -> &str {
+        "tmux"
     }
 }
 

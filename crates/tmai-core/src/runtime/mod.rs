@@ -2,14 +2,12 @@
 //!
 //! Provides [`RuntimeAdapter`] trait that abstracts agent discovery, observation,
 //! and control. Two implementations:
-//! - [`TmuxAdapter`]: wraps `TmuxClient` for traditional tmux-based operation
+//! - [`TmuxClient`](crate::tmux::TmuxClient): implements `RuntimeAdapter` directly for tmux-based operation
 //! - [`StandaloneAdapter`]: hook/IPC-only mode, no tmux required
 
 mod standalone;
-mod tmux_adapter;
 
 pub use standalone::StandaloneAdapter;
-pub use tmux_adapter::TmuxAdapter;
 
 use anyhow::Result;
 
