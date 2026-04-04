@@ -119,11 +119,16 @@ impl WebServer {
                 get(api::get_spawn_settings).put(api::update_spawn_settings),
             )
             .route(
+                "/settings/orchestrator",
+                get(api::get_orchestrator_settings).put(api::update_orchestrator_settings),
+            )
+            .route(
                 "/settings/auto-approve",
                 get(api::get_auto_approve_settings).put(api::update_auto_approve_settings),
             )
             .route("/spawn", post(api::spawn_agent))
             .route("/spawn/worktree", post(api::spawn_worktree))
+            .route("/orchestrator/spawn", post(api::spawn_orchestrator))
             .route("/git/branches", get(api::list_branches))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))

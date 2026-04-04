@@ -116,6 +116,7 @@ export interface AgentSnapshot {
   connection_channels?: ConnectionChannels;
   model_id?: string | null;
   model_display_name?: string | null;
+  is_orchestrator?: boolean;
 }
 
 // ── Project grouping ──
@@ -535,6 +536,19 @@ export interface SpawnSettings {
   tmux_window_name: string;
 }
 
+export interface OrchestratorRules {
+  branch: string;
+  merge: string;
+  review: string;
+  custom: string;
+}
+
+export interface OrchestratorSettings {
+  enabled: boolean;
+  role: string;
+  rules: OrchestratorRules;
+}
+
 export interface SpawnRequest {
   command: string;
   args?: string[];
@@ -879,6 +893,23 @@ export const api = {
     apiFetch("/settings/spawn", {
       method: "PUT",
       body: JSON.stringify(params),
+    }),
+
+  // Orchestrator settings
+  getOrchestratorSettings: () => apiFetch<OrchestratorSettings>("/settings/orchestrator"),
+  updateOrchestratorSettings: (params: {
+    enabled?: boolean;
+    role?: string;
+    rules?: Partial<OrchestratorRules>;
+  }) =>
+    apiFetch("/settings/orchestrator", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+  spawnOrchestrator: (params?: { cwd?: string; additional_instructions?: string }) =>
+    apiFetch<SpawnResponse>("/orchestrator/spawn", {
+      method: "POST",
+      body: JSON.stringify(params ?? {}),
     }),
 
   // Preview settings

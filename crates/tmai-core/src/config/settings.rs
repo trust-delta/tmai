@@ -286,6 +286,10 @@ pub struct Settings {
     #[serde(default)]
     pub spawn: SpawnSettings,
 
+    /// Orchestrator agent settings
+    #[serde(default)]
+    pub orchestrator: OrchestratorSettings,
+
     /// Registered project directories (absolute paths)
     #[serde(default)]
     pub projects: Vec<String>,
@@ -832,6 +836,60 @@ impl Default for SpawnSettings {
     }
 }
 
+/// Orchestrator agent settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestratorSettings {
+    /// Enable orchestrator functionality
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Role description for the orchestrator agent (system prompt preamble)
+    #[serde(default = "default_orchestrator_role")]
+    pub role: String,
+
+    /// Workflow rules that guide the orchestrator's behavior
+    #[serde(default)]
+    pub rules: OrchestratorRules,
+}
+
+/// Workflow rules for the orchestrator agent
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OrchestratorRules {
+    /// Branch naming convention (e.g., "Use {issue_number}-{slug} format")
+    #[serde(default)]
+    pub branch: String,
+
+    /// Merge strategy (e.g., "squash merge to main, delete branch after merge")
+    #[serde(default)]
+    pub merge: String,
+
+    /// Review process (e.g., "check CI status and run tests before merge")
+    #[serde(default)]
+    pub review: String,
+
+    /// Custom rules (free-form instructions appended to the prompt)
+    #[serde(default)]
+    pub custom: String,
+}
+
+/// Default orchestrator role
+fn default_orchestrator_role() -> String {
+    "You are an orchestrator agent managing a team of AI coding agents. \
+     Coordinate work by dispatching issues to worktree agents, monitoring their progress, \
+     and ensuring quality through reviews."
+        .to_string()
+}
+
+impl Default for OrchestratorSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            role: default_orchestrator_role(),
+            rules: OrchestratorRules::default(),
+        }
+    }
+}
+
 /// Codex CLI app-server WebSocket connection settings
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CodexWsSettings {
@@ -873,6 +931,7 @@ impl Default for Settings {
             worktree: WorktreeSettings::default(),
             workflow: WorkflowSettings::default(),
             spawn: SpawnSettings::default(),
+            orchestrator: OrchestratorSettings::default(),
             projects: Vec::new(),
             webui: true,
         }
@@ -1144,6 +1203,59 @@ mod tests {
         assert_eq!(settings.poll_interval_ms, 1000);
         assert_eq!(settings.capture_lines, 200);
         assert!(!settings.ui.show_preview);
+    }
+
+    #[test]
+    fn test_orchestrator_settings_default() {
+        let settings = OrchestratorSettings::default();
+        assert!(!settings.enabled);
+        assert!(!settings.role.is_empty());
+        assert!(settings.rules.branch.is_empty());
+        assert!(settings.rules.merge.is_empty());
+        assert!(settings.rules.review.is_empty());
+        assert!(settings.rules.custom.is_empty());
+    }
+
+    #[test]
+    fn test_orchestrator_settings_deserialization() {
+        let toml = r#"
+            [orchestrator]
+            enabled = true
+            role = "Custom orchestrator role"
+
+            [orchestrator.rules]
+            branch = "Use {issue_number}-{slug} format"
+            merge = "squash merge to main"
+            review = "check CI before merge"
+            custom = "always create PR with description"
+        "#;
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        assert!(settings.orchestrator.enabled);
+        assert_eq!(settings.orchestrator.role, "Custom orchestrator role");
+        assert_eq!(
+            settings.orchestrator.rules.branch,
+            "Use {issue_number}-{slug} format"
+        );
+        assert_eq!(settings.orchestrator.rules.merge, "squash merge to main");
+        assert_eq!(settings.orchestrator.rules.review, "check CI before merge");
+        assert_eq!(
+            settings.orchestrator.rules.custom,
+            "always create PR with description"
+        );
+    }
+
+    #[test]
+    fn test_orchestrator_partial_deserialization() {
+        let toml = r#"
+            [orchestrator]
+            enabled = true
+        "#;
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        assert!(settings.orchestrator.enabled);
+        // role should get the default value
+        assert!(!settings.orchestrator.role.is_empty());
+        // rules should be empty defaults
+        assert!(settings.orchestrator.rules.branch.is_empty());
     }
 
     #[test]

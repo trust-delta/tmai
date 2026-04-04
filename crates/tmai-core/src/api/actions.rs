@@ -935,6 +935,49 @@ impl TmaiCore {
 
         changed
     }
+
+    // =========================================================
+    // Orchestrator
+    // =========================================================
+
+    /// Compose a system prompt from orchestrator settings.
+    ///
+    /// The prompt includes the role description, any non-empty workflow rules,
+    /// and an instruction to use tmai MCP tools.
+    pub fn compose_orchestrator_prompt(&self) -> String {
+        let orch = &self.settings().orchestrator;
+        let mut parts: Vec<String> = Vec::new();
+
+        // Role
+        parts.push(orch.role.clone());
+
+        // Rules (only include non-empty ones)
+        let mut rule_lines: Vec<String> = Vec::new();
+        if !orch.rules.branch.is_empty() {
+            rule_lines.push(format!("- Branch: {}", orch.rules.branch));
+        }
+        if !orch.rules.merge.is_empty() {
+            rule_lines.push(format!("- Merge: {}", orch.rules.merge));
+        }
+        if !orch.rules.review.is_empty() {
+            rule_lines.push(format!("- Review: {}", orch.rules.review));
+        }
+        if !orch.rules.custom.is_empty() {
+            rule_lines.push(format!("- {}", orch.rules.custom));
+        }
+        if !rule_lines.is_empty() {
+            parts.push(format!("\nWorkflow rules:\n{}", rule_lines.join("\n")));
+        }
+
+        // MCP instruction
+        parts.push(
+            "\nUse tmai MCP tools to manage agents: list_agents, spawn_worktree, \
+             dispatch_issue, get_agent_output, send_prompt, approve, etc."
+                .to_string(),
+        );
+
+        parts.join("\n")
+    }
 }
 
 #[cfg(test)]
@@ -1489,5 +1532,34 @@ mod tests {
             s.prompt_queue.get("agent1").unwrap().len()
         };
         assert_eq!(remaining, 1);
+    }
+
+    #[test]
+    fn test_compose_orchestrator_prompt_default() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let prompt = core.compose_orchestrator_prompt();
+        // Should contain default role
+        assert!(prompt.contains("orchestrator agent"));
+        // Should contain MCP tools instruction
+        assert!(prompt.contains("tmai MCP tools"));
+        // No rules section with empty rules
+        assert!(!prompt.contains("Workflow rules:"));
+    }
+
+    #[test]
+    fn test_compose_orchestrator_prompt_with_rules() {
+        let mut settings = Settings::default();
+        settings.orchestrator.role = "You are the boss.".to_string();
+        settings.orchestrator.rules.branch = "feat/{issue}-{slug}".to_string();
+        settings.orchestrator.rules.review = "Run CI first".to_string();
+
+        let core = TmaiCoreBuilder::new(settings).build();
+        let prompt = core.compose_orchestrator_prompt();
+        assert!(prompt.contains("You are the boss."));
+        assert!(prompt.contains("Workflow rules:"));
+        assert!(prompt.contains("- Branch: feat/{issue}-{slug}"));
+        assert!(prompt.contains("- Review: Run CI first"));
+        // Merge rule is empty, should not appear
+        assert!(!prompt.contains("- Merge:"));
     }
 }
