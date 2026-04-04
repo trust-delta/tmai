@@ -315,6 +315,37 @@ pub async fn list_merged_prs(
     Some(map)
 }
 
+/// Check if a specific branch has an associated merged PR.
+///
+/// Uses `gh pr list --state merged --head <branch>` to detect squash-merged
+/// branches that `git branch -d` would refuse to delete.
+/// Returns `true` if at least one merged PR exists for the given branch.
+pub async fn has_merged_pr(repo_dir: &str, branch: &str) -> bool {
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args([
+                "pr", "list", "--state", "merged", "--head", branch, "--json", "number", "--limit",
+                "1",
+            ])
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    match output {
+        Some(o) if o.status.success() => {
+            // Parse JSON array — non-empty means at least one merged PR
+            serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
 /// A single CI check / workflow run
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CiCheck {
@@ -1112,6 +1143,24 @@ mod tests {
     fn test_parse_issue_detail_json_missing_required() {
         let json = serde_json::json!({"title": "no number"});
         assert!(parse_issue_detail_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_has_merged_pr_json_parsing() {
+        // Non-empty array → branch has a merged PR
+        let non_empty = b"[{\"number\":42}]";
+        let parsed: Vec<serde_json::Value> = serde_json::from_slice(non_empty).unwrap();
+        assert!(!parsed.is_empty());
+
+        // Empty array → no merged PR
+        let empty = b"[]";
+        let parsed: Vec<serde_json::Value> = serde_json::from_slice(empty).unwrap();
+        assert!(parsed.is_empty());
+
+        // Invalid JSON → should not panic
+        let invalid = b"not json";
+        let result = serde_json::from_slice::<Vec<serde_json::Value>>(invalid);
+        assert!(result.is_err());
     }
 
     #[test]
