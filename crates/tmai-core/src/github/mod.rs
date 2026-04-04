@@ -109,6 +109,30 @@ struct GhCheckRun {
     status: Option<String>,
 }
 
+/// Trait for types that carry CI check conclusion/status (used by compute_rollup)
+trait CheckRunLike {
+    fn conclusion(&self) -> Option<&str>;
+    fn check_status(&self) -> Option<&str>;
+}
+
+impl CheckRunLike for GhCheckRun {
+    fn conclusion(&self) -> Option<&str> {
+        self.conclusion.as_deref()
+    }
+    fn check_status(&self) -> Option<&str> {
+        self.status.as_deref()
+    }
+}
+
+impl CheckRunLike for CiCheck {
+    fn conclusion(&self) -> Option<&str> {
+        self.conclusion.as_deref()
+    }
+    fn check_status(&self) -> Option<&str> {
+        Some(self.status.as_str())
+    }
+}
+
 /// Fetch open PRs for a repository using gh CLI (cached with 30s TTL)
 ///
 /// Returns a map of head_branch -> PrInfo for quick lookup.
@@ -151,33 +175,10 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
 
     let mut map = HashMap::new();
     for entry in entries {
-        let check_status = entry.status_check_rollup.as_ref().map(|checks| {
-            if checks.is_empty() {
-                return CheckStatus::Unknown;
-            }
-            let has_failure = checks.iter().any(|c| {
-                c.conclusion.as_deref() == Some("FAILURE")
-                    || c.conclusion.as_deref() == Some("TIMED_OUT")
-                    || c.conclusion.as_deref() == Some("CANCELLED")
-            });
-            if has_failure {
-                return CheckStatus::Failure;
-            }
-            let has_pending = checks.iter().any(|c| {
-                matches!(
-                    c.status.as_deref(),
-                    Some("IN_PROGRESS")
-                        | Some("QUEUED")
-                        | Some("WAITING")
-                        | Some("PENDING")
-                        | Some("REQUESTED")
-                )
-            });
-            if has_pending {
-                return CheckStatus::Pending;
-            }
-            CheckStatus::Success
-        });
+        let check_status = entry
+            .status_check_rollup
+            .as_ref()
+            .map(|checks| compute_rollup(checks));
 
         let review_decision = entry.review_decision.as_deref().and_then(|s| match s {
             "APPROVED" => Some(ReviewDecision::Approved),
@@ -387,7 +388,7 @@ pub struct PrMergeStatus {
     pub mergeable: String,
     pub merge_state_status: String,
     pub review_decision: Option<String>,
-    pub check_status: Option<String>,
+    pub check_status: Option<CheckStatus>,
 }
 
 /// CI failure log output (truncated to 50KB)
@@ -480,25 +481,31 @@ pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
     })
 }
 
-/// Compute rollup status from a list of checks
-fn compute_rollup(checks: &[CiCheck]) -> CheckStatus {
+/// Compute rollup status from a list of checks (case-insensitive)
+fn compute_rollup<T: CheckRunLike>(checks: &[T]) -> CheckStatus {
     if checks.is_empty() {
         return CheckStatus::Unknown;
     }
     let has_failure = checks.iter().any(|c| {
-        matches!(
-            c.conclusion.as_deref(),
-            Some("failure") | Some("timed_out") | Some("cancelled")
-        )
+        c.conclusion()
+            .map(|s| {
+                let u = s.to_ascii_uppercase();
+                u == "FAILURE" || u == "TIMED_OUT" || u == "CANCELLED"
+            })
+            .unwrap_or(false)
     });
     if has_failure {
         return CheckStatus::Failure;
     }
     let has_pending = checks.iter().any(|c| {
-        matches!(
-            c.status.as_str(),
-            "in_progress" | "queued" | "waiting" | "pending" | "requested"
-        )
+        c.check_status()
+            .map(|s| {
+                matches!(
+                    s.to_ascii_uppercase().as_str(),
+                    "IN_PROGRESS" | "QUEUED" | "WAITING" | "PENDING" | "REQUESTED"
+                )
+            })
+            .unwrap_or(false)
     });
     if has_pending {
         return CheckStatus::Pending;
@@ -955,38 +962,11 @@ pub async fn get_pr_merge_status(repo_dir: &str, pr_number: u64) -> Option<PrMer
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // Compute check status from statusCheckRollup
-    let check_status = json
+    // Compute check status from statusCheckRollup using shared compute_rollup()
+    let check_status: Option<CheckStatus> = json
         .get("statusCheckRollup")
-        .and_then(|v| v.as_array())
-        .map(|checks| {
-            if checks.is_empty() {
-                return "UNKNOWN".to_string();
-            }
-            let has_failure = checks.iter().any(|c| {
-                matches!(
-                    c.get("conclusion").and_then(|v| v.as_str()),
-                    Some("FAILURE") | Some("TIMED_OUT") | Some("CANCELLED")
-                )
-            });
-            if has_failure {
-                return "FAILURE".to_string();
-            }
-            let has_pending = checks.iter().any(|c| {
-                matches!(
-                    c.get("status").and_then(|v| v.as_str()),
-                    Some("IN_PROGRESS")
-                        | Some("QUEUED")
-                        | Some("WAITING")
-                        | Some("PENDING")
-                        | Some("REQUESTED")
-                )
-            });
-            if has_pending {
-                return "PENDING".to_string();
-            }
-            "SUCCESS".to_string()
-        });
+        .and_then(|v| serde_json::from_value::<Vec<GhCheckRun>>(v.clone()).ok())
+        .map(|checks| compute_rollup(&checks));
 
     Some(PrMergeStatus {
         mergeable,
@@ -1173,5 +1153,89 @@ mod tests {
         assert_eq!(extract_issue_numbers("feat/no-number"), Vec::<u64>::new());
         // Ignore zero and very large numbers
         assert_eq!(extract_issue_numbers("fix/0-test"), Vec::<u64>::new());
+    }
+
+    /// Helper to build GhCheckRun for tests
+    fn check_run(conclusion: Option<&str>, status: Option<&str>) -> GhCheckRun {
+        GhCheckRun {
+            conclusion: conclusion.map(|s| s.to_string()),
+            status: status.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_compute_rollup_empty() {
+        let checks: Vec<GhCheckRun> = vec![];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Unknown));
+    }
+
+    #[test]
+    fn test_compute_rollup_all_success_uppercase() {
+        let checks = vec![
+            check_run(Some("SUCCESS"), Some("COMPLETED")),
+            check_run(Some("SUCCESS"), Some("COMPLETED")),
+        ];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Success));
+    }
+
+    #[test]
+    fn test_compute_rollup_all_success_lowercase() {
+        let checks = vec![CiCheck {
+            name: "build".into(),
+            status: "completed".into(),
+            conclusion: Some("success".into()),
+            url: String::new(),
+            started_at: None,
+            completed_at: None,
+            run_id: None,
+        }];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Success));
+    }
+
+    #[test]
+    fn test_compute_rollup_failure_takes_precedence() {
+        let checks = vec![
+            check_run(Some("SUCCESS"), Some("COMPLETED")),
+            check_run(Some("FAILURE"), Some("COMPLETED")),
+        ];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Failure));
+    }
+
+    #[test]
+    fn test_compute_rollup_timed_out_is_failure() {
+        let checks = vec![check_run(Some("timed_out"), Some("completed"))];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Failure));
+    }
+
+    #[test]
+    fn test_compute_rollup_cancelled_is_failure() {
+        let checks = vec![check_run(Some("CANCELLED"), Some("COMPLETED"))];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Failure));
+    }
+
+    #[test]
+    fn test_compute_rollup_pending_statuses() {
+        for status in &["IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED"] {
+            let checks = vec![check_run(None, Some(status))];
+            assert!(
+                matches!(compute_rollup(&checks), CheckStatus::Pending),
+                "expected Pending for status={status}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compute_rollup_pending_lowercase() {
+        let checks = vec![check_run(None, Some("in_progress"))];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Pending));
+    }
+
+    #[test]
+    fn test_compute_rollup_failure_beats_pending() {
+        let checks = vec![
+            check_run(Some("FAILURE"), Some("COMPLETED")),
+            check_run(None, Some("IN_PROGRESS")),
+        ];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Failure));
     }
 }
