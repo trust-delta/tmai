@@ -2098,12 +2098,9 @@ pub async fn git_branch_diff(
 pub async fn git_log(
     axum::extract::Query(params): axum::extract::Query<CommitLogParams>,
 ) -> Result<Json<Vec<tmai_core::git::CommitEntry>>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    let commits = tmai_core::git::log_commits(repo_dir, &params.base, &params.branch, 20).await;
+    let commits = tmai_core::git::log_commits(&repo_dir, &params.base, &params.branch, 20).await;
     Ok(Json(commits))
 }
 
@@ -2124,12 +2121,9 @@ fn default_graph_limit() -> usize {
 pub async fn git_graph(
     axum::extract::Query(params): axum::extract::Query<GraphQueryParams>,
 ) -> Result<Json<tmai_core::git::GraphData>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::git::log_graph(repo_dir, params.limit)
+    tmai_core::git::log_graph(&repo_dir, params.limit)
         .await
         .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to get graph"))
         .map(Json)
@@ -2158,20 +2152,17 @@ pub async fn delete_branch(
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
     }
 
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
     // Auto-force for squash-merged branches: git branch -d fails because the
     // original commits don't appear in the target branch after squash merge.
     let force = if req.force {
         true
     } else {
-        tmai_core::github::has_merged_pr(repo_dir, &req.branch).await
+        tmai_core::github::has_merged_pr(&repo_dir, &req.branch).await
     };
 
-    tmai_core::git::delete_branch(repo_dir, &req.branch, force, req.delete_remote)
+    tmai_core::git::delete_branch(&repo_dir, &req.branch, force, req.delete_remote)
         .await
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2207,10 +2198,7 @@ pub async fn bulk_delete_branches(
         return Err(json_error(StatusCode::BAD_REQUEST, "No branches specified"));
     }
 
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
     let mut results: Vec<BranchDeleteResult> = Vec::new();
 
@@ -2225,9 +2213,9 @@ pub async fn bulk_delete_branches(
         }
 
         // Auto-force for squash-merged branches
-        let force = tmai_core::github::has_merged_pr(repo_dir, branch).await;
+        let force = tmai_core::github::has_merged_pr(&repo_dir, branch).await;
 
-        match tmai_core::git::delete_branch(repo_dir, branch, force, req.delete_remote).await {
+        match tmai_core::git::delete_branch(&repo_dir, branch, force, req.delete_remote).await {
             Ok(()) => {
                 results.push(BranchDeleteResult {
                     branch: branch.clone(),
@@ -2270,12 +2258,9 @@ pub async fn checkout_branch(
     if !tmai_core::git::is_safe_git_ref(&req.branch) {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid branch name"));
     }
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
-    tmai_core::git::checkout_branch(repo_dir, &req.branch)
+    tmai_core::git::checkout_branch(&repo_dir, &req.branch)
         .await
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2305,12 +2290,9 @@ pub async fn create_branch(
             ));
         }
     }
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
-    tmai_core::git::create_branch(repo_dir, &req.name, req.base.as_deref())
+    tmai_core::git::create_branch(&repo_dir, &req.name, req.base.as_deref())
         .await
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2327,12 +2309,9 @@ pub struct FetchRequest {
 pub async fn git_fetch(
     Json(req): Json<FetchRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
-    tmai_core::git::fetch_remote(repo_dir, req.remote.as_deref())
+    tmai_core::git::fetch_remote(&repo_dir, req.remote.as_deref())
         .await
         .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2348,12 +2327,9 @@ pub struct PullRequest {
 pub async fn git_pull(
     Json(req): Json<PullRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
-    tmai_core::git::pull(repo_dir)
+    tmai_core::git::pull(&repo_dir)
         .await
         .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2370,12 +2346,9 @@ pub struct MergeRequest {
 pub async fn git_merge(
     Json(req): Json<MergeRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&req.repo_path)?;
 
-    tmai_core::git::merge_branch(repo_dir, &req.branch)
+    tmai_core::git::merge_branch(&repo_dir, &req.branch)
         .await
         .map(|output| Json(serde_json::json!({"status": "ok", "output": output})))
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
@@ -2788,12 +2761,9 @@ pub async fn list_prs(
     Json<std::collections::HashMap<String, tmai_core::github::PrInfo>>,
     (StatusCode, Json<serde_json::Value>),
 > {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    let mut map = tmai_core::github::list_open_prs(repo_dir)
+    let mut map = tmai_core::github::list_open_prs(&repo_dir)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2803,14 +2773,14 @@ pub async fn list_prs(
         })?;
 
     // Fetch merged PRs for local branches (best-effort, don't fail if unavailable)
-    if let Some(branch_list) = tmai_core::git::list_branches(repo_dir).await {
+    if let Some(branch_list) = tmai_core::git::list_branches(&repo_dir).await {
         let local_branches: Vec<String> = branch_list
             .branches
             .iter()
             .filter(|b| !map.contains_key(b.as_str()))
             .cloned()
             .collect();
-        if let Some(merged) = tmai_core::github::list_merged_prs(repo_dir, &local_branches).await {
+        if let Some(merged) = tmai_core::github::list_merged_prs(&repo_dir, &local_branches).await {
             map.extend(merged);
         }
     }
@@ -2829,12 +2799,9 @@ pub struct ChecksQueryParams {
 pub async fn list_checks(
     axum::extract::Query(params): axum::extract::Query<ChecksQueryParams>,
 ) -> Result<Json<tmai_core::github::CiSummary>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::list_checks(repo_dir, &params.branch)
+    tmai_core::github::list_checks(&repo_dir, &params.branch)
         .await
         .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list checks"))
         .map(Json)
@@ -2844,12 +2811,9 @@ pub async fn list_checks(
 pub async fn list_issues(
     axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
 ) -> Result<Json<Vec<tmai_core::github::IssueInfo>>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::list_issues(repo_dir)
+    tmai_core::github::list_issues(&repo_dir)
         .await
         .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list issues"))
         .map(Json)
@@ -2866,12 +2830,9 @@ pub struct IssueDetailParams {
 pub async fn get_issue_detail(
     axum::extract::Query(params): axum::extract::Query<IssueDetailParams>,
 ) -> Result<Json<tmai_core::github::IssueDetail>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::get_issue_detail(repo_dir, params.issue_number)
+    tmai_core::github::get_issue_detail(&repo_dir, params.issue_number)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2900,12 +2861,9 @@ pub struct CiLogParams {
 pub async fn get_pr_comments(
     axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
 ) -> Result<Json<Vec<tmai_core::github::PrComment>>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::get_pr_comments(repo_dir, params.pr_number)
+    tmai_core::github::get_pr_comments(&repo_dir, params.pr_number)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2920,12 +2878,9 @@ pub async fn get_pr_comments(
 pub async fn get_pr_files(
     axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
 ) -> Result<Json<Vec<tmai_core::github::PrChangedFile>>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::get_pr_files(repo_dir, params.pr_number)
+    tmai_core::github::get_pr_files(&repo_dir, params.pr_number)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2940,12 +2895,9 @@ pub async fn get_pr_files(
 pub async fn get_pr_merge_status(
     axum::extract::Query(params): axum::extract::Query<PrDetailParams>,
 ) -> Result<Json<tmai_core::github::PrMergeStatus>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::get_pr_merge_status(repo_dir, params.pr_number)
+    tmai_core::github::get_pr_merge_status(&repo_dir, params.pr_number)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2960,12 +2912,9 @@ pub async fn get_pr_merge_status(
 pub async fn rerun_failed_checks(
     Json(body): Json<CiLogParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&body.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&body.repo)?;
 
-    tmai_core::github::rerun_failed_checks(repo_dir, body.run_id)
+    tmai_core::github::rerun_failed_checks(&repo_dir, body.run_id)
         .await
         .ok_or_else(|| {
             json_error(
@@ -2980,12 +2929,9 @@ pub async fn rerun_failed_checks(
 pub async fn get_ci_failure_log(
     axum::extract::Query(params): axum::extract::Query<CiLogParams>,
 ) -> Result<Json<tmai_core::github::CiFailureLog>, (StatusCode, Json<serde_json::Value>)> {
-    let repo_dir = tmai_core::git::strip_git_suffix(&params.repo);
-    if !std::path::Path::new(repo_dir).is_dir() {
-        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
-    }
+    let repo_dir = validate_repo(&params.repo)?;
 
-    tmai_core::github::get_ci_failure_log(repo_dir, params.run_id)
+    tmai_core::github::get_ci_failure_log(&repo_dir, params.run_id)
         .await
         .ok_or_else(|| {
             json_error(
@@ -3162,6 +3108,17 @@ fn scan_md_tree(dir: &std::path::Path, depth: usize) -> Result<Vec<MdTreeEntry>,
         }
     }
     Ok(entries)
+}
+
+/// Validate that a repo path points to an existing directory, returning the
+/// path with any `.git` suffix stripped. Used by endpoints that accept a repo
+/// path parameter.
+fn validate_repo(repo: &str) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let dir = tmai_core::git::strip_git_suffix(repo);
+    if !std::path::Path::new(dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+    Ok(dir.to_string())
 }
 
 /// Re-export for convenience
