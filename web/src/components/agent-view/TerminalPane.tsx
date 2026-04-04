@@ -14,7 +14,7 @@ export function TerminalPane({ sessionId }: TerminalPaneProps) {
   return (
     <div
       ref={containerRef}
-      className="h-full w-full rounded-lg border border-neutral-700 overflow-hidden"
+      className="h-full w-full rounded-lg border border-neutral-300 overflow-hidden dark:border-neutral-700"
       style={{ minHeight: "200px" }}
     />
   );

@@ -16,7 +16,7 @@ export function Sidebar() {
         className={`w-full px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider hover:bg-neutral-300 dark:hover:bg-neutral-800 ${
           selectedProject === null
             ? "text-blue-600 dark:text-blue-400"
-            : "text-neutral-500"
+            : "text-neutral-600 dark:text-neutral-500"
         }`}
       >
         All Projects
