@@ -130,11 +130,15 @@ export function App() {
     [refresh, toast],
   );
 
-  // Spawn orchestrator agent
+  // Spawn orchestrator agent for the current project
   const handleSpawnOrchestrator = useCallback(async () => {
+    if (!currentProject) {
+      toast.error("No project selected");
+      return;
+    }
     setOrchestratorSpawning(true);
     try {
-      const res = await api.spawnOrchestrator();
+      const res = await api.spawnOrchestrator({ project: currentProject });
       handleSpawned(res.session_id ?? "orchestrator");
       toast.success("Orchestrator started");
     } catch (e) {
@@ -142,7 +146,7 @@ export function App() {
     } finally {
       setOrchestratorSpawning(false);
     }
-  }, [handleSpawned, toast]);
+  }, [currentProject, handleSpawned, toast]);
 
   // Select handler for agents
   const handleSelectAgent = useCallback((target: string) => {

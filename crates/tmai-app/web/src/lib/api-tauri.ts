@@ -186,14 +186,17 @@ export const api = {
   updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
     httpApi.updateSpawnSettings(params),
 
-  // Orchestrator settings
-  getOrchestratorSettings: () => httpApi.getOrchestratorSettings(),
-  updateOrchestratorSettings: (params: {
-    enabled?: boolean;
-    role?: string;
-    rules?: Partial<OrchestratorRules>;
-  }) => httpApi.updateOrchestratorSettings(params),
-  spawnOrchestrator: (params?: { cwd?: string; additional_instructions?: string }) =>
+  // Orchestrator settings (per-project scope via optional project param)
+  getOrchestratorSettings: (project?: string) => httpApi.getOrchestratorSettings(project),
+  updateOrchestratorSettings: (
+    params: {
+      enabled?: boolean;
+      role?: string;
+      rules?: Partial<OrchestratorRules>;
+    },
+    project?: string,
+  ) => httpApi.updateOrchestratorSettings(params, project),
+  spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
     httpApi.spawnOrchestrator(params),
 
   // Preview settings
