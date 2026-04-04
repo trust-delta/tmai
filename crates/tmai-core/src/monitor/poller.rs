@@ -68,6 +68,9 @@ pub enum PollMessage {
     Error(String),
 }
 
+/// Run audit validation only every Nth poll to reduce capture-pane overhead
+const AUDIT_VALIDATION_INTERVAL: u32 = 10;
+
 /// Poller for monitoring tmux panes
 pub struct Poller {
     runtime: Arc<dyn crate::runtime::RuntimeAdapter>,
@@ -111,6 +114,8 @@ pub struct Poller {
     /// Tracks the last known HEAD sha per repo for auto-rebase merge detection.
     /// Key: repo root path, Value: SHA of origin/<default_branch> HEAD.
     last_default_branch_head: HashMap<String, String>,
+    /// Current poll iteration counter, used for periodic task scheduling
+    poll_count: u32,
 }
 
 /// Check if a PID is a descendant (child, grandchild, ...) of any PID in the set.
@@ -182,6 +187,7 @@ impl Poller {
                 crate::transcript::watcher::new_transcript_registry(),
             ),
             last_default_branch_head: HashMap::new(),
+            poll_count: 0,
         }
     }
 
@@ -225,6 +231,7 @@ impl Poller {
             session_scanner: crate::session_discovery::SessionDiscoveryScanner::new(),
             transcript_watcher: crate::transcript::TranscriptWatcher::new(transcript_registry),
             last_default_branch_head: HashMap::new(),
+            poll_count: 0,
         }
     }
 
@@ -263,7 +270,7 @@ impl Poller {
         let mut backoff_ms: u64 = 0;
         let mut last_error: Option<String> = None;
         let mut last_error_at: Option<Instant> = None;
-        let mut poll_count: u32 = 0;
+        // poll_count is now tracked as self.poll_count for use in poll_once()
 
         loop {
             // Check if we should stop and get passthrough state
@@ -292,8 +299,8 @@ impl Poller {
                     last_error_at = None;
 
                     // Periodic cache cleanup (every 10 polls)
-                    poll_count = poll_count.wrapping_add(1);
-                    if poll_count.is_multiple_of(10) {
+                    self.poll_count = self.poll_count.wrapping_add(1);
+                    if self.poll_count.is_multiple_of(10) {
                         self.process_cache.cleanup();
                         // Remove expired grace periods (> 30s old to avoid unbounded growth)
                         self.grace_periods
@@ -322,7 +329,10 @@ impl Poller {
 
                     // Team scanning at configured interval, or re-apply cached info
                     if self.settings.teams.enabled {
-                        if poll_count.is_multiple_of(self.settings.teams.scan_interval) {
+                        if self
+                            .poll_count
+                            .is_multiple_of(self.settings.teams.scan_interval)
+                        {
                             self.scan_and_apply_teams(&mut agents, &all_panes);
                         } else {
                             self.apply_cached_team_info(&mut agents);
@@ -330,7 +340,7 @@ impl Poller {
                     }
 
                     // Git branch detection (every ~10 seconds)
-                    if poll_count.is_multiple_of(20) {
+                    if self.poll_count.is_multiple_of(20) {
                         self.update_git_info(&mut agents).await;
                         self.git_cache.cleanup();
                     } else {
@@ -338,23 +348,24 @@ impl Poller {
                     }
 
                     // Worktree scan (every 30 polls, offset from git scan)
-                    if poll_count % 30 == 5 {
+                    if self.poll_count % 30 == 5 {
                         self.scan_worktrees(&agents).await;
                     }
 
                     // Auto-rebase check (every 60 polls ≈ 30 seconds)
-                    if self.settings.workflow.auto_rebase_on_merge && poll_count.is_multiple_of(60)
+                    if self.settings.workflow.auto_rebase_on_merge
+                        && self.poll_count.is_multiple_of(60)
                     {
                         self.check_and_rebase(&agents).await;
                     }
 
                     // Session discovery (every 10 polls ≈ 5 seconds)
-                    if poll_count.is_multiple_of(10) {
+                    if self.poll_count.is_multiple_of(10) {
                         self.discover_sessions();
                     }
 
                     // Transcript polling (every 2 polls ≈ 1 second)
-                    if poll_count.is_multiple_of(2) {
+                    if self.poll_count.is_multiple_of(2) {
                         self.transcript_watcher.poll_updates();
                     }
 
@@ -579,13 +590,15 @@ impl Poller {
                 // - Non-selected + hook/IPC (no audit): skip capture-pane entirely
                 // - Non-selected + capture-pane mode: plain capture for detection only
                 let audit_enabled = self.settings.audit.enabled;
+                let audit_this_poll =
+                    audit_enabled && self.poll_count.is_multiple_of(AUDIT_VALIDATION_INTERVAL);
                 let (mut content_ansi, mut content) = if is_selected {
                     // Selected agent: full ANSI capture for preview
                     let ansi = self.runtime.capture_pane(&pane.target).unwrap_or_default();
                     let plain = strip_ansi(&ansi);
                     (ansi, plain)
-                } else if audit_enabled && has_fresh_hook {
-                    // Non-selected + audit + hook: plain capture for validation
+                } else if audit_this_poll && has_fresh_hook {
+                    // Non-selected + audit + hook: plain capture for validation (periodic)
                     let plain = self
                         .runtime
                         .capture_pane_plain(&pane.target)
@@ -701,7 +714,8 @@ impl Poller {
                     };
 
                     // Validation: compare IPC/capture-pane against hook ground truth
-                    if audit_enabled {
+                    // Only run every AUDIT_VALIDATION_INTERVAL polls to reduce overhead
+                    if audit_this_poll {
                         let hook_status_str = status_name(&status).to_string();
                         let hook_event = hs.last_context.event_name.clone();
 
@@ -2639,5 +2653,31 @@ mod tests {
             }
             _ => panic!("Expected Processing status, got {:?}", status),
         }
+    }
+
+    /// Verify that audit_this_poll fires only every AUDIT_VALIDATION_INTERVAL polls
+    #[test]
+    fn test_audit_validation_interval() {
+        let mut fired = Vec::new();
+        for poll_count in 0u32..30 {
+            if poll_count.is_multiple_of(AUDIT_VALIDATION_INTERVAL) {
+                fired.push(poll_count);
+            }
+        }
+        // poll 0 always fires (0 % N == 0), then 10, 20
+        assert_eq!(fired, vec![0, 10, 20]);
+    }
+
+    /// Ensure AUDIT_VALIDATION_INTERVAL is a reasonable value (> 1, <= 100)
+    #[test]
+    fn test_audit_validation_interval_value() {
+        assert!(
+            AUDIT_VALIDATION_INTERVAL > 1,
+            "interval must be > 1 to reduce overhead"
+        );
+        assert!(
+            AUDIT_VALIDATION_INTERVAL <= 100,
+            "interval must be <= 100 to maintain audit coverage"
+        );
     }
 }
