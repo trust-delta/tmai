@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.5.0] - 2026-04-05
+
+### Added
+
+- Orchestrator Agent with per-project workflow settings and Spawn Dialog integration (#226)
+- send_prompt API/MCP for queuing prompts to idle/stopped agents (#225)
+- dispatch_issue MCP tool for one-shot issue-to-agent workflow (#223)
+- Issue context in spawn_worktree MCP tool via issue_number param (#222)
+- Auto-rebase stale PRs after merge with conflict notification (#224)
+- Stable agent IDs independent of tmux pane numbering (#232)
+- Light mode / theme toggle with system preference support (#221)
+- Browser notification when agent stops with idle threshold (#217)
+- Click-to-copy commit SHA in git panel (#216)
+- Issue-to-PR progress tracker in Issues tab (#201)
+- Styled transcript rendering with Claude Code UI patterns (#200)
+- Responsive layout for narrow viewports (#197)
+- Bulk delete merged branches (#199)
+- MCP server documentation (EN/JA) (#198)
+
+### Fixed
+
+- Kill tmux pane before worktree deletion (#202)
+- Block worktree deletion during pending agent detection window (#220)
+
+### Improved
+
+- Reduce O(n²) complexity in compute_branch_parents() (#219)
+- Make audit validation periodic instead of every-poll (#214)
+- Extract repo validation helper for GitHub API endpoints (#209)
+- Deduplicate CI status rollup computation (#205)
+- Deduplicate session lookup functions (#206)
+- Extract common fallback chain in CommandSender (#207)
+- Replace custom floor_char_boundary with std (#211)
+
 ## [1.4.0] - 2026-04-04
 
 ### Added
