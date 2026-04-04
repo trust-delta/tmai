@@ -365,6 +365,10 @@ pub struct WebSettings {
     /// (filters out transient state flickers from capture-pane detection)
     #[serde(default = "default_notify_idle_threshold_secs")]
     pub notify_idle_threshold_secs: u64,
+
+    /// Theme preference: "dark", "light", or "system"
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_web_enabled() -> bool {
@@ -387,6 +391,10 @@ fn default_notify_idle_threshold_secs() -> u64 {
     10
 }
 
+fn default_theme() -> String {
+    "system".to_string()
+}
+
 impl Default for WebSettings {
     fn default() -> Self {
         Self {
@@ -395,6 +403,7 @@ impl Default for WebSettings {
             show_cursor: default_show_cursor(),
             notify_on_idle: default_notify_on_idle(),
             notify_idle_threshold_secs: default_notify_idle_threshold_secs(),
+            theme: default_theme(),
         }
     }
 }

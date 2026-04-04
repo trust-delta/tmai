@@ -145,6 +145,10 @@ impl WebServer {
                 "/settings/notification",
                 get(api::get_notification_settings).put(api::update_notification_settings),
             )
+            .route(
+                "/settings/theme",
+                get(api::get_theme_settings).put(api::update_theme_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

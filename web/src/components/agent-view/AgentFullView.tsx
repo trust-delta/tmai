@@ -29,20 +29,20 @@ export function AgentFullView({ agent }: AgentFullViewProps) {
         <span className="font-mono text-lg font-bold">{agent.agent_type}</span>
         <StatusBadge status={agent.status} />
         {agent.git_branch && (
-          <span className="font-mono text-sm text-neutral-400">
+          <span className="font-mono text-sm text-neutral-600 dark:text-neutral-400">
             {agent.git_branch}
             {agent.git_dirty ? " *" : ""}
           </span>
         )}
         {agent.team && (
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-neutral-600 dark:text-neutral-500">
             {agent.team.team_name} · {agent.team.member_name}
           </span>
         )}
       </div>
 
       {/* Info row */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-500">
         <span>ID: {agent.id}</span>
         <span>Session: {agent.session}</span>
         <span title={agent.cwd}>CWD: {agent.cwd}</span>

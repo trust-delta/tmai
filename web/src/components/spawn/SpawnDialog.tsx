@@ -63,19 +63,19 @@ export function SpawnDialog({ onClose }: SpawnDialogProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-lg border border-neutral-300 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-bold">Spawn Agent</h2>
 
         <div className="space-y-3">
           {/* Command */}
           <div>
-            <label className="mb-1 block text-sm text-neutral-400">
+            <label className="mb-1 block text-sm text-neutral-700 dark:text-neutral-400">
               Command
             </label>
             <select
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              className="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
             >
               <option value="bash">bash</option>
               <option value="claude">claude</option>
@@ -88,7 +88,7 @@ export function SpawnDialog({ onClose }: SpawnDialogProps) {
 
           {/* Arguments */}
           <div>
-            <label className="mb-1 block text-sm text-neutral-400">
+            <label className="mb-1 block text-sm text-neutral-700 dark:text-neutral-400">
               Arguments
             </label>
             <input
@@ -96,13 +96,13 @@ export function SpawnDialog({ onClose }: SpawnDialogProps) {
               value={args}
               onChange={(e) => setArgs(e.target.value)}
               placeholder="e.g. --debug"
-              className="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
             />
           </div>
 
           {/* Working directory */}
           <div>
-            <label className="mb-1 block text-sm text-neutral-400">
+            <label className="mb-1 block text-sm text-neutral-700 dark:text-neutral-400">
               Working Directory
             </label>
             <input
@@ -110,18 +110,18 @@ export function SpawnDialog({ onClose }: SpawnDialogProps) {
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
               placeholder="(server default)"
-              className="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-400">{error}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={onClose}
-              className="rounded px-4 py-2 text-sm hover:bg-neutral-800"
+              className="rounded px-4 py-2 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800"
             >
               Cancel
             </button>

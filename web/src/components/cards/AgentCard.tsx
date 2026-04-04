@@ -34,7 +34,7 @@ export function AgentCard({ agent }: AgentCardProps) {
 
       {/* Git info */}
       {agent.git_branch && (
-        <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+        <div className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
           <span className="font-mono">{agent.git_branch}</span>
           {agent.git_dirty && <span className="text-yellow-500">*</span>}
           {agent.is_worktree && (
@@ -47,7 +47,7 @@ export function AgentCard({ agent }: AgentCardProps) {
 
       {/* Team info */}
       {agent.team && (
-        <div className="text-xs text-neutral-500">
+        <div className="text-xs text-neutral-600 dark:text-neutral-500">
           <span>{agent.team.team_name}</span>
           <span className="mx-1">·</span>
           <span>{agent.team.member_name}</span>
@@ -68,7 +68,7 @@ export function AgentCard({ agent }: AgentCardProps) {
 
       {/* CWD */}
       <div
-        className="truncate text-[11px] text-neutral-400 dark:text-neutral-600"
+        className="truncate text-[11px] text-neutral-500 dark:text-neutral-600"
         title={agent.cwd}
       >
         {agent.cwd}
