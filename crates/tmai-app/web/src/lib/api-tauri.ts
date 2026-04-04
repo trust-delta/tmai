@@ -131,6 +131,8 @@ export const api = {
     httpApi.rerunFailedChecks(repoPath, runId),
   deleteBranch: (repoPath: string, branch: string, force?: boolean, deleteRemote?: boolean) =>
     httpApi.deleteBranch(repoPath, branch, force, deleteRemote),
+  bulkDeleteBranches: (repoPath: string, branches: string[], deleteRemote?: boolean) =>
+    httpApi.bulkDeleteBranches(repoPath, branches, deleteRemote),
   createBranch: (repoPath: string, name: string, base?: string) =>
     httpApi.createBranch(repoPath, name, base),
   checkoutBranch: (repoPath: string, branch: string) => httpApi.checkoutBranch(repoPath, branch),

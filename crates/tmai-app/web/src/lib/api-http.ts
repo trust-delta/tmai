@@ -770,6 +770,19 @@ export const api = {
         delete_remote: deleteRemote ?? false,
       }),
     }),
+  bulkDeleteBranches: (repoPath: string, branches: string[], deleteRemote?: boolean) =>
+    apiFetch<{
+      results: Array<{ branch: string; status: string; error?: string }>;
+      succeeded: number;
+      failed: number;
+    }>("/git/branches/delete-bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        repo_path: repoPath,
+        branches,
+        delete_remote: deleteRemote ?? false,
+      }),
+    }),
   createBranch: (repoPath: string, name: string, base?: string) =>
     apiFetch("/git/branches/create", {
       method: "POST",

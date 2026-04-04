@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
   type AgentSnapshot,
   api,
@@ -330,6 +331,64 @@ export function BranchGraph({
     }
   }, [refreshBusy, projectPath, fetchData]);
 
+  const confirm = useConfirm();
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+
+  // Identify merged branches eligible for bulk deletion
+  const mergedBranches = useMemo(() => {
+    return nodes.filter((n) => {
+      if (n.isMain || n.isCurrent) return false;
+      const pr = prMap[n.name];
+      return pr?.state === "merged";
+    });
+  }, [nodes, prMap]);
+
+  // Bulk-delete all merged branches after user confirmation
+  const handleBulkDeleteMerged = useCallback(async () => {
+    if (bulkDeleteBusy || mergedBranches.length === 0) return;
+
+    const branchList = mergedBranches.map((n) => n.name).join("\n  \u2022 ");
+    const ok = await confirm({
+      title: "Delete Merged Branches",
+      message: `Delete ${mergedBranches.length} merged branch${mergedBranches.length !== 1 ? "es" : ""} and their worktrees?\n\n  \u2022 ${branchList}`,
+      confirmLabel: "Delete All",
+      variant: "danger",
+    });
+    if (!ok) return;
+
+    setBulkDeleteBusy(true);
+    try {
+      // Delete worktrees first (for branches that have them)
+      const worktreeBranches = mergedBranches.filter((n) => n.isWorktree && n.worktree);
+      for (const n of worktreeBranches) {
+        if (n.worktree) {
+          await api.deleteWorktree(n.worktree.repo_path, n.worktree.name, true).catch(() => {});
+        }
+      }
+
+      // Then bulk-delete the branches
+      const branchNames = mergedBranches.map((n) => n.name);
+      await api.bulkDeleteBranches(projectPath, branchNames, false);
+
+      // Clear selection if the selected branch was deleted
+      if (selectedNode && branchNames.includes(selectedNode)) {
+        setSelectedNode(branches?.default_branch ?? "main");
+      }
+
+      refreshBranches();
+    } finally {
+      setBulkDeleteBusy(false);
+    }
+  }, [
+    bulkDeleteBusy,
+    mergedBranches,
+    confirm,
+    projectPath,
+    selectedNode,
+    branches,
+    refreshBranches,
+  ]);
+
   // Auto-refresh PR/Issues data every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
@@ -436,6 +495,16 @@ export function BranchGraph({
             >
               fetched {formatRelativeTime(branches.last_fetch)}
             </span>
+          )}
+          {!showIssues && mergedBranches.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBulkDeleteMerged}
+              disabled={bulkDeleteBusy}
+              className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50"
+            >
+              {bulkDeleteBusy ? "Deleting..." : `Delete Merged (${mergedBranches.length})`}
+            </button>
           )}
           <button
             type="button"

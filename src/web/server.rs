@@ -90,6 +90,7 @@ impl WebServer {
             .route("/git/diff-stat", get(api::git_diff_stat))
             .route("/git/diff", get(api::git_branch_diff))
             .route("/git/branches/delete", post(api::delete_branch))
+            .route("/git/branches/delete-bulk", post(api::bulk_delete_branches))
             .route("/git/log", get(api::git_log))
             .route("/git/graph", get(api::git_graph))
             .route("/git/branches/create", post(api::create_branch))
