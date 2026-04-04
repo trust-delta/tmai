@@ -98,6 +98,42 @@ fn extract_session_id(path: &Path) -> Option<String> {
     Some(stem.to_string())
 }
 
+/// Search recent JSONL files for a project, returning the session ID of the
+/// first file whose tail content satisfies `predicate`.
+fn search_jsonl_files<F>(cwd: &str, predicate: F) -> LookupResult
+where
+    F: Fn(&str) -> bool,
+{
+    let projects_dir = match claude_projects_dir() {
+        Some(dir) => dir,
+        None => return LookupResult::NotFound,
+    };
+
+    let project_hash = cwd_to_project_hash(cwd);
+    let project_dir = projects_dir.join(&project_hash);
+
+    if !project_dir.exists() {
+        return LookupResult::NotFound;
+    }
+
+    let files = list_recent_jsonl_files(&project_dir, MAX_FILES_TO_SEARCH);
+
+    for (path, _mtime) in &files {
+        let content = match read_tail(path, TAIL_READ_BYTES) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        if predicate(&content) {
+            if let Some(session_id) = extract_session_id(path) {
+                return LookupResult::Found(session_id);
+            }
+        }
+    }
+
+    LookupResult::NotFound
+}
+
 /// Phase 1: Find session ID by matching capture-pane content against JSONL files.
 ///
 /// This is the non-invasive approach that reads existing data without modifying
@@ -111,44 +147,14 @@ fn extract_session_id(path: &Path) -> Option<String> {
 /// * `LookupResult::Found(session_id)` if a matching session was found
 /// * `LookupResult::NotFound` if no match (caller should fall back to probe)
 pub fn find_session_id(cwd: &str, capture_content: &str) -> LookupResult {
-    let projects_dir = match claude_projects_dir() {
-        Some(dir) => dir,
-        None => return LookupResult::NotFound,
-    };
-
-    let project_hash = cwd_to_project_hash(cwd);
-    let project_dir = projects_dir.join(&project_hash);
-
-    if !project_dir.exists() {
-        return LookupResult::NotFound;
-    }
-
-    // Extract distinctive phrases from capture-pane content
     let phrases = phrase::extract_phrases(capture_content, MAX_PHRASES);
     if phrases.is_empty() {
         return LookupResult::NotFound;
     }
 
-    // Search recent JSONL files
-    let files = list_recent_jsonl_files(&project_dir, MAX_FILES_TO_SEARCH);
-
-    for (path, _mtime) in &files {
-        let content = match read_tail(path, TAIL_READ_BYTES) {
-            Some(c) => c,
-            None => continue,
-        };
-
-        // Check if any phrase matches
-        for phrase in &phrases {
-            if content.contains(phrase.as_str()) {
-                if let Some(session_id) = extract_session_id(path) {
-                    return LookupResult::Found(session_id);
-                }
-            }
-        }
-    }
-
-    LookupResult::NotFound
+    search_jsonl_files(cwd, |content| {
+        phrases.iter().any(|p| content.contains(p.as_str()))
+    })
 }
 
 /// Phase 2: Find session ID by searching for a probe marker in JSONL files.
@@ -168,35 +174,7 @@ pub fn probe_session_id(cwd: &str, marker: &str) -> LookupResult {
         return LookupResult::NotFound;
     }
 
-    let projects_dir = match claude_projects_dir() {
-        Some(dir) => dir,
-        None => return LookupResult::NotFound,
-    };
-
-    let project_hash = cwd_to_project_hash(cwd);
-    let project_dir = projects_dir.join(&project_hash);
-
-    if !project_dir.exists() {
-        return LookupResult::NotFound;
-    }
-
-    // Search more broadly for probe marker (it was just written)
-    let files = list_recent_jsonl_files(&project_dir, MAX_FILES_TO_SEARCH);
-
-    for (path, _mtime) in &files {
-        let content = match read_tail(path, TAIL_READ_BYTES) {
-            Some(c) => c,
-            None => continue,
-        };
-
-        if content.contains(marker) {
-            if let Some(session_id) = extract_session_id(path) {
-                return LookupResult::Found(session_id);
-            }
-        }
-    }
-
-    LookupResult::NotFound
+    search_jsonl_files(cwd, |content| content.contains(marker))
 }
 
 #[cfg(test)]
@@ -241,5 +219,52 @@ mod tests {
     fn test_probe_session_id_nonexistent_dir() {
         let result = probe_session_id("/nonexistent/path", "tmai-probe:test-uuid");
         assert_eq!(result, LookupResult::NotFound);
+    }
+
+    #[test]
+    fn test_probe_session_id_empty_marker() {
+        let result = probe_session_id("/some/path", "");
+        assert_eq!(result, LookupResult::NotFound);
+    }
+
+    #[test]
+    fn test_search_jsonl_files_nonexistent_dir() {
+        let result = search_jsonl_files("/nonexistent/path/xyz", |_| true);
+        assert_eq!(result, LookupResult::NotFound);
+    }
+
+    #[test]
+    fn test_search_jsonl_files_with_temp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().to_str().unwrap();
+
+        // Create the project directory that search_jsonl_files expects
+        let projects_dir = dirs::home_dir()
+            .unwrap()
+            .join(".claude")
+            .join("projects")
+            .join(cwd_to_project_hash(cwd));
+
+        // If we can't create the dir (e.g. no home dir), just verify NotFound
+        if fs::create_dir_all(&projects_dir).is_ok() {
+            // Empty project dir → NotFound
+            let result = search_jsonl_files(cwd, |_| true);
+            assert_eq!(result, LookupResult::NotFound);
+
+            // Write a fake JSONL file with known content
+            let session_file = projects_dir.join("abc-123-def.jsonl");
+            fs::write(&session_file, "hello world\n").unwrap();
+
+            // Predicate matches → Found
+            let result = search_jsonl_files(cwd, |content| content.contains("hello"));
+            assert_eq!(result, LookupResult::Found("abc-123-def".to_string()));
+
+            // Predicate doesn't match → NotFound
+            let result = search_jsonl_files(cwd, |content| content.contains("missing"));
+            assert_eq!(result, LookupResult::NotFound);
+
+            // Cleanup
+            let _ = fs::remove_dir_all(&projects_dir);
+        }
     }
 }
