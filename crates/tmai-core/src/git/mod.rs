@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 
@@ -709,96 +709,155 @@ async fn fetch_last_commit_times(
 /// Compute parent branch for each non-default branch
 ///
 /// Strategy: first check reflog for "Created from <branch>" (exact match),
-/// then fall back to closest ancestor via `git merge-base --is-ancestor`.
+/// then fall back to closest ancestor via commit distance.
+///
+/// Optimization: processes branches concurrently and uses
+/// `git for-each-ref --merged` to batch ancestor detection (one git call
+/// per branch instead of O(n) `--is-ancestor` calls).
 async fn compute_branch_parents(
     repo_dir: &str,
     branches: &[String],
     default_branch: &str,
 ) -> HashMap<String, String> {
-    // Skip expensive O(n^2) ancestor computation when branch count is too high
-    if branches.len() > 30 {
+    if branches.len() > 100 {
         return HashMap::new();
     }
 
-    let branch_set: std::collections::HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
-    let mut parents = HashMap::new();
+    let branch_set: HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
+
+    // Process all branches concurrently
+    let mut join_set = tokio::task::JoinSet::new();
 
     for branch in branches {
         if branch == default_branch {
             continue;
         }
 
-        // 1. Try reflog: "branch: Created from <name>"
-        if let Some(parent) =
-            reflog_created_from(repo_dir, branch, &branch_set, default_branch).await
-        {
-            parents.insert(branch.clone(), parent);
-            continue;
-        }
+        let branch = branch.clone();
+        let branches_owned: Vec<String> = branches.to_vec();
+        let default_branch_owned = default_branch.to_string();
+        let repo_dir_owned = repo_dir.to_string();
+        let branch_set_owned: HashSet<String> = branch_set.iter().map(|s| s.to_string()).collect();
 
-        // 2. Fallback: closest ancestor by commit count
-        let mut best_parent = default_branch.to_string();
-        let mut best_count = u32::MAX;
+        join_set.spawn(async move {
+            let known: HashSet<&str> = branch_set_owned.iter().map(|s| s.as_str()).collect();
 
-        for candidate in branches {
-            if candidate == branch {
-                continue;
+            // 1. Try reflog: "branch: Created from <name>"
+            if let Some(parent) =
+                reflog_created_from(&repo_dir_owned, &branch, &known, &default_branch_owned).await
+            {
+                return (branch, parent);
             }
 
-            let is_ancestor = tokio::time::timeout(
-                GIT_TIMEOUT,
-                Command::new("git")
-                    .args([
-                        "-C",
-                        repo_dir,
-                        "merge-base",
-                        "--is-ancestor",
-                        candidate,
-                        branch,
-                    ])
-                    .output(),
+            // 2. Fallback: closest ancestor by commit distance
+            let parent = find_closest_parent_branch(
+                &repo_dir_owned,
+                &branch,
+                &branches_owned,
+                &default_branch_owned,
             )
-            .await
-            .ok()
-            .and_then(|r| r.ok())
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+            .await;
 
-            if !is_ancestor {
-                continue;
-            }
+            (branch, parent)
+        });
+    }
 
-            // Check if candidate is a genuine parent (not a child branch).
-            // If merge-base(candidate, branch) == candidate HEAD, then candidate
-            // is entirely contained in branch's history — it's a child, not a parent.
-            let merge_base = git_output(repo_dir, &["merge-base", candidate, branch]).await;
-            let candidate_head = git_output(repo_dir, &["rev-parse", candidate]).await;
-            if let (Some(mb), Some(ch)) = (&merge_base, &candidate_head) {
-                if mb == ch {
-                    // candidate HEAD is the merge-base → candidate is behind branch
-                    continue;
-                }
-            }
-
-            // Count how far branch has diverged from candidate
-            let count = git_output(
-                repo_dir,
-                &["rev-list", "--count", &format!("{}..{}", candidate, branch)],
-            )
-            .await
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(u32::MAX);
-
-            if count < best_count {
-                best_count = count;
-                best_parent = candidate.clone();
-            }
+    let mut parents = HashMap::new();
+    while let Some(result) = join_set.join_next().await {
+        if let Ok((branch, parent)) = result {
+            parents.insert(branch, parent);
         }
-
-        parents.insert(branch.clone(), best_parent);
     }
 
     parents
+}
+
+/// Find the closest parent branch by commit distance
+///
+/// Uses `git for-each-ref --merged=<branch>` to get ancestor branches in
+/// a single git call, then computes distances concurrently.
+async fn find_closest_parent_branch(
+    repo_dir: &str,
+    branch: &str,
+    branches: &[String],
+    default_branch: &str,
+) -> String {
+    // Get all branches whose tips are ancestors of this branch (single git call)
+    let ancestors = get_ancestor_branches(repo_dir, branch).await;
+
+    // Build list of candidates: branches that are ancestors (excluding self)
+    let candidates: Vec<&String> = branches
+        .iter()
+        .filter(|c| c.as_str() != branch && ancestors.contains(c.as_str()))
+        .collect();
+
+    if candidates.is_empty() {
+        return default_branch.to_string();
+    }
+
+    // Compute commit distances concurrently
+    let futures: Vec<_> = candidates
+        .into_iter()
+        .map(|candidate| {
+            let repo = repo_dir.to_string();
+            let cand = candidate.clone();
+            let br = branch.to_string();
+            async move {
+                let count = git_output(
+                    &repo,
+                    &["rev-list", "--count", &format!("{}..{}", cand, br)],
+                )
+                .await
+                .and_then(|s| s.parse::<u32>().ok());
+                (cand, count)
+            }
+        })
+        .collect();
+
+    let results = futures_util::future::join_all(futures).await;
+
+    let mut best_parent = default_branch.to_string();
+    let mut best_count = u32::MAX;
+
+    for (candidate, count) in results {
+        if let Some(c) = count {
+            if c > 0 && c < best_count {
+                best_count = c;
+                best_parent = candidate;
+            }
+        }
+    }
+
+    best_parent
+}
+
+/// Get all branch names whose tips are reachable from the given branch
+async fn get_ancestor_branches(repo_dir: &str, branch: &str) -> HashSet<String> {
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args([
+                "-C",
+                repo_dir,
+                "for-each-ref",
+                &format!("--merged={}", branch),
+                "--format=%(refname:short)",
+                "refs/heads/",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        _ => HashSet::new(),
+    }
 }
 
 /// Check reflog for the branch creation source
@@ -826,7 +885,7 @@ async fn git_output(repo_dir: &str, args: &[&str]) -> Option<String> {
 async fn reflog_created_from(
     repo_dir: &str,
     branch: &str,
-    known_branches: &std::collections::HashSet<&str>,
+    known_branches: &HashSet<&str>,
     default_branch: &str,
 ) -> Option<String> {
     let output = tokio::time::timeout(
@@ -869,7 +928,7 @@ async fn resolve_branch_at_commit(
     repo_dir: &str,
     sha: &str,
     exclude_branch: &str,
-    known_branches: &std::collections::HashSet<&str>,
+    known_branches: &HashSet<&str>,
     default_branch: &str,
 ) -> Option<String> {
     let output = tokio::time::timeout(
@@ -1686,5 +1745,93 @@ branch refs/heads/main
             data.last_commit_times.contains_key(&data.default_branch),
             "default branch should have a commit time"
         );
+    }
+
+    #[tokio::test]
+    async fn test_compute_branch_parents_returns_map() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let branches_output = Command::new("git")
+            .args(["-C", repo, "branch", "--format=%(refname:short)"])
+            .output()
+            .await
+            .unwrap();
+        let branches: Vec<String> = String::from_utf8_lossy(&branches_output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if branches.len() < 2 {
+            // Need at least 2 branches to test parent detection
+            return;
+        }
+        let default_branch = detect_default_branch(repo)
+            .await
+            .unwrap_or_else(|| "main".to_string());
+        let parents = compute_branch_parents(repo, &branches, &default_branch).await;
+        // Default branch should not have a parent entry
+        assert!(
+            !parents.contains_key(&default_branch),
+            "default branch should not appear as key"
+        );
+        // Every non-default branch should have a parent
+        for branch in &branches {
+            if branch != &default_branch {
+                assert!(
+                    parents.contains_key(branch),
+                    "branch {} should have a parent",
+                    branch
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compute_branch_parents_empty_branches() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let parents = compute_branch_parents(repo, &[], "main").await;
+        assert!(parents.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_compute_branch_parents_skips_over_limit() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        // Create a fake list of >100 branches to verify early-exit
+        let branches: Vec<String> = (0..101).map(|i| format!("branch-{}", i)).collect();
+        let parents = compute_branch_parents(repo, &branches, "main").await;
+        assert!(
+            parents.is_empty(),
+            "should return empty map for >100 branches"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_ancestor_branches_returns_self() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let current = fetch_branch(repo).await.expect("should be on a branch");
+        let ancestors = get_ancestor_branches(repo, &current).await;
+        // A branch's ancestors (--merged) always include itself
+        assert!(
+            ancestors.contains(&current),
+            "ancestors should include the branch itself"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_ancestor_branches_invalid_dir() {
+        let ancestors = get_ancestor_branches("/nonexistent/path", "main").await;
+        assert!(ancestors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_find_closest_parent_branch_defaults() {
+        // With an invalid dir, should fall back to default_branch
+        let parent = find_closest_parent_branch(
+            "/nonexistent/path",
+            "feature",
+            &["main".to_string(), "feature".to_string()],
+            "main",
+        )
+        .await;
+        assert_eq!(parent, "main");
     }
 }

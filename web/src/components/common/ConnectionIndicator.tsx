@@ -10,7 +10,7 @@ export function ConnectionIndicator({ connected }: ConnectionIndicatorProps) {
           connected ? "bg-green-500" : "bg-red-500"
         }`}
       />
-      <span className={connected ? "text-green-400" : "text-red-400"}>
+      <span className={connected ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>
         {connected ? "Connected" : "Disconnected"}
       </span>
     </div>

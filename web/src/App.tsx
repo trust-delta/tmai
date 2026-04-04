@@ -1,18 +1,23 @@
 import { useEffect } from "react";
-import { useThemeStore } from "./stores/theme";
+import { useThemeStore, loadThemeFromBackend } from "./stores/theme";
 import { useSSE } from "./hooks/useSSE";
 import { Header } from "./components/layout/Header";
 import { Sidebar } from "./components/layout/Sidebar";
 import { MainArea } from "./components/layout/MainArea";
 
 export function App() {
-  const theme = useThemeStore((s) => s.theme);
+  const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
   const connected = useSSE();
 
-  // Apply dark class to <html>
+  // Apply dark class to <html> when resolved theme changes
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+  }, [resolvedTheme]);
+
+  // Load theme preference from backend on mount
+  useEffect(() => {
+    loadThemeFromBackend();
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100 text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100">

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useThemeStore } from "../../stores/theme";
+import { useThemeStore, syncThemeToBackend } from "../../stores/theme";
+import type { Theme } from "../../stores/theme";
 import { ConnectionIndicator } from "../common/ConnectionIndicator";
 import { SpawnDialog } from "../spawn/SpawnDialog";
 
@@ -7,9 +8,28 @@ interface HeaderProps {
   connected: boolean;
 }
 
+/** Icon and label for each theme mode */
+const themeIcon: Record<Theme, string> = {
+  dark: "\u{1F319}",
+  light: "\u{2600}\u{FE0F}",
+  system: "\u{1F4BB}",
+};
+const themeLabel: Record<Theme, string> = {
+  dark: "Dark",
+  light: "Light",
+  system: "System",
+};
+
 export function Header({ connected }: HeaderProps) {
-  const { theme, toggle } = useThemeStore();
+  const { theme, cycle } = useThemeStore();
   const [showSpawn, setShowSpawn] = useState(false);
+
+  /** Cycle theme and sync to backend */
+  function handleToggle() {
+    cycle();
+    const next = useThemeStore.getState().theme;
+    syncThemeToBackend(next);
+  }
 
   return (
     <>
@@ -29,12 +49,12 @@ export function Header({ connected }: HeaderProps) {
           <ConnectionIndicator connected={connected} />
           <button
             type="button"
-            onClick={toggle}
+            onClick={handleToggle}
             className="rounded p-1.5 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800"
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            aria-label={`Theme: ${themeLabel[theme]}`}
+            title={`Theme: ${themeLabel[theme]}`}
           >
-            {theme === "dark" ? "🌙" : "☀️"}
+            {themeIcon[theme]}
           </button>
         </div>
       </header>

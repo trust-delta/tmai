@@ -118,7 +118,7 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
               }
             }}
             disabled={sending}
-            className="rounded-md border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/30 disabled:opacity-40"
+            className="rounded-md border border-red-700 px-4 py-1.5 text-sm text-red-700 hover:bg-red-100 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30"
           >
             Reject
           </button>

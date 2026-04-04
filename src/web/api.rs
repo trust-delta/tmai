@@ -2959,6 +2959,51 @@ pub async fn update_notification_settings(
 }
 
 // =========================================================
+// Theme settings
+// =========================================================
+
+/// Response for GET /api/settings/theme
+#[derive(Debug, Serialize)]
+pub struct ThemeSettingsResponse {
+    pub theme: String,
+}
+
+/// Request for PUT /api/settings/theme
+#[derive(Debug, Deserialize)]
+pub struct ThemeSettingsRequest {
+    pub theme: Option<String>,
+}
+
+/// GET /api/settings/theme
+pub async fn get_theme_settings(State(core): State<Arc<TmaiCore>>) -> Json<ThemeSettingsResponse> {
+    Json(ThemeSettingsResponse {
+        theme: core.settings().web.theme.clone(),
+    })
+}
+
+/// PUT /api/settings/theme — update theme preference and persist
+pub async fn update_theme_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<ThemeSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(ref v) = req.theme {
+        // Validate value
+        if v == "dark" || v == "light" || v == "system" {
+            tmai_core::config::Settings::save_toml_value(
+                "web",
+                "theme",
+                toml_edit::Value::from(v.as_str()),
+            );
+        }
+    }
+
+    // Reload live settings from config.toml
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
 // Deferred tool call endpoints
 // =========================================================
 

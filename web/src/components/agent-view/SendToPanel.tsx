@@ -49,15 +49,15 @@ export function SendToPanel({ agent }: SendToPanelProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-700 bg-neutral-900/50 p-3">
-      <div className="text-xs font-semibold text-neutral-400">Agent Communication</div>
+    <div className="flex flex-col gap-2 rounded-lg border border-neutral-300 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-900/50">
+      <div className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">Agent Communication</div>
 
       {/* Send to another agent */}
       <div className="flex gap-2">
         <select
           value={targetId}
           onChange={(e) => setTargetId(e.target.value)}
-          className="flex-shrink-0 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+          className="flex-shrink-0 rounded border border-neutral-300 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
         >
           <option value="">Send to...</option>
           {otherAgents.map((a) => (
@@ -77,7 +77,7 @@ export function SendToPanel({ agent }: SendToPanelProps) {
             }
           }}
           placeholder="Text to send..."
-          className="min-w-0 flex-1 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+          className="min-w-0 flex-1 rounded border border-neutral-300 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
         />
         <button
           onClick={handleSend}
@@ -101,7 +101,7 @@ export function SendToPanel({ agent }: SendToPanelProps) {
               setViewingId(null);
             }
           }}
-          className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+          className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
         >
           <option value="">View output of...</option>
           {otherAgents.map((a) => (
@@ -113,7 +113,7 @@ export function SendToPanel({ agent }: SendToPanelProps) {
         {viewingId && (
           <button
             onClick={() => handleViewOutput(viewingId)}
-            className="rounded border border-neutral-600 px-2 py-1 text-xs hover:bg-neutral-800"
+            className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-200 dark:border-neutral-600 dark:hover:bg-neutral-800"
           >
             Refresh
           </button>
@@ -121,12 +121,12 @@ export function SendToPanel({ agent }: SendToPanelProps) {
       </div>
 
       {/* Status messages */}
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      {success && <p className="text-xs text-green-400">{success}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {success && <p className="text-xs text-green-600 dark:text-green-400">{success}</p>}
 
       {/* Output viewer */}
       {viewOutput !== null && (
-        <pre className="max-h-40 overflow-auto rounded border border-neutral-700 bg-black/50 p-2 text-xs text-neutral-300">
+        <pre className="max-h-40 overflow-auto rounded border border-neutral-300 bg-neutral-100 p-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-black/50 dark:text-neutral-300">
           {viewOutput || "(empty)"}
         </pre>
       )}
