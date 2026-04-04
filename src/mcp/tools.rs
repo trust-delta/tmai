@@ -137,6 +137,21 @@ pub struct WorktreeDeleteParams {
     pub force: bool,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DispatchIssueParams {
+    /// GitHub issue number to dispatch
+    pub issue_number: u64,
+    /// Repository path (optional, defaults to cwd or first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Base branch to fork from (defaults to main)
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    /// Extra instructions appended after the auto-generated issue prompt
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
+}
+
 // =========================================================
 // Tool implementations
 // =========================================================
@@ -345,6 +360,35 @@ impl TmaiMcpServer {
         }
     }
 
+    /// One-shot issue dispatch: fetch a GitHub issue, create a worktree, and spawn an agent
+    /// with the issue context as its prompt — all in a single call.
+    #[tool(
+        description = "Dispatch a GitHub issue: fetch issue, create worktree, spawn agent with issue context"
+    )]
+    fn dispatch_issue(&self, Parameters(p): Parameters<DispatchIssueParams>) -> String {
+        let cwd = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        let mut body = serde_json::json!({
+            "cwd": cwd,
+            "issue_number": p.issue_number,
+        });
+        if let Some(base) = &p.base_branch {
+            body["base_branch"] = serde_json::json!(base);
+        }
+        if let Some(extra) = &p.additional_instructions {
+            body["additional_instructions"] = serde_json::json!(extra);
+        }
+        match self
+            .client
+            .post::<serde_json::Value>("/spawn/worktree", &body)
+        {
+            Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     /// Delete a git worktree by name.
     #[tool(description = "Delete a git worktree")]
     fn delete_worktree(&self, Parameters(p): Parameters<WorktreeDeleteParams>) -> String {
@@ -538,4 +582,40 @@ fn encode(s: &str) -> String {
 /// Format JSON value as pretty-printed string
 fn format_json(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatch_issue_params_required_only() {
+        let json = serde_json::json!({"issue_number": 42});
+        let p: DispatchIssueParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.issue_number, 42);
+        assert!(p.repo.is_none());
+        assert!(p.base_branch.is_none());
+        assert!(p.additional_instructions.is_none());
+    }
+
+    #[test]
+    fn dispatch_issue_params_all_fields() {
+        let json = serde_json::json!({
+            "issue_number": 99,
+            "repo": "/tmp/repo",
+            "base_branch": "develop",
+            "additional_instructions": "Use TDD"
+        });
+        let p: DispatchIssueParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.issue_number, 99);
+        assert_eq!(p.repo.as_deref(), Some("/tmp/repo"));
+        assert_eq!(p.base_branch.as_deref(), Some("develop"));
+        assert_eq!(p.additional_instructions.as_deref(), Some("Use TDD"));
+    }
+
+    #[test]
+    fn dispatch_issue_params_missing_issue_number_fails() {
+        let json = serde_json::json!({"repo": "/tmp/repo"});
+        assert!(serde_json::from_value::<DispatchIssueParams>(json).is_err());
+    }
 }

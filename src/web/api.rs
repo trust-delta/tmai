@@ -2209,6 +2209,10 @@ pub struct WorktreeSpawnRequest {
     /// Optional initial prompt to send to the agent on launch
     #[serde(default)]
     pub initial_prompt: Option<String>,
+    /// Extra instructions appended after the auto-generated issue prompt.
+    /// Only used when issue_number is set and initial_prompt is absent.
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
     #[serde(default = "default_rows")]
     pub rows: u16,
     #[serde(default = "default_cols")]
@@ -2354,12 +2358,18 @@ async fn resolve_issue_context(
                     } else {
                         format!("\n\n## Issue Body\n{}", issue.body)
                     };
-                    format!(
+                    let base = format!(
                         "Resolve GitHub issue #{number}: {title}{body}\n\nCreate PR: \"{title} (#{number})\"",
                         number = issue_number,
                         title = issue.title,
                         body = body_section,
-                    )
+                    );
+                    match &req.additional_instructions {
+                        Some(extra) if !extra.is_empty() => {
+                            format!("{base}\n\n## Additional Instructions\n{extra}")
+                        }
+                        _ => base,
+                    }
                 }
             };
 
