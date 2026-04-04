@@ -262,7 +262,7 @@ fn truncate_diff(diff: String) -> String {
     const MAX_DIFF_BYTES: usize = 100_000; // ~100KB, well within Claude's context
     if diff.len() > MAX_DIFF_BYTES {
         // Find a UTF-8 safe boundary (walk back from MAX to find a char boundary)
-        let safe_end = floor_char_boundary(&diff, MAX_DIFF_BYTES);
+        let safe_end = diff.floor_char_boundary(MAX_DIFF_BYTES);
         // Then find the last newline to avoid cutting mid-line
         let cut_point = diff[..safe_end].rfind('\n').unwrap_or(safe_end);
         format!(
@@ -274,19 +274,6 @@ fn truncate_diff(diff: String) -> String {
     } else {
         diff
     }
-}
-
-/// Find the largest byte index <= `max` that is on a UTF-8 char boundary.
-/// Equivalent to `str::floor_char_boundary` (nightly-only as of stable 1.80).
-fn floor_char_boundary(s: &str, max: usize) -> usize {
-    if max >= s.len() {
-        return s.len();
-    }
-    let mut i = max;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }
 
 /// Build the review prompt from request context and diff
@@ -474,18 +461,18 @@ mod tests {
     #[test]
     fn test_floor_char_boundary_ascii() {
         let s = "hello world";
-        assert_eq!(floor_char_boundary(s, 5), 5);
-        assert_eq!(floor_char_boundary(s, 100), s.len());
+        assert_eq!(s.floor_char_boundary(5), 5);
+        assert_eq!(s.floor_char_boundary(100), s.len());
     }
 
     #[test]
     fn test_floor_char_boundary_multibyte() {
         // "あいう" = 3 chars × 3 bytes = 9 bytes
         let s = "あいう";
-        assert_eq!(floor_char_boundary(s, 9), 9); // exact boundary
-        assert_eq!(floor_char_boundary(s, 7), 6); // mid-char → back to boundary
-        assert_eq!(floor_char_boundary(s, 4), 3); // mid-char → back to boundary
-        assert_eq!(floor_char_boundary(s, 1), 0); // mid-char → back to 0
+        assert_eq!(s.floor_char_boundary(9), 9); // exact boundary
+        assert_eq!(s.floor_char_boundary(7), 6); // mid-char → back to boundary
+        assert_eq!(s.floor_char_boundary(4), 3); // mid-char → back to boundary
+        assert_eq!(s.floor_char_boundary(1), 0); // mid-char → back to 0
     }
 
     #[test]
