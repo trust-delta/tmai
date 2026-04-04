@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { CopyableSha } from "./CopyableSha";
 
 interface CommitData {
   sha: string;
@@ -55,7 +56,7 @@ export function CommitLog({ repoPath, base, branch, count }: CommitLogProps) {
                 onClick={() => setExpandedSha((prev) => (prev === c.sha ? null : c.sha))}
                 className="flex w-full items-baseline gap-2 py-1 text-left hover:bg-white/[0.03] rounded px-1 -mx-1 transition-colors"
               >
-                <span className="shrink-0 font-mono text-[10px] text-cyan-600">{c.sha}</span>
+                <CopyableSha sha={c.sha} className="text-[10px] text-cyan-600" />
                 <span className="text-[11px] text-zinc-400 truncate">{c.subject}</span>
               </button>
               {expandedSha === c.sha && (

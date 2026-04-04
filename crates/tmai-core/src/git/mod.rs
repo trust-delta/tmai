@@ -997,7 +997,7 @@ pub async fn log_commits(
                 "-C",
                 repo_dir,
                 "log",
-                "--format=%h\t%s\t%b%x1e",
+                "--format=%H\t%s\t%b%x1e",
                 &format!("--max-count={}", max_count),
                 &format!("{}..{}", base, branch),
             ])
