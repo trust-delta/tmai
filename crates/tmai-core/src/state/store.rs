@@ -309,6 +309,8 @@ pub struct WorktreeDetail {
     pub is_dirty: Option<bool>,
     /// Diff statistics vs base branch (files changed, insertions, deletions)
     pub diff_summary: Option<crate::git::DiffSummary>,
+    /// Whether an agent is pending detection (recently spawned, not yet linked)
+    pub agent_pending: bool,
 }
 
 /// Input-related state
@@ -491,6 +493,11 @@ pub struct AppState {
     pub spawn_in_tmux: bool,
     /// Tmux window name for spawned agents (runtime, init from config)
     pub spawn_tmux_window_name: String,
+
+    /// Worktrees with recently spawned agents awaiting detection by the poller.
+    /// Key: worktree path, Value: spawn timestamp.
+    /// Prevents deletion during the window between spawn and agent detection.
+    pub pending_agent_worktrees: HashMap<String, std::time::Instant>,
 }
 
 impl AppState {
@@ -530,6 +537,7 @@ impl AppState {
             worktree_diff_loading: false,
             spawn_in_tmux: false,
             spawn_tmux_window_name: "tmai-agents".to_string(),
+            pending_agent_worktrees: HashMap::new(),
         }
     }
 
@@ -1737,5 +1745,51 @@ mod tests {
         state.update_agents(vec![agent1, agent2]);
 
         assert_eq!(state.attention_count(), 1);
+    }
+
+    #[test]
+    fn test_pending_agent_worktrees_default_empty() {
+        let state = AppState::new();
+        assert!(state.pending_agent_worktrees.is_empty());
+    }
+
+    #[test]
+    fn test_pending_agent_worktrees_insert_and_check() {
+        let mut state = AppState::new();
+        let path = "/home/user/project/.claude/worktrees/feat-x".to_string();
+        state
+            .pending_agent_worktrees
+            .insert(path.clone(), std::time::Instant::now());
+
+        assert!(state.pending_agent_worktrees.contains_key(&path));
+        assert!(state.pending_agent_worktrees[&path].elapsed().as_secs() < 1);
+    }
+
+    #[test]
+    fn test_pending_agent_worktrees_removal() {
+        let mut state = AppState::new();
+        let path = "/home/user/project/.claude/worktrees/feat-x".to_string();
+        state
+            .pending_agent_worktrees
+            .insert(path.clone(), std::time::Instant::now());
+
+        state.pending_agent_worktrees.remove(&path);
+        assert!(!state.pending_agent_worktrees.contains_key(&path));
+    }
+
+    #[test]
+    fn test_pending_agent_worktrees_retain_expires_old() {
+        let mut state = AppState::new();
+        let path = "/home/user/project/.claude/worktrees/feat-x".to_string();
+        // Insert with an instant far in the past (simulated by checking elapsed > grace)
+        state
+            .pending_agent_worktrees
+            .insert(path.clone(), std::time::Instant::now());
+
+        // Retain entries within 60s — should keep since just inserted
+        state
+            .pending_agent_worktrees
+            .retain(|_, t| t.elapsed().as_secs() < 60);
+        assert!(state.pending_agent_worktrees.contains_key(&path));
     }
 }

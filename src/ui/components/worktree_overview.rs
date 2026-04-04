@@ -80,7 +80,7 @@ impl WorktreeOverview {
                         worktree_name: wt.name.clone(),
                         worktree_path: wt.path.clone(),
                         is_main: wt.is_main,
-                        has_agent: wt.agent_target.is_some(),
+                        has_agent: wt.agent_target.is_some() || wt.agent_pending,
                     });
                 }
                 flat_idx += 1;
@@ -232,11 +232,16 @@ impl WorktreeOverview {
                         }
                     }
 
-                    // Agent target
+                    // Agent target or pending indicator
                     if let Some(ref target) = wt.agent_target {
                         spans.push(Span::styled(
                             target.clone(),
                             Style::default().fg(Color::DarkGray),
+                        ));
+                    } else if wt.agent_pending {
+                        spans.push(Span::styled(
+                            "(agent starting...)",
+                            Style::default().fg(Color::Yellow),
                         ));
                     }
 

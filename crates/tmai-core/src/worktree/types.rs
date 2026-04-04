@@ -41,6 +41,8 @@ pub enum WorktreeOpsError {
     GitError(String),
     /// An agent is still running in the worktree
     AgentStillRunning(String),
+    /// An agent was recently spawned but not yet detected by the poller
+    AgentPendingDetection(String),
 }
 
 impl fmt::Display for WorktreeOpsError {
@@ -55,6 +57,13 @@ impl fmt::Display for WorktreeOpsError {
             Self::GitError(msg) => write!(f, "git error: {}", msg),
             Self::AgentStillRunning(name) => {
                 write!(f, "agent still running in worktree: {}", name)
+            }
+            Self::AgentPendingDetection(name) => {
+                write!(
+                    f,
+                    "agent recently spawned in worktree (awaiting detection): {}",
+                    name
+                )
             }
         }
     }
@@ -149,6 +158,10 @@ mod tests {
         assert_eq!(
             WorktreeOpsError::AgentStillRunning("busy".to_string()).to_string(),
             "agent still running in worktree: busy"
+        );
+        assert_eq!(
+            WorktreeOpsError::AgentPendingDetection("starting".to_string()).to_string(),
+            "agent recently spawned in worktree (awaiting detection): starting"
         );
     }
 }
