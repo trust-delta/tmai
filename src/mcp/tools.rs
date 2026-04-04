@@ -35,13 +35,13 @@ pub struct EmptyParams {}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct AgentIdParams {
-    /// Agent ID (e.g., "main:0.0" or a PTY session ID)
+    /// Agent ID — accepts stable ID (e.g., "a1b2c3d4"), pane target (e.g., "main:0.0"), or PTY session UUID
     pub id: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendTextParams {
-    /// Agent ID
+    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
     pub id: String,
     /// Text to send to the agent
     pub text: String,
@@ -49,7 +49,7 @@ pub struct SendTextParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendPromptParams {
-    /// Agent ID
+    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
     pub id: String,
     /// Prompt text to send to the agent
     pub prompt: String,
@@ -57,7 +57,7 @@ pub struct SendPromptParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendKeyParams {
-    /// Agent ID
+    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
     pub id: String,
     /// Key name (Enter, Escape, Space, Up, Down, Left, Right, Tab, BTab, BSpace)
     pub key: String,
@@ -65,7 +65,7 @@ pub struct SendKeyParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SelectChoiceParams {
-    /// Agent ID
+    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
     pub id: String,
     /// Choice index (1-based)
     pub index: u32,
@@ -160,8 +160,11 @@ impl TmaiMcpServer {
         match self.client.get::<serde_json::Value>("/agents") {
             Ok(data) => {
                 if let Some(agents) = data.as_array() {
+                    // Search by stable id (primary), pane_id, target, or pty_session_id
                     if let Some(agent) = agents.iter().find(|a| {
                         a.get("id").and_then(|v| v.as_str()) == Some(&p.id)
+                            || a.get("pane_id").and_then(|v| v.as_str()) == Some(&p.id)
+                            || a.get("target").and_then(|v| v.as_str()) == Some(&p.id)
                             || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(&p.id)
                     }) {
                         return format_json(agent);
