@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
-import { type AutoApproveSettings, api, type SpawnSettings, type UsageSettings } from "@/lib/api";
+import {
+  type AutoApproveSettings,
+  api,
+  type OrchestratorSettings,
+  type SpawnSettings,
+  type UsageSettings,
+} from "@/lib/api";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -20,6 +26,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [notifyOnIdle, setNotifyOnIdle] = useState(true);
   const [notifyThresholdSecs, setNotifyThresholdSecs] = useState(10);
   const [newPattern, setNewPattern] = useState("");
+  const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -37,11 +44,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api.getUsageSettings().then(setUsageSettings).catch(console.error);
   }, []);
 
+  const refreshOrchestrator = useCallback(() => {
+    api.getOrchestratorSettings().then(setOrchestrator).catch(console.error);
+  }, []);
+
   useEffect(() => {
     refreshProjects();
     refreshSpawnSettings();
     refreshAutoApprove();
     refreshUsageSettings();
+    refreshOrchestrator();
     api
       .getPreviewSettings()
       .then((s) => setPreviewShowCursor(s.show_cursor))
@@ -53,7 +65,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         setNotifyThresholdSecs(s.notify_idle_threshold_secs);
       })
       .catch(() => {});
-  }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove, refreshUsageSettings]);
+  }, [
+    refreshProjects,
+    refreshSpawnSettings,
+    refreshAutoApprove,
+    refreshUsageSettings,
+    refreshOrchestrator,
+  ]);
 
   // Add a project directory
   const handleAdd = async (projectPath?: string) => {
@@ -385,6 +403,174 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     }}
                     className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                   />
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Orchestrator section */}
+        {orchestrator && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Orchestrator</h3>
+            <p className="mt-1 text-xs text-zinc-600">
+              Configure the orchestrator agent that coordinates sub-agents for parallel development
+              workflows.
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-4">
+              {/* Enable toggle */}
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Enabled</span>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    Enable orchestrator workflow features.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !orchestrator.enabled;
+                    setOrchestrator({ ...orchestrator, enabled: next });
+                    try {
+                      await api.updateOrchestratorSettings({ enabled: next });
+                    } catch (_e) {
+                      setOrchestrator({ ...orchestrator, enabled: !next });
+                    }
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    orchestrator.enabled ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      orchestrator.enabled
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {orchestrator.enabled && (
+                <div className="space-y-3 border-t border-white/5 pt-3">
+                  {/* Role */}
+                  <div>
+                    <span className="block text-xs text-zinc-400 mb-1">Role</span>
+                    <textarea
+                      value={orchestrator.role}
+                      onChange={(e) => setOrchestrator({ ...orchestrator, role: e.target.value })}
+                      onBlur={async () => {
+                        try {
+                          await api.updateOrchestratorSettings({ role: orchestrator.role });
+                        } catch (_e) {}
+                      }}
+                      rows={2}
+                      placeholder="Describe the orchestrator's role and persona..."
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                    />
+                  </div>
+
+                  {/* Rules */}
+                  <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                    Workflow Rules
+                  </p>
+
+                  {/* Branch rules */}
+                  <div>
+                    <span className="block text-xs text-zinc-400 mb-1">Branch rules</span>
+                    <textarea
+                      value={orchestrator.rules.branch}
+                      onChange={(e) =>
+                        setOrchestrator({
+                          ...orchestrator,
+                          rules: { ...orchestrator.rules, branch: e.target.value },
+                        })
+                      }
+                      onBlur={async () => {
+                        try {
+                          await api.updateOrchestratorSettings({
+                            rules: { branch: orchestrator.rules.branch },
+                          });
+                        } catch (_e) {}
+                      }}
+                      rows={2}
+                      placeholder="Rules for branch naming and strategy..."
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                    />
+                  </div>
+
+                  {/* Merge rules */}
+                  <div>
+                    <span className="block text-xs text-zinc-400 mb-1">Merge rules</span>
+                    <textarea
+                      value={orchestrator.rules.merge}
+                      onChange={(e) =>
+                        setOrchestrator({
+                          ...orchestrator,
+                          rules: { ...orchestrator.rules, merge: e.target.value },
+                        })
+                      }
+                      onBlur={async () => {
+                        try {
+                          await api.updateOrchestratorSettings({
+                            rules: { merge: orchestrator.rules.merge },
+                          });
+                        } catch (_e) {}
+                      }}
+                      rows={2}
+                      placeholder="Rules for merge strategy and conflict resolution..."
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                    />
+                  </div>
+
+                  {/* Review rules */}
+                  <div>
+                    <span className="block text-xs text-zinc-400 mb-1">Review rules</span>
+                    <textarea
+                      value={orchestrator.rules.review}
+                      onChange={(e) =>
+                        setOrchestrator({
+                          ...orchestrator,
+                          rules: { ...orchestrator.rules, review: e.target.value },
+                        })
+                      }
+                      onBlur={async () => {
+                        try {
+                          await api.updateOrchestratorSettings({
+                            rules: { review: orchestrator.rules.review },
+                          });
+                        } catch (_e) {}
+                      }}
+                      rows={2}
+                      placeholder="Rules for code review process..."
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                    />
+                  </div>
+
+                  {/* Custom rules */}
+                  <div>
+                    <span className="block text-xs text-zinc-400 mb-1">Custom rules</span>
+                    <textarea
+                      value={orchestrator.rules.custom}
+                      onChange={(e) =>
+                        setOrchestrator({
+                          ...orchestrator,
+                          rules: { ...orchestrator.rules, custom: e.target.value },
+                        })
+                      }
+                      onBlur={async () => {
+                        try {
+                          await api.updateOrchestratorSettings({
+                            rules: { custom: orchestrator.rules.custom },
+                          });
+                        } catch (_e) {}
+                      }}
+                      rows={3}
+                      placeholder="Additional custom rules for the orchestrator..."
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                    />
+                  </div>
                 </div>
               )}
             </div>

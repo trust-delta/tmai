@@ -5,6 +5,8 @@ interface StatusBarProps {
   onToggleCollapse?: () => void;
   onSettingsClick: () => void;
   onSecurityClick: () => void;
+  onOrchestratorClick: () => void;
+  orchestratorSpawning?: boolean;
 }
 
 // Top status bar with glassmorphism
@@ -15,6 +17,8 @@ export function StatusBar({
   onToggleCollapse,
   onSettingsClick,
   onSecurityClick,
+  onOrchestratorClick,
+  orchestratorSpawning,
 }: StatusBarProps) {
   if (collapsed) {
     return (
@@ -83,6 +87,42 @@ export function StatusBar({
             {attentionCount}
           </span>
         )}
+        <button
+          type="button"
+          onClick={onOrchestratorClick}
+          disabled={orchestratorSpawning}
+          className={`rounded px-1.5 py-0.5 transition-colors ${
+            orchestratorSpawning
+              ? "cursor-not-allowed text-zinc-600"
+              : "text-zinc-500 hover:bg-white/10 hover:text-cyan-400"
+          }`}
+          title="Start Orchestrator"
+        >
+          {orchestratorSpawning ? (
+            <svg
+              className="h-4 w-4 animate-spin"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <title>Spawning...</title>
+              <circle cx="8" cy="8" r="6" strokeDasharray="28" strokeDashoffset="8" />
+            </svg>
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <title>Start Orchestrator</title>
+              <path d="M8 2v8M5 7l3 3 3-3M3 12h10M4 14h8" />
+            </svg>
+          )}
+        </button>
         <button
           type="button"
           onClick={onSecurityClick}

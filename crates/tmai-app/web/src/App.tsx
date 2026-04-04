@@ -64,6 +64,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [orchestratorSpawning, setOrchestratorSpawning] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown">("git");
 
   // Split-pane layout state
@@ -128,6 +129,20 @@ export function App() {
     },
     [refresh, toast],
   );
+
+  // Spawn orchestrator agent
+  const handleSpawnOrchestrator = useCallback(async () => {
+    setOrchestratorSpawning(true);
+    try {
+      const res = await api.spawnOrchestrator();
+      handleSpawned(res.session_id ?? "orchestrator");
+      toast.success("Orchestrator started");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to start orchestrator");
+    } finally {
+      setOrchestratorSpawning(false);
+    }
+  }, [handleSpawned, toast]);
 
   // Select handler for agents
   const handleSelectAgent = useCallback((target: string) => {
@@ -298,6 +313,8 @@ export function App() {
             setShowSecurity((v) => !v);
             setShowSettings(false);
           }}
+          onOrchestratorClick={handleSpawnOrchestrator}
+          orchestratorSpawning={orchestratorSpawning}
         />
         {!sidebarCollapsed && (
           <>
