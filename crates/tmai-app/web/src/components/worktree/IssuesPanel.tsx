@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { IssueInfo, WorktreeSnapshot } from "@/lib/api";
-import { extractIssueNumbers } from "@/lib/issue-utils";
+import type { IssueInfo, PrInfo, WorktreeSnapshot } from "@/lib/api";
+import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
 
 // Worktree status matched to an issue
 interface IssueWorktreeStatus {
@@ -8,15 +8,60 @@ interface IssueWorktreeStatus {
   isAgentActive: boolean;
 }
 
+// PR linked to an issue (via branch name or PR title/body refs)
+export interface IssuePrLink {
+  pr: PrInfo;
+  branch: string;
+}
+
 interface IssuesPanelProps {
   issues: IssueInfo[];
   worktrees: WorktreeSnapshot[];
+  prMap: Record<string, PrInfo>;
+  branches: string[];
   selectedIssue: IssueInfo | null;
   onSelectIssue: (issue: IssueInfo | null) => void;
 }
 
+// Build a map of issue number → linked PRs by cross-referencing branches and PR metadata
+export function buildIssuePrMap(
+  prMap: Record<string, PrInfo>,
+  _branches: string[],
+): Map<number, IssuePrLink> {
+  const map = new Map<number, IssuePrLink>();
+
+  // 1. For each PR, extract issue numbers from the head branch name
+  for (const [branch, pr] of Object.entries(prMap)) {
+    const nums = extractIssueNumbers(branch);
+    for (const num of nums) {
+      if (!map.has(num)) {
+        map.set(num, { pr, branch });
+      }
+    }
+    // 2. Also extract issue refs from PR title (e.g. "Fixes #42")
+    const titleRefs = extractIssueRefs(pr.title);
+    for (const num of titleRefs) {
+      if (!map.has(num)) {
+        map.set(num, { pr, branch });
+      }
+    }
+  }
+
+  // 3. For branches without a PR, still record the branch link
+  //    (handled by issueWorktreeMap + issueBranchMap in the component)
+
+  return map;
+}
+
 // Issues list panel — replaces the graph area when Issues tab is active
-export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }: IssuesPanelProps) {
+export function IssuesPanel({
+  issues,
+  worktrees,
+  prMap,
+  branches,
+  selectedIssue,
+  onSelectIssue,
+}: IssuesPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
 
@@ -36,6 +81,23 @@ export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }:
     }
     return map;
   }, [worktrees]);
+
+  // Build issue-number → linked PR map
+  const issuePrMap = useMemo(() => buildIssuePrMap(prMap, branches), [prMap, branches]);
+
+  // Build issue-number → branch name map (branches not yet linked via worktree or PR)
+  const issueBranchMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const branch of branches) {
+      const nums = extractIssueNumbers(branch);
+      for (const num of nums) {
+        if (!map.has(num)) {
+          map.set(num, branch);
+        }
+      }
+    }
+    return map;
+  }, [branches]);
 
   // Collect all unique labels for filter chips
   const allLabels = useMemo(() => {
@@ -132,6 +194,8 @@ export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }:
           {filteredIssues.map((issue) => {
             const isSelected = selectedIssue?.number === issue.number;
             const wtStatus = issueWorktreeMap.get(issue.number);
+            const prLink = issuePrMap.get(issue.number);
+            const linkedBranch = issueBranchMap.get(issue.number);
             return (
               <button
                 type="button"
@@ -150,6 +214,7 @@ export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }:
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-zinc-200">{issue.title}</span>
+                      {/* Progress badges: Worktree/Agent → Branch → PR status */}
                       {wtStatus && (
                         <span
                           className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
@@ -161,6 +226,31 @@ export function IssuesPanel({ issues, worktrees, selectedIssue, onSelectIssue }:
                           {wtStatus.isAgentActive ? "In Progress" : "Worktree"}
                         </span>
                       )}
+                      {prLink ? (
+                        <span
+                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            prLink.pr.state === "MERGED"
+                              ? "bg-purple-500/15 text-purple-400"
+                              : prLink.pr.is_draft
+                                ? "bg-zinc-500/15 text-zinc-400"
+                                : "bg-green-500/15 text-green-400"
+                          }`}
+                          title={`PR #${prLink.pr.number}: ${prLink.pr.title}`}
+                        >
+                          {prLink.pr.state === "MERGED"
+                            ? `PR #${prLink.pr.number} Merged`
+                            : prLink.pr.is_draft
+                              ? `PR #${prLink.pr.number} Draft`
+                              : `PR #${prLink.pr.number} Open`}
+                        </span>
+                      ) : linkedBranch && !wtStatus ? (
+                        <span
+                          className="shrink-0 rounded-full bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400"
+                          title={linkedBranch}
+                        >
+                          Branch
+                        </span>
+                      ) : null}
                     </div>
                     {/* Labels */}
                     {issue.labels.length > 0 && (

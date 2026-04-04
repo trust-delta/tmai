@@ -554,6 +554,8 @@ export function BranchGraph({
             <IssuesPanel
               issues={issues}
               worktrees={projectWorktrees}
+              prMap={prMap}
+              branches={branches?.branches ?? []}
               selectedIssue={selectedIssue}
               onSelectIssue={setSelectedIssue}
             />
