@@ -529,45 +529,58 @@ impl TmaiCore {
     /// Delete a git worktree
     ///
     /// Checks for running agents and uncommitted changes before removal.
+    /// When force is true, kills the associated agent pane before deletion.
     pub async fn delete_worktree(
         &self,
         req: &crate::worktree::WorktreeDeleteRequest,
     ) -> Result<(), ApiError> {
-        // Check for running agents in this worktree (skip if force)
-        if !req.force {
-            let state = self.state().read();
-            let worktree_path = std::path::Path::new(&req.repo_path)
-                .join(".claude")
-                .join("worktrees")
-                .join(&req.worktree_name);
-            let wt_path_str = worktree_path.to_string_lossy().to_string();
+        let worktree_path = std::path::Path::new(&req.repo_path)
+            .join(".claude")
+            .join("worktrees")
+            .join(&req.worktree_name);
+        let wt_path_str = worktree_path.to_string_lossy().to_string();
 
-            for repo in &state.worktree_info {
-                for wt in &repo.worktrees {
-                    if wt.path == wt_path_str && wt.agent_target.is_some() {
-                        return Err(ApiError::WorktreeError(
-                            crate::worktree::WorktreeOpsError::AgentStillRunning(
-                                req.worktree_name.clone(),
-                            ),
-                        ));
-                    }
+        // Find agent target associated with this worktree
+        let agent_target = {
+            let state = self.state().read();
+            state
+                .worktree_info
+                .iter()
+                .flat_map(|repo| &repo.worktrees)
+                .find(|wt| wt.path == wt_path_str)
+                .and_then(|wt| wt.agent_target.clone())
+        };
+
+        if let Some(ref target) = agent_target {
+            if req.force {
+                // Force mode: kill the agent pane before deletion
+                tracing::info!(
+                    target = %target,
+                    worktree = %req.worktree_name,
+                    "Killing agent pane before worktree deletion"
+                );
+                if let Err(e) = self.kill_pane(target) {
+                    tracing::warn!(
+                        target = %target,
+                        error = %e,
+                        "Failed to kill agent pane during worktree deletion"
+                    );
                 }
+            } else {
+                // Non-force mode: block deletion if agent is running
+                return Err(ApiError::WorktreeError(
+                    crate::worktree::WorktreeOpsError::AgentStillRunning(req.worktree_name.clone()),
+                ));
             }
         }
 
         crate::worktree::delete_worktree(req).await?;
 
         // Emit event
-        let worktree_path = std::path::Path::new(&req.repo_path)
-            .join(".claude")
-            .join("worktrees")
-            .join(&req.worktree_name)
-            .to_string_lossy()
-            .to_string();
         let _ = self
             .event_sender()
             .send(super::events::CoreEvent::WorktreeRemoved {
-                target: worktree_path,
+                target: wt_path_str,
                 worktree: Some(crate::hooks::types::WorktreeInfo {
                     name: Some(req.worktree_name.clone()),
                     path: None,
@@ -1194,5 +1207,91 @@ mod tests {
         core.start_initial_usage_fetch();
         // Should not set fetching since usage is disabled
         assert!(!state.read().usage.fetching);
+    }
+
+    /// Helper to set up worktree_info with an agent running in the given worktree path
+    fn setup_worktree_info(
+        state: &crate::state::SharedState,
+        repo_path: &str,
+        worktree_name: &str,
+        agent_target: Option<String>,
+    ) {
+        use crate::state::{RepoWorktreeInfo, WorktreeDetail};
+        let wt_path = std::path::Path::new(repo_path)
+            .join(".claude")
+            .join("worktrees")
+            .join(worktree_name)
+            .to_string_lossy()
+            .to_string();
+        let mut s = state.write();
+        s.worktree_info = vec![RepoWorktreeInfo {
+            repo_name: "test-repo".to_string(),
+            repo_path: repo_path.to_string(),
+            worktrees: vec![WorktreeDetail {
+                name: worktree_name.to_string(),
+                path: wt_path,
+                branch: Some("feat/test".to_string()),
+                is_main: false,
+                agent_target,
+                agent_status: Some(AgentStatus::Processing {
+                    activity: String::new(),
+                }),
+                is_dirty: Some(false),
+                diff_summary: None,
+            }],
+        }];
+    }
+
+    #[tokio::test]
+    async fn test_delete_worktree_blocks_when_agent_running() {
+        let state = AppState::shared();
+        setup_worktree_info(&state, "/tmp/repo", "my-wt", Some("main:0.1".to_string()));
+        let core = TmaiCoreBuilder::new(Settings::default())
+            .with_state(state)
+            .build();
+
+        let req = crate::worktree::WorktreeDeleteRequest {
+            repo_path: "/tmp/repo".to_string(),
+            worktree_name: "my-wt".to_string(),
+            force: false,
+        };
+        let result = core.delete_worktree(&req).await;
+        assert!(
+            matches!(
+                result,
+                Err(ApiError::WorktreeError(
+                    crate::worktree::WorktreeOpsError::AgentStillRunning(_)
+                ))
+            ),
+            "Should block deletion when agent is running and force=false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_worktree_no_block_without_agent() {
+        let state = AppState::shared();
+        // No agent_target set for the worktree
+        setup_worktree_info(&state, "/tmp/repo", "my-wt", None);
+        let core = TmaiCoreBuilder::new(Settings::default())
+            .with_state(state)
+            .build();
+
+        let req = crate::worktree::WorktreeDeleteRequest {
+            repo_path: "/tmp/repo".to_string(),
+            worktree_name: "my-wt".to_string(),
+            force: false,
+        };
+        // Will fail at the git worktree level (path doesn't exist), but should NOT
+        // fail with AgentStillRunning
+        let result = core.delete_worktree(&req).await;
+        assert!(
+            !matches!(
+                result,
+                Err(ApiError::WorktreeError(
+                    crate::worktree::WorktreeOpsError::AgentStillRunning(_)
+                ))
+            ),
+            "Should not block deletion when no agent is running"
+        );
     }
 }
