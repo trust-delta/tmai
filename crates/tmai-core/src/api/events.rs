@@ -191,6 +191,24 @@ pub enum CoreEvent {
         tool_name: String,
     },
 
+    /// A worktree branch was successfully rebased onto the default branch
+    RebaseSucceeded {
+        /// Branch that was rebased
+        branch: String,
+        /// Worktree path
+        worktree_path: String,
+    },
+
+    /// A worktree branch rebase failed due to conflicts
+    RebaseConflict {
+        /// Branch that had conflicts
+        branch: String,
+        /// Worktree path
+        worktree_path: String,
+        /// Error details
+        error: String,
+    },
+
     /// A deferred tool call was resolved (approved/denied)
     ToolCallResolved {
         /// Unique deferred call ID

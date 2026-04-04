@@ -240,6 +240,31 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::RebaseSucceeded { branch, worktree_path }) => {
+                            let data = serde_json::json!({
+                                "branch": branch,
+                                "worktree_path": worktree_path,
+                            });
+                            let event = Event::default()
+                                .event("rebase_succeeded")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::RebaseConflict { branch, worktree_path, error }) => {
+                            let data = serde_json::json!({
+                                "branch": branch,
+                                "worktree_path": worktree_path,
+                                "error": error,
+                            });
+                            let event = Event::default()
+                                .event("rebase_conflict")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })

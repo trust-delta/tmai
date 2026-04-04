@@ -108,6 +108,9 @@ pub struct Poller {
     session_scanner: crate::session_discovery::SessionDiscoveryScanner,
     /// Transcript watcher for JSONL conversation log monitoring
     transcript_watcher: crate::transcript::TranscriptWatcher,
+    /// Tracks the last known HEAD sha per repo for auto-rebase merge detection.
+    /// Key: repo root path, Value: SHA of origin/<default_branch> HEAD.
+    last_default_branch_head: HashMap<String, String>,
 }
 
 /// Check if a PID is a descendant (child, grandchild, ...) of any PID in the set.
@@ -178,6 +181,7 @@ impl Poller {
             transcript_watcher: crate::transcript::TranscriptWatcher::new(
                 crate::transcript::watcher::new_transcript_registry(),
             ),
+            last_default_branch_head: HashMap::new(),
         }
     }
 
@@ -220,6 +224,7 @@ impl Poller {
             event_tx: None,
             session_scanner: crate::session_discovery::SessionDiscoveryScanner::new(),
             transcript_watcher: crate::transcript::TranscriptWatcher::new(transcript_registry),
+            last_default_branch_head: HashMap::new(),
         }
     }
 
@@ -335,6 +340,12 @@ impl Poller {
                     // Worktree scan (every 30 polls, offset from git scan)
                     if poll_count % 30 == 5 {
                         self.scan_worktrees(&agents).await;
+                    }
+
+                    // Auto-rebase check (every 60 polls ≈ 30 seconds)
+                    if self.settings.workflow.auto_rebase_on_merge && poll_count.is_multiple_of(60)
+                    {
+                        self.check_and_rebase(&agents).await;
                     }
 
                     // Session discovery (every 10 polls ≈ 5 seconds)
@@ -2129,6 +2140,88 @@ impl Poller {
             .retain(|_, spawned_at| spawned_at.elapsed().as_secs() < PENDING_AGENT_GRACE_SECS);
 
         state.worktree_info = result;
+    }
+
+    /// Check if the default branch HEAD advanced (indicating a merge) and trigger
+    /// auto-rebase on all tmai-managed worktree branches.
+    async fn check_and_rebase(&mut self, agents: &[MonitoredAgent]) {
+        use crate::git;
+
+        // Collect unique repo roots from agents
+        let mut repo_roots: HashSet<String> = HashSet::new();
+        for agent in agents {
+            if agent.is_virtual {
+                continue;
+            }
+            if let Some(ref common_dir) = agent.git_common_dir {
+                let root = common_dir
+                    .strip_suffix("/.git")
+                    .unwrap_or(common_dir)
+                    .to_string();
+                repo_roots.insert(root);
+            }
+        }
+        // Also include registered projects
+        {
+            let state = self.state.read();
+            for project_path in &state.registered_projects {
+                repo_roots.insert(project_path.clone());
+            }
+        }
+
+        for repo_root in &repo_roots {
+            // Resolve current HEAD of origin/<default_branch>
+            let head_sha = match git::resolve_remote_head(repo_root).await {
+                Some(sha) => sha,
+                None => continue,
+            };
+
+            let prev_sha = self.last_default_branch_head.get(repo_root).cloned();
+            self.last_default_branch_head
+                .insert(repo_root.clone(), head_sha.clone());
+
+            // Only trigger rebase when the HEAD actually changed (not on first poll)
+            let changed = match prev_sha {
+                Some(prev) => prev != head_sha,
+                None => false, // first observation, just record
+            };
+
+            if !changed {
+                continue;
+            }
+
+            tracing::info!(
+                repo = %repo_root,
+                new_head = %head_sha,
+                "default branch HEAD advanced, triggering auto-rebase"
+            );
+
+            // Fetch open PRs to filter branches by base
+            let open_prs = match crate::github::list_open_prs(repo_root).await {
+                Some(prs) => prs,
+                None => continue,
+            };
+
+            let results = git::rebase_worktree_branches(repo_root, &open_prs).await;
+
+            // Emit events for each result
+            if let Some(ref tx) = self.event_tx {
+                for result in results {
+                    if result.success {
+                        let _ = tx.send(CoreEvent::RebaseSucceeded {
+                            branch: result.branch,
+                            worktree_path: result.worktree_path,
+                        });
+                    } else {
+                        let _ = tx.send(CoreEvent::RebaseConflict {
+                            branch: result.branch,
+                            worktree_path: result.worktree_path,
+                            error: result.error.unwrap_or_default(),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     /// Cleanup the process cache
