@@ -21,6 +21,7 @@
 - **使用量トラッキング** — Claude Max/Proサブスクリプションのトークン消費量を監視
 - **エージェント起動** — UIから直接新規エージェントを起動（PTYまたはtmuxウィンドウ）
 - **Auto-approve** — 4モードの自動承認: Rules / AI / Hybrid / Off
+- **MCPサーバー** — tmaiをMCPサーバーとして公開、AIエージェントが他のエージェントをオーケストレーション
 - **Agent Teams** — Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
 - **エージェント間メッセージ** — エージェント間でテキストを送信
 
@@ -82,7 +83,7 @@ tmai --tmux
 | **はじめに** | [インストールと初期設定](./doc/ja/getting-started.md) |
 | **WebUI機能** | [概要](./doc/ja/features/webui-overview.md) - [ブランチグラフ](./doc/ja/features/branch-graph.md) - [GitHub連携](./doc/ja/features/github-integration.md) - [Worktree UI](./doc/ja/features/worktree-ui.md) - [ターミナル](./doc/ja/features/terminal-panel.md) - [エージェント起動](./doc/ja/features/agent-spawn.md) |
 | **その他の機能** | [Markdownビューア](./doc/ja/features/markdown-viewer.md) - [セキュリティパネル](./doc/ja/features/security-panel.md) - [使用量トラッキング](./doc/ja/features/usage-tracking.md) - [ファイルブラウザ](./doc/ja/features/file-browser.md) |
-| **コア機能** | [Hooks](./doc/ja/features/hooks.md) - [Auto-Approve](./doc/ja/features/auto-approve.md) - [Agent Teams](./doc/ja/features/agent-teams.md) - [モバイルリモート](./doc/ja/features/web-remote.md) - [PTYラッピング](./doc/ja/features/pty-wrapping.md) - [Fresh Session Review](./doc/ja/features/fresh-session-review.md) - [TUIモード](./doc/ja/features/tui-mode.md) |
+| **コア機能** | [Hooks](./doc/ja/features/hooks.md) - [MCPサーバー](./doc/ja/features/mcp-server.md) - [Auto-Approve](./doc/ja/features/auto-approve.md) - [Agent Teams](./doc/ja/features/agent-teams.md) - [モバイルリモート](./doc/ja/features/web-remote.md) - [PTYラッピング](./doc/ja/features/pty-wrapping.md) - [Fresh Session Review](./doc/ja/features/fresh-session-review.md) - [TUIモード](./doc/ja/features/tui-mode.md) |
 | **ワークフロー** | [マルチエージェント](./doc/ja/workflows/multi-agent.md) - [Worktree並列開発](./doc/ja/workflows/worktree-parallel.md) - [リモート承認](./doc/ja/workflows/remote-approval.md) |
 | **リファレンス** | [設定](./doc/ja/reference/config.md) - [キーバインド](./doc/ja/reference/keybindings.md) - [Web API](./doc/ja/reference/web-api.md) |
 

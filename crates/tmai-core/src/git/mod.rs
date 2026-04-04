@@ -148,11 +148,18 @@ async fn fetch_worktree_info(dir: &str) -> (bool, Option<String>) {
             let is_worktree = gd_str != cd_str;
 
             // Resolve common_dir to absolute path (git may return relative like ".")
+            // Then strip /.git suffix to get the project root directory.
             let common_dir_path = std::path::Path::new(dir).join(&cd_str);
             let common_dir = common_dir_path
                 .canonicalize()
                 .ok()
-                .map(|p| p.to_string_lossy().to_string());
+                .map(|p| p.to_string_lossy().to_string())
+                .map(|s| {
+                    s.strip_suffix("/.git")
+                        .or_else(|| s.strip_suffix("/.git/"))
+                        .unwrap_or(&s)
+                        .to_string()
+                });
 
             (is_worktree, common_dir)
         }

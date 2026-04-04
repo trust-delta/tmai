@@ -28,6 +28,7 @@ Tactful Multi Agent Interface — AIコーディングエージェント（Claud
 WebUIとTUIの両モードで利用可能な機能。
 
 - [Claude Code Hooks連携](./features/hooks.md) - HTTP Hooksによるイベント駆動型状態検出（推奨）
+- [MCPサーバー](./features/mcp-server.md) - tmaiをMCPサーバーとして公開、エージェントオーケストレーション
 - [PTYラッピング](./features/pty-wrapping.md) - PTYプロキシによる高精度な状態検出
 - [Auto-Approve](./features/auto-approve.md) - AIによる自動承認
 - [Agent Teams](./features/agent-teams.md) - Claude Codeチーム監視・可視化
