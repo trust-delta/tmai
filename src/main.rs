@@ -417,6 +417,22 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     // Run poller in background
     let mut poll_rx = poller.start();
 
+    // Background task: deliver queued prompts when agents become idle
+    {
+        let core = core.clone();
+        let mut event_rx = core.subscribe();
+        tokio::spawn(async move {
+            while let Ok(event) = event_rx.recv().await {
+                if let tmai_core::api::CoreEvent::PromptReady { target, prompt } = event {
+                    tracing::info!("Delivering queued prompt to agent {}", target);
+                    if let Err(e) = core.send_text(&target, &prompt).await {
+                        tracing::warn!("Failed to deliver queued prompt to {}: {}", target, e);
+                    }
+                }
+            }
+        });
+    }
+
     // Interval for syncing PTY session liveness with agent status
     let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
     pty_sync_interval.tick().await; // skip first tick

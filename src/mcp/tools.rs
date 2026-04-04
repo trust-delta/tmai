@@ -48,6 +48,14 @@ pub struct SendTextParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SendPromptParams {
+    /// Agent ID
+    pub id: String,
+    /// Prompt text to send to the agent
+    pub prompt: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendKeyParams {
     /// Agent ID
     pub id: String,
@@ -203,6 +211,38 @@ impl TmaiMcpServer {
             &serde_json::json!({"text": p.text}),
         ) {
             Ok(()) => format!("Sent text to agent {}", p.id),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Send a prompt to an agent with status-aware delivery. If the agent is idle, the prompt is
+    /// sent immediately. If the agent is processing, the prompt is queued (max 5) and delivered
+    /// automatically when the agent becomes idle. If the agent is stopped/offline, the prompt is
+    /// sent to restart it.
+    #[tool(description = "Send a prompt to an agent (queues if busy, delivers when idle)")]
+    fn send_prompt(&self, Parameters(p): Parameters<SendPromptParams>) -> String {
+        match self.client.post::<serde_json::Value>(
+            &format!("/agents/{}/prompt", p.id),
+            &serde_json::json!({"prompt": p.prompt}),
+        ) {
+            Ok(data) => {
+                let action = data
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let queue_size = data.get("queue_size").and_then(|v| v.as_u64()).unwrap_or(0);
+                match action {
+                    "sent" => format!("Prompt sent to agent {} (idle)", p.id),
+                    "sent_restart" => {
+                        format!("Prompt sent to agent {} (restarting from stopped)", p.id)
+                    }
+                    "queued" => format!(
+                        "Prompt queued for agent {} (queue position: {})",
+                        p.id, queue_size
+                    ),
+                    _ => format!("Prompt action '{}' for agent {}", action, p.id),
+                }
+            }
             Err(e) => format!("Error: {e}"),
         }
     }

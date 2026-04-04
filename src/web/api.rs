@@ -123,6 +123,12 @@ pub struct PassthroughRequest {
     pub key: Option<String>,
 }
 
+/// Prompt request body
+#[derive(Debug, Deserialize)]
+pub struct PromptRequest {
+    pub prompt: String,
+}
+
 /// Per-agent auto-approve override request
 #[derive(Debug, Deserialize)]
 pub struct AutoApproveOverrideRequest {
@@ -347,6 +353,22 @@ pub async fn send_text(
         .map(|()| Json(serde_json::json!({"status": "ok"})))
         .map_err(|e| {
             tracing::warn!("API: input failed agent_id={}: {}", id, e);
+            api_error_to_http(e)
+        })
+}
+
+/// Send a prompt to an agent with status-aware behavior (queue if Processing)
+pub async fn send_prompt(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<PromptRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("API: send_prompt agent_id={}", id);
+    core.send_prompt(&id, &req.prompt)
+        .await
+        .map(|result| Json(serde_json::json!({"status": "ok", "action": result.action, "queue_size": result.queue_size})))
+        .map_err(|e| {
+            tracing::warn!("API: send_prompt failed agent_id={}: {}", id, e);
             api_error_to_http(e)
         })
 }

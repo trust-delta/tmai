@@ -1500,6 +1500,7 @@ impl Poller {
                 // Emit TeammateIdle when a team member transitions to idle
                 if current_status_name == "idle" && committed_status != "idle" {
                     self.emit_teammate_idle(agent);
+                    self.drain_prompt_queue(&agent.target);
                 }
 
                 self.previous_statuses.insert(
@@ -1552,6 +1553,7 @@ impl Poller {
                         // Emit TeammateIdle when a team member transitions to idle
                         if current_status_name == "idle" && committed_status != "idle" {
                             self.emit_teammate_idle(agent);
+                            self.drain_prompt_queue(&agent.target);
                         }
 
                         self.previous_statuses.insert(
@@ -1637,6 +1639,37 @@ impl Poller {
                     target: agent.target.clone(),
                     team_name: team_info.team_name.clone(),
                     member_name: team_info.member_name.clone(),
+                });
+            }
+        }
+    }
+
+    /// Drain one prompt from the queue for an agent that just became Idle.
+    ///
+    /// Pops the front prompt from `AppState::prompt_queue` and emits a
+    /// `CoreEvent::PromptReady` event so that the main loop can deliver it.
+    fn drain_prompt_queue(&self, target: &str) {
+        let prompt = {
+            let mut state = self.state.write();
+            state
+                .prompt_queue
+                .get_mut(target)
+                .and_then(|q| q.pop_front())
+        };
+        if let Some(prompt) = prompt {
+            // Clean up empty queues
+            {
+                let mut state = self.state.write();
+                if let Some(q) = state.prompt_queue.get(target) {
+                    if q.is_empty() {
+                        state.prompt_queue.remove(target);
+                    }
+                }
+            }
+            if let Some(ref tx) = self.event_tx {
+                let _ = tx.send(CoreEvent::PromptReady {
+                    target: target.to_string(),
+                    prompt,
                 });
             }
         }
