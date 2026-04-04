@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.4.0] - 2026-04-04
+
+### Added
+
+- MCP server for programmatic agent orchestration (#186)
+- Context-aware action buttons based on branch state in git panel (#187)
+- Issue detail view in Issues tab, similar to PR detail panel (#189)
+- PermissionDenied hook event integration into audit system (#190)
+- Relative commit date display on branches in git panel (#193)
+- TaskCreated hook event integration for task monitoring (#194)
+
+### Fixed
+
+- Add repo parameter to MCP GitHub/Git tools (#188)
+- Add type field and write MCP server config to ~/.claude.json (#191)
+- Preserve existing statusLine tool in tmai init (#191)
+- Add repo parameter to spawn_worktree MCP tool
+- Auto-force delete for squash-merged branches (#196)
+
 ## [1.3.0] - 2026-04-03
 
 ### Added
