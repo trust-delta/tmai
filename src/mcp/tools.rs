@@ -107,8 +107,13 @@ pub struct SpawnAgentParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SpawnWorktreeParams {
-    /// Worktree name
-    pub name: String,
+    /// Worktree name (optional if issue_number is provided — auto-generated from issue title)
+    #[serde(default)]
+    pub name: Option<String>,
+    /// GitHub issue number. When provided: auto-generates worktree name from issue title
+    /// (if name is omitted) and composes a resolve prompt with the issue context.
+    #[serde(default)]
+    pub issue_number: Option<u64>,
     /// Repository path (optional, defaults to cwd or first registered project)
     #[serde(default)]
     pub repo: Option<String>,
@@ -307,13 +312,24 @@ impl TmaiMcpServer {
     }
 
     /// Create a new git worktree and spawn an AI agent in it. Ideal for isolated feature work.
+    /// When issue_number is provided, the worktree name is auto-generated from the issue title
+    /// and a resolve prompt with issue context is composed automatically.
     #[tool(description = "Create a worktree and spawn an agent in it")]
     fn spawn_worktree(&self, Parameters(p): Parameters<SpawnWorktreeParams>) -> String {
+        if p.name.is_none() && p.issue_number.is_none() {
+            return "Error: either 'name' or 'issue_number' must be provided".to_string();
+        }
         let cwd = match self.client.resolve_repo(&p.repo) {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        let mut body = serde_json::json!({"name": p.name, "cwd": cwd});
+        let mut body = serde_json::json!({"cwd": cwd});
+        if let Some(name) = &p.name {
+            body["name"] = serde_json::json!(name);
+        }
+        if let Some(issue_number) = p.issue_number {
+            body["issue_number"] = serde_json::json!(issue_number);
+        }
         if let Some(base) = &p.base_branch {
             body["base_branch"] = serde_json::json!(base);
         }

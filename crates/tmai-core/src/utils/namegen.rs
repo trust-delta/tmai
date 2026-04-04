@@ -269,6 +269,57 @@ pub fn generate_unique_name(existing: &[String]) -> String {
     format!("{}-{}", name, ts)
 }
 
+/// Convert a title string into a valid branch-name slug.
+///
+/// Rules: lowercase, replace non-alphanumeric runs with `-`, strip leading/trailing
+/// hyphens, and truncate to `max_len` on a word boundary.
+///
+/// # Examples
+///
+/// ```
+/// let slug = tmai_core::utils::namegen::slugify_for_branch("feat: Spawn Worktree Issue Number!", 50);
+/// assert_eq!(slug, "feat-spawn-worktree-issue-number");
+/// ```
+pub fn slugify_for_branch(title: &str, max_len: usize) -> String {
+    // Lowercase and replace any non-alphanumeric character run with a single hyphen
+    let slug: String = title
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+
+    // Collapse consecutive hyphens and trim leading/trailing hyphens
+    let mut result = String::with_capacity(slug.len());
+    let mut prev_hyphen = true; // treat start as hyphen to strip leading
+    for c in slug.chars() {
+        if c == '-' {
+            if !prev_hyphen {
+                result.push('-');
+            }
+            prev_hyphen = true;
+        } else {
+            result.push(c);
+            prev_hyphen = false;
+        }
+    }
+    // Trim trailing hyphen
+    while result.ends_with('-') {
+        result.pop();
+    }
+
+    // Truncate to max_len on a hyphen boundary if possible
+    if result.len() > max_len {
+        let truncated = &result[..max_len];
+        if let Some(last_hyphen) = truncated.rfind('-') {
+            result = truncated[..last_hyphen].to_string();
+        } else {
+            result = truncated.to_string();
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +376,51 @@ mod tests {
         let existing: Vec<String> = vec![];
         let name = generate_unique_name(&existing);
         assert!(name.contains('-'), "Name should contain a hyphen separator");
+    }
+
+    #[test]
+    fn test_slugify_basic() {
+        assert_eq!(
+            slugify_for_branch("feat: Spawn Worktree Issue Number!", 50),
+            "feat-spawn-worktree-issue-number"
+        );
+    }
+
+    #[test]
+    fn test_slugify_special_characters() {
+        assert_eq!(
+            slugify_for_branch("Add `issue_number` param to spawn_worktree MCP tool", 60),
+            "add-issue-number-param-to-spawn-worktree-mcp-tool"
+        );
+    }
+
+    #[test]
+    fn test_slugify_truncation() {
+        let slug = slugify_for_branch(
+            "this is a very long title that should be truncated properly at word boundary",
+            30,
+        );
+        assert!(
+            slug.len() <= 30,
+            "Slug should be at most 30 chars, got {}: {}",
+            slug.len(),
+            slug
+        );
+        assert!(!slug.ends_with('-'), "Slug should not end with hyphen");
+    }
+
+    #[test]
+    fn test_slugify_leading_trailing_hyphens() {
+        assert_eq!(slugify_for_branch("---hello---", 50), "hello");
+    }
+
+    #[test]
+    fn test_slugify_empty() {
+        assert_eq!(slugify_for_branch("", 50), "");
+    }
+
+    #[test]
+    fn test_slugify_consecutive_specials() {
+        assert_eq!(slugify_for_branch("a!!!b###c", 50), "a-b-c");
     }
 }
