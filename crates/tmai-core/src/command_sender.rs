@@ -8,6 +8,40 @@ use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
 use crate::utils::keys::tmux_key_to_bytes;
 
+/// Dispatch variant for the 4-tier fallback — controls byte encoding and method selection per tier
+enum SendVariant {
+    /// tmux key names (e.g. "Enter", "C-c") → converted via tmux_key_to_bytes
+    Keys,
+    /// Literal text — raw bytes, no key name conversion
+    KeysLiteral,
+    /// Text followed by Enter (carriage return appended for PTY)
+    TextAndEnter,
+}
+
+impl SendVariant {
+    /// Convert payload to bytes for direct PTY session writes
+    fn to_pty_bytes(&self, payload: &str) -> Vec<u8> {
+        match self {
+            SendVariant::Keys => tmux_key_to_bytes(payload),
+            SendVariant::KeysLiteral => payload.as_bytes().to_vec(),
+            SendVariant::TextAndEnter => {
+                let mut data = payload.as_bytes().to_vec();
+                data.push(b'\r');
+                data
+            }
+        }
+    }
+
+    /// Human-readable name for error messages
+    fn name(&self) -> &'static str {
+        match self {
+            SendVariant::Keys => "send_keys",
+            SendVariant::KeysLiteral => "send_keys_literal",
+            SendVariant::TextAndEnter => "send_text_and_enter",
+        }
+    }
+}
+
 /// Unified command sender with 4-tier fallback: PTY session → IPC → RuntimeAdapter (tmux) → PTY inject
 ///
 /// Tier priority follows reliability:
@@ -81,86 +115,63 @@ impl CommandSender {
 
     /// Send keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys(&self, target: &str, keys: &str) -> Result<()> {
-        // Tier 0: Direct PTY session write (convert tmux key names to bytes)
-        let key_bytes = tmux_key_to_bytes(keys);
-        if self.try_pty_session_write(target, &key_bytes) {
-            return Ok(());
-        }
-        // Tier 1: IPC
-        if let Some(ref ipc) = self.ipc_server {
-            if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys(&pane_id, keys, false) {
-                    return Ok(());
-                }
-            }
-        }
-        // Tier 2: RuntimeAdapter (tmux send-keys)
-        if self.runtime.send_keys(target, keys).is_ok() {
-            return Ok(());
-        }
-        // Tier 3: PTY injection via /proc/{pid}/fd/0 (TIOCSTI)
-        if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 {
-                return crate::pty_inject::inject_text(pid, keys);
-            }
-        }
-        anyhow::bail!("All send_keys tiers failed for target {}", target)
+        self.try_send_via_tiers(target, keys, SendVariant::Keys)
     }
 
     /// Send literal keys via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_keys_literal(&self, target: &str, keys: &str) -> Result<()> {
-        // Tier 0: Direct PTY session write (literal = raw bytes, no key name conversion)
-        if self.try_pty_session_write(target, keys.as_bytes()) {
-            return Ok(());
-        }
-        // Tier 1: IPC
-        if let Some(ref ipc) = self.ipc_server {
-            if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys(&pane_id, keys, true) {
-                    return Ok(());
-                }
-            }
-        }
-        // Tier 2: RuntimeAdapter (tmux send-keys)
-        if self.runtime.send_keys_literal(target, keys).is_ok() {
-            return Ok(());
-        }
-        // Tier 3: PTY injection (literal text)
-        if let Some(pid) = self.resolve_pid_for_target(target) {
-            if pid > 0 {
-                return crate::pty_inject::inject_text_literal(pid, keys);
-            }
-        }
-        anyhow::bail!("All send_keys_literal tiers failed for target {}", target)
+        self.try_send_via_tiers(target, keys, SendVariant::KeysLiteral)
     }
 
     /// Send text + Enter via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
-        // Tier 0: Direct PTY session write (text + carriage return)
-        let mut data = text.as_bytes().to_vec();
-        data.push(b'\r');
-        if self.try_pty_session_write(target, &data) {
+        self.try_send_via_tiers(target, text, SendVariant::TextAndEnter)
+    }
+
+    /// Generic 4-tier fallback: PTY session → IPC → RuntimeAdapter → PTY inject
+    fn try_send_via_tiers(&self, target: &str, payload: &str, variant: SendVariant) -> Result<()> {
+        // Tier 0: Direct PTY session write
+        let pty_bytes = variant.to_pty_bytes(payload);
+        if self.try_pty_session_write(target, &pty_bytes) {
             return Ok(());
         }
         // Tier 1: IPC
         if let Some(ref ipc) = self.ipc_server {
             if let Some(pane_id) = self.get_pane_id_for_target(target) {
-                if ipc.try_send_keys_and_enter(&pane_id, text) {
+                let ok = match variant {
+                    SendVariant::Keys => ipc.try_send_keys(&pane_id, payload, false),
+                    SendVariant::KeysLiteral => ipc.try_send_keys(&pane_id, payload, true),
+                    SendVariant::TextAndEnter => ipc.try_send_keys_and_enter(&pane_id, payload),
+                };
+                if ok {
                     return Ok(());
                 }
             }
         }
         // Tier 2: RuntimeAdapter (tmux send-keys)
-        if self.runtime.send_text_and_enter(target, text).is_ok() {
+        let runtime_result = match variant {
+            SendVariant::Keys => self.runtime.send_keys(target, payload),
+            SendVariant::KeysLiteral => self.runtime.send_keys_literal(target, payload),
+            SendVariant::TextAndEnter => self.runtime.send_text_and_enter(target, payload),
+        };
+        if runtime_result.is_ok() {
             return Ok(());
         }
-        // Tier 3: PTY injection (text + Enter)
+        // Tier 3: PTY injection via /proc/{pid}/fd/0
         if let Some(pid) = self.resolve_pid_for_target(target) {
             if pid > 0 {
-                return crate::pty_inject::inject_text_and_enter(pid, text);
+                return match variant {
+                    SendVariant::Keys => crate::pty_inject::inject_text(pid, payload),
+                    SendVariant::KeysLiteral => {
+                        crate::pty_inject::inject_text_literal(pid, payload)
+                    }
+                    SendVariant::TextAndEnter => {
+                        crate::pty_inject::inject_text_and_enter(pid, payload)
+                    }
+                };
             }
         }
-        anyhow::bail!("All send_text_and_enter tiers failed for target {}", target)
+        anyhow::bail!("All {} tiers failed for target {}", variant.name(), target)
     }
 
     /// Access the runtime adapter for direct operations (focus_pane, kill_pane, etc.)
@@ -211,5 +222,58 @@ impl CommandSender {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_variant_keys_converts_via_tmux_key_to_bytes() {
+        let bytes = SendVariant::Keys.to_pty_bytes("Enter");
+        assert_eq!(bytes, tmux_key_to_bytes("Enter"));
+    }
+
+    #[test]
+    fn send_variant_keys_literal_uses_raw_bytes() {
+        let bytes = SendVariant::KeysLiteral.to_pty_bytes("hello");
+        assert_eq!(bytes, b"hello");
+    }
+
+    #[test]
+    fn send_variant_text_and_enter_appends_cr() {
+        let bytes = SendVariant::TextAndEnter.to_pty_bytes("ls");
+        assert_eq!(bytes, b"ls\r");
+    }
+
+    #[test]
+    fn send_variant_names() {
+        assert_eq!(SendVariant::Keys.name(), "send_keys");
+        assert_eq!(SendVariant::KeysLiteral.name(), "send_keys_literal");
+        assert_eq!(SendVariant::TextAndEnter.name(), "send_text_and_enter");
+    }
+
+    #[test]
+    fn all_tiers_fail_returns_descriptive_error() {
+        use crate::runtime::StandaloneAdapter;
+        use crate::state::AppState;
+        use parking_lot::RwLock;
+
+        let state: SharedState = Arc::new(RwLock::new(AppState::default()));
+        let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+        let sender = CommandSender::new(None, runtime, state);
+
+        let err = sender.send_keys("no-such-target", "Enter").unwrap_err();
+        assert!(err.to_string().contains("send_keys"));
+        assert!(err.to_string().contains("no-such-target"));
+
+        let err = sender.send_keys_literal("no-such-target", "x").unwrap_err();
+        assert!(err.to_string().contains("send_keys_literal"));
+
+        let err = sender
+            .send_text_and_enter("no-such-target", "echo hi")
+            .unwrap_err();
+        assert!(err.to_string().contains("send_text_and_enter"));
     }
 }
