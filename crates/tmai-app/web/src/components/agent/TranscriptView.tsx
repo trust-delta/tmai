@@ -22,7 +22,7 @@ const PROSE_CLASSES = `prose prose-invert prose-sm max-w-none
   prose-hr:border-white/10
   prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400`;
 
-// Tool name color mapping
+// Tool name color mapping (cyan/teal palette matching Claude Code)
 const TOOL_COLORS: Record<string, string> = {
   Bash: "text-amber-400",
   Read: "text-cyan-400",
@@ -35,7 +35,7 @@ const TOOL_COLORS: Record<string, string> = {
 
 // Get color class for a tool name
 function toolColor(name: string): string {
-  return TOOL_COLORS[name] ?? "text-amber-400";
+  return TOOL_COLORS[name] ?? "text-cyan-400";
 }
 
 // Truncate a string at a max length
@@ -43,7 +43,12 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}...` : s;
 }
 
-// Render a user message record
+// Check if a record starts a new user turn (for separator rendering)
+function isNewTurn(record: TranscriptRecord, index: number): boolean {
+  return record.type === "user" && index > 0;
+}
+
+// Render a user message record — mimics Claude Code's `❯` prompt style
 const UserRecord = memo(function UserRecord({
   record,
 }: {
@@ -51,9 +56,9 @@ const UserRecord = memo(function UserRecord({
 }) {
   const firstLine = record.text.split("\n")[0] ?? record.text;
   return (
-    <div className="py-1">
-      <span className="text-cyan-400 font-medium">{"▶ "}</span>
-      <span className="text-zinc-300">{truncate(firstLine, 200)}</span>
+    <div className="py-1.5">
+      <span className="text-white font-bold">{"❯ "}</span>
+      <span className="text-white font-semibold">{truncate(firstLine, 200)}</span>
     </div>
   );
 });
@@ -65,7 +70,7 @@ const AssistantTextRecord = memo(function AssistantTextRecord({
   record: Extract<TranscriptRecord, { type: "assistant_text" }>;
 }) {
   return (
-    <div className="py-1">
+    <div className="py-1 pl-2">
       <div className={PROSE_CLASSES}>
         <Markdown remarkPlugins={[remarkGfm]}>{record.text}</Markdown>
       </div>
@@ -96,21 +101,21 @@ const ThinkingRecord = memo(function ThinkingRecord({
   );
 });
 
-// Render a tool use record with expandable details
+// Render a tool use record — cyan/teal `●` label with dimmed input summary
 const ToolUseRecord = memo(function ToolUseRecord({
   record,
 }: {
   record: Extract<TranscriptRecord, { type: "tool_use" }>;
 }) {
   const [showFull, setShowFull] = useState(false);
-  const summary = record.input_summary ? `: ${truncate(record.input_summary, 120)}` : "";
+  const summary = record.input_summary ? truncate(record.input_summary, 120) : "";
   return (
     <div className="py-0.5 pl-2">
       <span className={toolColor(record.tool_name)}>
-        {"⚙ "}
-        {record.tool_name}
+        {"● "}
+        <span className="font-medium">{record.tool_name}</span>
       </span>
-      <span className="text-zinc-400">{summary}</span>
+      {summary && <span className="text-zinc-500 text-xs ml-1">({summary})</span>}
       {record.input_full && (
         <button
           type="button"
@@ -129,52 +134,87 @@ const ToolUseRecord = memo(function ToolUseRecord({
   );
 });
 
-// Render a tool result record
+// Maximum lines shown before collapsing tool result output
+const TOOL_RESULT_COLLAPSE_THRESHOLD = 3;
+
+// Render a tool result record — gray background block with `⎿` prefix, collapsible
 const ToolResultRecord = memo(function ToolResultRecord({
   record,
 }: {
   record: Extract<TranscriptRecord, { type: "tool_result" }>;
 }) {
-  const firstLine = record.output_summary.split("\n")[0] ?? record.output_summary;
   const isError = record.is_error === true;
+  const lines = record.output_summary.split("\n");
+  const isLong = lines.length > TOOL_RESULT_COLLAPSE_THRESHOLD;
+  const [expanded, setExpanded] = useState(false);
+
+  const visibleText =
+    isLong && !expanded
+      ? `${lines.slice(0, TOOL_RESULT_COLLAPSE_THRESHOLD).join("\n")}…`
+      : record.output_summary;
+
   return (
-    <div className="py-0.5 pl-2">
-      <span className={isError ? "text-red-500" : "text-green-600"}>{isError ? "✗ " : "✓ "}</span>
-      <span className={isError ? "text-red-400/70" : "text-zinc-500"}>
-        {truncate(firstLine, 150)}
-      </span>
+    <div
+      className={`py-1 pl-3 ml-2 my-0.5 rounded border-l-2 font-mono text-xs leading-relaxed ${
+        isError ? "border-red-500/40 bg-red-950/20" : "border-zinc-700/50 bg-zinc-900/30"
+      }`}
+    >
+      <div className="flex items-start gap-1">
+        <span className={`shrink-0 ${isError ? "text-red-500" : "text-zinc-600"}`}>⎿</span>
+        <pre
+          className={`whitespace-pre-wrap break-words ${
+            isError ? "text-red-400/80" : "text-zinc-500"
+          }`}
+        >
+          {truncate(visibleText, 600)}
+        </pre>
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 text-zinc-600 text-[10px] hover:text-zinc-400 transition-colors"
+        >
+          {expanded ? "▾ collapse" : `▸ ${lines.length} lines — show all`}
+        </button>
+      )}
     </div>
   );
 });
 
-// Render a single transcript record by type
-const TranscriptRecordItem = memo(function TranscriptRecordItem({
-  record,
-}: {
-  record: TranscriptRecord;
-}) {
-  switch (record.type) {
-    case "user":
-      return <UserRecord record={record} />;
-    case "assistant_text":
-      return <AssistantTextRecord record={record} />;
-    case "thinking":
-      return <ThinkingRecord record={record} />;
-    case "tool_use":
-      return <ToolUseRecord record={record} />;
-    case "tool_result":
-      return <ToolResultRecord record={record} />;
-  }
+// Turn separator — subtle divider rendered before each new user turn
+const TurnSeparator = memo(function TurnSeparator() {
+  return <div className="my-2 border-t border-white/5" />;
 });
 
-// Main transcript view — renders a list of transcript records
+// Render a single transcript record by type, with optional turn separator
+const TranscriptRecordItem = memo(function TranscriptRecordItem({
+  record,
+  index,
+}: {
+  record: TranscriptRecord;
+  index: number;
+}) {
+  return (
+    <>
+      {isNewTurn(record, index) && <TurnSeparator />}
+      {record.type === "user" && <UserRecord record={record} />}
+      {record.type === "assistant_text" && <AssistantTextRecord record={record} />}
+      {record.type === "thinking" && <ThinkingRecord record={record} />}
+      {record.type === "tool_use" && <ToolUseRecord record={record} />}
+      {record.type === "tool_result" && <ToolResultRecord record={record} />}
+    </>
+  );
+});
+
+// Main transcript view — renders a list of transcript records with Claude Code styling
 export function TranscriptView({ records }: TranscriptViewProps) {
   if (records.length === 0) return null;
 
   return (
     <div className="flex flex-col">
       {records.map((record, index) => (
-        <TranscriptRecordItem key={record.uuid ?? index} record={record} />
+        <TranscriptRecordItem key={record.uuid ?? index} record={record} index={index} />
       ))}
     </div>
   );
