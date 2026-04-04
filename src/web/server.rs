@@ -141,6 +141,10 @@ impl WebServer {
                 "/settings/preview",
                 get(api::get_preview_settings).put(api::update_preview_settings),
             )
+            .route(
+                "/settings/notification",
+                get(api::get_notification_settings).put(api::update_notification_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

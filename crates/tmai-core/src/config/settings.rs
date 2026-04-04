@@ -356,6 +356,15 @@ pub struct WebSettings {
     /// Show terminal cursor overlay in preview panel
     #[serde(default = "default_show_cursor")]
     pub show_cursor: bool,
+
+    /// Send browser notification when an agent becomes idle
+    #[serde(default = "default_notify_on_idle")]
+    pub notify_on_idle: bool,
+
+    /// Seconds of continuous idle before triggering a notification
+    /// (filters out transient state flickers from capture-pane detection)
+    #[serde(default = "default_notify_idle_threshold_secs")]
+    pub notify_idle_threshold_secs: u64,
 }
 
 fn default_web_enabled() -> bool {
@@ -370,12 +379,22 @@ fn default_show_cursor() -> bool {
     true
 }
 
+fn default_notify_on_idle() -> bool {
+    true
+}
+
+fn default_notify_idle_threshold_secs() -> u64 {
+    10
+}
+
 impl Default for WebSettings {
     fn default() -> Self {
         Self {
             enabled: default_web_enabled(),
             port: default_web_port(),
             show_cursor: default_show_cursor(),
+            notify_on_idle: default_notify_on_idle(),
+            notify_idle_threshold_secs: default_notify_idle_threshold_secs(),
         }
     }
 }

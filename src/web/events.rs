@@ -227,8 +227,20 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::AgentStopped { target, cwd, last_assistant_message }) => {
+                            let data = serde_json::json!({
+                                "target": target,
+                                "cwd": cwd,
+                                "last_assistant_message": last_assistant_message,
+                            });
+                            let event = Event::default()
+                                .event("agent_stopped")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
-                        | Ok(CoreEvent::AgentStopped { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })
                         | Ok(CoreEvent::WorktreeSetupCompleted { .. })

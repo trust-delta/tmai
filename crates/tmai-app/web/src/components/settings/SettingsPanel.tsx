@@ -17,6 +17,8 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [autoApprove, setAutoApprove] = useState<AutoApproveSettings | null>(null);
   const [usageSettings, setUsageSettings] = useState<UsageSettings | null>(null);
   const [previewShowCursor, setPreviewShowCursor] = useState(true);
+  const [notifyOnIdle, setNotifyOnIdle] = useState(true);
+  const [notifyThresholdSecs, setNotifyThresholdSecs] = useState(10);
   const [newPattern, setNewPattern] = useState("");
 
   const refreshProjects = useCallback(() => {
@@ -43,6 +45,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api
       .getPreviewSettings()
       .then((s) => setPreviewShowCursor(s.show_cursor))
+      .catch(() => {});
+    api
+      .getNotificationSettings()
+      .then((s) => {
+        setNotifyOnIdle(s.notify_on_idle);
+        setNotifyThresholdSecs(s.notify_idle_threshold_secs);
+      })
       .catch(() => {});
   }, [refreshProjects, refreshSpawnSettings, refreshAutoApprove, refreshUsageSettings]);
 
@@ -486,6 +495,82 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 />
               </button>
             </label>
+          </div>
+        </section>
+
+        {/* Notification section */}
+        <section>
+          <h3 className="text-sm font-medium text-zinc-300">Notifications</h3>
+          <p className="mt-1 text-xs text-zinc-600">
+            Browser notifications when agents finish processing and become idle.
+          </p>
+
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+            <label className="flex items-center justify-between gap-3">
+              <div className="flex-1">
+                <span className="text-sm text-zinc-300">Notify on idle</span>
+                <p className="text-[11px] text-zinc-600 mt-0.5">
+                  Send a browser notification when an agent transitions from Processing to Idle.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const prev = notifyOnIdle;
+                  const next = !prev;
+                  setNotifyOnIdle(next);
+                  try {
+                    await api.updateNotificationSettings({ notify_on_idle: next });
+                  } catch (_e) {
+                    setNotifyOnIdle(prev);
+                  }
+                }}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  notifyOnIdle ? "bg-cyan-500/40" : "bg-white/10"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                    notifyOnIdle ? "translate-x-[18px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+                  }`}
+                />
+              </button>
+            </label>
+
+            {notifyOnIdle && (
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Idle threshold</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={300}
+                  value={notifyThresholdSecs}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(val)) {
+                      setNotifyThresholdSecs(val);
+                    }
+                  }}
+                  onBlur={async () => {
+                    const val = Math.max(0, notifyThresholdSecs);
+                    try {
+                      await api.updateNotificationSettings({
+                        notify_idle_threshold_secs: val,
+                      });
+                    } catch (_e) {}
+                  }}
+                  className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                />
+                <span className="text-xs text-zinc-500">seconds</span>
+              </div>
+            )}
+
+            {notifyOnIdle && (
+              <p className="text-[10px] text-zinc-600">
+                Hook-detected (◈) agents notify immediately. Capture-pane (●) agents wait the full
+                threshold to filter out transient state flickers.
+              </p>
+            )}
           </div>
         </section>
 
