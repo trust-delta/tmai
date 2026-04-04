@@ -170,6 +170,14 @@ pub enum CoreEvent {
         error: String,
     },
 
+    /// A queued prompt is ready to be delivered (agent transitioned to Idle)
+    PromptReady {
+        /// Agent target ID
+        target: String,
+        /// The prompt text to send
+        prompt: String,
+    },
+
     /// Usage data was updated (after a fetch cycle)
     UsageUpdated,
 

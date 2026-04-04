@@ -244,8 +244,10 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })
                         | Ok(CoreEvent::WorktreeSetupCompleted { .. })
-                        | Ok(CoreEvent::WorktreeSetupFailed { .. }) => {
-                            // Future: forward to SSE subscribers if needed
+                        | Ok(CoreEvent::WorktreeSetupFailed { .. })
+                        | Ok(CoreEvent::PromptReady { .. }) => {
+                            // PromptReady is handled by the background prompt delivery task.
+                            // Other events: forward to SSE subscribers in the future if needed.
                         }
                         Ok(CoreEvent::ReviewLaunched { source_target, review_target }) => {
                             let data = serde_json::json!({

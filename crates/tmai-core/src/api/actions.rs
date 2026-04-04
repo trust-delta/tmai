@@ -7,10 +7,13 @@ use crate::agents::{AgentStatus, ApprovalType};
 use crate::detectors::get_detector;
 
 use super::core::TmaiCore;
-use super::types::ApiError;
+use super::types::{ApiError, SendPromptResult};
 
 /// Maximum text length for send_text
 const MAX_TEXT_LENGTH: usize = 1024;
+
+/// Maximum number of queued prompts per agent
+const MAX_PROMPT_QUEUE_SIZE: usize = 5;
 
 /// Allowed special key names for send_key
 const ALLOWED_KEYS: &[&str] = &[
@@ -285,6 +288,84 @@ impl TmaiCore {
             .maybe_emit_input(target, "input_text", "api_input", None);
 
         Ok(())
+    }
+
+    /// Send a prompt to an agent with status-aware behavior.
+    ///
+    /// - **Idle**: sends the prompt immediately (text + Enter).
+    /// - **Offline** (stopped): sends the prompt to restart the agent.
+    /// - **Processing**: queues the prompt (max 5); delivered when agent becomes Idle.
+    /// - **Other** (AwaitingApproval, Error, Unknown): queues like Processing.
+    ///
+    /// Returns a JSON-serializable status indicating the action taken.
+    pub async fn send_prompt(
+        &self,
+        target: &str,
+        prompt: &str,
+    ) -> Result<SendPromptResult, ApiError> {
+        if prompt.chars().count() > MAX_TEXT_LENGTH {
+            return Err(ApiError::InvalidInput {
+                message: format!(
+                    "Prompt exceeds maximum length of {} characters",
+                    MAX_TEXT_LENGTH
+                ),
+            });
+        }
+
+        let (status, is_virtual) = {
+            let state = self.state().read();
+            match state.agents.get(target) {
+                Some(a) => (a.status.clone(), a.is_virtual),
+                None => {
+                    return Err(ApiError::AgentNotFound {
+                        target: target.to_string(),
+                    })
+                }
+            }
+        };
+
+        if is_virtual {
+            return Err(ApiError::VirtualAgent {
+                target: target.to_string(),
+            });
+        }
+
+        match status {
+            AgentStatus::Idle | AgentStatus::Offline => {
+                // Send immediately — Idle agents accept input; Offline panes may restart
+                self.send_text(target, prompt).await?;
+                let action = if status.is_idle() {
+                    "sent"
+                } else {
+                    "sent_restart"
+                };
+                Ok(SendPromptResult {
+                    action: action.to_string(),
+                    queue_size: 0,
+                })
+            }
+            _ => {
+                // Processing, AwaitingApproval, Error, Unknown — queue the prompt
+                let queue_size = {
+                    let mut state = self.state().write();
+                    let queue = state.prompt_queue.entry(target.to_string()).or_default();
+                    if queue.len() >= MAX_PROMPT_QUEUE_SIZE {
+                        return Err(ApiError::InvalidInput {
+                            message: format!(
+                                "Prompt queue full (max {} per agent)",
+                                MAX_PROMPT_QUEUE_SIZE
+                            ),
+                        });
+                    }
+                    queue.push_back(prompt.to_string());
+                    queue.len()
+                };
+                Ok(SendPromptResult {
+                    action: "queued".to_string(),
+                    queue_size,
+                })
+            }
+        }
     }
 
     /// Send a special key to an agent (whitelist-validated).
@@ -1261,6 +1342,7 @@ mod tests {
                 }),
                 is_dirty: Some(false),
                 diff_summary: None,
+                agent_pending: false,
             }],
         }];
     }
@@ -1316,5 +1398,182 @@ mod tests {
             ),
             "Should not block deletion when no agent is running"
         );
+    }
+
+    // =========================================================
+    // send_prompt tests
+    // =========================================================
+
+    #[tokio::test]
+    async fn test_send_prompt_queues_when_processing() {
+        let agent = test_agent(
+            "test:0.0",
+            AgentStatus::Processing {
+                activity: "thinking".to_string(),
+            },
+        );
+        let core = make_core_with_agents(vec![agent]);
+
+        // send_prompt should queue (no command sender, but queue is written before send)
+        let result = core.send_prompt("test:0.0", "do something").await;
+        assert!(result.is_ok());
+        let r = result.unwrap();
+        assert_eq!(r.action, "queued");
+        assert_eq!(r.queue_size, 1);
+
+        // Verify queue state
+        let state = core.state().read();
+        let q = state.prompt_queue.get("test:0.0").unwrap();
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0], "do something");
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_queue_overflow() {
+        let agent = test_agent(
+            "test:0.0",
+            AgentStatus::Processing {
+                activity: "thinking".to_string(),
+            },
+        );
+        let core = make_core_with_agents(vec![agent]);
+
+        // Fill up the queue (MAX_PROMPT_QUEUE_SIZE = 5)
+        for i in 0..5 {
+            let result = core.send_prompt("test:0.0", &format!("prompt {}", i)).await;
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().queue_size, i + 1);
+        }
+
+        // 6th prompt should fail
+        let result = core.send_prompt("test:0.0", "overflow").await;
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::InvalidInput { message }) => {
+                assert!(message.contains("queue full"));
+            }
+            other => panic!("Expected InvalidInput, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_idle_sends_immediately() {
+        let agent = test_agent("test:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+
+        // Idle agent — send_prompt tries to send immediately.
+        // Without a CommandSender, it will fail at the send_text level, not the queue level.
+        let result = core.send_prompt("test:0.0", "hello").await;
+        // Should fail because no CommandSender, not because of queueing
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::NoCommandSender) => {} // expected
+            other => panic!("Expected NoCommandSender, got {:?}", other),
+        }
+
+        // Queue should remain empty (not queued)
+        let state = core.state().read();
+        assert!(state.prompt_queue.get("test:0.0").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_offline_sends_immediately() {
+        let agent = test_agent("test:0.0", AgentStatus::Offline);
+        let core = make_core_with_agents(vec![agent]);
+
+        // Offline agent — should try to send immediately (restart)
+        let result = core.send_prompt("test:0.0", "restart prompt").await;
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::NoCommandSender) => {} // expected without tmux
+            other => panic!("Expected NoCommandSender, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_not_found() {
+        let core = make_core_with_agents(vec![]);
+
+        let result = core.send_prompt("nonexistent", "hello").await;
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::AgentNotFound { target }) => {
+                assert_eq!(target, "nonexistent");
+            }
+            other => panic!("Expected AgentNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_virtual_agent() {
+        let mut agent = test_agent("test:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+
+        let result = core.send_prompt("test:0.0", "hello").await;
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::VirtualAgent { .. }) => {} // expected
+            other => panic!("Expected VirtualAgent, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_too_long() {
+        let agent = test_agent("test:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+
+        let long_text = "a".repeat(MAX_TEXT_LENGTH + 1);
+        let result = core.send_prompt("test:0.0", &long_text).await;
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::InvalidInput { message }) => {
+                assert!(message.contains("maximum length"));
+            }
+            other => panic!("Expected InvalidInput, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_queues_when_awaiting_approval() {
+        let agent = test_agent(
+            "test:0.0",
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::McpTool,
+                details: "read file".to_string(),
+            },
+        );
+        let core = make_core_with_agents(vec![agent]);
+
+        let result = core.send_prompt("test:0.0", "after approval").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().action, "queued");
+    }
+
+    #[test]
+    fn test_prompt_queue_drain() {
+        // Test the drain behavior by directly manipulating AppState
+        let state = AppState::shared();
+        {
+            let mut s = state.write();
+            let mut q = std::collections::VecDeque::new();
+            q.push_back("first".to_string());
+            q.push_back("second".to_string());
+            s.prompt_queue.insert("agent1".to_string(), q);
+        }
+
+        // Pop front (simulating what the poller does)
+        let prompt = {
+            let mut s = state.write();
+            s.prompt_queue.get_mut("agent1").and_then(|q| q.pop_front())
+        };
+        assert_eq!(prompt, Some("first".to_string()));
+
+        // Verify second is still there
+        let remaining = {
+            let s = state.read();
+            s.prompt_queue.get("agent1").unwrap().len()
+        };
+        assert_eq!(remaining, 1);
     }
 }

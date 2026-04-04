@@ -52,6 +52,15 @@ pub enum ApiError {
 /// Owned snapshot of a `MonitoredAgent`, returned by query methods.
 ///
 /// All string fields are cloned out of the locked state so that callers
+/// Result of a send_prompt operation
+#[derive(Debug, Clone, Serialize)]
+pub struct SendPromptResult {
+    /// Action taken: "sent", "sent_restart", or "queued"
+    pub action: String,
+    /// Current queue size for this agent (0 if sent immediately)
+    pub queue_size: usize,
+}
+
 /// never need to hold a read lock beyond the query call.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSnapshot {

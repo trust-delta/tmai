@@ -498,6 +498,11 @@ pub struct AppState {
     /// Key: worktree path, Value: spawn timestamp.
     /// Prevents deletion during the window between spawn and agent detection.
     pub pending_agent_worktrees: HashMap<String, std::time::Instant>,
+
+    /// Prompt queue for agents that are currently Processing.
+    /// Key: agent target ID, Value: queued prompts (max 5 per agent).
+    /// Drained by the poller when the agent transitions to Idle.
+    pub prompt_queue: HashMap<String, std::collections::VecDeque<String>>,
 }
 
 impl AppState {
@@ -538,6 +543,7 @@ impl AppState {
             spawn_in_tmux: false,
             spawn_tmux_window_name: "tmai-agents".to_string(),
             pending_agent_worktrees: HashMap::new(),
+            prompt_queue: HashMap::new(),
         }
     }
 

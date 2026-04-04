@@ -71,6 +71,8 @@ export const api = {
     return await httpApi.sendText(target, text);
   },
 
+  sendPrompt: (target: string, prompt: string) => httpApi.sendPrompt(target, prompt),
+
   sendKey: async (target: string, key: string) => {
     try {
       if (await isInTauri()) {

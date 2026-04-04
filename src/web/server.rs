@@ -74,6 +74,7 @@ impl WebServer {
             .route("/agents/{id}/select", post(api::select_choice))
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))
+            .route("/agents/{id}/prompt", post(api::send_prompt))
             .route("/agents/{id}/key", post(api::send_key))
             .route("/agents/{id}/auto-approve", put(api::set_auto_approve))
             .route("/agents/{id}/kill", post(api::kill_agent))

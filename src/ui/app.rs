@@ -459,6 +459,21 @@ impl App {
                             let mut state = self.state.write();
                             state.set_notification(format!("Setup failed [{}]: {}", branch, error));
                         }
+                        tmai_core::api::CoreEvent::PromptReady { target, prompt } => {
+                            if let Some(ref core) = self.core {
+                                let core = core.clone();
+                                tokio::spawn(async move {
+                                    tracing::info!("Delivering queued prompt to agent {}", target);
+                                    if let Err(e) = core.send_text(&target, &prompt).await {
+                                        tracing::warn!(
+                                            "Failed to deliver queued prompt to {}: {}",
+                                            target,
+                                            e
+                                        );
+                                    }
+                                });
+                            }
+                        }
                         _ => {} // Other events handled elsewhere
                     }
                 }

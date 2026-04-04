@@ -629,6 +629,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  sendPrompt: (target: string, prompt: string) =>
+    apiFetch<{ status: string; action: string; queue_size: number }>(
+      `/agents/${encodeURIComponent(target)}/prompt`,
+      {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      },
+    ),
   sendKey: (target: string, key: string) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/key`, {
       method: "POST",
