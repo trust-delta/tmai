@@ -390,6 +390,9 @@ pub struct WorktreeSnapshot {
     /// Diff statistics vs base branch
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff_summary: Option<DiffSummarySnapshot>,
+    /// Whether an agent is pending detection (recently spawned, not yet linked)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub agent_pending: bool,
 }
 
 /// Diff statistics snapshot for API consumers
@@ -432,6 +435,7 @@ impl WorktreeSnapshot {
                 insertions: ds.insertions,
                 deletions: ds.deletions,
             }),
+            agent_pending: detail.agent_pending,
         }
     }
 }

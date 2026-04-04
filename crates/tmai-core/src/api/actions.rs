@@ -574,6 +574,21 @@ impl TmaiCore {
             }
         }
 
+        // Check for pending agent detection (spawned but not yet detected)
+        {
+            const PENDING_AGENT_GRACE_SECS: u64 = 60;
+            let state = self.state().read();
+            if let Some(spawned_at) = state.pending_agent_worktrees.get(&wt_path_str) {
+                if spawned_at.elapsed().as_secs() < PENDING_AGENT_GRACE_SECS {
+                    return Err(ApiError::WorktreeError(
+                        crate::worktree::WorktreeOpsError::AgentPendingDetection(
+                            req.worktree_name.clone(),
+                        ),
+                    ));
+                }
+            }
+        }
+
         crate::worktree::delete_worktree(req).await?;
 
         // Emit event
@@ -705,6 +720,14 @@ impl TmaiCore {
 
         // Run via tmai wrap for PTY monitoring
         rt.run_command_wrapped(&target, &launch_cmd)?;
+
+        // Record pending agent state to prevent premature worktree deletion
+        {
+            let state = self.state();
+            let mut s = state.write();
+            s.pending_agent_worktrees
+                .insert(worktree_path.to_string(), std::time::Instant::now());
+        }
 
         tracing::info!(
             worktree = worktree_path,

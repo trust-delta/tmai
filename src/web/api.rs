@@ -90,7 +90,8 @@ fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
             tmai_core::worktree::WorktreeOpsError::AlreadyExists(_)
             | tmai_core::worktree::WorktreeOpsError::InvalidName(_)
             | tmai_core::worktree::WorktreeOpsError::UncommittedChanges(_)
-            | tmai_core::worktree::WorktreeOpsError::AgentStillRunning(_) => {
+            | tmai_core::worktree::WorktreeOpsError::AgentStillRunning(_)
+            | tmai_core::worktree::WorktreeOpsError::AgentPendingDetection(_) => {
                 StatusCode::BAD_REQUEST
             }
             tmai_core::worktree::WorktreeOpsError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -2235,6 +2236,7 @@ pub async fn spawn_worktree(
     };
 
     // Spawn claude in the worktree directory
+    let worktree_path = wt_result.path.clone();
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
         args,
@@ -2259,14 +2261,17 @@ pub async fn spawn_worktree(
         spawn_in_pty(&core, &spawn_req).await
     };
 
-    // Set worktree_base_branch on the spawned agent
+    // Record pending agent state to prevent premature worktree deletion
     if let Ok(ref resp) = result {
         #[allow(deprecated)]
         let state = core.raw_state();
         let mut s = state.write();
+        // Set worktree_base_branch on the spawned agent
         if let Some(agent) = s.agents.get_mut(&resp.session_id) {
             agent.worktree_base_branch = effective_base;
         }
+        s.pending_agent_worktrees
+            .insert(worktree_path, std::time::Instant::now());
     }
 
     result

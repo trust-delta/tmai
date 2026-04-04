@@ -2011,6 +2011,16 @@ impl Poller {
                         .iter()
                         .find(|a| std::path::Path::new(&a.cwd).starts_with(&entry.path));
 
+                    // Check if this worktree has a pending agent spawn
+                    let is_pending = {
+                        let state = self.state.read();
+                        const PENDING_AGENT_GRACE_SECS: u64 = 60;
+                        state
+                            .pending_agent_worktrees
+                            .get(&entry.path)
+                            .is_some_and(|t| t.elapsed().as_secs() < PENDING_AGENT_GRACE_SECS)
+                    };
+
                     WorktreeDetail {
                         name,
                         path: entry.path,
@@ -2020,6 +2030,7 @@ impl Poller {
                         agent_status: linked_agent.map(|a| a.status.clone()),
                         is_dirty: linked_agent.and_then(|a| a.git_dirty),
                         diff_summary: None, // populated below for non-main worktrees
+                        agent_pending: linked_agent.is_none() && is_pending,
                     }
                 })
                 .collect();
@@ -2067,6 +2078,23 @@ impl Poller {
         result.sort_by(|a, b| a.repo_name.cmp(&b.repo_name));
 
         let mut state = self.state.write();
+
+        // Clear pending agent entries: agent detected, or grace period expired
+        const PENDING_AGENT_GRACE_SECS: u64 = 60;
+        let detected_paths: Vec<String> = result
+            .iter()
+            .flat_map(|repo| &repo.worktrees)
+            .filter(|wt| wt.agent_target.is_some())
+            .map(|wt| wt.path.clone())
+            .collect();
+        for path in &detected_paths {
+            state.pending_agent_worktrees.remove(path);
+        }
+        // Expire stale entries
+        state
+            .pending_agent_worktrees
+            .retain(|_, spawned_at| spawned_at.elapsed().as_secs() < PENDING_AGENT_GRACE_SECS);
+
         state.worktree_info = result;
     }
 
