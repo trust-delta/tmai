@@ -1960,6 +1960,84 @@ pub async fn delete_branch(
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
 }
 
+/// Bulk delete branches request body
+#[derive(Debug, Deserialize)]
+pub struct BulkDeleteBranchesRequest {
+    pub repo_path: String,
+    pub branches: Vec<String>,
+    #[serde(default)]
+    pub delete_remote: bool,
+}
+
+/// Result of a single branch deletion attempt
+#[derive(Debug, Serialize)]
+struct BranchDeleteResult {
+    branch: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Bulk-delete local branches that have been merged
+///
+/// For each branch, auto-detects squash-merged PRs and uses force-delete
+/// accordingly. Returns per-branch success/failure results so the caller
+/// can report partial failures.
+pub async fn bulk_delete_branches(
+    Json(req): Json<BulkDeleteBranchesRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if req.branches.is_empty() {
+        return Err(json_error(StatusCode::BAD_REQUEST, "No branches specified"));
+    }
+
+    let repo_dir = tmai_core::git::strip_git_suffix(&req.repo_path);
+    if !std::path::Path::new(repo_dir).is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Repository not found"));
+    }
+
+    let mut results: Vec<BranchDeleteResult> = Vec::new();
+
+    for branch in &req.branches {
+        if !tmai_core::git::is_safe_git_ref(branch) {
+            results.push(BranchDeleteResult {
+                branch: branch.clone(),
+                status: "error".to_string(),
+                error: Some("Invalid branch name".to_string()),
+            });
+            continue;
+        }
+
+        // Auto-force for squash-merged branches
+        let force = tmai_core::github::has_merged_pr(repo_dir, branch).await;
+
+        match tmai_core::git::delete_branch(repo_dir, branch, force, req.delete_remote).await {
+            Ok(()) => {
+                results.push(BranchDeleteResult {
+                    branch: branch.clone(),
+                    status: "ok".to_string(),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(BranchDeleteResult {
+                    branch: branch.clone(),
+                    status: "error".to_string(),
+                    error: Some(e),
+                });
+            }
+        }
+    }
+
+    let succeeded = results.iter().filter(|r| r.status == "ok").count();
+    let failed = results.iter().filter(|r| r.status == "error").count();
+
+    Ok(Json(serde_json::json!({
+        "results": results,
+        "succeeded": succeeded,
+        "failed": failed,
+    })))
+}
+
 /// Checkout branch request body
 #[derive(Debug, Deserialize)]
 pub struct CheckoutRequest {
@@ -3270,5 +3348,58 @@ mod tests {
         // Root paths outside HOME should be rejected
         let outside = std::path::Path::new("/etc/passwd");
         assert!(!is_path_within_allowed_scope(outside, None));
+    }
+
+    #[tokio::test]
+    async fn test_bulk_delete_branches_empty_list() {
+        let req = BulkDeleteBranchesRequest {
+            repo_path: "/tmp".to_string(),
+            branches: vec![],
+            delete_remote: false,
+        };
+        let result = bulk_delete_branches(Json(req)).await;
+        assert!(result.is_err());
+        let (status, _body) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_bulk_delete_branches_invalid_repo() {
+        let req = BulkDeleteBranchesRequest {
+            repo_path: "/nonexistent/repo".to_string(),
+            branches: vec!["feature-a".to_string()],
+            delete_remote: false,
+        };
+        let result = bulk_delete_branches(Json(req)).await;
+        assert!(result.is_err());
+        let (status, _body) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_bulk_delete_branches_invalid_branch_name() {
+        // Create a temp git repo so repo_path validation passes
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_str().unwrap();
+        std::process::Command::new("git")
+            .args(["init", dir])
+            .output()
+            .unwrap();
+
+        let req = BulkDeleteBranchesRequest {
+            repo_path: dir.to_string(),
+            branches: vec!["--exec=evil".to_string(), "valid-name".to_string()],
+            delete_remote: false,
+        };
+        let result = bulk_delete_branches(Json(req)).await;
+        assert!(result.is_ok());
+        let body = result.unwrap().0;
+        let results = body["results"].as_array().unwrap();
+        // First branch should fail validation (starts with -)
+        assert_eq!(results[0]["status"], "error");
+        assert!(results[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid branch name"));
     }
 }
