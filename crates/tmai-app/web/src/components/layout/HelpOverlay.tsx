@@ -14,6 +14,8 @@ export function HelpOverlay({ isOpen, onClose }: HelpOverlayProps) {
       items: [
         { key: "?", description: "Toggle this help menu" },
         { key: "\\", description: "Toggle split view" },
+        { key: "Ctrl+B", description: "Toggle sidebar" },
+        { key: "Ctrl+.", description: "Toggle action panel" },
         { key: "Ctrl+[", description: "Previous project" },
         { key: "Ctrl+]", description: "Next project" },
       ],

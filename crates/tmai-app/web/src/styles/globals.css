@@ -184,6 +184,22 @@ body {
   animation: glowPulse 2s ease-in-out infinite;
 }
 
+/* Slide-in from right animation for action panel */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
 /* Thin overlay scrollbar — applied globally to all scrollable areas */
 *::-webkit-scrollbar {
   width: 6px;

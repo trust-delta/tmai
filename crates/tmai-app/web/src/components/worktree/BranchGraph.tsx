@@ -23,6 +23,8 @@ interface BranchGraphProps {
   worktrees: WorktreeSnapshot[];
   agents: AgentSnapshot[];
   onFocusAgent: (target: string) => void;
+  actionPanelCollapsed?: boolean;
+  onToggleActionPanel?: () => void;
 }
 
 // Format Unix timestamp as relative time (e.g., "2m ago", "3h ago", "2w ago")
@@ -46,6 +48,31 @@ function commitAgeColor(unixSecs: number): string {
 
 const BRANCH_DEPTH_WARNING = 3;
 
+// Toggle button for collapsing/expanding the ActionPanel
+function ActionPanelToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle?: () => void }) {
+  if (!onToggle) return null;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex h-full w-5 shrink-0 items-center justify-center border-l border-white/5 text-zinc-600 transition-colors hover:bg-white/5 hover:text-zinc-400"
+      title={collapsed ? "Show action panel" : "Hide action panel"}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <title>{collapsed ? "Expand" : "Collapse"}</title>
+        {collapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3l-5 5 5 5" />}
+      </svg>
+    </button>
+  );
+}
+
 // Graphical branch tree with interactive action panels
 export function BranchGraph({
   projectPath,
@@ -53,6 +80,8 @@ export function BranchGraph({
   worktrees,
   agents,
   onFocusAgent,
+  actionPanelCollapsed = false,
+  onToggleActionPanel,
 }: BranchGraphProps) {
   const [branches, setBranches] = useState<BranchListResponse | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -469,31 +498,36 @@ export function BranchGraph({
               />
             )}
 
-            {/* Action panel in issue mode */}
-            <ActionPanel
-              activeNode={activeNode ?? nodes[0]}
-              branches={branches}
-              projectPath={projectPath}
-              nodeDepth={nodeDepth}
-              branchDepthWarning={BRANCH_DEPTH_WARNING}
-              prInfo={undefined}
-              targetPrs={[]}
-              issues={issues}
-              onRefresh={refreshBranches}
-              onSelectNode={setSelectedNode}
-              onFocusAgent={onFocusAgent}
-              onOpenDetail={setDetailView}
-              issueMode
-              selectedIssue={selectedIssue}
-              defaultBranch={branches?.default_branch ?? "main"}
-              worktrees={projectWorktrees}
-              onStartWorkDone={handleStartWorkDone}
-              onSelectWorktreeBranch={(branch) => {
-                setShowIssues(false);
-                setSelectedIssue(null);
-                setSelectedNode(branch);
-              }}
-            />
+            {/* Action panel toggle + panel in issue mode */}
+            <ActionPanelToggle collapsed={actionPanelCollapsed} onToggle={onToggleActionPanel} />
+            {!actionPanelCollapsed && (
+              <div className="animate-slide-in-right">
+                <ActionPanel
+                  activeNode={activeNode ?? nodes[0]}
+                  branches={branches}
+                  projectPath={projectPath}
+                  nodeDepth={nodeDepth}
+                  branchDepthWarning={BRANCH_DEPTH_WARNING}
+                  prInfo={undefined}
+                  targetPrs={[]}
+                  issues={issues}
+                  onRefresh={refreshBranches}
+                  onSelectNode={setSelectedNode}
+                  onFocusAgent={onFocusAgent}
+                  onOpenDetail={setDetailView}
+                  issueMode
+                  selectedIssue={selectedIssue}
+                  defaultBranch={branches?.default_branch ?? "main"}
+                  worktrees={projectWorktrees}
+                  onStartWorkDone={handleStartWorkDone}
+                  onSelectWorktreeBranch={(branch) => {
+                    setShowIssues(false);
+                    setSelectedIssue(null);
+                    setSelectedNode(branch);
+                  }}
+                />
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -632,22 +666,25 @@ export function BranchGraph({
               />
             )}
 
-            {/* Action panel (right side) */}
-            {activeNode && (
-              <ActionPanel
-                activeNode={activeNode}
-                branches={branches}
-                projectPath={projectPath}
-                nodeDepth={nodeDepth}
-                branchDepthWarning={BRANCH_DEPTH_WARNING}
-                prInfo={prMap[activeNode.name]}
-                targetPrs={targetPrMap[activeNode.name] ?? []}
-                issues={issues}
-                onRefresh={refreshBranches}
-                onSelectNode={setSelectedNode}
-                onFocusAgent={onFocusAgent}
-                onOpenDetail={setDetailView}
-              />
+            {/* Action panel toggle + panel (right side) */}
+            <ActionPanelToggle collapsed={actionPanelCollapsed} onToggle={onToggleActionPanel} />
+            {!actionPanelCollapsed && activeNode && (
+              <div className="animate-slide-in-right">
+                <ActionPanel
+                  activeNode={activeNode}
+                  branches={branches}
+                  projectPath={projectPath}
+                  nodeDepth={nodeDepth}
+                  branchDepthWarning={BRANCH_DEPTH_WARNING}
+                  prInfo={prMap[activeNode.name]}
+                  targetPrs={targetPrMap[activeNode.name] ?? []}
+                  issues={issues}
+                  onRefresh={refreshBranches}
+                  onSelectNode={setSelectedNode}
+                  onFocusAgent={onFocusAgent}
+                  onOpenDetail={setDetailView}
+                />
+              </div>
             )}
           </>
         )}

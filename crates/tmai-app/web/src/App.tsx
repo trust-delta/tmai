@@ -16,9 +16,10 @@ import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgents } from "@/hooks/useAgents";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, isAiAgent, type Selection } from "@/lib/api";
+import { api, isAiAgent, type Selection, statusName } from "@/lib/api";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -44,6 +45,10 @@ export function App() {
     onDividerMouseDown,
     onDividerDoubleClick,
   } = useSplitPane();
+
+  // Responsive layout state (sidebar & action panel collapse)
+  const { sidebarCollapsed, toggleSidebar, actionPanelCollapsed, toggleActionPanel } =
+    useResponsiveLayout();
 
   // Fetch registered projects on mount and on demand
   const refreshProjects = useCallback(() => {
@@ -195,6 +200,18 @@ export function App() {
       handler: () => setSplitEnabled(!splitEnabled),
     },
     {
+      keys: ["b"],
+      description: "Toggle sidebar",
+      requiresCtrl: true,
+      handler: toggleSidebar,
+    },
+    {
+      keys: ["."],
+      description: "Toggle action panel",
+      requiresCtrl: true,
+      handler: toggleActionPanel,
+    },
+    {
       keys: ["]"],
       description: "Next project",
       requiresCtrl: true,
@@ -231,10 +248,16 @@ export function App() {
   return (
     <div className="flex h-screen text-zinc-100">
       {/* Sidebar */}
-      <aside className="glass flex w-80 shrink-0 flex-col transition-subtle">
+      <aside
+        className={`glass flex shrink-0 flex-col transition-subtle ${
+          sidebarCollapsed ? "w-14" : "w-80"
+        }`}
+      >
         <StatusBar
           agentCount={aiAgents.length}
           attentionCount={attentionCount}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
           onSettingsClick={() => {
             setShowSettings((v) => !v);
             setShowSecurity(false);
@@ -244,25 +267,52 @@ export function App() {
             setShowSettings(false);
           }}
         />
-        <AgentList
-          agents={aiAgents}
-          loading={loading}
-          selection={selection}
-          onSelectAgent={handleSelectAgent}
-          onSelectProject={handleSelectProject}
-          onSelectMarkdown={handleSelectMarkdown}
-          registeredProjects={registeredProjects}
-          worktrees={worktrees}
-          onSpawned={handleSpawned}
-          splitPaneProjectPath={showSplitView ? agentProjectPath : null}
-          splitPaneTab={showSplitView ? rightPanelTab : null}
-        />
-        <TerminalList
-          terminals={terminals}
-          selectedTarget={selectedTarget}
-          onSelect={handleSelectAgent}
-        />
-        <UsagePanel />
+        {!sidebarCollapsed && (
+          <>
+            <AgentList
+              agents={aiAgents}
+              loading={loading}
+              selection={selection}
+              onSelectAgent={handleSelectAgent}
+              onSelectProject={handleSelectProject}
+              onSelectMarkdown={handleSelectMarkdown}
+              registeredProjects={registeredProjects}
+              worktrees={worktrees}
+              onSpawned={handleSpawned}
+              splitPaneProjectPath={showSplitView ? agentProjectPath : null}
+              splitPaneTab={showSplitView ? rightPanelTab : null}
+            />
+            <TerminalList
+              terminals={terminals}
+              selectedTarget={selectedTarget}
+              onSelect={handleSelectAgent}
+            />
+            <UsagePanel />
+          </>
+        )}
+        {sidebarCollapsed && (
+          <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
+            {aiAgents.map((agent) => (
+              <button
+                key={agent.id}
+                type="button"
+                onClick={() => handleSelectAgent(agent.target)}
+                className={`h-8 w-8 rounded-lg text-[10px] transition-colors ${
+                  selectedTarget === agent.target
+                    ? "bg-cyan-500/20 text-cyan-400"
+                    : "text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                }`}
+                title={agent.target}
+              >
+                {statusName(agent.status) === "Processing"
+                  ? "●"
+                  : statusName(agent.status) === "AwaitingApproval"
+                    ? "◐"
+                    : "○"}
+              </button>
+            ))}
+          </div>
+        )}
       </aside>
 
       {/* Main area */}
@@ -287,6 +337,8 @@ export function App() {
               worktrees={worktrees}
               agents={aiAgents}
               onFocusAgent={handleSelectAgent}
+              actionPanelCollapsed={actionPanelCollapsed}
+              onToggleActionPanel={toggleActionPanel}
             />
           </div>
         ) : selection?.type === "markdown" ? (
@@ -340,6 +392,8 @@ export function App() {
                   worktrees={worktrees}
                   agents={aiAgents}
                   onFocusAgent={handleSelectAgent}
+                  actionPanelCollapsed={actionPanelCollapsed}
+                  onToggleActionPanel={toggleActionPanel}
                 />
               ) : (
                 <MarkdownPanel
