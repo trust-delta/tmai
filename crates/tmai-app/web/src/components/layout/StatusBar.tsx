@@ -7,6 +7,7 @@ interface StatusBarProps {
   onSecurityClick: () => void;
   onOrchestratorClick: () => void;
   orchestratorSpawning?: boolean;
+  orchestratorRunning?: boolean;
 }
 
 // Top status bar with glassmorphism
@@ -19,6 +20,7 @@ export function StatusBar({
   onSecurityClick,
   onOrchestratorClick,
   orchestratorSpawning,
+  orchestratorRunning,
 }: StatusBarProps) {
   if (collapsed) {
     return (
@@ -90,15 +92,36 @@ export function StatusBar({
         <button
           type="button"
           onClick={onOrchestratorClick}
-          disabled={orchestratorSpawning}
+          disabled={orchestratorSpawning || orchestratorRunning}
           className={`rounded px-1.5 py-0.5 transition-colors ${
-            orchestratorSpawning
-              ? "cursor-not-allowed text-zinc-600"
-              : "text-zinc-500 hover:bg-white/10 hover:text-cyan-400"
+            orchestratorRunning
+              ? "text-emerald-400 cursor-default"
+              : orchestratorSpawning
+                ? "cursor-not-allowed text-zinc-600"
+                : "text-zinc-500 hover:bg-white/10 hover:text-cyan-400"
           }`}
-          title="Start Orchestrator"
+          title={
+            orchestratorRunning
+              ? "Orchestrator is running"
+              : orchestratorSpawning
+                ? "Starting..."
+                : "Start Orchestrator"
+          }
         >
-          {orchestratorSpawning ? (
+          {orchestratorRunning ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <title>Orchestrator running</title>
+              <path d="M8 2v8M5 7l3 3 3-3M3 12h10M4 14h8" />
+              <circle cx="13" cy="3" r="2.5" fill="currentColor" stroke="none" />
+            </svg>
+          ) : orchestratorSpawning ? (
             <svg
               className="h-4 w-4 animate-spin"
               viewBox="0 0 16 16"

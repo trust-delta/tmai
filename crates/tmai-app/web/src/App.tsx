@@ -106,6 +106,9 @@ export function App() {
   const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
   const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
 
+  // Detect if an orchestrator agent is currently running
+  const orchestratorRunning = useMemo(() => agents.some((a) => a.is_orchestrator), [agents]);
+
   // Derive selected agent from selection
   const selectedAgent =
     selection?.type === "agent"
@@ -315,6 +318,7 @@ export function App() {
           }}
           onOrchestratorClick={handleSpawnOrchestrator}
           orchestratorSpawning={orchestratorSpawning}
+          orchestratorRunning={orchestratorRunning}
         />
         {!sidebarCollapsed && (
           <>
@@ -375,6 +379,9 @@ export function App() {
             <SettingsPanel
               onClose={() => setShowSettings(false)}
               onProjectsChanged={refreshProjects}
+              onLaunchOrchestrator={handleSpawnOrchestrator}
+              orchestratorSpawning={orchestratorSpawning}
+              orchestratorRunning={orchestratorRunning}
             />
           </div>
         ) : selection?.type === "project" ? (

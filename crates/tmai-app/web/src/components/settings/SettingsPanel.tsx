@@ -11,10 +11,19 @@ import {
 interface SettingsPanelProps {
   onClose: () => void;
   onProjectsChanged: () => void;
+  onLaunchOrchestrator?: () => void;
+  orchestratorSpawning?: boolean;
+  orchestratorRunning?: boolean;
 }
 
 // Settings panel displayed in the main area
-export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps) {
+export function SettingsPanel({
+  onClose,
+  onProjectsChanged,
+  onLaunchOrchestrator,
+  orchestratorSpawning,
+  orchestratorRunning,
+}: SettingsPanelProps) {
   const [projects, setProjects] = useState<string[]>([]);
   const [browsing, setBrowsing] = useState(false);
   const [path, setPath] = useState("");
@@ -451,6 +460,60 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   />
                 </button>
               </label>
+
+              {/* Launch button */}
+              {orchestrator.enabled && onLaunchOrchestrator && (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onLaunchOrchestrator}
+                    disabled={orchestratorSpawning || orchestratorRunning}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      orchestratorRunning
+                        ? "bg-emerald-500/15 text-emerald-400 cursor-default"
+                        : orchestratorSpawning
+                          ? "bg-white/5 text-zinc-500 cursor-not-allowed"
+                          : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+                    }`}
+                  >
+                    {orchestratorRunning ? (
+                      <>
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Orchestrator Running
+                      </>
+                    ) : orchestratorSpawning ? (
+                      <>
+                        <svg
+                          className="h-3.5 w-3.5 animate-spin"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <title>Spawning</title>
+                          <circle cx="8" cy="8" r="6" strokeDasharray="28" strokeDashoffset="8" />
+                        </svg>
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <title>Launch</title>
+                          <path d="M5 3l8 5-8 5V3z" />
+                        </svg>
+                        Launch Orchestrator
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {orchestrator.enabled && (
                 <div className="space-y-3 border-t border-white/5 pt-3">
