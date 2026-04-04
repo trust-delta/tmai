@@ -1,11 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>tmai</title>
-    <script type="module" crossorigin src="/assets/index-BdntBsk0.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-y5_hIxG-.css">
+    <script>
+      // FOUC prevention: apply theme before first paint
+      (function () {
+        var t = localStorage.getItem("tmai-theme") || "system";
+        var dark =
+          t === "dark" ||
+          (t === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-CNZib48d.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CTvxwv8o.css">
   </head>
   <body>
     <div id="root"></div>

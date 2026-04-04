@@ -27,6 +27,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [notifyThresholdSecs, setNotifyThresholdSecs] = useState(10);
   const [newPattern, setNewPattern] = useState("");
   const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
+  const [orchScope, setOrchScope] = useState<string>("global");
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -44,9 +45,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api.getUsageSettings().then(setUsageSettings).catch(console.error);
   }, []);
 
+  const orchProject = orchScope === "global" ? undefined : orchScope;
   const refreshOrchestrator = useCallback(() => {
-    api.getOrchestratorSettings().then(setOrchestrator).catch(console.error);
-  }, []);
+    api.getOrchestratorSettings(orchProject).then(setOrchestrator).catch(console.error);
+  }, [orchProject]);
 
   useEffect(() => {
     refreshProjects();
@@ -419,6 +421,30 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
             </p>
 
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-4">
+              {/* Scope selector */}
+              <div>
+                <span className="block text-xs text-zinc-400 mb-1">Scope</span>
+                <select
+                  value={orchScope}
+                  onChange={(e) => setOrchScope(e.target.value)}
+                  className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                >
+                  <option value="global">Global (default)</option>
+                  {projects.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                {orchScope !== "global" && (
+                  <p className="mt-1 text-[10px] text-zinc-600">
+                    {orchestrator.is_project_override
+                      ? "Project-level override active"
+                      : "Using global settings (no project override)"}
+                  </p>
+                )}
+              </div>
+
               {/* Enable toggle */}
               <label className="flex items-center justify-between gap-3">
                 <div className="flex-1">
@@ -433,7 +459,8 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     const next = !orchestrator.enabled;
                     setOrchestrator({ ...orchestrator, enabled: next });
                     try {
-                      await api.updateOrchestratorSettings({ enabled: next });
+                      await api.updateOrchestratorSettings({ enabled: next }, orchProject);
+                      refreshOrchestrator();
                     } catch (_e) {
                       setOrchestrator({ ...orchestrator, enabled: !next });
                     }
@@ -462,7 +489,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       onChange={(e) => setOrchestrator({ ...orchestrator, role: e.target.value })}
                       onBlur={async () => {
                         try {
-                          await api.updateOrchestratorSettings({ role: orchestrator.role });
+                          await api.updateOrchestratorSettings(
+                            { role: orchestrator.role },
+                            orchProject,
+                          );
                         } catch (_e) {}
                       }}
                       rows={2}
@@ -489,9 +519,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       }
                       onBlur={async () => {
                         try {
-                          await api.updateOrchestratorSettings({
-                            rules: { branch: orchestrator.rules.branch },
-                          });
+                          await api.updateOrchestratorSettings(
+                            { rules: { branch: orchestrator.rules.branch } },
+                            orchProject,
+                          );
                         } catch (_e) {}
                       }}
                       rows={2}
@@ -513,9 +544,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       }
                       onBlur={async () => {
                         try {
-                          await api.updateOrchestratorSettings({
-                            rules: { merge: orchestrator.rules.merge },
-                          });
+                          await api.updateOrchestratorSettings(
+                            { rules: { merge: orchestrator.rules.merge } },
+                            orchProject,
+                          );
                         } catch (_e) {}
                       }}
                       rows={2}
@@ -537,9 +569,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       }
                       onBlur={async () => {
                         try {
-                          await api.updateOrchestratorSettings({
-                            rules: { review: orchestrator.rules.review },
-                          });
+                          await api.updateOrchestratorSettings(
+                            { rules: { review: orchestrator.rules.review } },
+                            orchProject,
+                          );
                         } catch (_e) {}
                       }}
                       rows={2}
@@ -561,9 +594,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       }
                       onBlur={async () => {
                         try {
-                          await api.updateOrchestratorSettings({
-                            rules: { custom: orchestrator.rules.custom },
-                          });
+                          await api.updateOrchestratorSettings(
+                            { rules: { custom: orchestrator.rules.custom } },
+                            orchProject,
+                          );
                         } catch (_e) {}
                       }}
                       rows={3}

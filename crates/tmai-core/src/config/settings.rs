@@ -290,9 +290,13 @@ pub struct Settings {
     #[serde(default)]
     pub orchestrator: OrchestratorSettings,
 
-    /// Registered project directories (absolute paths)
+    /// Legacy project paths (plain string array, migrated to `project` on load)
+    #[serde(default, skip_serializing)]
+    projects: Vec<String>,
+
+    /// Project configurations with optional per-project orchestrator override
     #[serde(default)]
-    pub projects: Vec<String>,
+    pub project: Vec<ProjectConfig>,
 
     /// WebUI mode (default). False when --tmux flag is used.
     #[serde(skip)]
@@ -836,8 +840,18 @@ impl Default for SpawnSettings {
     }
 }
 
+/// Project configuration with path and optional orchestrator override
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectConfig {
+    /// Absolute path to the project directory
+    pub path: String,
+    /// Per-project orchestrator settings (overrides global if set)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orchestrator: Option<OrchestratorSettings>,
+}
+
 /// Orchestrator agent settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrchestratorSettings {
     /// Enable orchestrator functionality
     #[serde(default)]
@@ -853,7 +867,7 @@ pub struct OrchestratorSettings {
 }
 
 /// Workflow rules for the orchestrator agent
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct OrchestratorRules {
     /// Branch naming convention (e.g., "Use {issue_number}-{slug} format")
     #[serde(default)]
@@ -933,6 +947,7 @@ impl Default for Settings {
             spawn: SpawnSettings::default(),
             orchestrator: OrchestratorSettings::default(),
             projects: Vec::new(),
+            project: Vec::new(),
             webui: true,
         }
     }
@@ -1095,8 +1110,62 @@ impl Settings {
         }
     }
 
-    /// Persist the projects list to config.toml
+    /// Persist the projects list to config.toml.
+    /// Preserves per-project orchestrator overrides for paths that still exist.
     pub fn save_projects(projects: &[String]) {
+        let Some(path) = Self::config_path() else {
+            tracing::debug!("No config path available, skipping save");
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            tracing::debug!(?path, %e, "Could not read config, starting fresh");
+            String::new()
+        });
+
+        // Load existing config to preserve orchestrator overrides
+        let existing: Settings = toml::from_str(&content).unwrap_or_default();
+        let mut configs: Vec<ProjectConfig> = Vec::new();
+        for proj_path in projects {
+            // Preserve existing orchestrator override if the path was already configured
+            let orch = existing
+                .project
+                .iter()
+                .find(|p| &p.path == proj_path)
+                .and_then(|p| p.orchestrator.clone());
+            configs.push(ProjectConfig {
+                path: proj_path.clone(),
+                orchestrator: orch,
+            });
+        }
+        Self::save_project_configs(&configs);
+    }
+
+    /// Return project paths (from the canonical `project` array).
+    pub fn project_paths(&self) -> Vec<String> {
+        self.project.iter().map(|p| p.path.clone()).collect()
+    }
+
+    /// Find project config by path.
+    pub fn find_project(&self, path: &str) -> Option<&ProjectConfig> {
+        self.project.iter().find(|p| p.path == path)
+    }
+
+    /// Resolve effective orchestrator settings for a project.
+    /// Returns per-project override if set, otherwise global settings.
+    pub fn resolve_orchestrator(&self, project_path: Option<&str>) -> &OrchestratorSettings {
+        if let Some(path) = project_path {
+            if let Some(proj) = self.find_project(path) {
+                if let Some(ref orch) = proj.orchestrator {
+                    return orch;
+                }
+            }
+        }
+        &self.orchestrator
+    }
+
+    /// Persist project configs to config.toml as `[[project]]` table array.
+    /// Preserves orchestrator overrides for paths that remain in the list.
+    pub fn save_project_configs(configs: &[ProjectConfig]) {
         let Some(path) = Self::config_path() else {
             tracing::debug!("No config path available, skipping save");
             return;
@@ -1113,11 +1182,46 @@ impl Settings {
             }
         };
 
-        let mut arr = toml_edit::Array::new();
-        for p in projects {
-            arr.push(p.as_str());
+        // Remove legacy `projects = [...]` key if present
+        doc.remove("projects");
+
+        // Build [[project]] array of tables
+        let mut arr = toml_edit::ArrayOfTables::new();
+        for cfg in configs {
+            let mut tbl = toml_edit::Table::new();
+            tbl["path"] = toml_edit::value(cfg.path.as_str());
+            if let Some(ref orch) = cfg.orchestrator {
+                let mut orch_tbl = toml_edit::Table::new();
+                orch_tbl["enabled"] = toml_edit::value(orch.enabled);
+                if orch.role != default_orchestrator_role() {
+                    orch_tbl["role"] = toml_edit::value(orch.role.as_str());
+                }
+                let rules = &orch.rules;
+                if !rules.branch.is_empty()
+                    || !rules.merge.is_empty()
+                    || !rules.review.is_empty()
+                    || !rules.custom.is_empty()
+                {
+                    let mut rules_tbl = toml_edit::Table::new();
+                    if !rules.branch.is_empty() {
+                        rules_tbl["branch"] = toml_edit::value(rules.branch.as_str());
+                    }
+                    if !rules.merge.is_empty() {
+                        rules_tbl["merge"] = toml_edit::value(rules.merge.as_str());
+                    }
+                    if !rules.review.is_empty() {
+                        rules_tbl["review"] = toml_edit::value(rules.review.as_str());
+                    }
+                    if !rules.custom.is_empty() {
+                        rules_tbl["custom"] = toml_edit::value(rules.custom.as_str());
+                    }
+                    orch_tbl["rules"] = toml_edit::Item::Table(rules_tbl);
+                }
+                tbl["orchestrator"] = toml_edit::Item::Table(orch_tbl);
+            }
+            arr.push(tbl);
         }
-        doc["projects"] = toml_edit::value(arr);
+        doc["project"] = toml_edit::Item::ArrayOfTables(arr);
 
         if let Some(parent) = path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
@@ -1130,9 +1234,73 @@ impl Settings {
         }
     }
 
+    /// Save orchestrator settings for a specific project (or global if path is None).
+    pub fn save_project_orchestrator(project_path: Option<&str>, orch: &OrchestratorSettings) {
+        match project_path {
+            None => {
+                // Save to global [orchestrator] section
+                Self::save_toml_value(
+                    "orchestrator",
+                    "enabled",
+                    toml_edit::Value::from(orch.enabled),
+                );
+                Self::save_toml_value(
+                    "orchestrator",
+                    "role",
+                    toml_edit::Value::from(orch.role.as_str()),
+                );
+                Self::save_toml_nested_value(
+                    "orchestrator",
+                    "rules",
+                    "branch",
+                    toml_edit::Value::from(orch.rules.branch.as_str()),
+                );
+                Self::save_toml_nested_value(
+                    "orchestrator",
+                    "rules",
+                    "merge",
+                    toml_edit::Value::from(orch.rules.merge.as_str()),
+                );
+                Self::save_toml_nested_value(
+                    "orchestrator",
+                    "rules",
+                    "review",
+                    toml_edit::Value::from(orch.rules.review.as_str()),
+                );
+                Self::save_toml_nested_value(
+                    "orchestrator",
+                    "rules",
+                    "custom",
+                    toml_edit::Value::from(orch.rules.custom.as_str()),
+                );
+            }
+            Some(proj_path) => {
+                // Save per-project orchestrator by rewriting [[project]] array
+                let Some(path) = Self::config_path() else {
+                    return;
+                };
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                let settings: Settings = toml::from_str(&content).unwrap_or_default();
+
+                let configs: Vec<ProjectConfig> = settings
+                    .project
+                    .into_iter()
+                    .map(|mut p| {
+                        if p.path == proj_path {
+                            p.orchestrator = Some(orch.clone());
+                        }
+                        p
+                    })
+                    .collect();
+                Self::save_project_configs(&configs);
+            }
+        }
+    }
+
     /// Validate and normalize settings values
     ///
     /// Ensures poll intervals have a minimum value to prevent CPU exhaustion.
+    /// Also migrates legacy `projects` string array into `project` configs.
     pub fn validate(&mut self) {
         const MIN_POLL_INTERVAL: u64 = 1;
 
@@ -1152,6 +1320,21 @@ impl Settings {
         }
         if self.auto_approve.timeout_secs == 0 {
             self.auto_approve.timeout_secs = 5;
+        }
+
+        // Migrate legacy `projects = ["..."]` into `project` configs
+        if !self.projects.is_empty() {
+            let legacy = std::mem::take(&mut self.projects);
+            let existing_paths: std::collections::HashSet<String> =
+                self.project.iter().map(|p| p.path.clone()).collect();
+            for path in legacy {
+                if !existing_paths.contains(&path) {
+                    self.project.push(ProjectConfig {
+                        path,
+                        orchestrator: None,
+                    });
+                }
+            }
         }
     }
 }
@@ -1256,6 +1439,138 @@ mod tests {
         assert!(!settings.orchestrator.role.is_empty());
         // rules should be empty defaults
         assert!(settings.orchestrator.rules.branch.is_empty());
+    }
+
+    #[test]
+    fn test_legacy_projects_migration() {
+        let toml = r#"
+            projects = ["/home/user/project-a", "/home/user/project-b"]
+        "#;
+        let mut settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        settings.validate();
+        // Legacy projects should be migrated to project configs
+        assert_eq!(settings.project.len(), 2);
+        assert_eq!(settings.project[0].path, "/home/user/project-a");
+        assert_eq!(settings.project[1].path, "/home/user/project-b");
+        assert!(settings.project[0].orchestrator.is_none());
+        assert!(settings.project[1].orchestrator.is_none());
+        // Legacy field should be empty after migration
+        assert!(settings.projects.is_empty());
+    }
+
+    #[test]
+    fn test_project_config_deserialization() {
+        let toml = r#"
+            [[project]]
+            path = "/home/user/project-a"
+
+            [[project]]
+            path = "/home/user/project-b"
+            [project.orchestrator]
+            enabled = true
+            role = "Custom orchestrator for project B"
+        "#;
+        let settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        assert_eq!(settings.project.len(), 2);
+        assert_eq!(settings.project[0].path, "/home/user/project-a");
+        assert!(settings.project[0].orchestrator.is_none());
+        assert_eq!(settings.project[1].path, "/home/user/project-b");
+        let orch = settings.project[1].orchestrator.as_ref().unwrap();
+        assert!(orch.enabled);
+        assert_eq!(orch.role, "Custom orchestrator for project B");
+    }
+
+    #[test]
+    fn test_resolve_orchestrator_global_fallback() {
+        let mut settings = Settings::default();
+        settings.orchestrator.enabled = true;
+        settings.orchestrator.role = "Global role".to_string();
+        settings.project.push(ProjectConfig {
+            path: "/home/user/proj".to_string(),
+            orchestrator: None,
+        });
+
+        // No project override → global
+        let orch = settings.resolve_orchestrator(Some("/home/user/proj"));
+        assert_eq!(orch.role, "Global role");
+        assert!(orch.enabled);
+    }
+
+    #[test]
+    fn test_resolve_orchestrator_project_override() {
+        let mut settings = Settings::default();
+        settings.orchestrator.enabled = true;
+        settings.orchestrator.role = "Global role".to_string();
+        settings.project.push(ProjectConfig {
+            path: "/home/user/proj".to_string(),
+            orchestrator: Some(OrchestratorSettings {
+                enabled: true,
+                role: "Project-specific role".to_string(),
+                rules: OrchestratorRules::default(),
+            }),
+        });
+
+        // Project override exists → per-project
+        let orch = settings.resolve_orchestrator(Some("/home/user/proj"));
+        assert_eq!(orch.role, "Project-specific role");
+
+        // Unknown project → global
+        let orch = settings.resolve_orchestrator(Some("/unknown"));
+        assert_eq!(orch.role, "Global role");
+
+        // No project → global
+        let orch = settings.resolve_orchestrator(None);
+        assert_eq!(orch.role, "Global role");
+    }
+
+    #[test]
+    fn test_project_paths_helper() {
+        let mut settings = Settings::default();
+        settings.project.push(ProjectConfig {
+            path: "/a".to_string(),
+            orchestrator: None,
+        });
+        settings.project.push(ProjectConfig {
+            path: "/b".to_string(),
+            orchestrator: None,
+        });
+        assert_eq!(settings.project_paths(), vec!["/a", "/b"]);
+    }
+
+    #[test]
+    fn test_legacy_and_new_projects_merge() {
+        let toml = r#"
+            projects = ["/legacy-path"]
+
+            [[project]]
+            path = "/new-path"
+        "#;
+        let mut settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        settings.validate();
+        // Both should be present, no duplicates
+        assert_eq!(settings.project.len(), 2);
+        let paths: Vec<&str> = settings.project.iter().map(|p| p.path.as_str()).collect();
+        assert!(paths.contains(&"/new-path"));
+        assert!(paths.contains(&"/legacy-path"));
+    }
+
+    #[test]
+    fn test_legacy_duplicate_not_duplicated() {
+        let toml = r#"
+            projects = ["/same-path"]
+
+            [[project]]
+            path = "/same-path"
+            [project.orchestrator]
+            enabled = true
+        "#;
+        let mut settings: Settings = toml::from_str(toml).expect("Should parse TOML");
+        settings.validate();
+        // Should not duplicate
+        assert_eq!(settings.project.len(), 1);
+        assert_eq!(settings.project[0].path, "/same-path");
+        // Orchestrator from [[project]] should be preserved
+        assert!(settings.project[0].orchestrator.is_some());
     }
 
     #[test]

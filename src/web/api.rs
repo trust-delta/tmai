@@ -1166,12 +1166,22 @@ pub async fn update_spawn_settings(
 // Orchestrator settings endpoints
 // =========================================================
 
+/// Query param for per-project orchestrator endpoints
+#[derive(Debug, Deserialize)]
+pub struct OrchestratorProjectQuery {
+    /// Project path. If omitted, returns/updates global settings.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
 /// Response body for orchestrator settings
 #[derive(Debug, Serialize)]
 pub struct OrchestratorSettingsResponse {
     pub enabled: bool,
     pub role: String,
     pub rules: OrchestratorRulesResponse,
+    /// Whether this is a per-project override (true) or global fallback (false)
+    pub is_project_override: bool,
 }
 
 /// Rules sub-object in orchestrator settings response
@@ -1208,10 +1218,18 @@ pub struct UpdateOrchestratorRulesRequest {
 }
 
 /// GET /api/settings/orchestrator — get orchestrator settings
+/// Accepts `?project=/path` for per-project override; omit for global.
 pub async fn get_orchestrator_settings(
     State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(q): axum::extract::Query<OrchestratorProjectQuery>,
 ) -> Json<OrchestratorSettingsResponse> {
-    let orch = &core.settings().orchestrator;
+    let settings = core.settings();
+    let is_override = q
+        .project
+        .as_deref()
+        .and_then(|p| settings.find_project(p))
+        .is_some_and(|proj| proj.orchestrator.is_some());
+    let orch = settings.resolve_orchestrator(q.project.as_deref());
     Json(OrchestratorSettingsResponse {
         enabled: orch.enabled,
         role: orch.role.clone(),
@@ -1221,65 +1239,55 @@ pub async fn get_orchestrator_settings(
             review: orch.rules.review.clone(),
             custom: orch.rules.custom.clone(),
         },
+        is_project_override: is_override,
     })
 }
 
 /// PUT /api/settings/orchestrator — update orchestrator settings (persisted to config.toml)
+/// Accepts `?project=/path` for per-project override; omit for global.
 pub async fn update_orchestrator_settings(
     State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(q): axum::extract::Query<OrchestratorProjectQuery>,
     Json(req): Json<UpdateOrchestratorSettingsRequest>,
 ) -> Json<serde_json::Value> {
-    if let Some(enabled) = req.enabled {
-        tmai_core::config::Settings::save_toml_value(
-            "orchestrator",
-            "enabled",
-            toml_edit::Value::from(enabled),
-        );
-    }
-    if let Some(ref role) = req.role {
-        tmai_core::config::Settings::save_toml_value(
-            "orchestrator",
-            "role",
-            toml_edit::Value::from(role.as_str()),
-        );
-    }
-    if let Some(ref rules) = req.rules {
-        if let Some(ref v) = rules.branch {
-            tmai_core::config::Settings::save_toml_nested_value(
-                "orchestrator",
-                "rules",
-                "branch",
-                toml_edit::Value::from(v.as_str()),
-            );
-        }
-        if let Some(ref v) = rules.merge {
-            tmai_core::config::Settings::save_toml_nested_value(
-                "orchestrator",
-                "rules",
-                "merge",
-                toml_edit::Value::from(v.as_str()),
-            );
-        }
-        if let Some(ref v) = rules.review {
-            tmai_core::config::Settings::save_toml_nested_value(
-                "orchestrator",
-                "rules",
-                "review",
-                toml_edit::Value::from(v.as_str()),
-            );
-        }
-        if let Some(ref v) = rules.custom {
-            tmai_core::config::Settings::save_toml_nested_value(
-                "orchestrator",
-                "rules",
-                "custom",
-                toml_edit::Value::from(v.as_str()),
-            );
-        }
-    }
+    let settings = core.settings();
 
+    // Build the updated OrchestratorSettings from current + request
+    let current = settings.resolve_orchestrator(q.project.as_deref());
+    let updated = tmai_core::config::OrchestratorSettings {
+        enabled: req.enabled.unwrap_or(current.enabled),
+        role: req.role.unwrap_or_else(|| current.role.clone()),
+        rules: tmai_core::config::OrchestratorRules {
+            branch: req
+                .rules
+                .as_ref()
+                .and_then(|r| r.branch.clone())
+                .unwrap_or_else(|| current.rules.branch.clone()),
+            merge: req
+                .rules
+                .as_ref()
+                .and_then(|r| r.merge.clone())
+                .unwrap_or_else(|| current.rules.merge.clone()),
+            review: req
+                .rules
+                .as_ref()
+                .and_then(|r| r.review.clone())
+                .unwrap_or_else(|| current.rules.review.clone()),
+            custom: req
+                .rules
+                .as_ref()
+                .and_then(|r| r.custom.clone())
+                .unwrap_or_else(|| current.rules.custom.clone()),
+        },
+    };
+    drop(settings);
+
+    tmai_core::config::Settings::save_project_orchestrator(q.project.as_deref(), &updated);
     core.reload_settings();
-    tracing::info!("Orchestrator settings updated");
+    tracing::info!(
+        project = ?q.project,
+        "Orchestrator settings updated"
+    );
     Json(serde_json::json!({"ok": true}))
 }
 
@@ -1794,9 +1802,8 @@ async fn spawn_in_pty(
 /// Request body for spawning an orchestrator agent
 #[derive(Debug, Deserialize)]
 pub struct SpawnOrchestratorRequest {
-    /// Working directory (defaults to first registered project or cwd)
-    #[serde(default)]
-    pub cwd: Option<String>,
+    /// Project path (required). Orchestrator is spawned in this directory.
+    pub project: String,
     /// Additional instructions appended to the composed prompt
     #[serde(default)]
     pub additional_instructions: Option<String>,
@@ -1807,12 +1814,7 @@ pub async fn spawn_orchestrator(
     State(core): State<Arc<TmaiCore>>,
     Json(req): Json<SpawnOrchestratorRequest>,
 ) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
-    // Resolve cwd: explicit > first registered project > default_cwd()
-    let cwd = req
-        .cwd
-        .clone()
-        .or_else(|| core.settings().projects.first().cloned())
-        .unwrap_or_else(default_cwd);
+    let cwd = req.project.clone();
 
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(json_error(
@@ -1821,8 +1823,8 @@ pub async fn spawn_orchestrator(
         ));
     }
 
-    // Compose orchestrator prompt from settings
-    let mut prompt = core.compose_orchestrator_prompt();
+    // Compose orchestrator prompt from settings (with per-project override)
+    let mut prompt = core.compose_orchestrator_prompt(Some(&cwd));
     if let Some(ref extra) = req.additional_instructions {
         if !extra.is_empty() {
             prompt.push_str("\n\n");

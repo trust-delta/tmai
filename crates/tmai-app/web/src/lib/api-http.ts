@@ -547,6 +547,8 @@ export interface OrchestratorSettings {
   enabled: boolean;
   role: string;
   rules: OrchestratorRules;
+  /** Whether this is a per-project override (true) or global fallback (false) */
+  is_project_override: boolean;
 }
 
 export interface SpawnRequest {
@@ -895,21 +897,27 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // Orchestrator settings
-  getOrchestratorSettings: () => apiFetch<OrchestratorSettings>("/settings/orchestrator"),
-  updateOrchestratorSettings: (params: {
-    enabled?: boolean;
-    role?: string;
-    rules?: Partial<OrchestratorRules>;
-  }) =>
-    apiFetch("/settings/orchestrator", {
+  // Orchestrator settings (accepts optional project path for per-project scope)
+  getOrchestratorSettings: (project?: string) =>
+    apiFetch<OrchestratorSettings>(
+      `/settings/orchestrator${project ? `?project=${encodeURIComponent(project)}` : ""}`,
+    ),
+  updateOrchestratorSettings: (
+    params: {
+      enabled?: boolean;
+      role?: string;
+      rules?: Partial<OrchestratorRules>;
+    },
+    project?: string,
+  ) =>
+    apiFetch(`/settings/orchestrator${project ? `?project=${encodeURIComponent(project)}` : ""}`, {
       method: "PUT",
       body: JSON.stringify(params),
     }),
-  spawnOrchestrator: (params?: { cwd?: string; additional_instructions?: string }) =>
+  spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
     apiFetch<SpawnResponse>("/orchestrator/spawn", {
       method: "POST",
-      body: JSON.stringify(params ?? {}),
+      body: JSON.stringify(params),
     }),
 
   // Preview settings
