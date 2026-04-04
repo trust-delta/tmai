@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PrInfo } from "@/lib/api";
+import { CopyableSha } from "../CopyableSha";
 import { laneBgColor, laneColor, laneDimColor } from "./colors";
 import { BRANCH_R, COMMIT_R, LEFT_PAD, ROW_H } from "./layout";
 import type { LaneLayout } from "./types";
@@ -553,15 +554,14 @@ export function LaneGraph({
               onMouseLeave={() => setHoveredSha(null)}
               onClick={() => handleCommitClick(row.sha, row.lane)}
             >
-              {/* SHA */}
-              <span
-                className="shrink-0 font-mono text-[10px]"
+              {/* SHA (click to copy) */}
+              <CopyableSha
+                sha={row.sha}
+                className="text-[10px]"
                 style={{
                   color: isHovered || isExpanded ? "rgb(34,211,238)" : "rgba(34,211,238,0.35)",
                 }}
-              >
-                {row.sha.slice(0, 7)}
-              </span>
+              />
 
               {/* Subject */}
               <span
@@ -664,9 +664,11 @@ export function LaneGraph({
         >
           <div className="p-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-mono text-[11px] text-cyan-400 select-all">
-                {commitDetail?.sha ?? expandedRow.sha}
-              </span>
+              <CopyableSha
+                sha={commitDetail?.sha ?? expandedRow.sha}
+                displayLength={40}
+                className="text-[11px] text-cyan-400"
+              />
               <button
                 type="button"
                 onClick={() => {
