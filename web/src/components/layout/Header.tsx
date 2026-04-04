@@ -3,6 +3,7 @@ import { useThemeStore, syncThemeToBackend } from "../../stores/theme";
 import type { Theme } from "../../stores/theme";
 import { ConnectionIndicator } from "../common/ConnectionIndicator";
 import { SpawnDialog } from "../spawn/SpawnDialog";
+import { OrchestratorSettingsPanel } from "../settings/OrchestratorSettings";
 
 interface HeaderProps {
   connected: boolean;
@@ -23,6 +24,7 @@ const themeLabel: Record<Theme, string> = {
 export function Header({ connected }: HeaderProps) {
   const { theme, cycle } = useThemeStore();
   const [showSpawn, setShowSpawn] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   /** Cycle theme and sync to backend */
   function handleToggle() {
@@ -46,6 +48,14 @@ export function Header({ connected }: HeaderProps) {
           >
             + Spawn
           </button>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="rounded p-1.5 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800"
+            title="Orchestrator Settings"
+          >
+            &#9881;
+          </button>
           <ConnectionIndicator connected={connected} />
           <button
             type="button"
@@ -59,6 +69,9 @@ export function Header({ connected }: HeaderProps) {
         </div>
       </header>
       {showSpawn && <SpawnDialog onClose={() => setShowSpawn(false)} />}
+      {showSettings && (
+        <OrchestratorSettingsPanel onClose={() => setShowSettings(false)} />
+      )}
     </>
   );
 }

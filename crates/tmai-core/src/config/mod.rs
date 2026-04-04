@@ -6,6 +6,6 @@ pub use claude_settings::{
 };
 pub use settings::{
     AuditCommand, AutoApproveSettings, CodexWsConnection, CodexWsSettings, Command, Config,
-    CreateProcessSettings, ExfilDetectionSettings, ReviewSettings, RuleSettings, Settings,
-    TeamSettings,
+    CreateProcessSettings, ExfilDetectionSettings, OrchestratorRules, OrchestratorSettings,
+    ProjectConfig, ReviewSettings, RuleSettings, Settings, TeamSettings,
 };

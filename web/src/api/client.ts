@@ -135,6 +135,79 @@ export async function sendToAgent(
   return res.json();
 }
 
+/** GET /api/projects — list registered project paths */
+export async function fetchProjects(): Promise<string[]> {
+  const res = await apiFetch("/api/projects");
+  if (!res.ok) throw new Error(`fetchProjects: ${res.status}`);
+  return res.json() as Promise<string[]>;
+}
+
+/** Orchestrator rules */
+export interface OrchestratorRules {
+  branch: string;
+  merge: string;
+  review: string;
+  custom: string;
+}
+
+/** Orchestrator settings */
+export interface OrchestratorSettings {
+  enabled: boolean;
+  role: string;
+  rules: OrchestratorRules;
+  is_project_override: boolean;
+}
+
+/** GET /api/settings/orchestrator — get orchestrator settings (optional ?project=) */
+export async function getOrchestratorSettings(
+  project?: string,
+): Promise<OrchestratorSettings> {
+  const params = project
+    ? `?project=${encodeURIComponent(project)}`
+    : "";
+  const res = await apiFetch(`/api/settings/orchestrator${params}`);
+  if (!res.ok) throw new Error(`getOrchestratorSettings: ${res.status}`);
+  return res.json() as Promise<OrchestratorSettings>;
+}
+
+/** PUT /api/settings/orchestrator — update orchestrator settings (optional ?project=) */
+export async function updateOrchestratorSettings(
+  params: {
+    enabled?: boolean;
+    role?: string;
+    rules?: Partial<OrchestratorRules>;
+  },
+  project?: string,
+): Promise<void> {
+  const query = project
+    ? `?project=${encodeURIComponent(project)}`
+    : "";
+  const res = await apiFetch(`/api/settings/orchestrator${query}`, {
+    method: "PUT",
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`updateOrchestratorSettings: ${res.status}`);
+}
+
+/** POST /api/orchestrator/spawn — spawn an orchestrator agent for a project */
+export async function spawnOrchestrator(
+  project: string,
+  additionalInstructions?: string,
+): Promise<{ session_id: string; pid: number; command: string }> {
+  const body: Record<string, unknown> = { project };
+  if (additionalInstructions) body.additional_instructions = additionalInstructions;
+  const res = await apiFetch("/api/orchestrator/spawn", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`spawnOrchestrator: ${res.status}`);
+  return res.json() as Promise<{
+    session_id: string;
+    pid: number;
+    command: string;
+  }>;
+}
+
 /** Build a WebSocket URL for a PTY terminal session */
 export function buildWsUrl(sessionId: string): string {
   const token = useAuthStore.getState().token;

@@ -288,7 +288,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     {
         let mut s = state.write();
         s.show_activity_name = settings.ui.show_activity_name;
-        s.registered_projects = settings.projects.clone();
+        s.registered_projects = settings.project_paths();
         s.spawn_in_tmux = settings.spawn.use_tmux_window;
         s.spawn_tmux_window_name = settings.spawn.tmux_window_name.clone();
     }

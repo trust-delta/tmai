@@ -944,8 +944,10 @@ impl TmaiCore {
     ///
     /// The prompt includes the role description, any non-empty workflow rules,
     /// and an instruction to use tmai MCP tools.
-    pub fn compose_orchestrator_prompt(&self) -> String {
-        let orch = &self.settings().orchestrator;
+    /// When `project_path` is provided, uses per-project orchestrator override if set.
+    pub fn compose_orchestrator_prompt(&self, project_path: Option<&str>) -> String {
+        let settings = self.settings();
+        let orch = settings.resolve_orchestrator(project_path);
         let mut parts: Vec<String> = Vec::new();
 
         // Role
@@ -1537,7 +1539,7 @@ mod tests {
     #[test]
     fn test_compose_orchestrator_prompt_default() {
         let core = TmaiCoreBuilder::new(Settings::default()).build();
-        let prompt = core.compose_orchestrator_prompt();
+        let prompt = core.compose_orchestrator_prompt(None);
         // Should contain default role
         assert!(prompt.contains("orchestrator agent"));
         // Should contain MCP tools instruction
@@ -1554,7 +1556,7 @@ mod tests {
         settings.orchestrator.rules.review = "Run CI first".to_string();
 
         let core = TmaiCoreBuilder::new(settings).build();
-        let prompt = core.compose_orchestrator_prompt();
+        let prompt = core.compose_orchestrator_prompt(None);
         assert!(prompt.contains("You are the boss."));
         assert!(prompt.contains("Workflow rules:"));
         assert!(prompt.contains("- Branch: feat/{issue}-{slug}"));
