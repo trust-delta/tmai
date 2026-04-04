@@ -152,6 +152,16 @@ pub struct DispatchIssueParams {
     pub additional_instructions: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SpawnOrchestratorParams {
+    /// Working directory (optional, defaults to first registered project or cwd)
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Additional instructions appended to the composed orchestrator prompt
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
+}
+
 // =========================================================
 // Tool implementations
 // =========================================================
@@ -357,6 +367,26 @@ impl TmaiMcpServer {
         match self
             .client
             .post::<serde_json::Value>("/spawn/worktree", &body)
+        {
+            Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Spawn an orchestrator agent with a composed prompt from the [orchestrator] config settings.
+    /// The orchestrator coordinates work across sub-agents using tmai MCP tools.
+    #[tool(description = "Spawn an orchestrator agent with workflow settings from config")]
+    fn spawn_orchestrator(&self, Parameters(p): Parameters<SpawnOrchestratorParams>) -> String {
+        let mut body = serde_json::json!({});
+        if let Some(ref cwd) = p.cwd {
+            body["cwd"] = serde_json::json!(cwd);
+        }
+        if let Some(ref extra) = p.additional_instructions {
+            body["additional_instructions"] = serde_json::json!(extra);
+        }
+        match self
+            .client
+            .post::<serde_json::Value>("/orchestrator/spawn", &body)
         {
             Ok(data) => format_json(&data),
             Err(e) => format!("Error: {e}"),
@@ -590,6 +620,28 @@ fn format_json(value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spawn_orchestrator_params_empty() {
+        let json = serde_json::json!({});
+        let p: SpawnOrchestratorParams = serde_json::from_value(json).unwrap();
+        assert!(p.cwd.is_none());
+        assert!(p.additional_instructions.is_none());
+    }
+
+    #[test]
+    fn spawn_orchestrator_params_all_fields() {
+        let json = serde_json::json!({
+            "cwd": "/tmp/project",
+            "additional_instructions": "Focus on issue #42"
+        });
+        let p: SpawnOrchestratorParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.cwd.as_deref(), Some("/tmp/project"));
+        assert_eq!(
+            p.additional_instructions.as_deref(),
+            Some("Focus on issue #42")
+        );
+    }
 
     #[test]
     fn dispatch_issue_params_required_only() {

@@ -1163,6 +1163,127 @@ pub async fn update_spawn_settings(
 }
 
 // =========================================================
+// Orchestrator settings endpoints
+// =========================================================
+
+/// Response body for orchestrator settings
+#[derive(Debug, Serialize)]
+pub struct OrchestratorSettingsResponse {
+    pub enabled: bool,
+    pub role: String,
+    pub rules: OrchestratorRulesResponse,
+}
+
+/// Rules sub-object in orchestrator settings response
+#[derive(Debug, Serialize)]
+pub struct OrchestratorRulesResponse {
+    pub branch: String,
+    pub merge: String,
+    pub review: String,
+    pub custom: String,
+}
+
+/// Request body for updating orchestrator settings
+#[derive(Debug, Deserialize)]
+pub struct UpdateOrchestratorSettingsRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub rules: Option<UpdateOrchestratorRulesRequest>,
+}
+
+/// Rules sub-object in orchestrator settings update request
+#[derive(Debug, Deserialize)]
+pub struct UpdateOrchestratorRulesRequest {
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub merge: Option<String>,
+    #[serde(default)]
+    pub review: Option<String>,
+    #[serde(default)]
+    pub custom: Option<String>,
+}
+
+/// GET /api/settings/orchestrator — get orchestrator settings
+pub async fn get_orchestrator_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<OrchestratorSettingsResponse> {
+    let orch = &core.settings().orchestrator;
+    Json(OrchestratorSettingsResponse {
+        enabled: orch.enabled,
+        role: orch.role.clone(),
+        rules: OrchestratorRulesResponse {
+            branch: orch.rules.branch.clone(),
+            merge: orch.rules.merge.clone(),
+            review: orch.rules.review.clone(),
+            custom: orch.rules.custom.clone(),
+        },
+    })
+}
+
+/// PUT /api/settings/orchestrator — update orchestrator settings (persisted to config.toml)
+pub async fn update_orchestrator_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<UpdateOrchestratorSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(enabled) = req.enabled {
+        tmai_core::config::Settings::save_toml_value(
+            "orchestrator",
+            "enabled",
+            toml_edit::Value::from(enabled),
+        );
+    }
+    if let Some(ref role) = req.role {
+        tmai_core::config::Settings::save_toml_value(
+            "orchestrator",
+            "role",
+            toml_edit::Value::from(role.as_str()),
+        );
+    }
+    if let Some(ref rules) = req.rules {
+        if let Some(ref v) = rules.branch {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "orchestrator",
+                "rules",
+                "branch",
+                toml_edit::Value::from(v.as_str()),
+            );
+        }
+        if let Some(ref v) = rules.merge {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "orchestrator",
+                "rules",
+                "merge",
+                toml_edit::Value::from(v.as_str()),
+            );
+        }
+        if let Some(ref v) = rules.review {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "orchestrator",
+                "rules",
+                "review",
+                toml_edit::Value::from(v.as_str()),
+            );
+        }
+        if let Some(ref v) = rules.custom {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "orchestrator",
+                "rules",
+                "custom",
+                toml_edit::Value::from(v.as_str()),
+            );
+        }
+    }
+
+    core.reload_settings();
+    tracing::info!("Orchestrator settings updated");
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
 // Auto-approve settings endpoint
 // =========================================================
 
@@ -1668,6 +1789,74 @@ async fn spawn_in_pty(
             ))
         }
     }
+}
+
+/// Request body for spawning an orchestrator agent
+#[derive(Debug, Deserialize)]
+pub struct SpawnOrchestratorRequest {
+    /// Working directory (defaults to first registered project or cwd)
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Additional instructions appended to the composed prompt
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
+}
+
+/// POST /api/orchestrator/spawn — spawn an orchestrator agent with composed prompt
+pub async fn spawn_orchestrator(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<SpawnOrchestratorRequest>,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Resolve cwd: explicit > first registered project > default_cwd()
+    let cwd = req
+        .cwd
+        .clone()
+        .or_else(|| core.settings().projects.first().cloned())
+        .unwrap_or_else(default_cwd);
+
+    if !std::path::Path::new(&cwd).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", cwd),
+        ));
+    }
+
+    // Compose orchestrator prompt from settings
+    let mut prompt = core.compose_orchestrator_prompt();
+    if let Some(ref extra) = req.additional_instructions {
+        if !extra.is_empty() {
+            prompt.push_str("\n\n");
+            prompt.push_str(extra);
+        }
+    }
+
+    // Spawn as a regular claude agent with the composed prompt as the initial argument
+    let spawn_req = SpawnRequest {
+        command: "claude".to_string(),
+        args: vec![prompt],
+        cwd: cwd.clone(),
+        rows: default_rows(),
+        cols: default_cols(),
+        force_pty: true, // orchestrator always uses PTY for reliable monitoring
+    };
+
+    // Use spawn_in_pty directly (orchestrator always uses PTY)
+    let result = spawn_in_pty(&core, &spawn_req).await?;
+
+    // Mark the newly spawned agent as an orchestrator
+    let session_id = &result.session_id;
+    {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        if let Some(agent) = s.agents.get_mut(session_id) {
+            agent.is_orchestrator = true;
+        }
+    }
+    core.notify_agents_updated();
+
+    tracing::info!("API: spawned orchestrator agent session_id={}", session_id);
+    Ok(result)
 }
 
 /// Start a Codex app-server and return its WebSocket URL.

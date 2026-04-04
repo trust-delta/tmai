@@ -618,6 +618,8 @@ pub struct MonitoredAgent {
     pub claude_version: Option<String>,
     /// Human-readable session name set via /rename (from statusline hook)
     pub session_name: Option<String>,
+    /// Whether this agent was spawned as an orchestrator
+    pub is_orchestrator: bool,
 }
 
 impl MonitoredAgent {
@@ -685,6 +687,7 @@ impl MonitoredAgent {
             context_window_size: None,
             claude_version: None,
             session_name: None,
+            is_orchestrator: false,
         }
     }
 

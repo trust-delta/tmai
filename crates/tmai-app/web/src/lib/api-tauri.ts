@@ -5,7 +5,13 @@
 export * from "./api-http";
 export * from "./teams";
 
-import type { AgentSnapshot, AutoApproveRules, SpawnRequest, UsageSettings } from "./api-http";
+import type {
+  AgentSnapshot,
+  AutoApproveRules,
+  OrchestratorRules,
+  SpawnRequest,
+  UsageSettings,
+} from "./api-http";
 import { api as httpApi } from "./api-http";
 // Import for implementation
 import { tauri } from "./tauri";
@@ -179,6 +185,16 @@ export const api = {
   getSpawnSettings: () => httpApi.getSpawnSettings(),
   updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
     httpApi.updateSpawnSettings(params),
+
+  // Orchestrator settings
+  getOrchestratorSettings: () => httpApi.getOrchestratorSettings(),
+  updateOrchestratorSettings: (params: {
+    enabled?: boolean;
+    role?: string;
+    rules?: Partial<OrchestratorRules>;
+  }) => httpApi.updateOrchestratorSettings(params),
+  spawnOrchestrator: (params?: { cwd?: string; additional_instructions?: string }) =>
+    httpApi.spawnOrchestrator(params),
 
   // Preview settings
   getPreviewSettings: () => httpApi.getPreviewSettings(),

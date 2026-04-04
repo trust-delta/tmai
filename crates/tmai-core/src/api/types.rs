@@ -193,6 +193,9 @@ pub struct AgentSnapshot {
     /// Human-readable session name set via /rename (from statusline hook)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_name: Option<String>,
+    /// Whether this agent was spawned as an orchestrator
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_orchestrator: bool,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -285,6 +288,7 @@ impl AgentSnapshot {
             context_window_size: agent.context_window_size,
             claude_version: agent.claude_version.clone(),
             session_name: agent.session_name.clone(),
+            is_orchestrator: agent.is_orchestrator,
         }
     }
 
