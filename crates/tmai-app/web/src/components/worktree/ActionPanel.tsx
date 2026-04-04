@@ -527,6 +527,26 @@ export function ActionPanel({
           <div className="flex items-center gap-2">
             {activeNode.isWorktree && <span className="text-sm">🌿</span>}
             <h3 className="text-sm font-semibold text-zinc-100">{activeNode.name}</h3>
+            {activeNode.lastCommitTime != null && (
+              <span
+                className={`text-[10px] ${(() => {
+                  const days = Math.floor((Date.now() / 1000 - activeNode.lastCommitTime) / 86400);
+                  if (days <= 3) return "text-zinc-500";
+                  if (days <= 14) return "text-yellow-500/70";
+                  return "text-red-400/70";
+                })()}`}
+              >
+                {(() => {
+                  const diff = Math.floor(Date.now() / 1000 - activeNode.lastCommitTime);
+                  if (diff < 60) return "just now";
+                  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+                  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+                  const days = Math.floor(diff / 86400);
+                  if (days < 14) return `${days}d ago`;
+                  return `${Math.floor(days / 7)}w ago`;
+                })()}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
             {activeNode.isMain && (

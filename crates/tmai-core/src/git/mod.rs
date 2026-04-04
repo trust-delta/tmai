@@ -408,6 +408,9 @@ pub struct BranchListResult {
     pub remote_only_branches: Vec<String>,
     /// Last fetch timestamp (Unix seconds), None if never fetched
     pub last_fetch: Option<u64>,
+    /// Last commit timestamp per branch (Unix seconds)
+    #[serde(default)]
+    pub last_commit_times: HashMap<String, i64>,
 }
 
 /// List branches for a repository and detect the default branch
@@ -473,6 +476,10 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
     // Get last fetch timestamp
     let last_fetch = fetch_head_time(repo_dir);
 
+    // Get last commit timestamps per branch
+    let last_commit_times =
+        fetch_last_commit_times(repo_dir, &branches, &remote_only_branches).await;
+
     Some(BranchListResult {
         default_branch,
         current_branch,
@@ -482,6 +489,7 @@ pub async fn list_branches(repo_dir: &str) -> Option<BranchListResult> {
         remote_tracking,
         remote_only_branches,
         last_fetch,
+        last_commit_times,
     })
 }
 
@@ -616,6 +624,79 @@ fn fetch_head_time(repo_dir: &str) -> Option<u64> {
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .map(|d| d.as_secs())
+}
+
+/// Fetch last commit timestamp for each local and remote-only branch
+async fn fetch_last_commit_times(
+    repo_dir: &str,
+    branches: &[String],
+    remote_only_branches: &[String],
+) -> HashMap<String, i64> {
+    let mut result = HashMap::new();
+
+    // Fetch timestamps for local branches using for-each-ref
+    if !branches.is_empty() {
+        if let Ok(Ok(output)) = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args([
+                    "-C",
+                    repo_dir,
+                    "for-each-ref",
+                    "--format=%(refname:short) %(committerdate:unix)",
+                    "refs/heads/",
+                ])
+                .output(),
+        )
+        .await
+        {
+            if output.status.success() {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    if let Some((name, ts_str)) = line.rsplit_once(' ') {
+                        if let Ok(ts) = ts_str.parse::<i64>() {
+                            result.insert(name.to_string(), ts);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fetch timestamps for remote-only branches
+    if !remote_only_branches.is_empty() {
+        if let Ok(Ok(output)) = tokio::time::timeout(
+            GIT_TIMEOUT,
+            Command::new("git")
+                .args([
+                    "-C",
+                    repo_dir,
+                    "for-each-ref",
+                    "--format=%(refname:short) %(committerdate:unix)",
+                    "refs/remotes/",
+                ])
+                .output(),
+        )
+        .await
+        {
+            if output.status.success() {
+                let remote_set: std::collections::HashSet<&str> =
+                    remote_only_branches.iter().map(|s| s.as_str()).collect();
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    if let Some((name, ts_str)) = line.rsplit_once(' ') {
+                        // Strip "origin/" prefix to match remote_only_branches naming
+                        let short = name.strip_prefix("origin/").unwrap_or(name);
+                        if remote_set.contains(short) {
+                            if let Ok(ts) = ts_str.parse::<i64>() {
+                                result.insert(short.to_string(), ts);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
 }
 
 /// Compute parent branch for each non-default branch
@@ -1550,5 +1631,53 @@ branch refs/heads/main
     async fn test_log_graph_invalid_dir_returns_none() {
         let result = log_graph("/nonexistent/path", 10).await;
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_last_commit_times_returns_timestamps() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let branches_output = Command::new("git")
+            .args(["-C", repo, "branch", "--format=%(refname:short)"])
+            .output()
+            .await
+            .unwrap();
+        let branches: Vec<String> = String::from_utf8_lossy(&branches_output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let times = fetch_last_commit_times(repo, &branches, &[]).await;
+        // At least the current branch should have a timestamp
+        assert!(
+            !times.is_empty(),
+            "should have at least one branch timestamp"
+        );
+        for ts in times.values() {
+            assert!(*ts > 0, "timestamps should be positive Unix seconds");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_last_commit_times_invalid_dir() {
+        let times = fetch_last_commit_times("/nonexistent/path", &["main".to_string()], &[]).await;
+        assert!(times.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_branches_includes_commit_times() {
+        let repo = env!("CARGO_MANIFEST_DIR");
+        let result = list_branches(repo).await;
+        assert!(result.is_some());
+        let data = result.unwrap();
+        // last_commit_times should be populated for local branches
+        assert!(
+            !data.last_commit_times.is_empty(),
+            "last_commit_times should not be empty"
+        );
+        // The default branch should have a timestamp
+        assert!(
+            data.last_commit_times.contains_key(&data.default_branch),
+            "default branch should have a commit time"
+        );
     }
 }

@@ -21,6 +21,7 @@ function makeNode(overrides: Partial<BranchNode> = {}): BranchNode {
     behind: 0,
     remote: null,
     isRemoteOnly: false,
+    lastCommitTime: null,
     ...overrides,
   };
 }

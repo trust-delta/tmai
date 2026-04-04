@@ -25,13 +25,23 @@ interface BranchGraphProps {
   onFocusAgent: (target: string) => void;
 }
 
-// Format Unix timestamp as relative time (e.g., "2m ago", "3h ago")
+// Format Unix timestamp as relative time (e.g., "2m ago", "3h ago", "2w ago")
 function formatRelativeTime(unixSecs: number): string {
   const diff = Math.floor(Date.now() / 1000) - unixSecs;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  const days = Math.floor(diff / 86400);
+  if (days < 14) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
+// Return CSS color class for commit age: recent → aging → stale
+function commitAgeColor(unixSecs: number): string {
+  const days = Math.floor((Date.now() / 1000 - unixSecs) / 86400);
+  if (days <= 3) return "text-zinc-400";
+  if (days <= 14) return "text-yellow-500/70";
+  return "text-red-400/70";
 }
 
 const BRANCH_DEPTH_WARNING = 3;
@@ -127,6 +137,7 @@ export function BranchGraph({
     const parentMap = branches?.parents ?? {};
     const abMap = branches?.ahead_behind ?? {};
     const rtMap = branches?.remote_tracking ?? {};
+    const ctMap = branches?.last_commit_times ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
 
@@ -158,6 +169,7 @@ export function BranchGraph({
       behind: 0,
       remote: rtMap[defaultBranch] ?? null,
       isRemoteOnly: false,
+      lastCommitTime: ctMap[defaultBranch] ?? null,
     });
 
     for (const wt of projectWorktrees) {
@@ -180,6 +192,7 @@ export function BranchGraph({
         behind: ab?.[1] ?? 0,
         remote: rtMap[branchName] ?? null,
         isRemoteOnly: false,
+        lastCommitTime: ctMap[branchName] ?? null,
       });
     }
 
@@ -205,6 +218,7 @@ export function BranchGraph({
             behind: ab?.[1] ?? 0,
             remote: rtMap[b] ?? null,
             isRemoteOnly: false,
+            lastCommitTime: ctMap[b] ?? null,
           });
         }
       }
@@ -229,6 +243,7 @@ export function BranchGraph({
           behind: 0,
           remote: null,
           isRemoteOnly: true,
+          lastCommitTime: ctMap[rb] ?? null,
         });
       }
     }
@@ -557,7 +572,14 @@ export function BranchGraph({
                         >
                           {n.name}
                           {n.behind > 0 && (
-                            <span className="ml-1 text-[10px] text-red-400">{n.behind}\u2193</span>
+                            <span className="ml-1 text-[10px] text-red-400">{n.behind}↓</span>
+                          )}
+                          {n.lastCommitTime != null && (
+                            <span
+                              className={`ml-1.5 text-[10px] ${commitAgeColor(n.lastCommitTime)}`}
+                            >
+                              {formatRelativeTime(n.lastCommitTime)}
+                            </span>
                           )}
                         </button>
                       ))}
@@ -585,6 +607,13 @@ export function BranchGraph({
                         >
                           <span className="mr-1 text-[10px] text-purple-500/60">remote</span>
                           {n.name}
+                          {n.lastCommitTime != null && (
+                            <span
+                              className={`ml-1.5 text-[10px] ${commitAgeColor(n.lastCommitTime)}`}
+                            >
+                              {formatRelativeTime(n.lastCommitTime)}
+                            </span>
+                          )}
                         </button>
                       ))}
                   </div>
