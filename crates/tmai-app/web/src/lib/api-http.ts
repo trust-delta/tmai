@@ -881,6 +881,20 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
+  // Notification settings
+  getNotificationSettings: () =>
+    apiFetch<{ notify_on_idle: boolean; notify_idle_threshold_secs: number }>(
+      "/settings/notification",
+    ),
+  updateNotificationSettings: (params: {
+    notify_on_idle?: boolean;
+    notify_idle_threshold_secs?: number;
+  }) =>
+    apiFetch("/settings/notification", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
   // Teams
   listTeams: () => apiFetch<import("./teams").TeamSummary[]>("/teams"),
   getTeamTasks: (teamName: string) =>
@@ -926,6 +940,7 @@ export function subscribeSSE(handlers: {
     "usage",
     "worktree_created",
     "worktree_removed",
+    "agent_stopped",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {

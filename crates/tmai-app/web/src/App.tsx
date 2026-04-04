@@ -15,16 +15,48 @@ import { UsagePanel } from "@/components/usage/UsagePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgents } from "@/hooks/useAgents";
+import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, isAiAgent, type Selection, statusName } from "@/lib/api";
+import { api, isAiAgent, type Selection, statusName, subscribeSSE } from "@/lib/api";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const toast = useToast();
+  const [notifyConfig, setNotifyConfig] = useState({ enabled: true, thresholdSecs: 10 });
+
+  // Load notification settings from backend
+  useEffect(() => {
+    api
+      .getNotificationSettings()
+      .then((s) =>
+        setNotifyConfig({
+          enabled: s.notify_on_idle,
+          thresholdSecs: s.notify_idle_threshold_secs,
+        }),
+      )
+      .catch(() => {});
+  }, []);
+
+  // Browser notification on agent idle
+  const { handleAgentStopped } = useIdleNotification(agents, notifyConfig);
+
+  // Listen for agent_stopped SSE event for immediate hook-based notifications
+  useEffect(() => {
+    const { unlisten } = subscribeSSE({
+      onEvent: (eventName, data) => {
+        if (eventName === "agent_stopped") {
+          handleAgentStopped(
+            data as { target: string; cwd: string; last_assistant_message?: string },
+          );
+        }
+      },
+    });
+    return unlisten;
+  }, [handleAgentStopped]);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);

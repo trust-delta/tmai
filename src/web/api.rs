@@ -2899,6 +2899,61 @@ pub async fn update_preview_settings(
 }
 
 // =========================================================
+// Notification settings
+// =========================================================
+
+/// Response for GET /api/settings/notification
+#[derive(Debug, Serialize)]
+pub struct NotificationSettingsResponse {
+    pub notify_on_idle: bool,
+    pub notify_idle_threshold_secs: u64,
+}
+
+/// Request for PUT /api/settings/notification
+#[derive(Debug, Deserialize)]
+pub struct NotificationSettingsRequest {
+    pub notify_on_idle: Option<bool>,
+    pub notify_idle_threshold_secs: Option<u64>,
+}
+
+/// GET /api/settings/notification
+pub async fn get_notification_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<NotificationSettingsResponse> {
+    let web = &core.settings().web;
+    Json(NotificationSettingsResponse {
+        notify_on_idle: web.notify_on_idle,
+        notify_idle_threshold_secs: web.notify_idle_threshold_secs,
+    })
+}
+
+/// PUT /api/settings/notification — update notification settings and persist
+pub async fn update_notification_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<NotificationSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(v) = req.notify_on_idle {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "notify_on_idle",
+            toml_edit::Value::from(v),
+        );
+    }
+    if let Some(v) = req.notify_idle_threshold_secs {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "notify_idle_threshold_secs",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+
+    // Reload live settings from config.toml
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
 // Deferred tool call endpoints
 // =========================================================
 
