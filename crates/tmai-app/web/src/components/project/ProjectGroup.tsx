@@ -30,7 +30,16 @@ export function ProjectGroup({
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawning, setSpawning] = useState(false);
+  const [orchEnabled, setOrchEnabled] = useState(false);
   const spawnRef = useRef<HTMLDivElement>(null);
+
+  // Check orchestrator enablement for this project
+  useEffect(() => {
+    api
+      .getOrchestratorSettings(project.path)
+      .then((s) => setOrchEnabled(s.enabled))
+      .catch(() => setOrchEnabled(false));
+  }, [project.path]);
 
   // Close spawn dropdown on outside click
   useEffect(() => {
@@ -88,6 +97,20 @@ export function ProjectGroup({
     },
     [spawning, confirm, onSpawned],
   );
+
+  // Spawn orchestrator agent for this project
+  const spawnOrchestrator = useCallback(async () => {
+    if (spawning) return;
+    setSpawning(true);
+    setShowSpawn(false);
+    try {
+      const res = await api.spawnOrchestrator({ project: project.path });
+      onSpawned(res.session_id);
+    } catch (_e) {
+    } finally {
+      setSpawning(false);
+    }
+  }, [spawning, project.path, onSpawned]);
 
   // All spawn targets: main + worktrees. Fallback ensures at least one target.
   const defaultTarget: WorktreeGroup = {
@@ -247,6 +270,19 @@ export function ProjectGroup({
             </button>
             {showSpawn && (
               <div className="absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-white/10 bg-zinc-900 p-1 shadow-lg min-w-[140px]">
+                {/* Orchestrator option (shown when enabled for this project) */}
+                {orchEnabled && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={spawnOrchestrator}
+                      className="whitespace-nowrap rounded px-3 py-1 text-left text-xs text-cyan-400 transition-colors hover:bg-white/10 hover:text-cyan-300"
+                    >
+                      claude (main)
+                    </button>
+                    <div className="mx-1 border-t border-white/5" />
+                  </>
+                )}
                 {hasMultipleTargets
                   ? // Show worktree-grouped spawn options
                     spawnTargets.map((target) => {
