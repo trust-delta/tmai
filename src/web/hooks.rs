@@ -252,8 +252,8 @@ pub async fn hook_event(
             }
         }
 
-        // TeammateIdle/TaskCompleted: return stop control response
-        "TeammateIdle" | "TaskCompleted" => {
+        // TeammateIdle/TaskCreated/TaskCompleted: return stop control response
+        "TeammateIdle" | "TaskCreated" | "TaskCompleted" => {
             let response = HookEventResponse {
                 should_continue: true,
                 stop_reason: None,

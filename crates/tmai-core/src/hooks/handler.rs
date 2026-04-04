@@ -285,6 +285,21 @@ pub fn handle_hook_event(
             }
         }
 
+        event_names::TASK_CREATED => {
+            let team_name = payload.team_name.clone().unwrap_or_default();
+            let task_id = payload.task_id.clone().unwrap_or_default();
+            let task_subject = payload.task_subject.clone().unwrap_or_default();
+            if !team_name.is_empty() && !task_id.is_empty() {
+                Some(CoreEvent::TaskCreated {
+                    team_name,
+                    task_id,
+                    task_subject,
+                })
+            } else {
+                None
+            }
+        }
+
         event_names::TASK_COMPLETED => {
             let team_name = payload.team_name.clone().unwrap_or_default();
             let task_id = payload.task_id.clone().unwrap_or_default();
@@ -952,6 +967,41 @@ mod tests {
 
         let event = handle_hook_event(&payload, "5", &registry, &map);
         assert!(matches!(event, Some(CoreEvent::TaskCompleted { .. })));
+    }
+
+    #[test]
+    fn test_task_created_emits_core_event() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "TaskCreated",
+            "session_id": "s1",
+            "team_name": "my-team",
+            "task_id": "1",
+            "task_subject": "Implement feature"
+        }))
+        .unwrap();
+
+        let event = handle_hook_event(&payload, "5", &registry, &map);
+        assert!(matches!(event, Some(CoreEvent::TaskCreated { .. })));
+    }
+
+    #[test]
+    fn test_task_created_missing_fields_returns_none() {
+        let registry = new_hook_registry();
+        let map = new_session_pane_map();
+
+        let payload: HookEventPayload = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "TaskCreated",
+            "session_id": "s1",
+            "team_name": "",
+            "task_id": ""
+        }))
+        .unwrap();
+
+        let event = handle_hook_event(&payload, "5", &registry, &map);
+        assert!(event.is_none());
     }
 
     #[test]

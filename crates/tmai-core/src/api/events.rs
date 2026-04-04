@@ -58,6 +58,16 @@ pub enum CoreEvent {
         member_name: String,
     },
 
+    /// A new task was created
+    TaskCreated {
+        /// Team name
+        team_name: String,
+        /// Task ID
+        task_id: String,
+        /// Task subject
+        task_subject: String,
+    },
+
     /// A task was completed
     TaskCompleted {
         /// Team name
