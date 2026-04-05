@@ -126,6 +126,11 @@ export function ProjectGroup({
   const hasMultipleTargets =
     spawnTargets.length > 1 || (spawnTargets.length === 1 && spawnTargets[0].isWorktree);
 
+  // Check if an orchestrator agent is already running in this project
+  const hasRunningOrchestrator = project.worktrees.some((wt) =>
+    wt.agents.some((a) => a.is_orchestrator),
+  );
+
   const isEmpty = project.totalAgents === 0;
 
   return (
@@ -276,9 +281,23 @@ export function ProjectGroup({
                     <button
                       type="button"
                       onClick={spawnOrchestrator}
-                      className="whitespace-nowrap rounded px-3 py-1 text-left text-xs text-cyan-400 transition-colors hover:bg-white/10 hover:text-cyan-300"
+                      disabled={hasRunningOrchestrator}
+                      className={cn(
+                        "whitespace-nowrap rounded px-3 py-1 text-left text-xs transition-colors",
+                        hasRunningOrchestrator
+                          ? "text-zinc-600 cursor-not-allowed"
+                          : "text-cyan-400 hover:bg-white/10 hover:text-cyan-300",
+                      )}
+                      title={
+                        hasRunningOrchestrator
+                          ? "Orchestrator is already running"
+                          : "Spawn orchestrator agent"
+                      }
                     >
-                      claude (main)
+                      Orchestrator
+                      {hasRunningOrchestrator && (
+                        <span className="ml-1 text-[10px] text-zinc-600">(active)</span>
+                      )}
                     </button>
                     <div className="mx-1 border-t border-white/5" />
                   </>
@@ -359,12 +378,18 @@ interface WorktreeSectionProps {
   onSelect: (target: string) => void;
 }
 
-// Sub-section for a worktree (or main) within a project
+// Sub-section for a worktree (or main) within a project — orchestrator agents pinned to top
 function WorktreeSection({ worktree, selectedTarget, onSelect }: WorktreeSectionProps) {
+  const sortedAgents = [...worktree.agents].sort((a, b) => {
+    if (a.is_orchestrator && !b.is_orchestrator) return -1;
+    if (!a.is_orchestrator && b.is_orchestrator) return 1;
+    return 0;
+  });
+
   return (
     <div className="mb-0.5">
       <div className="flex flex-col gap-1">
-        {worktree.agents.map((agent) => (
+        {sortedAgents.map((agent) => (
           <AgentCard
             key={agent.id}
             agent={agent}
