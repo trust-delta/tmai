@@ -134,6 +134,17 @@ impl TmaiHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No registered projects. Specify repo explicitly."))
     }
 
+    /// Make a DELETE request that returns a simple status (no body parsing)
+    pub fn delete_ok(&self, path: &str) -> Result<()> {
+        let info = Self::read_connection_info()?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
+        ureq::delete(&url)
+            .header("Authorization", &format!("Bearer {}", info.token))
+            .call()
+            .with_context(|| format!("DELETE {path} failed"))?;
+        Ok(())
+    }
+
     /// Make a GET request that returns raw text.
     pub fn get_text(&self, path: &str) -> Result<String> {
         let info = Self::read_connection_info()?;
