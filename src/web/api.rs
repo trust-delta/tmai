@@ -2994,6 +2994,28 @@ pub async fn rerun_failed_checks(
         .map(|()| Json(serde_json::json!({"status": "ok"})))
 }
 
+/// Request body for PR review
+#[derive(Debug, Deserialize)]
+pub struct PrReviewRequest {
+    pub repo: String,
+    pub pr_number: u64,
+    pub action: tmai_core::github::ReviewAction,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// POST /api/github/pr/review — submit a review on a pull request
+pub async fn review_pr(
+    Json(body): Json<PrReviewRequest>,
+) -> Result<Json<tmai_core::github::ReviewResult>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = validate_repo(&body.repo)?;
+
+    tmai_core::github::review_pr(&repo_dir, body.pr_number, body.action, body.body.as_deref())
+        .await
+        .map(Json)
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+}
+
 /// POST /api/github/pr/merge — merge a pull request
 pub async fn merge_pr(
     Json(body): Json<PrMergeRequest>,

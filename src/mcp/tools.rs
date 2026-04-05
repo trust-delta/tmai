@@ -189,6 +189,20 @@ pub struct MergePrParams {
     pub repo: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ReviewPrParams {
+    /// Pull request number to review
+    pub pr_number: u32,
+    /// Review action: "approve", "request_changes", or "comment"
+    pub action: String,
+    /// Review body text / summary (optional)
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Repository path (optional, defaults to first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
 fn default_merge_method() -> String {
     "squash".to_string()
 }
@@ -620,6 +634,34 @@ impl TmaiMcpServer {
             &serde_json::json!({"branch": p.branch, "repo": repo}),
         ) {
             Ok(()) => format!("Rerunning failed checks for branch: {}", p.branch),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Submit a review on a pull request (approve, request changes, or comment).
+    #[tool(description = "Review a pull request — approve, request changes, or post a comment")]
+    fn review_pr(&self, Parameters(p): Parameters<ReviewPrParams>) -> String {
+        if !["approve", "request_changes", "comment"].contains(&p.action.as_str()) {
+            return format!(
+                "Error: invalid action '{}' — must be approve, request_changes, or comment",
+                p.action
+            );
+        }
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        let body = serde_json::json!({
+            "repo": repo,
+            "pr_number": p.pr_number,
+            "action": p.action,
+            "body": p.body,
+        });
+        match self
+            .client
+            .post::<serde_json::Value>("/github/pr/review", &body)
+        {
+            Ok(data) => format_json(&data),
             Err(e) => format!("Error: {e}"),
         }
     }
