@@ -38,7 +38,7 @@
     "@vitejs/plugin-react": "^5",
     "tailwindcss": "^4",
     "typescript": "~5.8",
-    "vite": "^6",
+    "vite": "^8",
     "vitest": "^4.1.2"
   },
   "pnpm": {
