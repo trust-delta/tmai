@@ -222,6 +222,16 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         );
     }
 
+    // Start orchestrator notifier service
+    if settings.orchestrator.enabled {
+        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+            settings.orchestrator.notify.clone(),
+            app.shared_state(),
+            core.subscribe(),
+            core.event_sender(),
+        );
+    }
+
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
         let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
@@ -378,6 +388,17 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             "tmai: auto-approve service started (mode: {:?})",
             settings.auto_approve.effective_mode()
         );
+    }
+
+    // Start orchestrator notifier service
+    if settings.orchestrator.enabled {
+        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+            settings.orchestrator.notify.clone(),
+            state.clone(),
+            core.subscribe(),
+            core.event_sender(),
+        );
+        eprintln!("tmai: orchestrator notifier service started");
     }
 
     // Start Codex CLI app-server WebSocket connections if configured

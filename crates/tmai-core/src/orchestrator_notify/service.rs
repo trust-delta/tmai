@@ -1,0 +1,500 @@
+//! Orchestrator notification service — forwards sub-agent state changes
+//! to orchestrator agents via `send_prompt`.
+//!
+//! Subscribes to `CoreEvent` stream and sends human-readable notifications
+//! to every registered orchestrator agent when significant events occur on
+//! sub-agents (idle/stopped, CI status, PR review comments).
+
+use tokio::sync::broadcast;
+use tracing::{debug, info};
+
+use crate::api::CoreEvent;
+use crate::config::OrchestratorNotifySettings;
+use crate::state::SharedState;
+
+/// Background service that notifies orchestrator agents about sub-agent events
+pub struct OrchestratorNotifier;
+
+/// Contextual info about an agent at the time of notification
+struct AgentContext {
+    display_name: String,
+    git_branch: Option<String>,
+    worktree_name: Option<String>,
+    session_name: Option<String>,
+}
+
+impl OrchestratorNotifier {
+    /// Spawn the notifier as a background task.
+    ///
+    /// Listens for relevant `CoreEvent`s and sends notification prompts
+    /// to all orchestrator agents (excluding the agent that triggered the event).
+    pub fn spawn(
+        settings: OrchestratorNotifySettings,
+        state: SharedState,
+        mut event_rx: broadcast::Receiver<CoreEvent>,
+        event_tx: broadcast::Sender<CoreEvent>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                let notification = match event_rx.recv().await {
+                    Ok(event) => Self::build_notification(&event, &settings, &state),
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        debug!(skipped = n, "Orchestrator notifier lagged, skipping events");
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        debug!("Event channel closed, stopping orchestrator notifier");
+                        break;
+                    }
+                };
+
+                let Some((message, source_target)) = notification else {
+                    continue;
+                };
+
+                // Find all orchestrator agents (excluding the source agent)
+                let orchestrators: Vec<String> = {
+                    let s = state.read();
+                    s.agents
+                        .iter()
+                        .filter(|(target, a)| {
+                            a.is_orchestrator
+                                && !a.is_virtual
+                                && a.status.is_idle()
+                                && *target != &source_target
+                        })
+                        .map(|(target, _)| target.clone())
+                        .collect()
+                };
+
+                if orchestrators.is_empty() {
+                    debug!(
+                        message = %message,
+                        "No idle orchestrator agents to notify"
+                    );
+                    continue;
+                }
+
+                for target in &orchestrators {
+                    info!(
+                        orchestrator = %target,
+                        source = %source_target,
+                        "Sending sub-agent notification to orchestrator"
+                    );
+
+                    // Queue the notification via PromptReady event so the
+                    // existing prompt delivery infrastructure handles sending.
+                    let _ = event_tx.send(CoreEvent::PromptReady {
+                        target: target.clone(),
+                        prompt: message.clone(),
+                    });
+                }
+            }
+        })
+    }
+
+    /// Build a notification message from an event, or None if the event is not relevant.
+    fn build_notification(
+        event: &CoreEvent,
+        settings: &OrchestratorNotifySettings,
+        state: &SharedState,
+    ) -> Option<(String, String)> {
+        match event {
+            CoreEvent::AgentStopped {
+                target,
+                last_assistant_message,
+                ..
+            } => {
+                if !settings.on_idle {
+                    return None;
+                }
+                // Don't notify about orchestrator agents stopping
+                if Self::is_orchestrator(target, state) {
+                    return None;
+                }
+
+                let ctx = Self::agent_context(target, state);
+                let name = Self::agent_label(&ctx);
+                let mut msg = format!("[tmai] Agent \"{name}\" has stopped.");
+                Self::append_branch_info(&mut msg, &ctx);
+
+                if let Some(last_msg) = last_assistant_message {
+                    let summary = truncate(last_msg, 200);
+                    msg.push_str(&format!("\n  Last message: {summary}"));
+                }
+
+                Some((msg, target.clone()))
+            }
+
+            CoreEvent::AgentStatusChanged {
+                target,
+                old_status,
+                new_status,
+            } => {
+                if !settings.on_idle {
+                    return None;
+                }
+                if Self::is_orchestrator(target, state) {
+                    return None;
+                }
+
+                // Only notify on transitions to idle or error
+                let dominated = new_status == "idle" || new_status == "error";
+                if !dominated {
+                    return None;
+                }
+                // Avoid duplicate notification if AgentStopped will also fire
+                if new_status == "idle" && old_status == "processing" {
+                    // AgentStopped covers stop→idle with more context; skip
+                    return None;
+                }
+
+                let ctx = Self::agent_context(target, state);
+                let name = Self::agent_label(&ctx);
+                let status_display = match new_status.as_str() {
+                    "idle" => "Idle",
+                    "error" => "Error",
+                    _ => new_status.as_str(),
+                };
+                let mut msg = format!("[tmai] Agent \"{name}\" is now {status_display}.");
+                Self::append_branch_info(&mut msg, &ctx);
+
+                Some((msg, target.clone()))
+            }
+
+            CoreEvent::RebaseConflict {
+                branch,
+                worktree_path,
+                error,
+            } => {
+                if !settings.on_idle {
+                    return None;
+                }
+                // Find the agent working on this branch
+                let source = Self::find_agent_by_branch(branch, state)
+                    .unwrap_or_else(|| worktree_path.clone());
+                let msg =
+                    format!("[tmai] Rebase conflict on branch \"{branch}\".\n  Error: {error}");
+                Some((msg, source))
+            }
+
+            // Future: PR/CI events from #229 will be handled here
+            // CoreEvent::CiStatusChanged { .. } => { ... }
+            // CoreEvent::PrReviewComment { .. } => { ... }
+            _ => None,
+        }
+    }
+
+    /// Check if a target agent is an orchestrator
+    fn is_orchestrator(target: &str, state: &SharedState) -> bool {
+        let s = state.read();
+        s.agents
+            .get(target)
+            .map(|a| a.is_orchestrator)
+            .unwrap_or(false)
+    }
+
+    /// Gather contextual info about an agent for notification formatting
+    fn agent_context(target: &str, state: &SharedState) -> AgentContext {
+        let s = state.read();
+        match s.agents.get(target) {
+            Some(a) => AgentContext {
+                display_name: a.display_name(),
+                git_branch: a.git_branch.clone(),
+                worktree_name: a.worktree_name.clone(),
+                session_name: a.session_name.clone(),
+            },
+            None => AgentContext {
+                display_name: target.to_string(),
+                git_branch: None,
+                worktree_name: None,
+                session_name: None,
+            },
+        }
+    }
+
+    /// Build a human-readable label for the agent
+    fn agent_label(ctx: &AgentContext) -> String {
+        // Prefer session_name > worktree_name > display_name
+        if let Some(ref name) = ctx.session_name {
+            return name.clone();
+        }
+        if let Some(ref name) = ctx.worktree_name {
+            return name.clone();
+        }
+        ctx.display_name.clone()
+    }
+
+    /// Append branch info line if available
+    fn append_branch_info(msg: &mut String, ctx: &AgentContext) {
+        if let Some(ref branch) = ctx.git_branch {
+            msg.push_str(&format!("\n  Branch: {branch}"));
+        }
+    }
+
+    /// Find an agent target by git branch name
+    fn find_agent_by_branch(branch: &str, state: &SharedState) -> Option<String> {
+        let s = state.read();
+        s.agents
+            .iter()
+            .find(|(_, a)| a.git_branch.as_deref() == Some(branch))
+            .map(|(target, _)| target.clone())
+    }
+}
+
+/// Truncate a string to max_chars, appending "..." if truncated
+fn truncate(s: &str, max_chars: usize) -> String {
+    // Take first line only, then truncate
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.chars().count() > max_chars {
+        let truncated: String = first_line.chars().take(max_chars).collect();
+        format!("{truncated}...")
+    } else {
+        first_line.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::{AgentStatus, AgentType, MonitoredAgent};
+    use crate::api::TmaiCoreBuilder;
+    use crate::config::{OrchestratorNotifySettings, Settings};
+    use crate::state::AppState;
+
+    /// Helper: insert a sub-agent into state
+    fn insert_agent(state: &SharedState, target: &str, is_orchestrator: bool, status: AgentStatus) {
+        let mut s = state.write();
+        let mut agent = MonitoredAgent::new(
+            target.to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            "/tmp".to_string(),
+            0,
+            target.to_string(),
+            String::new(),
+            0,
+            0,
+        );
+        agent.is_orchestrator = is_orchestrator;
+        agent.status = status;
+        agent.git_branch = Some(format!("feat/{target}"));
+        s.agents.insert(target.to_string(), agent);
+    }
+
+    #[test]
+    fn test_truncate_short() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_long() {
+        let long = "a".repeat(300);
+        let result = truncate(&long, 200);
+        assert!(result.ends_with("..."));
+        // 200 chars + "..."
+        assert_eq!(result.chars().count(), 203);
+    }
+
+    #[test]
+    fn test_truncate_multiline() {
+        let text = "First line\nSecond line\nThird line";
+        assert_eq!(truncate(text, 100), "First line");
+    }
+
+    #[test]
+    fn test_agent_stopped_notification() {
+        let state = AppState::shared();
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("Done implementing the feature.".to_string()),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, source) = result.unwrap();
+        assert_eq!(source, "sub:0.0");
+        assert!(msg.contains("[tmai]"));
+        assert!(msg.contains("has stopped"));
+        assert!(msg.contains("Branch: feat/sub:0.0"));
+        assert!(msg.contains("Last message: Done implementing the feature."));
+    }
+
+    #[test]
+    fn test_orchestrator_stopped_not_notified() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStopped {
+            target: "orch:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: None,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_status_changed_to_error() {
+        let state = AppState::shared();
+        insert_agent(
+            &state,
+            "sub:0.0",
+            false,
+            AgentStatus::Error {
+                message: "OOM".to_string(),
+            },
+        );
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStatusChanged {
+            target: "sub:0.0".to_string(),
+            old_status: "idle".to_string(),
+            new_status: "error".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, _) = result.unwrap();
+        assert!(msg.contains("Error"));
+    }
+
+    #[test]
+    fn test_status_changed_processing_to_idle_skipped() {
+        // processing→idle is covered by AgentStopped, so skip
+        let state = AppState::shared();
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStatusChanged {
+            target: "sub:0.0".to_string(),
+            old_status: "processing".to_string(),
+            new_status: "idle".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_disabled_on_idle_skips_all() {
+        let state = AppState::shared();
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let settings = OrchestratorNotifySettings {
+            on_idle: false,
+            on_ci: true,
+            on_pr_comment: true,
+        };
+
+        let event = CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: None,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_rebase_conflict_notification() {
+        let state = AppState::shared();
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+        {
+            let mut s = state.write();
+            s.agents.get_mut("sub:0.0").unwrap().git_branch = Some("feat/foo".to_string());
+        }
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::RebaseConflict {
+            branch: "feat/foo".to_string(),
+            worktree_path: "/tmp/wt".to_string(),
+            error: "CONFLICT in file.rs".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, source) = result.unwrap();
+        assert_eq!(source, "sub:0.0");
+        assert!(msg.contains("Rebase conflict"));
+        assert!(msg.contains("feat/foo"));
+    }
+
+    #[test]
+    fn test_agent_label_prefers_session_name() {
+        let ctx = AgentContext {
+            display_name: "main:0.0".to_string(),
+            git_branch: Some("feat/foo".to_string()),
+            worktree_name: Some("foo-worktree".to_string()),
+            session_name: Some("my-task".to_string()),
+        };
+        assert_eq!(OrchestratorNotifier::agent_label(&ctx), "my-task");
+    }
+
+    #[test]
+    fn test_agent_label_falls_back_to_worktree() {
+        let ctx = AgentContext {
+            display_name: "main:0.0".to_string(),
+            git_branch: None,
+            worktree_name: Some("foo-worktree".to_string()),
+            session_name: None,
+        };
+        assert_eq!(OrchestratorNotifier::agent_label(&ctx), "foo-worktree");
+    }
+
+    #[tokio::test]
+    async fn test_spawn_delivers_to_orchestrator() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+        insert_agent(
+            &state,
+            "sub:0.0",
+            false,
+            AgentStatus::Processing {
+                activity: String::new(),
+            },
+        );
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let settings = OrchestratorNotifySettings::default();
+        let _handle =
+            OrchestratorNotifier::spawn(settings, state.clone(), event_rx, event_tx.clone());
+
+        // Emit an AgentStopped event for the sub-agent
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("All done.".to_string()),
+        });
+
+        // The notifier should emit a PromptReady for the orchestrator
+        let mut found = false;
+        for _ in 0..10 {
+            match tokio::time::timeout(std::time::Duration::from_millis(100), listen_rx.recv())
+                .await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, prompt })) => {
+                    if target == "orch:0.0" {
+                        assert!(prompt.contains("[tmai]"));
+                        assert!(prompt.contains("has stopped"));
+                        found = true;
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        assert!(found, "Expected PromptReady for orchestrator");
+    }
+}

@@ -869,6 +869,36 @@ pub struct OrchestratorSettings {
     /// Workflow rules that guide the orchestrator's behavior
     #[serde(default)]
     pub rules: OrchestratorRules,
+
+    /// Notification settings for sub-agent state changes
+    #[serde(default)]
+    pub notify: OrchestratorNotifySettings,
+}
+
+/// Settings controlling which sub-agent events notify the orchestrator
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrchestratorNotifySettings {
+    /// Notify when a sub-agent becomes idle or stops
+    #[serde(default = "default_true")]
+    pub on_idle: bool,
+
+    /// Notify on CI status changes (passed/failed)
+    #[serde(default = "default_true")]
+    pub on_ci: bool,
+
+    /// Notify on new PR review comments
+    #[serde(default = "default_true")]
+    pub on_pr_comment: bool,
+}
+
+impl Default for OrchestratorNotifySettings {
+    fn default() -> Self {
+        Self {
+            on_idle: true,
+            on_ci: true,
+            on_pr_comment: true,
+        }
+    }
 }
 
 /// Workflow rules for the orchestrator agent
@@ -905,6 +935,7 @@ impl Default for OrchestratorSettings {
             enabled: false,
             role: default_orchestrator_role(),
             rules: OrchestratorRules::default(),
+            notify: OrchestratorNotifySettings::default(),
         }
     }
 }
@@ -1512,6 +1543,7 @@ mod tests {
                 enabled: true,
                 role: "Project-specific role".to_string(),
                 rules: OrchestratorRules::default(),
+                notify: OrchestratorNotifySettings::default(),
             }),
         });
 
