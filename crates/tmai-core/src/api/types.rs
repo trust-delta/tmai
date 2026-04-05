@@ -7,7 +7,8 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::agents::{
-    AgentMode, AgentStatus, AgentTeamInfo, AgentType, DetectionSource, EffortLevel, SendCapability,
+    AgentMode, AgentStatus, AgentTeamInfo, AgentType, Detail, DetectionSource, EffortLevel, Phase,
+    SendCapability,
 };
 use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
@@ -82,6 +83,10 @@ pub struct AgentSnapshot {
     pub agent_type: AgentType,
     /// Current status
     pub status: AgentStatus,
+    /// Coarse-grained phase for orchestrator consumption
+    pub phase: Phase,
+    /// Fine-grained detail for UI display
+    pub detail: Detail,
     /// Pane title
     pub title: String,
     /// Last captured content (plain text) — skipped in JSON serialization (use preview API)
@@ -248,6 +253,8 @@ impl AgentSnapshot {
             target: agent.target.clone(),
             agent_type: agent.agent_type.clone(),
             status: agent.status.clone(),
+            phase: agent.status.phase(),
+            detail: agent.status.detail(),
             title: agent.title.clone(),
             last_content: agent.last_content.clone(),
             last_content_ansi: agent.last_content_ansi.clone(),
@@ -445,14 +452,7 @@ impl WorktreeSnapshot {
             branch: detail.branch.clone(),
             is_main: detail.is_main,
             agent_target: detail.agent_target.clone(),
-            agent_status: detail.agent_status.as_ref().map(|s| match s {
-                AgentStatus::Idle => "idle".to_string(),
-                AgentStatus::Processing { .. } => "processing".to_string(),
-                AgentStatus::AwaitingApproval { .. } => "awaiting_approval".to_string(),
-                AgentStatus::Error { .. } => "error".to_string(),
-                AgentStatus::Unknown => "unknown".to_string(),
-                AgentStatus::Offline => "offline".to_string(),
-            }),
+            agent_status: detail.agent_status.as_ref().map(|s| s.phase().to_string()),
             is_dirty: detail.is_dirty,
             diff_summary: detail.diff_summary.as_ref().map(|ds| DiffSummarySnapshot {
                 files_changed: ds.files_changed,
@@ -500,6 +500,40 @@ mod tests {
         assert_eq!(snapshot.context_warning, Some(15));
         assert_eq!(snapshot.display_name, "main:0.0");
         assert!(!snapshot.needs_attention());
+    }
+
+    #[test]
+    fn test_agent_snapshot_phase_and_detail() {
+        use crate::agents::{Detail, Phase};
+
+        let mut agent = test_agent("main:0.0");
+        agent.status = AgentStatus::Processing {
+            activity: "Tool: Bash".to_string(),
+        };
+        let snapshot = AgentSnapshot::from_agent(&agent);
+        assert_eq!(snapshot.phase, Phase::Working);
+        assert_eq!(
+            snapshot.detail,
+            Detail::ToolExecution {
+                tool_name: "Bash".to_string()
+            }
+        );
+
+        agent.status = AgentStatus::Idle;
+        let snapshot = AgentSnapshot::from_agent(&agent);
+        assert_eq!(snapshot.phase, Phase::Idle);
+        assert_eq!(snapshot.detail, Detail::Idle);
+
+        agent.status = AgentStatus::AwaitingApproval {
+            approval_type: crate::agents::ApprovalType::ShellCommand,
+            details: "ls".to_string(),
+        };
+        let snapshot = AgentSnapshot::from_agent(&agent);
+        assert_eq!(snapshot.phase, Phase::Blocked);
+
+        // Verify phase is serialized in JSON
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("\"phase\":\"Blocked\""));
     }
 
     #[test]

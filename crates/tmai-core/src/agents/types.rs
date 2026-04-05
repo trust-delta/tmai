@@ -415,6 +415,90 @@ impl fmt::Display for ApprovalType {
     }
 }
 
+/// Coarse-grained phase for orchestrator consumption.
+///
+/// Derived from `AgentStatus` — orchestrator tools operate on phase for simple,
+/// stable categories suitable for decision-making.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Phase {
+    /// Actively processing (tools, thinking, compacting)
+    Working,
+    /// Needs intervention (approval, error, user question)
+    Blocked,
+    /// Waiting for next instruction
+    Idle,
+    /// Not connected / not yet started
+    Offline,
+}
+
+impl fmt::Display for Phase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Phase::Working => write!(f, "working"),
+            Phase::Blocked => write!(f, "blocked"),
+            Phase::Idle => write!(f, "idle"),
+            Phase::Offline => write!(f, "offline"),
+        }
+    }
+}
+
+impl Phase {
+    /// Parse from a string (case-insensitive)
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "working" => Some(Phase::Working),
+            "blocked" => Some(Phase::Blocked),
+            "idle" => Some(Phase::Idle),
+            "offline" => Some(Phase::Offline),
+            _ => None,
+        }
+    }
+}
+
+/// Fine-grained detail for UI display.
+///
+/// Provides rich information about what the agent is currently doing,
+/// while `Phase` gives the coarse category for orchestrator logic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Detail {
+    /// Executing a tool (Read, Edit, Bash, etc.)
+    ToolExecution { tool_name: String },
+    /// Compacting context window
+    Compacting,
+    /// Thinking / processing without a specific tool
+    Thinking,
+    /// Waiting for user approval on a tool or action
+    AwaitingApproval {
+        approval_type: ApprovalType,
+        details: String,
+    },
+    /// Agent encountered an error
+    Error { message: String },
+    /// Agent is idle, waiting for input
+    Idle,
+    /// Agent is offline / not connected
+    Offline,
+    /// Status could not be determined
+    Unknown,
+}
+
+impl fmt::Display for Detail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Detail::ToolExecution { tool_name } => write!(f, "Tool: {}", tool_name),
+            Detail::Compacting => write!(f, "Compacting context…"),
+            Detail::Thinking => write!(f, "Thinking"),
+            Detail::AwaitingApproval { approval_type, .. } => {
+                write!(f, "Awaiting: {}", approval_type)
+            }
+            Detail::Error { message } => write!(f, "Error: {}", message),
+            Detail::Idle => write!(f, "Idle"),
+            Detail::Offline => write!(f, "Offline"),
+            Detail::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 /// Current status of an agent
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
@@ -437,6 +521,51 @@ pub enum AgentStatus {
 }
 
 impl AgentStatus {
+    /// Derive the coarse-grained phase from this status
+    pub fn phase(&self) -> Phase {
+        match self {
+            AgentStatus::Processing { .. } => Phase::Working,
+            AgentStatus::AwaitingApproval { .. } | AgentStatus::Error { .. } => Phase::Blocked,
+            AgentStatus::Idle => Phase::Idle,
+            AgentStatus::Offline | AgentStatus::Unknown => Phase::Offline,
+        }
+    }
+
+    /// Derive the fine-grained detail from this status
+    pub fn detail(&self) -> Detail {
+        match self {
+            AgentStatus::Processing { activity } => {
+                if activity.starts_with("Tool: ") {
+                    Detail::ToolExecution {
+                        tool_name: activity.trim_start_matches("Tool: ").to_string(),
+                    }
+                } else if activity.contains("Compacting") || activity.contains("compacting") {
+                    Detail::Compacting
+                } else if activity.is_empty() {
+                    Detail::Thinking
+                } else {
+                    // General activity text — treat as tool execution with activity as name
+                    Detail::ToolExecution {
+                        tool_name: activity.clone(),
+                    }
+                }
+            }
+            AgentStatus::AwaitingApproval {
+                approval_type,
+                details,
+            } => Detail::AwaitingApproval {
+                approval_type: approval_type.clone(),
+                details: details.clone(),
+            },
+            AgentStatus::Error { message } => Detail::Error {
+                message: message.clone(),
+            },
+            AgentStatus::Idle => Detail::Idle,
+            AgentStatus::Offline => Detail::Offline,
+            AgentStatus::Unknown => Detail::Unknown,
+        }
+    }
+
     /// Check if the agent needs user attention
     pub fn needs_attention(&self) -> bool {
         matches!(
@@ -895,6 +1024,145 @@ mod tests {
         assert!(AgentType::is_version_like("1.0.0"));
         assert!(!AgentType::is_version_like("fish"));
         assert!(!AgentType::is_version_like(""));
+    }
+
+    #[test]
+    fn test_phase_from_agent_status() {
+        assert_eq!(
+            AgentStatus::Processing {
+                activity: "Tool: Bash".to_string()
+            }
+            .phase(),
+            Phase::Working
+        );
+        assert_eq!(
+            AgentStatus::Processing {
+                activity: String::new()
+            }
+            .phase(),
+            Phase::Working
+        );
+        assert_eq!(
+            AgentStatus::Processing {
+                activity: "Compacting context…".to_string()
+            }
+            .phase(),
+            Phase::Working
+        );
+        assert_eq!(
+            AgentStatus::AwaitingApproval {
+                approval_type: ApprovalType::FileEdit,
+                details: String::new()
+            }
+            .phase(),
+            Phase::Blocked
+        );
+        assert_eq!(
+            AgentStatus::Error {
+                message: "test".to_string()
+            }
+            .phase(),
+            Phase::Blocked
+        );
+        assert_eq!(AgentStatus::Idle.phase(), Phase::Idle);
+        assert_eq!(AgentStatus::Offline.phase(), Phase::Offline);
+        assert_eq!(AgentStatus::Unknown.phase(), Phase::Offline);
+    }
+
+    #[test]
+    fn test_detail_from_agent_status() {
+        // Tool execution
+        let detail = AgentStatus::Processing {
+            activity: "Tool: Bash".to_string(),
+        }
+        .detail();
+        assert_eq!(
+            detail,
+            Detail::ToolExecution {
+                tool_name: "Bash".to_string()
+            }
+        );
+
+        // Compacting
+        let detail = AgentStatus::Processing {
+            activity: "Compacting context…".to_string(),
+        }
+        .detail();
+        assert_eq!(detail, Detail::Compacting);
+
+        // Thinking (empty activity)
+        let detail = AgentStatus::Processing {
+            activity: String::new(),
+        }
+        .detail();
+        assert_eq!(detail, Detail::Thinking);
+
+        // Awaiting approval
+        let detail = AgentStatus::AwaitingApproval {
+            approval_type: ApprovalType::ShellCommand,
+            details: "rm -rf /tmp".to_string(),
+        }
+        .detail();
+        assert_eq!(
+            detail,
+            Detail::AwaitingApproval {
+                approval_type: ApprovalType::ShellCommand,
+                details: "rm -rf /tmp".to_string()
+            }
+        );
+
+        // Error
+        let detail = AgentStatus::Error {
+            message: "timeout".to_string(),
+        }
+        .detail();
+        assert_eq!(
+            detail,
+            Detail::Error {
+                message: "timeout".to_string()
+            }
+        );
+
+        // Simple variants
+        assert_eq!(AgentStatus::Idle.detail(), Detail::Idle);
+        assert_eq!(AgentStatus::Offline.detail(), Detail::Offline);
+        assert_eq!(AgentStatus::Unknown.detail(), Detail::Unknown);
+    }
+
+    #[test]
+    fn test_phase_display_and_parse() {
+        assert_eq!(Phase::Working.to_string(), "working");
+        assert_eq!(Phase::Blocked.to_string(), "blocked");
+        assert_eq!(Phase::Idle.to_string(), "idle");
+        assert_eq!(Phase::Offline.to_string(), "offline");
+
+        assert_eq!(Phase::from_str_loose("Working"), Some(Phase::Working));
+        assert_eq!(Phase::from_str_loose("BLOCKED"), Some(Phase::Blocked));
+        assert_eq!(Phase::from_str_loose("idle"), Some(Phase::Idle));
+        assert_eq!(Phase::from_str_loose("Offline"), Some(Phase::Offline));
+        assert_eq!(Phase::from_str_loose("unknown"), None);
+    }
+
+    #[test]
+    fn test_phase_serialization() {
+        let json = serde_json::to_string(&Phase::Working).unwrap();
+        assert_eq!(json, "\"Working\"");
+        let deserialized: Phase = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, Phase::Working);
+    }
+
+    #[test]
+    fn test_detail_serialization() {
+        let detail = Detail::ToolExecution {
+            tool_name: "Read".to_string(),
+        };
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(json.contains("ToolExecution"));
+        assert!(json.contains("Read"));
+
+        let detail = Detail::Compacting;
+        let json = serde_json::to_string(&detail).unwrap();
+        assert_eq!(json, "\"Compacting\"");
     }
 
     #[test]
