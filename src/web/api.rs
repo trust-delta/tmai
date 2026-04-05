@@ -1873,7 +1873,12 @@ pub async fn spawn_orchestrator(
         let state = core.raw_state();
         let mut s = state.write();
         if let Some(agent) = s.agents.get_mut(session_id) {
+            // Agent already registered (e.g. PTY spawn registers immediately)
             agent.is_orchestrator = true;
+        } else {
+            // Agent not yet detected by the poller (tmux spawn);
+            // queue it so update_agents will apply the flag on first detection.
+            s.pending_orchestrator_ids.insert(session_id.clone());
         }
     }
     core.notify_agents_updated();
