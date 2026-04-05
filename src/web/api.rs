@@ -1279,6 +1279,7 @@ pub async fn update_orchestrator_settings(
                 .and_then(|r| r.custom.clone())
                 .unwrap_or_else(|| current.rules.custom.clone()),
         },
+        notify: current.notify.clone(),
     };
     drop(settings);
 
