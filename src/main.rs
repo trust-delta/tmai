@@ -454,6 +454,29 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         });
     }
 
+    // Start PR/CI monitor if orchestrator.pr_monitor_enabled
+    {
+        let orch_settings = settings.resolve_orchestrator(None);
+        if orch_settings.pr_monitor_enabled {
+            let project_paths = settings.project_paths();
+            if project_paths.is_empty() {
+                tracing::info!("PR monitor enabled but no projects registered, skipping");
+            } else {
+                for path in &project_paths {
+                    let project_orch = settings.resolve_orchestrator(Some(path));
+                    if project_orch.pr_monitor_enabled {
+                        tracing::info!("Starting PR monitor for project: {}", path);
+                        tmai_core::github::pr_monitor::spawn_pr_monitor(
+                            path.clone(),
+                            core.event_sender().clone(),
+                            project_orch.clone(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // Interval for syncing PTY session liveness with agent status
     let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
     pty_sync_interval.tick().await; // skip first tick

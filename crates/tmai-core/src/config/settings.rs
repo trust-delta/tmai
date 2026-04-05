@@ -873,6 +873,14 @@ pub struct OrchestratorSettings {
     /// Notification settings for sub-agent state changes
     #[serde(default)]
     pub notify: OrchestratorNotifySettings,
+
+    /// Enable automatic PR/CI status monitoring with notifications
+    #[serde(default)]
+    pub pr_monitor_enabled: bool,
+
+    /// Polling interval for PR/CI status checks (seconds)
+    #[serde(default = "default_pr_monitor_interval")]
+    pub pr_monitor_interval_secs: u64,
 }
 
 /// Settings controlling which sub-agent events notify the orchestrator
@@ -889,6 +897,10 @@ pub struct OrchestratorNotifySettings {
     /// Notify on new PR review comments
     #[serde(default = "default_true")]
     pub on_pr_comment: bool,
+
+    /// Notify orchestrator when a new PR is created
+    #[serde(default = "default_true")]
+    pub on_pr_created: bool,
 }
 
 impl Default for OrchestratorNotifySettings {
@@ -897,6 +909,7 @@ impl Default for OrchestratorNotifySettings {
             on_idle: true,
             on_ci: true,
             on_pr_comment: true,
+            on_pr_created: true,
         }
     }
 }
@@ -936,8 +949,15 @@ impl Default for OrchestratorSettings {
             role: default_orchestrator_role(),
             rules: OrchestratorRules::default(),
             notify: OrchestratorNotifySettings::default(),
+            pr_monitor_enabled: false,
+            pr_monitor_interval_secs: default_pr_monitor_interval(),
         }
     }
+}
+
+/// Default PR monitor polling interval (60 seconds)
+fn default_pr_monitor_interval() -> u64 {
+    60
 }
 
 /// Codex CLI app-server WebSocket connection settings
@@ -1543,7 +1563,7 @@ mod tests {
                 enabled: true,
                 role: "Project-specific role".to_string(),
                 rules: OrchestratorRules::default(),
-                notify: OrchestratorNotifySettings::default(),
+                ..Default::default()
             }),
         });
 

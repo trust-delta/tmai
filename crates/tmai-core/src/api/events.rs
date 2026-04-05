@@ -220,6 +220,46 @@ pub enum CoreEvent {
         /// Who resolved it (e.g., "human", "ai:haiku", "timeout")
         resolved_by: String,
     },
+
+    /// A new PR was detected by the PR monitor
+    PrCreated {
+        /// PR number
+        pr_number: u64,
+        /// PR title
+        title: String,
+        /// Head branch name
+        branch: String,
+    },
+
+    /// CI checks passed for a PR
+    PrCiPassed {
+        /// PR number
+        pr_number: u64,
+        /// PR title
+        title: String,
+        /// Summary of passed checks
+        checks_summary: String,
+    },
+
+    /// CI checks failed for a PR
+    PrCiFailed {
+        /// PR number
+        pr_number: u64,
+        /// PR title
+        title: String,
+        /// Details of failed checks
+        failed_details: String,
+    },
+
+    /// A PR received review feedback (changes requested)
+    PrReviewFeedback {
+        /// PR number
+        pr_number: u64,
+        /// PR title
+        title: String,
+        /// Summary of review comments
+        comments_summary: String,
+    },
 }
 
 impl TmaiCore {

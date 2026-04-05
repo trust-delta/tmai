@@ -178,9 +178,61 @@ impl OrchestratorNotifier {
                 Some((msg, source))
             }
 
-            // Future: PR/CI events from #229 will be handled here
-            // CoreEvent::CiStatusChanged { .. } => { ... }
-            // CoreEvent::PrReviewComment { .. } => { ... }
+            CoreEvent::PrCreated {
+                pr_number,
+                title,
+                branch,
+            } => {
+                if !settings.on_pr_created {
+                    return None;
+                }
+                let msg =
+                    format!("[PR Monitor] PR #{pr_number} created: \"{title}\" (branch: {branch})");
+                // Use branch as pseudo-target (no specific agent)
+                Some((msg, branch.clone()))
+            }
+
+            CoreEvent::PrCiPassed {
+                pr_number,
+                title,
+                checks_summary,
+            } => {
+                if !settings.on_ci {
+                    return None;
+                }
+                let msg = format!(
+                    "[PR Monitor] PR #{pr_number} \"{title}\" CI passed. Ready to merge. {checks_summary}"
+                );
+                Some((msg, format!("pr-{pr_number}")))
+            }
+
+            CoreEvent::PrCiFailed {
+                pr_number,
+                title,
+                failed_details,
+            } => {
+                if !settings.on_ci {
+                    return None;
+                }
+                let msg =
+                    format!("[PR Monitor] PR #{pr_number} \"{title}\" CI failed. {failed_details}");
+                Some((msg, format!("pr-{pr_number}")))
+            }
+
+            CoreEvent::PrReviewFeedback {
+                pr_number,
+                title,
+                comments_summary,
+            } => {
+                if !settings.on_pr_comment {
+                    return None;
+                }
+                let msg = format!(
+                    "[PR Monitor] PR #{pr_number} \"{title}\" has review feedback: {comments_summary}"
+                );
+                Some((msg, format!("pr-{pr_number}")))
+            }
+
             _ => None,
         }
     }

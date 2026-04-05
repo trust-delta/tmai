@@ -265,6 +265,58 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::PrCreated { pr_number, title, branch }) => {
+                            let data = serde_json::json!({
+                                "pr_number": pr_number,
+                                "title": title,
+                                "branch": branch,
+                            });
+                            let event = Event::default()
+                                .event("pr_created")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::PrCiPassed { pr_number, title, checks_summary }) => {
+                            let data = serde_json::json!({
+                                "pr_number": pr_number,
+                                "title": title,
+                                "checks_summary": checks_summary,
+                            });
+                            let event = Event::default()
+                                .event("pr_ci_passed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::PrCiFailed { pr_number, title, failed_details }) => {
+                            let data = serde_json::json!({
+                                "pr_number": pr_number,
+                                "title": title,
+                                "failed_details": failed_details,
+                            });
+                            let event = Event::default()
+                                .event("pr_ci_failed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::PrReviewFeedback { pr_number, title, comments_summary }) => {
+                            let data = serde_json::json!({
+                                "pr_number": pr_number,
+                                "title": title,
+                                "comments_summary": comments_summary,
+                            });
+                            let event = Event::default()
+                                .event("pr_review_feedback")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })
