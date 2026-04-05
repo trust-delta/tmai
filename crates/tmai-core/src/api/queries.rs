@@ -66,6 +66,52 @@ impl TmaiCore {
             .collect()
     }
 
+    /// List agents filtered by project (git_common_dir).
+    ///
+    /// Agents are matched when their `git_common_dir` equals the given project path,
+    /// or when `git_common_dir` is None, by checking if the agent's `cwd` starts with
+    /// the project path. This ensures worktree agents are included since they share
+    /// the same git_common_dir as the main repo.
+    pub fn list_agents_by_project(&self, project: &str) -> Vec<AgentSnapshot> {
+        let state = self.state().read();
+        let defs = &state.agent_definitions;
+        let project_git_dir = normalize_git_dir(project);
+        state
+            .agent_order
+            .iter()
+            .filter_map(|id| state.agents.get(id))
+            .filter(|a| agent_matches_project(a, &project_git_dir, project))
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap
+            })
+            .collect()
+    }
+
+    /// Validate that an agent belongs to the given project scope.
+    ///
+    /// Returns Ok(()) if the agent's git_common_dir matches the project,
+    /// or Err with a clear message if it belongs to a different project.
+    pub fn validate_agent_project(&self, id: &str, project: &str) -> Result<(), ApiError> {
+        let state = self.state().read();
+        let key = Self::resolve_agent_key_in_state(&state, id)?;
+        let agent = state.agents.get(&key).unwrap();
+        let project_git_dir = normalize_git_dir(project);
+        if agent_matches_project(agent, &project_git_dir, project) {
+            Ok(())
+        } else {
+            Err(ApiError::ProjectScopeMismatch {
+                agent_id: id.to_string(),
+                agent_project: agent
+                    .git_common_dir
+                    .clone()
+                    .unwrap_or_else(|| agent.cwd.clone()),
+                expected_project: project.to_string(),
+            })
+        }
+    }
+
     /// Get a single agent snapshot by any accepted ID form (stable_id, target, pty_session_id).
     pub fn get_agent(&self, id: &str) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
@@ -348,6 +394,32 @@ impl TmaiCore {
     }
 }
 
+/// Normalize a project path to its `.git` directory for comparison with git_common_dir.
+///
+/// If the path already ends with `.git`, return as-is. Otherwise append `/.git`.
+fn normalize_git_dir(project: &str) -> String {
+    if project.ends_with(".git") {
+        project.to_string()
+    } else {
+        let trimmed = project.trim_end_matches('/');
+        format!("{trimmed}/.git")
+    }
+}
+
+/// Check whether an agent belongs to a project by comparing git_common_dir or cwd.
+fn agent_matches_project(
+    agent: &crate::agents::MonitoredAgent,
+    project_git_dir: &str,
+    project_path: &str,
+) -> bool {
+    if let Some(ref gcd) = agent.git_common_dir {
+        gcd == project_git_dir
+    } else {
+        // Fallback: check if agent cwd is within the project directory
+        agent.cwd.starts_with(project_path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,5 +673,204 @@ mod tests {
         let snapshot = AgentSnapshot::from_agent(&agent);
         assert_eq!(snapshot.id, stable_id);
         assert_eq!(snapshot.pane_id, "main:0.0");
+    }
+
+    // =========================================================
+    // Project-scoped filtering tests
+    // =========================================================
+
+    /// Create an agent with a specific cwd and git_common_dir
+    fn test_agent_with_project(
+        id: &str,
+        cwd: &str,
+        git_common_dir: Option<&str>,
+    ) -> MonitoredAgent {
+        let mut agent = MonitoredAgent::new(
+            id.to_string(),
+            AgentType::ClaudeCode,
+            "Title".to_string(),
+            cwd.to_string(),
+            100,
+            "main".to_string(),
+            "win".to_string(),
+            0,
+            0,
+        );
+        agent.git_common_dir = git_common_dir.map(|s| s.to_string());
+        agent
+    }
+
+    #[test]
+    fn test_list_agents_by_project_filters_by_git_common_dir() {
+        let agents = vec![
+            test_agent_with_project(
+                "main:0.0",
+                "/home/user/project-a",
+                Some("/home/user/project-a/.git"),
+            ),
+            test_agent_with_project(
+                "main:0.1",
+                "/home/user/project-a/.claude/worktrees/feat-x",
+                Some("/home/user/project-a/.git"),
+            ),
+            test_agent_with_project(
+                "main:0.2",
+                "/home/user/project-b",
+                Some("/home/user/project-b/.git"),
+            ),
+        ];
+        let core = make_core_with_agents(agents);
+
+        // Filter by project-a
+        let result = core.list_agents_by_project("/home/user/project-a");
+        assert_eq!(result.len(), 2);
+        assert!(result
+            .iter()
+            .all(|a| a.pane_id == "main:0.0" || a.pane_id == "main:0.1"));
+
+        // Filter by project-b
+        let result = core.list_agents_by_project("/home/user/project-b");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].pane_id, "main:0.2");
+    }
+
+    #[test]
+    fn test_list_agents_by_project_cwd_fallback() {
+        // Agents without git_common_dir fall back to cwd prefix matching
+        let agents = vec![
+            test_agent_with_project("main:0.0", "/home/user/project-a/src", None),
+            test_agent_with_project("main:0.1", "/home/user/project-b/src", None),
+        ];
+        let core = make_core_with_agents(agents);
+
+        let result = core.list_agents_by_project("/home/user/project-a");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].pane_id, "main:0.0");
+    }
+
+    #[test]
+    fn test_list_agents_by_project_git_dir_suffix() {
+        // Passing path with .git suffix should also work
+        let agents = vec![test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        )];
+        let core = make_core_with_agents(agents);
+
+        let result = core.list_agents_by_project("/home/user/project-a/.git");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_list_agents_by_project_empty_result() {
+        let agents = vec![test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        )];
+        let core = make_core_with_agents(agents);
+
+        let result = core.list_agents_by_project("/home/user/project-c");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_validate_agent_project_same_project() {
+        let agents = vec![test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        )];
+        let core = make_core_with_agents(agents);
+
+        assert!(core
+            .validate_agent_project("main:0.0", "/home/user/project-a")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_validate_agent_project_different_project() {
+        let agents = vec![test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-b",
+            Some("/home/user/project-b/.git"),
+        )];
+        let core = make_core_with_agents(agents);
+
+        let result = core.validate_agent_project("main:0.0", "/home/user/project-a");
+        assert!(matches!(result, Err(ApiError::ProjectScopeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_validate_agent_project_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.validate_agent_project("nonexistent", "/home/user/project-a");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_validate_agent_project_worktree_agent() {
+        // Worktree agent shares git_common_dir with main repo
+        let agents = vec![test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-a/.claude/worktrees/feat-x",
+            Some("/home/user/project-a/.git"),
+        )];
+        let core = make_core_with_agents(agents);
+
+        assert!(core
+            .validate_agent_project("main:0.0", "/home/user/project-a")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_normalize_git_dir() {
+        assert_eq!(
+            normalize_git_dir("/home/user/project"),
+            "/home/user/project/.git"
+        );
+        assert_eq!(
+            normalize_git_dir("/home/user/project/"),
+            "/home/user/project/.git"
+        );
+        assert_eq!(
+            normalize_git_dir("/home/user/project/.git"),
+            "/home/user/project/.git"
+        );
+    }
+
+    #[test]
+    fn test_agent_matches_project_with_git_common_dir() {
+        let agent = test_agent_with_project(
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        );
+        assert!(agent_matches_project(
+            &agent,
+            "/home/user/project-a/.git",
+            "/home/user/project-a"
+        ));
+        assert!(!agent_matches_project(
+            &agent,
+            "/home/user/project-b/.git",
+            "/home/user/project-b"
+        ));
+    }
+
+    #[test]
+    fn test_agent_matches_project_cwd_fallback() {
+        let agent = test_agent_with_project("main:0.0", "/home/user/project-a/subdir", None);
+        assert!(agent_matches_project(
+            &agent,
+            "/home/user/project-a/.git",
+            "/home/user/project-a"
+        ));
+        assert!(!agent_matches_project(
+            &agent,
+            "/home/user/project-b/.git",
+            "/home/user/project-b"
+        ));
     }
 }

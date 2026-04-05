@@ -134,6 +134,38 @@ impl TmaiHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No registered projects. Specify repo explicitly."))
     }
 
+    /// Resolve the git common directory for the MCP client's project context.
+    ///
+    /// Runs `git rev-parse --git-common-dir` in the resolved repo directory to get the
+    /// canonical git directory path. This is used for project-scoped filtering of agents.
+    pub fn resolve_git_common_dir(&self) -> Result<String> {
+        let repo = self.resolve_repo(&None)?;
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "--git-common-dir"])
+            .current_dir(&repo)
+            .output()
+            .context("Failed to run git rev-parse --git-common-dir")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git rev-parse --git-common-dir failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let git_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // If the result is relative, resolve it against the repo path
+        let path = std::path::Path::new(&git_dir);
+        if path.is_relative() {
+            let abs = std::path::Path::new(&repo).join(path);
+            Ok(abs
+                .canonicalize()
+                .unwrap_or(abs)
+                .to_string_lossy()
+                .to_string())
+        } else {
+            Ok(git_dir)
+        }
+    }
+
     /// Make a DELETE request that returns a simple status (no body parsing)
     pub fn delete_ok(&self, path: &str) -> Result<()> {
         let info = Self::read_connection_info()?;
