@@ -27,6 +27,7 @@ mod core;
 pub mod events;
 mod queries;
 pub mod types;
+mod worktree_guard;
 
 pub use builder::TmaiCoreBuilder;
 pub use core::TmaiCore;
