@@ -178,6 +178,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       className={cn(
         "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
         "hover:bg-white/[0.08] hover:border-white/10",
+        agent.is_orchestrator && "!border-cyan-500/20 bg-cyan-500/[0.04]",
         selected && "!border-cyan-500/30 !bg-cyan-500/10",
         attention && "!border-amber-500/30 animate-glow-pulse",
         glow && selected && glow,
@@ -186,6 +187,11 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       {/* Row 1: Agent type + status badge */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
+          {agent.is_orchestrator && (
+            <span className="shrink-0 rounded border border-cyan-500/30 bg-cyan-500/10 px-1 py-px text-[9px] font-semibold text-cyan-400">
+              ORCH
+            </span>
+          )}
           <span className="truncate text-sm font-medium text-zinc-200 group-hover:text-zinc-100 transition-subtle">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
             {isAi && agent.model_display_name && (
