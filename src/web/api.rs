@@ -1802,6 +1802,15 @@ async fn spawn_in_pty(
     }
 }
 
+/// POST /api/agents/{id}/set-orchestrator — mark an existing agent as orchestrator
+pub async fn set_orchestrator(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    core.set_orchestrator(&id).map_err(api_error_to_http)?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
 /// Request body for spawning an orchestrator agent
 #[derive(Debug, Deserialize)]
 pub struct SpawnOrchestratorRequest {

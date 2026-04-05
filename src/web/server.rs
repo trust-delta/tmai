@@ -78,6 +78,7 @@ impl WebServer {
             .route("/agents/{id}/key", post(api::send_key))
             .route("/agents/{id}/auto-approve", put(api::set_auto_approve))
             .route("/agents/{id}/kill", post(api::kill_agent))
+            .route("/agents/{id}/set-orchestrator", post(api::set_orchestrator))
             .route("/agents/{id}/passthrough", post(api::passthrough_input))
             .route("/agents/{id}/preview", get(api::get_preview))
             .route("/agents/{id}/transcript", get(api::get_transcript))
