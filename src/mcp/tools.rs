@@ -289,7 +289,9 @@ impl TmaiMcpServer {
     /// List monitored AI agents scoped to the current project. By default, only agents belonging
     /// to the same git repository as the MCP client are shown. Pass project="*" to list all agents.
     /// Optionally filter by phase (working, blocked, idle, offline) for orchestrator decision-making.
-    #[tool(description = "List monitored AI agents (scoped to current project by default). Filter by phase: working, blocked, idle, offline.")]
+    #[tool(
+        description = "List monitored AI agents (scoped to current project by default). Filter by phase: working, blocked, idle, offline."
+    )]
     fn list_agents(&self, Parameters(p): Parameters<ListAgentsParams>) -> String {
         let project = match &p.project {
             Some(proj) if proj == "*" => None,
