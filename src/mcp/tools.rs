@@ -310,6 +310,15 @@ impl TmaiMcpServer {
         }
     }
 
+    /// Kill (terminate) an agent. Works for both PTY-spawned and tmux-managed agents.
+    #[tool(description = "Kill (terminate) an agent by ID")]
+    fn kill_agent(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        match self.client.delete_ok(&format!("/agents/{}", p.id)) {
+            Ok(()) => format!("Killed agent {}", p.id),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     // ----- Team Queries -----
 
     /// List all Claude Code Agent Teams with their member count and task progress.
