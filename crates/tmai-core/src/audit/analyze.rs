@@ -360,6 +360,7 @@ fn event_reason(event: &AuditEvent) -> Option<&crate::detectors::DetectionReason
 mod tests {
     use super::*;
     use crate::detectors::{DetectionConfidence, DetectionReason};
+    use crate::hooks::types::PermissionMode;
 
     /// Helper to build a StateChanged event
     fn state_changed(ts: u64, rule: &str, confidence: DetectionConfidence) -> AuditEvent {
@@ -620,7 +621,7 @@ mod tests {
                 agent_type: "ClaudeCode".to_string(),
                 tool_name: Some("Bash".to_string()),
                 tool_input: Some(serde_json::json!({"command": "rm -rf /"})),
-                permission_mode: Some("default".to_string()),
+                permission_mode: Some(PermissionMode::Default),
             },
             state_changed(1000, "rule_a", DetectionConfidence::High),
         ];

@@ -3,6 +3,7 @@
 use crate::agents::{AgentStatus, DetectionSource};
 use crate::audit::{AuditEvent, AuditEventSender};
 use crate::detectors::DetectionReason;
+use crate::hooks::types::PermissionMode;
 use crate::state::SharedState;
 
 /// Pre-extracted agent info for audit (avoids holding state lock during emit)
@@ -116,7 +117,7 @@ impl AuditHelper {
         agent_type: &str,
         tool_name: Option<String>,
         tool_input: Option<serde_json::Value>,
-        permission_mode: Option<String>,
+        permission_mode: Option<PermissionMode>,
     ) {
         let Some(ref tx) = self.tx else {
             return;
