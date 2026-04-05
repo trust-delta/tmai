@@ -393,6 +393,40 @@ pub struct PrMergeStatus {
     pub check_status: Option<CheckStatus>,
 }
 
+/// Merge method for `gh pr merge`
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MergeMethod {
+    Squash,
+    Merge,
+    Rebase,
+}
+
+impl MergeMethod {
+    /// Convert to the `gh pr merge` CLI flag
+    fn as_flag(self) -> &'static str {
+        match self {
+            MergeMethod::Squash => "--squash",
+            MergeMethod::Merge => "--merge",
+            MergeMethod::Rebase => "--rebase",
+        }
+    }
+}
+
+/// Result of a PR merge operation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MergeResult {
+    pub pr_number: u64,
+    pub merged: bool,
+    pub method: String,
+    pub message: String,
+    /// Whether the remote branch was deleted after merge
+    pub branch_deleted: bool,
+    /// Worktree cleanup result (if requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_cleanup: Option<String>,
+}
+
 /// CI failure log output (truncated to 50KB)
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CiFailureLog {
@@ -1043,6 +1077,95 @@ pub async fn rerun_failed_checks(repo_dir: &str, run_id: u64) -> Option<()> {
     }
 }
 
+/// Merge a pull request using `gh pr merge`
+///
+/// Checks merge readiness (CI status, mergeable state) before attempting merge.
+/// Optionally deletes the remote branch after successful merge (gh does this by default
+/// with `--delete-branch`).
+pub async fn merge_pr(
+    repo_dir: &str,
+    pr_number: u64,
+    method: MergeMethod,
+    delete_branch: bool,
+) -> Result<MergeResult, String> {
+    // Pre-flight: check merge readiness
+    if let Some(status) = get_pr_merge_status(repo_dir, pr_number).await {
+        if status.mergeable == "CONFLICTING" {
+            return Err(format!(
+                "PR #{} has merge conflicts — resolve conflicts before merging",
+                pr_number
+            ));
+        }
+        if let Some(CheckStatus::Failure) = status.check_status {
+            return Err(format!(
+                "PR #{} has failing CI checks — fix CI before merging",
+                pr_number
+            ));
+        }
+        if let Some(CheckStatus::Pending) = status.check_status {
+            return Err(format!(
+                "PR #{} has pending CI checks — wait for CI to complete before merging",
+                pr_number
+            ));
+        }
+    }
+
+    let mut args = vec![
+        "pr".to_string(),
+        "merge".to_string(),
+        pr_number.to_string(),
+        method.as_flag().to_string(),
+    ];
+    if delete_branch {
+        args.push("--delete-branch".to_string());
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(30), // longer timeout for merge operations
+        Command::new("gh")
+            .args(&args)
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .map_err(|_| "gh pr merge timed out".to_string())?
+    .map_err(|e| format!("Failed to run gh: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !output.status.success() {
+        return Err(format!("gh pr merge failed: {}", stderr));
+    }
+
+    // Invalidate PR cache after successful merge
+    {
+        let mut cache = GH_CACHE.prs.write().await;
+        cache.remove(repo_dir);
+    }
+
+    let message = if stdout.is_empty() {
+        stderr.clone()
+    } else {
+        stdout
+    };
+
+    let method_str = match method {
+        MergeMethod::Squash => "squash",
+        MergeMethod::Merge => "merge",
+        MergeMethod::Rebase => "rebase",
+    };
+
+    Ok(MergeResult {
+        pr_number,
+        merged: true,
+        method: method_str.to_string(),
+        message,
+        branch_deleted: delete_branch,
+        worktree_cleanup: None,
+    })
+}
+
 /// Extract issue numbers from a branch name
 ///
 /// Matches patterns like: `fix/123-desc`, `feat/42`, `issue-7`, `gh-99`
@@ -1061,6 +1184,53 @@ pub fn extract_issue_numbers(branch: &str) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_method_serde_roundtrip() {
+        let squash: MergeMethod = serde_json::from_str("\"squash\"").unwrap();
+        assert_eq!(squash, MergeMethod::Squash);
+        assert_eq!(squash.as_flag(), "--squash");
+
+        let merge: MergeMethod = serde_json::from_str("\"merge\"").unwrap();
+        assert_eq!(merge, MergeMethod::Merge);
+        assert_eq!(merge.as_flag(), "--merge");
+
+        let rebase: MergeMethod = serde_json::from_str("\"rebase\"").unwrap();
+        assert_eq!(rebase, MergeMethod::Rebase);
+        assert_eq!(rebase.as_flag(), "--rebase");
+    }
+
+    #[test]
+    fn merge_result_serializes_correctly() {
+        let result = MergeResult {
+            pr_number: 42,
+            merged: true,
+            method: "squash".to_string(),
+            message: "Merged".to_string(),
+            branch_deleted: true,
+            worktree_cleanup: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["pr_number"], 42);
+        assert_eq!(json["merged"], true);
+        assert_eq!(json["method"], "squash");
+        assert_eq!(json["branch_deleted"], true);
+        assert!(json.get("worktree_cleanup").is_none());
+    }
+
+    #[test]
+    fn merge_result_includes_worktree_cleanup() {
+        let result = MergeResult {
+            pr_number: 10,
+            merged: true,
+            method: "rebase".to_string(),
+            message: "Done".to_string(),
+            branch_deleted: false,
+            worktree_cleanup: Some("Deleted worktree: feat-branch".to_string()),
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["worktree_cleanup"], "Deleted worktree: feat-branch");
+    }
 
     #[test]
     fn test_parse_issue_detail_json() {

@@ -168,6 +168,35 @@ pub struct SpawnOrchestratorParams {
     pub additional_instructions: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MergePrParams {
+    /// Pull request number to merge
+    pub pr_number: u32,
+    /// Merge method: "squash" (default), "merge", or "rebase"
+    #[serde(default = "default_merge_method")]
+    pub method: String,
+    /// Delete remote branch after merge (default: true)
+    #[serde(default = "default_true")]
+    pub delete_branch: bool,
+    /// Clean up associated worktree after merge (default: true)
+    #[serde(default = "default_true")]
+    pub delete_worktree: bool,
+    /// Worktree name to clean up (auto-detected from branch if omitted)
+    #[serde(default)]
+    pub worktree_name: Option<String>,
+    /// Repository path (optional, defaults to first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
+fn default_merge_method() -> String {
+    "squash".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
 // =========================================================
 // Tool implementations
 // =========================================================
@@ -595,6 +624,39 @@ impl TmaiMcpServer {
         }
     }
 
+    /// Merge a pull request. Checks CI status and mergeability before merging.
+    /// Optionally cleans up the remote branch and associated worktree after merge.
+    #[tool(
+        description = "Merge a pull request (checks CI first, then squash/merge/rebase with optional branch and worktree cleanup)"
+    )]
+    fn merge_pr(&self, Parameters(p): Parameters<MergePrParams>) -> String {
+        if !["squash", "merge", "rebase"].contains(&p.method.as_str()) {
+            return format!(
+                "Error: invalid merge method '{}' — must be squash, merge, or rebase",
+                p.method
+            );
+        }
+        let repo = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        let body = serde_json::json!({
+            "repo": repo,
+            "pr_number": p.pr_number,
+            "method": p.method,
+            "delete_branch": p.delete_branch,
+            "delete_worktree": p.delete_worktree,
+            "worktree_name": p.worktree_name,
+        });
+        match self
+            .client
+            .post::<serde_json::Value>("/github/pr/merge", &body)
+        {
+            Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     // ----- Git -----
 
     /// List git branches in the repository.
@@ -701,5 +763,42 @@ mod tests {
     fn dispatch_issue_params_missing_issue_number_fails() {
         let json = serde_json::json!({"repo": "/tmp/repo"});
         assert!(serde_json::from_value::<DispatchIssueParams>(json).is_err());
+    }
+
+    #[test]
+    fn merge_pr_params_defaults() {
+        let json = serde_json::json!({"pr_number": 42});
+        let p: MergePrParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.pr_number, 42);
+        assert_eq!(p.method, "squash");
+        assert!(p.delete_branch);
+        assert!(p.delete_worktree);
+        assert!(p.worktree_name.is_none());
+        assert!(p.repo.is_none());
+    }
+
+    #[test]
+    fn merge_pr_params_all_fields() {
+        let json = serde_json::json!({
+            "pr_number": 99,
+            "method": "rebase",
+            "delete_branch": false,
+            "delete_worktree": false,
+            "worktree_name": "99-feat-something",
+            "repo": "/tmp/repo"
+        });
+        let p: MergePrParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.pr_number, 99);
+        assert_eq!(p.method, "rebase");
+        assert!(!p.delete_branch);
+        assert!(!p.delete_worktree);
+        assert_eq!(p.worktree_name.as_deref(), Some("99-feat-something"));
+        assert_eq!(p.repo.as_deref(), Some("/tmp/repo"));
+    }
+
+    #[test]
+    fn merge_pr_params_missing_pr_number_fails() {
+        let json = serde_json::json!({"method": "squash"});
+        assert!(serde_json::from_value::<MergePrParams>(json).is_err());
     }
 }
