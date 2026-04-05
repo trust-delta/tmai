@@ -46,33 +46,40 @@ pub fn remove_api_info() {
     let _ = std::fs::remove_file(api_info_path());
 }
 
-/// HTTP client for tmai's Web API
+/// HTTP client for tmai's Web API.
+/// Re-reads `api.json` on every request so that token and port changes
+/// (e.g. after tmai restart) are picked up transparently.
 #[derive(Debug, Clone)]
 pub struct TmaiHttpClient {
-    base_url: String,
-    token: String,
+    _private: (),
 }
 
 impl TmaiHttpClient {
-    /// Create a new client by reading the runtime API info file
+    /// Create a new client. Validates that `api.json` is readable at construction time.
     pub fn from_runtime() -> Result<Self> {
-        let path = api_info_path();
-        let data = std::fs::read_to_string(&path)
-            .with_context(|| format!("tmai is not running (no API info at {})", path.display()))?;
-        let info: ApiConnectionInfo =
-            serde_json::from_str(&data).context("Invalid API info file")?;
+        // Validate that we can read the file now (fail-fast)
+        Self::read_connection_info()?;
+        Ok(Self { _private: () })
+    }
 
-        Ok(Self {
-            base_url: format!("http://localhost:{}", info.port),
-            token: info.token,
-        })
+    /// Read fresh connection info from `api.json`.
+    fn read_connection_info() -> Result<ApiConnectionInfo> {
+        let path = api_info_path();
+        let data = std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "tmai is not running (no API info at {}). Start tmai first.",
+                path.display()
+            )
+        })?;
+        serde_json::from_str(&data).context("Invalid API info file")
     }
 
     /// Make a GET request to the tmai API
     pub fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}/api{}", self.base_url, path);
+        let info = Self::read_connection_info()?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
         let resp: T = ureq::get(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
+            .header("Authorization", &format!("Bearer {}", info.token))
             .call()
             .with_context(|| format!("GET {path} failed"))?
             .body_mut()
@@ -83,9 +90,10 @@ impl TmaiHttpClient {
 
     /// Make a POST request to the tmai API with a JSON body
     pub fn post<T: DeserializeOwned>(&self, path: &str, body: &serde_json::Value) -> Result<T> {
-        let url = format!("{}/api{}", self.base_url, path);
+        let info = Self::read_connection_info()?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
         let resp: T = ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
+            .header("Authorization", &format!("Bearer {}", info.token))
             .send_json(body)
             .with_context(|| format!("POST {path} failed"))?
             .body_mut()
@@ -96,9 +104,10 @@ impl TmaiHttpClient {
 
     /// Make a POST request that returns a simple status (no body parsing)
     pub fn post_ok(&self, path: &str, body: &serde_json::Value) -> Result<()> {
-        let url = format!("{}/api{}", self.base_url, path);
+        let info = Self::read_connection_info()?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
         ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
+            .header("Authorization", &format!("Bearer {}", info.token))
             .send_json(body)
             .with_context(|| format!("POST {path} failed"))?;
         Ok(())
@@ -127,14 +136,69 @@ impl TmaiHttpClient {
 
     /// Make a GET request that returns raw text.
     pub fn get_text(&self, path: &str) -> Result<String> {
-        let url = format!("{}/api{}", self.base_url, path);
+        let info = Self::read_connection_info()?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
         let text = ureq::get(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
+            .header("Authorization", &format!("Bearer {}", info.token))
             .call()
             .with_context(|| format!("GET {path} failed"))?
             .body_mut()
             .read_to_string()
             .with_context(|| format!("Failed to read response from {path}"))?;
         Ok(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_connection_info_picks_up_updated_token() {
+        // Write initial api.json
+        write_api_info(3000, "token-old").unwrap();
+
+        // Client reads and validates at construction
+        let info = TmaiHttpClient::read_connection_info().unwrap();
+        assert_eq!(info.port, 3000);
+        assert_eq!(info.token, "token-old");
+
+        // Simulate tmai restart: new port and token
+        write_api_info(3001, "token-new").unwrap();
+
+        // read_connection_info picks up the new values
+        let info = TmaiHttpClient::read_connection_info().unwrap();
+        assert_eq!(info.port, 3001);
+        assert_eq!(info.token, "token-new");
+
+        // Cleanup
+        remove_api_info();
+    }
+
+    #[test]
+    fn read_connection_info_error_when_file_missing() {
+        // Ensure no api.json exists
+        remove_api_info();
+
+        let err = TmaiHttpClient::read_connection_info().unwrap_err();
+        assert!(
+            err.to_string().contains("tmai is not running"),
+            "Expected 'tmai is not running' error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn from_runtime_succeeds_when_api_json_exists() {
+        write_api_info(4000, "test-token").unwrap();
+        let client = TmaiHttpClient::from_runtime();
+        assert!(client.is_ok());
+        remove_api_info();
+    }
+
+    #[test]
+    fn from_runtime_fails_when_api_json_missing() {
+        remove_api_info();
+        let result = TmaiHttpClient::from_runtime();
+        assert!(result.is_err());
     }
 }
