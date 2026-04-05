@@ -103,7 +103,21 @@ QRコードスキャン（TUIモード）またはURLアクセス（任意のデ
 
 詳細: [モバイルリモートコントロール](../features/web-remote.md)
 
-## 9. Agent Teams可視化
+## 9. MCP駆動オーケストレーション
+
+tmaiは**「AI開発ツールのKubernetes」** — 1つのAIエージェントが複数のエージェントを管理するオーケストレーション基盤です。
+
+- **IDE非依存** — ターミナルベースのあらゆるAIエージェントに対応（Claude Code, Codex, Gemini CLI）
+- **マルチベンダー** — 異なるAIプロバイダーのエージェントを同時にオーケストレーション
+- **MCP標準** — 標準Model Context Protocolインターフェース、独自APIなし
+- **フルライフサイクル** — `dispatch_issue` → エージェント → PR → CI → `send_prompt`（修正） → マージ → `delete_worktree`
+- **耐障害性** — 誤終了後も `/resume` + `set_orchestrator` で復旧可能
+
+他のツールにはない、このレベルの自律的・プログラマティックなマルチエージェント統括を提供します。
+
+詳細: [Issue駆動オーケストレーション](../workflows/issue-driven-orchestration.md) | [MCPサーバー](../features/mcp-server.md)
+
+## 10. Agent Teams可視化
 
 Claude Code Agent Teamsのチーム構造とタスク進捗を監視。
 
@@ -125,4 +139,5 @@ Claude Code Agent Teamsのチーム構造とタスク進捗を監視。
 | AI Git操作 | マージとPR作成を委任 |
 | セキュリティ | 設定スキャン + ランタイム外部送信検知 |
 | リモート操作 | スマホから承認可能 |
+| MCPオーケストレーション | IDE非依存・マルチベンダーのMCP経由エージェント統括 |
 | Agent Teams | チーム構造・タスク進捗を可視化 |

@@ -4,8 +4,24 @@ Workflow for multiple agents working in parallel on independent branches using G
 
 ## Overview
 
-tmai is a "monitor-only" tool, so you're free to create worktrees however you like.
-Create worktrees your way, start agents there, and tmai auto-detects them.
+There are two ways to create worktrees for parallel development:
+
+### Recommended: `dispatch_issue` (MCP)
+
+The simplest approach — one MCP tool call does everything:
+
+```
+dispatch_issue(issue_number: 42)
+  → Fetches issue #42 from GitHub
+  → Creates worktree at .claude/worktrees/42-feat-description/
+  → Spawns agent with issue context as prompt
+```
+
+See [Issue-Driven Orchestration](./issue-driven-orchestration.md) for the full orchestrator workflow.
+
+### Manual: `git worktree` + `claude`
+
+For cases where you want full control, create worktrees manually:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -127,7 +143,18 @@ claude
 
 ## Cleanup
 
-After completing work:
+### Via MCP Tool (Recommended)
+
+Use the `delete_worktree` MCP tool from the orchestrator:
+
+```
+delete_worktree(worktree_name: "42-feat-description")
+  → Deletes the worktree directory and prunes git references
+```
+
+Use `force: true` if the worktree has uncommitted changes.
+
+### Manual Cleanup
 
 ```bash
 # Merge
@@ -158,14 +185,15 @@ In the WebUI, worktrees can be created and managed visually:
 5. **View diffs** between worktree and base branch
 6. **AI merge/PR** — Delegate merge or PR creation to an AI agent
 
-Worktrees created via the UI are placed under `.claude/worktrees/<name>/` in the repository.
+Worktrees created via the UI or MCP tools are placed under `.claude/worktrees/<name>/` in the repository.
 
 See [Worktree Management](../features/worktree-ui.md) for detailed WebUI documentation.
 
 ## tmai's Philosophy
 
-tmai supports both "monitor" and "manage" approaches:
+tmai supports multiple approaches:
 
+- **MCP tools**: `dispatch_issue` and `spawn_worktree` for programmatic orchestration
 - **WebUI**: Full worktree lifecycle management from the dashboard
 - **CLI**: Create worktrees however you like — tmai auto-detects them
 - Add/remove dynamically while running
@@ -173,6 +201,7 @@ tmai supports both "monitor" and "manage" approaches:
 
 ## Next Steps
 
+- [Issue-Driven Orchestration](./issue-driven-orchestration.md) - MCP-driven orchestrator workflow
 - [Worktree Management UI](../features/worktree-ui.md) - WebUI worktree features
 - [Multi-Agent Monitoring](./multi-agent.md) - Basic multi-agent monitoring
 - [Best Practices](../guides/best-practices.md) - Recommended workflows

@@ -103,7 +103,21 @@ Operate via smartphone by scanning a QR code (TUI mode) or opening the URL on an
 
 Details: [Mobile Remote Control](../features/web-remote.md)
 
-## 9. Agent Teams Visualization
+## 9. MCP-Driven Orchestration
+
+tmai functions as **"Kubernetes for AI dev tools"** — an orchestration layer that lets one AI agent manage a fleet of others.
+
+- **IDE-independent** — Works with any terminal-based AI agent (Claude Code, Codex, Gemini CLI)
+- **Multi-vendor** — Orchestrate agents from different AI providers simultaneously
+- **MCP-native** — Standard Model Context Protocol interface, no proprietary APIs
+- **Full lifecycle** — `dispatch_issue` → agent → PR → CI → `send_prompt` (fix) → merge → `delete_worktree`
+- **Resilient** — Recovery via `/resume` + `set_orchestrator` after accidental termination
+
+No other tool provides this level of autonomous, programmatic multi-agent coordination.
+
+Details: [Issue-Driven Orchestration](../workflows/issue-driven-orchestration.md) | [MCP Server](../features/mcp-server.md)
+
+## 10. Agent Teams Visualization
 
 Monitor Claude Code Agent Teams structure and task progress.
 
@@ -125,4 +139,5 @@ Details: [Agent Teams](../features/agent-teams.md)
 | AI Git operations | Delegate merge and PR creation |
 | Security | Config scanning + runtime exfil detection |
 | Remote operation | Approve from smartphone |
+| MCP orchestration | IDE-independent, multi-vendor agent coordination via MCP |
 | Agent Teams | Visualize team structure and task progress |

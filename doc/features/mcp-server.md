@@ -71,6 +71,7 @@ Once configured, Claude Code can use tmai tools directly. The tools appear as `m
 |------|-------------|------------|
 | `approve` | Approve a pending permission request | `id` |
 | `send_text` | Send text input to an agent | `id`, `text` |
+| `send_prompt` | Send a prompt to an agent (queues if busy, delivers when idle) | `id`, `prompt` |
 | `send_key` | Send a special key (Enter, Escape, Tab, etc.) | `id`, `key` |
 | `select_choice` | Select a numbered choice for AskUserQuestion | `id`, `index` |
 
@@ -80,13 +81,21 @@ Once configured, Claude Code can use tmai tools directly. The tools appear as `m
 |------|-------------|------------|
 | `list_teams` | List Claude Code Agent Teams with task progress | — |
 
+### Orchestration
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `dispatch_issue` | One-shot: fetch issue, create worktree, spawn agent with issue context | `issue_number`, `repo?`, `base_branch?`, `additional_instructions?` |
+| `spawn_orchestrator` | Spawn an orchestrator agent with workflow settings from config | `cwd?`, `additional_instructions?` |
+| `set_orchestrator` | Mark an existing agent as orchestrator (e.g., after `/resume` recovery) | `id` |
+
 ### Worktree Management
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
 | `list_worktrees` | List all worktrees with linked agents and diff stats | — |
 | `spawn_agent` | Spawn a new AI agent in a directory | `directory`, `prompt?` |
-| `spawn_worktree` | Create a worktree and spawn an agent in it | `name`, `repo?`, `base_branch?`, `prompt?` |
+| `spawn_worktree` | Create a worktree and spawn an agent in it | `name?`, `issue_number?`, `repo?`, `base_branch?`, `prompt?` |
 | `delete_worktree` | Delete a git worktree | `worktree_name`, `repo?`, `force?` |
 
 ### GitHub
@@ -108,19 +117,28 @@ Once configured, Claude Code can use tmai tools directly. The tools appear as `m
 | `list_branches` | List git branches | `repo?` |
 | `git_diff_stat` | Get diff stats for a branch vs base | `branch`, `repo?` |
 
+### Coming Soon
+
+| Tool | Description |
+|------|-------------|
+| `merge_pr` | Merge a pull request via MCP |
+| `review_pr` | Submit a PR review via MCP |
+
 ## Example: Autonomous Issue Resolution
 
-An orchestrating Claude Code agent can use tmai MCP tools to drive a full development cycle:
+An orchestrating Claude Code agent can use tmai MCP tools to drive a full development cycle with `dispatch_issue`:
 
 ```
 1. list_issues          → Pick an issue to work on
-2. spawn_worktree       → Create isolated worktree, launch agent with resolve prompt
-3. get_agent            → Monitor agent progress
+2. dispatch_issue       → One-shot: fetch issue, create worktree, spawn agent
+3. list_agents          → Monitor agent progress
 4. approve              → Approve pending permissions
-5. list_prs             → Check if PR was created
-6. get_ci_status        → Verify CI passes
+5. get_ci_status        → Verify CI passes
+6. send_prompt          → Instruct agent to fix CI failures (if any)
 7. get_pr_merge_status  → Confirm PR is mergeable
 ```
+
+See [Issue-Driven Orchestration](../workflows/issue-driven-orchestration.md) for the full orchestrator workflow.
 
 ## Architecture
 
