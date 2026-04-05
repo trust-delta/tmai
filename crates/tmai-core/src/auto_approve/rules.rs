@@ -311,6 +311,11 @@ impl RuleEngine {
             }
         }
 
+        // tmai MCP tools (mcp__tmai__*)
+        if self.settings.allow_tmai_mcp && tool_lower.starts_with("mcp__tmai__") {
+            return Some(format!("allow_tmai_mcp: {}", tool_name));
+        }
+
         None
     }
 
@@ -433,6 +438,11 @@ impl RuleEngine {
                     return Some(format!("allow_format_lint: {}", cmd.trim()));
                 }
             }
+        }
+
+        // tmai MCP tools (capture-pane fallback: "Allow MCP tool: mcp__tmai__*")
+        if self.settings.allow_tmai_mcp && op == "mcp tool" && tgt.starts_with("mcp__tmai__") {
+            return Some(format!("allow_tmai_mcp: {}", tgt));
         }
 
         None

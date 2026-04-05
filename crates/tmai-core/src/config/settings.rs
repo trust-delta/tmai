@@ -584,6 +584,10 @@ pub struct RuleSettings {
     #[serde(default = "default_true")]
     pub allow_format_lint: bool,
 
+    /// Auto-approve tmai MCP tools (list_agents, approve, spawn_agent, etc.)
+    #[serde(default = "default_true")]
+    pub allow_tmai_mcp: bool,
+
     /// Additional allow patterns (regex, matched against screen context)
     #[serde(default)]
     pub allow_patterns: Vec<String>,
@@ -602,6 +606,7 @@ impl Default for RuleSettings {
             allow_fetch: true,
             allow_git_readonly: true,
             allow_format_lint: true,
+            allow_tmai_mcp: true,
             allow_patterns: Vec::new(),
         }
     }

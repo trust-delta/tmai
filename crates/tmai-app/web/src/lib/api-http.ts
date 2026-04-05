@@ -521,6 +521,7 @@ export interface AutoApproveRules {
   allow_fetch: boolean;
   allow_git_readonly: boolean;
   allow_format_lint: boolean;
+  allow_tmai_mcp: boolean;
   allow_patterns: string[];
 }
 

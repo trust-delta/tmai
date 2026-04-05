@@ -215,6 +215,11 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                         label: "Format & lint",
                         desc: "cargo fmt/clippy, prettier, eslint",
                       },
+                      {
+                        key: "allow_tmai_mcp" as const,
+                        label: "tmai MCP tools",
+                        desc: "list_agents, approve, spawn, send_text, etc.",
+                      },
                     ] as const
                   ).map(({ key, label, desc }) => (
                     <label key={key} className="flex items-center justify-between gap-3">
