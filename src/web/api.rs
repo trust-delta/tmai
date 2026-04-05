@@ -2873,6 +2873,33 @@ pub struct PrDetailParams {
     pub pr_number: u64,
 }
 
+/// Request body for PR merge endpoint
+#[derive(Debug, Deserialize)]
+pub struct PrMergeRequest {
+    pub repo: String,
+    pub pr_number: u64,
+    /// Merge method: "squash" (default), "merge", or "rebase"
+    #[serde(default = "default_merge_method")]
+    pub method: tmai_core::github::MergeMethod,
+    /// Delete remote branch after merge (default: true)
+    #[serde(default = "default_true")]
+    pub delete_branch: bool,
+    /// Clean up associated worktree after merge (default: false)
+    #[serde(default)]
+    pub delete_worktree: bool,
+    /// Worktree name to clean up (required if delete_worktree is true)
+    #[serde(default)]
+    pub worktree_name: Option<String>,
+}
+
+fn default_merge_method() -> tmai_core::github::MergeMethod {
+    tmai_core::github::MergeMethod::Squash
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Query params for CI log endpoint
 #[derive(Debug, Deserialize)]
 pub struct CiLogParams {
@@ -2946,6 +2973,46 @@ pub async fn rerun_failed_checks(
             )
         })
         .map(|()| Json(serde_json::json!({"status": "ok"})))
+}
+
+/// POST /api/github/pr/merge — merge a pull request
+pub async fn merge_pr(
+    Json(body): Json<PrMergeRequest>,
+) -> Result<Json<tmai_core::github::MergeResult>, (StatusCode, Json<serde_json::Value>)> {
+    let repo_dir = validate_repo(&body.repo)?;
+
+    let mut result =
+        tmai_core::github::merge_pr(&repo_dir, body.pr_number, body.method, body.delete_branch)
+            .await
+            .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))?;
+
+    // Optional worktree cleanup after successful merge
+    if body.delete_worktree {
+        if let Some(ref worktree_name) = body.worktree_name {
+            let repo_path = if repo_dir.ends_with(".git") {
+                repo_dir.clone()
+            } else {
+                format!("{}/.git", repo_dir)
+            };
+            let req = tmai_core::worktree::WorktreeDeleteRequest {
+                repo_path,
+                worktree_name: worktree_name.clone(),
+                force: true,
+            };
+            match tmai_core::worktree::delete_worktree(&req).await {
+                Ok(()) => {
+                    result.worktree_cleanup = Some(format!("Deleted worktree: {}", worktree_name));
+                }
+                Err(e) => {
+                    result.worktree_cleanup = Some(format!("Worktree cleanup failed: {}", e));
+                }
+            }
+        } else {
+            result.worktree_cleanup = Some("Skipped: worktree_name not provided".to_string());
+        }
+    }
+
+    Ok(Json(result))
 }
 
 /// GET /api/github/ci/failure-log — fetch failure log for a CI run
