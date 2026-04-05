@@ -152,9 +152,16 @@ impl TmaiHttpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// All tests that touch the shared `api.json` file must hold this lock
+    /// to prevent parallel test execution from causing races.
+    static API_FILE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn read_connection_info_picks_up_updated_token() {
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
         // Write initial api.json
         write_api_info(3000, "token-old").unwrap();
 
@@ -177,6 +184,8 @@ mod tests {
 
     #[test]
     fn read_connection_info_error_when_file_missing() {
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
         // Ensure no api.json exists
         remove_api_info();
 
@@ -189,6 +198,8 @@ mod tests {
 
     #[test]
     fn from_runtime_succeeds_when_api_json_exists() {
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
         write_api_info(4000, "test-token").unwrap();
         let client = TmaiHttpClient::from_runtime();
         assert!(client.is_ok());
@@ -197,6 +208,8 @@ mod tests {
 
     #[test]
     fn from_runtime_fails_when_api_json_missing() {
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
         remove_api_info();
         let result = TmaiHttpClient::from_runtime();
         assert!(result.is_err());
