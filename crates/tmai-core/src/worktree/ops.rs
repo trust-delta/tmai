@@ -105,18 +105,24 @@ pub async fn delete_worktree(req: &WorktreeDeleteRequest) -> Result<(), Worktree
             .join("worktrees")
             .join(&req.worktree_name);
         if primary.exists() {
-            primary
+            Some(primary)
         } else {
             let fallback = Path::new(&req.repo_path)
                 .join(".git/.claude/worktrees")
                 .join(&req.worktree_name);
             if fallback.exists() {
-                fallback
+                Some(fallback)
             } else {
-                return Err(WorktreeOpsError::NotFound(req.worktree_name.clone()));
+                None
             }
         }
     };
+
+    // Directory already gone — prune git's stale worktree entries and delete branch
+    if worktree_dir.is_none() {
+        return cleanup_orphaned_worktree(&req.repo_path, &req.worktree_name, req.force).await;
+    }
+    let worktree_dir = worktree_dir.unwrap();
 
     // Check for uncommitted changes unless force
     if !req.force {
@@ -309,6 +315,50 @@ pub async fn move_to_worktree(
         path: worktree_path,
         branch: req.branch_name.clone(),
     })
+}
+
+/// Clean up an orphaned worktree whose directory has already been removed.
+///
+/// Runs `git worktree prune` to clear stale git registry entries, then
+/// attempts to delete the associated branch (best-effort). Returns `Ok(())`
+/// for idempotent delete semantics.
+async fn cleanup_orphaned_worktree(
+    repo_path: &str,
+    worktree_name: &str,
+    force: bool,
+) -> Result<(), WorktreeOpsError> {
+    // Prune stale worktree entries from git's internal list
+    let prune_output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_path, "worktree", "prune"])
+            .output(),
+    )
+    .await
+    .map_err(|_| WorktreeOpsError::GitError("git worktree prune timed out".to_string()))?
+    .map_err(|e| WorktreeOpsError::GitError(format!("failed to run git: {}", e)))?;
+
+    if !prune_output.status.success() {
+        let stderr = String::from_utf8_lossy(&prune_output.stderr)
+            .trim()
+            .to_string();
+        return Err(WorktreeOpsError::GitError(format!(
+            "git worktree prune failed: {}",
+            stderr
+        )));
+    }
+
+    // Best-effort branch deletion — infer branch name from worktree name
+    let flag = if force { "-D" } else { "-d" };
+    let _ = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .args(["-C", repo_path, "branch", flag, worktree_name])
+            .output(),
+    )
+    .await;
+
+    Ok(())
 }
 
 /// Detect the branch checked out in a worktree via `git worktree list --porcelain`
@@ -589,10 +639,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_worktree_not_found() {
+    async fn test_delete_worktree_not_found_succeeds_with_prune() {
         let (_tmp, repo) = init_test_repo().await;
         let repo_path = repo.to_string_lossy().to_string();
 
+        // Deleting a nonexistent worktree should succeed (idempotent)
         let req = WorktreeDeleteRequest {
             repo_path,
             worktree_name: "nonexistent".to_string(),
@@ -600,7 +651,56 @@ mod tests {
         };
 
         let result = delete_worktree(&req).await;
-        assert!(matches!(result, Err(WorktreeOpsError::NotFound(_))));
+        assert!(
+            result.is_ok(),
+            "expected Ok for missing directory, got: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_worktree_directory_already_removed() {
+        let (_tmp, repo) = init_test_repo().await;
+        let repo_path = repo.to_string_lossy().to_string();
+
+        // Create a worktree normally
+        let create_req = WorktreeCreateRequest {
+            repo_path: repo_path.clone(),
+            branch_name: "feat-orphan".to_string(),
+            dir_name: None,
+            base_branch: None,
+        };
+        let wt = create_worktree(&create_req).await.unwrap();
+
+        // Manually remove the worktree directory (simulating auto-cleanup)
+        tokio::fs::remove_dir_all(&wt.path).await.unwrap();
+        assert!(!Path::new(&wt.path).exists());
+
+        // Delete should still succeed via prune path
+        let del_req = WorktreeDeleteRequest {
+            repo_path: repo_path.clone(),
+            worktree_name: "feat-orphan".to_string(),
+            force: true,
+        };
+        let result = delete_worktree(&del_req).await;
+        assert!(
+            result.is_ok(),
+            "expected Ok for orphaned worktree, got: {:?}",
+            result.err()
+        );
+
+        // Branch should also be cleaned up
+        let branch_output = Command::new("git")
+            .args(["-C", &repo_path, "branch", "--list", "feat-orphan"])
+            .output()
+            .await
+            .unwrap();
+        let branches = String::from_utf8_lossy(&branch_output.stdout);
+        assert!(
+            !branches.contains("feat-orphan"),
+            "branch should have been deleted, but found: {}",
+            branches
+        );
     }
 
     #[tokio::test]
