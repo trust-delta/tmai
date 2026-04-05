@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [1.6.0] - 2026-04-05
+
+### Added
+
+- PR/CI status monitor with automatic notification to orchestrator (#229)
+- Notify orchestrator agent on sub-agent state changes (#256)
+- Orchestrator UX improvements: rename label to "Orchestrator", visual badge, pin to top, prevent duplicate spawn (#258)
+- set_orchestrator MCP tool for re-registering agents as orchestrator after /resume (#268)
+- MCP tools auto-approve rule preset (#254)
+
+### Fixed
+
+- MCP server reconnects after tmai restart by re-reading api.json on every request (#270)
+- delete_worktree gracefully handles already-removed directories with prune + cleanup (#257)
+- Orchestrator spawn respects tmux mode (#255)
+- send_text character limit increased from 1024 to 32768 (#253)
+- Flaky MCP client tests caused by parallel file access race (#274)
+
+### Docs
+
+- Comprehensive orchestration documentation update: MCP-driven workflow, config guide, recovery, competitive positioning (#272)
+
 ## [1.5.0] - 2026-04-05
 
 ### Added
