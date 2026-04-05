@@ -1,5 +1,7 @@
 //! GitHub integration via `gh` CLI — fetches PR, CI, and issue data.
 
+pub mod pr_monitor;
+
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -37,7 +39,7 @@ impl GhCache {
 static GH_CACHE: LazyLock<GhCache> = LazyLock::new(GhCache::new);
 
 /// PR review decision
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ReviewDecision {
     Approved,
@@ -48,7 +50,7 @@ pub enum ReviewDecision {
 }
 
 /// CI/check status rollup
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckStatus {
     Success,

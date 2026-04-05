@@ -1280,6 +1280,8 @@ pub async fn update_orchestrator_settings(
                 .unwrap_or_else(|| current.rules.custom.clone()),
         },
         notify: current.notify.clone(),
+        pr_monitor_enabled: current.pr_monitor_enabled,
+        pr_monitor_interval_secs: current.pr_monitor_interval_secs,
     };
     drop(settings);
 
