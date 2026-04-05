@@ -9,11 +9,24 @@ use super::pane::PaneInfo;
 static TARGET_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[A-Za-z0-9_.-]+:\d+\.\d+$").expect("Invalid TARGET_PATTERN regex"));
 
+/// Regex pattern for validating tmux pane ID format (%N)
+static PANE_ID_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^%\d+$").expect("Invalid PANE_ID_PATTERN regex"));
+
 /// Validate tmux target format to prevent command injection
 /// Only allows `session:window.pane` format (e.g., "main:0.1")
 fn validate_target(target: &str) -> Result<()> {
     if !TARGET_PATTERN.is_match(target) {
         anyhow::bail!("Invalid tmux target format: {}", target);
+    }
+    Ok(())
+}
+
+/// Validate tmux pane ID format to prevent command injection
+/// Only allows `%N` format (e.g., "%42")
+fn validate_pane_id(pane_id: &str) -> Result<()> {
+    if !PANE_ID_PATTERN.is_match(pane_id) {
+        anyhow::bail!("Invalid tmux pane ID format: {}", pane_id);
     }
     Ok(())
 }
@@ -572,7 +585,7 @@ impl TmuxClient {
         Ok(())
     }
 
-    /// Kill a specific pane
+    /// Kill a specific pane by target (session:window.pane format)
     pub fn kill_pane(&self, target: &str) -> Result<()> {
         validate_target(target)?;
         let output = Command::new("tmux")
@@ -583,6 +596,23 @@ impl TmuxClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("tmux kill-pane failed for {}: {}", target, stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Kill a specific pane by stable pane ID (%N format).
+    /// Pane IDs are stable across sibling pane kills, unlike pane indices.
+    pub fn kill_pane_by_id(&self, pane_id: &str) -> Result<()> {
+        validate_pane_id(pane_id)?;
+        let output = Command::new("tmux")
+            .args(["kill-pane", "-t", pane_id])
+            .output()
+            .context("Failed to execute tmux kill-pane")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux kill-pane failed for {}: {}", pane_id, stderr);
         }
 
         Ok(())
@@ -653,5 +683,24 @@ mod tests {
         assert!(validate_target("`whoami`:0.0").is_err());
         assert!(validate_target("main:0.0\necho evil").is_err());
         assert!(validate_target("../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn test_validate_pane_id_valid() {
+        assert!(validate_pane_id("%0").is_ok());
+        assert!(validate_pane_id("%5").is_ok());
+        assert!(validate_pane_id("%42").is_ok());
+        assert!(validate_pane_id("%999").is_ok());
+    }
+
+    #[test]
+    fn test_validate_pane_id_invalid() {
+        assert!(validate_pane_id("").is_err());
+        assert!(validate_pane_id("5").is_err());
+        assert!(validate_pane_id("%").is_err());
+        assert!(validate_pane_id("%abc").is_err());
+        assert!(validate_pane_id("%; rm -rf /").is_err());
+        assert!(validate_pane_id("%5; echo pwned").is_err());
+        assert!(validate_pane_id("main:0.1").is_err());
     }
 }
