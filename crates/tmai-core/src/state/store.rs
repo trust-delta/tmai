@@ -503,6 +503,11 @@ pub struct AppState {
     /// Key: agent target ID, Value: queued prompts (max 5 per agent).
     /// Drained by the poller when the agent transitions to Idle.
     pub prompt_queue: HashMap<String, std::collections::VecDeque<String>>,
+
+    /// Agent IDs that should be flagged as orchestrator when first detected by the poller.
+    /// Populated by `spawn_orchestrator` before the agent appears in the agents map.
+    /// Consumed by `update_agents` when the agent is first inserted.
+    pub pending_orchestrator_ids: HashSet<String>,
 }
 
 impl AppState {
@@ -544,6 +549,7 @@ impl AppState {
             spawn_tmux_window_name: "tmai-agents".to_string(),
             pending_agent_worktrees: HashMap::new(),
             prompt_queue: HashMap::new(),
+            pending_orchestrator_ids: HashSet::new(),
         }
     }
 
@@ -693,6 +699,9 @@ impl AppState {
                 if agent.model_id.is_some() {
                     existing.model_id = agent.model_id;
                 }
+                // Preserve orchestrator flag (set by user or spawn_orchestrator, not by poller)
+                // is_orchestrator is intentionally NOT overwritten from the poller snapshot.
+
                 // Preserve per-agent auto-approve override (set by user, not by poller)
                 // Preserve auto_approve_phase from service, but clear it when
                 // agent is no longer awaiting approval (state has transitioned)
@@ -703,7 +712,14 @@ impl AppState {
                     existing.auto_approve_phase = None;
                 }
             } else {
-                self.agents.insert(id.clone(), agent);
+                // Apply pending orchestrator flag for newly detected agents
+                if self.pending_orchestrator_ids.remove(&id) {
+                    let mut agent = agent;
+                    agent.is_orchestrator = true;
+                    self.agents.insert(id.clone(), agent);
+                } else {
+                    self.agents.insert(id.clone(), agent);
+                }
             }
         }
 
@@ -1797,5 +1813,71 @@ mod tests {
             .pending_agent_worktrees
             .retain(|_, t| t.elapsed().as_secs() < 60);
         assert!(state.pending_agent_worktrees.contains_key(&path));
+    }
+
+    #[test]
+    fn test_update_agents_preserves_orchestrator_flag() {
+        let mut state = AppState::new();
+
+        // Initial agent with orchestrator flag set
+        let mut agent = create_test_agent("main:0.0");
+        agent.is_orchestrator = true;
+        state.update_agents(vec![agent]);
+        assert!(state.agents["main:0.0"].is_orchestrator);
+
+        // Poller sends a fresh snapshot without the flag — it should be preserved
+        let fresh = create_test_agent("main:0.0");
+        assert!(!fresh.is_orchestrator);
+        state.update_agents(vec![fresh]);
+        assert!(
+            state.agents["main:0.0"].is_orchestrator,
+            "orchestrator flag must survive poller updates"
+        );
+    }
+
+    #[test]
+    fn test_pending_orchestrator_applied_on_first_detection() {
+        let mut state = AppState::new();
+
+        // Queue the agent ID as pending orchestrator (simulates spawn_orchestrator
+        // running before the poller detects the agent)
+        state
+            .pending_orchestrator_ids
+            .insert("main:1.0".to_string());
+
+        // Poller discovers the agent for the first time
+        let agent = create_test_agent("main:1.0");
+        state.update_agents(vec![agent]);
+
+        assert!(
+            state.agents["main:1.0"].is_orchestrator,
+            "pending orchestrator flag must be applied on first detection"
+        );
+        assert!(
+            state.pending_orchestrator_ids.is_empty(),
+            "pending entry must be consumed after application"
+        );
+    }
+
+    #[test]
+    fn test_pending_orchestrator_not_applied_to_unrelated_agent() {
+        let mut state = AppState::new();
+
+        state
+            .pending_orchestrator_ids
+            .insert("main:1.0".to_string());
+
+        // A different agent is detected
+        let agent = create_test_agent("main:2.0");
+        state.update_agents(vec![agent]);
+
+        assert!(
+            !state.agents["main:2.0"].is_orchestrator,
+            "unrelated agent must not get the orchestrator flag"
+        );
+        assert!(
+            state.pending_orchestrator_ids.contains("main:1.0"),
+            "pending entry for a different agent must remain"
+        );
     }
 }
