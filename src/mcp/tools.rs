@@ -178,8 +178,8 @@ pub struct MergePrParams {
     /// Delete remote branch after merge (default: true)
     #[serde(default = "default_true")]
     pub delete_branch: bool,
-    /// Clean up associated worktree after merge (default: true)
-    #[serde(default = "default_true")]
+    /// Clean up associated worktree after merge (default: false)
+    #[serde(default)]
     pub delete_worktree: bool,
     /// Worktree name to clean up (auto-detected from branch if omitted)
     #[serde(default)]
@@ -772,7 +772,7 @@ mod tests {
         assert_eq!(p.pr_number, 42);
         assert_eq!(p.method, "squash");
         assert!(p.delete_branch);
-        assert!(p.delete_worktree);
+        assert!(!p.delete_worktree);
         assert!(p.worktree_name.is_none());
         assert!(p.repo.is_none());
     }
