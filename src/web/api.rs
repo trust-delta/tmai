@@ -1839,11 +1839,20 @@ pub async fn spawn_orchestrator(
         cwd: cwd.clone(),
         rows: default_rows(),
         cols: default_cols(),
-        force_pty: true, // orchestrator always uses PTY for reliable monitoring
+        force_pty: false,
     };
 
-    // Use spawn_in_pty directly (orchestrator always uses PTY)
-    let result = spawn_in_pty(&core, &spawn_req).await?;
+    // Respect tmux mode: use tmux window when available, fall back to PTY
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let result = if use_tmux && is_tmux_available() {
+        spawn_in_tmux(&core, &spawn_req).await?
+    } else {
+        spawn_in_pty(&core, &spawn_req).await?
+    };
 
     // Mark the newly spawned agent as an orchestrator
     let session_id = &result.session_id;
