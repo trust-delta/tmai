@@ -24,6 +24,62 @@ impl TmaiMcpServer {
             client,
         }
     }
+
+    /// Validate that the target agent belongs to the MCP client's project.
+    ///
+    /// Fetches the agent, then checks its git_common_dir against the client's resolved
+    /// git common directory. Returns an error message if the agent belongs to a different
+    /// project. Returns None if validation passes or cannot be determined (fail-open).
+    fn validate_project_scope(&self, agent_id: &str) -> Option<String> {
+        let project_git_dir = match self.client.resolve_git_common_dir() {
+            Ok(dir) => dir,
+            Err(_) => return None, // Cannot determine project context — allow
+        };
+        // Fetch agent info and check its git_common_dir
+        match self.client.get::<serde_json::Value>("/agents") {
+            Ok(data) => {
+                if let Some(agents) = data.as_array() {
+                    if let Some(agent) = agents.iter().find(|a| {
+                        a.get("id").and_then(|v| v.as_str()) == Some(agent_id)
+                            || a.get("pane_id").and_then(|v| v.as_str()) == Some(agent_id)
+                            || a.get("target").and_then(|v| v.as_str()) == Some(agent_id)
+                            || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(agent_id)
+                    }) {
+                        if let Some(agent_gcd) =
+                            agent.get("git_common_dir").and_then(|v| v.as_str())
+                        {
+                            if agent_gcd != project_git_dir {
+                                let agent_display = agent
+                                    .get("cwd")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                return Some(format!(
+                                    "Error: agent {} belongs to a different project ({}). \
+                                     Cross-project operations are not allowed.",
+                                    agent_id, agent_display
+                                ));
+                            }
+                        }
+                        // No git_common_dir on agent — check cwd prefix
+                        else if let Some(agent_cwd) = agent.get("cwd").and_then(|v| v.as_str()) {
+                            // Resolve the repo path for prefix check
+                            if let Ok(repo) = self.client.resolve_repo(&None) {
+                                if !agent_cwd.starts_with(&repo) {
+                                    return Some(format!(
+                                        "Error: agent {} belongs to a different project ({}). \
+                                         Cross-project operations are not allowed.",
+                                        agent_id, agent_cwd
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                None // Agent not found or passes validation — let the action endpoint handle errors
+            }
+            Err(_) => None, // Cannot fetch agents — fail-open
+        }
+    }
 }
 
 // =========================================================
@@ -32,6 +88,14 @@ impl TmaiMcpServer {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct EmptyParams {}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListAgentsParams {
+    /// Filter by project path (git_common_dir). Defaults to the MCP client's own project context.
+    /// Set to "*" to list agents from all projects.
+    #[serde(default)]
+    pub project: Option<String>,
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct AgentIdParams {
@@ -219,18 +283,32 @@ fn default_true() -> bool {
 impl TmaiMcpServer {
     // ----- Agent Queries -----
 
-    /// List all monitored AI agents with their current status, type, working directory, and detection source.
-    #[tool(description = "List all monitored AI agents with their status")]
-    fn list_agents(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/agents") {
+    /// List monitored AI agents scoped to the current project. By default, only agents belonging
+    /// to the same git repository as the MCP client are shown. Pass project="*" to list all agents.
+    #[tool(description = "List monitored AI agents (scoped to current project by default)")]
+    fn list_agents(&self, Parameters(p): Parameters<ListAgentsParams>) -> String {
+        let project = match &p.project {
+            Some(proj) if proj == "*" => None,
+            Some(proj) => Some(proj.clone()),
+            None => self.client.resolve_git_common_dir().ok(),
+        };
+        let path = match &project {
+            Some(proj) => format!("/agents?project={}", encode(proj)),
+            None => "/agents".to_string(),
+        };
+        match self.client.get::<serde_json::Value>(&path) {
             Ok(agents) => format_json(&agents),
             Err(e) => format!("Error: {e}"),
         }
     }
 
     /// Get detailed information about a specific agent including its status, working directory, git branch, and connection channels.
+    /// Only agents within the same project scope are accessible.
     #[tool(description = "Get detailed info about a specific agent")]
     fn get_agent(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.get::<serde_json::Value>("/agents") {
             Ok(data) => {
                 if let Some(agents) = data.as_array() {
@@ -250,9 +328,12 @@ impl TmaiMcpServer {
         }
     }
 
-    /// Get the plain-text terminal output of an agent. Useful for seeing what the agent is currently displaying.
+    /// Get the plain-text terminal output of an agent. Only agents within the same project scope are accessible.
     #[tool(description = "Get the terminal output of an agent")]
     fn get_agent_output(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.get_text(&format!("/agents/{}/output", p.id)) {
             Ok(text) => text,
             Err(e) => format!("Error: {e}"),
@@ -260,8 +341,12 @@ impl TmaiMcpServer {
     }
 
     /// Get the conversation transcript of an agent (parsed from JSONL session log).
+    /// Only agents within the same project scope are accessible.
     #[tool(description = "Get the conversation transcript of an agent")]
     fn get_transcript(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self
             .client
             .get::<serde_json::Value>(&format!("/agents/{}/transcript", p.id))
@@ -274,8 +359,12 @@ impl TmaiMcpServer {
     // ----- Agent Actions -----
 
     /// Approve a pending permission request for an agent (equivalent to pressing 'y').
+    /// Only agents within the same project scope can be approved.
     #[tool(description = "Approve a pending permission request for an agent")]
     fn approve(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self
             .client
             .post_ok(&format!("/agents/{}/approve", p.id), &serde_json::json!({}))
@@ -286,8 +375,12 @@ impl TmaiMcpServer {
     }
 
     /// Send text input to an agent (like typing in the terminal). Use this to send prompts or commands.
+    /// Only agents within the same project scope can receive text.
     #[tool(description = "Send text input to an agent")]
     fn send_text(&self, Parameters(p): Parameters<SendTextParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.post_ok(
             &format!("/agents/{}/input", p.id),
             &serde_json::json!({"text": p.text}),
@@ -300,9 +393,12 @@ impl TmaiMcpServer {
     /// Send a prompt to an agent with status-aware delivery. If the agent is idle, the prompt is
     /// sent immediately. If the agent is processing, the prompt is queued (max 5) and delivered
     /// automatically when the agent becomes idle. If the agent is stopped/offline, the prompt is
-    /// sent to restart it.
+    /// sent to restart it. Only agents within the same project scope can receive prompts.
     #[tool(description = "Send a prompt to an agent (queues if busy, delivers when idle)")]
     fn send_prompt(&self, Parameters(p): Parameters<SendPromptParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.post::<serde_json::Value>(
             &format!("/agents/{}/prompt", p.id),
             &serde_json::json!({"prompt": p.prompt}),
@@ -330,8 +426,12 @@ impl TmaiMcpServer {
     }
 
     /// Send a special key to an agent (Enter, Escape, Space, Up, Down, Left, Right, Tab).
+    /// Only agents within the same project scope can receive keys.
     #[tool(description = "Send a special key to an agent")]
     fn send_key(&self, Parameters(p): Parameters<SendKeyParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.post_ok(
             &format!("/agents/{}/key", p.id),
             &serde_json::json!({"key": p.key}),
@@ -342,8 +442,12 @@ impl TmaiMcpServer {
     }
 
     /// Select a numbered choice for an agent's AskUserQuestion prompt (1-based index).
+    /// Only agents within the same project scope can be interacted with.
     #[tool(description = "Select a choice for an agent's question")]
     fn select_choice(&self, Parameters(p): Parameters<SelectChoiceParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.post_ok(
             &format!("/agents/{}/select", p.id),
             &serde_json::json!({"index": p.index}),
@@ -354,8 +458,12 @@ impl TmaiMcpServer {
     }
 
     /// Kill (terminate) an agent. Works for both PTY-spawned and tmux-managed agents.
+    /// Only agents within the same project scope can be killed.
     #[tool(description = "Kill (terminate) an agent by ID")]
     fn kill_agent(&self, Parameters(p): Parameters<AgentIdParams>) -> String {
+        if let Some(err) = self.validate_project_scope(&p.id) {
+            return err;
+        }
         match self.client.delete_ok(&format!("/agents/{}", p.id)) {
             Ok(()) => format!("Killed agent {}", p.id),
             Err(e) => format!("Error: {e}"),
@@ -753,6 +861,27 @@ fn format_json(value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn list_agents_params_empty() {
+        let json = serde_json::json!({});
+        let p: ListAgentsParams = serde_json::from_value(json).unwrap();
+        assert!(p.project.is_none());
+    }
+
+    #[test]
+    fn list_agents_params_with_project() {
+        let json = serde_json::json!({"project": "/home/user/project-a/.git"});
+        let p: ListAgentsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.project.as_deref(), Some("/home/user/project-a/.git"));
+    }
+
+    #[test]
+    fn list_agents_params_wildcard() {
+        let json = serde_json::json!({"project": "*"});
+        let p: ListAgentsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.project.as_deref(), Some("*"));
+    }
 
     #[test]
     fn spawn_orchestrator_params_empty() {

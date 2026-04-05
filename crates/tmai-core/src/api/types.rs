@@ -47,6 +47,14 @@ pub enum ApiError {
     /// A tmux or IPC operation failed
     #[error("command failed: {0}")]
     CommandError(#[from] anyhow::Error),
+
+    /// Agent belongs to a different project (cross-project operation denied)
+    #[error("agent {agent_id} belongs to project {agent_project}, not {expected_project}")]
+    ProjectScopeMismatch {
+        agent_id: String,
+        agent_project: String,
+        expected_project: String,
+    },
 }
 
 /// Owned snapshot of a `MonitoredAgent`, returned by query methods.

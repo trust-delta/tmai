@@ -85,6 +85,7 @@ fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
         ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
             StatusCode::BAD_REQUEST
         }
+        ApiError::ProjectScopeMismatch { .. } => StatusCode::FORBIDDEN,
         ApiError::WorktreeError(e) => match e {
             tmai_core::worktree::WorktreeOpsError::NotFound(_) => StatusCode::NOT_FOUND,
             tmai_core::worktree::WorktreeOpsError::AlreadyExists(_)
@@ -291,9 +292,25 @@ pub struct SubmitRequest {
     pub selected_choices: Vec<usize>,
 }
 
-/// Get all agents
-pub async fn get_agents(State(core): State<Arc<TmaiCore>>) -> Json<Vec<AgentSnapshot>> {
-    Json(core.list_agents())
+/// Query parameters for agent listing
+#[derive(Debug, Deserialize)]
+pub struct AgentListQuery {
+    /// Filter agents by project path (git_common_dir). When provided, only agents
+    /// belonging to this project (matching git_common_dir or cwd prefix) are returned.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+/// Get all agents, optionally filtered by project
+pub async fn get_agents(
+    State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(query): axum::extract::Query<AgentListQuery>,
+) -> Json<Vec<AgentSnapshot>> {
+    let agents = match query.project {
+        Some(ref project) => core.list_agents_by_project(project),
+        None => core.list_agents(),
+    };
+    Json(agents)
 }
 
 /// Approve an agent action (send approval keys)
