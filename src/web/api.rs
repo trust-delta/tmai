@@ -2457,9 +2457,23 @@ pub async fn spawn_worktree(
         wt_result.branch
     );
 
+    // Inject worktree path constraint into the prompt (defense in depth)
+    let worktree_prompt = if !resolved_prompt.is_empty() {
+        format!(
+            "IMPORTANT: You are working in a git worktree at: {path}\n\
+             All file reads and edits MUST use paths starting with this directory.\n\
+             NEVER edit files outside your worktree directory.\n\n\
+             {prompt}",
+            path = wt_result.path,
+            prompt = resolved_prompt,
+        )
+    } else {
+        resolved_prompt
+    };
+
     // Build args — pass resolved prompt as first positional argument if provided
-    let args = if !resolved_prompt.is_empty() {
-        vec![resolved_prompt]
+    let args = if !worktree_prompt.is_empty() {
+        vec![worktree_prompt]
     } else {
         vec![]
     };

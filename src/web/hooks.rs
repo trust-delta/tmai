@@ -77,15 +77,6 @@ pub async fn hook_event(
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({})));
     }
 
-    // For PreToolUse: evaluate auto-approve BEFORE processing the event.
-    // This allows returning a permissionDecision in the response body,
-    // preventing the permission prompt from appearing at all.
-    let pre_tool_use_response = if payload.hook_event_name == "PreToolUse" {
-        core.evaluate_pre_tool_use(&payload)
-    } else {
-        None
-    };
-
     // Extract pane_id from X-Tmai-Pane-Id header
     let header_pane_id = headers.get("x-tmai-pane-id").and_then(|v| v.to_str().ok());
 
@@ -111,6 +102,19 @@ pub async fn hook_event(
     };
 
     let event_name = payload.hook_event_name.clone();
+
+    // For PreToolUse: check worktree path guard FIRST, then auto-approve.
+    // Worktree guard Deny takes absolute precedence — prevents worktree agents
+    // from contaminating the main working tree via absolute path resolution.
+    let pre_tool_use_response = if payload.hook_event_name == "PreToolUse" {
+        if let Some(deny) = core.validate_worktree_path(&pane_id, &payload) {
+            Some(deny)
+        } else {
+            core.evaluate_pre_tool_use(&payload)
+        }
+    } else {
+        None
+    };
 
     // Process the hook event (update HookRegistry, emit CoreEvent)
     let core_event = handle_hook_event(
