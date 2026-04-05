@@ -808,10 +808,12 @@ impl TmaiCore {
         }
     }
 
-    /// Kill a specific agent (PTY session or tmux pane)
+    /// Kill a specific agent (PTY session or tmux pane).
+    /// Uses stable pane ID (%N) when available to avoid index-shift issues
+    /// during sequential kills.
     pub fn kill_pane(&self, id: &str) -> Result<(), ApiError> {
         let target = self.resolve_agent_key(id)?;
-        let has_pty = {
+        let (has_pty, pane_id) = {
             let state = self.state().read();
             let a = state.agents.get(&target).unwrap();
             if a.is_virtual {
@@ -819,7 +821,8 @@ impl TmaiCore {
                     target: target.clone(),
                 });
             }
-            a.pty_session_id.is_some()
+            let pane_id = state.target_to_pane_id.get(&target).cloned();
+            (a.pty_session_id.is_some(), pane_id)
         };
 
         if has_pty {
@@ -835,7 +838,13 @@ impl TmaiCore {
             Ok(())
         } else {
             let cmd = self.require_command_sender()?;
-            cmd.runtime().kill_pane(&target)?;
+            // Prefer stable pane ID to avoid index-shift when killing multiple panes
+            if let Some(pid) = pane_id {
+                let pane_id_target = format!("%{}", pid);
+                cmd.runtime().kill_pane_by_id(&pane_id_target)?;
+            } else {
+                cmd.runtime().kill_pane(&target)?;
+            }
             Ok(())
         }
     }

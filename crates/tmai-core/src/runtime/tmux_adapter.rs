@@ -87,6 +87,10 @@ impl RuntimeAdapter for TmuxAdapter {
         self.client.kill_pane(target)
     }
 
+    fn kill_pane_by_id(&self, pane_id: &str) -> Result<()> {
+        self.client.kill_pane_by_id(pane_id)
+    }
+
     // --- Session Management ---
 
     fn create_session(&self, name: &str, cwd: &str, window_name: Option<&str>) -> Result<()> {

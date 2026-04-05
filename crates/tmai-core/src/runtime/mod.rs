@@ -84,6 +84,12 @@ pub trait RuntimeAdapter: Send + Sync {
     /// Terminate a pane / agent process.
     fn kill_pane(&self, target: &str) -> Result<()>;
 
+    /// Terminate a pane by stable pane ID (%N format).
+    /// Pane IDs survive sibling pane kills, unlike pane indices.
+    fn kill_pane_by_id(&self, _pane_id: &str) -> Result<()> {
+        anyhow::bail!("kill_pane_by_id not supported by {} runtime", self.name())
+    }
+
     // =========================================================
     // Session Management (optional capabilities)
     // =========================================================
