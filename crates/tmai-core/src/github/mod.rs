@@ -60,6 +60,55 @@ pub enum CheckStatus {
     Unknown,
 }
 
+/// CI run lifecycle status (the phase a check run is in)
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CiRunStatus {
+    Queued,
+    InProgress,
+    Completed,
+    Waiting,
+    Pending,
+    Requested,
+}
+
+/// CI run outcome (only meaningful when status is Completed)
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CiConclusion {
+    Success,
+    Failure,
+    Neutral,
+    Skipped,
+    Cancelled,
+    TimedOut,
+    ActionRequired,
+}
+
+impl CiRunStatus {
+    /// Whether this status indicates the run is still in progress
+    fn is_pending(&self) -> bool {
+        matches!(
+            self,
+            CiRunStatus::InProgress
+                | CiRunStatus::Queued
+                | CiRunStatus::Waiting
+                | CiRunStatus::Pending
+                | CiRunStatus::Requested
+        )
+    }
+}
+
+impl CiConclusion {
+    /// Whether this conclusion indicates a failure
+    fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            CiConclusion::Failure | CiConclusion::TimedOut | CiConclusion::Cancelled
+        )
+    }
+}
+
 /// PR info for a branch
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PrInfo {
@@ -113,25 +162,42 @@ struct GhCheckRun {
 
 /// Trait for types that carry CI check conclusion/status (used by compute_rollup)
 trait CheckRunLike {
-    fn conclusion(&self) -> Option<&str>;
-    fn check_status(&self) -> Option<&str>;
+    fn has_failure_conclusion(&self) -> bool;
+    fn has_pending_status(&self) -> bool;
 }
 
 impl CheckRunLike for GhCheckRun {
-    fn conclusion(&self) -> Option<&str> {
-        self.conclusion.as_deref()
+    fn has_failure_conclusion(&self) -> bool {
+        self.conclusion
+            .as_deref()
+            .map(|s| {
+                let u = s.to_ascii_uppercase();
+                u == "FAILURE" || u == "TIMED_OUT" || u == "CANCELLED"
+            })
+            .unwrap_or(false)
     }
-    fn check_status(&self) -> Option<&str> {
-        self.status.as_deref()
+    fn has_pending_status(&self) -> bool {
+        self.status
+            .as_deref()
+            .map(|s| {
+                matches!(
+                    s.to_ascii_uppercase().as_str(),
+                    "IN_PROGRESS" | "QUEUED" | "WAITING" | "PENDING" | "REQUESTED"
+                )
+            })
+            .unwrap_or(false)
     }
 }
 
 impl CheckRunLike for CiCheck {
-    fn conclusion(&self) -> Option<&str> {
-        self.conclusion.as_deref()
+    fn has_failure_conclusion(&self) -> bool {
+        self.conclusion
+            .as_ref()
+            .map(|c| c.is_failure())
+            .unwrap_or(false)
     }
-    fn check_status(&self) -> Option<&str> {
-        Some(self.status.as_str())
+    fn has_pending_status(&self) -> bool {
+        self.status.is_pending()
     }
 }
 
@@ -353,8 +419,8 @@ pub async fn has_merged_pr(repo_dir: &str, branch: &str) -> bool {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CiCheck {
     pub name: String,
-    pub status: String,
-    pub conclusion: Option<String>,
+    pub status: CiRunStatus,
+    pub conclusion: Option<CiConclusion>,
     pub url: String,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
@@ -476,8 +542,8 @@ pub struct CiSummary {
 #[allow(dead_code)]
 struct GhRunEntry {
     name: String,
-    status: String,
-    conclusion: Option<String>,
+    status: CiRunStatus,
+    conclusion: Option<CiConclusion>,
     url: String,
     head_branch: String,
     created_at: Option<String>,
@@ -545,33 +611,15 @@ pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
     })
 }
 
-/// Compute rollup status from a list of checks (case-insensitive)
+/// Compute rollup status from a list of checks
 fn compute_rollup<T: CheckRunLike>(checks: &[T]) -> CheckStatus {
     if checks.is_empty() {
         return CheckStatus::Unknown;
     }
-    let has_failure = checks.iter().any(|c| {
-        c.conclusion()
-            .map(|s| {
-                let u = s.to_ascii_uppercase();
-                u == "FAILURE" || u == "TIMED_OUT" || u == "CANCELLED"
-            })
-            .unwrap_or(false)
-    });
-    if has_failure {
+    if checks.iter().any(|c| c.has_failure_conclusion()) {
         return CheckStatus::Failure;
     }
-    let has_pending = checks.iter().any(|c| {
-        c.check_status()
-            .map(|s| {
-                matches!(
-                    s.to_ascii_uppercase().as_str(),
-                    "IN_PROGRESS" | "QUEUED" | "WAITING" | "PENDING" | "REQUESTED"
-                )
-            })
-            .unwrap_or(false)
-    });
-    if has_pending {
+    if checks.iter().any(|c| c.has_pending_status()) {
         return CheckStatus::Pending;
     }
     CheckStatus::Success
@@ -1458,17 +1506,84 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_rollup_all_success_lowercase() {
+    fn test_compute_rollup_ci_check_success() {
         let checks = vec![CiCheck {
             name: "build".into(),
-            status: "completed".into(),
-            conclusion: Some("success".into()),
+            status: CiRunStatus::Completed,
+            conclusion: Some(CiConclusion::Success),
             url: String::new(),
             started_at: None,
             completed_at: None,
             run_id: None,
         }];
         assert!(matches!(compute_rollup(&checks), CheckStatus::Success));
+    }
+
+    #[test]
+    fn test_compute_rollup_ci_check_pending() {
+        let checks = vec![CiCheck {
+            name: "build".into(),
+            status: CiRunStatus::InProgress,
+            conclusion: None,
+            url: String::new(),
+            started_at: None,
+            completed_at: None,
+            run_id: None,
+        }];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Pending));
+    }
+
+    #[test]
+    fn test_compute_rollup_ci_check_failure() {
+        let checks = vec![CiCheck {
+            name: "build".into(),
+            status: CiRunStatus::Completed,
+            conclusion: Some(CiConclusion::Failure),
+            url: String::new(),
+            started_at: None,
+            completed_at: None,
+            run_id: None,
+        }];
+        assert!(matches!(compute_rollup(&checks), CheckStatus::Failure));
+    }
+
+    #[test]
+    fn test_ci_conclusion_is_failure() {
+        assert!(CiConclusion::Failure.is_failure());
+        assert!(CiConclusion::TimedOut.is_failure());
+        assert!(CiConclusion::Cancelled.is_failure());
+        assert!(!CiConclusion::Success.is_failure());
+        assert!(!CiConclusion::Neutral.is_failure());
+        assert!(!CiConclusion::Skipped.is_failure());
+        assert!(!CiConclusion::ActionRequired.is_failure());
+    }
+
+    #[test]
+    fn test_ci_run_status_is_pending() {
+        assert!(CiRunStatus::Queued.is_pending());
+        assert!(CiRunStatus::InProgress.is_pending());
+        assert!(CiRunStatus::Waiting.is_pending());
+        assert!(CiRunStatus::Pending.is_pending());
+        assert!(CiRunStatus::Requested.is_pending());
+        assert!(!CiRunStatus::Completed.is_pending());
+    }
+
+    #[test]
+    fn test_ci_run_status_serde_roundtrip() {
+        let status = CiRunStatus::InProgress;
+        let json = serde_json::to_string(&status).unwrap();
+        assert_eq!(json, "\"in_progress\"");
+        let parsed: CiRunStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, CiRunStatus::InProgress);
+    }
+
+    #[test]
+    fn test_ci_conclusion_serde_roundtrip() {
+        let conclusion = CiConclusion::TimedOut;
+        let json = serde_json::to_string(&conclusion).unwrap();
+        assert_eq!(json, "\"timed_out\"");
+        let parsed: CiConclusion = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, CiConclusion::TimedOut);
     }
 
     #[test]

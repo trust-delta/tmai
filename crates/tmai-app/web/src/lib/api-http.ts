@@ -448,10 +448,27 @@ export interface PrInfo {
   merge_commit_sha?: string;
 }
 
+export type CiRunStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "waiting"
+  | "pending"
+  | "requested";
+
+export type CiConclusion =
+  | "success"
+  | "failure"
+  | "neutral"
+  | "skipped"
+  | "cancelled"
+  | "timed_out"
+  | "action_required";
+
 export interface CiCheck {
   name: string;
-  status: string;
-  conclusion: string | null;
+  status: CiRunStatus;
+  conclusion: CiConclusion | null;
   url: string;
   started_at: string | null;
   completed_at: string | null;
