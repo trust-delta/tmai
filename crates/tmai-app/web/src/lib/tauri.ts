@@ -41,11 +41,40 @@ function convertTauriAgent(info: TauriAgentInfo): AgentSnapshot {
     status = "Unknown";
   }
 
+  // Derive phase and detail from status for Tauri compatibility
+  let phase: import("./api-http").Phase = "Idle";
+  let detail: import("./api-http").Detail = "Idle";
+  if (typeof status === "string") {
+    if (status === "Idle") {
+      phase = "Idle";
+      detail = "Idle";
+    } else if (status === "Offline") {
+      phase = "Offline";
+      detail = "Offline";
+    } else {
+      phase = "Idle";
+      detail = "Unknown";
+    }
+  } else if ("Processing" in status) {
+    phase = "Working";
+    detail = status.Processing.activity
+      ? { ToolExecution: { tool_name: status.Processing.activity } }
+      : "Thinking";
+  } else if ("AwaitingApproval" in status) {
+    phase = "Blocked";
+    detail = { AwaitingApproval: status.AwaitingApproval };
+  } else if ("Error" in status) {
+    phase = "Blocked";
+    detail = { Error: status.Error };
+  }
+
   return {
     id: info.id,
     target: info.target,
     agent_type: info.type as AgentType,
     status,
+    phase,
+    detail,
     title: info.title,
     cwd: info.cwd,
     display_cwd: info.display_cwd,
