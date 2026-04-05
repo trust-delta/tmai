@@ -2604,11 +2604,11 @@ pub async fn send_to_agent(
         .resolve_agent_key(&to)
         .map_err(|_| json_error(StatusCode::NOT_FOUND, "Target agent not found"))?;
 
-    // Validate text length
-    if req.text.len() > 10240 {
+    // Validate text length (32KB, matching MAX_TEXT_LENGTH in tmai-core)
+    if req.text.len() > 32_768 {
         return Err(json_error(
             StatusCode::BAD_REQUEST,
-            "Text too long (max 10KB)",
+            "Text too long (max 32KB)",
         ));
     }
     let _ = &from_key; // ensure source is valid

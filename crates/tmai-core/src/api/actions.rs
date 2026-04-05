@@ -9,8 +9,8 @@ use crate::detectors::get_detector;
 use super::core::TmaiCore;
 use super::types::{ApiError, SendPromptResult};
 
-/// Maximum text length for send_text
-const MAX_TEXT_LENGTH: usize = 1024;
+/// Maximum text length for send_text / send_prompt (32KB)
+const MAX_TEXT_LENGTH: usize = 32_768;
 
 /// Maximum number of queued prompts per agent
 const MAX_PROMPT_QUEUE_SIZE: usize = 5;
@@ -1158,7 +1158,7 @@ mod tests {
     async fn test_send_text_too_long() {
         let agent = test_agent("main:0.0", AgentStatus::Idle);
         let core = make_core_with_agents(vec![agent]);
-        let long_text = "x".repeat(1025);
+        let long_text = "x".repeat(32_769);
         let result = core.send_text("main:0.0", &long_text).await;
         assert!(matches!(result, Err(ApiError::InvalidInput { .. })));
     }
