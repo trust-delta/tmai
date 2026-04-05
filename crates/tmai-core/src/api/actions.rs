@@ -829,6 +829,16 @@ impl TmaiCore {
             if let Some(session) = self.pty_registry().get(&target) {
                 session.kill();
             }
+            // Also kill the tmux pane if one exists, otherwise the parent
+            // shell survives after the PTY child process exits.
+            if let Some(runtime) = self.runtime() {
+                if let Some(pid) = &pane_id {
+                    let pane_id_target = format!("%{}", pid);
+                    let _ = runtime.kill_pane_by_id(&pane_id_target);
+                } else {
+                    let _ = runtime.kill_pane(&target);
+                }
+            }
             {
                 let mut state = self.state().write();
                 state.agents.remove(&target);
