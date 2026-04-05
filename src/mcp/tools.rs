@@ -95,6 +95,9 @@ pub struct ListAgentsParams {
     /// Set to "*" to list agents from all projects.
     #[serde(default)]
     pub project: Option<String>,
+    /// Filter by phase: "working", "blocked", "idle", "offline" (optional, returns all if omitted)
+    #[serde(default)]
+    pub phase: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -285,7 +288,8 @@ impl TmaiMcpServer {
 
     /// List monitored AI agents scoped to the current project. By default, only agents belonging
     /// to the same git repository as the MCP client are shown. Pass project="*" to list all agents.
-    #[tool(description = "List monitored AI agents (scoped to current project by default)")]
+    /// Optionally filter by phase (working, blocked, idle, offline) for orchestrator decision-making.
+    #[tool(description = "List monitored AI agents (scoped to current project by default). Filter by phase: working, blocked, idle, offline.")]
     fn list_agents(&self, Parameters(p): Parameters<ListAgentsParams>) -> String {
         let project = match &p.project {
             Some(proj) if proj == "*" => None,
@@ -297,7 +301,25 @@ impl TmaiMcpServer {
             None => "/agents".to_string(),
         };
         match self.client.get::<serde_json::Value>(&path) {
-            Ok(agents) => format_json(&agents),
+            Ok(agents) => {
+                if let Some(ref phase_filter) = p.phase {
+                    let lower = phase_filter.to_ascii_lowercase();
+                    if let Some(arr) = agents.as_array() {
+                        let filtered: Vec<&serde_json::Value> = arr
+                            .iter()
+                            .filter(|a| {
+                                a.get("phase")
+                                    .and_then(|v| v.as_str())
+                                    .is_some_and(|p| p.to_ascii_lowercase() == lower)
+                            })
+                            .collect();
+                        return format_json(&serde_json::Value::Array(
+                            filtered.into_iter().cloned().collect(),
+                        ));
+                    }
+                }
+                format_json(&agents)
+            }
             Err(e) => format!("Error: {e}"),
         }
     }

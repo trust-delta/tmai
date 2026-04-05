@@ -73,6 +73,29 @@ export interface ConnectionChannels {
 export type AgentType = "ClaudeCode" | "OpenCode" | "CodexCli" | "GeminiCli" | { Custom: string };
 export type EffortLevel = "Low" | "Medium" | "High";
 
+/// Coarse-grained phase for orchestrator consumption
+export type Phase = "Working" | "Blocked" | "Idle" | "Offline";
+
+/// Fine-grained detail for UI display (serde externally tagged)
+export type Detail =
+  | "Idle"
+  | "Offline"
+  | "Unknown"
+  | "Compacting"
+  | "Thinking"
+  | { ToolExecution: { tool_name: string } }
+  | { AwaitingApproval: { approval_type: string; details: string } }
+  | { Error: { message: string } };
+
+/// Extract a human-readable label from a Detail value
+export function detailLabel(detail: Detail): string {
+  if (typeof detail === "string") return detail;
+  if ("ToolExecution" in detail) return `Tool: ${detail.ToolExecution.tool_name}`;
+  if ("AwaitingApproval" in detail) return `Awaiting: ${detail.AwaitingApproval.approval_type}`;
+  if ("Error" in detail) return `Error: ${detail.Error.message}`;
+  return "Unknown";
+}
+
 /// Whether this agent type is an AI coding agent (not a plain terminal)
 export function isAiAgent(agentType: AgentType): boolean {
   return (
@@ -88,6 +111,8 @@ export interface AgentSnapshot {
   target: string;
   agent_type: AgentType;
   status: AgentStatus;
+  phase: Phase;
+  detail: Detail;
   title: string;
   cwd: string;
   display_cwd: string;
