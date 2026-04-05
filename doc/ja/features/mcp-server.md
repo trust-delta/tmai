@@ -70,9 +70,10 @@ tmai
 | ツール | 説明 | パラメータ |
 |--------|------|------------|
 | `approve` | 権限リクエストを承認 | `id` |
-| `send_text` | エージェントにテキスト入力を送信 | `id`, `text` |
+| `send_text` | エージェントに��キスト入力を送信 | `id`, `text` |
+| `send_prompt` | エージェントにプロンプトを送信（ビジー時はキュー、Idle時は即座に配信） | `id`, `prompt` |
 | `send_key` | 特殊キーを送信（Enter, Escape, Tabなど） | `id`, `key` |
-| `select_choice` | AskUserQuestionの選択肢を選択 | `id`, `index` |
+| `select_choice` | AskUserQuestionの選択肢を��択 | `id`, `index` |
 
 ### チームクエリ
 
@@ -80,13 +81,21 @@ tmai
 |--------|------|------------|
 | `list_teams` | Claude Code Agent Teamsとタスク進捗を一覧 | — |
 
+### オーケストレーション
+
+| ツール | 説明 | パラメータ |
+|--------|------|------------|
+| `dispatch_issue` | 一括処理: Issueを取得、worktreeを作成、Issueコンテキスト付きエージェントを起動 | `issue_number`, `repo?`, `base_branch?`, `additional_instructions?` |
+| `spawn_orchestrator` | 設定のワークフロー設定からオーケストレーターエージェントを起動 | `cwd?`, `additional_instructions?` |
+| `set_orchestrator` | 既存のエージェントをオーケストレーターとしてマーク（例: `/resume` 後の復旧） | `id` |
+
 ### Worktree管理
 
 | ツール | 説明 | パラメータ |
 |--------|------|------------|
 | `list_worktrees` | 全worktreeとリンクされたエージェント・diff統計を一覧 | — |
 | `spawn_agent` | ディレクトリに新しいAIエージェントを起動 | `directory`, `prompt?` |
-| `spawn_worktree` | worktreeを作成しエージェントを起動 | `name`, `repo?`, `base_branch?`, `prompt?` |
+| `spawn_worktree` | worktreeを作成しエージェントを起動 | `name?`, `issue_number?`, `repo?`, `base_branch?`, `prompt?` |
 | `delete_worktree` | git worktreeを削除 | `worktree_name`, `repo?`, `force?` |
 
 ### GitHub
@@ -108,19 +117,28 @@ tmai
 | `list_branches` | gitブランチを一覧 | `repo?` |
 | `git_diff_stat` | ブランチのdiff統計を取得（ベースとの比較） | `branch`, `repo?` |
 
+### 今後追加予定
+
+| ツール | 説明 |
+|--------|------|
+| `merge_pr` | MCP経由でPRをマージ |
+| `review_pr` | MCP経由でPRレビューを投稿 |
+
 ## 使用例: 自律的なIssue解決
 
-オーケストレーション用のClaude Codeエージェントは、tmai MCPツールを使って完全な開発サイクルを駆動できます:
+オーケストレーション用のClaude Codeエージェントは、`dispatch_issue` を使って完全な開発サイクルを駆動できます:
 
 ```
 1. list_issues          → 作業するIssueを選択
-2. spawn_worktree       → 隔離されたworktreeを作成、resolve promptでエージェント起動
-3. get_agent            → エージェントの進捗を監視
+2. dispatch_issue       → 一括処理: Issue取得、worktree作成、エージェント起動
+3. list_agents          → エージェントの進捗を監視
 4. approve              → 保留中の権限を承認
-5. list_prs             → PRが作成されたか確認
-6. get_ci_status        → CIの通過を確認
+5. get_ci_status        → CIの通過を確認
+6. send_prompt          → CI失敗時にエージェントに修正指示を送信
 7. get_pr_merge_status  → PRがマージ可能か確認
 ```
+
+詳細は[Issue駆動オーケストレーション](../workflows/issue-driven-orchestration.md)を参照。
 
 ## アーキテクチャ
 

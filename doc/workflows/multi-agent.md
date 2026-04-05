@@ -81,6 +81,29 @@ tmai --tmux
 | `Space` | Toggle for multi-select |
 | `p` | Passthrough mode |
 
+## Orchestrator Agent Pattern (Recommended)
+
+The most powerful multi-agent pattern is the **orchestrator + sub-agents** model, where one Claude Code agent uses tmai MCP tools to manage the others programmatically.
+
+```
+┌──────────────────────────────────────┐
+│ Orchestrator (main agent)  ⚙        │  ← Uses MCP tools
+│  ├── Sub-agent 1 (worktree)         │  ← dispatch_issue
+│  ├── Sub-agent 2 (worktree)         │  ← dispatch_issue
+│  └── Sub-agent 3 (worktree)         │  ← dispatch_issue
+└──────────────────────────────────────┘
+```
+
+The orchestrator:
+- Dispatches issues to sub-agents via `dispatch_issue`
+- Monitors progress via `list_agents` and `get_ci_status`
+- Sends fix instructions via `send_prompt`
+- Merges PRs and cleans up worktrees
+
+In the WebUI, the orchestrator is visually distinguished with a badge and pinned to the top of the agent list.
+
+See [Issue-Driven Orchestration](./issue-driven-orchestration.md) for the full workflow and [MCP Server](../features/mcp-server.md) for all available tools.
+
 ## Agent Teams Integration
 
 When using Claude Code's Agent Teams feature (multiple agents collaborating on a project), tmai visualizes the team structure and task progress.
@@ -109,5 +132,6 @@ See [Agent Teams](../features/agent-teams.md) for details.
 
 ## Next Steps
 
+- [Issue-Driven Orchestration](./issue-driven-orchestration.md) - MCP-driven orchestrator workflow (recommended)
 - [Parallel Development with Worktrees](./worktree-parallel.md) - Safe parallel development with branches
 - [Remote Approval](./remote-approval.md) - Approve from anywhere
