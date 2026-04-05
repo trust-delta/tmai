@@ -940,6 +940,39 @@ impl TmaiCore {
     // Orchestrator
     // =========================================================
 
+    /// Mark an existing agent as the orchestrator for its project.
+    ///
+    /// Any previous orchestrator for the same project is automatically demoted.
+    /// Emits `AgentsUpdated` so all subscribers (WebUI, notifier) reflect the change.
+    pub fn set_orchestrator(&self, id: &str) -> Result<(), ApiError> {
+        let target = self.resolve_agent_key(id)?;
+
+        let mut state = self.state().write();
+
+        // Determine the project (cwd) of the target agent
+        let project = state
+            .agents
+            .get(&target)
+            .map(|a| a.cwd.clone())
+            .unwrap_or_default();
+
+        // Demote any existing orchestrator for the same project
+        for agent in state.agents.values_mut() {
+            if agent.is_orchestrator && agent.cwd == project {
+                agent.is_orchestrator = false;
+            }
+        }
+
+        // Promote the target agent
+        if let Some(agent) = state.agents.get_mut(&target) {
+            agent.is_orchestrator = true;
+        }
+
+        drop(state);
+        self.notify_agents_updated();
+        Ok(())
+    }
+
     /// Compose a system prompt from orchestrator settings.
     ///
     /// The prompt includes the role description, any non-empty workflow rules,
@@ -1563,5 +1596,63 @@ mod tests {
         assert!(prompt.contains("- Review: Run CI first"));
         // Merge rule is empty, should not appear
         assert!(!prompt.contains("- Merge:"));
+    }
+
+    #[test]
+    fn test_set_orchestrator_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.set_orchestrator("nonexistent");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_set_orchestrator_promotes_agent() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        assert!(core.set_orchestrator("main:0.0").is_ok());
+        let state = core.state().read();
+        assert!(state.agents.get("main:0.0").unwrap().is_orchestrator);
+    }
+
+    #[test]
+    fn test_set_orchestrator_demotes_previous() {
+        let mut agent1 = test_agent("main:0.0", AgentStatus::Idle);
+        agent1.is_orchestrator = true;
+        let agent2 = test_agent("main:0.1", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent1, agent2]);
+
+        // Promote agent2 — agent1 should be demoted (same cwd)
+        assert!(core.set_orchestrator("main:0.1").is_ok());
+        let state = core.state().read();
+        assert!(!state.agents.get("main:0.0").unwrap().is_orchestrator);
+        assert!(state.agents.get("main:0.1").unwrap().is_orchestrator);
+    }
+
+    #[test]
+    fn test_set_orchestrator_different_project_not_demoted() {
+        let mut agent1 = test_agent("main:0.0", AgentStatus::Idle);
+        agent1.is_orchestrator = true;
+        agent1.cwd = "/project-a".to_string();
+        let mut agent2 = test_agent("main:0.1", AgentStatus::Idle);
+        agent2.cwd = "/project-b".to_string();
+        let core = make_core_with_agents(vec![agent1, agent2]);
+
+        // Promote agent2 in project-b — agent1 in project-a stays orchestrator
+        assert!(core.set_orchestrator("main:0.1").is_ok());
+        let state = core.state().read();
+        assert!(state.agents.get("main:0.0").unwrap().is_orchestrator);
+        assert!(state.agents.get("main:0.1").unwrap().is_orchestrator);
+    }
+
+    #[test]
+    fn test_set_orchestrator_idempotent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_orchestrator = true;
+        let core = make_core_with_agents(vec![agent]);
+
+        // Re-setting the same agent should succeed
+        assert!(core.set_orchestrator("main:0.0").is_ok());
+        let state = core.state().read();
+        assert!(state.agents.get("main:0.0").unwrap().is_orchestrator);
     }
 }

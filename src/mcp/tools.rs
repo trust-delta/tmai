@@ -153,6 +153,12 @@ pub struct DispatchIssueParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SetOrchestratorParams {
+    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    pub id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SpawnOrchestratorParams {
     /// Working directory (optional, defaults to first registered project or cwd)
     #[serde(default)]
@@ -389,6 +395,20 @@ impl TmaiMcpServer {
             .post::<serde_json::Value>("/orchestrator/spawn", &body)
         {
             Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Mark an existing running agent as the orchestrator for its project.
+    /// Any previous orchestrator for the same project is automatically demoted.
+    /// Use this to re-register yourself as orchestrator after /resume.
+    #[tool(description = "Mark an existing agent as orchestrator (e.g. after /resume recovery)")]
+    fn set_orchestrator(&self, Parameters(p): Parameters<SetOrchestratorParams>) -> String {
+        match self.client.post_ok(
+            &format!("/agents/{}/set-orchestrator", p.id),
+            &serde_json::json!({}),
+        ) {
+            Ok(()) => format!("Agent {} is now the orchestrator", p.id),
             Err(e) => format!("Error: {e}"),
         }
     }

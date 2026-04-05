@@ -443,6 +443,7 @@ mod tests {
             on_idle: false,
             on_ci: true,
             on_pr_comment: true,
+            on_pr_created: true,
         };
 
         let event = CoreEvent::AgentStopped {
