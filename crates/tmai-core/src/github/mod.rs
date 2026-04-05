@@ -427,6 +427,34 @@ pub struct MergeResult {
     pub worktree_cleanup: Option<String>,
 }
 
+/// Review action for `gh pr review`
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAction {
+    Approve,
+    RequestChanges,
+    Comment,
+}
+
+impl ReviewAction {
+    /// Convert to the `gh pr review` CLI flag
+    fn as_flag(self) -> &'static str {
+        match self {
+            ReviewAction::Approve => "--approve",
+            ReviewAction::RequestChanges => "--request-changes",
+            ReviewAction::Comment => "--comment",
+        }
+    }
+}
+
+/// Result of a PR review operation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReviewResult {
+    pub pr_number: u64,
+    pub action: String,
+    pub message: String,
+}
+
 /// CI failure log output (truncated to 50KB)
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CiFailureLog {
@@ -1166,6 +1194,57 @@ pub async fn merge_pr(
     })
 }
 
+/// Submit a review on a pull request via `gh pr review`
+pub async fn review_pr(
+    repo_dir: &str,
+    pr_number: u64,
+    action: ReviewAction,
+    body: Option<&str>,
+) -> Result<ReviewResult, String> {
+    let mut args = vec![
+        "pr".to_string(),
+        "review".to_string(),
+        pr_number.to_string(),
+        action.as_flag().to_string(),
+    ];
+    if let Some(body_text) = body {
+        args.push("--body".to_string());
+        args.push(body_text.to_string());
+    }
+
+    let output = tokio::time::timeout(
+        GH_TIMEOUT,
+        Command::new("gh")
+            .args(&args)
+            .current_dir(repo_dir)
+            .output(),
+    )
+    .await
+    .map_err(|_| "gh pr review timed out".to_string())?
+    .map_err(|e| format!("Failed to run gh: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !output.status.success() {
+        return Err(format!("gh pr review failed: {}", stderr));
+    }
+
+    let message = if stdout.is_empty() { stderr } else { stdout };
+
+    let action_str = match action {
+        ReviewAction::Approve => "approve",
+        ReviewAction::RequestChanges => "request_changes",
+        ReviewAction::Comment => "comment",
+    };
+
+    Ok(ReviewResult {
+        pr_number,
+        action: action_str.to_string(),
+        message,
+    })
+}
+
 /// Extract issue numbers from a branch name
 ///
 /// Matches patterns like: `fix/123-desc`, `feat/42`, `issue-7`, `gh-99`
@@ -1230,6 +1309,34 @@ mod tests {
         };
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["worktree_cleanup"], "Deleted worktree: feat-branch");
+    }
+
+    #[test]
+    fn review_action_serde_roundtrip() {
+        let approve: ReviewAction = serde_json::from_str("\"approve\"").unwrap();
+        assert_eq!(approve, ReviewAction::Approve);
+        assert_eq!(approve.as_flag(), "--approve");
+
+        let request_changes: ReviewAction = serde_json::from_str("\"request_changes\"").unwrap();
+        assert_eq!(request_changes, ReviewAction::RequestChanges);
+        assert_eq!(request_changes.as_flag(), "--request-changes");
+
+        let comment: ReviewAction = serde_json::from_str("\"comment\"").unwrap();
+        assert_eq!(comment, ReviewAction::Comment);
+        assert_eq!(comment.as_flag(), "--comment");
+    }
+
+    #[test]
+    fn review_result_serializes_correctly() {
+        let result = ReviewResult {
+            pr_number: 42,
+            action: "approve".to_string(),
+            message: "Approved".to_string(),
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["pr_number"], 42);
+        assert_eq!(json["action"], "approve");
+        assert_eq!(json["message"], "Approved");
     }
 
     #[test]
