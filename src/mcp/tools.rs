@@ -27,57 +27,30 @@ impl TmaiMcpServer {
 
     /// Validate that the target agent belongs to the MCP client's project.
     ///
-    /// Fetches the agent, then checks its git_common_dir against the client's resolved
-    /// git common directory. Returns an error message if the agent belongs to a different
-    /// project. Returns None if validation passes or cannot be determined (fail-open).
+    /// Delegates to the backend's `validate-project` endpoint which uses
+    /// `normalize_git_dir()` for consistent comparison. Returns an error message
+    /// if the agent belongs to a different project. Returns None if validation
+    /// passes or cannot be determined (fail-open).
     fn validate_project_scope(&self, agent_id: &str) -> Option<String> {
+        use super::client::ValidateError;
+
         let project_git_dir = match self.client.resolve_git_common_dir() {
             Ok(dir) => dir,
             Err(_) => return None, // Cannot determine project context — allow
         };
-        // Fetch agent info and check its git_common_dir
-        match self.client.get::<serde_json::Value>("/agents") {
-            Ok(data) => {
-                if let Some(agents) = data.as_array() {
-                    if let Some(agent) = agents.iter().find(|a| {
-                        a.get("id").and_then(|v| v.as_str()) == Some(agent_id)
-                            || a.get("pane_id").and_then(|v| v.as_str()) == Some(agent_id)
-                            || a.get("target").and_then(|v| v.as_str()) == Some(agent_id)
-                            || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(agent_id)
-                    }) {
-                        if let Some(agent_gcd) =
-                            agent.get("git_common_dir").and_then(|v| v.as_str())
-                        {
-                            if agent_gcd != project_git_dir {
-                                let agent_display = agent
-                                    .get("cwd")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                return Some(format!(
-                                    "Error: agent {} belongs to a different project ({}). \
-                                     Cross-project operations are not allowed.",
-                                    agent_id, agent_display
-                                ));
-                            }
-                        }
-                        // No git_common_dir on agent — check cwd prefix
-                        else if let Some(agent_cwd) = agent.get("cwd").and_then(|v| v.as_str()) {
-                            // Resolve the repo path for prefix check
-                            if let Ok(repo) = self.client.resolve_repo(&None) {
-                                if !agent_cwd.starts_with(&repo) {
-                                    return Some(format!(
-                                        "Error: agent {} belongs to a different project ({}). \
-                                         Cross-project operations are not allowed.",
-                                        agent_id, agent_cwd
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-                None // Agent not found or passes validation — let the action endpoint handle errors
+        let path = format!("/agents/{}/validate-project", agent_id);
+        let body = serde_json::json!({ "project": project_git_dir });
+        match self.client.post_with_error_body(&path, &body) {
+            Ok(_) => None, // 200 OK — validation passed
+            Err(ValidateError::HttpError { status: 403 }) => Some(format!(
+                "Error: agent {} belongs to a different project. \
+                 Cross-project operations are not allowed.",
+                agent_id
+            )),
+            Err(ValidateError::HttpError { status: 404 }) => {
+                None // Agent not found — let the action endpoint handle it
             }
-            Err(_) => None, // Cannot fetch agents — fail-open
+            Err(_) => None, // Other errors — fail-open
         }
     }
 }
