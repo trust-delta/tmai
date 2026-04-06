@@ -1,6 +1,8 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::codex_ws::CodexWsSender;
 use crate::hooks::registry::HookRegistry;
 use crate::ipc::server::IpcServer;
 use crate::pty::registry::PtyRegistry;
@@ -8,7 +10,18 @@ use crate::runtime::RuntimeAdapter;
 use crate::state::SharedState;
 use crate::utils::keys::tmux_key_to_bytes;
 
-/// Dispatch variant for the 4-tier fallback — controls byte encoding and method selection per tier
+/// Registry of CodexWsSender instances keyed by URL.
+/// Used by CommandSender to route messages to the correct Codex WS connection.
+pub type CodexWsSenderRegistry = Arc<parking_lot::RwLock<HashMap<String, CodexWsSender>>>;
+
+/// Create a new CodexWsSenderRegistry from a map of senders
+pub fn new_codex_ws_sender_registry(
+    senders: &HashMap<String, CodexWsSender>,
+) -> CodexWsSenderRegistry {
+    Arc::new(parking_lot::RwLock::new(senders.clone()))
+}
+
+/// Dispatch variant for the 5-tier fallback — controls byte encoding and method selection per tier
 enum SendVariant {
     /// tmux key names (e.g. "Enter", "C-c") → converted via tmux_key_to_bytes
     Keys,
@@ -42,10 +55,12 @@ impl SendVariant {
     }
 }
 
-/// Unified command sender with 4-tier fallback: PTY session → IPC → RuntimeAdapter (tmux) → PTY inject
+/// Unified command sender with 5-tier fallback:
+/// PTY session → Codex WebSocket → IPC → RuntimeAdapter (tmux) → PTY inject
 ///
 /// Tier priority follows reliability:
 /// - **PTY session**: Direct write to spawned PTY session — most reliable for WebUI-spawned agents
+/// - **Codex WebSocket**: JSON-RPC turn/start for Codex CLI agents — structured bidirectional control
 /// - **IPC**: `tmai wrap` provides PTY master — most reliable for wrapped agents
 /// - **tmux send-keys**: tmux native mechanism — reliable when tmux is available
 /// - **PTY inject**: TIOCSTI via `/proc/{pid}/fd/0` — last resort, requires kernel support
@@ -55,6 +70,7 @@ pub struct CommandSender {
     app_state: SharedState,
     hook_registry: Option<HookRegistry>,
     pty_registry: Option<Arc<PtyRegistry>>,
+    codex_ws_senders: Option<CodexWsSenderRegistry>,
 }
 
 impl CommandSender {
@@ -70,6 +86,7 @@ impl CommandSender {
             app_state,
             hook_registry: None,
             pty_registry: None,
+            codex_ws_senders: None,
         }
     }
 
@@ -83,6 +100,17 @@ impl CommandSender {
     pub fn with_pty_registry(mut self, registry: Arc<PtyRegistry>) -> Self {
         self.pty_registry = Some(registry);
         self
+    }
+
+    /// Attach Codex WebSocket senders for bidirectional Codex CLI control
+    pub fn with_codex_ws_senders(mut self, senders: CodexWsSenderRegistry) -> Self {
+        self.codex_ws_senders = Some(senders);
+        self
+    }
+
+    /// Get the Codex WS sender registry (for direct approve/deny operations)
+    pub fn codex_ws_senders(&self) -> Option<&CodexWsSenderRegistry> {
+        self.codex_ws_senders.as_ref()
     }
 
     /// Try writing directly to a PTY session (for WebUI-spawned agents)

@@ -499,6 +499,7 @@ fn build_context(payload: &HookEventPayload) -> HookContext {
         event_name: payload.hook_event_name.to_string(),
         tool_input: payload.tool_input.clone(),
         permission_mode: payload.permission_mode.clone(),
+        pending_request_id: None,
     }
 }
 

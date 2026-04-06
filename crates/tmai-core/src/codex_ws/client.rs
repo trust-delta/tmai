@@ -14,6 +14,7 @@ use crate::api::CoreEvent;
 use crate::hooks::registry::HookRegistry;
 use crate::state::SharedState;
 
+use super::sender::CodexWsSender;
 use super::translator;
 use super::types::{CodexWsMessage, JsonRpcRequest};
 
@@ -36,6 +37,7 @@ pub async fn run(
     hook_registry: HookRegistry,
     event_tx: broadcast::Sender<CoreEvent>,
     state: SharedState,
+    sender: CodexWsSender,
 ) {
     let initial_backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
@@ -54,6 +56,7 @@ pub async fn run(
             &event_tx,
             &state,
             &resolved_pane_id,
+            &sender,
         )
         .await
         {
@@ -66,6 +69,9 @@ pub async fn run(
                 warn!(url = %config.url, error = %e, "Codex WS connection error");
             }
         }
+
+        // Clear sender write half on disconnect
+        sender.clear_write().await;
 
         // On disconnect, remove only the pane_id this connection was writing to
         if let Some(ref pane_id) = *resolved_pane_id.lock() {
@@ -97,13 +103,14 @@ async fn connect_and_run(
     event_tx: &broadcast::Sender<CoreEvent>,
     state: &SharedState,
     resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
+    sender: &CodexWsSender,
 ) -> anyhow::Result<()> {
     let (ws_stream, _response) = tokio_tungstenite::connect_async(&config.url).await?;
     let (mut write, mut read) = ws_stream.split();
 
     info!(url = %config.url, "Connected to Codex app-server");
 
-    // Send initialize request
+    // Send initialize request via raw write (sender not set up yet)
     let init_req = JsonRpcRequest::initialize(1);
     let init_json = serde_json::to_string(&init_req)?;
     write.send(Message::Text(init_json.into())).await?;
@@ -128,14 +135,14 @@ async fn connect_and_run(
                 }
                 info!("Codex app-server initialized successfully");
             }
-            CodexWsMessage::Notification(_) => {
+            CodexWsMessage::Notification(_) | CodexWsMessage::Request { .. } => {
                 debug!("Received notification before init response, continuing");
             }
         }
     }
 
-    // Reset backoff on successful connection
-    // (handled by the caller resetting backoff isn't needed since we loop)
+    // Hand write half to the sender for bidirectional control
+    sender.set_write(write).await;
 
     // Message processing loop with periodic keep-alive touch
     // to maintain hook state freshness while connected
@@ -163,10 +170,11 @@ async fn connect_and_run(
                             event_tx,
                             state,
                             resolved_pane_id,
+                            sender,
                         );
                     }
                     Message::Ping(data) => {
-                        let _ = write.send(Message::Pong(data)).await;
+                        let _ = sender.send_pong(data.to_vec()).await;
                     }
                     Message::Close(_) => {
                         info!(url = %config.url, "Received close frame");
@@ -199,6 +207,7 @@ fn handle_text_message(
     event_tx: &broadcast::Sender<CoreEvent>,
     state: &SharedState,
     resolved_pane_id: &std::sync::Arc<parking_lot::Mutex<Option<String>>>,
+    sender: &CodexWsSender,
 ) {
     tracing::trace!(text, "Codex WS raw message");
 
@@ -210,15 +219,44 @@ fn handle_text_message(
         }
     };
 
-    let notification = match msg {
-        CodexWsMessage::Notification(notif) => notif,
+    // Extract notification and optional request_id from the message
+    let (notification, request_id) = match msg {
+        CodexWsMessage::Notification(notif) => (notif, None),
+        CodexWsMessage::Request { id, notification } => (notification, Some(id)),
         CodexWsMessage::Response(_) => {
-            // Unexpected response (we only sent initialize), ignore
+            // Response to our outbound requests (turn/start, thread/start, etc.)
+            debug!("Received response to outbound request");
             return;
         }
     };
 
     let codex_event = super::types::parse_codex_event(&notification);
+
+    // Track thread_id from thread/started notifications
+    if let super::types::CodexEvent::ThreadStarted {
+        thread_id: Some(ref tid),
+        ..
+    } = codex_event
+    {
+        sender.set_thread_id(tid.clone());
+        debug!(thread_id = %tid, "Tracked thread_id from thread/started");
+    }
+
+    // Store pending request_id for approval events (needed to send approval response)
+    if let Some(req_id) = request_id {
+        match &codex_event {
+            super::types::CodexEvent::CommandApprovalRequested { .. }
+            | super::types::CodexEvent::FileChangeApprovalRequested { .. } => {
+                debug!(
+                    request_id = req_id,
+                    "Approval request received, storing pending request_id"
+                );
+                // Store in hook registry context for retrieval by approve/deny flows
+                // (will be stored after pane_id resolution below)
+            }
+            _ => {}
+        }
+    }
 
     // Resolve pane_id — try config first, then cwd matching
     let pane_id = if let Some(ref id) = config.pane_id {
@@ -226,20 +264,15 @@ fn handle_text_message(
     } else {
         // Try to resolve via cwd from thread/started event
         match &codex_event {
-            super::types::CodexEvent::ThreadStarted { cwd: Some(cwd) } => {
-                resolve_pane_id_by_cwd(cwd, state).unwrap_or_else(|| {
-                    // Use URL-based synthetic pane_id as fallback
-                    synthetic_pane_id(&config.url)
-                })
+            super::types::CodexEvent::ThreadStarted { cwd: Some(cwd), .. } => {
+                resolve_pane_id_by_cwd(cwd, state).unwrap_or_else(|| synthetic_pane_id(&config.url))
             }
             _ => {
-                // Check if we already have a hook state for a synthetic pane_id
                 let synthetic = synthetic_pane_id(&config.url);
                 let reg = hook_registry.read();
                 if reg.contains_key(&synthetic) {
                     synthetic
                 } else {
-                    // Try resolving from existing hook states' cwd
                     resolve_pane_id(config, state).unwrap_or(synthetic)
                 }
             }
@@ -251,6 +284,14 @@ fn handle_text_message(
         let mut guard = resolved_pane_id.lock();
         if guard.is_none() || guard.as_ref() != Some(&pane_id) {
             *guard = Some(pane_id.clone());
+        }
+    }
+
+    // Store pending approval request_id in hook state for retrieval by approve/deny
+    if let Some(req_id) = request_id {
+        let mut reg = hook_registry.write();
+        if let Some(hs) = reg.get_mut(&pane_id) {
+            hs.last_context.pending_request_id = Some(req_id);
         }
     }
 

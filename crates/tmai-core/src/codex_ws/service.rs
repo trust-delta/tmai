@@ -1,5 +1,7 @@
 //! CodexWsService — manages multiple WebSocket client connections
-//! to Codex CLI app-server instances.
+//! to Codex CLI app-server instances with bidirectional control.
+
+use std::collections::HashMap;
 
 use tokio::sync::broadcast;
 use tracing::info;
@@ -10,6 +12,7 @@ use crate::hooks::registry::HookRegistry;
 use crate::state::SharedState;
 
 use super::client::{self, CodexWsClientConfig};
+use super::sender::CodexWsSender;
 
 /// Service that manages WebSocket connections to Codex CLI app-servers
 pub struct CodexWsService {
@@ -17,6 +20,8 @@ pub struct CodexWsService {
     hook_registry: HookRegistry,
     event_tx: broadcast::Sender<CoreEvent>,
     state: SharedState,
+    /// Senders keyed by URL for external access (send_prompt, approve, etc.)
+    senders: HashMap<String, CodexWsSender>,
 }
 
 impl CodexWsService {
@@ -27,20 +32,33 @@ impl CodexWsService {
         event_tx: broadcast::Sender<CoreEvent>,
         state: SharedState,
     ) -> Self {
-        let configs = connections
-            .iter()
-            .map(|conn| CodexWsClientConfig {
+        let mut configs = Vec::with_capacity(connections.len());
+        let mut senders = HashMap::with_capacity(connections.len());
+
+        for conn in connections {
+            let config = CodexWsClientConfig {
                 url: conn.url.clone(),
                 pane_id: conn.pane_id.clone(),
-            })
-            .collect();
+            };
+            let sender = CodexWsSender::new(conn.url.clone());
+            senders.insert(conn.url.clone(), sender);
+            configs.push(config);
+        }
 
         Self {
             configs,
             hook_registry,
             event_tx,
             state,
+            senders,
         }
+    }
+
+    /// Get all senders (keyed by URL) for external access to bidirectional control.
+    /// Call this before `start()` — the returned senders are clones that share
+    /// state with the background tasks.
+    pub fn senders(&self) -> &HashMap<String, CodexWsSender> {
+        &self.senders
     }
 
     /// Start all WebSocket client connections as background tasks.
@@ -60,9 +78,14 @@ impl CodexWsService {
             let registry = self.hook_registry.clone();
             let event_tx = self.event_tx.clone();
             let state = self.state.clone();
+            let sender = self
+                .senders
+                .get(&config.url)
+                .cloned()
+                .unwrap_or_else(|| CodexWsSender::new(config.url.clone()));
 
             tokio::spawn(async move {
-                client::run(config, registry, event_tx, state).await;
+                client::run(config, registry, event_tx, state, sender).await;
             });
         }
     }
@@ -107,5 +130,9 @@ mod tests {
         assert_eq!(service.configs[0].pane_id.as_deref(), Some("5"));
         assert_eq!(service.configs[1].url, "ws://127.0.0.1:15711");
         assert!(service.configs[1].pane_id.is_none());
+        // Senders are created for each connection
+        assert_eq!(service.senders().len(), 2);
+        assert!(service.senders().contains_key("ws://127.0.0.1:15710"));
+        assert!(service.senders().contains_key("ws://127.0.0.1:15711"));
     }
 }

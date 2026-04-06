@@ -240,6 +240,10 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             core.event_sender(),
             app_state.clone(),
         );
+        // Capture senders for bidirectional control before start() consumes service
+        let ws_sender_registry =
+            tmai_core::command_sender::new_codex_ws_sender_registry(codex_ws_service.senders());
+        core.set_codex_ws_senders(ws_sender_registry);
         codex_ws_service.start();
     }
 
@@ -409,6 +413,10 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             core.event_sender(),
             state.clone(),
         );
+        // Capture senders for bidirectional control before start() consumes service
+        let ws_sender_registry =
+            tmai_core::command_sender::new_codex_ws_sender_registry(codex_ws_service.senders());
+        core.set_codex_ws_senders(ws_sender_registry);
         codex_ws_service.start();
         eprintln!(
             "tmai: codex WS service started ({} connection(s))",

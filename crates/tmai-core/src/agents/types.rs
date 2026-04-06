@@ -111,6 +111,8 @@ impl DetectionSource {
 /// Best available method for sending keystrokes to this agent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SendCapability {
+    /// Codex WebSocket bidirectional control (JSON-RPC turn/start, approve)
+    CodexWebSocket,
     /// IPC connection available (PTY master held by tmai wrap)
     Ipc,
     /// tmux send-keys available (agent runs in a tmux pane)
@@ -126,6 +128,7 @@ impl SendCapability {
     /// Get icon for this send capability
     pub fn icon(&self) -> char {
         match self {
+            SendCapability::CodexWebSocket => '⇌',
             SendCapability::Ipc => '⇋',
             SendCapability::Tmux => '⇉',
             SendCapability::PtyInject => '⇝',
@@ -136,6 +139,7 @@ impl SendCapability {
     /// Get short label for this send capability
     pub fn label(&self) -> &'static str {
         match self {
+            SendCapability::CodexWebSocket => "WS",
             SendCapability::Ipc => "IPC",
             SendCapability::Tmux => "tmux",
             SendCapability::PtyInject => "PTY",

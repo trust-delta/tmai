@@ -11,7 +11,7 @@ use tokio::sync::broadcast;
 use crate::audit::helper::AuditHelper;
 use crate::audit::AuditEventSender;
 use crate::auto_approve::defer::DeferRegistry;
-use crate::command_sender::CommandSender;
+use crate::command_sender::{CodexWsSenderRegistry, CommandSender};
 use crate::config::Settings;
 use crate::hooks::registry::{HookRegistry, SessionPaneMap};
 use crate::ipc::server::IpcServer;
@@ -55,6 +55,8 @@ pub struct TmaiCore {
     transcript_registry: Option<TranscriptRegistry>,
     /// Registry for deferred tool calls pending resolution
     defer_registry: Arc<DeferRegistry>,
+    /// Codex WebSocket sender registry for bidirectional control
+    codex_ws_senders: RwLock<Option<CodexWsSenderRegistry>>,
 }
 
 impl TmaiCore {
@@ -90,6 +92,7 @@ impl TmaiCore {
             runtime,
             transcript_registry,
             defer_registry,
+            codex_ws_senders: RwLock::new(None),
         }
     }
 
@@ -144,6 +147,16 @@ impl TmaiCore {
     /// Access the IPC server (if configured)
     pub fn ipc_server(&self) -> Option<&Arc<IpcServer>> {
         self.ipc_server.as_ref()
+    }
+
+    /// Set the Codex WebSocket sender registry (called after CodexWsService is created)
+    pub fn set_codex_ws_senders(&self, senders: CodexWsSenderRegistry) {
+        *self.codex_ws_senders.write() = Some(senders);
+    }
+
+    /// Get the Codex WebSocket sender registry
+    pub fn codex_ws_senders(&self) -> Option<CodexWsSenderRegistry> {
+        self.codex_ws_senders.read().clone()
     }
 
     /// Get a clone of the broadcast event sender.

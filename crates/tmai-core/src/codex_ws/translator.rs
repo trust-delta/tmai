@@ -21,7 +21,7 @@ pub fn translate_event(
     hook_registry: &HookRegistry,
 ) -> Option<CoreEvent> {
     match event {
-        CodexEvent::ThreadStarted { cwd } => {
+        CodexEvent::ThreadStarted { cwd, thread_id: _ } => {
             let mut reg = hook_registry.write();
             if let Some(state) = reg.get_mut(pane_id) {
                 if cwd.is_some() {
@@ -255,6 +255,7 @@ fn update_hook_state_with_event_name(
             event_name: event_name.to_string(),
             tool_input: None,
             permission_mode: None,
+            pending_request_id: None,
         };
         state.touch();
     } else {
@@ -265,6 +266,7 @@ fn update_hook_state_with_event_name(
             event_name: event_name.to_string(),
             tool_input: None,
             permission_mode: None,
+            pending_request_id: None,
         };
         reg.insert(pane_id.to_string(), state);
     }
@@ -282,6 +284,7 @@ mod tests {
         translate_event(
             &CodexEvent::ThreadStarted {
                 cwd: Some("/home/user/project".to_string()),
+                thread_id: None,
             },
             "5",
             &registry,
@@ -298,7 +301,14 @@ mod tests {
         let registry = new_hook_registry();
 
         // Create initial entry
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(&CodexEvent::TurnStarted, "5", &registry);
 
@@ -310,7 +320,14 @@ mod tests {
     fn test_item_started_command_execution_sets_tool() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::ItemStarted {
@@ -336,7 +353,14 @@ mod tests {
     fn test_item_started_file_change_sets_tool() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::ItemStarted {
@@ -359,7 +383,14 @@ mod tests {
     fn test_item_started_agent_message_no_tool() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::ItemStarted {
@@ -382,7 +413,14 @@ mod tests {
     fn test_command_approval_sets_awaiting() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::CommandApprovalRequested {
@@ -403,7 +441,14 @@ mod tests {
     fn test_file_change_approval_sets_awaiting() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::FileChangeApprovalRequested {
@@ -427,6 +472,7 @@ mod tests {
         translate_event(
             &CodexEvent::ThreadStarted {
                 cwd: Some("/tmp".to_string()),
+                thread_id: None,
             },
             "5",
             &registry,
@@ -457,7 +503,14 @@ mod tests {
     fn test_turn_completed_failed_also_sets_idle() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
         translate_event(&CodexEvent::TurnStarted, "5", &registry);
 
         let event = translate_event(
@@ -477,7 +530,14 @@ mod tests {
     fn test_item_completed_keeps_processing() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
         translate_event(&CodexEvent::TurnStarted, "5", &registry);
 
         translate_event(
@@ -497,7 +557,14 @@ mod tests {
     fn test_item_completed_pushes_activity_log() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
         translate_event(&CodexEvent::TurnStarted, "5", &registry);
 
         // Start a command execution item
@@ -534,7 +601,14 @@ mod tests {
     fn test_turn_started_clears_activity_log() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
         translate_event(&CodexEvent::TurnStarted, "5", &registry);
 
         // Add some activity
@@ -573,7 +647,14 @@ mod tests {
     fn test_token_usage_stored() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         translate_event(
             &CodexEvent::TokenUsageUpdated {
@@ -594,7 +675,14 @@ mod tests {
     fn test_streaming_delta_touches_state() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         // Set old timestamp
         {
@@ -620,7 +708,14 @@ mod tests {
     fn test_unknown_event_no_state_change() {
         let registry = new_hook_registry();
 
-        translate_event(&CodexEvent::ThreadStarted { cwd: None }, "5", &registry);
+        translate_event(
+            &CodexEvent::ThreadStarted {
+                cwd: None,
+                thread_id: None,
+            },
+            "5",
+            &registry,
+        );
 
         let event = translate_event(
             &CodexEvent::Unknown {
@@ -643,6 +738,7 @@ mod tests {
         translate_event(
             &CodexEvent::ThreadStarted {
                 cwd: Some("/project".to_string()),
+                thread_id: None,
             },
             "5",
             &registry,
