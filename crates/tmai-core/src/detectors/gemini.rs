@@ -1,6 +1,8 @@
 use regex::Regex;
 
-use crate::agents::{Activity, AgentMode, AgentStatus, AgentType, ApprovalType};
+use crate::agents::{
+    Activity, AgentMode, AgentStatus, AgentType, ApprovalCategory, InteractionMode,
+};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -47,7 +49,10 @@ impl GeminiDetector {
     ///
     /// Checks for RadioButtonSelect patterns, header texts, confirmation questions,
     /// and WaitingForConfirmation patterns in the recent content lines.
-    fn detect_content_approval(&self, content: &str) -> Option<(ApprovalType, String, &str)> {
+    fn detect_content_approval(
+        &self,
+        content: &str,
+    ) -> Option<(ApprovalCategory, String, Option<InteractionMode>, &str)> {
         let lines: Vec<&str> = content.lines().collect();
         let check_start = lines.len().saturating_sub(30);
         let recent_lines = &lines[check_start..];
@@ -86,7 +91,12 @@ impl GeminiDetector {
     fn detect_radio_button_select(
         &self,
         lines: &[&str],
-    ) -> Option<(ApprovalType, String, &'static str)> {
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        Option<InteractionMode>,
+        &'static str,
+    )> {
         let mut choices: Vec<String> = Vec::new();
         let mut cursor_position: usize = 0;
         let mut found_any = false;
@@ -120,12 +130,12 @@ impl GeminiDetector {
         if found_any && choices.len() >= 2 {
             let details = choices.join(" / ");
             return Some((
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select: false,
-                    cursor_position,
-                },
+                ApprovalCategory::UserQuestion,
                 details,
+                Some(InteractionMode::SingleSelect {
+                    choices,
+                    cursor_position,
+                }),
                 "radio_button_select",
             ));
         }
@@ -155,18 +165,20 @@ impl GeminiDetector {
     fn detect_header_approval(
         &self,
         lines: &[&str],
-    ) -> Option<(ApprovalType, String, &'static str)> {
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        Option<InteractionMode>,
+        &'static str,
+    )> {
         for line in lines {
             let trimmed = line.trim();
 
             if trimmed.contains("Answer Questions") || trimmed.contains("answer questions") {
                 return Some((
-                    ApprovalType::UserQuestion {
-                        choices: Vec::new(),
-                        multi_select: false,
-                        cursor_position: 0,
-                    },
+                    ApprovalCategory::UserQuestion,
                     "Answer Questions".to_string(),
+                    None,
                     "answer_questions_header",
                 ));
             }
@@ -178,6 +190,7 @@ impl GeminiDetector {
                 return Some((
                     approval_type,
                     "Action Required".to_string(),
+                    None,
                     "action_required_header",
                 ));
             }
@@ -189,22 +202,29 @@ impl GeminiDetector {
     fn detect_confirmation_question(
         &self,
         lines: &[&str],
-    ) -> Option<(ApprovalType, String, &'static str)> {
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        Option<InteractionMode>,
+        &'static str,
+    )> {
         for line in lines {
             let trimmed = line.trim();
 
             if trimmed.contains("Apply this change?") {
                 return Some((
-                    ApprovalType::FileEdit,
+                    ApprovalCategory::FileEdit,
                     "Apply this change?".to_string(),
+                    None,
                     "confirmation_question",
                 ));
             }
 
             if trimmed.contains("Allow execution of") {
                 return Some((
-                    ApprovalType::ShellCommand,
+                    ApprovalCategory::ShellCommand,
                     trimmed.to_string(),
+                    None,
                     "confirmation_question",
                 ));
             }
@@ -215,14 +235,16 @@ impl GeminiDetector {
                 return Some((
                     approval_type,
                     "Do you want to proceed?".to_string(),
+                    None,
                     "confirmation_question",
                 ));
             }
 
             if trimmed.contains("Ready to start implementation?") {
                 return Some((
-                    ApprovalType::Other("Plan execution".to_string()),
+                    ApprovalCategory::Other("Plan execution".to_string()),
                     "Ready to start implementation?".to_string(),
+                    None,
                     "confirmation_question",
                 ));
             }
@@ -234,15 +256,21 @@ impl GeminiDetector {
     fn detect_waiting_for_confirmation(
         &self,
         lines: &[&str],
-    ) -> Option<(ApprovalType, String, &'static str)> {
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        Option<InteractionMode>,
+        &'static str,
+    )> {
         for line in lines.iter().rev().take(10) {
             let trimmed = line.trim();
             if trimmed.contains(WAITING_SPINNER)
                 && trimmed.contains("Waiting for user confirmation")
             {
                 return Some((
-                    ApprovalType::Other("Gemini approval".to_string()),
+                    ApprovalCategory::Other("Gemini approval".to_string()),
                     "Waiting for user confirmation".to_string(),
+                    None,
                     "waiting_for_confirmation",
                 ));
             }
@@ -250,26 +278,26 @@ impl GeminiDetector {
         None
     }
 
-    /// Determine ApprovalType from tool name context in content
-    fn determine_tool_approval_type(context: &str) -> ApprovalType {
+    /// Determine ApprovalCategory from tool name context in content
+    fn determine_tool_approval_type(context: &str) -> ApprovalCategory {
         let lower = context.to_lowercase();
 
         if lower.contains("write_file")
             || lower.contains("edit_file")
             || lower.contains("patch_file")
         {
-            return ApprovalType::FileEdit;
+            return ApprovalCategory::FileEdit;
         }
 
         if lower.contains("exec") || lower.contains("shell") || lower.contains("run_command") {
-            return ApprovalType::ShellCommand;
+            return ApprovalCategory::ShellCommand;
         }
 
         if lower.contains("mcp") {
-            return ApprovalType::McpTool;
+            return ApprovalCategory::McpTool;
         }
 
-        ApprovalType::Other("Gemini approval".to_string())
+        ApprovalCategory::Other("Gemini approval".to_string())
     }
 
     /// Detect error patterns in recent content lines
@@ -387,12 +415,15 @@ impl StatusDetector for GeminiDetector {
     ) -> DetectionResult {
         // 1. Title ✋ icon → AwaitingApproval (highest priority)
         if title.contains(TITLE_ACTION_REQUIRED_ICON) {
-            // Also check content for specific ApprovalType
-            if let Some((approval_type, details, rule)) = self.detect_content_approval(content) {
+            // Also check content for specific ApprovalCategory
+            if let Some((approval_type, details, interaction, rule)) =
+                self.detect_content_approval(content)
+            {
                 return DetectionResult::new(
                     AgentStatus::AwaitingApproval {
                         approval_type,
                         details: details.clone(),
+                        interaction,
                     },
                     rule,
                     DetectionConfidence::High,
@@ -402,8 +433,9 @@ impl StatusDetector for GeminiDetector {
             // Title says action required but content doesn't specify type
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::Other("Gemini approval".to_string()),
+                    approval_type: ApprovalCategory::Other("Gemini approval".to_string()),
                     details: String::new(),
+                    interaction: None,
                 },
                 "title_action_required_icon",
                 DetectionConfidence::High,
@@ -412,11 +444,14 @@ impl StatusDetector for GeminiDetector {
         }
 
         // 2. Content-based approval detection (without title icon)
-        if let Some((approval_type, details, rule)) = self.detect_content_approval(content) {
+        if let Some((approval_type, details, interaction, rule)) =
+            self.detect_content_approval(content)
+        {
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
                     approval_type,
                     details: details.clone(),
+                    interaction,
                 },
                 rule,
                 DetectionConfidence::High,
@@ -563,7 +598,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion { .. },
+                approval_type: ApprovalCategory::UserQuestion,
                 ..
             }
         ));
@@ -581,19 +616,18 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion { .. },
+                approval_type: ApprovalCategory::UserQuestion,
                 ..
             }
         ));
         assert_eq!(result.reason.rule, "radio_button_select");
 
         if let AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
+            interaction:
+                Some(InteractionMode::SingleSelect {
                     choices,
                     cursor_position,
-                    multi_select,
-                },
+                }),
             ..
         } = &result.status
         {
@@ -602,7 +636,6 @@ mod tests {
             assert_eq!(choices[1], "Allow for this session");
             assert_eq!(choices[2], "No, suggest changes");
             assert_eq!(*cursor_position, 1);
-            assert!(!multi_select);
         }
     }
 
@@ -615,7 +648,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::FileEdit,
+                approval_type: ApprovalCategory::FileEdit,
                 ..
             }
         ));
@@ -629,7 +662,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion { .. },
+                approval_type: ApprovalCategory::UserQuestion,
                 ..
             }
         ));
@@ -643,7 +676,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::FileEdit,
+                approval_type: ApprovalCategory::FileEdit,
                 ..
             }
         ));
@@ -657,7 +690,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::ShellCommand,
+                approval_type: ApprovalCategory::ShellCommand,
                 ..
             }
         ));
@@ -671,12 +704,12 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::Other(_),
+                approval_type: ApprovalCategory::Other(_),
                 ..
             }
         ));
         if let AgentStatus::AwaitingApproval {
-            approval_type: ApprovalType::Other(ref s),
+            approval_type: ApprovalCategory::Other(ref s),
             ..
         } = result.status
         {
@@ -864,7 +897,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::ShellCommand,
+                approval_type: ApprovalCategory::ShellCommand,
                 ..
             }
         ));
@@ -877,7 +910,7 @@ mod tests {
         assert!(matches!(
             result.status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::McpTool,
+                approval_type: ApprovalCategory::McpTool,
                 ..
             }
         ));

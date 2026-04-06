@@ -5,8 +5,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 use crate::agents::{
-    Activity, AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
-    TeamTaskSummaryItem,
+    Activity, AgentStatus, AgentTeamInfo, AgentType, ApprovalCategory, DetectionSource,
+    InteractionMode, MonitoredAgent, TeamTaskSummaryItem,
 };
 use crate::api::CoreEvent;
 use crate::audit::{AuditEvent, AuditLogger};
@@ -2348,16 +2348,17 @@ fn extract_approval_info(status: &AgentStatus) -> (Option<String>, Option<String
     if let AgentStatus::AwaitingApproval {
         approval_type,
         details,
+        ..
     } = status
     {
         let type_str = match approval_type {
-            ApprovalType::FileEdit => "file_edit".to_string(),
-            ApprovalType::FileCreate => "file_create".to_string(),
-            ApprovalType::FileDelete => "file_delete".to_string(),
-            ApprovalType::ShellCommand => "shell_command".to_string(),
-            ApprovalType::McpTool => "mcp_tool".to_string(),
-            ApprovalType::UserQuestion { .. } => "user_question".to_string(),
-            ApprovalType::Other(s) => format!("other:{}", s),
+            ApprovalCategory::FileEdit => "file_edit".to_string(),
+            ApprovalCategory::FileCreate => "file_create".to_string(),
+            ApprovalCategory::FileDelete => "file_delete".to_string(),
+            ApprovalCategory::ShellCommand => "shell_command".to_string(),
+            ApprovalCategory::McpTool => "mcp_tool".to_string(),
+            ApprovalCategory::UserQuestion => "user_question".to_string(),
+            ApprovalCategory::Other(s) => format!("other:{}", s),
         };
         let details_opt = if details.is_empty() {
             None
@@ -2450,23 +2451,36 @@ fn wrap_state_to_agent_status(ws: &WrapState) -> AgentStatus {
         },
         WrapStatus::Idle => AgentStatus::Idle,
         WrapStatus::AwaitingApproval => {
-            let approval_type = match ws.approval_type {
-                Some(WrapApprovalType::UserQuestion) => ApprovalType::UserQuestion {
-                    choices: ws.choices.clone(),
-                    multi_select: ws.multi_select,
-                    cursor_position: ws.cursor_position,
-                },
-                Some(WrapApprovalType::FileEdit) => ApprovalType::FileEdit,
-                Some(WrapApprovalType::ShellCommand) => ApprovalType::ShellCommand,
-                Some(WrapApprovalType::McpTool) => ApprovalType::McpTool,
-                Some(WrapApprovalType::YesNo) => ApprovalType::Other("Yes/No".to_string()),
-                Some(WrapApprovalType::Other) => ApprovalType::Other("Approval".to_string()),
-                None => ApprovalType::Other("Approval".to_string()),
+            let (approval_type, interaction) = match ws.approval_type {
+                Some(WrapApprovalType::UserQuestion) => {
+                    let interaction = if ws.multi_select {
+                        Some(InteractionMode::MultiSelect {
+                            choices: ws.choices.clone(),
+                        })
+                    } else {
+                        Some(InteractionMode::SingleSelect {
+                            choices: ws.choices.clone(),
+                            cursor_position: ws.cursor_position,
+                        })
+                    };
+                    (ApprovalCategory::UserQuestion, interaction)
+                }
+                Some(WrapApprovalType::FileEdit) => (ApprovalCategory::FileEdit, None),
+                Some(WrapApprovalType::ShellCommand) => (ApprovalCategory::ShellCommand, None),
+                Some(WrapApprovalType::McpTool) => (ApprovalCategory::McpTool, None),
+                Some(WrapApprovalType::YesNo) => {
+                    (ApprovalCategory::Other("Yes/No".to_string()), None)
+                }
+                Some(WrapApprovalType::Other) => {
+                    (ApprovalCategory::Other("Approval".to_string()), None)
+                }
+                None => (ApprovalCategory::Other("Approval".to_string()), None),
             };
             let details = ws.details.clone().unwrap_or_default();
             AgentStatus::AwaitingApproval {
                 approval_type,
                 details,
+                interaction,
             }
         }
     }
@@ -2621,8 +2635,9 @@ mod tests {
         assert!(matches!(
             status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::Other(_),
+                approval_type: ApprovalCategory::Other(_),
                 details,
+                ..
             } if details == "Bash"
         ));
     }
@@ -2638,13 +2653,10 @@ mod tests {
         assert!(matches!(
             status,
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion {
-                    ref choices,
-                    multi_select: false,
-                    cursor_position: 0,
-                },
+                approval_type: ApprovalCategory::UserQuestion,
                 ref details,
-            } if choices.is_empty() && details.is_empty()
+                interaction: None,
+            } if details.is_empty()
         ));
     }
 

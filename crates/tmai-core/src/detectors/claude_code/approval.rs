@@ -1,7 +1,7 @@
 use regex::Regex;
 use tracing::trace;
 
-use crate::agents::ApprovalType;
+use crate::agents::{ApprovalCategory, InteractionMode};
 
 use super::ClaudeCodeDetector;
 use crate::detectors::common::{safe_tail, strip_box_drawing};
@@ -17,7 +17,10 @@ impl ClaudeCodeDetector {
     }
 
     /// Detect AskUserQuestion with numbered choices
-    pub(super) fn detect_user_question(&self, content: &str) -> Option<(ApprovalType, String)> {
+    pub(super) fn detect_user_question(
+        &self,
+        content: &str,
+    ) -> Option<(ApprovalCategory, String, Option<InteractionMode>)> {
         let lines: Vec<&str> = content.lines().collect();
         if lines.is_empty() {
             return None;
@@ -297,14 +300,15 @@ impl ClaudeCodeDetector {
             } else {
                 cursor_position
             };
-            Some((
-                ApprovalType::UserQuestion {
+            let interaction = if is_multi_select {
+                Some(InteractionMode::MultiSelect { choices })
+            } else {
+                Some(InteractionMode::SingleSelect {
                     choices,
-                    multi_select: is_multi_select,
                     cursor_position: cursor,
-                },
-                question,
-            ))
+                })
+            };
+            Some((ApprovalCategory::UserQuestion, question, interaction))
         } else {
             None
         }
@@ -442,7 +446,12 @@ impl ClaudeCodeDetector {
     pub(super) fn detect_approval(
         &self,
         content: &str,
-    ) -> Option<(ApprovalType, String, &'static str)> {
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        Option<InteractionMode>,
+        &'static str,
+    )> {
         let lines: Vec<&str> = content.lines().collect();
         if lines.is_empty() {
             return None;
@@ -462,8 +471,13 @@ impl ClaudeCodeDetector {
         let _recent = recent_lines.join("\n");
 
         // Check for AskUserQuestion first (highest priority)
-        if let Some((approval_type, details)) = self.detect_user_question(content) {
-            return Some((approval_type, details, "user_question_numbered_choices"));
+        if let Some((category, details, interaction)) = self.detect_user_question(content) {
+            return Some((
+                category,
+                details,
+                interaction,
+                "user_question_numbered_choices",
+            ));
         }
 
         // Check for "1. Yes / 2. ... / 3. No" style proceed prompt
@@ -490,12 +504,12 @@ impl ClaudeCodeDetector {
         if let Some(choices) = proceed_choices {
             let question = Self::extract_question_text(content);
             return Some((
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select: false,
-                    cursor_position: 1,
-                },
+                ApprovalCategory::UserQuestion,
                 question,
+                Some(InteractionMode::SingleSelect {
+                    choices,
+                    cursor_position: 1,
+                }),
                 "proceed_prompt",
             ));
         }
@@ -512,31 +526,37 @@ impl ClaudeCodeDetector {
 
         if self.file_edit_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileEdit, details, rule));
+            return Some((ApprovalCategory::FileEdit, details, None, rule));
         }
 
         if self.file_create_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileCreate, details, rule));
+            return Some((ApprovalCategory::FileCreate, details, None, rule));
         }
 
         if self.file_delete_pattern.is_match(context) {
             let details = self.extract_file_path(context).unwrap_or_default();
-            return Some((ApprovalType::FileDelete, details, rule));
+            return Some((ApprovalCategory::FileDelete, details, None, rule));
         }
 
         if self.bash_pattern.is_match(context) {
             let details = self.extract_command(context).unwrap_or_default();
-            return Some((ApprovalType::ShellCommand, details, rule));
+            return Some((ApprovalCategory::ShellCommand, details, None, rule));
         }
 
         if self.mcp_pattern.is_match(context) {
-            return Some((ApprovalType::McpTool, "MCP tool call".to_string(), rule));
+            return Some((
+                ApprovalCategory::McpTool,
+                "MCP tool call".to_string(),
+                None,
+                rule,
+            ));
         }
 
         Some((
-            ApprovalType::Other("Pending approval".to_string()),
+            ApprovalCategory::Other("Pending approval".to_string()),
             String::new(),
+            None,
             rule,
         ))
     }

@@ -381,9 +381,9 @@ impl fmt::Display for AgentType {
     }
 }
 
-/// Type of approval being requested
+/// Category of approval being requested
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ApprovalType {
+pub enum ApprovalCategory {
     /// File edit request
     FileEdit,
     /// File creation request
@@ -394,29 +394,37 @@ pub enum ApprovalType {
     ShellCommand,
     /// MCP tool invocation request
     McpTool,
-    /// User question with selectable choices (AskUserQuestion)
-    UserQuestion {
-        choices: Vec<String>,
-        multi_select: bool,
-        /// Current cursor position (1-indexed, 0 means unknown)
-        cursor_position: usize,
-    },
-    /// Other/unknown approval type
+    /// User question (AskUserQuestion)
+    UserQuestion,
+    /// Other/unknown approval category
     Other(String),
 }
 
-impl fmt::Display for ApprovalType {
+impl fmt::Display for ApprovalCategory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ApprovalType::FileEdit => write!(f, "File Edit"),
-            ApprovalType::FileCreate => write!(f, "File Create"),
-            ApprovalType::FileDelete => write!(f, "File Delete"),
-            ApprovalType::ShellCommand => write!(f, "Shell Command"),
-            ApprovalType::McpTool => write!(f, "MCP Tool"),
-            ApprovalType::UserQuestion { .. } => write!(f, "Question"),
-            ApprovalType::Other(s) => write!(f, "{}", s),
+            ApprovalCategory::FileEdit => write!(f, "File Edit"),
+            ApprovalCategory::FileCreate => write!(f, "File Create"),
+            ApprovalCategory::FileDelete => write!(f, "File Delete"),
+            ApprovalCategory::ShellCommand => write!(f, "Shell Command"),
+            ApprovalCategory::McpTool => write!(f, "MCP Tool"),
+            ApprovalCategory::UserQuestion => write!(f, "Question"),
+            ApprovalCategory::Other(s) => write!(f, "{}", s),
         }
     }
+}
+
+/// Interaction mode for approval requests with selectable choices
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InteractionMode {
+    /// Single-select from a list of choices
+    SingleSelect {
+        choices: Vec<String>,
+        /// Current cursor position (1-indexed, 0 means unknown)
+        cursor_position: usize,
+    },
+    /// Multi-select from a list of choices
+    MultiSelect { choices: Vec<String> },
 }
 
 /// Coarse-grained phase for orchestrator consumption.
@@ -473,8 +481,9 @@ pub enum Detail {
     Thinking,
     /// Waiting for user approval on a tool or action
     AwaitingApproval {
-        approval_type: ApprovalType,
+        approval_type: ApprovalCategory,
         details: String,
+        interaction: Option<InteractionMode>,
     },
     /// Agent encountered an error
     Error { message: String },
@@ -556,8 +565,9 @@ pub enum AgentStatus {
     Processing { activity: Activity },
     /// Agent is waiting for user approval
     AwaitingApproval {
-        approval_type: ApprovalType,
+        approval_type: ApprovalCategory,
         details: String,
+        interaction: Option<InteractionMode>,
     },
     /// Agent encountered an error
     Error { message: String },
@@ -595,9 +605,11 @@ impl AgentStatus {
             AgentStatus::AwaitingApproval {
                 approval_type,
                 details,
+                interaction,
             } => Detail::AwaitingApproval {
                 approval_type: approval_type.clone(),
                 details: details.clone(),
+                interaction: interaction.clone(),
             },
             AgentStatus::Error { message } => Detail::Error {
                 message: message.clone(),
@@ -1095,8 +1107,9 @@ mod tests {
         );
         assert_eq!(
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::FileEdit,
-                details: String::new()
+                approval_type: ApprovalCategory::FileEdit,
+                details: String::new(),
+                interaction: None,
             }
             .phase(),
             Phase::Blocked
@@ -1145,15 +1158,17 @@ mod tests {
 
         // Awaiting approval
         let detail = AgentStatus::AwaitingApproval {
-            approval_type: ApprovalType::ShellCommand,
+            approval_type: ApprovalCategory::ShellCommand,
             details: "rm -rf /tmp".to_string(),
+            interaction: None,
         }
         .detail();
         assert_eq!(
             detail,
             Detail::AwaitingApproval {
-                approval_type: ApprovalType::ShellCommand,
-                details: "rm -rf /tmp".to_string()
+                approval_type: ApprovalCategory::ShellCommand,
+                details: "rm -rf /tmp".to_string(),
+                interaction: None,
             }
         );
 
@@ -1214,8 +1229,9 @@ mod tests {
     #[test]
     fn test_agent_status_needs_attention() {
         assert!(AgentStatus::AwaitingApproval {
-            approval_type: ApprovalType::FileEdit,
-            details: String::new()
+            approval_type: ApprovalCategory::FileEdit,
+            details: String::new(),
+            interaction: None,
         }
         .needs_attention());
 

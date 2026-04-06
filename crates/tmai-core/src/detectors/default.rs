@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{Activity, AgentStatus, AgentType, ApprovalType};
+use crate::agents::{Activity, AgentStatus, AgentType, ApprovalCategory};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -21,14 +21,14 @@ impl DefaultDetector {
         }
     }
 
-    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String)> {
+    fn detect_approval(&self, content: &str) -> Option<(ApprovalCategory, String)> {
         let lines: Vec<&str> = content.lines().collect();
         let check_start = lines.len().saturating_sub(15);
         let recent = lines[check_start..].join("\n");
 
         if self.approval_pattern.is_match(&recent) {
             Some((
-                ApprovalType::Other("Pending approval".to_string()),
+                ApprovalCategory::Other("Pending approval".to_string()),
                 String::new(),
             ))
         } else {
@@ -59,6 +59,7 @@ impl StatusDetector for DefaultDetector {
                 AgentStatus::AwaitingApproval {
                     approval_type,
                     details,
+                    interaction: None,
                 },
                 "default_approval_pattern",
                 DetectionConfidence::High,

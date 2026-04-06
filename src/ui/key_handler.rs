@@ -6,7 +6,7 @@
 
 use crossterm::event::KeyCode;
 
-use tmai_core::agents::{AgentStatus, ApprovalType};
+use tmai_core::agents::{AgentStatus, ApprovalCategory, InteractionMode};
 use tmai_core::api::has_checkbox_format;
 use tmai_core::detectors::get_detector;
 use tmai_core::state::AppState;
@@ -99,16 +99,18 @@ pub fn resolve_number_selection(state: &AppState, num: usize) -> NumberSelection
             return None;
         }
         if let AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select,
-                    cursor_position,
-                },
+            approval_type: ApprovalCategory::UserQuestion,
+            interaction: Some(ref interaction),
             ..
         } = &agent.status
         {
-            Some((choices.clone(), *multi_select, *cursor_position))
+            match interaction {
+                InteractionMode::SingleSelect {
+                    choices,
+                    cursor_position,
+                } => Some((choices.clone(), false, *cursor_position)),
+                InteractionMode::MultiSelect { choices } => Some((choices.clone(), true, 0)),
+            }
         } else {
             None
         }
@@ -199,16 +201,12 @@ pub fn resolve_space_toggle(state: &AppState) -> NumberSelectionResult {
             return None;
         }
         if let AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select: true,
-                    cursor_position,
-                },
+            approval_type: ApprovalCategory::UserQuestion,
+            interaction: Some(InteractionMode::MultiSelect { ref choices }),
             ..
         } = &agent.status
         {
-            Some((choices.clone(), *cursor_position))
+            Some((choices.clone(), 0usize))
         } else {
             None
         }
@@ -284,14 +282,17 @@ pub fn resolve_yes_no(state: &AppState, key: char) -> KeyAction {
 
     match status {
         AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
-                    choices,
-                    cursor_position,
-                    ..
-                },
+            approval_type: ApprovalCategory::UserQuestion,
+            interaction: Some(ref interaction),
             ..
         } => {
+            let (choices, cursor_position) = match interaction {
+                InteractionMode::SingleSelect {
+                    choices,
+                    cursor_position,
+                } => (choices, *cursor_position),
+                InteractionMode::MultiSelect { choices } => (choices, 0),
+            };
             // Find choice matching "Yes" or "No" (word-boundary check)
             let needle = if key == 'y' { "yes" } else { "no" };
             let match_pos = choices
@@ -311,10 +312,10 @@ pub fn resolve_yes_no(state: &AppState, key: char) -> KeyAction {
             };
 
             let target_pos = idx + 1; // 1-indexed
-            let cursor = if *cursor_position == 0 {
+            let cursor = if cursor_position == 0 {
                 1
             } else {
-                *cursor_position
+                cursor_position
             };
             let steps = target_pos as i32 - cursor as i32;
 
@@ -360,16 +361,12 @@ pub fn resolve_enter_submit(state: &AppState) -> KeyAction {
             return None;
         }
         if let AgentStatus::AwaitingApproval {
-            approval_type:
-                ApprovalType::UserQuestion {
-                    choices,
-                    multi_select: true,
-                    cursor_position,
-                },
+            approval_type: ApprovalCategory::UserQuestion,
+            interaction: Some(InteractionMode::MultiSelect { ref choices }),
             ..
         } = &agent.status
         {
-            Some((choices.len(), *cursor_position))
+            Some((choices.len(), 0usize))
         } else {
             None
         }
@@ -383,10 +380,15 @@ pub fn resolve_enter_submit(state: &AppState) -> KeyAction {
                 .get(&target)
                 .and_then(|agent| {
                     if let AgentStatus::AwaitingApproval {
-                        approval_type: ApprovalType::UserQuestion { choices, .. },
+                        approval_type: ApprovalCategory::UserQuestion,
+                        interaction: Some(ref interaction),
                         ..
                     } = &agent.status
                     {
+                        let choices = match interaction {
+                            InteractionMode::SingleSelect { choices, .. }
+                            | InteractionMode::MultiSelect { choices } => choices,
+                        };
                         Some(has_checkbox_format(choices))
                     } else {
                         None

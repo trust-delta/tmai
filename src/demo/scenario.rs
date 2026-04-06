@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tmai_core::agents::{Activity, AgentStatus, AgentType, ApprovalType};
+use tmai_core::agents::{Activity, AgentStatus, AgentType, ApprovalCategory, InteractionMode};
 
 /// A demo agent definition
 pub struct DemoAgent {
@@ -104,8 +104,9 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(3),
             agent_idx: 0,
             status: AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::FileEdit,
+                approval_type: ApprovalCategory::FileEdit,
                 details: "src/auth/middleware.rs".to_string(),
+                interaction: None,
             },
             wait_for_action: true,
             content_key: "approval_file_edit",
@@ -128,8 +129,9 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(6),
             agent_idx: 1,
             status: AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::ShellCommand,
+                approval_type: ApprovalCategory::ShellCommand,
                 details: "cargo test --lib".to_string(),
+                interaction: None,
             },
             wait_for_action: true,
             content_key: "approval_shell_command",
@@ -149,16 +151,16 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(10),
             agent_idx: 0,
             status: AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion {
+                approval_type: ApprovalCategory::UserQuestion,
+                details: "Which authentication strategy should I use?".to_string(),
+                interaction: Some(InteractionMode::SingleSelect {
                     choices: vec![
                         "JWT with refresh tokens".to_string(),
                         "Session-based auth".to_string(),
                         "OAuth 2.0 integration".to_string(),
                     ],
-                    multi_select: false,
                     cursor_position: 1,
-                },
-                details: "Which authentication strategy should I use?".to_string(),
+                }),
             },
             wait_for_action: true,
             content_key: "approval_user_question",
