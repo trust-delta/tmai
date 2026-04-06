@@ -1349,7 +1349,7 @@ mod tests {
                 is_main: false,
                 agent_target,
                 agent_status: Some(AgentStatus::Processing {
-                    activity: String::new(),
+                    activity: crate::agents::Activity::Thinking,
                 }),
                 is_dirty: Some(false),
                 diff_summary: None,
@@ -1420,7 +1420,7 @@ mod tests {
         let agent = test_agent(
             "test:0.0",
             AgentStatus::Processing {
-                activity: "thinking".to_string(),
+                activity: crate::agents::Activity::Thinking,
             },
         );
         let core = make_core_with_agents(vec![agent]);
@@ -1444,7 +1444,7 @@ mod tests {
         let agent = test_agent(
             "test:0.0",
             AgentStatus::Processing {
-                activity: "thinking".to_string(),
+                activity: crate::agents::Activity::Thinking,
             },
         );
         let core = make_core_with_agents(vec![agent]);

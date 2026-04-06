@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use tmai_core::agents::{AgentMode, AgentStatus, AgentType, DetectionSource, MonitoredAgent};
+use tmai_core::agents::{
+    Activity, AgentMode, AgentStatus, AgentType, DetectionSource, MonitoredAgent,
+};
 use tmai_core::monitor::PollMessage;
 use tmai_core::state::SharedState;
 
@@ -225,7 +227,7 @@ impl DemoPoller {
 
         // Set to Processing after approval
         runtime.status = AgentStatus::Processing {
-            activity: String::new(),
+            activity: Activity::Thinking,
         };
         runtime.content_key = match action {
             DemoAction::Approve { .. } => "processing_read",

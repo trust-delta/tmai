@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 use crate::agents::{
-    AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
+    Activity, AgentStatus, AgentTeamInfo, AgentType, ApprovalType, DetectionSource, MonitoredAgent,
     TeamTaskSummaryItem,
 };
 use crate::api::CoreEvent;
@@ -838,7 +838,7 @@ impl Poller {
                             let status = enrich_ipc_activity(status, &result.status, &title);
                             let matched_text =
                                 if let AgentStatus::Processing { ref activity } = status {
-                                    if !activity.is_empty() {
+                                    if !activity.is_thinking() {
                                         Some(format!("enriched: {}", activity))
                                     } else {
                                         None
@@ -1621,7 +1621,7 @@ impl Poller {
                         agent.status = match committed.status.as_str() {
                             "idle" => AgentStatus::Idle,
                             "processing" => AgentStatus::Processing {
-                                activity: String::new(),
+                                activity: Activity::Thinking,
                             },
                             "error" => AgentStatus::Error {
                                 message: String::new(),
@@ -1645,7 +1645,7 @@ impl Poller {
                     agent.status = match committed.status.as_str() {
                         "idle" => AgentStatus::Idle,
                         "processing" => AgentStatus::Processing {
-                            activity: String::new(),
+                            activity: Activity::Thinking,
                         },
                         "error" => AgentStatus::Error {
                             message: String::new(),
@@ -1745,7 +1745,7 @@ impl Poller {
                         if last_processing.elapsed().as_secs() < GRACE_PERIOD_SECS {
                             // Within grace period — maintain Processing
                             return AgentStatus::Processing {
-                                activity: String::new(),
+                                activity: Activity::Thinking,
                             };
                         } else {
                             // Grace period expired — allow transition
@@ -2405,7 +2405,7 @@ fn extract_activity_from_title(title: &str) -> String {
 
 /// Enrich IPC Processing status with screen-detected activity
 ///
-/// When IPC reports Processing with empty activity, first try the screen-detected
+/// When IPC reports Processing with Thinking activity, first try the screen-detected
 /// activity, then fall back to extracting activity directly from the pane title.
 fn enrich_ipc_activity(
     ipc_status: AgentStatus,
@@ -2413,13 +2413,13 @@ fn enrich_ipc_activity(
     title: &str,
 ) -> AgentStatus {
     if let AgentStatus::Processing { ref activity } = ipc_status {
-        if activity.is_empty() {
+        if activity.is_thinking() {
             // 1. Try screen-detected activity
             if let AgentStatus::Processing {
                 activity: ref screen_activity,
             } = screen_status
             {
-                if !screen_activity.is_empty() {
+                if !screen_activity.is_thinking() {
                     return AgentStatus::Processing {
                         activity: screen_activity.clone(),
                     };
@@ -2429,7 +2429,7 @@ fn enrich_ipc_activity(
             let title_activity = extract_activity_from_title(title);
             if !title_activity.is_empty() {
                 return AgentStatus::Processing {
-                    activity: title_activity,
+                    activity: Activity::Other(title_activity),
                 };
             }
         }
@@ -2446,7 +2446,7 @@ fn hook_state_to_agent_status(hs: &crate::hooks::types::HookState) -> AgentStatu
 fn wrap_state_to_agent_status(ws: &WrapState) -> AgentStatus {
     match ws.status {
         WrapStatus::Processing => AgentStatus::Processing {
-            activity: String::new(),
+            activity: Activity::Thinking,
         },
         WrapStatus::Idle => AgentStatus::Idle,
         WrapStatus::AwaitingApproval => {
@@ -2508,45 +2508,45 @@ mod tests {
     #[test]
     fn test_enrich_ipc_activity_screen_priority() {
         let ipc = AgentStatus::Processing {
-            activity: String::new(),
+            activity: Activity::Thinking,
         };
         let screen = AgentStatus::Processing {
-            activity: "✶ Compacting…".to_string(),
+            activity: Activity::Other("✶ Compacting…".to_string()),
         };
         let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
         assert!(
-            matches!(result, AgentStatus::Processing { ref activity } if activity == "✶ Compacting…")
+            matches!(result, AgentStatus::Processing { ref activity } if matches!(activity, Activity::Other(t) if t == "✶ Compacting…"))
         );
     }
 
     #[test]
     fn test_enrich_ipc_activity_title_fallback() {
         let ipc = AgentStatus::Processing {
-            activity: String::new(),
+            activity: Activity::Thinking,
         };
         // Screen returns Idle (e.g., ✳ in title caused screen detector to return Idle)
         let screen = AgentStatus::Idle;
         let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
         assert!(
-            matches!(result, AgentStatus::Processing { ref activity } if activity == "Compacting")
+            matches!(result, AgentStatus::Processing { ref activity } if matches!(activity, Activity::Other(t) if t == "Compacting"))
         );
     }
 
     #[test]
     fn test_enrich_ipc_activity_no_enrichment_when_filled() {
         let ipc = AgentStatus::Processing {
-            activity: "Already set".to_string(),
+            activity: Activity::Other("Already set".to_string()),
         };
         let screen = AgentStatus::Processing {
-            activity: "Other".to_string(),
+            activity: Activity::Other("Other".to_string()),
         };
         let result = enrich_ipc_activity(ipc, &screen, "⠐ Compacting");
         assert!(
-            matches!(result, AgentStatus::Processing { ref activity } if activity == "Already set")
+            matches!(result, AgentStatus::Processing { ref activity } if matches!(activity, Activity::Other(t) if t == "Already set"))
         );
     }
 
-    /// hook_state_to_agent_status with a tool name shows "Tool: <name>"
+    /// hook_state_to_agent_status with a tool name produces ToolExecution
     #[test]
     fn test_hook_state_to_agent_status_with_tool() {
         use crate::hooks::types::{HookState, HookStatus};
@@ -2556,11 +2556,11 @@ mod tests {
 
         let status = hook_state_to_agent_status(&hs);
         assert!(
-            matches!(status, AgentStatus::Processing { ref activity } if activity == "Tool: Bash")
+            matches!(status, AgentStatus::Processing { activity: Activity::ToolExecution { ref tool_name } } if tool_name == "Bash")
         );
     }
 
-    /// hook_state_to_agent_status with None last_tool shows empty activity
+    /// hook_state_to_agent_status with None last_tool produces Thinking
     #[test]
     fn test_hook_state_to_agent_status_no_tool() {
         use crate::hooks::types::{HookState, HookStatus};
@@ -2569,7 +2569,12 @@ mod tests {
         hs.last_tool = None;
 
         let status = hook_state_to_agent_status(&hs);
-        assert!(matches!(status, AgentStatus::Processing { ref activity } if activity.is_empty()));
+        assert!(matches!(
+            status,
+            AgentStatus::Processing {
+                activity: Activity::Thinking
+            }
+        ));
     }
 
     /// hook_state_to_agent_status filters empty string tool name
@@ -2581,10 +2586,15 @@ mod tests {
         hs.last_tool = Some(String::new()); // empty string
 
         let status = hook_state_to_agent_status(&hs);
-        // Should NOT produce "Tool: ", should be empty activity
+        // Should NOT produce ToolExecution with empty name, should be Thinking
         assert!(
-            matches!(status, AgentStatus::Processing { ref activity } if activity.is_empty()),
-            "Empty tool name should be filtered, not displayed as 'Tool: '"
+            matches!(
+                status,
+                AgentStatus::Processing {
+                    activity: Activity::Thinking
+                }
+            ),
+            "Empty tool name should be filtered, not displayed as ToolExecution"
         );
     }
 
@@ -2638,7 +2648,7 @@ mod tests {
         ));
     }
 
-    /// hook_state_to_agent_status maps Compacting to Processing with activity
+    /// hook_state_to_agent_status maps Compacting to Processing with Activity::Compacting
     #[test]
     fn test_hook_state_to_agent_status_compacting() {
         use crate::hooks::types::{HookState, HookStatus};
@@ -2646,16 +2656,16 @@ mod tests {
         hs.status = HookStatus::Compacting;
 
         let status = hook_state_to_agent_status(&hs);
-        match status {
-            AgentStatus::Processing { ref activity } => {
-                assert!(
-                    activity.contains("Compacting"),
-                    "Compacting status should produce 'Compacting' activity, got: {}",
-                    activity
-                );
-            }
-            _ => panic!("Expected Processing status, got {:?}", status),
-        }
+        assert!(
+            matches!(
+                status,
+                AgentStatus::Processing {
+                    activity: Activity::Compacting
+                }
+            ),
+            "Compacting status should produce Activity::Compacting, got: {:?}",
+            status
+        );
     }
 
     /// Verify that audit_this_poll fires only every AUDIT_VALIDATION_INTERVAL polls

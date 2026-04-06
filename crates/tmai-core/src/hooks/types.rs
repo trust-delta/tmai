@@ -406,12 +406,14 @@ pub const MAX_ACTIVITY_LOG: usize = 20;
 /// A single tool execution record for activity log display
 #[derive(Debug, Clone)]
 pub struct ToolActivity {
-    /// Tool name (e.g., "Bash", "Edit", "Read")
-    pub tool_name: String,
+    /// Structured activity type
+    pub tool: crate::agents::Activity,
     /// Summarized input (e.g., "cargo test", "src/main.rs")
     pub input_summary: String,
     /// Summarized response/output
     pub response_summary: String,
+    /// Outcome of the tool execution
+    pub outcome: crate::agents::ToolOutcome,
     /// Timestamp (Unix millis)
     pub timestamp: u64,
 }

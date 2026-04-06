@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{AgentMode, AgentStatus, AgentType, ApprovalType};
+use crate::agents::{Activity, AgentMode, AgentStatus, AgentType, ApprovalType};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -440,7 +440,7 @@ impl StatusDetector for GeminiDetector {
         if title.contains(TITLE_WORKING_ICON) {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: String::new(),
+                    activity: Activity::Thinking,
                 },
                 "title_working_icon",
                 DetectionConfidence::High,
@@ -451,7 +451,7 @@ impl StatusDetector for GeminiDetector {
         if title.contains(TITLE_SILENT_WORKING_ICON) {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: String::new(),
+                    activity: Activity::Thinking,
                 },
                 "title_silent_working_icon",
                 DetectionConfidence::High,
@@ -473,7 +473,7 @@ impl StatusDetector for GeminiDetector {
         if self.detect_content_spinner(content) {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: String::new(),
+                    activity: Activity::Thinking,
                 },
                 "braille_spinner",
                 DetectionConfidence::Medium,
@@ -492,7 +492,7 @@ impl StatusDetector for GeminiDetector {
         // 8. Fallback → Processing
         DetectionResult::new(
             AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             "fallback_processing",
             DetectionConfidence::Low,

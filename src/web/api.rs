@@ -1801,7 +1801,7 @@ async fn spawn_in_pty(
                     0,
                 );
                 agent.status = tmai_core::agents::AgentStatus::Processing {
-                    activity: "Starting...".to_string(),
+                    activity: tmai_core::agents::Activity::Other("Starting...".to_string()),
                 };
                 agent.stable_id = session_id.clone();
                 agent.pty_session_id = Some(session_id.clone());

@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::{Activity, AgentStatus, AgentType, ApprovalType};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -97,7 +97,7 @@ impl StatusDetector for DefaultDetector {
         {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: title.to_string(),
+                    activity: Activity::Other(title.to_string()),
                 },
                 "default_title_processing",
                 DetectionConfidence::Medium,

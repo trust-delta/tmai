@@ -503,13 +503,57 @@ impl fmt::Display for Detail {
     }
 }
 
+/// Structured activity describing what an agent is currently doing
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Activity {
+    /// Executing a specific tool (Read, Edit, Bash, etc.)
+    ToolExecution { tool_name: String },
+    /// Compacting context window
+    Compacting,
+    /// Thinking / processing without a specific tool
+    #[default]
+    Thinking,
+    /// Other activity with descriptive text
+    Other(String),
+}
+
+impl Activity {
+    /// Check if this activity represents an empty/default state
+    pub fn is_thinking(&self) -> bool {
+        matches!(self, Activity::Thinking)
+    }
+}
+
+impl fmt::Display for Activity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Activity::ToolExecution { tool_name } => write!(f, "Tool: {}", tool_name),
+            Activity::Compacting => write!(f, "Compacting context…"),
+            Activity::Thinking => write!(f, "Thinking"),
+            Activity::Other(text) => write!(f, "{}", text),
+        }
+    }
+}
+
+/// Outcome of a tool execution
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ToolOutcome {
+    /// Tool completed successfully
+    #[default]
+    Success,
+    /// Tool encountered an error
+    Error,
+    /// Tool timed out
+    Timeout,
+}
+
 /// Current status of an agent
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
     /// Agent is idle, waiting for input
     Idle,
     /// Agent is actively processing
-    Processing { activity: String },
+    Processing { activity: Activity },
     /// Agent is waiting for user approval
     AwaitingApproval {
         approval_type: ApprovalType,
@@ -538,22 +582,16 @@ impl AgentStatus {
     /// Derive the fine-grained detail from this status
     pub fn detail(&self) -> Detail {
         match self {
-            AgentStatus::Processing { activity } => {
-                if activity.starts_with("Tool: ") {
-                    Detail::ToolExecution {
-                        tool_name: activity.trim_start_matches("Tool: ").to_string(),
-                    }
-                } else if activity.contains("Compacting") || activity.contains("compacting") {
-                    Detail::Compacting
-                } else if activity.is_empty() {
-                    Detail::Thinking
-                } else {
-                    // General activity text — treat as tool execution with activity as name
-                    Detail::ToolExecution {
-                        tool_name: activity.clone(),
-                    }
-                }
-            }
+            AgentStatus::Processing { activity } => match activity {
+                Activity::ToolExecution { tool_name } => Detail::ToolExecution {
+                    tool_name: tool_name.clone(),
+                },
+                Activity::Compacting => Detail::Compacting,
+                Activity::Thinking => Detail::Thinking,
+                Activity::Other(text) => Detail::ToolExecution {
+                    tool_name: text.clone(),
+                },
+            },
             AgentStatus::AwaitingApproval {
                 approval_type,
                 details,
@@ -606,7 +644,7 @@ impl fmt::Display for AgentStatus {
         match self {
             AgentStatus::Idle => write!(f, "Idle"),
             AgentStatus::Processing { activity } => {
-                if activity.is_empty() {
+                if activity.is_thinking() {
                     write!(f, "Processing")
                 } else {
                     write!(f, "Processing: {}", activity)
@@ -1034,21 +1072,23 @@ mod tests {
     fn test_phase_from_agent_status() {
         assert_eq!(
             AgentStatus::Processing {
-                activity: "Tool: Bash".to_string()
+                activity: Activity::ToolExecution {
+                    tool_name: "Bash".to_string()
+                }
             }
             .phase(),
             Phase::Working
         );
         assert_eq!(
             AgentStatus::Processing {
-                activity: String::new()
+                activity: Activity::Thinking
             }
             .phase(),
             Phase::Working
         );
         assert_eq!(
             AgentStatus::Processing {
-                activity: "Compacting context…".to_string()
+                activity: Activity::Compacting
             }
             .phase(),
             Phase::Working
@@ -1077,7 +1117,9 @@ mod tests {
     fn test_detail_from_agent_status() {
         // Tool execution
         let detail = AgentStatus::Processing {
-            activity: "Tool: Bash".to_string(),
+            activity: Activity::ToolExecution {
+                tool_name: "Bash".to_string(),
+            },
         }
         .detail();
         assert_eq!(
@@ -1089,14 +1131,14 @@ mod tests {
 
         // Compacting
         let detail = AgentStatus::Processing {
-            activity: "Compacting context…".to_string(),
+            activity: Activity::Compacting,
         }
         .detail();
         assert_eq!(detail, Detail::Compacting);
 
-        // Thinking (empty activity)
+        // Thinking
         let detail = AgentStatus::Processing {
-            activity: String::new(),
+            activity: Activity::Thinking,
         }
         .detail();
         assert_eq!(detail, Detail::Thinking);
@@ -1184,7 +1226,7 @@ mod tests {
 
         assert!(!AgentStatus::Idle.needs_attention());
         assert!(!AgentStatus::Processing {
-            activity: String::new()
+            activity: Activity::Thinking
         }
         .needs_attention());
     }

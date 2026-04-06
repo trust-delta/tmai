@@ -147,9 +147,12 @@ pub fn translate_event(
                     push_activity(
                         state,
                         ToolActivity {
-                            tool_name: tool_name.to_string(),
+                            tool: crate::agents::Activity::ToolExecution {
+                                tool_name: tool_name.to_string(),
+                            },
                             input_summary,
                             response_summary,
+                            outcome: crate::agents::ToolOutcome::Success,
                             timestamp: crate::hooks::types::current_time_millis(),
                         },
                     );
