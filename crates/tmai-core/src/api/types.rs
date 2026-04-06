@@ -525,8 +525,9 @@ mod tests {
         assert_eq!(snapshot.detail, Detail::Idle);
 
         agent.status = AgentStatus::AwaitingApproval {
-            approval_type: crate::agents::ApprovalType::ShellCommand,
+            approval_type: crate::agents::ApprovalCategory::ShellCommand,
             details: "ls".to_string(),
+            interaction: None,
         };
         let snapshot = AgentSnapshot::from_agent(&agent);
         assert_eq!(snapshot.phase, Phase::Blocked);
@@ -540,8 +541,9 @@ mod tests {
     fn test_agent_snapshot_needs_attention() {
         let mut agent = test_agent("main:0.1");
         agent.status = AgentStatus::AwaitingApproval {
-            approval_type: crate::agents::ApprovalType::FileEdit,
+            approval_type: crate::agents::ApprovalCategory::FileEdit,
             details: "edit foo.rs".to_string(),
+            interaction: None,
         };
 
         let snapshot = AgentSnapshot::from_agent(&agent);

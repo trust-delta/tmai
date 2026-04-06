@@ -89,13 +89,14 @@ impl StatusDetector for ClaudeCodeDetector {
         context: &DetectionContext,
     ) -> DetectionResult {
         // 1. Check for AskUserQuestion or approval (highest priority)
-        if let Some((approval_type, details, rule)) = self.detect_approval(content) {
+        if let Some((approval_type, details, rule, interaction)) = self.detect_approval(content) {
             trace!(rule, "detect_status: approval detected");
             let matched = safe_tail(content, 200);
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
                     approval_type,
                     details,
+                    interaction,
                 },
                 rule,
                 DetectionConfidence::High,

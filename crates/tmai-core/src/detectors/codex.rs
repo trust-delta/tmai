@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::{AgentStatus, AgentType, ApprovalCategory, InteractionMode};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -25,8 +25,16 @@ impl CodexDetector {
         }
     }
 
-    /// Detect approval patterns in content, returning (ApprovalType, details) if found
-    fn detect_approval(&self, content: &str) -> Option<(ApprovalType, String, &'static str)> {
+    /// Detect approval patterns in content, returning (ApprovalCategory, details, rule, interaction) if found
+    fn detect_approval(
+        &self,
+        content: &str,
+    ) -> Option<(
+        ApprovalCategory,
+        String,
+        &'static str,
+        Option<InteractionMode>,
+    )> {
         let lines: Vec<&str> = content.lines().collect();
         let check_start = lines.len().saturating_sub(30);
         let recent_lines = &lines[check_start..];
@@ -41,26 +49,34 @@ impl CodexDetector {
             let trimmed = line.trim();
             if trimmed.contains("Would you like to run the following command?") {
                 return Some((
-                    ApprovalType::ShellCommand,
+                    ApprovalCategory::ShellCommand,
                     trimmed.to_string(),
                     "exec_approval",
+                    None,
                 ));
             }
             if trimmed.contains("Would you like to make the following edits?") {
                 return Some((
-                    ApprovalType::FileEdit,
+                    ApprovalCategory::FileEdit,
                     trimmed.to_string(),
                     "patch_approval",
+                    None,
                 ));
             }
             if trimmed.contains("needs your approval") {
-                return Some((ApprovalType::McpTool, trimmed.to_string(), "mcp_approval"));
+                return Some((
+                    ApprovalCategory::McpTool,
+                    trimmed.to_string(),
+                    "mcp_approval",
+                    None,
+                ));
             }
             if trimmed.contains("Do you want to approve access to") {
                 return Some((
-                    ApprovalType::Other("Network".to_string()),
+                    ApprovalCategory::Other("Network".to_string()),
                     trimmed.to_string(),
                     "network_approval",
+                    None,
                 ));
             }
         }
@@ -70,15 +86,21 @@ impl CodexDetector {
         //    "No, and tell Codex" with [Esc/n]
         if let Some(rule) = self.detect_codex_choices(recent_lines) {
             return Some((
-                ApprovalType::Other("Codex approval".to_string()),
+                ApprovalCategory::Other("Codex approval".to_string()),
                 String::new(),
                 rule,
+                None,
             ));
         }
 
         // 3. Numbered choices (user question pattern)
-        if let Some(question) = self.detect_numbered_choices(recent_lines) {
-            return Some((question.0, question.1, "codex_numbered_choices"));
+        if let Some((category, details, interaction)) = self.detect_numbered_choices(recent_lines) {
+            return Some((
+                category,
+                details,
+                "codex_numbered_choices",
+                Some(interaction),
+            ));
         }
 
         // 4. Generic [y/n] approval patterns
@@ -94,9 +116,10 @@ impl CodexDetector {
 
             if self.approval_pattern.is_match(line) {
                 return Some((
-                    ApprovalType::Other("Codex approval".to_string()),
+                    ApprovalCategory::Other("Codex approval".to_string()),
                     String::new(),
                     "codex_approval_pattern",
+                    None,
                 ));
             }
         }
@@ -104,9 +127,10 @@ impl CodexDetector {
         // 5. Confirm footer alone (without other approval signals) as a weaker signal
         if has_confirm_footer {
             return Some((
-                ApprovalType::Other("Codex approval".to_string()),
+                ApprovalCategory::Other("Codex approval".to_string()),
                 String::new(),
                 "confirm_footer",
+                None,
             ));
         }
 
@@ -143,7 +167,10 @@ impl CodexDetector {
     }
 
     /// Detect numbered choices pattern (e.g., "1. Option", "2. Option")
-    fn detect_numbered_choices(&self, lines: &[&str]) -> Option<(ApprovalType, String)> {
+    fn detect_numbered_choices(
+        &self,
+        lines: &[&str],
+    ) -> Option<(ApprovalCategory, String, InteractionMode)> {
         let mut choices: Vec<String> = Vec::new();
         let mut question_text = String::new();
         let mut found_prompt = false;
@@ -181,12 +208,12 @@ impl CodexDetector {
             // Reverse choices since we collected them bottom-up
             choices.reverse();
             return Some((
-                ApprovalType::UserQuestion {
+                ApprovalCategory::UserQuestion,
+                question_text,
+                InteractionMode::SingleSelect {
                     choices,
-                    multi_select: false,
                     cursor_position: 0,
                 },
-                question_text,
             ));
         }
 
@@ -236,11 +263,12 @@ impl StatusDetector for CodexDetector {
         _context: &DetectionContext,
     ) -> DetectionResult {
         // 1-4. Check for approval requests (specific patterns, codex choices, numbered choices, generic [y/n])
-        if let Some((approval_type, details, rule)) = self.detect_approval(content) {
+        if let Some((approval_type, details, rule, interaction)) = self.detect_approval(content) {
             return DetectionResult::new(
                 AgentStatus::AwaitingApproval {
                     approval_type,
                     details: details.clone(),
+                    interaction,
                 },
                 rule,
                 DetectionConfidence::High,
@@ -513,7 +541,7 @@ Some suggestions here
             matches!(
                 status,
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::UserQuestion { .. },
+                    approval_type: ApprovalCategory::UserQuestion,
                     ..
                 }
             ),
@@ -521,12 +549,16 @@ Some suggestions here
             status
         );
 
-        // Verify choices are extracted
+        // Verify choices are extracted from interaction mode
         if let AgentStatus::AwaitingApproval {
-            approval_type: ApprovalType::UserQuestion { choices, .. },
+            interaction: Some(ref interaction),
             ..
         } = status
         {
+            let choices = match interaction {
+                InteractionMode::SingleSelect { choices, .. }
+                | InteractionMode::MultiSelect { choices, .. } => choices,
+            };
             assert_eq!(choices.len(), 4);
             assert_eq!(choices[0], "Fix the bug");
         }
@@ -647,7 +679,7 @@ Some long response text...
             matches!(
                 status,
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::ShellCommand,
+                    approval_type: ApprovalCategory::ShellCommand,
                     ..
                 }
             ),
@@ -665,7 +697,7 @@ Some long response text...
             matches!(
                 status,
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::FileEdit,
+                    approval_type: ApprovalCategory::FileEdit,
                     ..
                 }
             ),
@@ -683,7 +715,7 @@ Some long response text...
             matches!(
                 status,
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::McpTool,
+                    approval_type: ApprovalCategory::McpTool,
                     ..
                 }
             ),
@@ -701,7 +733,7 @@ Some long response text...
             matches!(
                 status,
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::Other(ref s),
+                    approval_type: ApprovalCategory::Other(ref s),
                     ..
                 } if s == "Network"
             ),

@@ -1,4 +1,9 @@
-/** Agent status variants matching Rust StatusInfo */
+/** Interaction mode for approval prompts */
+export type InteractionMode =
+  | { SingleSelect: { choices: string[]; cursor_position: number } }
+  | { MultiSelect: { choices: string[]; cursor_position: number } };
+
+/** Agent status variants matching Rust AgentStatus */
 export type StatusInfo =
   | { type: "idle" }
   | { type: "processing"; message: string | null }
@@ -6,8 +11,7 @@ export type StatusInfo =
       type: "awaiting_approval";
       approval_type: string;
       details: string;
-      choices: string[] | null;
-      multi_select: boolean | null;
+      interaction: InteractionMode | null;
     }
   | { type: "error"; message: string }
   | { type: "offline" }

@@ -5,10 +5,22 @@ import {
   submitSelection,
   sendKey,
 } from "../../api/client";
-import type { Agent } from "../../types/agent";
+import type { Agent, InteractionMode } from "../../types/agent";
 
 interface ApprovalBarProps {
   agent: Agent;
+}
+
+/// Extract choices and multi_select flag from InteractionMode
+function parseInteraction(interaction: InteractionMode | null): {
+  choices: string[];
+  multiSelect: boolean;
+} {
+  if (!interaction) return { choices: [], multiSelect: false };
+  if ("SingleSelect" in interaction) {
+    return { choices: interaction.SingleSelect.choices, multiSelect: false };
+  }
+  return { choices: interaction.MultiSelect.choices, multiSelect: true };
 }
 
 export function ApprovalBar({ agent }: ApprovalBarProps) {
@@ -17,7 +29,8 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
 
   if (agent.status.type !== "awaiting_approval") return null;
 
-  const { approval_type, details, choices, multi_select } = agent.status;
+  const { approval_type, details, interaction } = agent.status;
+  const { choices, multiSelect } = parseInteraction(interaction);
 
   async function handleApprove() {
     setSending(true);
@@ -31,7 +44,7 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
   }
 
   async function handleChoice(idx: number) {
-    if (multi_select) {
+    if (multiSelect) {
       // Toggle selection
       setSelected((prev) => {
         const next = new Set(prev);
@@ -71,7 +84,7 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
       </div>
 
       {/* Choices or approve button */}
-      {choices && choices.length > 0 ? (
+      {choices.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {choices.map((choice, idx) => (
             <button
@@ -87,7 +100,7 @@ export function ApprovalBar({ agent }: ApprovalBarProps) {
               {choice}
             </button>
           ))}
-          {multi_select && (
+          {multiSelect && (
             <button
               onClick={handleSubmitSelection}
               disabled={sending || selected.size === 0}

@@ -6,14 +6,20 @@ use ratatui::{
     Frame,
 };
 
-use tmai_core::agents::ApprovalType;
+use tmai_core::agents::{ApprovalCategory, InteractionMode};
 
 /// Selection popup widget for AskUserQuestion
 pub struct SelectionPopup;
 
 impl SelectionPopup {
     /// Render a selection popup for choices
-    pub fn render(frame: &mut Frame, area: Rect, approval_type: &ApprovalType, question: &str) {
+    pub fn render(
+        frame: &mut Frame,
+        area: Rect,
+        approval_type: &ApprovalCategory,
+        interaction: Option<&InteractionMode>,
+        question: &str,
+    ) {
         // Clear the area first
         frame.render_widget(Clear, area);
 
@@ -36,13 +42,13 @@ impl SelectionPopup {
             lines.push(Line::from(""));
         }
 
-        // Add choices
-        if let ApprovalType::UserQuestion {
-            choices,
-            multi_select,
-            ..
-        } = approval_type
-        {
+        // Add choices from interaction mode
+        if let Some(interaction) = interaction {
+            let (choices, is_multi) = match interaction {
+                InteractionMode::SingleSelect { choices, .. } => (choices, false),
+                InteractionMode::MultiSelect { choices, .. } => (choices, true),
+            };
+
             lines.push(Line::from(vec![Span::styled(
                 "Options:",
                 Style::default()
@@ -65,7 +71,7 @@ impl SelectionPopup {
 
             lines.push(Line::from(""));
 
-            if *multi_select {
+            if is_multi {
                 lines.push(Line::from(vec![Span::styled(
                     "Press number keys to toggle, Enter to confirm",
                     Style::default().fg(Color::DarkGray),
@@ -95,8 +101,11 @@ impl SelectionPopup {
     }
 
     /// Check if we should show the selection popup for this approval type
-    pub fn should_show(approval_type: &ApprovalType) -> bool {
-        matches!(approval_type, ApprovalType::UserQuestion { .. })
+    pub fn should_show(
+        approval_type: &ApprovalCategory,
+        interaction: Option<&InteractionMode>,
+    ) -> bool {
+        matches!(approval_type, ApprovalCategory::UserQuestion) && interaction.is_some()
     }
 }
 
@@ -106,12 +115,18 @@ mod tests {
 
     #[test]
     fn test_should_show() {
-        assert!(SelectionPopup::should_show(&ApprovalType::UserQuestion {
+        let interaction = InteractionMode::SingleSelect {
             choices: vec!["A".to_string(), "B".to_string()],
-            multi_select: false,
             cursor_position: 1,
-        }));
+        };
+        assert!(SelectionPopup::should_show(
+            &ApprovalCategory::UserQuestion,
+            Some(&interaction),
+        ));
 
-        assert!(!SelectionPopup::should_show(&ApprovalType::FileEdit));
+        assert!(!SelectionPopup::should_show(
+            &ApprovalCategory::FileEdit,
+            None,
+        ));
     }
 }

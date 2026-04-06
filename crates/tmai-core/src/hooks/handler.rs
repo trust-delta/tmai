@@ -509,7 +509,7 @@ fn build_context(payload: &HookEventPayload) -> HookContext {
 /// logic (for PTY-spawned agents that receive hook events).
 pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agents::AgentStatus {
     use super::types::HookStatus;
-    use crate::agents::{AgentStatus, ApprovalType};
+    use crate::agents::{AgentStatus, ApprovalCategory};
 
     match hs.status {
         HookStatus::Processing => {
@@ -526,27 +526,27 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
             let tool_info = hs.last_tool.clone().unwrap_or_default();
             if tool_info == "AskUserQuestion" {
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::UserQuestion {
-                        choices: vec![],
-                        multi_select: false,
-                        cursor_position: 0,
-                    },
+                    approval_type: ApprovalCategory::UserQuestion,
                     details: String::new(),
+                    interaction: None,
                 }
             } else if hs.last_context.event_name == "codex_ws_command_approval" {
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::ShellCommand,
+                    approval_type: ApprovalCategory::ShellCommand,
                     details: tool_info,
+                    interaction: None,
                 }
             } else if hs.last_context.event_name == "codex_ws_file_approval" {
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::FileEdit,
+                    approval_type: ApprovalCategory::FileEdit,
                     details: tool_info,
+                    interaction: None,
                 }
             } else {
                 AgentStatus::AwaitingApproval {
-                    approval_type: ApprovalType::Other("Approval".to_string()),
+                    approval_type: ApprovalCategory::Other("Approval".to_string()),
                     details: tool_info,
+                    interaction: None,
                 }
             }
         }
