@@ -301,6 +301,26 @@ pub struct AgentListQuery {
     pub project: Option<String>,
 }
 
+/// Request body for project scope validation
+#[derive(Debug, Deserialize)]
+pub struct ValidateProjectRequest {
+    /// The project path (git_common_dir) to validate against
+    pub project: String,
+}
+
+/// Validate that an agent belongs to the given project scope.
+///
+/// Returns 200 if the agent matches, 403 if it belongs to a different project.
+pub async fn validate_agent_project(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    Json(req): Json<ValidateProjectRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    core.validate_agent_project(&id, &req.project)
+        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map_err(api_error_to_http)
+}
+
 /// Get all agents, optionally filtered by project
 pub async fn get_agents(
     State(core): State<Arc<TmaiCore>>,
@@ -3514,6 +3534,10 @@ mod tests {
         Router::new()
             .route("/agents", get(get_agents))
             .route("/agents/{id}/approve", post(approve_agent))
+            .route(
+                "/agents/{id}/validate-project",
+                post(validate_agent_project),
+            )
             .route("/agents/{id}/select", post(select_choice))
             .route("/agents/{id}/submit", post(submit_selection))
             .route("/agents/{id}/input", post(send_text))
@@ -3534,12 +3558,22 @@ mod tests {
 
     /// Add an idle agent to the shared state
     fn add_idle_agent(state: &SharedState, id: &str) {
+        add_agent_with_project(state, id, "/tmp", None);
+    }
+
+    /// Add an agent with a specific cwd and git_common_dir
+    fn add_agent_with_project(
+        state: &SharedState,
+        id: &str,
+        cwd: &str,
+        git_common_dir: Option<&str>,
+    ) {
         let mut s = state.write();
         let mut agent = tmai_core::agents::MonitoredAgent::new(
             id.to_string(),
             tmai_core::agents::AgentType::ClaudeCode,
             "Test".to_string(),
-            "/tmp".to_string(),
+            cwd.to_string(),
             1234,
             "main".to_string(),
             "window".to_string(),
@@ -3547,6 +3581,7 @@ mod tests {
             0,
         );
         agent.status = AgentStatus::Idle;
+        agent.git_common_dir = git_common_dir.map(|s| s.to_string());
         s.agents.insert(id.to_string(), agent);
         s.agent_order.push(id.to_string());
     }
@@ -3922,5 +3957,129 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Invalid branch name"));
+    }
+
+    // =========================================================
+    // validate-project endpoint tests
+    // =========================================================
+
+    #[tokio::test]
+    async fn test_validate_project_same_project() {
+        let state = test_app_state();
+        add_agent_with_project(
+            &state,
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        );
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/validate-project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"project":"/home/user/project-a"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_validate_project_worktree_agent_same_project() {
+        let state = test_app_state();
+        // Worktree agent: cwd differs but git_common_dir matches
+        add_agent_with_project(
+            &state,
+            "main:0.0",
+            "/home/user/project-a/.claude/worktrees/feat-x",
+            Some("/home/user/project-a/.git"),
+        );
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/validate-project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"project":"/home/user/project-a"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_validate_project_different_project() {
+        let state = test_app_state();
+        add_agent_with_project(
+            &state,
+            "main:0.0",
+            "/home/user/project-b",
+            Some("/home/user/project-b/.git"),
+        );
+        let app = test_router_with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/validate-project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"project":"/home/user/project-a"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_validate_project_agent_not_found() {
+        let app = test_router();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/nonexistent/validate-project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"project":"/home/user/project-a"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_validate_project_git_suffix_normalization() {
+        let state = test_app_state();
+        add_agent_with_project(
+            &state,
+            "main:0.0",
+            "/home/user/project-a",
+            Some("/home/user/project-a/.git"),
+        );
+        let app = test_router_with_state(state);
+
+        // Pass project path WITH .git suffix — should still match
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/main:0.0/validate-project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"project":"/home/user/project-a/.git"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

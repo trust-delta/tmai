@@ -4,6 +4,15 @@ use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 
+/// Error type for operations that need to distinguish HTTP status codes.
+#[derive(Debug)]
+pub enum ValidateError {
+    /// HTTP 4xx/5xx response with status code
+    HttpError { status: u16 },
+    /// Transport or parsing error
+    Transport(anyhow::Error),
+}
+
 /// Connection info for the tmai HTTP API
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ApiConnectionInfo {
@@ -163,6 +172,33 @@ impl TmaiHttpClient {
                 .to_string())
         } else {
             Ok(git_dir)
+        }
+    }
+
+    /// Make a POST request and return the parsed JSON error body on failure.
+    ///
+    /// Unlike `post()`, HTTP 4xx/5xx responses are read and returned as a
+    /// structured error value instead of a generic ureq error.
+    pub fn post_with_error_body(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ValidateError> {
+        let info = Self::read_connection_info().map_err(ValidateError::Transport)?;
+        let url = format!("http://localhost:{}/api{}", info.port, path);
+        match ureq::post(&url)
+            .header("Authorization", &format!("Bearer {}", info.token))
+            .send_json(body)
+        {
+            Ok(mut resp) => {
+                let val: serde_json::Value = resp
+                    .body_mut()
+                    .read_json()
+                    .map_err(|e| ValidateError::Transport(e.into()))?;
+                Ok(val)
+            }
+            Err(ureq::Error::StatusCode(status)) => Err(ValidateError::HttpError { status }),
+            Err(e) => Err(ValidateError::Transport(e.into())),
         }
     }
 

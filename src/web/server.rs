@@ -71,6 +71,10 @@ impl WebServer {
         let api_routes = Router::new()
             .route("/agents", get(api::get_agents))
             .route("/agents/{id}/approve", post(api::approve_agent))
+            .route(
+                "/agents/{id}/validate-project",
+                post(api::validate_agent_project),
+            )
             .route("/agents/{id}/select", post(api::select_choice))
             .route("/agents/{id}/submit", post(api::submit_selection))
             .route("/agents/{id}/input", post(api::send_text))
