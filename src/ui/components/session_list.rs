@@ -684,30 +684,32 @@ impl SessionList {
 
     /// Map Processing activity to a specific status label
     ///
-    /// Extracts the leading verb from the activity string (e.g., "Compacting" from
-    /// "✶ Compacting…").  For hook-sourced "Tool: X" activities, returns the full
-    /// string.  Returns "Processing" when the activity is empty, does not start
-    /// with an uppercase letter, or when show_activity_name is false.
-    fn processing_label(activity: &str, show_activity_name: bool) -> String {
-        if !show_activity_name || activity.is_empty() {
+    /// Uses the structured Activity enum to produce a display label.
+    /// Returns "Processing" when show_activity_name is false or for Thinking.
+    fn processing_label(
+        activity: &tmai_core::agents::Activity,
+        show_activity_name: bool,
+    ) -> String {
+        use tmai_core::agents::Activity;
+        if !show_activity_name {
             return "Processing".to_string();
         }
-        // Hook-sourced activity: "Tool: Bash" → keep as-is
-        if let Some(tool) = activity.strip_prefix("Tool: ") {
-            if !tool.is_empty() {
-                return activity.to_string();
+        match activity {
+            Activity::ToolExecution { tool_name } => format!("Tool: {}", tool_name),
+            Activity::Compacting => "Compacting".to_string(),
+            Activity::Thinking => "Processing".to_string(),
+            Activity::Other(text) => {
+                // Strip spinner chars and whitespace prefix
+                let stripped =
+                    text.trim_start_matches(|c: char| "·✢✳✶✻✽*".contains(c) || c.is_whitespace());
+                // Take the first word (split on whitespace, '…', or '.')
+                let verb = stripped.split(['\u{2026}', '.', ' ']).next().unwrap_or("");
+                if verb.is_empty() || !verb.starts_with(|c: char| c.is_uppercase()) {
+                    "Processing".to_string()
+                } else {
+                    verb.to_string()
+                }
             }
-            return "Processing".to_string();
-        }
-        // Strip spinner chars and whitespace prefix
-        let stripped =
-            activity.trim_start_matches(|c: char| "·✢✳✶✻✽*".contains(c) || c.is_whitespace());
-        // Take the first word (split on whitespace, '…', or '.')
-        let verb = stripped.split(['\u{2026}', '.', ' ']).next().unwrap_or("");
-        if verb.is_empty() || !verb.starts_with(|c: char| c.is_uppercase()) {
-            "Processing".to_string()
-        } else {
-            verb.to_string()
         }
     }
 
@@ -1281,88 +1283,114 @@ mod tests {
 
     #[test]
     fn test_processing_label_compacting() {
+        use tmai_core::agents::Activity;
         assert_eq!(
-            SessionList::processing_label("✻ Compacting conversation…", true),
-            "Compacting"
-        );
-        assert_eq!(
-            SessionList::processing_label("Compacting...", true),
-            "Compacting"
-        );
-        assert_eq!(
-            SessionList::processing_label("Compacting", true),
+            SessionList::processing_label(&Activity::Compacting, true),
             "Compacting"
         );
     }
 
     #[test]
     fn test_processing_label_default() {
-        assert_eq!(SessionList::processing_label("", true), "Processing");
-        // Lowercase start → Processing
+        use tmai_core::agents::Activity;
+        // Thinking → Processing
         assert_eq!(
-            SessionList::processing_label("tasks running", true),
+            SessionList::processing_label(&Activity::Thinking, true),
+            "Processing"
+        );
+        // Lowercase start in Other → Processing
+        assert_eq!(
+            SessionList::processing_label(&Activity::Other("tasks running".to_string()), true),
             "Processing"
         );
     }
 
     #[test]
     fn test_processing_label_various_verbs() {
+        use tmai_core::agents::Activity;
         assert_eq!(
-            SessionList::processing_label("Cerebrating…", true),
+            SessionList::processing_label(&Activity::Other("Cerebrating…".to_string()), true),
             "Cerebrating"
         );
         assert_eq!(
-            SessionList::processing_label("✻ Levitating… (2m · ↓ 13 tokens)", true),
+            SessionList::processing_label(
+                &Activity::Other("✻ Levitating… (2m · ↓ 13 tokens)".to_string()),
+                true
+            ),
             "Levitating"
         );
         assert_eq!(
-            SessionList::processing_label("· Gallivanting…", true),
+            SessionList::processing_label(&Activity::Other("· Gallivanting…".to_string()), true),
             "Gallivanting"
         );
         assert_eq!(
-            SessionList::processing_label("✶ Crunching…", true),
+            SessionList::processing_label(&Activity::Other("✶ Crunching…".to_string()), true),
             "Crunching"
         );
         // First word is capitalized → extract it
         assert_eq!(
-            SessionList::processing_label("Tasks running", true),
+            SessionList::processing_label(&Activity::Other("Tasks running".to_string()), true),
             "Tasks"
         );
         // show_activity_name = false → always "Processing"
         assert_eq!(
-            SessionList::processing_label("✻ Compacting conversation…", false),
+            SessionList::processing_label(&Activity::Compacting, false),
             "Processing"
         );
         assert_eq!(
-            SessionList::processing_label("Cerebrating…", false),
+            SessionList::processing_label(&Activity::Other("Cerebrating…".to_string()), false),
             "Processing"
         );
     }
 
     #[test]
     fn test_processing_label_hook_tool_name() {
-        // Hook-sourced "Tool: X" activity should be preserved as-is
+        use tmai_core::agents::Activity;
+        // ToolExecution activity should show "Tool: X"
         assert_eq!(
-            SessionList::processing_label("Tool: Bash", true),
+            SessionList::processing_label(
+                &Activity::ToolExecution {
+                    tool_name: "Bash".to_string()
+                },
+                true
+            ),
             "Tool: Bash"
         );
         assert_eq!(
-            SessionList::processing_label("Tool: Read", true),
+            SessionList::processing_label(
+                &Activity::ToolExecution {
+                    tool_name: "Read".to_string()
+                },
+                true
+            ),
             "Tool: Read"
         );
         assert_eq!(
-            SessionList::processing_label("Tool: Edit", true),
+            SessionList::processing_label(
+                &Activity::ToolExecution {
+                    tool_name: "Edit".to_string()
+                },
+                true
+            ),
             "Tool: Edit"
         );
         assert_eq!(
-            SessionList::processing_label("Tool: Agent", true),
+            SessionList::processing_label(
+                &Activity::ToolExecution {
+                    tool_name: "Agent".to_string()
+                },
+                true
+            ),
             "Tool: Agent"
         );
-        // Empty tool name after prefix → fallback to Processing
-        assert_eq!(SessionList::processing_label("Tool: ", true), "Processing");
         // show_activity_name = false → always "Processing"
         assert_eq!(
-            SessionList::processing_label("Tool: Bash", false),
+            SessionList::processing_label(
+                &Activity::ToolExecution {
+                    tool_name: "Bash".to_string()
+                },
+                false
+            ),
             "Processing"
         );
     }

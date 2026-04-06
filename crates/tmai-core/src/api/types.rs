@@ -504,11 +504,13 @@ mod tests {
 
     #[test]
     fn test_agent_snapshot_phase_and_detail() {
-        use crate::agents::{Detail, Phase};
+        use crate::agents::{Activity, Detail, Phase};
 
         let mut agent = test_agent("main:0.0");
         agent.status = AgentStatus::Processing {
-            activity: "Tool: Bash".to_string(),
+            activity: Activity::ToolExecution {
+                tool_name: "Bash".to_string(),
+            },
         };
         let snapshot = AgentSnapshot::from_agent(&agent);
         assert_eq!(snapshot.phase, Phase::Working);

@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::agents::{AgentStatus, AgentType, ApprovalType};
+use crate::agents::{Activity, AgentStatus, AgentType, ApprovalType};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 
@@ -270,7 +270,7 @@ impl StatusDetector for CodexDetector {
             if self.working_elapsed_pattern.is_match(trimmed) {
                 return DetectionResult::new(
                     AgentStatus::Processing {
-                        activity: trimmed.to_string(),
+                        activity: Activity::Other(trimmed.to_string()),
                     },
                     "working_elapsed_time",
                     DetectionConfidence::High,
@@ -296,7 +296,7 @@ impl StatusDetector for CodexDetector {
             {
                 return DetectionResult::new(
                     AgentStatus::Processing {
-                        activity: trimmed.to_string(),
+                        activity: Activity::Other(trimmed.to_string()),
                     },
                     "codex_spinner",
                     DetectionConfidence::Medium,
@@ -311,7 +311,7 @@ impl StatusDetector for CodexDetector {
             if trimmed.contains("esc to interrupt") {
                 return DetectionResult::new(
                     AgentStatus::Processing {
-                        activity: String::new(),
+                        activity: Activity::Thinking,
                     },
                     "codex_esc_to_interrupt",
                     DetectionConfidence::Medium,
@@ -326,7 +326,7 @@ impl StatusDetector for CodexDetector {
             if trimmed.contains("Thinking") || trimmed.contains("Generating") {
                 return DetectionResult::new(
                     AgentStatus::Processing {
-                        activity: trimmed.to_string(),
+                        activity: Activity::Other(trimmed.to_string()),
                     },
                     "codex_thinking",
                     DetectionConfidence::Medium,
@@ -349,7 +349,7 @@ impl StatusDetector for CodexDetector {
         if title_lower.contains("working") || title_lower.contains("processing") {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: title.to_string(),
+                    activity: Activity::Other(title.to_string()),
                 },
                 "codex_title_processing",
                 DetectionConfidence::Medium,
@@ -431,7 +431,7 @@ impl StatusDetector for CodexDetector {
             // 11. Fallback - Processing (Low confidence)
             DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: String::new(),
+                    activity: Activity::Thinking,
                 },
                 "codex_fallback_processing",
                 DetectionConfidence::Low,

@@ -511,7 +511,7 @@ mod tests {
             "sub:0.0",
             false,
             AgentStatus::Processing {
-                activity: String::new(),
+                activity: crate::agents::Activity::Thinking,
             },
         );
 

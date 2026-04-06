@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(color, Color::Green);
 
         let (icon, color) = status_icon_and_color(&AgentStatus::Processing {
-            activity: String::new(),
+            activity: tmai_core::agents::Activity::Thinking,
         });
         assert_eq!(icon, "\u{25cf}");
         assert_eq!(color, Color::Yellow);
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(status_label(&AgentStatus::Idle), "Idle");
         assert_eq!(
             status_label(&AgentStatus::Processing {
-                activity: String::new()
+                activity: tmai_core::agents::Activity::Thinking
             }),
             "Processing"
         );

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tmai_core::agents::{AgentStatus, AgentType, ApprovalType};
+use tmai_core::agents::{Activity, AgentStatus, AgentType, ApprovalType};
 
 /// A demo agent definition
 pub struct DemoAgent {
@@ -78,7 +78,7 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(0),
             agent_idx: 0,
             status: AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             wait_for_action: false,
             content_key: "processing_read",
@@ -94,7 +94,7 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(0),
             agent_idx: 2,
             status: AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             wait_for_action: false,
             content_key: "processing_gemini",
@@ -115,7 +115,7 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(3),
             agent_idx: 1,
             status: AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             wait_for_action: false,
             content_key: "processing_test",
@@ -168,7 +168,7 @@ pub fn default_scenario() -> DemoScenario {
             at: Duration::from_secs(10),
             agent_idx: 2,
             status: AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             wait_for_action: false,
             content_key: "processing_gemini_2",

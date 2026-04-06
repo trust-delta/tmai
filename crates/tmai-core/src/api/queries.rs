@@ -466,7 +466,9 @@ mod tests {
             test_agent(
                 "main:0.1",
                 AgentStatus::Processing {
-                    activity: "Bash".to_string(),
+                    activity: crate::agents::Activity::ToolExecution {
+                        tool_name: "Bash".to_string(),
+                    },
                 },
             ),
         ]);

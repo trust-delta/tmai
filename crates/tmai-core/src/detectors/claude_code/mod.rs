@@ -7,7 +7,7 @@ mod tests;
 use regex::Regex;
 use tracing::trace;
 
-use crate::agents::{AgentStatus, AgentType};
+use crate::agents::{Activity, AgentStatus, AgentType};
 
 use super::{DetectionConfidence, DetectionContext, DetectionResult, StatusDetector};
 use crate::detectors::common::safe_tail;
@@ -115,10 +115,13 @@ impl StatusDetector for ClaudeCodeDetector {
                 .skip_while(|c| matches!(*c, '\u{2800}'..='\u{28FF}') || c.is_whitespace())
                 .collect::<String>();
             if title.chars().any(|c| matches!(c, '\u{2800}'..='\u{28FF}')) {
+                let activity = if title_activity.is_empty() {
+                    Activity::Thinking
+                } else {
+                    Activity::Other(title_activity)
+                };
                 return DetectionResult::new(
-                    AgentStatus::Processing {
-                        activity: title_activity,
-                    },
+                    AgentStatus::Processing { activity },
                     "title_braille_spinner_fast_path",
                     DetectionConfidence::High,
                 )
@@ -142,7 +145,7 @@ impl StatusDetector for ClaudeCodeDetector {
         if Self::has_in_progress_tasks(content) {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: "Tasks running".to_string(),
+                    activity: Activity::Other("Tasks running".to_string()),
                 },
                 "tasks_in_progress",
                 DetectionConfidence::High,
@@ -153,7 +156,7 @@ impl StatusDetector for ClaudeCodeDetector {
         if title.contains('✽') && title.to_lowercase().contains("compacting") {
             return DetectionResult::new(
                 AgentStatus::Processing {
-                    activity: "Compacting...".to_string(),
+                    activity: Activity::Compacting,
                 },
                 "title_compacting",
                 DetectionConfidence::High,
@@ -192,20 +195,23 @@ impl StatusDetector for ClaudeCodeDetector {
         // 6. Content-based spinner detection (overrides title idle)
         //    Catches cases where title still shows ✳ but content has active spinner
         //    e.g. during /compact, or title update lag
-        if let Some((activity, is_builtin)) = Self::detect_content_spinner(content, context) {
+        if let Some((activity_text, is_builtin)) = Self::detect_content_spinner(content, context) {
             let confidence = if is_builtin {
                 DetectionConfidence::High
             } else {
                 DetectionConfidence::Medium
             };
+            let activity = if activity_text.is_empty() {
+                Activity::Thinking
+            } else {
+                Activity::Other(activity_text.clone())
+            };
             return DetectionResult::new(
-                AgentStatus::Processing {
-                    activity: activity.clone(),
-                },
+                AgentStatus::Processing { activity },
                 "content_spinner_verb",
                 confidence,
             )
-            .with_matched_text(&activity);
+            .with_matched_text(&activity_text);
         }
 
         // 7. Check for turn duration completion (e.g., "✻ Cooked for 1m 6s")
@@ -235,7 +241,12 @@ impl StatusDetector for ClaudeCodeDetector {
         }
 
         // 9. Check for custom spinner verbs from settings
-        if let Some(activity) = Self::detect_custom_spinner_verb(title, context) {
+        if let Some(activity_text) = Self::detect_custom_spinner_verb(title, context) {
+            let activity = if activity_text.is_empty() {
+                Activity::Thinking
+            } else {
+                Activity::Other(activity_text)
+            };
             return DetectionResult::new(
                 AgentStatus::Processing { activity },
                 "custom_spinner_verb",
@@ -248,10 +259,15 @@ impl StatusDetector for ClaudeCodeDetector {
         if !Self::should_skip_default_spinners(context)
             && title.chars().any(|c| PROCESSING_SPINNERS.contains(&c))
         {
-            let activity = title
+            let activity_text: String = title
                 .chars()
                 .skip_while(|c| PROCESSING_SPINNERS.contains(c) || c.is_whitespace())
-                .collect::<String>();
+                .collect();
+            let activity = if activity_text.is_empty() {
+                Activity::Thinking
+            } else {
+                Activity::Other(activity_text)
+            };
             return DetectionResult::new(
                 AgentStatus::Processing { activity },
                 "braille_spinner",
@@ -286,7 +302,7 @@ impl StatusDetector for ClaudeCodeDetector {
         // No indicator - default to Processing
         DetectionResult::new(
             AgentStatus::Processing {
-                activity: String::new(),
+                activity: Activity::Thinking,
             },
             "fallback_no_indicator",
             DetectionConfidence::Low,

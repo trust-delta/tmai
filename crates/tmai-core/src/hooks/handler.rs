@@ -118,9 +118,10 @@ pub fn handle_hook_event(
                 })
                 .unwrap_or_default();
             let activity = ToolActivity {
-                tool_name,
+                tool: crate::agents::Activity::ToolExecution { tool_name },
                 input_summary,
                 response_summary,
+                outcome: crate::agents::ToolOutcome::Success,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -193,9 +194,10 @@ pub fn handle_hook_event(
                             push_activity(
                                 state,
                                 ToolActivity {
-                                    tool_name: "Assistant".to_string(),
+                                    tool: crate::agents::Activity::Other("Assistant".to_string()),
                                     input_summary: String::new(),
                                     response_summary: truncate_string(msg, 300),
+                                    outcome: crate::agents::ToolOutcome::Success,
                                     timestamp: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
@@ -509,7 +511,7 @@ fn build_context(payload: &HookEventPayload) -> HookContext {
 /// logic (for PTY-spawned agents that receive hook events).
 pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agents::AgentStatus {
     use super::types::HookStatus;
-    use crate::agents::{AgentStatus, ApprovalType};
+    use crate::agents::{Activity, AgentStatus, ApprovalType};
 
     match hs.status {
         HookStatus::Processing => {
@@ -517,8 +519,10 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
                 .last_tool
                 .as_ref()
                 .filter(|t| !t.is_empty())
-                .map(|t| format!("Tool: {}", t))
-                .unwrap_or_default();
+                .map(|t| Activity::ToolExecution {
+                    tool_name: t.clone(),
+                })
+                .unwrap_or(Activity::Thinking);
             AgentStatus::Processing { activity }
         }
         HookStatus::Idle => AgentStatus::Idle,
@@ -551,7 +555,7 @@ pub fn hook_status_to_agent_status(hs: &super::types::HookState) -> crate::agent
             }
         }
         HookStatus::Compacting => AgentStatus::Processing {
-            activity: "Compacting context…".to_string(),
+            activity: Activity::Compacting,
         },
     }
 }
@@ -661,11 +665,17 @@ pub fn format_activity_log(activities: &[ToolActivity]) -> String {
 
     let mut lines = Vec::new();
     for activity in activities {
-        // Tool header
+        // Tool header — display tool name from Activity enum
+        let tool_label = match &activity.tool {
+            crate::agents::Activity::ToolExecution { tool_name } => tool_name.as_str(),
+            crate::agents::Activity::Compacting => "Compacting",
+            crate::agents::Activity::Thinking => "Thinking",
+            crate::agents::Activity::Other(text) => text.as_str(),
+        };
         let tool_line = if activity.input_summary.is_empty() {
-            format!("⚙ {}", activity.tool_name)
+            format!("⚙ {}", tool_label)
         } else {
-            format!("⚙ {}: {}", activity.tool_name, activity.input_summary)
+            format!("⚙ {}: {}", tool_label, activity.input_summary)
         };
         lines.push(tool_line);
 
@@ -1695,7 +1705,10 @@ mod tests {
         let reg = registry.read();
         let state = reg.get("5").unwrap();
         assert_eq!(state.activity_log.len(), 1);
-        assert_eq!(state.activity_log[0].tool_name, "Bash");
+        assert!(matches!(
+            state.activity_log[0].tool,
+            crate::agents::Activity::ToolExecution { ref tool_name } if tool_name == "Bash"
+        ));
         assert_eq!(state.activity_log[0].input_summary, "cargo test");
         assert_eq!(state.activity_log[0].response_summary, "All tests passed");
     }
@@ -1751,7 +1764,10 @@ mod tests {
         let reg = registry.read();
         let state = reg.get("5").unwrap();
         assert_eq!(state.activity_log.len(), 1);
-        assert_eq!(state.activity_log[0].tool_name, "Assistant");
+        assert!(matches!(
+            state.activity_log[0].tool,
+            crate::agents::Activity::Other(ref name) if name == "Assistant"
+        ));
         assert!(state.activity_log[0]
             .response_summary
             .contains("Done! All changes applied."));
@@ -1784,7 +1800,10 @@ mod tests {
             "Activity log should be capped at MAX_ACTIVITY_LOG"
         );
         // First entry should be Tool5 (oldest 5 were evicted)
-        assert_eq!(state.activity_log[0].tool_name, "Tool5");
+        assert!(matches!(
+            state.activity_log[0].tool,
+            crate::agents::Activity::ToolExecution { ref tool_name } if tool_name == "Tool5"
+        ));
     }
 
     #[test]
@@ -1813,15 +1832,21 @@ mod tests {
     fn test_format_activity_log() {
         let activities = vec![
             super::ToolActivity {
-                tool_name: "Bash".to_string(),
+                tool: crate::agents::Activity::ToolExecution {
+                    tool_name: "Bash".to_string(),
+                },
                 input_summary: "cargo test".to_string(),
                 response_summary: "All tests passed".to_string(),
+                outcome: crate::agents::ToolOutcome::Success,
                 timestamp: 0,
             },
             super::ToolActivity {
-                tool_name: "Edit".to_string(),
+                tool: crate::agents::Activity::ToolExecution {
+                    tool_name: "Edit".to_string(),
+                },
                 input_summary: "src/main.rs".to_string(),
                 response_summary: String::new(),
+                outcome: crate::agents::ToolOutcome::Success,
                 timestamp: 0,
             },
         ];
