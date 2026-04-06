@@ -70,6 +70,8 @@ pub enum CiRunStatus {
     Waiting,
     Pending,
     Requested,
+    #[serde(other)]
+    Unknown,
 }
 
 /// CI run outcome (only meaningful when status is Completed)
@@ -83,6 +85,8 @@ pub enum CiConclusion {
     Cancelled,
     TimedOut,
     ActionRequired,
+    #[serde(other)]
+    Unknown,
 }
 
 impl CiRunStatus {
@@ -1556,6 +1560,7 @@ mod tests {
         assert!(!CiConclusion::Neutral.is_failure());
         assert!(!CiConclusion::Skipped.is_failure());
         assert!(!CiConclusion::ActionRequired.is_failure());
+        assert!(!CiConclusion::Unknown.is_failure());
     }
 
     #[test]
@@ -1566,6 +1571,7 @@ mod tests {
         assert!(CiRunStatus::Pending.is_pending());
         assert!(CiRunStatus::Requested.is_pending());
         assert!(!CiRunStatus::Completed.is_pending());
+        assert!(!CiRunStatus::Unknown.is_pending());
     }
 
     #[test]
@@ -1584,6 +1590,18 @@ mod tests {
         assert_eq!(json, "\"timed_out\"");
         let parsed: CiConclusion = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, CiConclusion::TimedOut);
+    }
+
+    #[test]
+    fn test_ci_run_status_unknown_fallback() {
+        let parsed: CiRunStatus = serde_json::from_str("\"some_future_status\"").unwrap();
+        assert_eq!(parsed, CiRunStatus::Unknown);
+    }
+
+    #[test]
+    fn test_ci_conclusion_unknown_fallback() {
+        let parsed: CiConclusion = serde_json::from_str("\"stale\"").unwrap();
+        assert_eq!(parsed, CiConclusion::Unknown);
     }
 
     #[test]

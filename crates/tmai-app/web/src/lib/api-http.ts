@@ -454,7 +454,8 @@ export type CiRunStatus =
   | "completed"
   | "waiting"
   | "pending"
-  | "requested";
+  | "requested"
+  | "unknown";
 
 export type CiConclusion =
   | "success"
@@ -463,7 +464,8 @@ export type CiConclusion =
   | "skipped"
   | "cancelled"
   | "timed_out"
-  | "action_required";
+  | "action_required"
+  | "unknown";
 
 export interface CiCheck {
   name: string;
