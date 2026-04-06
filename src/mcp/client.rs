@@ -217,6 +217,55 @@ impl TmaiHttpClient {
         Ok(())
     }
 
+    // =========================================================
+    // MCP tool helpers — collapse Ok/Err into a single String
+    // =========================================================
+
+    /// GET a JSON endpoint and return pretty-printed JSON or "Error: …".
+    pub fn get_json_or_error(&self, path: &str) -> String {
+        match self.get::<serde_json::Value>(path) {
+            Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// GET a text endpoint and return the body or "Error: …".
+    pub fn get_text_or_error(&self, path: &str) -> String {
+        match self.get_text(path) {
+            Ok(text) => text,
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// POST with a JSON body and return pretty-printed response or "Error: …".
+    pub fn post_json_or_error(&self, path: &str, body: &serde_json::Value) -> String {
+        match self.post::<serde_json::Value>(path, body) {
+            Ok(data) => format_json(&data),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// POST and return a fixed success message or "Error: …".
+    pub fn post_ok_or_error(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+        success: String,
+    ) -> String {
+        match self.post_ok(path, body) {
+            Ok(()) => success,
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// DELETE and return a fixed success message or "Error: …".
+    pub fn delete_ok_or_error(&self, path: &str, success: String) -> String {
+        match self.delete_ok(path) {
+            Ok(()) => success,
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     /// Make a GET request that returns raw text.
     pub fn get_text(&self, path: &str) -> Result<String> {
         let info = Self::read_connection_info()?;
@@ -230,6 +279,11 @@ impl TmaiHttpClient {
             .with_context(|| format!("Failed to read response from {path}"))?;
         Ok(text)
     }
+}
+
+/// Format a JSON value as pretty-printed string for MCP tool responses.
+pub fn format_json(value: &serde_json::Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]
@@ -296,5 +350,27 @@ mod tests {
         remove_api_info();
         let result = TmaiHttpClient::from_runtime();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_json_pretty_prints_object() {
+        let val = serde_json::json!({"key": "value"});
+        let result = format_json(&val);
+        assert!(result.contains("\"key\": \"value\""));
+        assert!(result.contains('\n')); // pretty-printed
+    }
+
+    #[test]
+    fn format_json_handles_array() {
+        let val = serde_json::json!([1, 2, 3]);
+        let result = format_json(&val);
+        assert!(result.contains('1'));
+        assert!(result.contains('3'));
+    }
+
+    #[test]
+    fn format_json_handles_null() {
+        let val = serde_json::Value::Null;
+        assert_eq!(format_json(&val), "null");
     }
 }

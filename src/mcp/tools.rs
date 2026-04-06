@@ -7,7 +7,7 @@ use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{schemars, tool, tool_router};
 
-use super::client::TmaiHttpClient;
+use super::client::{format_json, TmaiHttpClient};
 
 /// tmai MCP Server — exposes agent management, GitHub, and worktree tools
 #[derive(Debug)]
@@ -275,23 +275,25 @@ impl TmaiMcpServer {
             Some(proj) => format!("/agents?project={}", encode(proj)),
             None => "/agents".to_string(),
         };
+        // Phase filtering needs access to the parsed JSON, so we can't use get_json_or_error
+        if p.phase.is_none() {
+            return self.client.get_json_or_error(&path);
+        }
         match self.client.get::<serde_json::Value>(&path) {
             Ok(agents) => {
-                if let Some(ref phase_filter) = p.phase {
-                    let lower = phase_filter.to_ascii_lowercase();
-                    if let Some(arr) = agents.as_array() {
-                        let filtered: Vec<&serde_json::Value> = arr
-                            .iter()
-                            .filter(|a| {
-                                a.get("phase")
-                                    .and_then(|v| v.as_str())
-                                    .is_some_and(|p| p.to_ascii_lowercase() == lower)
-                            })
-                            .collect();
-                        return format_json(&serde_json::Value::Array(
-                            filtered.into_iter().cloned().collect(),
-                        ));
-                    }
+                let lower = p.phase.as_ref().unwrap().to_ascii_lowercase();
+                if let Some(arr) = agents.as_array() {
+                    let filtered: Vec<&serde_json::Value> = arr
+                        .iter()
+                        .filter(|a| {
+                            a.get("phase")
+                                .and_then(|v| v.as_str())
+                                .is_some_and(|p| p.to_ascii_lowercase() == lower)
+                        })
+                        .collect();
+                    return format_json(&serde_json::Value::Array(
+                        filtered.into_iter().cloned().collect(),
+                    ));
                 }
                 format_json(&agents)
             }
@@ -331,10 +333,8 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self.client.get_text(&format!("/agents/{}/output", p.id)) {
-            Ok(text) => text,
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client
+            .get_text_or_error(&format!("/agents/{}/output", p.id))
     }
 
     /// Get the conversation transcript of an agent (parsed from JSONL session log).
@@ -344,13 +344,8 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/agents/{}/transcript", p.id))
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client
+            .get_json_or_error(&format!("/agents/{}/transcript", p.id))
     }
 
     // ----- Agent Actions -----
@@ -362,13 +357,11 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self
-            .client
-            .post_ok(&format!("/agents/{}/approve", p.id), &serde_json::json!({}))
-        {
-            Ok(()) => format!("Approved agent {}", p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_ok_or_error(
+            &format!("/agents/{}/approve", p.id),
+            &serde_json::json!({}),
+            format!("Approved agent {}", p.id),
+        )
     }
 
     /// Send text input to an agent (like typing in the terminal). Use this to send prompts or commands.
@@ -378,13 +371,11 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             &format!("/agents/{}/input", p.id),
             &serde_json::json!({"text": p.text}),
-        ) {
-            Ok(()) => format!("Sent text to agent {}", p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Sent text to agent {}", p.id),
+        )
     }
 
     /// Send a prompt to an agent with status-aware delivery. If the agent is idle, the prompt is
@@ -429,13 +420,11 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             &format!("/agents/{}/key", p.id),
             &serde_json::json!({"key": p.key}),
-        ) {
-            Ok(()) => format!("Sent key '{}' to agent {}", p.key, p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Sent key '{}' to agent {}", p.key, p.id),
+        )
     }
 
     /// Select a numbered choice for an agent's AskUserQuestion prompt (1-based index).
@@ -445,13 +434,11 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             &format!("/agents/{}/select", p.id),
             &serde_json::json!({"index": p.index}),
-        ) {
-            Ok(()) => format!("Selected choice {} for agent {}", p.index, p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Selected choice {} for agent {}", p.index, p.id),
+        )
     }
 
     /// Kill (terminate) an agent. Works for both PTY-spawned and tmux-managed agents.
@@ -461,10 +448,10 @@ impl TmaiMcpServer {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;
         }
-        match self.client.delete_ok(&format!("/agents/{}", p.id)) {
-            Ok(()) => format!("Killed agent {}", p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.delete_ok_or_error(
+            &format!("/agents/{}", p.id),
+            format!("Killed agent {}", p.id),
+        )
     }
 
     // ----- Team Queries -----
@@ -472,10 +459,7 @@ impl TmaiMcpServer {
     /// List all Claude Code Agent Teams with their member count and task progress.
     #[tool(description = "List all agent teams")]
     fn list_teams(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/teams") {
-            Ok(teams) => format_json(&teams),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.get_json_or_error("/teams")
     }
 
     // ----- Worktree Management -----
@@ -483,10 +467,7 @@ impl TmaiMcpServer {
     /// List all git worktrees with their linked agents, branch names, and diff statistics.
     #[tool(description = "List all git worktrees")]
     fn list_worktrees(&self, Parameters(_): Parameters<EmptyParams>) -> String {
-        match self.client.get::<serde_json::Value>("/worktrees") {
-            Ok(wt) => format_json(&wt),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.get_json_or_error("/worktrees")
     }
 
     /// Spawn a new AI agent (Claude Code) in a specified directory.
@@ -496,10 +477,7 @@ impl TmaiMcpServer {
         if let Some(prompt) = &p.prompt {
             body["initial_prompt"] = serde_json::json!(prompt);
         }
-        match self.client.post::<serde_json::Value>("/spawn", &body) {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/spawn", &body)
     }
 
     /// Create a new git worktree and spawn an AI agent in it. Ideal for isolated feature work.
@@ -527,13 +505,7 @@ impl TmaiMcpServer {
         if let Some(prompt) = &p.prompt {
             body["initial_prompt"] = serde_json::json!(prompt);
         }
-        match self
-            .client
-            .post::<serde_json::Value>("/spawn/worktree", &body)
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/spawn/worktree", &body)
     }
 
     /// Spawn an orchestrator agent with a composed prompt from the [orchestrator] config settings.
@@ -547,13 +519,7 @@ impl TmaiMcpServer {
         if let Some(ref extra) = p.additional_instructions {
             body["additional_instructions"] = serde_json::json!(extra);
         }
-        match self
-            .client
-            .post::<serde_json::Value>("/orchestrator/spawn", &body)
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/orchestrator/spawn", &body)
     }
 
     /// Mark an existing running agent as the orchestrator for its project.
@@ -561,13 +527,11 @@ impl TmaiMcpServer {
     /// Use this to re-register yourself as orchestrator after /resume.
     #[tool(description = "Mark an existing agent as orchestrator (e.g. after /resume recovery)")]
     fn set_orchestrator(&self, Parameters(p): Parameters<SetOrchestratorParams>) -> String {
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             &format!("/agents/{}/set-orchestrator", p.id),
             &serde_json::json!({}),
-        ) {
-            Ok(()) => format!("Agent {} is now the orchestrator", p.id),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Agent {} is now the orchestrator", p.id),
+        )
     }
 
     /// One-shot issue dispatch: fetch a GitHub issue, create a worktree, and spawn an agent
@@ -590,13 +554,7 @@ impl TmaiMcpServer {
         if let Some(extra) = &p.additional_instructions {
             body["additional_instructions"] = serde_json::json!(extra);
         }
-        match self
-            .client
-            .post::<serde_json::Value>("/spawn/worktree", &body)
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/spawn/worktree", &body)
     }
 
     /// Delete a git worktree by name.
@@ -612,17 +570,15 @@ impl TmaiMcpServer {
         } else {
             format!("{}/.git", repo)
         };
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             "/worktrees/delete",
             &serde_json::json!({
                 "repo_path": repo_path,
                 "worktree_name": p.worktree_name,
                 "force": p.force
             }),
-        ) {
-            Ok(()) => format!("Deleted worktree: {}", p.worktree_name),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Deleted worktree: {}", p.worktree_name),
+        )
     }
 
     // ----- GitHub -----
@@ -634,13 +590,8 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/github/prs?repo={}", encode(&repo)))
-        {
-            Ok(prs) => format_json(&prs),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client
+            .get_json_or_error(&format!("/github/prs?repo={}", encode(&repo)))
     }
 
     /// List open issues for the current repository.
@@ -650,13 +601,8 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/github/issues?repo={}", encode(&repo)))
-        {
-            Ok(issues) => format_json(&issues),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client
+            .get_json_or_error(&format!("/github/issues?repo={}", encode(&repo)))
     }
 
     /// Get CI check results for a branch.
@@ -666,14 +612,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.get::<serde_json::Value>(&format!(
+        self.client.get_json_or_error(&format!(
             "/github/checks?branch={}&repo={}",
             encode(&p.branch),
             encode(&repo)
-        )) {
-            Ok(checks) => format_json(&checks),
-            Err(e) => format!("Error: {e}"),
-        }
+        ))
     }
 
     /// Get comments and reviews on a pull request.
@@ -683,14 +626,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.get::<serde_json::Value>(&format!(
+        self.client.get_json_or_error(&format!(
             "/github/pr/comments?pr={}&repo={}",
             p.pr_number,
             encode(&repo)
-        )) {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        ))
     }
 
     /// Get the merge status of a pull request (mergeable, CI status, review decision).
@@ -700,14 +640,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.get::<serde_json::Value>(&format!(
+        self.client.get_json_or_error(&format!(
             "/github/pr/merge-status?pr={}&repo={}",
             p.pr_number,
             encode(&repo)
-        )) {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        ))
     }
 
     /// Get the CI failure log for debugging a failed check.
@@ -717,14 +654,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.get_text(&format!(
+        self.client.get_text_or_error(&format!(
             "/github/ci/failure-log?branch={}&repo={}",
             encode(&p.branch),
             encode(&repo)
-        )) {
-            Ok(log) => log,
-            Err(e) => format!("Error: {e}"),
-        }
+        ))
     }
 
     /// Rerun failed CI checks for a branch.
@@ -734,13 +668,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.post_ok(
+        self.client.post_ok_or_error(
             "/github/ci/rerun",
             &serde_json::json!({"branch": p.branch, "repo": repo}),
-        ) {
-            Ok(()) => format!("Rerunning failed checks for branch: {}", p.branch),
-            Err(e) => format!("Error: {e}"),
-        }
+            format!("Rerunning failed checks for branch: {}", p.branch),
+        )
     }
 
     /// Submit a review on a pull request (approve, request changes, or comment).
@@ -762,13 +694,7 @@ impl TmaiMcpServer {
             "action": p.action,
             "body": p.body,
         });
-        match self
-            .client
-            .post::<serde_json::Value>("/github/pr/review", &body)
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/github/pr/review", &body)
     }
 
     /// Merge a pull request. Checks CI status and mergeability before merging.
@@ -795,13 +721,7 @@ impl TmaiMcpServer {
             "delete_worktree": p.delete_worktree,
             "worktree_name": p.worktree_name,
         });
-        match self
-            .client
-            .post::<serde_json::Value>("/github/pr/merge", &body)
-        {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client.post_json_or_error("/github/pr/merge", &body)
     }
 
     // ----- Git -----
@@ -813,13 +733,8 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self
-            .client
-            .get::<serde_json::Value>(&format!("/git/branches?repo={}", encode(&repo)))
-        {
-            Ok(branches) => format_json(&branches),
-            Err(e) => format!("Error: {e}"),
-        }
+        self.client
+            .get_json_or_error(&format!("/git/branches?repo={}", encode(&repo)))
     }
 
     /// Get the diff statistics for a branch compared to its base.
@@ -829,14 +744,11 @@ impl TmaiMcpServer {
             Ok(r) => r,
             Err(e) => return format!("Error: {e}"),
         };
-        match self.client.get::<serde_json::Value>(&format!(
+        self.client.get_json_or_error(&format!(
             "/git/diff-stat?branch={}&repo={}",
             encode(&p.branch),
             encode(&repo)
-        )) {
-            Ok(data) => format_json(&data),
-            Err(e) => format!("Error: {e}"),
-        }
+        ))
     }
 }
 
@@ -848,11 +760,6 @@ fn encode(s: &str) -> String {
         .replace('&', "%26")
         .replace('=', "%3D")
         .replace('+', "%2B")
-}
-
-/// Format JSON value as pretty-printed string
-fn format_json(value: &serde_json::Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]
