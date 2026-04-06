@@ -394,16 +394,14 @@ impl TmaiCore {
     }
 }
 
-/// Normalize a project path to its `.git` directory for comparison with git_common_dir.
+/// Normalize a project path for comparison with agent git_common_dir.
 ///
-/// If the path already ends with `.git`, return as-is. Otherwise append `/.git`.
+/// Agents store git_common_dir **without** the `/.git` suffix (e.g., `/home/user/project`).
+/// The MCP client's `resolve_git_common_dir` may return the path **with** `/.git`.
+/// This function strips `/.git` if present to ensure consistent comparison.
 fn normalize_git_dir(project: &str) -> String {
-    if project.ends_with(".git") {
-        project.to_string()
-    } else {
-        let trimmed = project.trim_end_matches('/');
-        format!("{trimmed}/.git")
-    }
+    let trimmed = project.trim_end_matches('/');
+    trimmed.strip_suffix("/.git").unwrap_or(trimmed).to_string()
 }
 
 /// Check whether an agent belongs to a project by comparing git_common_dir or cwd.
@@ -706,17 +704,17 @@ mod tests {
             test_agent_with_project(
                 "main:0.0",
                 "/home/user/project-a",
-                Some("/home/user/project-a/.git"),
+                Some("/home/user/project-a"),
             ),
             test_agent_with_project(
                 "main:0.1",
                 "/home/user/project-a/.claude/worktrees/feat-x",
-                Some("/home/user/project-a/.git"),
+                Some("/home/user/project-a"),
             ),
             test_agent_with_project(
                 "main:0.2",
                 "/home/user/project-b",
-                Some("/home/user/project-b/.git"),
+                Some("/home/user/project-b"),
             ),
         ];
         let core = make_core_with_agents(agents);
@@ -754,7 +752,7 @@ mod tests {
         let agents = vec![test_agent_with_project(
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         )];
         let core = make_core_with_agents(agents);
 
@@ -767,7 +765,7 @@ mod tests {
         let agents = vec![test_agent_with_project(
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         )];
         let core = make_core_with_agents(agents);
 
@@ -780,7 +778,7 @@ mod tests {
         let agents = vec![test_agent_with_project(
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         )];
         let core = make_core_with_agents(agents);
 
@@ -794,7 +792,7 @@ mod tests {
         let agents = vec![test_agent_with_project(
             "main:0.0",
             "/home/user/project-b",
-            Some("/home/user/project-b/.git"),
+            Some("/home/user/project-b"),
         )];
         let core = make_core_with_agents(agents);
 
@@ -815,7 +813,7 @@ mod tests {
         let agents = vec![test_agent_with_project(
             "main:0.0",
             "/home/user/project-a/.claude/worktrees/feat-x",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         )];
         let core = make_core_with_agents(agents);
 
@@ -826,35 +824,39 @@ mod tests {
 
     #[test]
     fn test_normalize_git_dir() {
+        // Already without .git — returned as-is
         assert_eq!(
             normalize_git_dir("/home/user/project"),
-            "/home/user/project/.git"
+            "/home/user/project"
         );
+        // Trailing slash stripped
         assert_eq!(
             normalize_git_dir("/home/user/project/"),
-            "/home/user/project/.git"
+            "/home/user/project"
         );
+        // .git suffix stripped to match agent git_common_dir format
         assert_eq!(
             normalize_git_dir("/home/user/project/.git"),
-            "/home/user/project/.git"
+            "/home/user/project"
         );
     }
 
     #[test]
     fn test_agent_matches_project_with_git_common_dir() {
+        // Agent git_common_dir is stored without .git suffix (as set by poller)
         let agent = test_agent_with_project(
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         );
         assert!(agent_matches_project(
             &agent,
-            "/home/user/project-a/.git",
+            "/home/user/project-a",
             "/home/user/project-a"
         ));
         assert!(!agent_matches_project(
             &agent,
-            "/home/user/project-b/.git",
+            "/home/user/project-b",
             "/home/user/project-b"
         ));
     }
@@ -864,12 +866,12 @@ mod tests {
         let agent = test_agent_with_project("main:0.0", "/home/user/project-a/subdir", None);
         assert!(agent_matches_project(
             &agent,
-            "/home/user/project-a/.git",
+            "/home/user/project-a",
             "/home/user/project-a"
         ));
         assert!(!agent_matches_project(
             &agent,
-            "/home/user/project-b/.git",
+            "/home/user/project-b",
             "/home/user/project-b"
         ));
     }
