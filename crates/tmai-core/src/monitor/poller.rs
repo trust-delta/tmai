@@ -979,7 +979,10 @@ impl Poller {
                 }
 
                 // Determine send capability (best available tier)
-                agent.send_capability = if wrap_state.is_some() {
+                agent.send_capability = if agent.detection_source == DetectionSource::WebSocket {
+                    // Tier 0: Codex WebSocket — bidirectional JSON-RPC control
+                    crate::agents::SendCapability::CodexWebSocket
+                } else if wrap_state.is_some() {
                     // Tier 1: IPC — tmai wrap holds PTY master
                     crate::agents::SendCapability::Ipc
                 } else if !pane.session.starts_with("hook")

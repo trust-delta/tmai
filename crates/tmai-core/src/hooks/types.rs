@@ -395,6 +395,9 @@ pub struct HookContext {
     pub tool_input: Option<serde_json::Value>,
     /// Current permission mode
     pub permission_mode: Option<PermissionMode>,
+    /// Pending JSON-RPC request ID for Codex WS approval requests.
+    /// Set when an approval request arrives; consumed when approve/deny is sent.
+    pub pending_request_id: Option<u64>,
 }
 
 /// Maximum number of tool activities retained per agent

@@ -29,6 +29,60 @@ impl JsonRpcRequest {
             })),
         }
     }
+
+    /// Create a thread/start request to begin a new conversation thread
+    pub fn thread_start(id: u64) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            method: "thread/start".to_string(),
+            params: Some(serde_json::json!({})),
+        }
+    }
+
+    /// Create a turn/start request to send a prompt to the agent
+    pub fn turn_start(id: u64, thread_id: &str, text: &str) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            method: "turn/start".to_string(),
+            params: Some(serde_json::json!({
+                "threadId": thread_id,
+                "input": [{ "type": "text", "text": text }]
+            })),
+        }
+    }
+
+    /// Create a turn/interrupt request to cancel the active turn
+    pub fn turn_interrupt(id: u64, thread_id: &str) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            method: "turn/interrupt".to_string(),
+            params: Some(serde_json::json!({
+                "threadId": thread_id
+            })),
+        }
+    }
+}
+
+/// JSON-RPC 2.0 response to send back (for approval requests from server)
+#[derive(Debug, Serialize)]
+pub struct JsonRpcResponseOut {
+    pub jsonrpc: &'static str,
+    pub id: u64,
+    pub result: serde_json::Value,
+}
+
+impl JsonRpcResponseOut {
+    /// Create an approval response (accept/deny a command or file change)
+    pub fn approval(id: u64, decision: &str) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: serde_json::json!({ "decision": decision }),
+        }
+    }
 }
 
 /// JSON-RPC 2.0 response message (received from Codex app-server)
@@ -62,26 +116,43 @@ pub struct JsonRpcNotification {
     pub params: Option<serde_json::Value>,
 }
 
-/// Incoming WebSocket message — either a response or a notification
+/// Incoming WebSocket message — response, notification, or server request (approval)
 #[derive(Debug)]
 pub enum CodexWsMessage {
     Response(JsonRpcResponse),
     Notification(JsonRpcNotification),
+    /// Server-initiated request requiring a response (e.g., approval requests with `id`)
+    Request {
+        id: u64,
+        notification: JsonRpcNotification,
+    },
 }
 
 impl CodexWsMessage {
     /// Parse a JSON string into a CodexWsMessage
     pub fn parse(text: &str) -> Result<Self, serde_json::Error> {
-        // If it has an "id" field, it's a response; otherwise a notification
         let value: serde_json::Value = serde_json::from_str(text)?;
-        if value.get("id").is_some() && !value.get("id").unwrap().is_null() {
+        let has_id = value.get("id").is_some_and(|id| !id.is_null());
+        let has_method = value.get("method").is_some();
+
+        if has_id && has_method {
+            // Server request: has both id and method (e.g., approval requests)
+            let id = value["id"].as_u64().unwrap_or(0);
+            let notif: JsonRpcNotification = serde_json::from_value(value)?;
+            Ok(CodexWsMessage::Request {
+                id,
+                notification: notif,
+            })
+        } else if has_id {
+            // Response to our request (has id, no method)
             let resp: JsonRpcResponse = serde_json::from_value(value)?;
             Ok(CodexWsMessage::Response(resp))
-        } else if value.get("method").is_some() {
+        } else if has_method {
+            // Notification (no id, has method)
             let notif: JsonRpcNotification = serde_json::from_value(value)?;
             Ok(CodexWsMessage::Notification(notif))
         } else {
-            // Response with null id (shouldn't happen, but handle gracefully)
+            // Fallback: treat as response
             let resp: JsonRpcResponse = serde_json::from_value(value)?;
             Ok(CodexWsMessage::Response(resp))
         }
@@ -142,10 +213,12 @@ pub enum CodexEvent {
         output_tokens: u64,
     },
 
-    /// Thread started (provides cwd)
+    /// Thread started (provides cwd and thread_id)
     ThreadStarted {
         /// Working directory
         cwd: Option<String>,
+        /// Thread ID for subsequent turn/start calls
+        thread_id: Option<String>,
     },
 
     /// Streaming delta (content being generated)
@@ -284,7 +357,12 @@ pub fn parse_codex_event(notification: &JsonRpcNotification) -> CodexEvent {
                 .and_then(|p| p.get("cwd"))
                 .and_then(|c| c.as_str())
                 .map(|s| s.to_string());
-            CodexEvent::ThreadStarted { cwd }
+            let thread_id = params
+                .and_then(|p| p.get("threadId"))
+                .or_else(|| params.and_then(|p| p.get("thread_id")))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
+            CodexEvent::ThreadStarted { cwd, thread_id }
         }
 
         // Streaming delta events — content being generated
@@ -524,6 +602,40 @@ mod tests {
             jsonrpc: Some("2.0".to_string()),
             method: "thread/started".to_string(),
             params: Some(serde_json::json!({
+                "cwd": "/home/user/project",
+                "threadId": "thread-abc-123"
+            })),
+        };
+        let event = parse_codex_event(&notif);
+        assert_eq!(
+            event,
+            CodexEvent::ThreadStarted {
+                cwd: Some("/home/user/project".to_string()),
+                thread_id: Some("thread-abc-123".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_server_request_with_id_and_method() {
+        // Approval requests have both id and method — parsed as Request
+        let json = r#"{"jsonrpc":"2.0","id":42,"method":"item/commandExecution/requestApproval","params":{"command":"rm -rf /tmp"}}"#;
+        let msg = CodexWsMessage::parse(json).unwrap();
+        match msg {
+            CodexWsMessage::Request { id, notification } => {
+                assert_eq!(id, 42);
+                assert_eq!(notification.method, "item/commandExecution/requestApproval");
+            }
+            _ => panic!("Expected Request variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_thread_started_without_thread_id() {
+        let notif = JsonRpcNotification {
+            jsonrpc: Some("2.0".to_string()),
+            method: "thread/started".to_string(),
+            params: Some(serde_json::json!({
                 "cwd": "/home/user/project"
             })),
         };
@@ -532,8 +644,44 @@ mod tests {
             event,
             CodexEvent::ThreadStarted {
                 cwd: Some("/home/user/project".to_string()),
+                thread_id: None,
             }
         );
+    }
+
+    #[test]
+    fn test_outbound_thread_start_format() {
+        let req = JsonRpcRequest::thread_start(10);
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "thread/start");
+        assert_eq!(json["id"], 10);
+    }
+
+    #[test]
+    fn test_outbound_turn_start_format() {
+        let req = JsonRpcRequest::turn_start(11, "thread-abc", "fix the bug");
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "turn/start");
+        assert_eq!(json["params"]["threadId"], "thread-abc");
+        assert_eq!(json["params"]["input"][0]["type"], "text");
+        assert_eq!(json["params"]["input"][0]["text"], "fix the bug");
+    }
+
+    #[test]
+    fn test_outbound_turn_interrupt_format() {
+        let req = JsonRpcRequest::turn_interrupt(12, "thread-abc");
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "turn/interrupt");
+        assert_eq!(json["params"]["threadId"], "thread-abc");
+    }
+
+    #[test]
+    fn test_outbound_approval_response_format() {
+        let resp = JsonRpcResponseOut::approval(42, "accept");
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["jsonrpc"], "2.0");
+        assert_eq!(json["id"], 42);
+        assert_eq!(json["result"]["decision"], "accept");
     }
 
     #[test]

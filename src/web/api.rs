@@ -2046,13 +2046,21 @@ fn connect_codex_ws(core: &Arc<TmaiCore>, pane_id: &str, ws_url: &str) {
     #[allow(deprecated)]
     let state = core.raw_state().clone();
 
+    // Create a sender for bidirectional control and register it
+    let sender = tmai_core::codex_ws::CodexWsSender::new(ws_url.to_string());
+    if let Some(ws_senders) = core.codex_ws_senders() {
+        ws_senders
+            .write()
+            .insert(ws_url.to_string(), sender.clone());
+    }
+
     tracing::info!(
         pane_id,
         url = ws_url,
         "Connecting WS client to Codex app-server"
     );
     tokio::spawn(async move {
-        tmai_core::codex_ws::client::run(config, registry, event_tx, state).await;
+        tmai_core::codex_ws::client::run(config, registry, event_tx, state, sender).await;
     });
 }
 
