@@ -163,16 +163,20 @@ impl TmaiHttpClient {
         let git_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
         // If the result is relative, resolve it against the repo path
         let path = std::path::Path::new(&git_dir);
-        if path.is_relative() {
+        let resolved = if path.is_relative() {
             let abs = std::path::Path::new(&repo).join(path);
-            Ok(abs
-                .canonicalize()
+            abs.canonicalize()
                 .unwrap_or(abs)
                 .to_string_lossy()
-                .to_string())
+                .to_string()
         } else {
-            Ok(git_dir)
-        }
+            git_dir
+        };
+        // Strip /.git suffix to match agent git_common_dir format (poller strips it)
+        Ok(resolved
+            .strip_suffix("/.git")
+            .unwrap_or(&resolved)
+            .to_string())
     }
 
     /// Make a POST request and return the parsed JSON error body on failure.

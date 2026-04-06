@@ -3970,7 +3970,7 @@ mod tests {
             &state,
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         );
         let app = test_router_with_state(state);
 
@@ -3996,7 +3996,7 @@ mod tests {
             &state,
             "main:0.0",
             "/home/user/project-a/.claude/worktrees/feat-x",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         );
         let app = test_router_with_state(state);
 
@@ -4021,7 +4021,7 @@ mod tests {
             &state,
             "main:0.0",
             "/home/user/project-b",
-            Some("/home/user/project-b/.git"),
+            Some("/home/user/project-b"),
         );
         let app = test_router_with_state(state);
 
@@ -4064,7 +4064,7 @@ mod tests {
             &state,
             "main:0.0",
             "/home/user/project-a",
-            Some("/home/user/project-a/.git"),
+            Some("/home/user/project-a"),
         );
         let app = test_router_with_state(state);
 
