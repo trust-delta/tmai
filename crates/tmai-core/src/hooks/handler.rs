@@ -1,14 +1,14 @@
 //! Hook event handler — processes incoming Claude Code hook events
 //! and updates the HookRegistry accordingly.
 
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::api::CoreEvent;
 use crate::state::SharedState;
 
 use super::registry::{HookRegistry, SessionPaneMap};
 use super::types::{
-    event_names, HookContext, HookEventPayload, HookState, HookStatus, NotificationType,
+    HookContext, HookEventName, HookEventPayload, HookState, HookStatus, NotificationType,
     ToolActivity, MAX_ACTIVITY_LOG,
 };
 
@@ -27,9 +27,9 @@ pub fn handle_hook_event(
         map.insert(payload.session_id.clone(), pane_id.to_string());
     }
 
-    let event = payload.hook_event_name.as_str();
+    let event = &payload.hook_event_name;
     debug!(
-        event,
+        event = %event,
         pane_id,
         session_id = %payload.session_id,
         tool_name = ?payload.tool_name,
@@ -37,7 +37,7 @@ pub fn handle_hook_event(
     );
 
     match event {
-        event_names::SESSION_START => {
+        HookEventName::SessionStart => {
             let mut state = HookState::new(payload.session_id.clone(), payload.cwd.clone());
             state.last_context = build_context(payload);
             state.worktree = payload.worktree.clone();
@@ -52,7 +52,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::USER_PROMPT_SUBMIT => {
+        HookEventName::UserPromptSubmit => {
             // Clear last_tool and activity_log on new prompt (fresh processing cycle)
             let ctx = build_context(payload);
             let mut reg = hook_registry.write();
@@ -82,7 +82,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::PRE_TOOL_USE => {
+        HookEventName::PreToolUse => {
             // Filter empty tool names to prevent "Tool: " display
             let tool_name = payload.tool_name.clone().filter(|t| !t.is_empty());
             update_status(
@@ -95,7 +95,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::POST_TOOL_USE => {
+        HookEventName::PostToolUse => {
             // Tool completed, still processing (more tools may follow)
             // Keep last_tool so the display shows which tool was last used.
             // It will be overwritten by the next PreToolUse or cleared by
@@ -137,7 +137,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::NOTIFICATION => {
+        HookEventName::Notification => {
             // Check for permission_prompt notification type
             let is_permission =
                 payload.notification_type == Some(NotificationType::PermissionPrompt);
@@ -154,7 +154,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::PERMISSION_REQUEST => {
+        HookEventName::PermissionRequest => {
             update_status(
                 hook_registry,
                 pane_id,
@@ -165,7 +165,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::PERMISSION_DENIED => {
+        HookEventName::PermissionDenied => {
             // Permission was denied by the user; agent returns to processing
             update_status(
                 hook_registry,
@@ -177,7 +177,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::STOP => {
+        HookEventName::Stop => {
             // Clear last_tool on stop (session returns to idle)
             let ctx = build_context(payload);
             let cwd = {
@@ -221,7 +221,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::SESSION_END => {
+        HookEventName::SessionEnd => {
             // Drop each lock before acquiring the next to avoid holding
             // multiple write locks simultaneously
             {
@@ -236,7 +236,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::SUBAGENT_START => {
+        HookEventName::SubagentStart => {
             // Increment active subagent count, agent is processing
             update_status(
                 hook_registry,
@@ -252,7 +252,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::SUBAGENT_STOP => {
+        HookEventName::SubagentStop => {
             // Decrement active subagent count, agent is still processing
             update_status(
                 hook_registry,
@@ -268,7 +268,7 @@ pub fn handle_hook_event(
             None
         }
 
-        event_names::TEAMMATE_IDLE => {
+        HookEventName::TeammateIdle => {
             let team_name = payload.team_name.clone().unwrap_or_default();
             let member_name = payload.teammate_name.clone().unwrap_or_default();
             if !team_name.is_empty() && !member_name.is_empty() {
@@ -282,7 +282,7 @@ pub fn handle_hook_event(
             }
         }
 
-        event_names::TASK_CREATED => {
+        HookEventName::TaskCreated => {
             let team_name = payload.team_name.clone().unwrap_or_default();
             let task_id = payload.task_id.clone().unwrap_or_default();
             let task_subject = payload.task_subject.clone().unwrap_or_default();
@@ -297,7 +297,7 @@ pub fn handle_hook_event(
             }
         }
 
-        event_names::TASK_COMPLETED => {
+        HookEventName::TaskCompleted => {
             let team_name = payload.team_name.clone().unwrap_or_default();
             let task_id = payload.task_id.clone().unwrap_or_default();
             let task_subject = payload.task_subject.clone().unwrap_or_default();
@@ -312,7 +312,7 @@ pub fn handle_hook_event(
             }
         }
 
-        event_names::CONFIG_CHANGE => {
+        HookEventName::ConfigChange => {
             // Config file changed — emit event for security/audit, touch timestamp only
             let ctx = build_context(payload);
             let source = payload.source.clone().unwrap_or_default();
@@ -329,7 +329,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::WORKTREE_CREATE => {
+        HookEventName::WorktreeCreate => {
             // Worktree created — set Processing, store worktree info, emit event
             let worktree_info = payload.worktree.clone();
             update_status(
@@ -352,7 +352,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::WORKTREE_REMOVE => {
+        HookEventName::WorktreeRemove => {
             // Worktree removed — touch timestamp, emit event with worktree info
             let worktree_info = payload.worktree.clone();
             let ctx = build_context(payload);
@@ -369,7 +369,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::PRE_COMPACT => {
+        HookEventName::PreCompact => {
             // Context compaction starting — set Compacting status, increment counter
             let ctx = build_context(payload);
             let count = {
@@ -390,7 +390,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::INSTRUCTIONS_LOADED => {
+        HookEventName::InstructionsLoaded => {
             // CLAUDE.md or rules files loaded — touch timestamp, emit event
             let ctx = build_context(payload);
             let mut reg = hook_registry.write();
@@ -403,7 +403,7 @@ pub fn handle_hook_event(
             })
         }
 
-        event_names::POST_TOOL_USE_FAILURE => {
+        HookEventName::PostToolUseFailure => {
             // Tool failed — same as PostToolUse (Processing continues, keep last_tool)
             let ctx = build_context(payload);
             let mut reg = hook_registry.write();
@@ -412,11 +412,6 @@ pub fn handle_hook_event(
                 state.last_context = ctx;
                 state.touch();
             }
-            None
-        }
-
-        _ => {
-            warn!(event, "Unknown hook event type, ignoring");
             None
         }
     }
@@ -501,7 +496,7 @@ pub fn resolve_pane_id(
 /// Build a HookContext from a hook event payload
 fn build_context(payload: &HookEventPayload) -> HookContext {
     HookContext {
-        event_name: payload.hook_event_name.clone(),
+        event_name: payload.hook_event_name.to_string(),
         tool_input: payload.tool_input.clone(),
         permission_mode: payload.permission_mode.clone(),
     }

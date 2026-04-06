@@ -20,7 +20,7 @@ use tracing::{debug, info, warn};
 use tmai_core::api::{CoreEvent, TmaiCore};
 use tmai_core::auto_approve::types::PermissionDecision;
 use tmai_core::hooks::handler::{handle_hook_event, handle_statusline, resolve_pane_id};
-use tmai_core::hooks::{HookEventPayload, StatuslineData};
+use tmai_core::hooks::{HookEventName, HookEventPayload, StatuslineData};
 
 /// Response body for hook events that support stop control
 ///
@@ -106,7 +106,7 @@ pub async fn hook_event(
     // For PreToolUse: check worktree path guard FIRST, then auto-approve.
     // Worktree guard Deny takes absolute precedence — prevents worktree agents
     // from contaminating the main working tree via absolute path resolution.
-    let pre_tool_use_response = if payload.hook_event_name == "PreToolUse" {
+    let pre_tool_use_response = if payload.hook_event_name == HookEventName::PreToolUse {
         if let Some(deny) = core.validate_worktree_path(&pane_id, &payload) {
             Some(deny)
         } else {
@@ -130,7 +130,7 @@ pub async fn hook_event(
     }
 
     // Emit PermissionDenied audit event when a permission is denied
-    if event_name == "PermissionDenied" {
+    if event_name == HookEventName::PermissionDenied {
         core.audit_helper().emit_permission_denied(
             &pane_id,
             "ClaudeCode",
@@ -144,9 +144,9 @@ pub async fn hook_event(
     core.notify_agents_updated();
 
     // Build event-specific response body
-    match event_name.as_str() {
+    match event_name {
         // PreToolUse: return permissionDecision for instant auto-approval
-        "PreToolUse" => {
+        HookEventName::PreToolUse => {
             if let Some(decision) = pre_tool_use_response {
                 match decision.decision {
                     // Defer: hold HTTP connection while awaiting AI/human resolution
@@ -257,7 +257,7 @@ pub async fn hook_event(
         }
 
         // TeammateIdle/TaskCreated/TaskCompleted: return stop control response
-        "TeammateIdle" | "TaskCreated" | "TaskCompleted" => {
+        HookEventName::TeammateIdle | HookEventName::TaskCreated | HookEventName::TaskCompleted => {
             let response = HookEventResponse {
                 should_continue: true,
                 stop_reason: None,

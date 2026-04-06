@@ -4,31 +4,63 @@
 //! and the internal state tracked per agent.
 
 use std::collections::HashMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Hook event name constants
-pub mod event_names {
-    pub const SESSION_START: &str = "SessionStart";
-    pub const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
-    pub const PRE_TOOL_USE: &str = "PreToolUse";
-    pub const POST_TOOL_USE: &str = "PostToolUse";
-    pub const NOTIFICATION: &str = "Notification";
-    pub const PERMISSION_REQUEST: &str = "PermissionRequest";
-    pub const STOP: &str = "Stop";
-    pub const SUBAGENT_START: &str = "SubagentStart";
-    pub const SUBAGENT_STOP: &str = "SubagentStop";
-    pub const TEAMMATE_IDLE: &str = "TeammateIdle";
-    pub const TASK_CREATED: &str = "TaskCreated";
-    pub const TASK_COMPLETED: &str = "TaskCompleted";
-    pub const SESSION_END: &str = "SessionEnd";
-    pub const CONFIG_CHANGE: &str = "ConfigChange";
-    pub const WORKTREE_CREATE: &str = "WorktreeCreate";
-    pub const WORKTREE_REMOVE: &str = "WorktreeRemove";
-    pub const PRE_COMPACT: &str = "PreCompact";
-    pub const POST_TOOL_USE_FAILURE: &str = "PostToolUseFailure";
-    pub const INSTRUCTIONS_LOADED: &str = "InstructionsLoaded";
-    pub const PERMISSION_DENIED: &str = "PermissionDenied";
+/// Hook event name — typed enum replacing stringly-typed constants.
+///
+/// Variant names match the PascalCase wire format sent by Claude Code,
+/// so serde default (de)serialization works without `rename_all`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HookEventName {
+    SessionStart,
+    UserPromptSubmit,
+    PreToolUse,
+    PostToolUse,
+    PostToolUseFailure,
+    Notification,
+    PermissionRequest,
+    PermissionDenied,
+    Stop,
+    SubagentStart,
+    SubagentStop,
+    TeammateIdle,
+    TaskCreated,
+    TaskCompleted,
+    SessionEnd,
+    ConfigChange,
+    WorktreeCreate,
+    WorktreeRemove,
+    PreCompact,
+    InstructionsLoaded,
+}
+
+impl fmt::Display for HookEventName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SessionStart => write!(f, "SessionStart"),
+            Self::UserPromptSubmit => write!(f, "UserPromptSubmit"),
+            Self::PreToolUse => write!(f, "PreToolUse"),
+            Self::PostToolUse => write!(f, "PostToolUse"),
+            Self::PostToolUseFailure => write!(f, "PostToolUseFailure"),
+            Self::Notification => write!(f, "Notification"),
+            Self::PermissionRequest => write!(f, "PermissionRequest"),
+            Self::PermissionDenied => write!(f, "PermissionDenied"),
+            Self::Stop => write!(f, "Stop"),
+            Self::SubagentStart => write!(f, "SubagentStart"),
+            Self::SubagentStop => write!(f, "SubagentStop"),
+            Self::TeammateIdle => write!(f, "TeammateIdle"),
+            Self::TaskCreated => write!(f, "TaskCreated"),
+            Self::TaskCompleted => write!(f, "TaskCompleted"),
+            Self::SessionEnd => write!(f, "SessionEnd"),
+            Self::ConfigChange => write!(f, "ConfigChange"),
+            Self::WorktreeCreate => write!(f, "WorktreeCreate"),
+            Self::WorktreeRemove => write!(f, "WorktreeRemove"),
+            Self::PreCompact => write!(f, "PreCompact"),
+            Self::InstructionsLoaded => write!(f, "InstructionsLoaded"),
+        }
+    }
 }
 
 /// Permission mode reported by Claude Code in hook payloads.
@@ -82,8 +114,8 @@ pub struct WorktreeInfo {
 /// to support all event types.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HookEventPayload {
-    /// Event name (e.g., "PreToolUse", "Stop", "Notification")
-    pub hook_event_name: String,
+    /// Event name (e.g., PreToolUse, Stop, Notification)
+    pub hook_event_name: HookEventName,
 
     /// Claude Code session ID (unique per session)
     #[serde(default)]
@@ -477,7 +509,7 @@ mod tests {
             "tool_input": {"command": "npm test"}
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert_eq!(payload.hook_event_name, HookEventName::PreToolUse);
         assert_eq!(payload.session_id, "sess-123");
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
@@ -493,7 +525,7 @@ mod tests {
             "last_assistant_message": "Done."
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "Stop");
+        assert_eq!(payload.hook_event_name, HookEventName::Stop);
         assert_eq!(payload.stop_hook_active, Some(true));
         assert_eq!(payload.last_assistant_message.as_deref(), Some("Done."));
     }
@@ -508,7 +540,7 @@ mod tests {
             "title": "Permission needed"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "Notification");
+        assert_eq!(payload.hook_event_name, HookEventName::Notification);
         assert_eq!(
             payload.notification_type,
             Some(NotificationType::PermissionPrompt)
@@ -525,7 +557,7 @@ mod tests {
             "another_field": 42
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert_eq!(payload.hook_event_name, HookEventName::PreToolUse);
         assert!(payload.extra.contains_key("unknown_field"));
     }
 
@@ -562,7 +594,7 @@ mod tests {
             "tool_input": {"command": "cargo test"}
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert_eq!(payload.hook_event_name, HookEventName::PreToolUse);
         assert_eq!(payload.session_id, "abc123");
         assert_eq!(
             payload.transcript_path.as_deref(),
@@ -601,7 +633,7 @@ mod tests {
             "agent_type": "Explore"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "SubagentStart");
+        assert_eq!(payload.hook_event_name, HookEventName::SubagentStart);
         assert_eq!(payload.agent_id.as_deref(), Some("agent-abc123"));
         assert_eq!(payload.agent_type.as_deref(), Some("Explore"));
     }
@@ -618,7 +650,7 @@ mod tests {
             "team_name": "my-project"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "TeammateIdle");
+        assert_eq!(payload.hook_event_name, HookEventName::TeammateIdle);
         assert_eq!(payload.teammate_name.as_deref(), Some("researcher"));
         assert_eq!(payload.team_name.as_deref(), Some("my-project"));
     }
@@ -638,7 +670,7 @@ mod tests {
             "team_name": "my-project"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "TaskCompleted");
+        assert_eq!(payload.hook_event_name, HookEventName::TaskCompleted);
         assert_eq!(payload.task_id.as_deref(), Some("task-001"));
         assert_eq!(payload.task_subject.as_deref(), Some("Implement auth"));
         assert_eq!(
@@ -663,7 +695,7 @@ mod tests {
             "team_name": "my-project"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "TaskCreated");
+        assert_eq!(payload.hook_event_name, HookEventName::TaskCreated);
         assert_eq!(payload.task_id.as_deref(), Some("task-001"));
         assert_eq!(payload.task_subject.as_deref(), Some("Implement feature"));
         assert_eq!(
@@ -684,7 +716,7 @@ mod tests {
             "permission_mode": "plan"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "SessionStart");
+        assert_eq!(payload.hook_event_name, HookEventName::SessionStart);
         assert_eq!(payload.session_id, "new-session");
         assert_eq!(payload.permission_mode, Some(PermissionMode::Plan));
         // All optional event-specific fields should be None
@@ -702,7 +734,7 @@ mod tests {
             "cwd": "/home/user/project"
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "InstructionsLoaded");
+        assert_eq!(payload.hook_event_name, HookEventName::InstructionsLoaded);
         assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
     }
 
@@ -722,7 +754,7 @@ mod tests {
             }
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PreToolUse");
+        assert_eq!(payload.hook_event_name, HookEventName::PreToolUse);
         let wt = payload.worktree.as_ref().unwrap();
         assert_eq!(wt.name.as_deref(), Some("feat-auth"));
         assert_eq!(wt.path.as_deref(), Some("/home/user/worktrees/feat-auth"));
@@ -754,7 +786,7 @@ mod tests {
             "tool_input": {"command": "rm -rf /tmp/build"}
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PermissionRequest");
+        assert_eq!(payload.hook_event_name, HookEventName::PermissionRequest);
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         let tool_input = payload.tool_input.unwrap();
         assert_eq!(tool_input["command"], "rm -rf /tmp/build");
@@ -772,7 +804,7 @@ mod tests {
             "tool_input": {"command": "rm -rf /tmp/build"}
         }"#;
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.hook_event_name, "PermissionDenied");
+        assert_eq!(payload.hook_event_name, HookEventName::PermissionDenied);
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         assert_eq!(payload.permission_mode, Some(PermissionMode::Default));
         let tool_input = payload.tool_input.unwrap();
