@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auto_approve::types::JudgmentUsage;
 use crate::detectors::DetectionReason;
+use crate::hooks::types::PermissionMode;
 
 /// Audit event types for detection logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +104,7 @@ pub enum AuditEvent {
         hook_tool_input: Option<serde_json::Value>,
         /// Permission mode from hook
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        hook_permission_mode: Option<String>,
+        hook_permission_mode: Option<PermissionMode>,
         /// Last N lines of screen content (included on disagreement, max 1000 chars)
         #[serde(default, skip_serializing_if = "Option::is_none")]
         screen_context: Option<String>,
@@ -119,9 +120,9 @@ pub enum AuditEvent {
         /// Tool input parameters at the time of denial
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_input: Option<serde_json::Value>,
-        /// Permission mode (e.g., "default", "plan")
+        /// Permission mode (e.g., Default, Plan)
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        permission_mode: Option<String>,
+        permission_mode: Option<PermissionMode>,
     },
     /// User sent input while agent was detected as Processing
     /// (possible false negative — detection may have missed an approval prompt)
@@ -169,7 +170,7 @@ mod tests {
             ipc_agrees: Some(false),
             capture_agrees: false,
             hook_tool_input: Some(serde_json::json!({"command": "cargo test"})),
-            hook_permission_mode: Some("default".to_string()),
+            hook_permission_mode: Some(PermissionMode::Default),
             screen_context: Some("last few lines".to_string()),
         };
 
@@ -200,7 +201,7 @@ mod tests {
             assert_eq!(ipc_agrees, Some(false));
             assert!(!capture_agrees);
             assert!(hook_tool_input.is_some());
-            assert_eq!(hook_permission_mode.as_deref(), Some("default"));
+            assert_eq!(hook_permission_mode, Some(PermissionMode::Default));
             assert_eq!(screen_context.as_deref(), Some("last few lines"));
         } else {
             panic!("Expected DetectionValidation");
@@ -260,7 +261,7 @@ mod tests {
             agent_type: "ClaudeCode".to_string(),
             tool_name: Some("Bash".to_string()),
             tool_input: Some(serde_json::json!({"command": "rm -rf /"})),
-            permission_mode: Some("default".to_string()),
+            permission_mode: Some(PermissionMode::Default),
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -281,7 +282,7 @@ mod tests {
             assert_eq!(agent_type, "ClaudeCode");
             assert_eq!(tool_name.as_deref(), Some("Bash"));
             assert!(tool_input.is_some());
-            assert_eq!(permission_mode.as_deref(), Some("default"));
+            assert_eq!(permission_mode, Some(PermissionMode::Default));
         } else {
             panic!("Expected PermissionDenied");
         }

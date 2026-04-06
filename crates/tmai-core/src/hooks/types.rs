@@ -31,6 +31,30 @@ pub mod event_names {
     pub const PERMISSION_DENIED: &str = "PermissionDenied";
 }
 
+/// Permission mode reported by Claude Code in hook payloads.
+///
+/// Maps to the session's current permission level (e.g., "default", "plan", "dontAsk").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    /// Normal interactive mode — prompts for each tool use
+    Default,
+    /// Plan mode — requires plan approval before execution
+    Plan,
+    /// Auto-approve all tool uses without prompting
+    DontAsk,
+}
+
+/// Notification type for the Notification hook event.
+///
+/// Currently only "permission_prompt" is defined by Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationType {
+    /// Agent is waiting for a permission prompt response
+    PermissionPrompt,
+}
+
 /// Worktree information attached to hook events in `--worktree` sessions
 ///
 /// Contains name, path, branch, and the original repo directory.
@@ -73,9 +97,9 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub transcript_path: Option<String>,
 
-    /// Current permission mode (e.g., "default", "plan", "dontAsk")
+    /// Current permission mode (e.g., Default, Plan, DontAsk)
     #[serde(default)]
-    pub permission_mode: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
 
     /// Tool name (for PreToolUse / PostToolUse / PermissionRequest)
     #[serde(default)]
@@ -99,9 +123,9 @@ pub struct HookEventPayload {
     #[serde(default)]
     pub last_assistant_message: Option<String>,
 
-    /// Notification type (for Notification event, e.g., "permission_prompt")
+    /// Notification type (for Notification event)
     #[serde(default)]
-    pub notification_type: Option<String>,
+    pub notification_type: Option<NotificationType>,
 
     /// Notification message text (for Notification)
     #[serde(default)]
@@ -337,8 +361,8 @@ pub struct HookContext {
     pub event_name: String,
     /// Tool input parameters (from PreToolUse/PostToolUse/PermissionRequest)
     pub tool_input: Option<serde_json::Value>,
-    /// Current permission mode (e.g., "default", "plan", "dontAsk")
-    pub permission_mode: Option<String>,
+    /// Current permission mode
+    pub permission_mode: Option<PermissionMode>,
 }
 
 /// Maximum number of tool activities retained per agent
@@ -457,7 +481,7 @@ mod tests {
         assert_eq!(payload.session_id, "sess-123");
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
-        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
+        assert_eq!(payload.permission_mode, Some(PermissionMode::Default));
     }
 
     #[test]
@@ -486,8 +510,8 @@ mod tests {
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
         assert_eq!(payload.hook_event_name, "Notification");
         assert_eq!(
-            payload.notification_type.as_deref(),
-            Some("permission_prompt")
+            payload.notification_type,
+            Some(NotificationType::PermissionPrompt)
         );
         assert_eq!(payload.message.as_deref(), Some("Claude needs permission"));
     }
@@ -545,7 +569,7 @@ mod tests {
             Some("/home/user/.claude/projects/proj/transcript.jsonl")
         );
         assert_eq!(payload.cwd.as_deref(), Some("/home/user/project"));
-        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
+        assert_eq!(payload.permission_mode, Some(PermissionMode::Default));
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
         assert!(payload.tool_input.is_some());
     }
@@ -662,7 +686,7 @@ mod tests {
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
         assert_eq!(payload.hook_event_name, "SessionStart");
         assert_eq!(payload.session_id, "new-session");
-        assert_eq!(payload.permission_mode.as_deref(), Some("plan"));
+        assert_eq!(payload.permission_mode, Some(PermissionMode::Plan));
         // All optional event-specific fields should be None
         assert!(payload.tool_name.is_none());
         assert!(payload.stop_hook_active.is_none());
@@ -750,7 +774,7 @@ mod tests {
         let payload: HookEventPayload = serde_json::from_str(json).unwrap();
         assert_eq!(payload.hook_event_name, "PermissionDenied");
         assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
-        assert_eq!(payload.permission_mode.as_deref(), Some("default"));
+        assert_eq!(payload.permission_mode, Some(PermissionMode::Default));
         let tool_input = payload.tool_input.unwrap();
         assert_eq!(tool_input["command"], "rm -rf /tmp/build");
     }

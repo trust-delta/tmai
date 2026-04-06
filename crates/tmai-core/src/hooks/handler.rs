@@ -8,8 +8,8 @@ use crate::state::SharedState;
 
 use super::registry::{HookRegistry, SessionPaneMap};
 use super::types::{
-    event_names, HookContext, HookEventPayload, HookState, HookStatus, ToolActivity,
-    MAX_ACTIVITY_LOG,
+    event_names, HookContext, HookEventPayload, HookState, HookStatus, NotificationType,
+    ToolActivity, MAX_ACTIVITY_LOG,
 };
 
 /// Process an incoming hook event and update the registry
@@ -139,11 +139,8 @@ pub fn handle_hook_event(
 
         event_names::NOTIFICATION => {
             // Check for permission_prompt notification type
-            let is_permission = payload
-                .notification_type
-                .as_deref()
-                .map(|t| t == "permission_prompt")
-                .unwrap_or(false);
+            let is_permission =
+                payload.notification_type == Some(NotificationType::PermissionPrompt);
             if is_permission {
                 update_status(
                     hook_registry,
@@ -806,6 +803,7 @@ pub fn handle_statusline(
 mod tests {
     use super::*;
     use crate::hooks::registry::{new_hook_registry, new_session_pane_map};
+    use crate::hooks::types::PermissionMode;
 
     fn make_payload(event: &str) -> HookEventPayload {
         serde_json::from_value(serde_json::json!({
@@ -1128,8 +1126,8 @@ mod tests {
         assert_eq!(state.last_tool.as_deref(), Some("Edit"));
         assert_eq!(state.last_context.event_name, "PermissionDenied");
         assert_eq!(
-            state.last_context.permission_mode.as_deref(),
-            Some("default")
+            state.last_context.permission_mode,
+            Some(PermissionMode::Default)
         );
     }
 
@@ -1288,8 +1286,8 @@ mod tests {
         assert_eq!(state.last_context.event_name, "PreToolUse");
         assert!(state.last_context.tool_input.is_some());
         assert_eq!(
-            state.last_context.permission_mode.as_deref(),
-            Some("default")
+            state.last_context.permission_mode,
+            Some(PermissionMode::Default)
         );
     }
 
@@ -1509,8 +1507,8 @@ mod tests {
         let state = reg.get("5").unwrap();
         assert_eq!(state.last_context.event_name, "PostToolUse");
         assert_eq!(
-            state.last_context.permission_mode.as_deref(),
-            Some("dontAsk")
+            state.last_context.permission_mode,
+            Some(PermissionMode::DontAsk)
         );
     }
 
