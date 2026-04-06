@@ -230,11 +230,7 @@ impl PrMonitor {
                 let failed: Vec<&str> = ci
                     .checks
                     .iter()
-                    .filter(|c| {
-                        c.conclusion
-                            .as_deref()
-                            .is_some_and(|con| con.eq_ignore_ascii_case("failure"))
-                    })
+                    .filter(|c| c.conclusion.as_ref().is_some_and(|con| con.is_failure()))
                     .map(|c| c.name.as_str())
                     .collect();
                 if failed.is_empty() {
