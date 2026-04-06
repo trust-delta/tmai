@@ -3,7 +3,7 @@
 //! These methods perform side-effects (send keys, focus panes, etc.) and
 //! centralise logic that was previously duplicated across TUI and Web.
 
-use crate::agents::{AgentStatus, ApprovalType};
+use crate::agents::{AgentStatus, ApprovalCategory, InteractionMode};
 use crate::detectors::get_detector;
 
 use super::core::TmaiCore;
@@ -95,16 +95,20 @@ impl TmaiCore {
             let state = self.state().read();
             state.agents.get(&target).and_then(|agent| {
                 if let AgentStatus::AwaitingApproval {
-                    approval_type:
-                        ApprovalType::UserQuestion {
-                            choices,
-                            multi_select,
-                            cursor_position,
-                        },
+                    approval_type: ApprovalCategory::UserQuestion,
+                    interaction: Some(ref interaction),
                     ..
                 } = &agent.status
                 {
-                    Some((choices.clone(), *multi_select, *cursor_position))
+                    match interaction {
+                        InteractionMode::SingleSelect {
+                            choices,
+                            cursor_position,
+                        } => Some((choices.clone(), false, *cursor_position)),
+                        InteractionMode::MultiSelect { choices } => {
+                            Some((choices.clone(), true, 0))
+                        }
+                    }
                 } else {
                     None
                 }
@@ -156,16 +160,12 @@ impl TmaiCore {
             let state = self.state().read();
             state.agents.get(&target).and_then(|agent| {
                 if let AgentStatus::AwaitingApproval {
-                    approval_type:
-                        ApprovalType::UserQuestion {
-                            choices,
-                            multi_select: true,
-                            cursor_position,
-                        },
+                    approval_type: ApprovalCategory::UserQuestion,
+                    interaction: Some(InteractionMode::MultiSelect { ref choices }),
                     ..
                 } = &agent.status
                 {
-                    Some((choices.clone(), *cursor_position))
+                    Some((choices.clone(), 0usize))
                 } else {
                     None
                 }
@@ -1102,8 +1102,9 @@ mod tests {
         let mut agent = test_agent(
             "main:0.0",
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::FileEdit,
+                approval_type: ApprovalCategory::FileEdit,
                 details: "edit foo.rs".to_string(),
+                interaction: None,
             },
         );
         agent.is_virtual = true;
@@ -1126,8 +1127,9 @@ mod tests {
         let agent = test_agent(
             "main:0.0",
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::ShellCommand,
+                approval_type: ApprovalCategory::ShellCommand,
                 details: "rm -rf".to_string(),
+                interaction: None,
             },
         );
         let core = make_core_with_agents(vec![agent]);
@@ -1189,12 +1191,12 @@ mod tests {
         let agent = test_agent(
             "main:0.0",
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::UserQuestion {
-                    choices: vec!["A".to_string(), "B".to_string()],
-                    multi_select: false,
-                    cursor_position: 1,
-                },
+                approval_type: ApprovalCategory::UserQuestion,
                 details: "Pick one".to_string(),
+                interaction: Some(InteractionMode::SingleSelect {
+                    choices: vec!["A".to_string(), "B".to_string()],
+                    cursor_position: 1,
+                }),
             },
         );
         let core = make_core_with_agents(vec![agent]);
@@ -1550,8 +1552,9 @@ mod tests {
         let agent = test_agent(
             "test:0.0",
             AgentStatus::AwaitingApproval {
-                approval_type: ApprovalType::McpTool,
+                approval_type: ApprovalCategory::McpTool,
                 details: "read file".to_string(),
+                interaction: None,
             },
         );
         let core = make_core_with_agents(vec![agent]);

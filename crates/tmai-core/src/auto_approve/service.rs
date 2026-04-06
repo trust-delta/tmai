@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use tokio::sync::Semaphore;
 
-use crate::agents::{AgentMode, AgentStatus, ApprovalType};
+use crate::agents::{AgentMode, AgentStatus, ApprovalCategory, InteractionMode};
 use crate::audit::AuditEventSender;
 use crate::command_sender::CommandSender;
 use crate::config::AutoApproveSettings;
@@ -152,17 +152,18 @@ impl AutoApproveService {
                     };
 
                     // Skip non-approval agents
-                    let (approval_type, details) = match &agent.status {
+                    let (approval_type, details, interaction) = match &agent.status {
                         AgentStatus::AwaitingApproval {
                             approval_type,
                             details,
-                        } => (approval_type.clone(), details.clone()),
+                            interaction,
+                        } => (approval_type.clone(), details.clone(), interaction.clone()),
                         _ => continue,
                     };
 
                     // Skip genuine UserQuestion (requires human judgment),
                     // but allow standard yes/no permission prompts through
-                    if is_genuine_user_question(&approval_type) {
+                    if is_genuine_user_question(&approval_type, &interaction) {
                         if let Some(a) = state.agents.get_mut(target) {
                             if a.auto_approve_phase.is_none() {
                                 a.auto_approve_phase = Some(AutoApprovePhase::ManualRequired(
@@ -518,59 +519,60 @@ fn emit_audit_event(
     }
 }
 
-/// Check if an ApprovalType is a genuine user question (not a standard permission prompt).
+/// Check if an approval request is a genuine user question (not a standard permission prompt).
 ///
 /// Claude Code's standard permission prompts (file edit, shell command, etc.) appear as
 /// numbered choices like "1. Yes / 2. Yes, and always allow... / 3. No", which the detector
 /// classifies as UserQuestion. However, these are standard approval prompts that can be
 /// auto-approved, not genuine AskUserQuestion prompts requiring human judgment.
-fn is_genuine_user_question(approval_type: &ApprovalType) -> bool {
-    match approval_type {
-        ApprovalType::UserQuestion {
-            choices,
-            multi_select,
-            ..
-        } => {
-            // Multi-select questions always require human judgment
-            if *multi_select {
-                return true;
-            }
+fn is_genuine_user_question(
+    approval_type: &ApprovalCategory,
+    interaction: &Option<InteractionMode>,
+) -> bool {
+    if !matches!(approval_type, ApprovalCategory::UserQuestion) {
+        return false; // Non-UserQuestion types are never genuine user questions
+    }
 
+    match interaction {
+        Some(InteractionMode::MultiSelect { .. }) => {
+            // Multi-select questions always require human judgment
+            true
+        }
+        Some(InteractionMode::SingleSelect { choices, .. }) => {
             // Empty choices = hook-based detection without choice info → genuine
-            // Hook detection only knows tool_name, not the actual choices
             if choices.is_empty() {
                 return true;
             }
 
             // Standard permission prompts have choices that are all variations of Yes/No
-            // e.g., ["Yes", "Yes, and always allow...", "No"]
-            // Genuine questions have choices like ["Option A", "Option B", "Other"]
-            let is_standard_approval = !choices.is_empty()
-                && choices.iter().all(|choice| {
-                    let lower = choice.to_lowercase();
-                    lower.starts_with("yes")
-                        || lower.starts_with("no")
-                        || lower == "other"
-                        || lower == "__other__"
-                });
+            let is_standard_approval = choices.iter().all(|choice| {
+                let lower = choice.to_lowercase();
+                lower.starts_with("yes")
+                    || lower.starts_with("no")
+                    || lower == "other"
+                    || lower == "__other__"
+            });
 
             // If all choices are yes/no variants, this is a standard prompt → NOT genuine
             !is_standard_approval
         }
-        _ => false, // Non-UserQuestion types are never genuine user questions
+        None => {
+            // No interaction info (hook-based detection) → genuine
+            true
+        }
     }
 }
 
-/// Convert ApprovalType to a string for filtering and logging
-fn approval_type_to_string(approval_type: &ApprovalType) -> String {
+/// Convert ApprovalCategory to a string for filtering and logging
+fn approval_type_to_string(approval_type: &ApprovalCategory) -> String {
     match approval_type {
-        ApprovalType::FileEdit => "file_edit".to_string(),
-        ApprovalType::FileCreate => "file_create".to_string(),
-        ApprovalType::FileDelete => "file_delete".to_string(),
-        ApprovalType::ShellCommand => "shell_command".to_string(),
-        ApprovalType::McpTool => "mcp_tool".to_string(),
-        ApprovalType::UserQuestion { .. } => "user_question".to_string(),
-        ApprovalType::Other(s) => s.clone(),
+        ApprovalCategory::FileEdit => "file_edit".to_string(),
+        ApprovalCategory::FileCreate => "file_create".to_string(),
+        ApprovalCategory::FileDelete => "file_delete".to_string(),
+        ApprovalCategory::ShellCommand => "shell_command".to_string(),
+        ApprovalCategory::McpTool => "mcp_tool".to_string(),
+        ApprovalCategory::UserQuestion => "user_question".to_string(),
+        ApprovalCategory::Other(s) => s.clone(),
     }
 }
 
@@ -621,15 +623,15 @@ mod tests {
     #[test]
     fn test_approval_type_to_string() {
         assert_eq!(
-            approval_type_to_string(&ApprovalType::FileEdit),
+            approval_type_to_string(&ApprovalCategory::FileEdit),
             "file_edit"
         );
         assert_eq!(
-            approval_type_to_string(&ApprovalType::ShellCommand),
+            approval_type_to_string(&ApprovalCategory::ShellCommand),
             "shell_command"
         );
         assert_eq!(
-            approval_type_to_string(&ApprovalType::Other("custom".to_string())),
+            approval_type_to_string(&ApprovalCategory::Other("custom".to_string())),
             "custom"
         );
     }
@@ -637,71 +639,86 @@ mod tests {
     #[test]
     fn test_is_genuine_user_question_standard_yes_no() {
         // Standard permission prompt: "1. Yes / 2. No" → NOT genuine
-        let approval = ApprovalType::UserQuestion {
+        let interaction = Some(InteractionMode::SingleSelect {
             choices: vec!["Yes".to_string(), "No".to_string()],
-            multi_select: false,
             cursor_position: 1,
-        };
-        assert!(!is_genuine_user_question(&approval));
+        });
+        assert!(!is_genuine_user_question(
+            &ApprovalCategory::UserQuestion,
+            &interaction
+        ));
     }
 
     #[test]
     fn test_is_genuine_user_question_yes_always_no() {
         // Standard permission prompt with "always allow" → NOT genuine
-        let approval = ApprovalType::UserQuestion {
+        let interaction = Some(InteractionMode::SingleSelect {
             choices: vec![
                 "Yes".to_string(),
                 "Yes, and always allow access to tmp/ from this project".to_string(),
                 "No".to_string(),
             ],
-            multi_select: false,
             cursor_position: 1,
-        };
-        assert!(!is_genuine_user_question(&approval));
+        });
+        assert!(!is_genuine_user_question(
+            &ApprovalCategory::UserQuestion,
+            &interaction
+        ));
     }
 
     #[test]
     fn test_is_genuine_user_question_custom_choices() {
         // Actual AskUserQuestion with custom choices → genuine
-        let approval = ApprovalType::UserQuestion {
+        let interaction = Some(InteractionMode::SingleSelect {
             choices: vec![
                 "Use TypeScript".to_string(),
                 "Use JavaScript".to_string(),
                 "Other".to_string(),
             ],
-            multi_select: false,
             cursor_position: 1,
-        };
-        assert!(is_genuine_user_question(&approval));
+        });
+        assert!(is_genuine_user_question(
+            &ApprovalCategory::UserQuestion,
+            &interaction
+        ));
     }
 
     #[test]
     fn test_is_genuine_user_question_multi_select() {
         // Multi-select is always genuine (requires human selection)
-        let approval = ApprovalType::UserQuestion {
+        let interaction = Some(InteractionMode::MultiSelect {
             choices: vec!["Yes".to_string(), "No".to_string()],
-            multi_select: true,
-            cursor_position: 1,
-        };
-        assert!(is_genuine_user_question(&approval));
+        });
+        assert!(is_genuine_user_question(
+            &ApprovalCategory::UserQuestion,
+            &interaction
+        ));
     }
 
     #[test]
     fn test_is_genuine_user_question_non_user_question() {
         // Non-UserQuestion types are never genuine user questions
-        assert!(!is_genuine_user_question(&ApprovalType::FileEdit));
-        assert!(!is_genuine_user_question(&ApprovalType::ShellCommand));
+        assert!(!is_genuine_user_question(
+            &ApprovalCategory::FileEdit,
+            &None
+        ));
+        assert!(!is_genuine_user_question(
+            &ApprovalCategory::ShellCommand,
+            &None
+        ));
     }
 
     #[test]
     fn test_is_genuine_user_question_empty_choices() {
         // Empty choices from hook-based detection → genuine (requires human judgment)
-        let approval = ApprovalType::UserQuestion {
+        let interaction = Some(InteractionMode::SingleSelect {
             choices: vec![],
-            multi_select: false,
             cursor_position: 0,
-        };
-        assert!(is_genuine_user_question(&approval));
+        });
+        assert!(is_genuine_user_question(
+            &ApprovalCategory::UserQuestion,
+            &interaction
+        ));
     }
 
     #[test]

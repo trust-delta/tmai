@@ -1760,8 +1760,9 @@ mod tests {
 
         let mut agent2 = create_test_agent("main:0.1");
         agent2.status = AgentStatus::AwaitingApproval {
-            approval_type: crate::agents::ApprovalType::FileEdit,
+            approval_type: crate::agents::ApprovalCategory::FileEdit,
             details: String::new(),
+            interaction: None,
         };
 
         state.update_agents(vec![agent1, agent2]);

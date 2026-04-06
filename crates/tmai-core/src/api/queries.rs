@@ -500,8 +500,9 @@ mod tests {
             test_agent(
                 "main:0.1",
                 AgentStatus::AwaitingApproval {
-                    approval_type: crate::agents::ApprovalType::ShellCommand,
+                    approval_type: crate::agents::ApprovalCategory::ShellCommand,
                     details: "rm -rf".to_string(),
+                    interaction: None,
                 },
             ),
             test_agent(
@@ -523,8 +524,9 @@ mod tests {
             test_agent(
                 "main:0.1",
                 AgentStatus::AwaitingApproval {
-                    approval_type: crate::agents::ApprovalType::FileEdit,
+                    approval_type: crate::agents::ApprovalCategory::FileEdit,
                     details: String::new(),
+                    interaction: None,
                 },
             ),
         ]);

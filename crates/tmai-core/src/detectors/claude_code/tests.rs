@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::agents::{AgentMode, ApprovalType, EffortLevel};
+use crate::agents::{AgentMode, ApprovalCategory, EffortLevel, InteractionMode};
 
 #[test]
 fn test_idle_with_asterisk() {
@@ -53,7 +53,7 @@ Which option do you prefer?
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
         AgentStatus::AwaitingApproval { approval_type, .. } => {
-            assert!(matches!(approval_type, ApprovalType::UserQuestion { .. }));
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
         }
         _ => panic!("Expected AwaitingApproval with UserQuestion"),
     }
@@ -90,11 +90,16 @@ Which option do you prefer?
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 3);
             } else {
-                panic!("Expected UserQuestion");
+                panic!("Expected SingleSelect interaction");
             }
         }
         _ => panic!("Expected AwaitingApproval with UserQuestion"),
@@ -121,11 +126,16 @@ fn test_numbered_choices_with_descriptions() {
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -143,11 +153,16 @@ fn test_would_you_like_to_proceed() {
    4. Type here to tell Claude what to change"#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -179,11 +194,16 @@ fn test_would_you_like_to_proceed_with_footer() {
  ctrl-g to edit in Micro · .claude/plans/eventual-humming-hellman.md"#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -213,11 +233,16 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -447,22 +472,25 @@ fn test_proceed_prompt_without_cursor_returns_user_question() {
  Esc to cancel"#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect {
                 choices,
-                multi_select,
                 cursor_position,
-            } = approval_type
+            }) = interaction
             {
                 assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
-                assert!(!multi_select);
                 assert_eq!(cursor_position, 1);
                 assert!(choices[0].contains("Yes"));
                 assert!(choices[2].contains("No"));
             } else {
                 panic!(
-                    "Expected UserQuestion for cursor-less proceed prompt, got {:?}",
-                    approval_type
+                    "Expected SingleSelect interaction for cursor-less proceed prompt, got {:?}",
+                    interaction
                 );
             }
         }
@@ -479,11 +507,16 @@ fn test_proceed_prompt_2_choice_without_cursor() {
    2. No"#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion { choices, .. } = approval_type {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 2, "Expected 2 choices, got {:?}", choices);
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -668,21 +701,22 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
         "Should detect AskUserQuestion despite trailing empty lines, got {:?}",
         status
     );
-    if let AgentStatus::AwaitingApproval { approval_type, .. } = status {
-        if let ApprovalType::UserQuestion {
+    if let AgentStatus::AwaitingApproval {
+        approval_type,
+        interaction,
+        ..
+    } = status
+    {
+        assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+        if let Some(InteractionMode::SingleSelect {
             choices,
-            multi_select,
             cursor_position,
-            ..
-        } = approval_type
+        }) = interaction
         {
             assert_eq!(choices.len(), 6, "Expected 6 choices, got {:?}", choices);
-            // Note: multi_select detection relies on English keywords ("space to", "toggle")
-            // which aren't present in this Japanese UI. The [ ] checkboxes are visual-only.
-            let _ = multi_select;
             assert_eq!(cursor_position, 1);
         } else {
-            panic!("Expected UserQuestion, got {:?}", approval_type);
+            panic!("Expected SingleSelect interaction, got {:?}", interaction);
         }
     }
 }
@@ -815,17 +849,19 @@ Which items to include?
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
-                choices,
-                multi_select,
-                ..
-            } = approval_type
-            {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::MultiSelect { choices }) = interaction {
                 assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
-                assert!(multi_select, "Expected multi_select=true for [×] checkbox");
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!(
+                    "Expected MultiSelect interaction for [×] checkbox, got {:?}",
+                    interaction
+                );
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -1029,20 +1065,19 @@ Which option?
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
-                choices,
-                multi_select,
-                ..
-            } = approval_type
-            {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect { choices, .. }) = interaction {
                 assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
-                assert!(
-                    !multi_select,
-                    "Expected multi_select=false for (*) radio buttons (single-select)"
-                );
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!(
+                    "Expected SingleSelect interaction for (*) radio buttons, got {:?}",
+                    interaction
+                );
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -1068,19 +1103,19 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
 "#;
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect {
                 choices,
-                multi_select,
                 cursor_position,
-            } = approval_type
+            }) = interaction
             {
                 assert_eq!(choices.len(), 4, "Expected 4 choices, got {:?}", choices);
                 assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
-                assert!(
-                    !multi_select,
-                    "Preview format should not be detected as multi-select"
-                );
                 // Verify preview box content is stripped from choice text
                 assert!(
                     !choices[0].contains('│'),
@@ -1088,7 +1123,7 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
                     choices[0]
                 );
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!("Expected AwaitingApproval, got {:?}", status),
@@ -1134,26 +1169,26 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
 
     let status = detector.detect_status("✳ Claude Code", &padded);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect {
                 choices,
-                multi_select,
                 cursor_position,
-            } = approval_type
+            }) = interaction
             {
                 assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
                 assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
-                assert!(
-                    !multi_select,
-                    "Preview format should not be detected as multi-select"
-                );
                 assert!(
                     !choices[0].contains('│'),
                     "Choice text should not contain box chars: {:?}",
                     choices[0]
                 );
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!(
@@ -1218,17 +1253,21 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
 ";
     let status = detector.detect_status("✳ Claude Code", content);
     match status {
-        AgentStatus::AwaitingApproval { approval_type, .. } => {
-            if let ApprovalType::UserQuestion {
+        AgentStatus::AwaitingApproval {
+            approval_type,
+            interaction,
+            ..
+        } => {
+            assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
+            if let Some(InteractionMode::SingleSelect {
                 choices,
                 cursor_position,
-                ..
-            } = approval_type
+            }) = interaction
             {
                 assert_eq!(choices.len(), 3, "Expected 3 choices, got {:?}", choices);
                 assert_eq!(cursor_position, 2, "Cursor should be on choice 2");
             } else {
-                panic!("Expected UserQuestion, got {:?}", approval_type);
+                panic!("Expected SingleSelect interaction, got {:?}", interaction);
             }
         }
         _ => panic!(
