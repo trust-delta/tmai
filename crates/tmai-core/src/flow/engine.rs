@@ -97,6 +97,11 @@ impl FlowEngine {
     ) -> FlowEngineHandle {
         let active_runs: Arc<RwLock<HashMap<String, FlowRun>>> =
             Arc::new(RwLock::new(HashMap::new()));
+        // Maps agent identifiers → run_id. Multiple keys may point to the same run:
+        // - session_id (from spawn response, e.g., PTY UUID)
+        // - pane target (from AgentStopped event, e.g., "session:window.pane")
+        // - stable_id (short hash)
+        // This redundancy ensures matching regardless of which identifier arrives first.
         let agent_run_map: Arc<RwLock<HashMap<String, String>>> =
             Arc::new(RwLock::new(HashMap::new()));
         let registry = Arc::new(registry);
@@ -180,16 +185,59 @@ impl FlowEngine {
         event_tx: &broadcast::Sender<CoreEvent>,
         state: &Option<SharedState>,
     ) {
-        // Find the FlowRun this agent belongs to
+        // Find the FlowRun this agent belongs to.
+        // Try direct target match first, then fall back to matching by current_agent_id
+        // across all running flows (handles session_id vs target mismatch after spawn).
         let run_id = {
             let map = agent_map.read();
-            map.get(target).cloned()
+            if let Some(id) = map.get(target) {
+                Some(id.clone())
+            } else {
+                // Fallback: scan active runs for matching current_agent_id
+                // This handles the case where spawn returned a session_id but
+                // the stop event arrives with a tmux target.
+                drop(map);
+                let runs_r = runs.read();
+                runs_r
+                    .iter()
+                    .find(|(_, run)| {
+                        run.is_running() && run.current_agent_id.as_deref() == Some(target)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .or_else(|| {
+                        // Try matching by session_name or stable_id from agent state
+                        let identifiers = state.as_ref().and_then(|shared_state| {
+                            let s = shared_state.read();
+                            let agent = s.agents.get(target)?;
+                            Some((
+                                agent.session_name.clone().unwrap_or_default(),
+                                agent.stable_id.clone(),
+                            ))
+                        });
+                        if let Some((session_name, stable_id)) = identifiers {
+                            let map = agent_map.read();
+                            map.get(&session_name)
+                                .or_else(|| map.get(&stable_id))
+                                .cloned()
+                        } else {
+                            None
+                        }
+                    })
+            }
         };
 
         let Some(run_id) = run_id else {
             debug!(agent = %target, "Agent stopped but not part of any flow run");
             return;
         };
+
+        // Register the resolved target in agent_map for future lookups
+        {
+            let mut map = agent_map.write();
+            if !map.contains_key(target) {
+                map.insert(target.to_string(), run_id.clone());
+            }
+        }
 
         // Get run state and flow definition
         let (current_node, flow_name, accumulated_context) = {

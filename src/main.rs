@@ -235,24 +235,74 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             .map(|p| p.path.clone())
             .unwrap_or_default();
 
-        // Capture API connection info for the action handler closure
+        // Capture dependencies for the action handler closure
         let api_port = settings.web.port;
         let api_token = {
             let s = app_state.read();
             s.web.token.clone().unwrap_or_default()
         };
         let action_cwd = default_repo.clone();
+        let action_core = core.clone();
+        let action_state = app.shared_state();
 
         let executor = tmai_core::flow::real_executor::RealFlowExecutor::new(
             default_repo,
             move |action_name, params| {
                 let token = api_token.clone();
                 let cwd = action_cwd.clone();
+                let core = action_core.clone();
+                let state = action_state.clone();
                 Box::pin(async move {
+                    // send_prompt is handled directly via TmaiCore (async, no HTTP)
+                    if action_name == "send_prompt" {
+                        let target_role = params
+                            .get("target_role")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let prompt = params
+                            .get("prompt")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        // Find agent matching the target role
+                        let agent_target = {
+                            let s = state.read();
+                            s.agents.iter()
+                                .find(|(_, a)| {
+                                    // Match orchestrator role
+                                    (target_role == "orchestrator" && a.is_orchestrator)
+                                    // Or match by session_name/worktree_name containing the role
+                                    || a.session_name.as_deref().is_some_and(|n| n.contains(&target_role))
+                                    || a.worktree_name.as_deref().is_some_and(|n| n.contains(&target_role))
+                                })
+                                .map(|(t, _)| t.clone())
+                        };
+
+                        if let Some(ref target) = agent_target {
+                            match core.send_prompt(target, &prompt).await {
+                                Ok(result) => {
+                                    return Ok(serde_json::json!({
+                                        "agent_id": target,
+                                        "action": result.action,
+                                        "queue_size": result.queue_size,
+                                    }));
+                                }
+                                Err(e) => return Err(format!("send_prompt failed: {e}")),
+                            }
+                        }
+
+                        // No agent found — return role as stub agent_id
+                        return Ok(
+                            serde_json::json!({"agent_id": target_role, "status": "no_agent_found"}),
+                        );
+                    }
+
+                    // Other actions: delegate to HTTP API via spawn_blocking
                     let base_url = format!("http://127.0.0.1:{}/api", api_port);
                     let auth = format!("Bearer {token}");
 
-                    // Dispatch to appropriate HTTP API endpoint
                     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
                         match action_name.as_str() {
                             "spawn" => {
@@ -262,21 +312,6 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
                                     "initial_prompt": prompt,
                                 });
                                 post_json(&base_url, "/spawn/worktree", &auth, &body)
-                            }
-                            "send_prompt" => {
-                                let target_role = params.get("target_role").and_then(|v| v.as_str()).unwrap_or("");
-                                let prompt = params.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                // Find agent by target_role — for now just forward the prompt
-                                // The flow engine will track agent_id mapping
-                                let body = serde_json::json!({
-                                    "target_role": target_role,
-                                    "prompt": prompt,
-                                });
-                                post_json(&base_url, "/flow/action/send-prompt", &auth, &body)
-                                    .or_else(|_| {
-                                        // Fallback: return stub with role as agent_id
-                                        Ok(serde_json::json!({"agent_id": target_role, "status": "queued"}))
-                                    })
                             }
                             "merge_pr" => {
                                 let body = serde_json::json!({
