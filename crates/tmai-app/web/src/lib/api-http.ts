@@ -596,6 +596,82 @@ export interface OrchestratorSettings {
   is_project_override: boolean;
 }
 
+// ---- Flow Orchestration Types ----
+
+export interface FlowNodeConfig {
+  role: string;
+  mode: "spawn" | "persistent";
+  prompt_template: string;
+  tools: string[] | string;
+  agent_type: "claude" | "codex" | "gemini";
+}
+
+export interface ResolveStepConfig {
+  name: string;
+  query: string;
+  params: Record<string, string>;
+  filter: string | null;
+  pick: "first" | "last" | "count" | "all";
+}
+
+export interface RouteStepConfig {
+  when: string;
+  action: string;
+  target: string | null;
+  prompt: string | null;
+  params: Record<string, unknown>;
+}
+
+export interface FlowEdgeConfig {
+  from: string;
+  event: string;
+  resolve: ResolveStepConfig[];
+  route: RouteStepConfig[];
+}
+
+export interface FlowConfig {
+  description: string;
+  entry_params: string[];
+  nodes: FlowNodeConfig[];
+  edges: FlowEdgeConfig[];
+}
+
+export interface FlowDefinitionSummary {
+  name: string;
+  description: string;
+  entry_params: string[];
+  nodes: string[];
+  first_node: string;
+}
+
+export interface FlowStep {
+  node: string;
+  agent_id: string;
+  started_at: string;
+  finished_at: string | null;
+  outcome: "completed" | { error: string };
+  resolved: Record<string, unknown>;
+}
+
+export interface FlowRun {
+  run_id: string;
+  flow_name: string;
+  trigger: string;
+  current_node: string;
+  current_agent_id: string | null;
+  history: FlowStep[];
+  context: Record<string, unknown>;
+  status: "running" | "completed" | { error: string };
+  started_at: string;
+}
+
+export interface FlowKickResult {
+  run_id: string;
+  flow_name: string;
+  first_node: string;
+  agent_id: string;
+}
+
 export interface SpawnRequest {
   command: string;
   args?: string[];
@@ -963,6 +1039,39 @@ export const api = {
     apiFetch<SpawnResponse>("/orchestrator/spawn", {
       method: "POST",
       body: JSON.stringify(params),
+    }),
+
+  // ---- Flow Orchestration ----
+
+  /** List available flow definitions */
+  listFlows: () => apiFetch<FlowDefinitionSummary[]>("/flow/list"),
+
+  /** Start a named flow */
+  runFlow: (flow: string, params: Record<string, unknown>) =>
+    apiFetch<FlowKickResult>("/flow/run", {
+      method: "POST",
+      body: JSON.stringify({ flow, params }),
+    }),
+
+  /** List flow runs (optionally filtered by status) */
+  listFlowRuns: (status?: string) =>
+    apiFetch<FlowRun[]>(`/flow/runs${status ? `?status=${status}` : ""}`),
+
+  /** Cancel an active flow run */
+  cancelFlow: (runId: string) =>
+    apiFetch<{ status: string; run_id: string }>("/flow/cancel", {
+      method: "POST",
+      body: JSON.stringify({ run_id: runId }),
+    }),
+
+  /** Get flow config from settings (for editor) */
+  getFlowConfig: () => apiFetch<Record<string, FlowConfig>>("/settings/flow"),
+
+  /** Update flow config (for editor) */
+  updateFlowConfig: (flows: Record<string, FlowConfig>) =>
+    apiFetch("/settings/flow", {
+      method: "PUT",
+      body: JSON.stringify(flows),
     }),
 
   // Preview settings

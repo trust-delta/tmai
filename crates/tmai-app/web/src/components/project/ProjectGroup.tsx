@@ -13,7 +13,7 @@ interface ProjectGroupProps {
   onSelectMarkdown: (projectPath: string, projectName: string) => void;
   onSpawned: (sessionId: string) => void;
   splitPaneProjectPath: string | null;
-  splitPaneTab: "git" | "markdown" | null;
+  splitPaneTab: "git" | "markdown" | "flow" | null;
 }
 
 // Collapsible project group containing worktree sub-groups

@@ -13,7 +13,6 @@ function getDelay(source: DetectionSource, thresholdSecs: number): number {
     case "IpcSocket":
     case "WebSocket":
       return Math.min(thresholdSecs * 1000, 2000);
-    case "CapturePane":
     default:
       return thresholdSecs * 1000;
   }
