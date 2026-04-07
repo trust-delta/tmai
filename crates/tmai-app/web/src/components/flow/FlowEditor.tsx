@@ -399,6 +399,40 @@ export function FlowEditor(_props: FlowEditorProps) {
           </button>
         )}
 
+        {/* Add node / description / delete */}
+        {currentConfig && (
+          <>
+            <button
+              type="button"
+              onClick={handleAddNode}
+              className="rounded bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            >
+              + Node
+            </button>
+            <input
+              type="text"
+              value={currentConfig.description}
+              onChange={(e) => {
+                setFlowConfigs({
+                  ...flowConfigs,
+                  [selectedFlow]: { ...currentConfig, description: e.target.value },
+                });
+                setDirty(true);
+              }}
+              placeholder="Description..."
+              className="w-36 rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-zinc-500 outline-none placeholder:text-zinc-600 focus:border-cyan-500/50 focus:text-zinc-300"
+            />
+            <button
+              type="button"
+              onClick={handleDeleteFlow}
+              className="rounded px-1.5 py-0.5 text-[10px] text-red-400/50 hover:bg-red-500/10 hover:text-red-400"
+              title="Delete this flow"
+            >
+              Delete
+            </button>
+          </>
+        )}
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -495,41 +529,6 @@ export function FlowEditor(_props: FlowEditorProps) {
                 route={selectedEdgeData.route}
               />
             )}
-          </div>
-        )}
-
-        {/* Toolbar (bottom of canvas when flow is selected) */}
-        {currentConfig && !selectedNode && !selectedEdge && (
-          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/[0.06] bg-zinc-900/90 px-3 py-1.5 shadow-lg backdrop-blur">
-            <button
-              type="button"
-              onClick={handleAddNode}
-              className="rounded bg-white/[0.05] px-2 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
-            >
-              + Node
-            </button>
-            {currentConfig.description !== undefined && (
-              <input
-                type="text"
-                value={currentConfig.description}
-                onChange={(e) => {
-                  setFlowConfigs({
-                    ...flowConfigs,
-                    [selectedFlow]: { ...currentConfig, description: e.target.value },
-                  });
-                  setDirty(true);
-                }}
-                placeholder="Flow description..."
-                className="w-48 rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-zinc-400 outline-none placeholder:text-zinc-600 focus:border-cyan-500/50"
-              />
-            )}
-            <button
-              type="button"
-              onClick={handleDeleteFlow}
-              className="rounded px-2 py-1 text-xs text-red-400/60 hover:bg-red-500/10 hover:text-red-400"
-            >
-              Delete
-            </button>
           </div>
         )}
       </div>
