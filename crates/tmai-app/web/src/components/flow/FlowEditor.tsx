@@ -22,7 +22,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "@xyflow/react/dist/style.css";
-import type { FlowConfig, FlowDefinitionSummary, FlowEdgeConfig, FlowRun } from "@/lib/api";
+import type { FlowConfig, FlowEdgeConfig, FlowRun } from "@/lib/api";
 import { api } from "@/lib/api";
 import { EdgeConfigPanel } from "./EdgeConfigPanel";
 import { FlowNodeComponent } from "./FlowNode";
@@ -79,7 +79,6 @@ function configToReactFlow(config: FlowConfig): { nodes: Node[]; edges: Edge[] }
 
 /** Auto-layout nodes in a left-to-right flow */
 function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
-  // Simple DAG layout: BFS from first node
   if (nodes.length === 0) return nodes;
 
   const adjacency = new Map<string, string[]>();
@@ -127,17 +126,34 @@ function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
   }));
 }
 
+/** Create an empty flow config */
+function createEmptyFlow(_name: string): FlowConfig {
+  return {
+    description: "",
+    entry_params: [],
+    nodes: [
+      {
+        role: "implement",
+        mode: "spawn",
+        prompt_template: "",
+        tools: [],
+        agent_type: "claude",
+      },
+    ],
+    edges: [],
+  };
+}
+
 interface FlowEditorProps {
-  /** Optional: project path for per-project flow config */
   projectPath?: string;
 }
 
 export function FlowEditor(_props: FlowEditorProps) {
-  // Flow definitions from API
-  const [_flowDefs, setFlowDefs] = useState<FlowDefinitionSummary[]>([]);
   const [flowConfigs, setFlowConfigs] = useState<Record<string, FlowConfig>>({});
   const [selectedFlow, setSelectedFlow] = useState<string>("");
   const [flowRuns, setFlowRuns] = useState<FlowRun[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // React Flow state
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -147,21 +163,29 @@ export function FlowEditor(_props: FlowEditorProps) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
 
-  // Load flow definitions and configs on mount
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally run only on mount
+  // New flow dialog
+  const [showNewFlow, setShowNewFlow] = useState(false);
+  const [newFlowName, setNewFlowName] = useState("");
+
+  // Load flow configs on mount
   useEffect(() => {
-    api.listFlows().then(setFlowDefs).catch(console.error);
     api
       .getFlowConfig()
-      .then((configs) => {
+      .then((configs: Record<string, FlowConfig>) => {
         setFlowConfigs(configs);
         const names = Object.keys(configs);
         if (names.length > 0) {
           setSelectedFlow((prev) => prev || names[0]);
         }
       })
-      .catch(console.error);
-    api.listFlowRuns().then(setFlowRuns).catch(console.error);
+      .catch(() => {
+        // Flow config endpoint may not exist yet — start with empty
+        setFlowConfigs({});
+      });
+    api
+      .listFlowRuns()
+      .then(setFlowRuns)
+      .catch(() => {});
   }, []);
 
   // Update canvas when selected flow changes
@@ -195,7 +219,6 @@ export function FlowEditor(_props: FlowEditorProps) {
       const config = flowConfigs[selectedFlow];
       if (!config) return;
 
-      // Add a new edge to the flow config
       const existingEdge = config.edges.find((e) => e.from === connection.source);
       if (existingEdge) {
         existingEdge.route.push({
@@ -223,6 +246,7 @@ export function FlowEditor(_props: FlowEditorProps) {
       }
 
       setFlowConfigs({ ...flowConfigs, [selectedFlow]: { ...config } });
+      setDirty(true);
     },
     [flowConfigs, selectedFlow],
   );
@@ -232,16 +256,76 @@ export function FlowEditor(_props: FlowEditorProps) {
     setSelectedNode(node.id);
     setSelectedEdge(null);
   }, []);
-
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
     setSelectedEdge(edge.id);
     setSelectedNode(null);
   }, []);
-
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setSelectedEdge(null);
   }, []);
+
+  // Create new flow
+  const handleCreateFlow = useCallback(() => {
+    const name = newFlowName.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!name || flowConfigs[name]) return;
+
+    const newConfig = createEmptyFlow(name);
+    const updated = { ...flowConfigs, [name]: newConfig };
+    setFlowConfigs(updated);
+    setSelectedFlow(name);
+    setShowNewFlow(false);
+    setNewFlowName("");
+    setDirty(true);
+  }, [newFlowName, flowConfigs]);
+
+  // Add node to current flow
+  const handleAddNode = useCallback(() => {
+    if (!selectedFlow || !flowConfigs[selectedFlow]) return;
+    const config = flowConfigs[selectedFlow];
+
+    // Generate a unique role name
+    let roleName = "worker";
+    let i = 1;
+    while (config.nodes.some((n) => n.role === roleName)) {
+      roleName = `worker_${i}`;
+      i++;
+    }
+
+    config.nodes.push({
+      role: roleName,
+      mode: "spawn",
+      prompt_template: "",
+      tools: [],
+      agent_type: "claude",
+    });
+
+    setFlowConfigs({ ...flowConfigs, [selectedFlow]: { ...config } });
+    setDirty(true);
+  }, [flowConfigs, selectedFlow]);
+
+  // Save flow config to backend
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await api.updateFlowConfig(flowConfigs);
+      setDirty(false);
+    } catch (e) {
+      console.error("Failed to save flow config:", e);
+    } finally {
+      setSaving(false);
+    }
+  }, [flowConfigs]);
+
+  // Delete current flow
+  const handleDeleteFlow = useCallback(() => {
+    if (!selectedFlow) return;
+    const updated = { ...flowConfigs };
+    delete updated[selectedFlow];
+    setFlowConfigs(updated);
+    setSelectedFlow(Object.keys(updated)[0] ?? "");
+    setDirty(true);
+  }, [flowConfigs, selectedFlow]);
 
   // Get current flow config
   const currentConfig = selectedFlow ? flowConfigs[selectedFlow] : null;
@@ -259,8 +343,8 @@ export function FlowEditor(_props: FlowEditorProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-2">
-        <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2">
+        <h3 className="text-sm font-medium text-zinc-300">Flow</h3>
 
         {/* Flow selector */}
         <select
@@ -268,7 +352,7 @@ export function FlowEditor(_props: FlowEditorProps) {
           onChange={(e) => setSelectedFlow(e.target.value)}
           className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
         >
-          <option value="">Select flow...</option>
+          {Object.keys(flowConfigs).length === 0 && <option value="">No flows</option>}
           {Object.keys(flowConfigs).map((name) => (
             <option key={name} value={name}>
               {name}
@@ -276,15 +360,65 @@ export function FlowEditor(_props: FlowEditorProps) {
           ))}
         </select>
 
-        {currentConfig && (
-          <span className="text-xs text-zinc-500">{currentConfig.description}</span>
+        {/* New flow button */}
+        {showNewFlow ? (
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={newFlowName}
+              onChange={(e) => setNewFlowName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreateFlow()}
+              placeholder="flow name"
+              className="w-24 rounded border border-white/10 bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
+              // biome-ignore lint/a11y/noAutofocus: UX requires focus on new flow name input
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={handleCreateFlow}
+              className="rounded bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-400 hover:bg-cyan-500/30"
+            >
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNewFlow(false)}
+              className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowNewFlow(true)}
+            className="rounded bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            title="Create new flow"
+          >
+            + New
+          </button>
         )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
 
         {/* Active runs indicator */}
         {activeRuns.length > 0 && (
-          <span className="ml-auto rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-400">
+          <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-400">
             {activeRuns.length} running
           </span>
+        )}
+
+        {/* Save button */}
+        {dirty && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
         )}
       </div>
 
@@ -318,18 +452,27 @@ export function FlowEditor(_props: FlowEditorProps) {
               />
             </ReactFlow>
           ) : (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full flex-col items-center justify-center gap-3">
               <p className="text-sm text-zinc-500">
                 {Object.keys(flowConfigs).length === 0
-                  ? "No flow definitions found. Add [flow.*] sections to config.toml."
-                  : "Select a flow to view"}
+                  ? "No flows defined yet"
+                  : "Select a flow to edit"}
               </p>
+              {Object.keys(flowConfigs).length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewFlow(true)}
+                  className="rounded-lg bg-cyan-500/20 px-4 py-2 text-sm text-cyan-400 hover:bg-cyan-500/30"
+                >
+                  Create your first flow
+                </button>
+              )}
             </div>
           )}
         </div>
 
         {/* Config panel (right side) */}
-        {(selectedNode || selectedEdge) && currentConfig && (
+        {currentConfig && (selectedNode || selectedEdge) && (
           <div className="w-72 shrink-0 overflow-y-auto border-l border-white/[0.06] bg-zinc-900/50 p-3">
             {selectedNodeConfig && (
               <NodeConfigPanel
@@ -342,6 +485,7 @@ export function FlowEditor(_props: FlowEditorProps) {
                     ...flowConfigs,
                     [selectedFlow]: { ...currentConfig, nodes: newNodes },
                   });
+                  setDirty(true);
                 }}
               />
             )}
@@ -351,6 +495,41 @@ export function FlowEditor(_props: FlowEditorProps) {
                 route={selectedEdgeData.route}
               />
             )}
+          </div>
+        )}
+
+        {/* Toolbar (bottom of canvas when flow is selected) */}
+        {currentConfig && !selectedNode && !selectedEdge && (
+          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/[0.06] bg-zinc-900/90 px-3 py-1.5 shadow-lg backdrop-blur">
+            <button
+              type="button"
+              onClick={handleAddNode}
+              className="rounded bg-white/[0.05] px-2 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            >
+              + Node
+            </button>
+            {currentConfig.description !== undefined && (
+              <input
+                type="text"
+                value={currentConfig.description}
+                onChange={(e) => {
+                  setFlowConfigs({
+                    ...flowConfigs,
+                    [selectedFlow]: { ...currentConfig, description: e.target.value },
+                  });
+                  setDirty(true);
+                }}
+                placeholder="Flow description..."
+                className="w-48 rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-zinc-400 outline-none placeholder:text-zinc-600 focus:border-cyan-500/50"
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleDeleteFlow}
+              className="rounded px-2 py-1 text-xs text-red-400/60 hover:bg-red-500/10 hover:text-red-400"
+            >
+              Delete
+            </button>
           </div>
         )}
       </div>

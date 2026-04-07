@@ -1362,6 +1362,47 @@ impl Settings {
         }
     }
 
+    /// Save flow orchestration config to config.toml.
+    ///
+    /// Replaces the entire `[flow]` section. Uses a serialize-then-merge approach
+    /// since flow config has deep nesting (`[[flow.*.nodes]]`, `[[flow.*.edges]]`).
+    pub fn save_flow_config(flows: &HashMap<String, crate::flow::FlowConfig>) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+
+        // Remove existing [flow] section
+        doc.remove("flow");
+
+        // Serialize flow config to TOML and merge into document
+        if !flows.is_empty() {
+            // Wrap in a struct so toml serializes as [flow.*]
+            #[derive(serde::Serialize)]
+            struct FlowWrapper<'a> {
+                flow: &'a HashMap<String, crate::flow::FlowConfig>,
+            }
+            let wrapper = FlowWrapper { flow: flows };
+            if let Ok(flow_toml) = toml::to_string(&wrapper) {
+                if let Ok(flow_doc) = flow_toml.parse::<toml_edit::DocumentMut>() {
+                    if let Some(flow_table) = flow_doc.get("flow") {
+                        doc["flow"] = flow_table.clone();
+                    }
+                }
+            }
+        }
+
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&path, doc.to_string()) {
+            tracing::warn!(?path, %e, "Failed to write flow config");
+        }
+    }
+
     /// Validate and normalize settings values
     ///
     /// Ensures poll intervals have a minimum value to prevent CPU exhaustion.

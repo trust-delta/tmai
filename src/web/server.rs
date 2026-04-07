@@ -136,6 +136,10 @@ impl WebServer {
             .route("/spawn", post(api::spawn_agent))
             .route("/spawn/worktree", post(api::spawn_worktree))
             .route("/orchestrator/spawn", post(api::spawn_orchestrator))
+            .route(
+                "/settings/flow",
+                get(api::get_flow_settings).put(api::update_flow_settings),
+            )
             .route("/flow/run", post(api::run_flow))
             .route("/flow/list", get(api::list_flow_definitions))
             .route("/flow/runs", get(api::list_flow_runs))

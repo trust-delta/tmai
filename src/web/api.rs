@@ -3510,6 +3510,38 @@ pub async fn resolve_deferred(
 }
 
 // =========================================================
+// Flow settings endpoints (for WebUI editor)
+// =========================================================
+
+/// GET /api/settings/flow — get all flow definitions from config
+pub async fn get_flow_settings(State(core): State<Arc<TmaiCore>>) -> Json<serde_json::Value> {
+    let settings = core.settings();
+    Json(serde_json::to_value(&settings.flow).unwrap_or_default())
+}
+
+/// PUT /api/settings/flow — update all flow definitions in config
+pub async fn update_flow_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(flows): Json<std::collections::HashMap<String, tmai_core::flow::FlowConfig>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate the flow config
+    tmai_core::flow::FlowRegistry::from_config(&flows).map_err(|e| {
+        json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Invalid flow config: {e}"),
+        )
+    })?;
+
+    // Save to config.toml
+    tmai_core::config::Settings::save_flow_config(&flows);
+
+    // Reload settings in memory
+    core.reload_settings();
+
+    Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
+// =========================================================
 // Flow orchestration endpoints
 // =========================================================
 
