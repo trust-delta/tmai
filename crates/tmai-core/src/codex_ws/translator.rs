@@ -595,7 +595,12 @@ mod tests {
         let reg = registry.read();
         let state = reg.get("5").unwrap();
         assert_eq!(state.activity_log.len(), 1);
-        assert_eq!(state.activity_log[0].tool_name, "Shell");
+        assert_eq!(
+            state.activity_log[0].tool,
+            crate::agents::Activity::ToolExecution {
+                tool_name: "Shell".to_string()
+            }
+        );
         assert_eq!(state.activity_log[0].input_summary, "cargo test");
         assert_eq!(state.activity_log[0].response_summary, "test result: ok");
     }
@@ -797,7 +802,12 @@ mod tests {
             let state = reg.get("5").unwrap();
             assert_eq!(state.status, HookStatus::Processing);
             assert_eq!(state.activity_log.len(), 1);
-            assert_eq!(state.activity_log[0].tool_name, "Shell");
+            assert_eq!(
+                state.activity_log[0].tool,
+                crate::agents::Activity::ToolExecution {
+                    tool_name: "Shell".to_string()
+                }
+            );
         }
 
         // Turn completes

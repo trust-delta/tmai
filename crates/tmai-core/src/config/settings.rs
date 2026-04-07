@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Command line arguments
@@ -289,6 +290,13 @@ pub struct Settings {
     /// Orchestrator agent settings
     #[serde(default)]
     pub orchestrator: OrchestratorSettings,
+
+    /// Node-based flow orchestration definitions.
+    ///
+    /// Each key is a flow name (e.g., "feature", "hotfix").
+    /// When present, the flow engine takes over from OrchestratorNotifier.
+    #[serde(default)]
+    pub flow: HashMap<String, crate::flow::FlowConfig>,
 
     /// Legacy project paths (plain string array, migrated to `project` on load)
     #[serde(default, skip_serializing)]
@@ -1002,6 +1010,7 @@ impl Default for Settings {
             workflow: WorkflowSettings::default(),
             spawn: SpawnSettings::default(),
             orchestrator: OrchestratorSettings::default(),
+            flow: HashMap::new(),
             projects: Vec::new(),
             project: Vec::new(),
             webui: true,

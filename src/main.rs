@@ -222,8 +222,43 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         );
     }
 
-    // Start orchestrator notifier service
-    if settings.orchestrator.enabled {
+    // Start flow engine or legacy orchestrator notifier
+    if !settings.flow.is_empty() {
+        // Flow engine mode — node-based orchestration
+        let registry = tmai_core::flow::FlowRegistry::from_config(&settings.flow)
+            .context("Invalid flow configuration")?;
+
+        // Build a real executor with action handler delegating to HTTP API
+        // For now, actions are a placeholder — full integration requires HTTP client setup
+        let default_repo = settings
+            .project
+            .first()
+            .map(|p| p.path.clone())
+            .unwrap_or_default();
+        let executor = tmai_core::flow::real_executor::RealFlowExecutor::new(
+            default_repo,
+            |action_name, _params| {
+                Box::pin(async move {
+                    tracing::warn!(
+                        action = %action_name,
+                        "Flow action handler not yet wired to HTTP API"
+                    );
+                    Ok(serde_json::json!({"agent_id": "pending", "status": "stub"}))
+                })
+            },
+        );
+
+        let _flow_handle = tmai_core::flow::FlowEngine::spawn(
+            registry,
+            core.subscribe(),
+            core.event_sender(),
+            std::sync::Arc::new(executor),
+        );
+
+        tracing::info!(flow_count = settings.flow.len(), "Flow engine started");
+        // TODO: store flow_handle in TmaiCore for MCP/API access
+    } else if settings.orchestrator.enabled {
+        // Legacy mode — OrchestratorNotifier
         tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
             settings.orchestrator.notify.clone(),
             app.shared_state(),

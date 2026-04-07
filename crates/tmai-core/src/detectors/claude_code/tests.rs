@@ -558,7 +558,10 @@ fn test_default_spinner_still_works_without_settings() {
     let status = detector.detect_status_with_context("⠋ Working on task", "content", &context);
     match status {
         AgentStatus::Processing { activity } => {
-            assert_eq!(activity, "Working on task");
+            assert_eq!(
+                activity,
+                crate::agents::Activity::Other("Working on task".to_string())
+            );
         }
         _ => panic!("Expected Processing, got {:?}", status),
     }
