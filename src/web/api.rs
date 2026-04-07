@@ -3509,6 +3509,123 @@ pub async fn resolve_deferred(
     }
 }
 
+// =========================================================
+// Flow orchestration endpoints
+// =========================================================
+
+#[derive(Deserialize)]
+pub struct RunFlowRequest {
+    pub flow: String,
+    #[serde(default)]
+    pub params: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// POST /api/flow/run — start a named flow
+pub async fn run_flow(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<RunFlowRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let handle = core.flow_engine().ok_or_else(|| {
+        json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Flow engine not active (no [flow] config defined)",
+        )
+    })?;
+
+    let result = handle
+        .start_flow(req.flow, req.params)
+        .await
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))?;
+
+    Ok(Json(serde_json::to_value(result).unwrap_or_default()))
+}
+
+/// GET /api/flow/list — list available flow definitions
+pub async fn list_flow_definitions(
+    State(core): State<Arc<TmaiCore>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let handle = core
+        .flow_engine()
+        .ok_or_else(|| json_error(StatusCode::SERVICE_UNAVAILABLE, "Flow engine not active"))?;
+
+    let flows: Vec<serde_json::Value> = handle
+        .registry()
+        .list()
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "name": f.name,
+                "description": f.config.description,
+                "entry_params": f.config.entry_params,
+                "nodes": f.config.nodes.iter().map(|n| &n.role).collect::<Vec<_>>(),
+                "first_node": f.first_node,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!(flows)))
+}
+
+#[derive(Deserialize)]
+pub struct FlowRunsQuery {
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+/// GET /api/flow/runs — list flow runs
+pub async fn list_flow_runs(
+    State(core): State<Arc<TmaiCore>>,
+    axum::extract::Query(query): axum::extract::Query<FlowRunsQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let handle = core
+        .flow_engine()
+        .ok_or_else(|| json_error(StatusCode::SERVICE_UNAVAILABLE, "Flow engine not active"))?;
+
+    let runs = handle.active_runs();
+    let filtered: Vec<serde_json::Value> = runs
+        .values()
+        .filter(|r| {
+            if let Some(ref status) = query.status {
+                match status.as_str() {
+                    "running" => r.is_running(),
+                    "completed" => matches!(r.status, tmai_core::flow::FlowRunStatus::Completed),
+                    "error" => matches!(r.status, tmai_core::flow::FlowRunStatus::Error(_)),
+                    _ => true,
+                }
+            } else {
+                true
+            }
+        })
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .collect();
+
+    Ok(Json(serde_json::json!(filtered)))
+}
+
+#[derive(Deserialize)]
+pub struct CancelFlowRequest {
+    pub run_id: String,
+}
+
+/// POST /api/flow/cancel — cancel an active flow run
+pub async fn cancel_flow(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<CancelFlowRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let handle = core
+        .flow_engine()
+        .ok_or_else(|| json_error(StatusCode::SERVICE_UNAVAILABLE, "Flow engine not active"))?;
+
+    handle
+        .cancel_flow(req.run_id.clone())
+        .await
+        .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e))?;
+
+    Ok(Json(
+        serde_json::json!({"status": "ok", "run_id": req.run_id}),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

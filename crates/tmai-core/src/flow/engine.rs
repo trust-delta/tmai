@@ -16,6 +16,7 @@ use super::registry::FlowRegistry;
 use super::resolver;
 use super::types::{FlowContext, FlowKickResult, FlowRun};
 use crate::api::CoreEvent;
+use crate::state::SharedState;
 
 /// Handle for interacting with the flow engine from outside (MCP tools, API, prompt composer).
 #[derive(Clone)]
@@ -92,6 +93,7 @@ impl FlowEngine {
         mut event_rx: broadcast::Receiver<CoreEvent>,
         event_tx: broadcast::Sender<CoreEvent>,
         executor: Arc<dyn FlowExecutor>,
+        state: Option<SharedState>,
     ) -> FlowEngineHandle {
         let active_runs: Arc<RwLock<HashMap<String, FlowRun>>> =
             Arc::new(RwLock::new(HashMap::new()));
@@ -113,6 +115,7 @@ impl FlowEngine {
         let reg = registry.clone();
         let exec = executor.clone();
         let tx = event_tx.clone();
+        let st = state;
 
         tokio::spawn(async move {
             info!("Flow engine started with {} flow(s)", reg.len());
@@ -125,7 +128,7 @@ impl FlowEngine {
                             Ok(CoreEvent::AgentStopped { target, cwd, last_assistant_message }) => {
                                 Self::handle_agent_stopped(
                                     &target, &cwd, last_assistant_message.as_deref(),
-                                    &runs, &map, &reg, &exec, &tx,
+                                    &runs, &map, &reg, &exec, &tx, &st,
                                 ).await;
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -175,6 +178,7 @@ impl FlowEngine {
         registry: &Arc<FlowRegistry>,
         executor: &Arc<dyn FlowExecutor>,
         event_tx: &broadcast::Sender<CoreEvent>,
+        state: &Option<SharedState>,
     ) {
         // Find the FlowRun this agent belongs to
         let run_id = {
@@ -236,17 +240,40 @@ impl FlowEngine {
             return;
         };
 
+        // Build agent context from state if available, otherwise from event fields
+        let agent_json = if let Some(ref shared_state) = state {
+            let s = shared_state.read();
+            if let Some(agent) = s.agents.get(target) {
+                serde_json::json!({
+                    "target": target,
+                    "cwd": cwd,
+                    "last_message": last_assistant_message,
+                    "git_branch": agent.git_branch,
+                    "git_dirty": agent.git_dirty,
+                    "worktree_name": agent.worktree_name,
+                    "display_name": agent.display_name(),
+                    "is_worktree": agent.is_worktree,
+                    "session": agent.session,
+                })
+            } else {
+                serde_json::json!({
+                    "target": target,
+                    "cwd": cwd,
+                    "last_message": last_assistant_message,
+                })
+            }
+        } else {
+            serde_json::json!({
+                "target": target,
+                "cwd": cwd,
+                "last_message": last_assistant_message,
+            })
+        };
+
         // Build context
         let mut context = FlowContext::with_accumulated(
             HashMap::from([
-                (
-                    "agent".to_string(),
-                    serde_json::json!({
-                        "target": target,
-                        "cwd": cwd,
-                        "last_message": last_assistant_message,
-                    }),
-                ),
+                ("agent".to_string(), agent_json),
                 (
                     "run".to_string(),
                     serde_json::json!({
@@ -628,6 +655,7 @@ mod tests {
             event_tx.subscribe(),
             event_tx.clone(),
             executor.clone(),
+            None,
         );
 
         // Start a flow
@@ -659,7 +687,13 @@ mod tests {
         let (event_tx, _event_rx) = broadcast::channel(16);
         let executor = mock_executor_with_pr();
 
-        let handle = FlowEngine::spawn(registry, event_tx.subscribe(), event_tx.clone(), executor);
+        let handle = FlowEngine::spawn(
+            registry,
+            event_tx.subscribe(),
+            event_tx.clone(),
+            executor,
+            None,
+        );
 
         let result = handle
             .start_flow("nonexistent".to_string(), HashMap::new())
@@ -695,6 +729,7 @@ mod tests {
             event_tx.subscribe(),
             event_tx.clone(),
             executor.clone(),
+            None,
         );
 
         // Start a flow
@@ -736,7 +771,13 @@ mod tests {
         let (event_tx, _event_rx) = broadcast::channel(16);
         let executor = mock_executor_with_pr();
 
-        let handle = FlowEngine::spawn(registry, event_tx.subscribe(), event_tx.clone(), executor);
+        let handle = FlowEngine::spawn(
+            registry,
+            event_tx.subscribe(),
+            event_tx.clone(),
+            executor,
+            None,
+        );
 
         let kick = handle
             .start_flow(

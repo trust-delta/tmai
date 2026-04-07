@@ -248,15 +248,16 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             },
         );
 
-        let _flow_handle = tmai_core::flow::FlowEngine::spawn(
+        let flow_handle = tmai_core::flow::FlowEngine::spawn(
             registry,
             core.subscribe(),
             core.event_sender(),
             std::sync::Arc::new(executor),
+            Some(app.shared_state()),
         );
+        core.set_flow_engine(flow_handle);
 
         tracing::info!(flow_count = settings.flow.len(), "Flow engine started");
-        // TODO: store flow_handle in TmaiCore for MCP/API access
     } else if settings.orchestrator.enabled {
         // Legacy mode — OrchestratorNotifier
         tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
