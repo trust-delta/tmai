@@ -197,43 +197,7 @@ export function FlowEditor(_props: FlowEditorProps) {
     setSelectedNode(null);
   }, [selectedFlow, flowConfigs]);
 
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [],
-  );
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    [],
-  );
-
-  // Wire creation via drag-connect
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target || !selectedFlow) return;
-      const config = flowConfigs[selectedFlow];
-      if (!config) return;
-
-      const fromPort = (connection.sourceHandle ?? "stop") as PortType;
-      const toPort = (connection.targetHandle ?? "input") as PortType;
-
-      config.wires.push({
-        from: { node: connection.source, port: fromPort },
-        to: { node: connection.target, port: toPort },
-      });
-
-      setFlowConfigs({ ...flowConfigs, [selectedFlow]: { ...config } });
-      setDirty(true);
-    },
-    [flowConfigs, selectedFlow],
-  );
-
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node.id);
-  }, []);
-
-  const onPaneClick = useCallback(() => setSelectedNode(null), []);
-
-  // Mutate helpers
+  // Mutate helpers (declared early for use in callbacks below)
   const updateConfig = useCallback(
     (updater: (config: FlowConfig) => FlowConfig) => {
       if (!selectedFlow || !flowConfigs[selectedFlow]) return;
@@ -245,6 +209,52 @@ export function FlowEditor(_props: FlowEditorProps) {
     },
     [flowConfigs, selectedFlow],
   );
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    [],
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges((eds) => applyEdgeChanges(changes, eds));
+      // Sync deletions back to flow config
+      const removals = changes.filter((c) => c.type === "remove");
+      if (removals.length > 0) {
+        const removedIds = new Set(removals.map((c) => c.id));
+        updateConfig((c) => {
+          c.wires = c.wires.filter(
+            (w, i) =>
+              !removedIds.has(`wire-${i}-${w.from.node}-${w.from.port}-${w.to.node}-${w.to.port}`),
+          );
+          return c;
+        });
+      }
+    },
+    [updateConfig],
+  );
+
+  // Wire creation via drag-connect
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      const fromPort = (connection.sourceHandle ?? "stop") as PortType;
+      const toPort = (connection.targetHandle ?? "input") as PortType;
+      updateConfig((c) => {
+        c.wires.push({
+          from: { node: connection.source!, port: fromPort },
+          to: { node: connection.target!, port: toPort },
+        });
+        return c;
+      });
+    },
+    [updateConfig],
+  );
+
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node.id);
+  }, []);
+
+  const onPaneClick = useCallback(() => setSelectedNode(null), []);
 
   const handleCreateFlow = useCallback(() => {
     const name = newFlowName.trim().toLowerCase().replace(/\s+/g, "_");
@@ -497,6 +507,18 @@ export function FlowEditor(_props: FlowEditorProps) {
                     return c;
                   })
                 }
+                onDelete={() => {
+                  updateConfig((c) => {
+                    const id = selectedAgentConfig.id;
+                    c.agents = c.agents.filter((a) => a.id !== id);
+                    c.wires = c.wires.filter((w) => w.from.node !== id && w.to.node !== id);
+                    if (c.entry_node === id) {
+                      c.entry_node = c.agents[0]?.id ?? "";
+                    }
+                    return c;
+                  });
+                  setSelectedNode(null);
+                }}
               />
             )}
             {selectedGateConfig && (
@@ -508,6 +530,15 @@ export function FlowEditor(_props: FlowEditorProps) {
                     return c;
                   })
                 }
+                onDelete={() => {
+                  updateConfig((c) => {
+                    const id = selectedGateConfig.id;
+                    c.gates = c.gates.filter((g) => g.id !== id);
+                    c.wires = c.wires.filter((w) => w.from.node !== id && w.to.node !== id);
+                    return c;
+                  });
+                  setSelectedNode(null);
+                }}
               />
             )}
           </div>
