@@ -87,7 +87,8 @@ impl FlowEngine {
     ) -> FlowEngineHandle {
         let active_runs: Arc<RwLock<HashMap<String, FlowRun>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        let agent_run_map: Arc<RwLock<HashMap<String, String>>> =
+        // Agent → run_id(s). Persistent agents can be referenced by multiple runs.
+        let agent_run_map: Arc<RwLock<HashMap<String, Vec<String>>>> =
             Arc::new(RwLock::new(HashMap::new()));
         let registry = Arc::new(registry);
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<FlowCommand>(32);
@@ -157,63 +158,106 @@ impl FlowEngine {
         cwd: &str,
         last_assistant_message: Option<&str>,
         runs: &Arc<RwLock<HashMap<String, FlowRun>>>,
-        agent_map: &Arc<RwLock<HashMap<String, String>>>,
+        agent_map: &Arc<RwLock<HashMap<String, Vec<String>>>>,
         registry: &Arc<FlowRegistry>,
         executor: &Arc<dyn FlowExecutor>,
         event_tx: &broadcast::Sender<CoreEvent>,
         state: &Option<SharedState>,
     ) {
-        // Find the FlowRun this agent belongs to
-        let run_id = {
+        // Find ALL FlowRuns this agent belongs to (persistent agents can have multiple)
+        let run_ids: Vec<String> = {
             let map_r = agent_map.read();
-            if let Some(id) = map_r.get(target) {
-                Some(id.clone())
-            } else {
+            let mut ids: Vec<String> = map_r.get(target).cloned().unwrap_or_default();
+
+            if ids.is_empty() {
                 drop(map_r);
                 // Fallback: scan by current_agent_id
                 let runs_r = runs.read();
-                runs_r
+                ids = runs_r
                     .iter()
-                    .find(|(_, run)| {
+                    .filter(|(_, run)| {
                         run.is_running() && run.current_agent_id.as_deref() == Some(target)
                     })
                     .map(|(id, _)| id.clone())
-                    .or_else(|| {
-                        // Try session_name/stable_id from state
-                        let ids = state.as_ref().and_then(|s| {
-                            let s = s.read();
-                            let a = s.agents.get(target)?;
-                            Some((
-                                a.session_name.clone().unwrap_or_default(),
-                                a.stable_id.clone(),
-                            ))
-                        });
-                        if let Some((session, stable)) = ids {
-                            let map_r = agent_map.read();
-                            map_r.get(&session).or_else(|| map_r.get(&stable)).cloned()
-                        } else {
-                            None
+                    .collect();
+
+                if ids.is_empty() {
+                    // Try session_name/stable_id from state
+                    let alt_ids = state.as_ref().and_then(|s| {
+                        let s = s.read();
+                        let a = s.agents.get(target)?;
+                        Some((
+                            a.session_name.clone().unwrap_or_default(),
+                            a.stable_id.clone(),
+                        ))
+                    });
+                    if let Some((session, stable)) = alt_ids {
+                        let map_r = agent_map.read();
+                        if let Some(v) = map_r.get(&session) {
+                            ids.extend(v.iter().cloned());
                         }
-                    })
+                        if let Some(v) = map_r.get(&stable) {
+                            ids.extend(v.iter().cloned());
+                        }
+                        ids.sort();
+                        ids.dedup();
+                    }
+                }
             }
+            ids
         };
 
-        let Some(run_id) = run_id else {
+        if run_ids.is_empty() {
             debug!(agent = %target, "Agent stopped but not part of any flow run");
             return;
-        };
+        }
 
-        // Cache target in agent_map
+        // Cache target in agent_map for all found runs
         {
             let mut map_w = agent_map.write();
-            if !map_w.contains_key(target) {
-                map_w.insert(target.to_string(), run_id.clone());
+            let entry = map_w.entry(target.to_string()).or_default();
+            for id in &run_ids {
+                if !entry.contains(id) {
+                    entry.push(id.clone());
+                }
             }
         }
 
+        // Process each FlowRun independently
+        for run_id in run_ids {
+            Self::process_run_for_stopped_agent(
+                &run_id,
+                target,
+                cwd,
+                last_assistant_message,
+                runs,
+                agent_map,
+                registry,
+                executor,
+                event_tx,
+                state,
+            )
+            .await;
+        }
+    }
+
+    /// Process a single FlowRun when its current agent stops
+    #[allow(clippy::too_many_arguments)]
+    async fn process_run_for_stopped_agent(
+        run_id: &str,
+        target: &str,
+        cwd: &str,
+        last_assistant_message: Option<&str>,
+        runs: &Arc<RwLock<HashMap<String, FlowRun>>>,
+        agent_map: &Arc<RwLock<HashMap<String, Vec<String>>>>,
+        registry: &Arc<FlowRegistry>,
+        executor: &Arc<dyn FlowExecutor>,
+        event_tx: &broadcast::Sender<CoreEvent>,
+        state: &Option<SharedState>,
+    ) {
         let (current_node, flow_name, accumulated_context) = {
             let runs_r = runs.read();
-            let Some(run) = runs_r.get(&run_id) else {
+            let Some(run) = runs_r.get(run_id) else {
                 return;
             };
             if !run.is_running() {
@@ -263,11 +307,11 @@ impl FlowEngine {
         let Some(wire) = wire else {
             info!(run_id = %run_id, node = %current_node, "No wire from stop — flow complete");
             let mut runs_w = runs.write();
-            if let Some(run) = runs_w.get_mut(&run_id) {
+            if let Some(run) = runs_w.get_mut(run_id) {
                 run.complete(target.to_string(), HashMap::new());
             }
             let _ = event_tx.send(CoreEvent::FlowCompleted {
-                run_id: run_id.clone(),
+                run_id: run_id.to_string(),
                 flow_name: flow_name.clone(),
             });
             return;
@@ -282,7 +326,7 @@ impl FlowEngine {
             if chain_depth >= max_chain {
                 error!(run_id = %run_id, "Gate chain exceeded max depth");
                 let mut runs_w = runs.write();
-                if let Some(run) = runs_w.get_mut(&run_id) {
+                if let Some(run) = runs_w.get_mut(run_id) {
                     run.fail("Gate chain exceeded max depth".to_string());
                 }
                 return;
@@ -309,7 +353,7 @@ impl FlowEngine {
                     // Advance the flow run
                     {
                         let mut runs_w = runs.write();
-                        if let Some(run) = runs_w.get_mut(&run_id) {
+                        if let Some(run) = runs_w.get_mut(run_id) {
                             run.advance(target.to_string(), target_node.clone(), resolved);
                         }
                     }
@@ -334,26 +378,32 @@ impl FlowEngine {
                                 .to_string();
 
                             let mut runs_w = runs.write();
-                            if let Some(run) = runs_w.get_mut(&run_id) {
+                            if let Some(run) = runs_w.get_mut(run_id) {
                                 run.current_agent_id = Some(agent_id.clone());
                             }
                             let mut map_w = agent_map.write();
-                            map_w.remove(target);
-                            map_w.insert(agent_id.clone(), run_id.clone());
+                            // Remove this run from old agent, add to new
+                            if let Some(v) = map_w.get_mut(target) {
+                                v.retain(|id| id != run_id);
+                            }
+                            map_w
+                                .entry(agent_id.clone())
+                                .or_default()
+                                .push(run_id.to_string());
 
                             info!(run_id = %run_id, agent = %agent_id, node = %target_node, "Flow advanced");
                         }
                         Err(e) => {
                             error!(run_id = %run_id, error = %e, "Agent action failed");
                             let mut runs_w = runs.write();
-                            if let Some(run) = runs_w.get_mut(&run_id) {
+                            if let Some(run) = runs_w.get_mut(run_id) {
                                 run.fail(format!("Agent action failed: {e}"));
                             }
                         }
                     }
 
                     let _ = event_tx.send(CoreEvent::FlowStepCompleted {
-                        run_id: run_id.clone(),
+                        run_id: run_id.to_string(),
                         flow_name: flow_name.clone(),
                         node: current_gate_id.clone(),
                         outcome: "completed".to_string(),
@@ -382,14 +432,16 @@ impl FlowEngine {
 
                     let resolved = context.drain_resolved();
                     let mut runs_w = runs.write();
-                    if let Some(run) = runs_w.get_mut(&run_id) {
+                    if let Some(run) = runs_w.get_mut(run_id) {
                         run.complete(target.to_string(), resolved);
                     }
                     let mut map_w = agent_map.write();
-                    map_w.remove(target);
+                    if let Some(v) = map_w.get_mut(target) {
+                        v.retain(|id| id != run_id);
+                    }
 
                     let _ = event_tx.send(CoreEvent::FlowCompleted {
-                        run_id: run_id.clone(),
+                        run_id: run_id.to_string(),
                         flow_name: flow_name.clone(),
                     });
                     info!(run_id = %run_id, action = %action_name, "Flow completed with terminal action");
@@ -402,11 +454,11 @@ impl FlowEngine {
                 Err(e) => {
                     error!(run_id = %run_id, gate = %current_gate_id, error = %e, "Gate execution failed");
                     let mut runs_w = runs.write();
-                    if let Some(run) = runs_w.get_mut(&run_id) {
+                    if let Some(run) = runs_w.get_mut(run_id) {
                         run.fail(format!("Gate '{current_gate_id}' failed: {e}"));
                     }
                     let _ = event_tx.send(CoreEvent::FlowError {
-                        run_id: Some(run_id.clone()),
+                        run_id: Some(run_id.to_string()),
                         flow_name: Some(flow_name.clone()),
                         message: e.to_string(),
                     });
@@ -422,7 +474,7 @@ impl FlowEngine {
         flow_name: &str,
         params: HashMap<String, serde_json::Value>,
         runs: &Arc<RwLock<HashMap<String, FlowRun>>>,
-        agent_map: &Arc<RwLock<HashMap<String, String>>>,
+        agent_map: &Arc<RwLock<HashMap<String, Vec<String>>>>,
         registry: &Arc<FlowRegistry>,
         executor: &Arc<dyn FlowExecutor>,
         _event_tx: &broadcast::Sender<CoreEvent>,
@@ -476,7 +528,7 @@ impl FlowEngine {
             .to_string();
 
         let mut run = FlowRun::new(
-            run_id.clone(),
+            run_id.to_string(),
             flow_name.to_string(),
             trigger,
             entry_node.clone(),
@@ -488,11 +540,14 @@ impl FlowEngine {
 
         {
             let mut runs_w = runs.write();
-            runs_w.insert(run_id.clone(), run);
+            runs_w.insert(run_id.to_string(), run);
         }
         {
             let mut map_w = agent_map.write();
-            map_w.insert(agent_id.clone(), run_id.clone());
+            map_w
+                .entry(agent_id.clone())
+                .or_default()
+                .push(run_id.to_string());
         }
 
         info!(run_id = %run_id, flow = %flow_name, agent = %agent_id, "Flow v2 started");
@@ -509,14 +564,16 @@ impl FlowEngine {
     fn handle_cancel_flow(
         run_id: &str,
         runs: &Arc<RwLock<HashMap<String, FlowRun>>>,
-        agent_map: &Arc<RwLock<HashMap<String, String>>>,
+        agent_map: &Arc<RwLock<HashMap<String, Vec<String>>>>,
     ) {
         let mut runs_w = runs.write();
         if let Some(run) = runs_w.get_mut(run_id) {
             run.fail("Cancelled by user".to_string());
             if let Some(ref agent_id) = run.current_agent_id {
                 let mut map_w = agent_map.write();
-                map_w.remove(agent_id);
+                if let Some(v) = map_w.get_mut(agent_id) {
+                    v.retain(|id| id != run_id);
+                }
             }
             info!(run_id = %run_id, "Flow run cancelled");
         }
