@@ -129,9 +129,11 @@ export function GateFlowNode({ data, selected }: NodeProps) {
   );
 }
 
-/** Orchestrator node — purple/violet, fixed at top */
+/** Orchestrator node — two variants: start (top) and end (bottom) */
 export function OrchestratorFlowNode({ data, selected }: NodeProps) {
   const flowNames = (data.flowNames ?? []) as string[];
+  const variant = (data.variant ?? "start") as "start" | "end";
+  const isStart = variant === "start";
 
   return (
     <div
@@ -142,39 +144,46 @@ export function OrchestratorFlowNode({ data, selected }: NodeProps) {
       }`}
       style={{ minWidth: 180 }}
     >
-      {/* Queue input (from gate send_message) */}
-      <Handle
-        type="target"
-        id="queue"
-        position={Position.Top}
-        className="!h-3 !w-3 !border-2 !border-zinc-700 !bg-violet-400"
-        title="notifications from flows"
-      />
+      {/* END variant: input handle on top (receives notifications) */}
+      {!isStart && (
+        <Handle
+          type="target"
+          id="queue"
+          position={Position.Top}
+          className="!h-3 !w-3 !border-2 !border-zinc-700 !bg-violet-400"
+          title="notifications from flows"
+        />
+      )}
 
       <div className="flex items-center gap-2">
-        <span className="text-base">🎯</span>
-        <span className="text-sm font-bold text-violet-300">Orchestrator</span>
+        <span className="text-base">{isStart ? "🎯" : "📥"}</span>
+        <span className="text-sm font-bold text-violet-300">
+          Orchestrator{isStart ? "" : " (notify)"}
+        </span>
       </div>
-      <div className="mt-1 text-[10px] text-zinc-500">
-        {flowNames.length} flow{flowNames.length !== 1 ? "s" : ""}
-      </div>
+      {isStart && (
+        <div className="mt-1 text-[10px] text-zinc-500">
+          {flowNames.length} flow{flowNames.length !== 1 ? "s" : ""}
+        </div>
+      )}
 
-      {/* Output handles: one per flow */}
-      {flowNames.map((name, i) => {
-        const count = flowNames.length;
-        const pct = count === 1 ? 50 : 20 + (60 * i) / Math.max(count - 1, 1);
-        return (
-          <Handle
-            key={name}
-            type="source"
-            id={`flow-${name}`}
-            position={Position.Bottom}
-            style={{ left: `${pct}%` }}
-            className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-violet-400"
-            title={`flow: ${name}`}
-          />
-        );
-      })}
+      {/* START variant: output handles per flow (bottom) */}
+      {isStart &&
+        flowNames.map((name, i) => {
+          const count = flowNames.length;
+          const pct = count === 1 ? 50 : 20 + (60 * i) / Math.max(count - 1, 1);
+          return (
+            <Handle
+              key={name}
+              type="source"
+              id={`flow-${name}`}
+              position={Position.Bottom}
+              style={{ left: `${pct}%` }}
+              className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-violet-400"
+              title={`flow: ${name}`}
+            />
+          );
+        })}
     </div>
   );
 }

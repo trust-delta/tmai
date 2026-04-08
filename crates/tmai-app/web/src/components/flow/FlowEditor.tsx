@@ -40,12 +40,12 @@ function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges:
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // Orchestrator node (fixed, always present)
+  // Orchestrator START node (top — flow origins)
   nodes.push({
     id: "__orch__",
     type: "orchestrator",
     position: { x: 300, y: 20 },
-    data: { flowNames: Object.keys(flows) },
+    data: { flowNames: Object.keys(flows), variant: "start" },
     draggable: true,
   });
 
@@ -180,6 +180,25 @@ function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges:
       if (gate.else_action) {
         addOrchEdge("else", gate.else_action.target);
       }
+    }
+  }
+
+  // Orchestrator END node (bottom — notification sink)
+  // Position below all flow nodes
+  const allY = nodes.filter((n) => n.id !== "__orch__").map((n) => n.position.y);
+  const maxY = allY.length > 0 ? Math.max(...allY) : 200;
+  nodes.push({
+    id: "__orch_end__",
+    type: "orchestrator",
+    position: { x: 300, y: maxY + 180 },
+    data: { flowNames: [], variant: "end" },
+    draggable: true,
+  });
+
+  // Retarget orch notification edges to the END node
+  for (const edge of edges) {
+    if (edge.target === "__orch__" && edge.targetHandle === "queue") {
+      edge.target = "__orch_end__";
     }
   }
 
