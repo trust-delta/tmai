@@ -45,8 +45,8 @@ function configToReactFlow(config: FlowConfig): { nodes: Node[]; edges: Edge[] }
       type: "agent",
       position: { x: 0, y: 0 }, // auto-laid out below
       data: { config: agent, nodeKind: "agent" as const },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
     });
   }
 
@@ -57,8 +57,8 @@ function configToReactFlow(config: FlowConfig): { nodes: Node[]; edges: Edge[] }
       type: "gate",
       position: { x: 0, y: 0 },
       data: { config: gate, nodeKind: "gate" as const },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
     });
   }
 
@@ -102,9 +102,10 @@ function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
     if (visited.has(id)) continue;
     visited.add(id);
 
-    const row = colCounts.get(col) ?? 0;
-    colCounts.set(col, row + 1);
-    positions.set(id, { x: col * 280 + 40, y: row * 160 + 40 });
+    const col_count = colCounts.get(col) ?? 0;
+    colCounts.set(col, col_count + 1);
+    // Vertical layout: row = depth (top→bottom), col_count = horizontal spread
+    positions.set(id, { x: col_count * 240 + 40, y: col * 160 + 40 });
 
     for (const target of adj.get(id) ?? []) {
       if (!visited.has(target)) {
@@ -113,11 +114,11 @@ function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
     }
   }
 
-  let extraY = (Math.max(...Array.from(colCounts.values()), 0) + 1) * 160;
+  let extraX = (Math.max(...Array.from(colCounts.values()), 0) + 1) * 240;
   for (const node of nodes) {
     if (!positions.has(node.id)) {
-      positions.set(node.id, { x: 40, y: extraY });
-      extraY += 160;
+      positions.set(node.id, { x: extraX, y: 40 });
+      extraX += 240;
     }
   }
 

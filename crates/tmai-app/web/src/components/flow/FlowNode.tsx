@@ -1,6 +1,7 @@
 /**
  * Custom React Flow node components for flow editor v2.
  *
+ * Vertical layout: inputs on top, outputs on bottom.
  * AgentFlowNode (cyan) — LLM agent with initial/queue inputs and stop/error outputs
  * GateFlowNode (amber) — tmai judgment with input and then/else outputs
  */
@@ -21,20 +22,20 @@ export function AgentFlowNode({ data, selected }: NodeProps) {
       }`}
       style={{ minWidth: 150 }}
     >
-      {/* Input handles (left side) */}
+      {/* Input handles (top) */}
       <Handle
         type="target"
         id="initial"
-        position={Position.Left}
-        style={{ top: "30%" }}
+        position={Position.Top}
+        style={{ left: "30%" }}
         className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-cyan-400"
         title="initial prompt (spawn)"
       />
       <Handle
         type="target"
         id="queue"
-        position={Position.Left}
-        style={{ top: "70%" }}
+        position={Position.Top}
+        style={{ left: "70%" }}
         className="!h-2 !w-2 !border-2 !border-zinc-700 !bg-cyan-600"
         title="queue prompt (send_message)"
       />
@@ -49,20 +50,20 @@ export function AgentFlowNode({ data, selected }: NodeProps) {
         <span className="text-cyan-500/60">{config.agent_type}</span>
       </div>
 
-      {/* Output handles (right side) */}
+      {/* Output handles (bottom) */}
       <Handle
         type="source"
         id="stop"
-        position={Position.Right}
-        style={{ top: "30%" }}
+        position={Position.Bottom}
+        style={{ left: "30%" }}
         className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-red-400"
         title="stop hook"
       />
       <Handle
         type="source"
         id="error"
-        position={Position.Right}
-        style={{ top: "70%" }}
+        position={Position.Bottom}
+        style={{ left: "70%" }}
         className="!h-2 !w-2 !border-2 !border-zinc-700 !bg-red-600"
         title="error hook"
       />
@@ -84,11 +85,11 @@ export function GateFlowNode({ data, selected }: NodeProps) {
       }`}
       style={{ minWidth: 150 }}
     >
-      {/* Input handle */}
+      {/* Input handle (top) */}
       <Handle
         type="target"
         id="input"
-        position={Position.Left}
+        position={Position.Top}
         className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-amber-400"
         title="input (from hook or passthrough)"
       />
@@ -98,7 +99,7 @@ export function GateFlowNode({ data, selected }: NodeProps) {
         <span className="inline-block h-2.5 w-2.5 rotate-45 bg-amber-400" />
         <span className="text-sm font-medium text-zinc-200">{config.id}</span>
       </div>
-      <div className="mt-1 font-mono text-[10px] text-zinc-500 max-w-[160px] truncate">
+      <div className="mt-1 max-w-[160px] truncate font-mono text-[10px] text-zinc-500">
         {config.condition}
       </div>
       <div className="mt-0.5 text-[10px] text-zinc-600">
@@ -106,12 +107,12 @@ export function GateFlowNode({ data, selected }: NodeProps) {
         {hasElse ? ` / else: ${config.else_action?.action}` : ""}
       </div>
 
-      {/* Output handles */}
+      {/* Output handles (bottom) */}
       <Handle
         type="source"
         id="then"
-        position={Position.Right}
-        style={{ top: "35%" }}
+        position={Position.Bottom}
+        style={{ left: hasElse ? "30%" : "50%" }}
         className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-emerald-400"
         title="then (condition true)"
       />
@@ -119,8 +120,8 @@ export function GateFlowNode({ data, selected }: NodeProps) {
         <Handle
           type="source"
           id="else"
-          position={Position.Right}
-          style={{ top: "70%" }}
+          position={Position.Bottom}
+          style={{ left: "70%" }}
           className="!h-2 !w-2 !border-2 !border-zinc-700 !bg-rose-400"
           title="else (condition false)"
         />
