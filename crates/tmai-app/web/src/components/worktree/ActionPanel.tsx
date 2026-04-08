@@ -35,6 +35,10 @@ interface ActionPanelProps {
   worktrees?: WorktreeSnapshot[];
   onStartWorkDone?: (worktreeName: string) => void;
   onSelectWorktreeBranch?: (branch: string) => void;
+  /** Navigate to issue in Issues tab */
+  onNavigateToIssue?: (issue: IssueInfo) => void;
+  /** Navigate to branch in Branches tab (used from PrCard) */
+  onNavigateToBranch?: (branch: string) => void;
 }
 
 // Right-side action panel for selected branch
@@ -57,6 +61,8 @@ export function ActionPanel({
   worktrees,
   onStartWorkDone,
   onSelectWorktreeBranch,
+  onNavigateToIssue,
+  onNavigateToBranch,
 }: ActionPanelProps) {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -622,7 +628,12 @@ export function ActionPanel({
           {/* PR info */}
           {prInfo && (
             <div className="mt-2">
-              <PrCard pr={prInfo} onOpenDetail={onOpenDetail} />
+              <PrCard
+                pr={prInfo}
+                onOpenDetail={onOpenDetail}
+                onNavigateToIssue={onNavigateToIssue}
+                issues={issues}
+              />
             </div>
           )}
           {/* CI checks */}
@@ -736,7 +747,7 @@ export function ActionPanel({
           {ciSummary && ciSummary.checks.length === 0 && !ciLoading && !prInfo?.check_status && (
             <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
           )}
-          {/* Linked issues */}
+          {/* Linked issues — clickable to navigate to Issues tab */}
           {(() => {
             const nums = extractIssueNumbers(activeNode.name);
             if (prInfo?.title) {
@@ -751,13 +762,24 @@ export function ActionPanel({
                 <div className="mb-1 text-[11px] text-zinc-500">Linked issues</div>
                 <div className="flex flex-col gap-1">
                   {linked.map((issue) => (
-                    <a
+                    <button
                       key={issue.number}
-                      href={issue.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-start gap-1.5 rounded bg-white/[0.03] px-2 py-1.5 text-[11px] transition-colors hover:bg-white/[0.06]"
+                      type="button"
+                      onClick={() => onNavigateToIssue?.(issue)}
+                      className="flex items-start gap-1.5 rounded bg-white/[0.03] px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-white/[0.06]"
+                      title={`Go to issue #${issue.number}`}
                     >
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="mt-0.5 shrink-0 text-green-400"
+                        aria-hidden="true"
+                      >
+                        <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+                        <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z" />
+                      </svg>
                       <span className="shrink-0 text-green-400">#{issue.number}</span>
                       <span className="truncate text-zinc-300">{issue.title}</span>
                       {issue.labels.length > 0 && (
@@ -776,7 +798,7 @@ export function ActionPanel({
                           ))}
                         </div>
                       )}
-                    </a>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -806,6 +828,9 @@ export function ActionPanel({
                     )
                   }
                   actionBusy={actionBusy}
+                  onNavigateToIssue={onNavigateToIssue}
+                  onNavigateToBranch={onNavigateToBranch}
+                  issues={issues}
                 />
               ))}
             </div>
