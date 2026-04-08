@@ -634,6 +634,24 @@ impl AppState {
             .map(|s| s.as_str())
     }
 
+    /// Find the best fallback index when the currently selected agent is removed.
+    /// Priority: orchestrator agent → first agent in order → None
+    pub fn focus_fallback_index(&self) -> Option<usize> {
+        // Prefer the orchestrator agent
+        if let Some(idx) = self
+            .agent_order
+            .iter()
+            .position(|id| self.agents.get(id).is_some_and(|a| a.is_orchestrator))
+        {
+            return Some(idx);
+        }
+        // Fall back to first agent
+        if !self.agent_order.is_empty() {
+            return Some(0);
+        }
+        None
+    }
+
     /// Update agents from a new list
     pub fn update_agents(&mut self, agents: Vec<MonitoredAgent>) {
         // Use HashSet for O(1) lookup instead of Vec::contains O(n)
@@ -741,6 +759,11 @@ impl AppState {
         if let Some(old_id) = old_selected {
             if let Some(new_index) = self.agent_order.iter().position(|id| id == &old_id) {
                 self.selection.selected_index = new_index;
+            } else {
+                // Selected agent was removed — fall back to orchestrator or first agent
+                if let Some(fallback) = self.focus_fallback_index() {
+                    self.selection.selected_index = fallback;
+                }
             }
         }
 
@@ -1880,5 +1903,91 @@ mod tests {
             state.pending_orchestrator_ids.contains("main:1.0"),
             "pending entry for a different agent must remain"
         );
+    }
+
+    #[test]
+    fn test_focus_falls_back_to_orchestrator_when_selected_agent_removed() {
+        let mut state = AppState::new();
+
+        // Set up 3 agents: agent0 (selected), agent1 (orchestrator), agent2
+        let agent0 = create_test_agent("main:0.0");
+        let agent1 = create_test_agent("main:1.0");
+        let agent2 = create_test_agent("main:2.0");
+        state.update_agents(vec![agent0, agent1, agent2]);
+
+        // Select agent0
+        state.selection.selected_index = 0;
+        assert_eq!(state.selected_target(), Some("main:0.0"));
+
+        // Mark agent1 as orchestrator
+        state.agents.get_mut("main:1.0").unwrap().is_orchestrator = true;
+
+        // Agent0 disappears from poller results
+        let agent1 = create_test_agent("main:1.0");
+        let agent2 = create_test_agent("main:2.0");
+        state.update_agents(vec![agent1, agent2]);
+
+        // Focus should fall back to orchestrator (main:1.0)
+        assert_eq!(
+            state.selected_target(),
+            Some("main:1.0"),
+            "focus must fall back to orchestrator when selected agent is removed"
+        );
+    }
+
+    #[test]
+    fn test_focus_falls_back_to_first_agent_when_no_orchestrator() {
+        let mut state = AppState::new();
+
+        // Set up 2 agents, no orchestrator
+        let agent0 = create_test_agent("main:0.0");
+        let agent1 = create_test_agent("main:1.0");
+        state.update_agents(vec![agent0, agent1]);
+
+        // Select agent0
+        state.selection.selected_index = 0;
+        assert_eq!(state.selected_target(), Some("main:0.0"));
+
+        // Agent0 disappears — no orchestrator exists
+        let agent1 = create_test_agent("main:1.0");
+        state.update_agents(vec![agent1]);
+
+        // Focus should fall back to first agent
+        assert_eq!(
+            state.selected_target(),
+            Some("main:1.0"),
+            "focus must fall back to first agent when no orchestrator exists"
+        );
+    }
+
+    #[test]
+    fn test_focus_fallback_index_prefers_orchestrator() {
+        let mut state = AppState::new();
+
+        let agent0 = create_test_agent("main:0.0");
+        let mut agent1 = create_test_agent("main:1.0");
+        agent1.is_orchestrator = true;
+        let agent2 = create_test_agent("main:2.0");
+        state.update_agents(vec![agent0, agent1, agent2]);
+
+        // Orchestrator is at index 1
+        assert_eq!(state.focus_fallback_index(), Some(1));
+    }
+
+    #[test]
+    fn test_focus_fallback_index_returns_zero_when_no_orchestrator() {
+        let mut state = AppState::new();
+
+        let agent0 = create_test_agent("main:0.0");
+        let agent1 = create_test_agent("main:1.0");
+        state.update_agents(vec![agent0, agent1]);
+
+        assert_eq!(state.focus_fallback_index(), Some(0));
+    }
+
+    #[test]
+    fn test_focus_fallback_index_returns_none_when_empty() {
+        let state = AppState::new();
+        assert_eq!(state.focus_fallback_index(), None);
     }
 }
