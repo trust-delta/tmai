@@ -1,47 +1,50 @@
 /**
- * Node configuration panel — shown when a node is selected in the flow editor.
- *
- * Allows editing role properties: mode, prompt template, tools, agent type.
+ * Agent node configuration panel (v2).
  */
 
-import type { FlowNodeConfig } from "@/lib/api";
+import type { AgentNodeConfig } from "@/lib/api";
 
-interface NodeConfigPanelProps {
-  node: FlowNodeConfig;
-  onChange: (updated: FlowNodeConfig) => void;
+interface AgentConfigPanelProps {
+  agent: AgentNodeConfig;
+  onChange: (updated: AgentNodeConfig) => void;
 }
 
-/** Config panel for a selected flow node */
-export function NodeConfigPanel({ node, onChange }: NodeConfigPanelProps) {
+export function AgentConfigPanel({ agent, onChange }: AgentConfigPanelProps) {
   return (
     <div className="space-y-3">
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-        Node: {node.role}
+      <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-400">
+        <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
+        Agent: {agent.id}
       </h4>
 
-      {/* Mode */}
+      <label className="block">
+        <span className="text-[10px] text-zinc-500">ID</span>
+        <input
+          type="text"
+          value={agent.id}
+          onChange={(e) => onChange({ ...agent, id: e.target.value.trim() })}
+          className="mt-0.5 block w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 font-mono text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
+        />
+      </label>
+
       <label className="block">
         <span className="text-[10px] text-zinc-500">Mode</span>
         <select
-          value={node.mode}
-          onChange={(e) => onChange({ ...node, mode: e.target.value as "spawn" | "persistent" })}
+          value={agent.mode}
+          onChange={(e) => onChange({ ...agent, mode: e.target.value as "spawn" | "persistent" })}
           className="mt-0.5 block w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
         >
-          <option value="spawn">spawn (new agent per trigger)</option>
-          <option value="persistent">persistent (reuse idle agent)</option>
+          <option value="spawn">spawn</option>
+          <option value="persistent">persistent</option>
         </select>
       </label>
 
-      {/* Agent type */}
       <label className="block">
         <span className="text-[10px] text-zinc-500">Agent Type</span>
         <select
-          value={node.agent_type}
+          value={agent.agent_type}
           onChange={(e) =>
-            onChange({
-              ...node,
-              agent_type: e.target.value as "claude" | "codex" | "gemini",
-            })
+            onChange({ ...agent, agent_type: e.target.value as "claude" | "codex" | "gemini" })
           }
           className="mt-0.5 block w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
         >
@@ -51,28 +54,26 @@ export function NodeConfigPanel({ node, onChange }: NodeConfigPanelProps) {
         </select>
       </label>
 
-      {/* Prompt template */}
       <label className="block">
         <span className="text-[10px] text-zinc-500">Prompt Template</span>
         <textarea
-          value={node.prompt_template}
-          onChange={(e) => onChange({ ...node, prompt_template: e.target.value })}
-          rows={5}
-          placeholder="Resolve #{{issue_number}}: {{issue_title}}"
+          value={agent.prompt_template}
+          onChange={(e) => onChange({ ...agent, prompt_template: e.target.value })}
+          rows={4}
+          placeholder="Resolve #{{issue_number}}"
           className="mt-0.5 block w-full resize-y rounded border border-white/10 bg-white/[0.05] px-2 py-1 font-mono text-xs text-zinc-300 outline-none placeholder:text-zinc-600 focus:border-cyan-500/50"
         />
       </label>
 
-      {/* Tools */}
       <label className="block">
-        <span className="text-[10px] text-zinc-500">Tools (comma-separated, or * for all)</span>
+        <span className="text-[10px] text-zinc-500">Tools (* for all)</span>
         <input
           type="text"
-          value={Array.isArray(node.tools) ? node.tools.join(", ") : node.tools}
+          value={Array.isArray(agent.tools) ? agent.tools.join(", ") : agent.tools}
           onChange={(e) => {
             const val = e.target.value.trim();
             onChange({
-              ...node,
+              ...agent,
               tools:
                 val === "*"
                   ? "*"

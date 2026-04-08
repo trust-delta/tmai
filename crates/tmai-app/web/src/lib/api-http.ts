@@ -596,17 +596,17 @@ export interface OrchestratorSettings {
   is_project_override: boolean;
 }
 
-// ---- Flow Orchestration Types ----
+// ---- Flow Orchestration Types (v2: agent/gate/wire) ----
 
-export interface FlowNodeConfig {
-  role: string;
+export interface AgentNodeConfig {
+  id: string;
+  agent_type: "claude" | "codex" | "gemini";
   mode: "spawn" | "persistent";
   prompt_template: string;
   tools: string[] | string;
-  agent_type: "claude" | "codex" | "gemini";
 }
 
-export interface ResolveStepConfig {
+export interface ResolveStep {
   name: string;
   query: string;
   params: Record<string, string>;
@@ -614,34 +614,58 @@ export interface ResolveStepConfig {
   pick: "first" | "last" | "count" | "all";
 }
 
-export interface RouteStepConfig {
-  when: string;
-  action: string;
+export type ActionType =
+  | "send_message"
+  | "spawn_agent"
+  | "merge_pr"
+  | "review_pr"
+  | "rerun_ci"
+  | "passthrough"
+  | "noop";
+
+export interface GateAction {
+  action: ActionType;
   target: string | null;
   prompt: string | null;
   params: Record<string, unknown>;
 }
 
-export interface FlowEdgeConfig {
-  from: string;
-  event: string;
-  resolve: ResolveStepConfig[];
-  route: RouteStepConfig[];
+export interface GateNodeConfig {
+  id: string;
+  resolve: ResolveStep | null;
+  condition: string;
+  then_action: GateAction;
+  else_action: GateAction | null;
+}
+
+export type PortType = "initial" | "queue" | "stop" | "error" | "input" | "then" | "else";
+
+export interface PortRef {
+  node: string;
+  port: PortType;
+}
+
+export interface Wire {
+  from: PortRef;
+  to: PortRef;
 }
 
 export interface FlowConfig {
   description: string;
   entry_params: string[];
-  nodes: FlowNodeConfig[];
-  edges: FlowEdgeConfig[];
+  entry_node: string;
+  agents: AgentNodeConfig[];
+  gates: GateNodeConfig[];
+  wires: Wire[];
 }
 
 export interface FlowDefinitionSummary {
   name: string;
   description: string;
   entry_params: string[];
-  nodes: string[];
-  first_node: string;
+  agents: string[];
+  gates: string[];
+  entry_node: string;
 }
 
 export interface FlowStep {
