@@ -524,13 +524,17 @@ impl FlowEngine {
 }
 
 /// Generate a short random run ID
+/// Generate a unique run ID using timestamp + atomic counter
 fn generate_run_id() -> String {
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::SystemTime;
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
     let ts = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    format!("run-{:x}", ts & 0xFFFFFF)
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("run-{:x}-{:x}", ts & 0xFFFFFFFF, seq)
 }
 
 #[cfg(test)]
