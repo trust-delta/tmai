@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IssueInfo, PrInfo, WorktreeSnapshot } from "@/lib/api";
+import type { PrInfo, WorktreeSnapshot } from "@/lib/api";
 import { extractIssueNumbers, extractIssueRefs } from "@/lib/issue-utils";
 import { buildIssuePrMap } from "../IssuesPanel";
 
@@ -20,19 +20,6 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
     deletions: 0,
     comments: 0,
     reviews: 0,
-    ...overrides,
-  };
-}
-
-// Helper to create a minimal IssueInfo
-function makeIssue(overrides: Partial<IssueInfo> = {}): IssueInfo {
-  return {
-    number: 1,
-    title: "test issue",
-    state: "OPEN",
-    url: "https://github.com/test/repo/issues/1",
-    labels: [],
-    assignees: [],
     ...overrides,
   };
 }
