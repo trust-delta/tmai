@@ -222,8 +222,149 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         );
     }
 
-    // Start orchestrator notifier service
-    if settings.orchestrator.enabled {
+    // Start flow engine or legacy orchestrator notifier
+    if !settings.flow.is_empty() {
+        // Flow engine mode — node-based orchestration
+        let registry = tmai_core::flow::FlowRegistry::from_config(&settings.flow)
+            .context("Invalid flow configuration")?;
+
+        // Build a real executor with action handler delegating to local HTTP API
+        let default_repo = settings
+            .project
+            .first()
+            .map(|p| p.path.clone())
+            .unwrap_or_default();
+
+        // Capture dependencies for the action handler closure
+        let api_port = settings.web.port;
+        let api_token = {
+            let s = app_state.read();
+            s.web.token.clone().unwrap_or_default()
+        };
+        let action_cwd = default_repo.clone();
+        let action_core = core.clone();
+        let action_state = app.shared_state();
+
+        let executor = tmai_core::flow::real_executor::RealFlowExecutor::new(
+            default_repo,
+            move |action_name, params| {
+                let token = api_token.clone();
+                let cwd = action_cwd.clone();
+                let core = action_core.clone();
+                let state = action_state.clone();
+                Box::pin(async move {
+                    // send_prompt is handled directly via TmaiCore (async, no HTTP)
+                    if action_name == "send_prompt" {
+                        let target_role = params
+                            .get("target_role")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let prompt = params
+                            .get("prompt")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        // Find agent matching the target role
+                        let agent_target = {
+                            let s = state.read();
+                            s.agents.iter()
+                                .find(|(_, a)| {
+                                    // Match orchestrator role
+                                    (target_role == "orchestrator" && a.is_orchestrator)
+                                    // Or match by session_name/worktree_name containing the role
+                                    || a.session_name.as_deref().is_some_and(|n| n.contains(&target_role))
+                                    || a.worktree_name.as_deref().is_some_and(|n| n.contains(&target_role))
+                                })
+                                .map(|(t, _)| t.clone())
+                        };
+
+                        if let Some(ref target) = agent_target {
+                            match core.send_prompt(target, &prompt).await {
+                                Ok(result) => {
+                                    return Ok(serde_json::json!({
+                                        "agent_id": target,
+                                        "action": result.action,
+                                        "queue_size": result.queue_size,
+                                    }));
+                                }
+                                Err(e) => return Err(format!("send_prompt failed: {e}")),
+                            }
+                        }
+
+                        // No agent found — return role as stub agent_id
+                        return Ok(
+                            serde_json::json!({"agent_id": target_role, "status": "no_agent_found"}),
+                        );
+                    }
+
+                    // Other actions: delegate to HTTP API via spawn_blocking
+                    let base_url = format!("http://127.0.0.1:{}/api", api_port);
+                    let auth = format!("Bearer {token}");
+
+                    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+                        match action_name.as_str() {
+                            "spawn" => {
+                                let prompt = params.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let body = serde_json::json!({
+                                    "cwd": cwd,
+                                    "initial_prompt": prompt,
+                                });
+                                post_json(&base_url, "/spawn/worktree", &auth, &body)
+                            }
+                            "merge_pr" => {
+                                let body = serde_json::json!({
+                                    "repo": params.get("repo").and_then(|v| v.as_str()).unwrap_or(&cwd),
+                                    "pr_number": params.get("pr_number"),
+                                    "method": params.get("method").and_then(|v| v.as_str()).unwrap_or("squash"),
+                                    "delete_branch": params.get("delete_branch").and_then(|v| v.as_bool()).unwrap_or(true),
+                                    "delete_worktree": params.get("delete_worktree").and_then(|v| v.as_bool()).unwrap_or(false),
+                                });
+                                post_json(&base_url, "/github/pr/merge", &auth, &body)
+                            }
+                            "review_pr" => {
+                                let body = serde_json::json!({
+                                    "repo": params.get("repo").and_then(|v| v.as_str()).unwrap_or(&cwd),
+                                    "pr_number": params.get("pr_number"),
+                                    "action": params.get("action").and_then(|v| v.as_str()).unwrap_or("approve"),
+                                    "body": params.get("body").and_then(|v| v.as_str()).unwrap_or(""),
+                                });
+                                post_json(&base_url, "/github/pr/review", &auth, &body)
+                            }
+                            "rerun_ci" => {
+                                let branch = params.get("branch").and_then(|v| v.as_str()).unwrap_or("");
+                                let repo = params.get("repo").and_then(|v| v.as_str()).unwrap_or(&cwd);
+                                post_json(&base_url, &format!("/github/ci/rerun?branch={branch}&repo={repo}"), &auth, &serde_json::json!({}))
+                            }
+                            "kill" => {
+                                let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                post_json(&base_url, &format!("/agents/{id}/kill"), &auth, &serde_json::json!({}))
+                            }
+                            other => {
+                                tracing::warn!(action = %other, "Unknown flow action");
+                                Ok(serde_json::json!({"status": "unknown_action"}))
+                            }
+                        }
+                    }).await.map_err(|e| format!("spawn_blocking failed: {e}"))?;
+
+                    result
+                })
+            },
+        );
+
+        let flow_handle = tmai_core::flow::FlowEngine::spawn(
+            registry,
+            core.subscribe(),
+            core.event_sender(),
+            std::sync::Arc::new(executor),
+            Some(app.shared_state()),
+        );
+        core.set_flow_engine(flow_handle);
+
+        tracing::info!(flow_count = settings.flow.len(), "Flow engine started");
+    } else if settings.orchestrator.enabled {
+        // Legacy mode — OrchestratorNotifier
         tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
             settings.orchestrator.notify.clone(),
             app.shared_state(),
@@ -824,4 +965,22 @@ fn urlencoded(s: &str) -> String {
         .replace('/', "%2F")
         .replace(':', "%3A")
         .replace(' ', "%20")
+}
+
+/// POST JSON to a local tmai HTTP API endpoint and return the response as JSON
+fn post_json(
+    base_url: &str,
+    path: &str,
+    auth: &str,
+    body: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let url = format!("{base_url}{path}");
+    let mut resp = ureq::post(&url)
+        .header("Authorization", auth)
+        .send_json(body)
+        .map_err(|e| format!("HTTP POST {path} failed: {e}"))?;
+
+    resp.body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(|e| format!("Failed to parse response from {path}: {e}"))
 }

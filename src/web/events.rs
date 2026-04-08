@@ -317,6 +317,45 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::FlowStepCompleted { run_id, flow_name, node, outcome }) => {
+                            let data = serde_json::json!({
+                                "run_id": run_id,
+                                "flow_name": flow_name,
+                                "node": node,
+                                "outcome": outcome,
+                            });
+                            let event = Event::default()
+                                .event("flow_step_completed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::FlowCompleted { run_id, flow_name }) => {
+                            let data = serde_json::json!({
+                                "run_id": run_id,
+                                "flow_name": flow_name,
+                            });
+                            let event = Event::default()
+                                .event("flow_completed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Ok(CoreEvent::FlowError { run_id, flow_name, message }) => {
+                            let data = serde_json::json!({
+                                "run_id": run_id,
+                                "flow_name": flow_name,
+                                "message": message,
+                            });
+                            let event = Event::default()
+                                .event("flow_error")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })

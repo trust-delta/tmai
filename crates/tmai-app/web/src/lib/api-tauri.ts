@@ -214,4 +214,13 @@ export const api = {
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
   getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),
+
+  // Flow orchestration (HTTP only)
+  listFlows: () => httpApi.listFlows(),
+  runFlow: (flow: string, params: Record<string, unknown>) => httpApi.runFlow(flow, params),
+  listFlowRuns: (status?: string) => httpApi.listFlowRuns(status),
+  cancelFlow: (runId: string) => httpApi.cancelFlow(runId),
+  getFlowConfig: () => httpApi.getFlowConfig(),
+  updateFlowConfig: (flows: Record<string, import("./api-http").FlowConfig>) =>
+    httpApi.updateFlowConfig(flows),
 };
