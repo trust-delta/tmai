@@ -433,6 +433,19 @@ export function BranchGraph({
     return () => clearInterval(interval);
   }, [projectPath]);
 
+  // Navigate from Issues tab to a branch in Branches tab
+  const navigateToBranch = useCallback((branch: string) => {
+    setShowIssues(false);
+    setSelectedIssue(null);
+    setSelectedNode(branch);
+  }, []);
+
+  // Navigate from Branches tab to an issue in Issues tab
+  const navigateToIssue = useCallback((issue: IssueInfo) => {
+    setShowIssues(true);
+    setSelectedIssue(issue);
+  }, []);
+
   // Handle start-work completion: refresh data in background, stay on current tab
   const handleStartWorkDone = useCallback(
     (_worktreeName: string) => {
@@ -558,6 +571,8 @@ export function BranchGraph({
               branches={branches?.branches ?? []}
               selectedIssue={selectedIssue}
               onSelectIssue={setSelectedIssue}
+              onNavigateToBranch={navigateToBranch}
+              onNavigateToPr={navigateToBranch}
             />
 
             {/* Issue detail panel (middle, conditional) */}
@@ -591,11 +606,9 @@ export function BranchGraph({
                   defaultBranch={branches?.default_branch ?? "main"}
                   worktrees={projectWorktrees}
                   onStartWorkDone={handleStartWorkDone}
-                  onSelectWorktreeBranch={(branch) => {
-                    setShowIssues(false);
-                    setSelectedIssue(null);
-                    setSelectedNode(branch);
-                  }}
+                  onSelectWorktreeBranch={navigateToBranch}
+                  onNavigateToIssue={navigateToIssue}
+                  onNavigateToBranch={navigateToBranch}
                 />
               </div>
             )}
@@ -754,6 +767,8 @@ export function BranchGraph({
                   onSelectNode={setSelectedNode}
                   onFocusAgent={onFocusAgent}
                   onOpenDetail={setDetailView}
+                  onNavigateToIssue={navigateToIssue}
+                  onNavigateToBranch={(branch) => setSelectedNode(branch)}
                 />
               </div>
             )}

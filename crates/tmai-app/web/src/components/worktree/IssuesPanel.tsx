@@ -21,6 +21,10 @@ interface IssuesPanelProps {
   branches: string[];
   selectedIssue: IssueInfo | null;
   onSelectIssue: (issue: IssueInfo | null) => void;
+  /** Navigate to branch/worktree in Branches tab */
+  onNavigateToBranch?: (branch: string) => void;
+  /** Navigate to PR's branch in Branches tab */
+  onNavigateToPr?: (branch: string) => void;
 }
 
 // Build a map of issue number → linked PRs by cross-referencing branches and PR metadata
@@ -61,6 +65,8 @@ export function IssuesPanel({
   branches,
   selectedIssue,
   onSelectIssue,
+  onNavigateToBranch,
+  onNavigateToPr,
 }: IssuesPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
@@ -214,42 +220,86 @@ export function IssuesPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-zinc-200">{issue.title}</span>
-                      {/* Progress badges: Worktree/Agent → Branch → PR status */}
+                      {/* Cross-navigation badges: clickable to jump to branch/PR */}
                       {wtStatus && (
-                        <span
-                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const branch = wtStatus.worktree.branch ?? wtStatus.worktree.name;
+                            onNavigateToBranch?.(branch);
+                          }}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                             wtStatus.isAgentActive
-                              ? "bg-cyan-500/15 text-cyan-400"
-                              : "bg-amber-500/15 text-amber-400"
+                              ? "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+                              : "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
                           }`}
+                          title={`Go to branch: ${wtStatus.worktree.branch ?? wtStatus.worktree.name}`}
                         >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z" />
+                          </svg>
                           {wtStatus.isAgentActive ? "In Progress" : "Worktree"}
-                        </span>
+                        </button>
                       )}
                       {prLink ? (
-                        <span
-                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateToPr?.(prLink.branch);
+                          }}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                             prLink.pr.state === "MERGED"
-                              ? "bg-purple-500/15 text-purple-400"
+                              ? "bg-purple-500/15 text-purple-400 hover:bg-purple-500/25"
                               : prLink.pr.is_draft
-                                ? "bg-zinc-500/15 text-zinc-400"
-                                : "bg-green-500/15 text-green-400"
+                                ? "bg-zinc-500/15 text-zinc-400 hover:bg-zinc-500/25"
+                                : "bg-green-500/15 text-green-400 hover:bg-green-500/25"
                           }`}
-                          title={`PR #${prLink.pr.number}: ${prLink.pr.title}`}
+                          title={`Go to PR #${prLink.pr.number}: ${prLink.pr.title}`}
                         >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+                          </svg>
                           {prLink.pr.state === "MERGED"
                             ? `PR #${prLink.pr.number} Merged`
                             : prLink.pr.is_draft
                               ? `PR #${prLink.pr.number} Draft`
                               : `PR #${prLink.pr.number} Open`}
-                        </span>
+                        </button>
                       ) : linkedBranch && !wtStatus ? (
-                        <span
-                          className="shrink-0 rounded-full bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400"
-                          title={linkedBranch}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateToBranch?.(linkedBranch);
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-500/25"
+                          title={`Go to branch: ${linkedBranch}`}
                         >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z" />
+                          </svg>
                           Branch
-                        </span>
+                        </button>
                       ) : null}
                     </div>
                     {/* Labels */}
