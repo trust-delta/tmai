@@ -69,9 +69,8 @@ function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges:
         targetHandle: "initial",
         label: flowName,
         labelStyle: { fill: "#a1a1aa", fontSize: 10, fontFamily: "monospace", fontWeight: 600 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
-        style: { stroke: "#06b6d4", strokeWidth: 2 },
-        animated: true,
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
+        style: { stroke: "#a78bfa", strokeWidth: 2 },
       });
     }
 
