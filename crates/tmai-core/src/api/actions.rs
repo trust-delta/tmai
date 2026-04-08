@@ -841,8 +841,15 @@ impl TmaiCore {
             }
             {
                 let mut state = self.state().write();
+                let was_selected = state.selected_target() == Some(target.as_str());
                 state.agents.remove(&target);
                 state.agent_order.retain(|k| k != &target);
+                // If the killed agent was focused, fall back to orchestrator or first agent
+                if was_selected {
+                    if let Some(fallback) = state.focus_fallback_index() {
+                        state.selection.selected_index = fallback;
+                    }
+                }
             }
             self.notify_agents_updated();
             Ok(())
