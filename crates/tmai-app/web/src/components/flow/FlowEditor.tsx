@@ -158,6 +158,29 @@ function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges:
         data: { flowName, wireIndex: wi },
       });
     }
+
+    // Gate actions targeting __orch__ → visible edges to orch node
+    for (const gate of config.gates) {
+      const addOrchEdge = (branch: "then" | "else", target: string | null) => {
+        if (target === "__orch__") {
+          edges.push({
+            id: `${flowName}-${gate.id}-${branch}->orch`,
+            source: `${flowName}::${gate.id}`,
+            sourceHandle: branch,
+            target: "__orch__",
+            targetHandle: "queue",
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
+            style: { stroke: "#a78bfa", strokeWidth: 1.5, strokeDasharray: "4 2" },
+            label: branch === "then" ? "notify orch" : "else → orch",
+            labelStyle: { fill: "#a78bfa", fontSize: 9, fontFamily: "monospace" },
+          });
+        }
+      };
+      addOrchEdge("then", gate.then_action.target);
+      if (gate.else_action) {
+        addOrchEdge("else", gate.else_action.target);
+      }
+    }
   }
 
   return { nodes, edges };
