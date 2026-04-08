@@ -907,11 +907,13 @@ impl Poller {
                     .unwrap_or(false);
                 // connection_channels: whether channel *exists* (not just fresh)
                 let hook_registered = hook_state.is_some();
+                let is_pty_session = pane.session.starts_with("pty");
                 agent.connection_channels = crate::agents::ConnectionChannels {
                     has_tmux: is_real_tmux_pane,
                     has_ipc: wrap_state.is_some(),
                     has_hook: hook_registered && !is_ws_source,
                     has_websocket: hook_registered && is_ws_source,
+                    has_pty: is_pty_session,
                 };
 
                 // detection_source: which method was actually used for this poll cycle
