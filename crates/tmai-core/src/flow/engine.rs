@@ -613,14 +613,14 @@ mod tests {
                     AgentNodeConfig {
                         id: "impl".to_string(),
                         agent_type: AgentTypeName::default(),
-                        mode: NodeMode::Spawn,
+                        mode: None,
                         prompt_template: "Fix #{{issue_number}}".to_string(),
                         tools: ToolAccess::default(),
                     },
                     AgentNodeConfig {
                         id: "review".to_string(),
                         agent_type: AgentTypeName::default(),
-                        mode: NodeMode::Spawn,
+                        mode: None,
                         prompt_template: "Review".to_string(),
                         tools: ToolAccess::default(),
                     },

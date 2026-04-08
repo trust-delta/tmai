@@ -43,33 +43,20 @@ export function AgentConfigPanel({ agent, onChange, onDelete }: AgentConfigPanel
         />
       </label>
 
-      <div className="flex gap-2">
-        <label className="block flex-1">
-          <span className={labelCls}>Mode</span>
-          <select
-            value={agent.mode}
-            onChange={(e) => onChange({ ...agent, mode: e.target.value as "spawn" | "persistent" })}
-            className={selectCls}
-          >
-            <option value="spawn">spawn</option>
-            <option value="persistent">persistent</option>
-          </select>
-        </label>
-        <label className="block flex-1">
-          <span className={labelCls}>Type</span>
-          <select
-            value={agent.agent_type}
-            onChange={(e) =>
-              onChange({ ...agent, agent_type: e.target.value as "claude" | "codex" | "gemini" })
-            }
-            className={selectCls}
-          >
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-            <option value="gemini">Gemini</option>
-          </select>
-        </label>
-      </div>
+      <label className="block">
+        <span className={labelCls}>Agent Type</span>
+        <select
+          value={agent.agent_type}
+          onChange={(e) =>
+            onChange({ ...agent, agent_type: e.target.value as "claude" | "codex" | "gemini" })
+          }
+          className={selectCls}
+        >
+          <option value="claude">Claude</option>
+          <option value="codex">Codex</option>
+          <option value="gemini">Gemini</option>
+        </select>
+      </label>
 
       <label className="block">
         <span className={labelCls}>Prompt Template</span>

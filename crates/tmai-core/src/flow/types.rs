@@ -62,7 +62,7 @@ pub struct FlowConfig {
 
 // ---- Agent Node ----
 
-/// An agent node — LLM execution unit.
+/// An agent node — LLM execution unit. Always spawned fresh.
 ///
 /// Has two input ports (initial prompt, queue prompt) and
 /// hook output ports (stop, error).
@@ -75,10 +75,6 @@ pub struct AgentNodeConfig {
     #[serde(default)]
     pub agent_type: AgentTypeName,
 
-    /// Lifecycle mode
-    #[serde(default)]
-    pub mode: NodeMode,
-
     /// Default prompt template for the initial port (supports {{placeholders}})
     #[serde(default)]
     pub prompt_template: String,
@@ -86,17 +82,21 @@ pub struct AgentNodeConfig {
     /// MCP tools this agent is allowed to use
     #[serde(default)]
     pub tools: ToolAccess,
+
+    /// Legacy mode field (ignored, kept for config backward compat)
+    #[serde(default, skip_serializing)]
+    pub mode: Option<String>,
 }
 
-/// Node lifecycle mode
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum NodeMode {
-    /// Spawn a new worktree agent per trigger; can be killed after completion
-    #[default]
-    Spawn,
-    /// Reuse a single persistent agent; queue prompts when busy
-    Persistent,
+impl AgentNodeConfig {
+    /// Human-readable agent type string
+    pub fn agent_type_str(&self) -> &str {
+        match self.agent_type {
+            AgentTypeName::Claude => "claude",
+            AgentTypeName::Codex => "codex",
+            AgentTypeName::Gemini => "gemini",
+        }
+    }
 }
 
 /// Agent type name (for multi-vendor support)
@@ -612,7 +612,6 @@ to = { node = "orch", port = "queue" }
 
         // Agent
         assert_eq!(f.agents[0].id, "impl");
-        assert_eq!(f.agents[2].mode, NodeMode::Persistent);
         assert!(f.agents[2].tools.is_all());
 
         // Gate
@@ -656,7 +655,6 @@ to = { node = "done", port = "input" }
             toml::from_str(toml_str).expect("Failed to parse minimal flow");
 
         let f = &flows["simple"];
-        assert_eq!(f.agents[0].mode, NodeMode::Spawn);
         assert_eq!(f.agents[0].agent_type, AgentTypeName::Claude);
         assert_eq!(f.gates[0].then_action.action, ActionType::Noop);
     }

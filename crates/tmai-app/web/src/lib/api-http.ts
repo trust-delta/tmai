@@ -601,7 +601,6 @@ export interface OrchestratorSettings {
 export interface AgentNodeConfig {
   id: string;
   agent_type: "claude" | "codex" | "gemini";
-  mode: "spawn" | "persistent";
   prompt_template: string;
   tools: string[] | string;
 }

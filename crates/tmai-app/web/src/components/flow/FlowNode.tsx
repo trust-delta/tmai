@@ -45,8 +45,7 @@ export function AgentFlowNode({ data, selected }: NodeProps) {
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-cyan-400" />
         <span className="text-sm font-medium text-zinc-200">{config.id}</span>
       </div>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500">
-        <span>{config.mode}</span>
+      <div className="mt-1 text-[10px] text-zinc-500">
         <span className="text-cyan-500/60">{config.agent_type}</span>
       </div>
 
@@ -126,6 +125,56 @@ export function GateFlowNode({ data, selected }: NodeProps) {
           title="else (condition false)"
         />
       )}
+    </div>
+  );
+}
+
+/** Orchestrator node — purple/violet, fixed at top */
+export function OrchestratorFlowNode({ data, selected }: NodeProps) {
+  const flowNames = (data.flowNames ?? []) as string[];
+
+  return (
+    <div
+      className={`rounded-xl border-2 px-5 py-3 shadow-xl transition-colors ${
+        selected
+          ? "border-violet-500/60 bg-violet-950/40"
+          : "border-violet-500/30 bg-zinc-900/90 hover:border-violet-500/50"
+      }`}
+      style={{ minWidth: 180 }}
+    >
+      {/* Queue input (from gate send_message) */}
+      <Handle
+        type="target"
+        id="queue"
+        position={Position.Top}
+        className="!h-3 !w-3 !border-2 !border-zinc-700 !bg-violet-400"
+        title="notifications from flows"
+      />
+
+      <div className="flex items-center gap-2">
+        <span className="text-base">🎯</span>
+        <span className="text-sm font-bold text-violet-300">Orchestrator</span>
+      </div>
+      <div className="mt-1 text-[10px] text-zinc-500">
+        {flowNames.length} flow{flowNames.length !== 1 ? "s" : ""}
+      </div>
+
+      {/* Output handles: one per flow */}
+      {flowNames.map((name, i) => {
+        const count = flowNames.length;
+        const pct = count === 1 ? 50 : 20 + (60 * i) / Math.max(count - 1, 1);
+        return (
+          <Handle
+            key={name}
+            type="source"
+            id={`flow-${name}`}
+            position={Position.Bottom}
+            style={{ left: `${pct}%` }}
+            className="!h-2.5 !w-2.5 !border-2 !border-zinc-700 !bg-violet-400"
+            title={`flow: ${name}`}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 /**
- * Flow Editor v2 — typed agent/gate nodes with wire connections.
+ * Flow Editor v3 — Orchestrator-centric single canvas.
  *
- * Agent nodes (cyan) = LLM execution, ports: initial, queue, stop, error
- * Gate nodes (amber) = tmai judgment, ports: input, then, else
+ * One page per project. Orchestrator node fixed at top.
+ * Multiple named flows branch out from it.
  */
 
 import {
@@ -24,128 +24,143 @@ import "@xyflow/react/dist/style.css";
 import type { FlowConfig, FlowRun, PortType } from "@/lib/api";
 import { api } from "@/lib/api";
 import { GateConfigPanel } from "./EdgeConfigPanel";
-import { AgentFlowNode, GateFlowNode } from "./FlowNode";
+import { AgentFlowNode, GateFlowNode, OrchestratorFlowNode } from "./FlowNode";
 import { AgentConfigPanel } from "./NodeConfigPanel";
 
 const nodeTypes = {
   agent: AgentFlowNode,
   gate: GateFlowNode,
+  orchestrator: OrchestratorFlowNode,
 };
 
 const rfStyle = { backgroundColor: "transparent" };
 
-/** Convert v2 flow config to React Flow nodes and edges */
-function configToReactFlow(config: FlowConfig): { nodes: Node[]; edges: Edge[] } {
+/** Build the complete canvas from all flows + orchestrator */
+function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
+  const edges: Edge[] = [];
 
-  // Agent nodes
-  for (const agent of config.agents) {
-    nodes.push({
-      id: agent.id,
-      type: "agent",
-      position: { x: 0, y: 0 }, // auto-laid out below
-      data: { config: agent, nodeKind: "agent" as const },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
-    });
-  }
+  // Orchestrator node (fixed, always present)
+  nodes.push({
+    id: "__orch__",
+    type: "orchestrator",
+    position: { x: 300, y: 20 },
+    data: { flowNames: Object.keys(flows) },
+    draggable: true,
+  });
 
-  // Gate nodes
-  for (const gate of config.gates) {
-    nodes.push({
-      id: gate.id,
-      type: "gate",
-      position: { x: 0, y: 0 },
-      data: { config: gate, nodeKind: "gate" as const },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
-    });
-  }
+  // Layout each flow as a column
+  const flowNames = Object.keys(flows).sort();
+  const colWidth = 280;
 
-  // Wires → edges
-  const edges: Edge[] = config.wires.map((wire, i) => ({
-    id: `wire-${i}-${wire.from.node}-${wire.from.port}-${wire.to.node}-${wire.to.port}`,
-    source: wire.from.node,
-    sourceHandle: wire.from.port,
-    target: wire.to.node,
-    targetHandle: wire.to.port,
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
-    style: { stroke: "#06b6d4", strokeWidth: 1.5 },
-    label: `${wire.from.port} → ${wire.to.port}`,
-    labelStyle: { fill: "#71717a", fontSize: 9, fontFamily: "monospace" },
-    data: { wire },
-  }));
+  for (let fi = 0; fi < flowNames.length; fi++) {
+    const flowName = flowNames[fi];
+    const config = flows[flowName];
+    const offsetX = fi * colWidth * 2 + 40;
+    const offsetY = 160;
 
-  return { nodes: autoLayout(nodes, edges), edges };
-}
+    // Orch → first agent edge
+    if (config.entry_node) {
+      edges.push({
+        id: `orch->${flowName}`,
+        source: "__orch__",
+        sourceHandle: `flow-${flowName}`,
+        target: `${flowName}::${config.entry_node}`,
+        targetHandle: "initial",
+        label: flowName,
+        labelStyle: { fill: "#a1a1aa", fontSize: 10, fontFamily: "monospace", fontWeight: 600 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
+        style: { stroke: "#06b6d4", strokeWidth: 2 },
+        animated: true,
+      });
+    }
 
-/** BFS auto-layout */
-function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
-  if (nodes.length === 0) return nodes;
+    // BFS layout for this flow
+    const adj = new Map<string, string[]>();
+    for (const w of config.wires) {
+      const list = adj.get(w.from.node) ?? [];
+      list.push(w.to.node);
+      adj.set(w.from.node, list);
+    }
 
-  const adj = new Map<string, string[]>();
-  for (const e of edges) {
-    const list = adj.get(e.source) ?? [];
-    list.push(e.target);
-    adj.set(e.source, list);
-  }
+    const visited = new Set<string>();
+    const positions = new Map<string, { x: number; y: number }>();
+    const queue: { id: string; depth: number }[] = [
+      { id: config.entry_node || config.agents[0]?.id || "", depth: 0 },
+    ];
+    const depthCounts = new Map<number, number>();
 
-  const visited = new Set<string>();
-  const positions = new Map<string, { x: number; y: number }>();
-  const queue: { id: string; col: number }[] = [{ id: nodes[0].id, col: 0 }];
-  const colCounts = new Map<number, number>();
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item || !item.id) break;
+      const { id, depth } = item;
+      if (visited.has(id)) continue;
+      visited.add(id);
 
-  while (queue.length > 0) {
-    const item = queue.shift();
-    if (!item) break;
-    const { id, col } = item;
-    if (visited.has(id)) continue;
-    visited.add(id);
+      const col = depthCounts.get(depth) ?? 0;
+      depthCounts.set(depth, col + 1);
+      positions.set(id, { x: offsetX + col * colWidth, y: offsetY + depth * 150 });
 
-    const col_count = colCounts.get(col) ?? 0;
-    colCounts.set(col, col_count + 1);
-    // Vertical layout: row = depth (top→bottom), col_count = horizontal spread
-    positions.set(id, { x: col_count * 240 + 40, y: col * 160 + 40 });
-
-    for (const target of adj.get(id) ?? []) {
-      if (!visited.has(target)) {
-        queue.push({ id: target, col: col + 1 });
+      for (const t of adj.get(id) ?? []) {
+        if (!visited.has(t)) queue.push({ id: t, depth: depth + 1 });
       }
     }
-  }
 
-  let extraX = (Math.max(...Array.from(colCounts.values()), 0) + 1) * 240;
-  for (const node of nodes) {
-    if (!positions.has(node.id)) {
-      positions.set(node.id, { x: extraX, y: 40 });
-      extraX += 240;
+    // Place unvisited nodes
+    let extraY = offsetY + (Math.max(...Array.from(depthCounts.values()), 0) + 1) * 150;
+    const allNodeIds = [...config.agents.map((a) => a.id), ...config.gates.map((g) => g.id)];
+    for (const nid of allNodeIds) {
+      if (!positions.has(nid)) {
+        positions.set(nid, { x: offsetX, y: extraY });
+        extraY += 150;
+      }
+    }
+
+    // Agent nodes
+    for (const agent of config.agents) {
+      const pos = positions.get(agent.id) ?? { x: offsetX, y: offsetY };
+      nodes.push({
+        id: `${flowName}::${agent.id}`,
+        type: "agent",
+        position: pos,
+        data: { config: agent, flowName, nodeKind: "agent" as const },
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
+      });
+    }
+
+    // Gate nodes
+    for (const gate of config.gates) {
+      const pos = positions.get(gate.id) ?? { x: offsetX, y: offsetY };
+      nodes.push({
+        id: `${flowName}::${gate.id}`,
+        type: "gate",
+        position: pos,
+        data: { config: gate, flowName, nodeKind: "gate" as const },
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
+      });
+    }
+
+    // Wires → edges (prefix node IDs with flow name)
+    for (let wi = 0; wi < config.wires.length; wi++) {
+      const w = config.wires[wi];
+      const sourceId = w.from.node === "__orch__" ? "__orch__" : `${flowName}::${w.from.node}`;
+      const targetId = w.to.node === "__orch__" ? "__orch__" : `${flowName}::${w.to.node}`;
+      edges.push({
+        id: `${flowName}-wire-${wi}`,
+        source: sourceId,
+        sourceHandle: w.from.port,
+        target: targetId,
+        targetHandle: w.to.port,
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
+        style: { stroke: "#06b6d4", strokeWidth: 1.5 },
+        data: { flowName, wireIndex: wi },
+      });
     }
   }
 
-  return nodes.map((n) => ({
-    ...n,
-    position: positions.get(n.id) ?? n.position,
-  }));
-}
-
-/** Create empty flow */
-function createEmptyFlow(): FlowConfig {
-  return {
-    description: "",
-    entry_params: [],
-    entry_node: "agent_1",
-    agents: [
-      {
-        id: "agent_1",
-        agent_type: "claude",
-        mode: "spawn",
-        prompt_template: "",
-        tools: [],
-      },
-    ],
-    gates: [],
-    wires: [],
-  };
+  return { nodes, edges };
 }
 
 interface FlowEditorProps {
@@ -154,7 +169,6 @@ interface FlowEditorProps {
 
 export function FlowEditor(_props: FlowEditorProps) {
   const [flowConfigs, setFlowConfigs] = useState<Record<string, FlowConfig>>({});
-  const [selectedFlow, setSelectedFlow] = useState<string>("");
   const [flowRuns, setFlowRuns] = useState<FlowRun[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -162,7 +176,8 @@ export function FlowEditor(_props: FlowEditorProps) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  // Selection: "flowName::nodeId" or null
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showNewFlow, setShowNewFlow] = useState(false);
   const [newFlowName, setNewFlowName] = useState("");
 
@@ -170,13 +185,7 @@ export function FlowEditor(_props: FlowEditorProps) {
   useEffect(() => {
     api
       .getFlowConfig()
-      .then((configs: Record<string, FlowConfig>) => {
-        setFlowConfigs(configs);
-        const names = Object.keys(configs);
-        if (names.length > 0) {
-          setSelectedFlow((prev) => prev || names[0]);
-        }
-      })
+      .then((configs: Record<string, FlowConfig>) => setFlowConfigs(configs))
       .catch(() => setFlowConfigs({}));
     api
       .listFlowRuns()
@@ -184,30 +193,24 @@ export function FlowEditor(_props: FlowEditorProps) {
       .catch(() => {});
   }, []);
 
-  // Update canvas
+  // Rebuild canvas when configs change
   useEffect(() => {
-    if (!selectedFlow || !flowConfigs[selectedFlow]) {
-      setNodes([]);
-      setEdges([]);
-      return;
-    }
-    const { nodes: n, edges: e } = configToReactFlow(flowConfigs[selectedFlow]);
+    const { nodes: n, edges: e } = buildCanvas(flowConfigs);
     setNodes(n);
     setEdges(e);
-    setSelectedNode(null);
-  }, [selectedFlow, flowConfigs]);
+  }, [flowConfigs]);
 
-  // Mutate helpers (declared early for use in callbacks below)
+  // Helpers
   const updateConfig = useCallback(
-    (updater: (config: FlowConfig) => FlowConfig) => {
-      if (!selectedFlow || !flowConfigs[selectedFlow]) return;
+    (flowName: string, updater: (config: FlowConfig) => FlowConfig) => {
+      if (!flowConfigs[flowName]) return;
       setFlowConfigs({
         ...flowConfigs,
-        [selectedFlow]: updater({ ...flowConfigs[selectedFlow] }),
+        [flowName]: updater({ ...flowConfigs[flowName] }),
       });
       setDirty(true);
     },
-    [flowConfigs, selectedFlow],
+    [flowConfigs],
   );
 
   const onNodesChange = useCallback(
@@ -215,34 +218,29 @@ export function FlowEditor(_props: FlowEditorProps) {
     [],
   );
   const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      setEdges((eds) => applyEdgeChanges(changes, eds));
-      // Sync deletions back to flow config
-      const removals = changes.filter((c) => c.type === "remove");
-      if (removals.length > 0) {
-        const removedIds = new Set(removals.map((c) => c.id));
-        updateConfig((c) => {
-          c.wires = c.wires.filter(
-            (w, i) =>
-              !removedIds.has(`wire-${i}-${w.from.node}-${w.from.port}-${w.to.node}-${w.to.port}`),
-          );
-          return c;
-        });
-      }
-    },
-    [updateConfig],
+    (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    [],
   );
 
-  // Wire creation via drag-connect
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
       const fromPort = (connection.sourceHandle ?? "stop") as PortType;
       const toPort = (connection.targetHandle ?? "input") as PortType;
-      updateConfig((c) => {
+
+      // Parse flow name from node IDs (format: "flowName::nodeId")
+      const srcFlow = connection.source.split("::")[0];
+      const tgtFlow = connection.target.split("::")[0];
+      if (srcFlow !== tgtFlow) return; // cross-flow wires not allowed
+
+      const srcNode = connection.source.split("::")[1];
+      const tgtNode = connection.target.split("::")[1];
+      if (!srcNode || !tgtNode) return;
+
+      updateConfig(srcFlow, (c) => {
         c.wires.push({
-          from: { node: connection.source!, port: fromPort },
-          to: { node: connection.target!, port: toPort },
+          from: { node: srcNode, port: fromPort },
+          to: { node: tgtNode, port: toPort },
         });
         return c;
       });
@@ -251,42 +249,58 @@ export function FlowEditor(_props: FlowEditorProps) {
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node.id);
+    if (node.id === "__orch__") return; // orch settings handled separately
+    setSelectedNodeId(node.id);
   }, []);
+  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
 
-  const onPaneClick = useCallback(() => setSelectedNode(null), []);
+  // Parse selected node
+  const selectedFlowName = selectedNodeId?.split("::")[0];
+  const selectedLocalId = selectedNodeId?.split("::")[1];
+  const selectedFlowConfig = selectedFlowName ? flowConfigs[selectedFlowName] : null;
+  const selectedAgentConfig = selectedFlowConfig?.agents.find((a) => a.id === selectedLocalId);
+  const selectedGateConfig = selectedFlowConfig?.gates.find((g) => g.id === selectedLocalId);
 
+  // New flow
   const handleCreateFlow = useCallback(() => {
     const name = newFlowName.trim().toLowerCase().replace(/\s+/g, "_");
     if (!name || flowConfigs[name]) return;
-    setFlowConfigs({ ...flowConfigs, [name]: createEmptyFlow() });
-    setSelectedFlow(name);
+    setFlowConfigs({
+      ...flowConfigs,
+      [name]: {
+        description: "",
+        entry_params: [],
+        entry_node: "agent_1",
+        agents: [{ id: "agent_1", agent_type: "claude", prompt_template: "", tools: [] }],
+        gates: [],
+        wires: [],
+      },
+    });
     setShowNewFlow(false);
     setNewFlowName("");
     setDirty(true);
   }, [newFlowName, flowConfigs]);
 
+  // Add agent/gate to a specific flow (uses selectedFlowName or first flow)
+  const targetFlow = selectedFlowName ?? Object.keys(flowConfigs)[0];
+
   const handleAddAgent = useCallback(() => {
-    updateConfig((c) => {
+    if (!targetFlow) return;
+    updateConfig(targetFlow, (c) => {
       let id = "agent_1";
       let i = 1;
       while (c.agents.some((a) => a.id === id) || c.gates.some((g) => g.id === id)) {
         i++;
         id = `agent_${i}`;
       }
-      c.agents.push({
-        id,
-        agent_type: "claude",
-        mode: "spawn",
-        prompt_template: "",
-        tools: [],
-      });
+      c.agents.push({ id, agent_type: "claude", prompt_template: "", tools: [] });
       return c;
     });
-  }, [updateConfig]);
+  }, [targetFlow, updateConfig]);
 
   const handleAddGate = useCallback(() => {
-    updateConfig((c) => {
+    if (!targetFlow) return;
+    updateConfig(targetFlow, (c) => {
       let id = "gate_1";
       let i = 1;
       while (c.agents.some((a) => a.id === id) || c.gates.some((g) => g.id === id)) {
@@ -302,7 +316,7 @@ export function FlowEditor(_props: FlowEditorProps) {
       });
       return c;
     });
-  }, [updateConfig]);
+  }, [targetFlow, updateConfig]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -316,44 +330,13 @@ export function FlowEditor(_props: FlowEditorProps) {
     }
   }, [flowConfigs]);
 
-  const handleDeleteFlow = useCallback(() => {
-    if (!selectedFlow) return;
-    const updated = { ...flowConfigs };
-    delete updated[selectedFlow];
-    setFlowConfigs(updated);
-    setSelectedFlow(Object.keys(updated)[0] ?? "");
-    setDirty(true);
-  }, [flowConfigs, selectedFlow]);
-
-  const currentConfig = selectedFlow ? flowConfigs[selectedFlow] : null;
-
-  // Find selected node config
-  const selectedAgentConfig = currentConfig?.agents.find((a) => a.id === selectedNode);
-  const selectedGateConfig = currentConfig?.gates.find((g) => g.id === selectedNode);
-
-  const activeRuns = useMemo(
-    () => flowRuns.filter((r) => r.flow_name === selectedFlow && r.status === "running"),
-    [flowRuns, selectedFlow],
-  );
+  const activeRuns = useMemo(() => flowRuns.filter((r) => r.status === "running"), [flowRuns]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.06] px-3 py-2">
-        <h3 className="text-sm font-medium text-zinc-300">Flow</h3>
-
-        <select
-          value={selectedFlow}
-          onChange={(e) => setSelectedFlow(e.target.value)}
-          className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
-        >
-          {Object.keys(flowConfigs).length === 0 && <option value="">No flows</option>}
-          {Object.keys(flowConfigs).map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+        <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
 
         {showNewFlow ? (
           <div className="flex items-center gap-1">
@@ -364,7 +347,7 @@ export function FlowEditor(_props: FlowEditorProps) {
               onKeyDown={(e) => e.key === "Enter" && handleCreateFlow()}
               placeholder="flow name"
               className="w-24 rounded border border-white/10 bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50"
-              // biome-ignore lint/a11y/noAutofocus: UX requires focus
+              // biome-ignore lint/a11y/noAutofocus: UX
               autoFocus
             />
             <button
@@ -388,47 +371,28 @@ export function FlowEditor(_props: FlowEditorProps) {
             onClick={() => setShowNewFlow(true)}
             className="rounded bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-400 hover:bg-white/10"
           >
-            + New
+            + Flow
           </button>
         )}
 
-        {currentConfig && (
-          <>
-            <button
-              type="button"
-              onClick={handleAddAgent}
-              className="rounded bg-cyan-500/10 px-2 py-0.5 text-xs text-cyan-400 hover:bg-cyan-500/20"
-            >
-              + Agent
-            </button>
-            <button
-              type="button"
-              onClick={handleAddGate}
-              className="rounded bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-500/20"
-            >
-              + Gate
-            </button>
-            <input
-              type="text"
-              value={currentConfig.description}
-              onChange={(e) =>
-                updateConfig((c) => {
-                  c.description = e.target.value;
-                  return c;
-                })
-              }
-              placeholder="Description..."
-              className="w-32 rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-zinc-500 outline-none placeholder:text-zinc-600 focus:border-cyan-500/50 focus:text-zinc-300"
-            />
-            <button
-              type="button"
-              onClick={handleDeleteFlow}
-              className="rounded px-1.5 py-0.5 text-[10px] text-red-400/50 hover:bg-red-500/10 hover:text-red-400"
-            >
-              Delete
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={handleAddAgent}
+          disabled={!targetFlow}
+          className="rounded bg-cyan-500/10 px-2 py-0.5 text-xs text-cyan-400 hover:bg-cyan-500/20 disabled:opacity-30"
+        >
+          + Agent
+        </button>
+        <button
+          type="button"
+          onClick={handleAddGate}
+          disabled={!targetFlow}
+          className="rounded bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-500/20 disabled:opacity-30"
+        >
+          + Gate
+        </button>
+
+        {targetFlow && <span className="text-[10px] text-zinc-600">adding to: {targetFlow}</span>}
 
         <div className="flex-1" />
 
@@ -453,71 +417,56 @@ export function FlowEditor(_props: FlowEditorProps) {
       {/* Canvas + config panel */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1">
-          {currentConfig ? (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={onNodeClick}
-              onPaneClick={onPaneClick}
-              nodeTypes={nodeTypes}
-              fitView
-              colorMode="dark"
-              style={rfStyle}
-              defaultEdgeOptions={{
-                markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
-                style: { stroke: "#06b6d4", strokeWidth: 1.5 },
-              }}
-            >
-              <Background color="#27272a" gap={20} />
-              <Controls
-                showInteractive={false}
-                className="[&_button]:!border-white/10 [&_button]:!bg-zinc-900/80 [&_button]:!text-zinc-400 [&_button]:hover:!bg-zinc-800"
-              />
-            </ReactFlow>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-              <p className="text-sm text-zinc-500">
-                {Object.keys(flowConfigs).length === 0 ? "No flows defined yet" : "Select a flow"}
-              </p>
-              {Object.keys(flowConfigs).length === 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowNewFlow(true)}
-                  className="rounded-lg bg-cyan-500/20 px-4 py-2 text-sm text-cyan-400 hover:bg-cyan-500/30"
-                >
-                  Create your first flow
-                </button>
-              )}
-            </div>
-          )}
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={nodeTypes}
+            fitView
+            colorMode="dark"
+            style={rfStyle}
+            defaultEdgeOptions={{
+              markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
+              style: { stroke: "#06b6d4", strokeWidth: 1.5 },
+            }}
+          >
+            <Background color="#27272a" gap={20} />
+            <Controls
+              showInteractive={false}
+              className="[&_button]:!border-white/10 [&_button]:!bg-zinc-900/80 [&_button]:!text-zinc-400 [&_button]:hover:!bg-zinc-800"
+            />
+          </ReactFlow>
         </div>
 
         {/* Config panel */}
-        {selectedNode && currentConfig && (selectedAgentConfig || selectedGateConfig) && (
+        {selectedFlowName && selectedLocalId && selectedFlowConfig && (
           <div className="w-72 shrink-0 overflow-y-auto border-l border-white/[0.06] bg-zinc-900/50 p-3">
+            <div className="mb-2 text-[10px] text-zinc-600">Flow: {selectedFlowName}</div>
             {selectedAgentConfig && (
               <AgentConfigPanel
                 agent={selectedAgentConfig}
                 onChange={(updated) =>
-                  updateConfig((c) => {
-                    c.agents = c.agents.map((a) => (a.id === updated.id ? updated : a));
+                  updateConfig(selectedFlowName, (c) => {
+                    c.agents = c.agents.map((a) => (a.id === selectedLocalId ? updated : a));
                     return c;
                   })
                 }
                 onDelete={() => {
-                  updateConfig((c) => {
-                    const id = selectedAgentConfig.id;
-                    c.agents = c.agents.filter((a) => a.id !== id);
-                    c.wires = c.wires.filter((w) => w.from.node !== id && w.to.node !== id);
-                    if (c.entry_node === id) {
+                  updateConfig(selectedFlowName, (c) => {
+                    c.agents = c.agents.filter((a) => a.id !== selectedLocalId);
+                    c.wires = c.wires.filter(
+                      (w) => w.from.node !== selectedLocalId && w.to.node !== selectedLocalId,
+                    );
+                    if (c.entry_node === selectedLocalId) {
                       c.entry_node = c.agents[0]?.id ?? "";
                     }
                     return c;
                   });
-                  setSelectedNode(null);
+                  setSelectedNodeId(null);
                 }}
               />
             )}
@@ -525,19 +474,20 @@ export function FlowEditor(_props: FlowEditorProps) {
               <GateConfigPanel
                 gate={selectedGateConfig}
                 onChange={(updated) =>
-                  updateConfig((c) => {
-                    c.gates = c.gates.map((g) => (g.id === updated.id ? updated : g));
+                  updateConfig(selectedFlowName, (c) => {
+                    c.gates = c.gates.map((g) => (g.id === selectedLocalId ? updated : g));
                     return c;
                   })
                 }
                 onDelete={() => {
-                  updateConfig((c) => {
-                    const id = selectedGateConfig.id;
-                    c.gates = c.gates.filter((g) => g.id !== id);
-                    c.wires = c.wires.filter((w) => w.from.node !== id && w.to.node !== id);
+                  updateConfig(selectedFlowName, (c) => {
+                    c.gates = c.gates.filter((g) => g.id !== selectedLocalId);
+                    c.wires = c.wires.filter(
+                      (w) => w.from.node !== selectedLocalId && w.to.node !== selectedLocalId,
+                    );
                     return c;
                   });
-                  setSelectedNode(null);
+                  setSelectedNodeId(null);
                 }}
               />
             )}

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use super::registry::{FlowDefinition, FlowRegistry};
-use super::types::{FlowRun, NodeMode};
+use super::types::FlowRun;
 use crate::config::OrchestratorSettings;
 
 /// Compose a flow-aware orchestrator prompt.
@@ -81,11 +81,7 @@ fn format_flow_topology(registry: &FlowRegistry) -> String {
         // Agents
         lines.push("  Agents:".to_string());
         for agent in &config.agents {
-            let mode_label = match agent.mode {
-                NodeMode::Spawn => "spawn",
-                NodeMode::Persistent => "persistent",
-            };
-            lines.push(format!("    {} ({})", agent.id, mode_label));
+            lines.push(format!("    {} ({})", agent.id, agent.agent_type_str()));
         }
 
         // Gates
@@ -157,14 +153,14 @@ mod tests {
                     AgentNodeConfig {
                         id: "impl".to_string(),
                         agent_type: AgentTypeName::default(),
-                        mode: NodeMode::Spawn,
+                        mode: None,
                         prompt_template: String::new(),
                         tools: ToolAccess::default(),
                     },
                     AgentNodeConfig {
                         id: "orch".to_string(),
                         agent_type: AgentTypeName::default(),
-                        mode: NodeMode::Persistent,
+                        mode: None,
                         prompt_template: String::new(),
                         tools: ToolAccess::All(AllTools("*".to_string())),
                     },
@@ -210,7 +206,7 @@ mod tests {
         let prompt = compose_flow_aware_prompt(&registry, &runs, &settings);
         assert!(prompt.contains("Available Flows"));
         assert!(prompt.contains("feature"));
-        assert!(prompt.contains("impl (spawn)"));
+        assert!(prompt.contains("impl (claude)"));
         assert!(prompt.contains("check_pr"));
         assert!(prompt.contains("run_flow"));
     }

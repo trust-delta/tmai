@@ -210,7 +210,7 @@ mod tests {
             agents: vec![AgentNodeConfig {
                 id: "worker".to_string(),
                 agent_type: AgentTypeName::default(),
-                mode: NodeMode::Spawn,
+                mode: None,
                 prompt_template: String::new(),
                 tools: ToolAccess::default(),
             }],
