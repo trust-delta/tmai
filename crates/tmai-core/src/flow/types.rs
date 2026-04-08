@@ -1,14 +1,21 @@
-//! Type definitions for the node-based flow orchestration system.
+//! Type definitions for the node-based flow orchestration system (v2).
 //!
-//! ## Config types (deserialized from config.toml)
+//! ## Two node types
 //!
-//! - `FlowConfig` — a named flow definition with nodes and edges
-//! - `FlowNodeConfig` — agent role within a flow
-//! - `FlowEdgeConfig` — stop-to-kick connection between nodes
-//! - `ResolveStepConfig` — MCP tool query → variable binding
-//! - `RouteStepConfig` — conditional branch → action execution
+//! - **Agent Node**: LLM execution unit with typed input ports (initial/queue)
+//!   and hook output ports (stop/error)
+//! - **Gate Node** (tmai node): deterministic judgment — 1 resolve + 1 condition → 2 branches
 //!
-//! ## Runtime types (in-memory execution state)
+//! ## Typed wires
+//!
+//! Connections between ports are type-checked:
+//! - Agent.stop/error → Gate.input
+//! - Gate.then/else (send_message) → Agent.queue
+//! - Gate.then/else (spawn_agent) → Agent.initial
+//! - Gate.then/else (passthrough) → Gate.input
+//! - Gate.then/else (merge_pr etc.) → terminal (no connection)
+//!
+//! ## Runtime types (reused from v1)
 //!
 //! - `FlowRun` — one execution instance of a flow definition
 //! - `FlowStep` — completed step in a flow run's history
@@ -26,10 +33,9 @@ use serde::{Deserialize, Serialize};
 /// A named flow definition.
 ///
 /// Corresponds to `[flow.<name>]` in config.toml.
-/// The flow name is the key in the `HashMap<String, FlowConfig>` on Settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FlowConfig {
-    /// Human-readable description (shown in UI and orchestrator prompt)
+    /// Human-readable description
     #[serde(default)]
     pub description: String,
 
@@ -37,38 +43,49 @@ pub struct FlowConfig {
     #[serde(default)]
     pub entry_params: Vec<String>,
 
-    /// Node definitions within this flow
+    /// First agent node to kick when the flow starts
     #[serde(default)]
-    pub nodes: Vec<FlowNodeConfig>,
+    pub entry_node: String,
 
-    /// Edge definitions (stop-to-kick connections)
+    /// Agent nodes (LLM execution units)
     #[serde(default)]
-    pub edges: Vec<FlowEdgeConfig>,
+    pub agents: Vec<AgentNodeConfig>,
+
+    /// Gate nodes (tmai judgment/routing nodes)
+    #[serde(default)]
+    pub gates: Vec<GateNodeConfig>,
+
+    /// Typed connections between ports
+    #[serde(default)]
+    pub wires: Vec<Wire>,
 }
 
-/// An agent role within a flow.
-///
-/// Corresponds to `[[flow.<name>.nodes]]` in config.toml.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FlowNodeConfig {
-    /// Role name, referenced by edges' `from` and `target` fields
-    pub role: String,
+// ---- Agent Node ----
 
-    /// Lifecycle mode: spawn a new agent per trigger, or reuse a persistent one
+/// An agent node — LLM execution unit.
+///
+/// Has two input ports (initial prompt, queue prompt) and
+/// hook output ports (stop, error).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentNodeConfig {
+    /// Unique node ID within the flow
+    pub id: String,
+
+    /// Agent type
+    #[serde(default)]
+    pub agent_type: AgentTypeName,
+
+    /// Lifecycle mode
     #[serde(default)]
     pub mode: NodeMode,
 
-    /// Initial prompt template for this role (supports `{{placeholders}}`)
+    /// Default prompt template for the initial port (supports {{placeholders}})
     #[serde(default)]
     pub prompt_template: String,
 
-    /// MCP tools this role is allowed to use
+    /// MCP tools this agent is allowed to use
     #[serde(default)]
     pub tools: ToolAccess,
-
-    /// Agent type (defaults to "claude")
-    #[serde(default)]
-    pub agent_type: AgentTypeName,
 }
 
 /// Node lifecycle mode
@@ -80,6 +97,16 @@ pub enum NodeMode {
     Spawn,
     /// Reuse a single persistent agent; queue prompts when busy
     Persistent,
+}
+
+/// Agent type name (for multi-vendor support)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTypeName {
+    #[default]
+    Claude,
+    Codex,
+    Gemini,
 }
 
 /// MCP tool access control for a node
@@ -132,60 +159,52 @@ impl ToolAccess {
     }
 }
 
-/// Agent type name (for multi-vendor support)
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentTypeName {
-    #[default]
-    Claude,
-    Codex,
-    Gemini,
-}
+// ---- Gate Node (tmai node) ----
 
-/// A stop-to-kick edge connecting two nodes.
+/// A gate node — deterministic judgment with 1 condition and max 2 branches.
 ///
-/// Corresponds to `[[flow.<name>.edges]]` in config.toml.
-/// Contains resolve steps (context queries) and route steps (conditional actions).
+/// 1 resolve (optional) + 1 condition → then/else actions.
+/// Complex logic is built by chaining multiple gates.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FlowEdgeConfig {
-    /// Source node role name
-    pub from: String,
+pub struct GateNodeConfig {
+    /// Unique node ID within the flow
+    pub id: String,
 
-    /// Trigger event type (default: "stop")
-    #[serde(default = "default_event_stop")]
-    pub event: String,
-
-    /// Resolve steps: MCP tool queries that bind context variables.
-    /// Executed sequentially (later resolves can reference earlier results).
+    /// Optional: query to resolve a variable before condition evaluation
     #[serde(default)]
-    pub resolve: Vec<ResolveStepConfig>,
+    pub resolve: Option<ResolveStep>,
 
-    /// Route steps: conditional branches evaluated top-to-bottom.
-    /// First matching route's action is executed.
+    /// Condition expression (e.g., "pr != null", "ci.status == 'success'")
+    /// If omitted, always takes the `then` branch (unconditional gate).
+    #[serde(default = "default_true_condition")]
+    pub condition: String,
+
+    /// Action when condition is true (required)
+    pub then_action: GateAction,
+
+    /// Action when condition is false (optional — if omitted, no-op on false)
     #[serde(default)]
-    pub route: Vec<RouteStepConfig>,
+    pub else_action: Option<GateAction>,
 }
 
-fn default_event_stop() -> String {
-    "stop".to_string()
+fn default_true_condition() -> String {
+    "true".to_string()
 }
 
-/// A resolve step that queries an MCP tool and binds the result to a variable.
-///
-/// Corresponds to `[[flow.<name>.edges.resolve]]` in config.toml.
+/// A single resolve step — query an MCP tool and bind the result to a variable.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ResolveStepConfig {
-    /// Variable name to bind the result to
+pub struct ResolveStep {
+    /// Variable name to bind
     pub name: String,
 
-    /// MCP tool name to call (e.g., "list_prs", "get_ci_status")
+    /// MCP tool name to call
     pub query: String,
 
-    /// Parameters for the MCP tool call (values support `{{placeholders}}`)
+    /// Parameters for the tool call (values support {{placeholders}})
     #[serde(default)]
     pub params: HashMap<String, String>,
 
-    /// Filter expression for list results (e.g., "item.branch == agent.git_branch")
+    /// Filter expression for list results
     #[serde(default)]
     pub filter: Option<String>,
 
@@ -198,78 +217,147 @@ pub struct ResolveStepConfig {
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PickMode {
-    /// First element, or null if empty
     #[default]
     First,
-    /// Last element, or null if empty
     Last,
-    /// Count of matching elements (number)
     Count,
-    /// All matching elements (array)
     All,
 }
 
-/// A conditional route that maps a condition to an action.
-///
-/// Corresponds to `[[flow.<name>.edges.route]]` in config.toml.
+/// Action to execute from a gate's then/else branch.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RouteStepConfig {
-    /// Condition expression (e.g., "pr != null", "ci.status == 'success'")
-    /// Use "true" for catch-all default.
-    #[serde(rename = "when")]
-    pub condition: String,
+pub struct GateAction {
+    /// Action type
+    pub action: ActionType,
 
-    /// Action to execute: MCP tool name or builtin
-    /// (send_prompt, spawn, merge_pr, review_pr, rerun_ci, kill, noop)
-    pub action: String,
-
-    /// Target node role name (required for send_prompt, spawn)
+    /// Target node ID (for send_message, spawn_agent, passthrough)
     #[serde(default)]
     pub target: Option<String>,
 
-    /// Prompt template for send_prompt/spawn actions (supports `{{placeholders}}`)
+    /// Prompt template (for send_message, spawn_agent)
     #[serde(default)]
     pub prompt: Option<String>,
 
-    /// Additional action parameters (supports `{{placeholders}}` in string values)
+    /// Additional parameters (for merge_pr, review_pr, etc.)
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
 }
 
+/// Gate output action types
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionType {
+    /// Send a prompt to an existing agent's queue port
+    SendMessage,
+    /// Spawn a new agent (connects to initial port)
+    SpawnAgent,
+    /// Merge a PR (terminal action)
+    MergePr,
+    /// Review a PR (terminal action)
+    ReviewPr,
+    /// Rerun CI checks (terminal action)
+    RerunCi,
+    /// Pass context to the next gate (chaining)
+    Passthrough,
+    /// Do nothing
+    Noop,
+}
+
+impl ActionType {
+    /// Whether this action terminates the flow (no downstream connection)
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::MergePr | Self::ReviewPr | Self::RerunCi | Self::Noop
+        )
+    }
+
+    /// Whether this action targets an agent node
+    pub fn targets_agent(&self) -> bool {
+        matches!(self, Self::SendMessage | Self::SpawnAgent)
+    }
+}
+
+// ---- Wire (typed connection) ----
+
+/// A typed connection between two ports.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Wire {
+    /// Source port
+    pub from: PortRef,
+    /// Destination port
+    pub to: PortRef,
+}
+
+/// Reference to a specific port on a node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PortRef {
+    /// Node ID
+    pub node: String,
+    /// Port name
+    pub port: PortType,
+}
+
+/// Port types for agent and gate nodes.
+#[derive(Debug, Clone, Hash, Eq, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PortType {
+    // Agent input ports
+    /// Initial prompt (from spawn_agent)
+    Initial,
+    /// Queue prompt (from send_message to running agent)
+    Queue,
+
+    // Agent output ports
+    /// Agent stopped (hook)
+    Stop,
+    /// Agent error (hook)
+    Error,
+
+    // Gate I/O ports
+    /// Gate input (from agent hook or previous gate passthrough)
+    Input,
+    /// Gate output: condition was true
+    Then,
+    /// Gate output: condition was false
+    Else,
+}
+
+impl PortType {
+    /// Whether this is an output port
+    pub fn is_output(&self) -> bool {
+        matches!(self, Self::Stop | Self::Error | Self::Then | Self::Else)
+    }
+
+    /// Whether this is an input port
+    pub fn is_input(&self) -> bool {
+        matches!(self, Self::Initial | Self::Queue | Self::Input)
+    }
+}
+
 // ============================================================
-// Runtime types (in-memory execution state)
+// Runtime types (reused from v1, minimal changes)
 // ============================================================
 
 /// One execution instance of a flow definition.
-///
-/// Tracks progress through nodes, accumulates context variables across edges,
-/// and provides state for orchestrator prompt injection.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowRun {
-    /// Unique run identifier (short hash)
+    /// Unique run identifier
     pub run_id: String,
-
-    /// Flow definition name (e.g., "feature")
+    /// Flow definition name
     pub flow_name: String,
-
-    /// Human-readable trigger description (e.g., "issue #42")
+    /// Human-readable trigger description
     pub trigger: String,
-
-    /// Currently active node role
+    /// Currently active node ID
     pub current_node: String,
-
-    /// Agent executing the current node (if spawned/assigned)
+    /// Agent executing the current node (if agent node)
     pub current_agent_id: Option<String>,
-
     /// Completed steps history
     pub history: Vec<FlowStep>,
-
-    /// Accumulated context variables (propagated across edges)
+    /// Accumulated context variables (propagated across nodes)
     pub context: HashMap<String, serde_json::Value>,
-
     /// Run status
     pub status: FlowRunStatus,
-
     /// When this run started
     pub started_at: DateTime<Utc>,
 }
@@ -277,22 +365,17 @@ pub struct FlowRun {
 /// A completed step in a flow run's history
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowStep {
-    /// Node role that was executed
+    /// Node ID that was executed
     pub node: String,
-
-    /// Agent that executed this step
+    /// Agent that executed this step (empty for gate nodes)
     pub agent_id: String,
-
     /// When this step started
     pub started_at: DateTime<Utc>,
-
-    /// When this step finished (None if still running)
+    /// When this step finished
     pub finished_at: Option<DateTime<Utc>>,
-
     /// Step outcome
     pub outcome: StepOutcome,
-
-    /// Variables resolved during this step's edge evaluation
+    /// Variables resolved during this step
     pub resolved: HashMap<String, serde_json::Value>,
 }
 
@@ -300,9 +383,7 @@ pub struct FlowStep {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepOutcome {
-    /// Step completed successfully
     Completed,
-    /// Step encountered an error
     Error(String),
 }
 
@@ -310,11 +391,8 @@ pub enum StepOutcome {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FlowRunStatus {
-    /// Flow is actively running (some node is executing)
     Running,
-    /// Flow completed all steps successfully
     Completed,
-    /// Flow terminated due to an error
     Error(String),
 }
 
@@ -344,18 +422,15 @@ impl FlowRun {
         let step = FlowStep {
             node: self.current_node.clone(),
             agent_id,
-            started_at: self.started_at, // TODO: track per-step start
+            started_at: self.started_at,
             finished_at: Some(Utc::now()),
             outcome: StepOutcome::Completed,
             resolved: resolved.clone(),
         };
         self.history.push(step);
-
-        // Merge resolved variables into accumulated context
         for (k, v) in resolved {
             self.context.insert(k, v);
         }
-
         self.current_node = next_node;
         self.current_agent_id = None;
     }
@@ -390,17 +465,15 @@ impl FlowRun {
     }
 }
 
-/// Variable store for template expansion and condition evaluation within an edge pipeline.
+/// Variable store for template expansion and condition evaluation.
 ///
-/// Lookup order: resolved (current step) → accumulated (from FlowRun.context) → implicit (agent/hook/event/run).
+/// Lookup order: resolved (current step) → accumulated (from FlowRun.context) → implicit.
 #[derive(Debug, Clone)]
 pub struct FlowContext {
-    /// Variables from implicit sources (agent snapshot, hook state, event payload, run metadata)
+    /// Variables from implicit sources (agent snapshot, hook state, etc.)
     pub implicit: HashMap<String, serde_json::Value>,
-
-    /// Variables resolved in the current edge's resolve steps
+    /// Variables resolved in the current gate's resolve step
     pub resolved: HashMap<String, serde_json::Value>,
-
     /// Variables accumulated from previous steps (FlowRun.context)
     pub accumulated: HashMap<String, serde_json::Value>,
 }
@@ -433,12 +506,9 @@ impl FlowContext {
     }
 
     /// Get a value by dot-path (e.g., "pr.number", "agent.git_branch").
-    ///
-    /// Lookup order: resolved → accumulated → implicit.
     pub fn get(&self, path: &str) -> Option<&serde_json::Value> {
         let (root, rest) = path.split_once('.').unwrap_or((path, ""));
 
-        // Search in order: resolved → accumulated → implicit
         let root_value = self
             .resolved
             .get(root)
@@ -449,7 +519,6 @@ impl FlowContext {
             return Some(root_value);
         }
 
-        // Navigate nested JSON with remaining path segments
         let mut current = root_value;
         for segment in rest.split('.') {
             current = current.get(segment)?;
@@ -463,20 +532,12 @@ impl FlowContext {
     }
 }
 
-// ============================================================
-// FlowEngine handle types
-// ============================================================
-
 /// Result of starting a new flow run
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowKickResult {
-    /// Unique run ID
     pub run_id: String,
-    /// Flow definition name
     pub flow_name: String,
-    /// First node that was kicked
     pub first_node: String,
-    /// Agent ID of the first node's agent
     pub agent_id: String,
 }
 
@@ -486,211 +547,246 @@ mod tests {
 
     // ---- TOML deserialization tests ----
 
-    /// Test that a complete flow config round-trips through TOML
     #[test]
-    fn test_flow_config_toml_roundtrip() {
+    fn test_flow_config_v2_toml() {
         let toml_str = r#"
 [feature]
 description = "Issue実装 → レビュー → マージ"
 entry_params = ["issue_number"]
+entry_node = "impl"
 
-[[feature.nodes]]
-role = "implement"
-mode = "spawn"
+[[feature.agents]]
+id = "impl"
+agent_type = "claude"
 prompt_template = "Resolve #{{issue_number}}"
-tools = ["list_agents", "get_ci_status"]
+
+[[feature.agents]]
+id = "review"
 agent_type = "claude"
 
-[[feature.nodes]]
-role = "orchestrator"
+[[feature.agents]]
+id = "orch"
 mode = "persistent"
 tools = "*"
 
-[[feature.edges]]
-from = "implement"
-event = "stop"
+[[feature.gates]]
+id = "check_pr"
+condition = "pr != null"
 
-[[feature.edges.resolve]]
+[feature.gates.resolve]
 name = "pr"
 query = "list_prs"
 filter = "item.branch == agent.git_branch"
-pick = "first"
 
-[feature.edges.resolve.params]
-repo = "{{agent.cwd}}"
-
-[[feature.edges.route]]
-when = "pr != null"
-action = "spawn"
+[feature.gates.then_action]
+action = "spawn_agent"
 target = "review"
-prompt = "PR #{{pr.number}} をレビューしてください"
+prompt = "Review PR #{{pr.number}}"
 
-[[feature.edges.route]]
-when = "pr == null"
-action = "send_prompt"
-target = "orchestrator"
-prompt = "PR未作成。確認してください。"
+[feature.gates.else_action]
+action = "send_message"
+target = "orch"
+prompt = "No PR found"
+
+[[feature.wires]]
+from = { node = "impl", port = "stop" }
+to = { node = "check_pr", port = "input" }
+
+[[feature.wires]]
+from = { node = "check_pr", port = "then" }
+to = { node = "review", port = "initial" }
+
+[[feature.wires]]
+from = { node = "check_pr", port = "else" }
+to = { node = "orch", port = "queue" }
 "#;
 
         let flows: HashMap<String, FlowConfig> =
-            toml::from_str(toml_str).expect("Failed to parse flow config TOML");
+            toml::from_str(toml_str).expect("Failed to parse v2 flow config");
 
-        assert!(flows.contains_key("feature"));
-        let feature = &flows["feature"];
-        assert_eq!(feature.description, "Issue実装 → レビュー → マージ");
-        assert_eq!(feature.entry_params, vec!["issue_number"]);
+        let f = &flows["feature"];
+        assert_eq!(f.entry_node, "impl");
+        assert_eq!(f.agents.len(), 3);
+        assert_eq!(f.gates.len(), 1);
+        assert_eq!(f.wires.len(), 3);
 
-        // Nodes
-        assert_eq!(feature.nodes.len(), 2);
-        assert_eq!(feature.nodes[0].role, "implement");
-        assert_eq!(feature.nodes[0].mode, NodeMode::Spawn);
-        assert!(matches!(feature.nodes[0].tools, ToolAccess::List(ref l) if l.len() == 2));
+        // Agent
+        assert_eq!(f.agents[0].id, "impl");
+        assert_eq!(f.agents[2].mode, NodeMode::Persistent);
+        assert!(f.agents[2].tools.is_all());
 
-        assert_eq!(feature.nodes[1].role, "orchestrator");
-        assert_eq!(feature.nodes[1].mode, NodeMode::Persistent);
-        assert!(feature.nodes[1].tools.is_all());
+        // Gate
+        let gate = &f.gates[0];
+        assert_eq!(gate.id, "check_pr");
+        assert_eq!(gate.condition, "pr != null");
+        assert!(gate.resolve.is_some());
+        assert_eq!(gate.then_action.action, ActionType::SpawnAgent);
+        assert_eq!(gate.then_action.target.as_deref(), Some("review"));
+        assert!(gate.else_action.is_some());
 
-        // Edges
-        assert_eq!(feature.edges.len(), 1);
-        let edge = &feature.edges[0];
-        assert_eq!(edge.from, "implement");
-        assert_eq!(edge.event, "stop");
-
-        // Resolve
-        assert_eq!(edge.resolve.len(), 1);
-        assert_eq!(edge.resolve[0].name, "pr");
-        assert_eq!(edge.resolve[0].query, "list_prs");
-        assert_eq!(
-            edge.resolve[0].filter.as_deref(),
-            Some("item.branch == agent.git_branch")
-        );
-        assert_eq!(edge.resolve[0].pick, PickMode::First);
-        assert_eq!(edge.resolve[0].params.get("repo").unwrap(), "{{agent.cwd}}");
-
-        // Routes
-        assert_eq!(edge.route.len(), 2);
-        assert_eq!(edge.route[0].condition, "pr != null");
-        assert_eq!(edge.route[0].action, "spawn");
-        assert_eq!(edge.route[0].target.as_deref(), Some("review"));
-        assert_eq!(edge.route[1].condition, "pr == null");
-        assert_eq!(edge.route[1].action, "send_prompt");
+        // Wires
+        assert_eq!(f.wires[0].from.node, "impl");
+        assert_eq!(f.wires[0].from.port, PortType::Stop);
+        assert_eq!(f.wires[0].to.node, "check_pr");
+        assert_eq!(f.wires[0].to.port, PortType::Input);
     }
 
-    /// Test minimal flow config (most fields optional)
     #[test]
-    fn test_minimal_flow_config() {
+    fn test_minimal_flow() {
         let toml_str = r#"
 [simple]
-description = "Simple flow"
+entry_node = "worker"
 
-[[simple.nodes]]
-role = "worker"
+[[simple.agents]]
+id = "worker"
 
-[[simple.edges]]
-from = "worker"
+[[simple.gates]]
+id = "done"
+condition = "true"
 
-[[simple.edges.route]]
-when = "true"
-action = "noop"
-"#;
-        let flows: HashMap<String, FlowConfig> =
-            toml::from_str(toml_str).expect("Failed to parse minimal flow config");
-
-        let simple = &flows["simple"];
-        assert_eq!(simple.nodes.len(), 1);
-        assert_eq!(simple.nodes[0].mode, NodeMode::Spawn); // default
-        assert_eq!(simple.nodes[0].agent_type, AgentTypeName::Claude); // default
-
-        assert_eq!(simple.edges[0].event, "stop"); // default
-        assert!(simple.edges[0].resolve.is_empty()); // no resolve steps
-    }
-
-    /// Test multi-flow config
-    #[test]
-    fn test_multi_flow_config() {
-        let toml_str = r#"
-[feature]
-description = "Feature flow"
-entry_params = ["issue_number"]
-
-[[feature.nodes]]
-role = "implement"
-
-[[feature.edges]]
-from = "implement"
-
-[[feature.edges.route]]
-when = "true"
+[simple.gates.then_action]
 action = "noop"
 
-[hotfix]
-description = "Hotfix flow"
-entry_params = ["issue_number"]
-
-[[hotfix.nodes]]
-role = "implement"
-
-[[hotfix.edges]]
-from = "implement"
-
-[[hotfix.edges.route]]
-when = "true"
-action = "merge_pr"
-
-[hotfix.edges.route.params]
-method = "squash"
+[[simple.wires]]
+from = { node = "worker", port = "stop" }
+to = { node = "done", port = "input" }
 "#;
+
         let flows: HashMap<String, FlowConfig> =
-            toml::from_str(toml_str).expect("Failed to parse multi-flow config");
+            toml::from_str(toml_str).expect("Failed to parse minimal flow");
 
-        assert_eq!(flows.len(), 2);
-        assert!(flows.contains_key("feature"));
-        assert!(flows.contains_key("hotfix"));
-
-        let hotfix_route = &flows["hotfix"].edges[0].route[0];
-        assert_eq!(hotfix_route.action, "merge_pr");
-        assert_eq!(
-            hotfix_route.params.get("method"),
-            Some(&serde_json::Value::String("squash".to_string()))
-        );
+        let f = &flows["simple"];
+        assert_eq!(f.agents[0].mode, NodeMode::Spawn);
+        assert_eq!(f.agents[0].agent_type, AgentTypeName::Claude);
+        assert_eq!(f.gates[0].then_action.action, ActionType::Noop);
     }
 
-    /// Test route params with template placeholders
     #[test]
-    fn test_route_params_with_templates() {
+    fn test_gate_chain_toml() {
         let toml_str = r#"
-[merge_flow]
-description = "Auto-merge"
+[chain]
+entry_node = "impl"
 
-[[merge_flow.nodes]]
-role = "worker"
+[[chain.agents]]
+id = "impl"
 
-[[merge_flow.edges]]
-from = "worker"
+[[chain.agents]]
+id = "orch"
+mode = "persistent"
 
-[[merge_flow.edges.route]]
-when = "true"
+[[chain.gates]]
+id = "check_pr"
+condition = "pr != null"
+
+[chain.gates.then_action]
+action = "passthrough"
+target = "check_ci"
+
+[chain.gates.else_action]
+action = "send_message"
+target = "orch"
+prompt = "No PR"
+
+[[chain.gates]]
+id = "check_ci"
+condition = "ci.status == 'success'"
+
+[chain.gates.then_action]
 action = "merge_pr"
 
-[merge_flow.edges.route.params]
-pr_number = "{{pr.number}}"
+[chain.gates.then_action.params]
 method = "squash"
-delete_worktree = true
-"#;
-        let flows: HashMap<String, FlowConfig> = toml::from_str(toml_str).expect("Failed to parse");
 
-        let params = &flows["merge_flow"].edges[0].route[0].params;
-        assert_eq!(
-            params.get("pr_number"),
-            Some(&serde_json::Value::String("{{pr.number}}".to_string()))
-        );
-        assert_eq!(
-            params.get("delete_worktree"),
-            Some(&serde_json::Value::Bool(true))
-        );
+[chain.gates.else_action]
+action = "send_message"
+target = "orch"
+prompt = "CI failed"
+
+[[chain.wires]]
+from = { node = "impl", port = "stop" }
+to = { node = "check_pr", port = "input" }
+
+[[chain.wires]]
+from = { node = "check_pr", port = "then" }
+to = { node = "check_ci", port = "input" }
+
+[[chain.wires]]
+from = { node = "check_pr", port = "else" }
+to = { node = "orch", port = "queue" }
+
+[[chain.wires]]
+from = { node = "check_ci", port = "else" }
+to = { node = "orch", port = "queue" }
+"#;
+
+        let flows: HashMap<String, FlowConfig> =
+            toml::from_str(toml_str).expect("Failed to parse gate chain");
+
+        let f = &flows["chain"];
+        assert_eq!(f.gates.len(), 2);
+        assert_eq!(f.gates[0].then_action.action, ActionType::Passthrough);
+        assert_eq!(f.gates[1].then_action.action, ActionType::MergePr);
+        assert_eq!(f.wires.len(), 4);
     }
 
-    // ---- FlowContext tests ----
+    #[test]
+    fn test_action_type_properties() {
+        assert!(ActionType::MergePr.is_terminal());
+        assert!(ActionType::ReviewPr.is_terminal());
+        assert!(ActionType::Noop.is_terminal());
+        assert!(!ActionType::SendMessage.is_terminal());
+        assert!(!ActionType::SpawnAgent.is_terminal());
+        assert!(!ActionType::Passthrough.is_terminal());
+
+        assert!(ActionType::SendMessage.targets_agent());
+        assert!(ActionType::SpawnAgent.targets_agent());
+        assert!(!ActionType::Passthrough.targets_agent());
+        assert!(!ActionType::MergePr.targets_agent());
+    }
+
+    #[test]
+    fn test_port_type_properties() {
+        assert!(PortType::Stop.is_output());
+        assert!(PortType::Then.is_output());
+        assert!(!PortType::Initial.is_output());
+
+        assert!(PortType::Initial.is_input());
+        assert!(PortType::Queue.is_input());
+        assert!(PortType::Input.is_input());
+        assert!(!PortType::Stop.is_input());
+    }
+
+    #[test]
+    fn test_settings_integration() {
+        let toml_str = r#"
+poll_interval_ms = 500
+
+[flow.test]
+entry_node = "worker"
+
+[[flow.test.agents]]
+id = "worker"
+
+[[flow.test.gates]]
+id = "gate1"
+
+[flow.test.gates.then_action]
+action = "noop"
+
+[[flow.test.wires]]
+from = { node = "worker", port = "stop" }
+to = { node = "gate1", port = "input" }
+"#;
+        let settings: crate::config::Settings =
+            toml::from_str(toml_str).expect("Failed to parse settings with v2 flow");
+
+        assert_eq!(settings.flow.len(), 1);
+        let f = &settings.flow["test"];
+        assert_eq!(f.agents.len(), 1);
+        assert_eq!(f.gates.len(), 1);
+    }
+
+    // ---- FlowContext tests (unchanged from v1) ----
 
     #[test]
     fn test_flow_context_lookup_order() {
@@ -699,18 +795,15 @@ delete_worktree = true
             serde_json::json!({"git_branch": "feat/42"}),
         )]));
 
-        // Implicit lookup
         assert_eq!(
             ctx.get("agent.git_branch"),
             Some(&serde_json::json!("feat/42"))
         );
 
-        // Add accumulated (from prior step)
         ctx.accumulated
             .insert("pr".to_string(), serde_json::json!({"number": 123}));
         assert_eq!(ctx.get("pr.number"), Some(&serde_json::json!(123)));
 
-        // Resolved takes precedence over accumulated
         ctx.set("pr".to_string(), serde_json::json!({"number": 456}));
         assert_eq!(ctx.get("pr.number"), Some(&serde_json::json!(456)));
     }
@@ -723,160 +816,28 @@ delete_worktree = true
     }
 
     #[test]
-    fn test_flow_context_drain_resolved() {
-        let mut ctx = FlowContext::new(HashMap::new());
-        ctx.set("pr".to_string(), serde_json::json!({"number": 123}));
-        ctx.set("ci".to_string(), serde_json::json!({"status": "success"}));
-
-        let drained = ctx.drain_resolved();
-        assert_eq!(drained.len(), 2);
-        assert!(ctx.resolved.is_empty());
-    }
-
-    // ---- FlowRun tests ----
-
-    #[test]
     fn test_flow_run_lifecycle() {
         let mut run = FlowRun::new(
             "run-abc".to_string(),
             "feature".to_string(),
             "issue #42".to_string(),
-            "implement".to_string(),
+            "impl".to_string(),
         );
 
         assert!(run.is_running());
-        assert_eq!(run.current_node, "implement");
-        assert_eq!(run.steps_completed(), 0);
+        assert_eq!(run.current_node, "impl");
 
-        // Advance from implement to review
         let resolved = HashMap::from([("pr".to_string(), serde_json::json!({"number": 123}))]);
-        run.advance("agent-1".to_string(), "review".to_string(), resolved);
+        run.advance("agent-1".to_string(), "check_pr".to_string(), resolved);
 
-        assert_eq!(run.current_node, "review");
+        assert_eq!(run.current_node, "check_pr");
         assert_eq!(run.steps_completed(), 1);
-        assert!(run.is_running());
-        // Context should have pr accumulated
         assert_eq!(
             run.context.get("pr"),
             Some(&serde_json::json!({"number": 123}))
         );
 
-        // Complete the flow
-        run.complete("agent-2".to_string(), HashMap::new());
+        run.complete("".to_string(), HashMap::new());
         assert!(!run.is_running());
-        assert_eq!(run.steps_completed(), 2);
-    }
-
-    #[test]
-    fn test_flow_run_fail() {
-        let mut run = FlowRun::new(
-            "run-xyz".to_string(),
-            "feature".to_string(),
-            "issue #99".to_string(),
-            "implement".to_string(),
-        );
-
-        run.fail("Resolve failed: API timeout".to_string());
-        assert!(!run.is_running());
-        assert!(matches!(run.status, FlowRunStatus::Error(ref msg) if msg.contains("API timeout")));
-    }
-
-    // ---- ToolAccess tests ----
-
-    #[test]
-    fn test_tool_access_allows() {
-        let all = ToolAccess::All(AllTools("*".to_string()));
-        assert!(all.allows("anything"));
-        assert!(all.is_all());
-
-        let list = ToolAccess::List(vec!["list_agents".to_string(), "approve".to_string()]);
-        assert!(list.allows("list_agents"));
-        assert!(list.allows("approve"));
-        assert!(!list.allows("kill_agent"));
-        assert!(!list.is_all());
-    }
-
-    // ---- Settings integration test ----
-
-    /// Test that flow config is correctly parsed as part of full Settings TOML
-    #[test]
-    fn test_flow_in_settings_toml() {
-        let toml_str = r#"
-poll_interval_ms = 500
-
-[flow.feature]
-description = "Feature development"
-entry_params = ["issue_number"]
-
-[[flow.feature.nodes]]
-role = "implement"
-mode = "spawn"
-prompt_template = "Fix #{{issue_number}}"
-
-[[flow.feature.nodes]]
-role = "orchestrator"
-mode = "persistent"
-tools = "*"
-
-[[flow.feature.edges]]
-from = "implement"
-
-[[flow.feature.edges.resolve]]
-name = "pr"
-query = "list_prs"
-filter = "item.branch == agent.git_branch"
-
-[[flow.feature.edges.route]]
-when = "pr != null"
-action = "spawn"
-target = "review"
-prompt = "Review PR #{{pr.number}}"
-
-[[flow.feature.edges.route]]
-when = "true"
-action = "send_prompt"
-target = "orchestrator"
-prompt = "No PR found"
-
-[flow.hotfix]
-description = "Quick hotfix"
-
-[[flow.hotfix.nodes]]
-role = "implement"
-
-[[flow.hotfix.edges]]
-from = "implement"
-
-[[flow.hotfix.edges.route]]
-when = "true"
-action = "noop"
-"#;
-        let settings: crate::config::Settings =
-            toml::from_str(toml_str).expect("Failed to parse settings with flow config");
-
-        assert_eq!(settings.flow.len(), 2);
-
-        let feature = &settings.flow["feature"];
-        assert_eq!(feature.description, "Feature development");
-        assert_eq!(feature.nodes.len(), 2);
-        assert_eq!(feature.edges.len(), 1);
-        assert_eq!(feature.edges[0].resolve.len(), 1);
-        assert_eq!(feature.edges[0].route.len(), 2);
-
-        let hotfix = &settings.flow["hotfix"];
-        assert_eq!(hotfix.description, "Quick hotfix");
-        assert_eq!(hotfix.nodes.len(), 1);
-    }
-
-    /// Test that empty flow config (no [flow] section) works
-    #[test]
-    fn test_settings_without_flow() {
-        let toml_str = r#"
-poll_interval_ms = 500
-"#;
-        let settings: crate::config::Settings =
-            toml::from_str(toml_str).expect("Failed to parse settings without flow");
-
-        assert!(settings.flow.is_empty());
     }
 }

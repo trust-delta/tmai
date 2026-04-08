@@ -3589,8 +3589,9 @@ pub async fn list_flow_definitions(
                 "name": f.name,
                 "description": f.config.description,
                 "entry_params": f.config.entry_params,
-                "nodes": f.config.nodes.iter().map(|n| &n.role).collect::<Vec<_>>(),
-                "first_node": f.first_node,
+                "agents": f.config.agents.iter().map(|a| &a.id).collect::<Vec<_>>(),
+                "gates": f.config.gates.iter().map(|g| &g.id).collect::<Vec<_>>(),
+                "entry_node": f.config.entry_node,
             })
         })
         .collect();

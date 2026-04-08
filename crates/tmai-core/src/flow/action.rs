@@ -1,277 +1,150 @@
-//! Action executor — executes route actions after condition evaluation.
+//! Gate action executor — executes a gate node's resolve + condition + action.
 //!
-//! Handles target resolution (role name → agent) and dispatches
-//! to the appropriate MCP tool via the FlowExecutor trait.
+//! In v2, each gate has exactly 1 condition and max 2 branches (then/else).
 
 use std::collections::HashMap;
 
 use tracing::{debug, info};
 
+use super::condition;
 use super::executor::FlowExecutor;
+use super::resolver;
 use super::template;
-use super::types::{FlowContext, FlowNodeConfig, RouteStepConfig};
+use super::types::{ActionType, FlowContext, GateAction, GateNodeConfig};
 
-/// Result of executing a route action
+/// Result of executing a gate node
 #[derive(Debug, Clone)]
-pub enum ActionResult {
-    /// Prompt sent to an existing agent
-    PromptSent {
-        agent_id: String,
-        target_role: String,
+pub enum GateResult {
+    /// Action targets an agent (send_message or spawn_agent)
+    AgentAction {
+        action: ActionType,
+        target_node: String,
+        prompt: String,
+        params: HashMap<String, serde_json::Value>,
     },
-    /// New agent spawned
-    Spawned {
-        agent_id: String,
-        target_role: String,
+    /// Terminal action (merge_pr, review_pr, etc.)
+    TerminalAction {
+        action: ActionType,
+        params: HashMap<String, serde_json::Value>,
     },
-    /// Direct action executed (merge_pr, review_pr, etc.)
-    DirectAction {
-        action: String,
-        result: serde_json::Value,
-    },
-    /// No-op (condition matched but no action needed)
+    /// Passthrough to next gate
+    Passthrough { target_node: String },
+    /// No-op (condition false with no else_action)
     Noop,
 }
 
-/// Errors from action execution
+/// Errors from gate execution
 #[derive(Debug)]
-pub enum ActionError {
-    /// Unknown action name
-    UnknownAction(String),
-    /// Target role required but not specified
-    MissingTarget { action: String },
-    /// Target role has no node definition
-    UnknownTargetRole { role: String },
-    /// Prompt template required but not specified
-    MissingPrompt { action: String },
-    /// Executor returned an error
-    ExecutionFailed { action: String, error: String },
+pub enum GateError {
+    ResolveFailed(String),
+    ConditionFailed(String),
+    ActionFailed(String),
 }
 
-impl std::fmt::Display for ActionError {
+impl std::fmt::Display for GateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownAction(a) => write!(f, "unknown action: '{a}'"),
-            Self::MissingTarget { action } => {
-                write!(f, "action '{action}' requires a target role")
-            }
-            Self::UnknownTargetRole { role } => {
-                write!(f, "target role '{role}' not found in flow")
-            }
-            Self::MissingPrompt { action } => {
-                write!(f, "action '{action}' requires a prompt template")
-            }
-            Self::ExecutionFailed { action, error } => {
-                write!(f, "action '{action}' failed: {error}")
-            }
+            Self::ResolveFailed(e) => write!(f, "resolve failed: {e}"),
+            Self::ConditionFailed(e) => write!(f, "condition failed: {e}"),
+            Self::ActionFailed(e) => write!(f, "action failed: {e}"),
         }
     }
 }
 
-impl std::error::Error for ActionError {}
+impl std::error::Error for GateError {}
 
-/// Evaluate routes and execute the first matching action.
-///
-/// Returns the action result, or None if no route matched (should not happen
-/// if a catch-all `when = "true"` route is present).
-pub async fn evaluate_and_execute(
-    routes: &[RouteStepConfig],
-    context: &FlowContext,
-    node_defs: &HashMap<String, FlowNodeConfig>,
+/// Execute a gate node: resolve → condition → select then/else → return action
+pub async fn execute_gate(
+    gate: &GateNodeConfig,
+    context: &mut FlowContext,
     executor: &dyn FlowExecutor,
-) -> Result<Option<ActionResult>, ActionError> {
-    for route in routes {
-        let matched = super::condition::evaluate(&route.condition, context).map_err(|e| {
-            ActionError::ExecutionFailed {
-                action: route.action.clone(),
-                error: format!("condition evaluation failed: {e}"),
-            }
-        })?;
-
-        if !matched {
-            continue;
-        }
-
-        debug!(
-            condition = %route.condition,
-            action = %route.action,
-            target = ?route.target,
-            "Route matched"
-        );
-
-        let result = execute_action(route, context, node_defs, executor).await?;
-        return Ok(Some(result));
+) -> Result<GateResult, GateError> {
+    // Step 1: Resolve (optional)
+    if let Some(ref resolve) = gate.resolve {
+        let steps = [resolve.clone()];
+        resolver::resolve_all(&steps, context, executor)
+            .await
+            .map_err(|e| GateError::ResolveFailed(e.to_string()))?;
     }
 
-    // No route matched
-    Ok(None)
-}
+    // Step 2: Evaluate condition
+    let condition_met = condition::evaluate(&gate.condition, context)
+        .map_err(|e| GateError::ConditionFailed(e.to_string()))?;
 
-/// Execute a single route's action
-async fn execute_action(
-    route: &RouteStepConfig,
-    context: &FlowContext,
-    node_defs: &HashMap<String, FlowNodeConfig>,
-    executor: &dyn FlowExecutor,
-) -> Result<ActionResult, ActionError> {
-    match route.action.as_str() {
-        "send_prompt" => execute_send_prompt(route, context, node_defs, executor).await,
-        "spawn" => execute_spawn(route, context, node_defs, executor).await,
-        "merge_pr" => execute_direct(route, context, executor).await,
-        "review_pr" => execute_direct(route, context, executor).await,
-        "rerun_ci" => execute_direct(route, context, executor).await,
-        "kill" => execute_direct(route, context, executor).await,
-        "noop" => Ok(ActionResult::Noop),
-        other => Err(ActionError::UnknownAction(other.to_string())),
-    }
-}
-
-/// Execute send_prompt action — send a message to a persistent or existing agent
-async fn execute_send_prompt(
-    route: &RouteStepConfig,
-    context: &FlowContext,
-    node_defs: &HashMap<String, FlowNodeConfig>,
-    executor: &dyn FlowExecutor,
-) -> Result<ActionResult, ActionError> {
-    let target_role = route.target.as_ref().ok_or(ActionError::MissingTarget {
-        action: "send_prompt".to_string(),
-    })?;
-
-    let _node_def = node_defs
-        .get(target_role)
-        .ok_or(ActionError::UnknownTargetRole {
-            role: target_role.clone(),
-        })?;
-
-    let prompt = route.prompt.as_ref().ok_or(ActionError::MissingPrompt {
-        action: "send_prompt".to_string(),
-    })?;
-    let expanded_prompt = template::expand(prompt, context);
-
-    let mut params = template::expand_params(&route.params, context);
-    params.insert(
-        "target_role".to_string(),
-        serde_json::Value::String(target_role.clone()),
-    );
-    params.insert(
-        "prompt".to_string(),
-        serde_json::Value::String(expanded_prompt),
+    debug!(
+        gate = %gate.id,
+        condition = %gate.condition,
+        result = condition_met,
+        "Gate condition evaluated"
     );
 
-    let result = executor.action("send_prompt", &params).await.map_err(|e| {
-        ActionError::ExecutionFailed {
-            action: "send_prompt".to_string(),
-            error: e,
-        }
-    })?;
-
-    let agent_id = result
-        .get("agent_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    info!(
-        target_role = %target_role,
-        agent_id = %agent_id,
-        "Sent prompt to agent"
-    );
-
-    Ok(ActionResult::PromptSent {
-        agent_id,
-        target_role: target_role.clone(),
-    })
-}
-
-/// Execute spawn action — create a new worktree agent
-async fn execute_spawn(
-    route: &RouteStepConfig,
-    context: &FlowContext,
-    node_defs: &HashMap<String, FlowNodeConfig>,
-    executor: &dyn FlowExecutor,
-) -> Result<ActionResult, ActionError> {
-    let target_role = route.target.as_ref().ok_or(ActionError::MissingTarget {
-        action: "spawn".to_string(),
-    })?;
-
-    let node_def = node_defs
-        .get(target_role)
-        .ok_or(ActionError::UnknownTargetRole {
-            role: target_role.clone(),
-        })?;
-
-    // Determine prompt: route prompt takes precedence, then node's prompt_template
-    let prompt = if let Some(ref route_prompt) = route.prompt {
-        template::expand(route_prompt, context)
-    } else if !node_def.prompt_template.is_empty() {
-        template::expand(&node_def.prompt_template, context)
+    // Step 3: Select action based on condition
+    let selected_action = if condition_met {
+        Some(&gate.then_action)
     } else {
-        return Err(ActionError::MissingPrompt {
-            action: "spawn".to_string(),
-        });
+        gate.else_action.as_ref()
     };
 
-    let mut params = template::expand_params(&route.params, context);
-    params.insert(
-        "target_role".to_string(),
-        serde_json::Value::String(target_role.clone()),
-    );
-    params.insert("prompt".to_string(), serde_json::Value::String(prompt));
-    params.insert(
-        "mode".to_string(),
-        serde_json::Value::String(format!("{:?}", node_def.mode)),
-    );
+    let Some(action) = selected_action else {
+        // Condition false, no else_action → noop
+        debug!(gate = %gate.id, "No else_action, returning noop");
+        return Ok(GateResult::Noop);
+    };
 
-    let result =
-        executor
-            .action("spawn", &params)
-            .await
-            .map_err(|e| ActionError::ExecutionFailed {
-                action: "spawn".to_string(),
-                error: e,
-            })?;
-
-    let agent_id = result
-        .get("agent_id")
-        .or_else(|| result.get("session_id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    info!(
-        target_role = %target_role,
-        agent_id = %agent_id,
-        mode = ?node_def.mode,
-        "Spawned agent for flow"
-    );
-
-    Ok(ActionResult::Spawned {
-        agent_id,
-        target_role: target_role.clone(),
-    })
+    // Step 4: Build result from selected action
+    execute_action(action, context)
 }
 
-/// Execute a direct action (merge_pr, review_pr, rerun_ci, kill)
-async fn execute_direct(
-    route: &RouteStepConfig,
-    context: &FlowContext,
-    executor: &dyn FlowExecutor,
-) -> Result<ActionResult, ActionError> {
-    let params = template::expand_params(&route.params, context);
+/// Convert a GateAction into a GateResult
+fn execute_action(action: &GateAction, context: &FlowContext) -> Result<GateResult, GateError> {
+    let expanded_prompt = action
+        .prompt
+        .as_deref()
+        .map(|p| template::expand(p, context))
+        .unwrap_or_default();
 
-    let result = executor.action(&route.action, &params).await.map_err(|e| {
-        ActionError::ExecutionFailed {
-            action: route.action.clone(),
-            error: e,
+    let expanded_params = template::expand_params(&action.params, context);
+
+    match &action.action {
+        ActionType::SendMessage | ActionType::SpawnAgent => {
+            let target = action.target.as_ref().ok_or_else(|| {
+                GateError::ActionFailed(format!("{:?} requires a target", action.action))
+            })?;
+
+            info!(
+                action = ?action.action,
+                target = %target,
+                "Gate action → agent"
+            );
+
+            Ok(GateResult::AgentAction {
+                action: action.action.clone(),
+                target_node: target.clone(),
+                prompt: expanded_prompt,
+                params: expanded_params,
+            })
         }
-    })?;
+        ActionType::Passthrough => {
+            let target = action.target.as_ref().ok_or_else(|| {
+                GateError::ActionFailed("passthrough requires a target".to_string())
+            })?;
 
-    info!(action = %route.action, "Executed direct action");
+            debug!(target = %target, "Gate action → passthrough");
 
-    Ok(ActionResult::DirectAction {
-        action: route.action.clone(),
-        result,
-    })
+            Ok(GateResult::Passthrough {
+                target_node: target.clone(),
+            })
+        }
+        ActionType::MergePr | ActionType::ReviewPr | ActionType::RerunCi => {
+            info!(action = ?action.action, "Gate action → terminal");
+
+            Ok(GateResult::TerminalAction {
+                action: action.action.clone(),
+                params: expanded_params,
+            })
+        }
+        ActionType::Noop => Ok(GateResult::Noop),
+    }
 }
 
 #[cfg(test)]
@@ -283,275 +156,193 @@ mod tests {
     fn test_context() -> FlowContext {
         let mut ctx = FlowContext::new(HashMap::from([(
             "agent".to_string(),
-            serde_json::json!({
-                "git_branch": "feat/42",
-                "display_name": "wt-42",
-            }),
+            serde_json::json!({"git_branch": "feat/42"}),
         )]));
         ctx.set(
             "pr".to_string(),
             serde_json::json!({"number": 123, "title": "Add auth"}),
         );
-        ctx.set("ci".to_string(), serde_json::json!({"status": "success"}));
         ctx
     }
 
-    fn test_node_defs() -> HashMap<String, FlowNodeConfig> {
-        HashMap::from([
-            (
-                "review".to_string(),
-                FlowNodeConfig {
-                    role: "review".to_string(),
-                    mode: NodeMode::Spawn,
-                    prompt_template: "Default review prompt".to_string(),
-                    tools: ToolAccess::default(),
-                    agent_type: AgentTypeName::default(),
-                },
-            ),
-            (
-                "orchestrator".to_string(),
-                FlowNodeConfig {
-                    role: "orchestrator".to_string(),
-                    mode: NodeMode::Persistent,
-                    prompt_template: String::new(),
-                    tools: ToolAccess::All(AllTools("*".to_string())),
-                    agent_type: AgentTypeName::default(),
-                },
-            ),
-        ])
-    }
-
-    #[tokio::test]
-    async fn test_first_matching_route_executes() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let mut executor = MockExecutor::new();
-        executor.action_responses.insert(
-            "spawn".to_string(),
-            serde_json::json!({"agent_id": "new-agent-1"}),
-        );
-
-        let routes = vec![
-            RouteStepConfig {
-                condition: "pr != null".to_string(),
-                action: "spawn".to_string(),
+    fn gate_with_pr_check() -> GateNodeConfig {
+        GateNodeConfig {
+            id: "check_pr".to_string(),
+            resolve: None,
+            condition: "pr != null".to_string(),
+            then_action: GateAction {
+                action: ActionType::SpawnAgent,
                 target: Some("review".to_string()),
                 prompt: Some("Review PR #{{pr.number}}".to_string()),
                 params: HashMap::new(),
             },
-            RouteStepConfig {
-                condition: "true".to_string(),
-                action: "send_prompt".to_string(),
-                target: Some("orchestrator".to_string()),
-                prompt: Some("Fallback".to_string()),
+            else_action: Some(GateAction {
+                action: ActionType::SendMessage,
+                target: Some("orch".to_string()),
+                prompt: Some("No PR found".to_string()),
                 params: HashMap::new(),
-            },
-        ];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            result,
-            Some(ActionResult::Spawned { ref target_role, .. }) if target_role == "review"
-        ));
-
-        // Verify the spawn action was called with expanded prompt
-        let calls = executor.recorded_actions();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "spawn");
-        assert_eq!(calls[0].1["prompt"], "Review PR #123");
+            }),
+        }
     }
 
     #[tokio::test]
-    async fn test_fallback_route() {
+    async fn test_gate_then_branch() {
+        let gate = gate_with_pr_check();
+        let mut ctx = test_context();
+        let executor = MockExecutor::new();
+
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
+
+        match result {
+            GateResult::AgentAction {
+                action,
+                target_node,
+                prompt,
+                ..
+            } => {
+                assert_eq!(action, ActionType::SpawnAgent);
+                assert_eq!(target_node, "review");
+                assert_eq!(prompt, "Review PR #123");
+            }
+            other => panic!("Expected AgentAction, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_gate_else_branch() {
+        let gate = gate_with_pr_check();
+        let mut ctx = FlowContext::new(HashMap::new()); // no pr
+        let executor = MockExecutor::new();
+
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
+
+        match result {
+            GateResult::AgentAction {
+                action,
+                target_node,
+                ..
+            } => {
+                assert_eq!(action, ActionType::SendMessage);
+                assert_eq!(target_node, "orch");
+            }
+            other => panic!("Expected AgentAction (else), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_gate_noop_when_no_else() {
+        let gate = GateNodeConfig {
+            id: "simple".to_string(),
+            resolve: None,
+            condition: "nonexistent != null".to_string(),
+            then_action: GateAction {
+                action: ActionType::SpawnAgent,
+                target: Some("worker".to_string()),
+                prompt: None,
+                params: HashMap::new(),
+            },
+            else_action: None,
+        };
+        let mut ctx = FlowContext::new(HashMap::new());
+        let executor = MockExecutor::new();
+
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
+        assert!(matches!(result, GateResult::Noop));
+    }
+
+    #[tokio::test]
+    async fn test_gate_terminal_action() {
+        let gate = GateNodeConfig {
+            id: "merge".to_string(),
+            resolve: None,
+            condition: "true".to_string(),
+            then_action: GateAction {
+                action: ActionType::MergePr,
+                target: None,
+                prompt: None,
+                params: HashMap::from([(
+                    "pr_number".to_string(),
+                    serde_json::Value::String("{{pr.number}}".to_string()),
+                )]),
+            },
+            else_action: None,
+        };
+        let mut ctx = test_context();
+        let executor = MockExecutor::new();
+
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
+
+        match result {
+            GateResult::TerminalAction { action, params } => {
+                assert_eq!(action, ActionType::MergePr);
+                assert_eq!(params["pr_number"], serde_json::json!(123));
+            }
+            other => panic!("Expected TerminalAction, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_gate_passthrough() {
+        let gate = GateNodeConfig {
+            id: "route".to_string(),
+            resolve: None,
+            condition: "true".to_string(),
+            then_action: GateAction {
+                action: ActionType::Passthrough,
+                target: Some("next_gate".to_string()),
+                prompt: None,
+                params: HashMap::new(),
+            },
+            else_action: None,
+        };
+        let mut ctx = FlowContext::new(HashMap::new());
+        let executor = MockExecutor::new();
+
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
+        assert!(
+            matches!(result, GateResult::Passthrough { target_node } if target_node == "next_gate")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_gate_with_resolve() {
+        let mut executor = MockExecutor::new();
+        executor.query_responses.insert(
+            "list_prs".to_string(),
+            serde_json::json!([{"number": 42, "branch": "feat/42"}]),
+        );
+
+        let gate = GateNodeConfig {
+            id: "resolve_gate".to_string(),
+            resolve: Some(ResolveStep {
+                name: "pr".to_string(),
+                query: "list_prs".to_string(),
+                params: HashMap::new(),
+                filter: Some("item.branch == agent.git_branch".to_string()),
+                pick: PickMode::First,
+            }),
+            condition: "pr != null".to_string(),
+            then_action: GateAction {
+                action: ActionType::SpawnAgent,
+                target: Some("review".to_string()),
+                prompt: Some("PR #{{pr.number}}".to_string()),
+                params: HashMap::new(),
+            },
+            else_action: None,
+        };
+
         let mut ctx = FlowContext::new(HashMap::from([(
             "agent".to_string(),
             serde_json::json!({"git_branch": "feat/42"}),
         )]));
-        // pr is null (not set)
-        let nodes = test_node_defs();
-        let mut executor = MockExecutor::new();
-        executor.action_responses.insert(
-            "send_prompt".to_string(),
-            serde_json::json!({"agent_id": "orch-1"}),
-        );
 
-        let routes = vec![
-            RouteStepConfig {
-                condition: "pr != null".to_string(),
-                action: "spawn".to_string(),
-                target: Some("review".to_string()),
-                prompt: Some("Review".to_string()),
-                params: HashMap::new(),
-            },
-            RouteStepConfig {
-                condition: "true".to_string(),
-                action: "send_prompt".to_string(),
-                target: Some("orchestrator".to_string()),
-                prompt: Some("No PR found for {{agent.git_branch}}".to_string()),
-                params: HashMap::new(),
-            },
-        ];
+        let result = execute_gate(&gate, &mut ctx, &executor).await.unwrap();
 
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            result,
-            Some(ActionResult::PromptSent { ref target_role, .. }) if target_role == "orchestrator"
-        ));
-
-        let calls = executor.recorded_actions();
-        assert_eq!(calls[0].1["prompt"], "No PR found for feat/42");
-    }
-
-    #[tokio::test]
-    async fn test_noop_action() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let executor = MockExecutor::new();
-
-        let routes = vec![RouteStepConfig {
-            condition: "true".to_string(),
-            action: "noop".to_string(),
-            target: None,
-            prompt: None,
-            params: HashMap::new(),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(matches!(result, Some(ActionResult::Noop)));
-    }
-
-    #[tokio::test]
-    async fn test_direct_action_merge() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let mut executor = MockExecutor::new();
-        executor
-            .action_responses
-            .insert("merge_pr".to_string(), serde_json::json!({"merged": true}));
-
-        let routes = vec![RouteStepConfig {
-            condition: "true".to_string(),
-            action: "merge_pr".to_string(),
-            target: None,
-            prompt: None,
-            params: HashMap::from([
-                (
-                    "pr_number".to_string(),
-                    serde_json::Value::String("{{pr.number}}".to_string()),
-                ),
-                (
-                    "method".to_string(),
-                    serde_json::Value::String("squash".to_string()),
-                ),
-            ]),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(matches!(result, Some(ActionResult::DirectAction { .. })));
-
-        let calls = executor.recorded_actions();
-        assert_eq!(calls[0].0, "merge_pr");
-        // pr_number should be expanded from "{{pr.number}}" to 123
-        assert_eq!(calls[0].1["pr_number"], serde_json::json!(123));
-    }
-
-    #[tokio::test]
-    async fn test_no_route_matches() {
-        let ctx = FlowContext::new(HashMap::new());
-        let nodes = test_node_defs();
-        let executor = MockExecutor::new();
-
-        let routes = vec![RouteStepConfig {
-            condition: "nonexistent != null".to_string(),
-            action: "spawn".to_string(),
-            target: Some("review".to_string()),
-            prompt: Some("test".to_string()),
-            params: HashMap::new(),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_unknown_action_rejected() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let executor = MockExecutor::new();
-
-        let routes = vec![RouteStepConfig {
-            condition: "true".to_string(),
-            action: "teleport".to_string(),
-            target: None,
-            prompt: None,
-            params: HashMap::new(),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor).await;
-        assert!(matches!(result, Err(ActionError::UnknownAction(_))));
-    }
-
-    #[tokio::test]
-    async fn test_missing_target_rejected() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let mut executor = MockExecutor::new();
-        executor
-            .action_responses
-            .insert("send_prompt".to_string(), serde_json::json!({}));
-
-        let routes = vec![RouteStepConfig {
-            condition: "true".to_string(),
-            action: "send_prompt".to_string(),
-            target: None, // missing!
-            prompt: Some("hello".to_string()),
-            params: HashMap::new(),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor).await;
-        assert!(matches!(result, Err(ActionError::MissingTarget { .. })));
-    }
-
-    #[tokio::test]
-    async fn test_spawn_uses_node_prompt_template_as_fallback() {
-        let ctx = test_context();
-        let nodes = test_node_defs();
-        let mut executor = MockExecutor::new();
-        executor.action_responses.insert(
-            "spawn".to_string(),
-            serde_json::json!({"agent_id": "new-1"}),
-        );
-
-        let routes = vec![RouteStepConfig {
-            condition: "true".to_string(),
-            action: "spawn".to_string(),
-            target: Some("review".to_string()),
-            prompt: None, // no route prompt → use node's prompt_template
-            params: HashMap::new(),
-        }];
-
-        let result = evaluate_and_execute(&routes, &ctx, &nodes, &executor)
-            .await
-            .unwrap();
-
-        assert!(matches!(result, Some(ActionResult::Spawned { .. })));
-
-        let calls = executor.recorded_actions();
-        assert_eq!(calls[0].1["prompt"], "Default review prompt");
+        match result {
+            GateResult::AgentAction { prompt, .. } => {
+                assert_eq!(prompt, "PR #42");
+            }
+            other => panic!("Expected AgentAction, got {other:?}"),
+        }
     }
 }

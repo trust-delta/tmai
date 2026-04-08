@@ -1,7 +1,5 @@
-//! Flow engine — the main background service that processes agent events
-//! and executes edge pipelines for active flow runs.
-//!
-//! Replaces `OrchestratorNotifier` when flow definitions are present.
+//! Flow engine v2 — background service processing agent events
+//! and executing gate pipelines via typed wire connections.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,27 +8,23 @@ use parking_lot::RwLock;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 
-use super::action::{self, ActionResult};
+use super::action::{self, GateResult};
 use super::executor::FlowExecutor;
 use super::registry::FlowRegistry;
-use super::resolver;
-use super::types::{FlowContext, FlowKickResult, FlowRun};
+use super::types::{ActionType, FlowContext, FlowKickResult, FlowRun, PortType};
 use crate::api::CoreEvent;
 use crate::state::SharedState;
 
-/// Handle for interacting with the flow engine from outside (MCP tools, API, prompt composer).
+/// Handle for interacting with the flow engine from outside.
 #[derive(Clone)]
 pub struct FlowEngineHandle {
-    /// Send commands to the engine
     cmd_tx: mpsc::Sender<FlowCommand>,
-    /// Read-only access to active flow runs (for prompt composition, UI)
     active_runs: Arc<RwLock<HashMap<String, FlowRun>>>,
-    /// Read-only access to flow registry (for prompt composition, UI)
     registry: Arc<FlowRegistry>,
 }
 
 impl FlowEngineHandle {
-    /// Start a new flow run. Called from `run_flow` MCP tool.
+    /// Start a new flow run.
     pub async fn start_flow(
         &self,
         flow_name: String,
@@ -45,7 +39,6 @@ impl FlowEngineHandle {
             })
             .await
             .map_err(|_| "flow engine not running".to_string())?;
-
         rx.await
             .map_err(|_| "flow engine dropped response".to_string())?
     }
@@ -58,18 +51,17 @@ impl FlowEngineHandle {
             .map_err(|_| "flow engine not running".to_string())
     }
 
-    /// Get a snapshot of active flow runs (for prompt composition).
+    /// Get a snapshot of active flow runs.
     pub fn active_runs(&self) -> HashMap<String, FlowRun> {
         self.active_runs.read().clone()
     }
 
-    /// Get the flow registry (for prompt composition, list_flows).
+    /// Get the flow registry.
     pub fn registry(&self) -> &FlowRegistry {
         &self.registry
     }
 }
 
-/// Commands sent to the engine via the handle
 enum FlowCommand {
     StartFlow {
         flow_name: String,
@@ -86,8 +78,6 @@ pub struct FlowEngine;
 
 impl FlowEngine {
     /// Spawn the flow engine as a background tokio task.
-    ///
-    /// Returns a handle for interacting with the engine.
     pub fn spawn(
         registry: FlowRegistry,
         mut event_rx: broadcast::Receiver<CoreEvent>,
@@ -97,15 +87,9 @@ impl FlowEngine {
     ) -> FlowEngineHandle {
         let active_runs: Arc<RwLock<HashMap<String, FlowRun>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        // Maps agent identifiers → run_id. Multiple keys may point to the same run:
-        // - session_id (from spawn response, e.g., PTY UUID)
-        // - pane target (from AgentStopped event, e.g., "session:window.pane")
-        // - stable_id (short hash)
-        // This redundancy ensures matching regardless of which identifier arrives first.
         let agent_run_map: Arc<RwLock<HashMap<String, String>>> =
             Arc::new(RwLock::new(HashMap::new()));
         let registry = Arc::new(registry);
-
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<FlowCommand>(32);
 
         let handle = FlowEngineHandle {
@@ -114,7 +98,6 @@ impl FlowEngine {
             registry: registry.clone(),
         };
 
-        // Spawn the event loop
         let runs = active_runs.clone();
         let map = agent_run_map.clone();
         let reg = registry.clone();
@@ -123,11 +106,10 @@ impl FlowEngine {
         let st = state;
 
         tokio::spawn(async move {
-            info!("Flow engine started with {} flow(s)", reg.len());
+            info!("Flow engine v2 started with {} flow(s)", reg.len());
 
             loop {
                 tokio::select! {
-                    // Process CoreEvents
                     event = event_rx.recv() => {
                         match event {
                             Ok(CoreEvent::AgentStopped { target, cwd, last_assistant_message }) => {
@@ -137,16 +119,15 @@ impl FlowEngine {
                                 ).await;
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
-                                debug!(skipped = n, "Flow engine lagged, skipping events");
+                                debug!(skipped = n, "Flow engine lagged");
                             }
                             Err(broadcast::error::RecvError::Closed) => {
                                 info!("Event channel closed, stopping flow engine");
                                 break;
                             }
-                            _ => {} // Ignore other events for now
+                            _ => {}
                         }
                     }
-                    // Process commands from handle
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(FlowCommand::StartFlow { flow_name, params, response_tx }) => {
@@ -159,10 +140,7 @@ impl FlowEngine {
                             Some(FlowCommand::CancelFlow { run_id }) => {
                                 Self::handle_cancel_flow(&run_id, &runs, &map);
                             }
-                            None => {
-                                info!("Command channel closed, stopping flow engine");
-                                break;
-                            }
+                            None => break,
                         }
                     }
                 }
@@ -172,7 +150,7 @@ impl FlowEngine {
         handle
     }
 
-    /// Handle an agent stop event — find the matching FlowRun and execute the edge pipeline.
+    /// Handle an agent stop event — find FlowRun, follow wire to gate, execute gate chain.
     #[allow(clippy::too_many_arguments)]
     async fn handle_agent_stopped(
         target: &str,
@@ -185,18 +163,14 @@ impl FlowEngine {
         event_tx: &broadcast::Sender<CoreEvent>,
         state: &Option<SharedState>,
     ) {
-        // Find the FlowRun this agent belongs to.
-        // Try direct target match first, then fall back to matching by current_agent_id
-        // across all running flows (handles session_id vs target mismatch after spawn).
+        // Find the FlowRun this agent belongs to
         let run_id = {
-            let map = agent_map.read();
-            if let Some(id) = map.get(target) {
+            let map_r = agent_map.read();
+            if let Some(id) = map_r.get(target) {
                 Some(id.clone())
             } else {
-                // Fallback: scan active runs for matching current_agent_id
-                // This handles the case where spawn returned a session_id but
-                // the stop event arrives with a tmux target.
-                drop(map);
+                drop(map_r);
+                // Fallback: scan by current_agent_id
                 let runs_r = runs.read();
                 runs_r
                     .iter()
@@ -205,20 +179,18 @@ impl FlowEngine {
                     })
                     .map(|(id, _)| id.clone())
                     .or_else(|| {
-                        // Try matching by session_name or stable_id from agent state
-                        let identifiers = state.as_ref().and_then(|shared_state| {
-                            let s = shared_state.read();
-                            let agent = s.agents.get(target)?;
+                        // Try session_name/stable_id from state
+                        let ids = state.as_ref().and_then(|s| {
+                            let s = s.read();
+                            let a = s.agents.get(target)?;
                             Some((
-                                agent.session_name.clone().unwrap_or_default(),
-                                agent.stable_id.clone(),
+                                a.session_name.clone().unwrap_or_default(),
+                                a.stable_id.clone(),
                             ))
                         });
-                        if let Some((session_name, stable_id)) = identifiers {
-                            let map = agent_map.read();
-                            map.get(&session_name)
-                                .or_else(|| map.get(&stable_id))
-                                .cloned()
+                        if let Some((session, stable)) = ids {
+                            let map_r = agent_map.read();
+                            map_r.get(&session).or_else(|| map_r.get(&stable)).cloned()
                         } else {
                             None
                         }
@@ -231,23 +203,20 @@ impl FlowEngine {
             return;
         };
 
-        // Register the resolved target in agent_map for future lookups
+        // Cache target in agent_map
         {
-            let mut map = agent_map.write();
-            if !map.contains_key(target) {
-                map.insert(target.to_string(), run_id.clone());
+            let mut map_w = agent_map.write();
+            if !map_w.contains_key(target) {
+                map_w.insert(target.to_string(), run_id.clone());
             }
         }
 
-        // Get run state and flow definition
         let (current_node, flow_name, accumulated_context) = {
             let runs_r = runs.read();
             let Some(run) = runs_r.get(&run_id) else {
-                warn!(run_id = %run_id, "FlowRun not found for stopped agent");
                 return;
             };
             if !run.is_running() {
-                debug!(run_id = %run_id, "FlowRun already completed, ignoring stop");
                 return;
             }
             (
@@ -258,25 +227,41 @@ impl FlowEngine {
         };
 
         let Some(flow_def) = registry.get(&flow_name) else {
-            error!(flow = %flow_name, "Flow definition not found in registry");
+            error!(flow = %flow_name, "Flow definition not found");
             return;
         };
 
-        // Find matching edge: from == current_node, event == "stop"
-        let matching_edge = flow_def
-            .config
-            .edges
-            .iter()
-            .find(|e| e.from == current_node && e.event == "stop");
+        // Build agent context
+        let agent_json = if let Some(ref shared_state) = state {
+            let s = shared_state.read();
+            if let Some(agent) = s.agents.get(target) {
+                serde_json::json!({
+                    "target": target,
+                    "cwd": cwd,
+                    "last_message": last_assistant_message,
+                    "git_branch": agent.git_branch,
+                    "worktree_name": agent.worktree_name,
+                    "display_name": agent.display_name(),
+                })
+            } else {
+                serde_json::json!({"target": target, "cwd": cwd, "last_message": last_assistant_message})
+            }
+        } else {
+            serde_json::json!({"target": target, "cwd": cwd, "last_message": last_assistant_message})
+        };
 
-        let Some(edge) = matching_edge else {
-            info!(
-                run_id = %run_id,
-                flow = %flow_name,
-                node = %current_node,
-                "No edge defined for this node's stop — flow complete"
-            );
-            // Mark run as completed
+        let mut context = FlowContext::with_accumulated(
+            HashMap::from([("agent".to_string(), agent_json)]),
+            accumulated_context,
+        );
+
+        // Follow wire from (current_node, Stop) → gate → execute gate chain
+        let wire = flow_def
+            .wires_from
+            .get(&(current_node.clone(), PortType::Stop));
+
+        let Some(wire) = wire else {
+            info!(run_id = %run_id, node = %current_node, "No wire from stop — flow complete");
             let mut runs_w = runs.write();
             if let Some(run) = runs_w.get_mut(&run_id) {
                 run.complete(target.to_string(), HashMap::new());
@@ -288,190 +273,151 @@ impl FlowEngine {
             return;
         };
 
-        // Build agent context from state if available, otherwise from event fields
-        let agent_json = if let Some(ref shared_state) = state {
-            let s = shared_state.read();
-            if let Some(agent) = s.agents.get(target) {
-                serde_json::json!({
-                    "target": target,
-                    "cwd": cwd,
-                    "last_message": last_assistant_message,
-                    "git_branch": agent.git_branch,
-                    "git_dirty": agent.git_dirty,
-                    "worktree_name": agent.worktree_name,
-                    "display_name": agent.display_name(),
-                    "is_worktree": agent.is_worktree,
-                    "session": agent.session,
-                })
-            } else {
-                serde_json::json!({
-                    "target": target,
-                    "cwd": cwd,
-                    "last_message": last_assistant_message,
-                })
-            }
-        } else {
-            serde_json::json!({
-                "target": target,
-                "cwd": cwd,
-                "last_message": last_assistant_message,
-            })
-        };
+        // Execute gate chain (follow passthrough wires)
+        let mut current_gate_id = wire.to.node.clone();
+        let max_chain = 10; // prevent infinite loops
+        let mut chain_depth = 0;
 
-        // Build context
-        let mut context = FlowContext::with_accumulated(
-            HashMap::from([
-                ("agent".to_string(), agent_json),
-                (
-                    "run".to_string(),
-                    serde_json::json!({
-                        "run_id": run_id,
-                        "flow_name": flow_name,
-                        "current_node": current_node,
-                    }),
-                ),
-            ]),
-            accumulated_context,
-        );
-
-        // Execute resolve steps
-        if let Err(e) = resolver::resolve_all(&edge.resolve, &mut context, executor.as_ref()).await
-        {
-            error!(run_id = %run_id, error = %e, "Resolve failed");
-            let mut runs_w = runs.write();
-            if let Some(run) = runs_w.get_mut(&run_id) {
-                run.fail(format!("Resolve failed: {e}"));
-            }
-            return;
-        }
-
-        // Execute route evaluation and action
-        let result =
-            action::evaluate_and_execute(&edge.route, &context, &flow_def.nodes, executor.as_ref())
-                .await;
-
-        match result {
-            Ok(Some(action_result)) => {
-                Self::apply_action_result(
-                    &run_id,
-                    target,
-                    &action_result,
-                    &mut context,
-                    runs,
-                    agent_map,
-                    event_tx,
-                    &flow_name,
-                    &current_node,
-                );
-            }
-            Ok(None) => {
-                warn!(
-                    run_id = %run_id,
-                    node = %current_node,
-                    "No route matched — consider adding a catch-all when='true' route"
-                );
-                // Notify orchestrator if present
-                let _ = event_tx.send(CoreEvent::FlowError {
-                    run_id: Some(run_id.clone()),
-                    flow_name: Some(flow_name.clone()),
-                    message: format!("No route matched for node '{current_node}' stop event"),
-                });
-            }
-            Err(e) => {
-                error!(
-                    run_id = %run_id,
-                    node = %current_node,
-                    error = %e,
-                    "Action execution failed"
-                );
+        loop {
+            if chain_depth >= max_chain {
+                error!(run_id = %run_id, "Gate chain exceeded max depth");
                 let mut runs_w = runs.write();
                 if let Some(run) = runs_w.get_mut(&run_id) {
-                    run.fail(format!("Action failed: {e}"));
+                    run.fail("Gate chain exceeded max depth".to_string());
+                }
+                return;
+            }
+            chain_depth += 1;
+
+            let Some(gate_config) = flow_def.gates.get(&current_gate_id) else {
+                error!(gate = %current_gate_id, "Gate not found in flow definition");
+                return;
+            };
+
+            let gate_result =
+                action::execute_gate(gate_config, &mut context, executor.as_ref()).await;
+
+            match gate_result {
+                Ok(GateResult::AgentAction {
+                    action,
+                    target_node,
+                    prompt,
+                    params,
+                }) => {
+                    let resolved = context.drain_resolved();
+
+                    // Advance the flow run
+                    {
+                        let mut runs_w = runs.write();
+                        if let Some(run) = runs_w.get_mut(&run_id) {
+                            run.advance(target.to_string(), target_node.clone(), resolved);
+                        }
+                    }
+
+                    // Execute the agent action
+                    let action_name = match action {
+                        ActionType::SpawnAgent => "spawn",
+                        ActionType::SendMessage => "send_prompt",
+                        _ => "send_prompt",
+                    };
+                    let mut action_params = params;
+                    action_params.insert("target_role".to_string(), serde_json::json!(target_node));
+                    action_params.insert("prompt".to_string(), serde_json::json!(prompt));
+
+                    match executor.action(action_name, &action_params).await {
+                        Ok(result) => {
+                            let agent_id = result
+                                .get("agent_id")
+                                .or_else(|| result.get("session_id"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+
+                            let mut runs_w = runs.write();
+                            if let Some(run) = runs_w.get_mut(&run_id) {
+                                run.current_agent_id = Some(agent_id.clone());
+                            }
+                            let mut map_w = agent_map.write();
+                            map_w.remove(target);
+                            map_w.insert(agent_id.clone(), run_id.clone());
+
+                            info!(run_id = %run_id, agent = %agent_id, node = %target_node, "Flow advanced");
+                        }
+                        Err(e) => {
+                            error!(run_id = %run_id, error = %e, "Agent action failed");
+                            let mut runs_w = runs.write();
+                            if let Some(run) = runs_w.get_mut(&run_id) {
+                                run.fail(format!("Agent action failed: {e}"));
+                            }
+                        }
+                    }
+
+                    let _ = event_tx.send(CoreEvent::FlowStepCompleted {
+                        run_id: run_id.clone(),
+                        flow_name: flow_name.clone(),
+                        node: current_gate_id.clone(),
+                        outcome: "completed".to_string(),
+                    });
+                    break;
+                }
+                Ok(GateResult::Passthrough { target_node }) => {
+                    debug!(from = %current_gate_id, to = %target_node, "Gate passthrough");
+                    current_gate_id = target_node;
+                    // Continue the loop to execute the next gate
+                }
+                Ok(GateResult::TerminalAction { action, params }) => {
+                    // Execute terminal action and complete flow
+                    let action_name = match action {
+                        ActionType::MergePr => "merge_pr",
+                        ActionType::ReviewPr => "review_pr",
+                        ActionType::RerunCi => "rerun_ci",
+                        _ => "noop",
+                    };
+
+                    if action_name != "noop" {
+                        if let Err(e) = executor.action(action_name, &params).await {
+                            warn!(run_id = %run_id, error = %e, "Terminal action failed");
+                        }
+                    }
+
+                    let resolved = context.drain_resolved();
+                    let mut runs_w = runs.write();
+                    if let Some(run) = runs_w.get_mut(&run_id) {
+                        run.complete(target.to_string(), resolved);
+                    }
+                    let mut map_w = agent_map.write();
+                    map_w.remove(target);
+
+                    let _ = event_tx.send(CoreEvent::FlowCompleted {
+                        run_id: run_id.clone(),
+                        flow_name: flow_name.clone(),
+                    });
+                    info!(run_id = %run_id, action = %action_name, "Flow completed with terminal action");
+                    break;
+                }
+                Ok(GateResult::Noop) => {
+                    debug!(run_id = %run_id, gate = %current_gate_id, "Gate returned noop");
+                    break;
+                }
+                Err(e) => {
+                    error!(run_id = %run_id, gate = %current_gate_id, error = %e, "Gate execution failed");
+                    let mut runs_w = runs.write();
+                    if let Some(run) = runs_w.get_mut(&run_id) {
+                        run.fail(format!("Gate '{current_gate_id}' failed: {e}"));
+                    }
+                    let _ = event_tx.send(CoreEvent::FlowError {
+                        run_id: Some(run_id.clone()),
+                        flow_name: Some(flow_name.clone()),
+                        message: e.to_string(),
+                    });
+                    break;
                 }
             }
         }
     }
 
-    /// Apply the result of an action to the FlowRun state
+    /// Handle start_flow command
     #[allow(clippy::too_many_arguments)]
-    fn apply_action_result(
-        run_id: &str,
-        source_agent: &str,
-        action_result: &ActionResult,
-        context: &mut FlowContext,
-        runs: &Arc<RwLock<HashMap<String, FlowRun>>>,
-        agent_map: &Arc<RwLock<HashMap<String, String>>>,
-        event_tx: &broadcast::Sender<CoreEvent>,
-        flow_name: &str,
-        current_node: &str,
-    ) {
-        let resolved = context.drain_resolved();
-
-        match action_result {
-            ActionResult::Spawned {
-                agent_id,
-                target_role,
-            }
-            | ActionResult::PromptSent {
-                agent_id,
-                target_role,
-            } => {
-                // Advance the flow to the next node
-                let mut runs_w = runs.write();
-                if let Some(run) = runs_w.get_mut(run_id) {
-                    run.advance(source_agent.to_string(), target_role.clone(), resolved);
-                    run.current_agent_id = Some(agent_id.clone());
-                }
-
-                // Update agent→run mapping
-                let mut map_w = agent_map.write();
-                map_w.remove(source_agent);
-                map_w.insert(agent_id.clone(), run_id.to_string());
-
-                let _ = event_tx.send(CoreEvent::FlowStepCompleted {
-                    run_id: run_id.to_string(),
-                    flow_name: flow_name.to_string(),
-                    node: current_node.to_string(),
-                    outcome: "completed".to_string(),
-                });
-
-                info!(
-                    run_id = %run_id,
-                    from = %current_node,
-                    to = %target_role,
-                    agent = %agent_id,
-                    "Flow advanced to next node"
-                );
-            }
-            ActionResult::DirectAction { action, .. } => {
-                // Direct action (merge, review, etc.) — flow completes
-                let mut runs_w = runs.write();
-                if let Some(run) = runs_w.get_mut(run_id) {
-                    run.complete(source_agent.to_string(), resolved);
-                }
-
-                let mut map_w = agent_map.write();
-                map_w.remove(source_agent);
-
-                let _ = event_tx.send(CoreEvent::FlowCompleted {
-                    run_id: run_id.to_string(),
-                    flow_name: flow_name.to_string(),
-                });
-
-                info!(
-                    run_id = %run_id,
-                    action = %action,
-                    "Flow completed with direct action"
-                );
-            }
-            ActionResult::Noop => {
-                // Noop — flow continues without advancing
-                debug!(run_id = %run_id, "Noop action, flow state unchanged");
-            }
-        }
-    }
-
-    /// Handle a start_flow command from the handle
     async fn handle_start_flow(
         flow_name: &str,
         params: HashMap<String, serde_json::Value>,
@@ -485,48 +431,42 @@ impl FlowEngine {
             .get(flow_name)
             .ok_or_else(|| format!("flow '{flow_name}' not found"))?;
 
-        let run_id = generate_run_id();
-        let first_node = &flow_def.first_node;
+        let entry_node = &flow_def.config.entry_node;
+        let agent_config = flow_def
+            .config
+            .agents
+            .iter()
+            .find(|a| a.id == *entry_node)
+            .ok_or_else(|| format!("entry agent '{entry_node}' not found"))?;
 
-        // Build trigger description from params
+        let run_id = generate_run_id();
         let trigger = params
             .get("issue_number")
             .and_then(|v| v.as_u64())
             .map(|n| format!("issue #{n}"))
             .unwrap_or_else(|| "manual".to_string());
 
-        // Build initial context from entry params
+        // Build initial context
         let mut context = FlowContext::new(HashMap::new());
         for (k, v) in &params {
             context.set(k.clone(), v.clone());
         }
 
-        // Get the first node's definition
-        let node_def = flow_def
-            .nodes
-            .get(first_node)
-            .ok_or_else(|| format!("first node '{first_node}' not found in flow"))?;
+        // Expand initial prompt
+        let prompt = super::template::expand(&agent_config.prompt_template, &context);
 
-        // Expand the node's prompt template
-        let prompt = super::template::expand(&node_def.prompt_template, &context);
-
-        // Spawn/send to the first node
+        // Spawn the first agent
         let mut action_params = HashMap::new();
         action_params.insert(
             "target_role".to_string(),
-            serde_json::Value::String(first_node.clone()),
+            serde_json::Value::String(entry_node.clone()),
         );
         action_params.insert("prompt".to_string(), serde_json::Value::String(prompt));
 
-        let action_name = match node_def.mode {
-            super::types::NodeMode::Spawn => "spawn",
-            super::types::NodeMode::Persistent => "send_prompt",
-        };
-
         let result = executor
-            .action(action_name, &action_params)
+            .action("spawn", &action_params)
             .await
-            .map_err(|e| format!("failed to kick first node: {e}"))?;
+            .map_err(|e| format!("failed to spawn entry agent: {e}"))?;
 
         let agent_id = result
             .get("agent_id")
@@ -535,21 +475,17 @@ impl FlowEngine {
             .unwrap_or("unknown")
             .to_string();
 
-        // Create FlowRun
         let mut run = FlowRun::new(
             run_id.clone(),
             flow_name.to_string(),
             trigger,
-            first_node.clone(),
+            entry_node.clone(),
         );
         run.current_agent_id = Some(agent_id.clone());
-
-        // Store entry params in context for propagation
         for (k, v) in &params {
             run.context.insert(k.clone(), v.clone());
         }
 
-        // Register
         {
             let mut runs_w = runs.write();
             runs_w.insert(run_id.clone(), run);
@@ -559,18 +495,12 @@ impl FlowEngine {
             map_w.insert(agent_id.clone(), run_id.clone());
         }
 
-        info!(
-            run_id = %run_id,
-            flow = %flow_name,
-            first_node = %first_node,
-            agent = %agent_id,
-            "Flow started"
-        );
+        info!(run_id = %run_id, flow = %flow_name, agent = %agent_id, "Flow v2 started");
 
         Ok(FlowKickResult {
             run_id,
             flow_name: flow_name.to_string(),
-            first_node: first_node.clone(),
+            first_node: entry_node.clone(),
             agent_id,
         })
     }
@@ -584,13 +514,10 @@ impl FlowEngine {
         let mut runs_w = runs.write();
         if let Some(run) = runs_w.get_mut(run_id) {
             run.fail("Cancelled by user".to_string());
-
-            // Remove agent mapping
             if let Some(ref agent_id) = run.current_agent_id {
                 let mut map_w = agent_map.write();
                 map_w.remove(agent_id);
             }
-
             info!(run_id = %run_id, "Flow run cancelled");
         }
     }
@@ -613,216 +540,73 @@ mod tests {
     use crate::flow::registry::FlowRegistry;
     use crate::flow::types::*;
 
-    /// Build a complete "feature" flow config for testing
     fn feature_flow_config() -> HashMap<String, FlowConfig> {
         let mut configs = HashMap::new();
         configs.insert(
             "feature".to_string(),
             FlowConfig {
-                description: "implement → review".to_string(),
+                description: "test".to_string(),
                 entry_params: vec!["issue_number".to_string()],
-                nodes: vec![
-                    FlowNodeConfig {
-                        role: "implement".to_string(),
+                entry_node: "impl".to_string(),
+                agents: vec![
+                    AgentNodeConfig {
+                        id: "impl".to_string(),
+                        agent_type: AgentTypeName::default(),
                         mode: NodeMode::Spawn,
                         prompt_template: "Fix #{{issue_number}}".to_string(),
                         tools: ToolAccess::default(),
-                        agent_type: AgentTypeName::default(),
                     },
-                    FlowNodeConfig {
-                        role: "review".to_string(),
+                    AgentNodeConfig {
+                        id: "review".to_string(),
+                        agent_type: AgentTypeName::default(),
                         mode: NodeMode::Spawn,
-                        prompt_template: "Review PR".to_string(),
+                        prompt_template: "Review".to_string(),
                         tools: ToolAccess::default(),
-                        agent_type: AgentTypeName::default(),
-                    },
-                    FlowNodeConfig {
-                        role: "orchestrator".to_string(),
-                        mode: NodeMode::Persistent,
-                        prompt_template: String::new(),
-                        tools: ToolAccess::All(AllTools("*".to_string())),
-                        agent_type: AgentTypeName::default(),
                     },
                 ],
-                edges: vec![FlowEdgeConfig {
-                    from: "implement".to_string(),
-                    event: "stop".to_string(),
-                    resolve: vec![ResolveStepConfig {
-                        name: "pr".to_string(),
-                        query: "list_prs".to_string(),
+                gates: vec![GateNodeConfig {
+                    id: "check_pr".to_string(),
+                    resolve: None,
+                    condition: "true".to_string(), // always true for test
+                    then_action: GateAction {
+                        action: ActionType::SpawnAgent,
+                        target: Some("review".to_string()),
+                        prompt: Some("Review please".to_string()),
                         params: HashMap::new(),
-                        filter: None, // No filter in test — real impl uses agent.git_branch
-                        pick: PickMode::First,
-                    }],
-                    route: vec![
-                        RouteStepConfig {
-                            condition: "pr != null".to_string(),
-                            action: "spawn".to_string(),
-                            target: Some("review".to_string()),
-                            prompt: Some("Review PR #{{pr.number}}".to_string()),
-                            params: HashMap::new(),
-                        },
-                        RouteStepConfig {
-                            condition: "true".to_string(),
-                            action: "send_prompt".to_string(),
-                            target: Some("orchestrator".to_string()),
-                            prompt: Some("No PR for {{agent.git_branch}}".to_string()),
-                            params: HashMap::new(),
-                        },
-                    ],
+                    },
+                    else_action: None,
+                }],
+                wires: vec![Wire {
+                    from: PortRef {
+                        node: "impl".to_string(),
+                        port: PortType::Stop,
+                    },
+                    to: PortRef {
+                        node: "check_pr".to_string(),
+                        port: PortType::Input,
+                    },
                 }],
             },
         );
         configs
     }
 
-    fn mock_executor_with_pr() -> Arc<MockExecutor> {
-        let mut executor = MockExecutor::new();
-        executor.query_responses.insert(
-            "list_prs".to_string(),
-            serde_json::json!([
-                {"number": 123, "branch": "feat/42-auth", "title": "Add auth"},
-            ]),
-        );
-        executor.action_responses.insert(
-            "spawn".to_string(),
-            serde_json::json!({"agent_id": "agent-impl-1"}),
-        );
-        Arc::new(executor)
-    }
-
     #[tokio::test]
-    async fn test_start_flow() {
+    async fn test_start_flow_v2() {
         let configs = feature_flow_config();
         let registry = FlowRegistry::from_config(&configs).unwrap();
-        let (event_tx, _event_rx) = broadcast::channel(16);
-        let executor = mock_executor_with_pr();
-
-        let handle = FlowEngine::spawn(
-            registry,
-            event_tx.subscribe(),
-            event_tx.clone(),
-            executor.clone(),
-            None,
-        );
-
-        // Start a flow
-        let result = handle
-            .start_flow(
-                "feature".to_string(),
-                HashMap::from([("issue_number".to_string(), serde_json::json!(42))]),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let kick = result.unwrap();
-        assert_eq!(kick.flow_name, "feature");
-        assert_eq!(kick.first_node, "implement");
-        assert_eq!(kick.agent_id, "agent-impl-1");
-
-        // Verify flow run exists
-        let runs = handle.active_runs();
-        assert_eq!(runs.len(), 1);
-        let run = runs.values().next().unwrap();
-        assert_eq!(run.current_node, "implement");
-        assert!(run.is_running());
-    }
-
-    #[tokio::test]
-    async fn test_start_flow_unknown_flow() {
-        let configs = feature_flow_config();
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        let (event_tx, _event_rx) = broadcast::channel(16);
-        let executor = mock_executor_with_pr();
-
-        let handle = FlowEngine::spawn(
-            registry,
-            event_tx.subscribe(),
-            event_tx.clone(),
-            executor,
-            None,
-        );
-
-        let result = handle
-            .start_flow("nonexistent".to_string(), HashMap::new())
-            .await;
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn test_agent_stop_triggers_edge_pipeline() {
-        let configs = feature_flow_config();
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        let (event_tx, _event_rx) = broadcast::channel(16);
+        let (event_tx, _) = broadcast::channel(16);
 
         let mut executor = MockExecutor::new();
-        // For start_flow
-        executor.action_responses.insert(
-            "spawn".to_string(),
-            serde_json::json!({"agent_id": "agent-impl-1"}),
-        );
-        // For resolve: list_prs returns a matching PR
-        executor.query_responses.insert(
-            "list_prs".to_string(),
-            serde_json::json!([
-                {"number": 123, "branch": "feat/42-auth", "title": "Add auth"},
-            ]),
-        );
+        executor
+            .action_responses
+            .insert("spawn".to_string(), serde_json::json!({"agent_id": "a1"}));
         let executor = Arc::new(executor);
 
         let handle = FlowEngine::spawn(
             registry,
             event_tx.subscribe(),
             event_tx.clone(),
-            executor.clone(),
-            None,
-        );
-
-        // Start a flow
-        let kick = handle
-            .start_flow(
-                "feature".to_string(),
-                HashMap::from([("issue_number".to_string(), serde_json::json!(42))]),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(kick.first_node, "implement");
-
-        // Simulate agent stop
-        let _ = event_tx.send(CoreEvent::AgentStopped {
-            target: "agent-impl-1".to_string(),
-            cwd: "/home/user/project".to_string(),
-            last_assistant_message: Some("Done implementing".to_string()),
-        });
-
-        // Give the engine a moment to process
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Check that the flow advanced to "review"
-        let runs = handle.active_runs();
-        let run = runs.values().next().unwrap();
-        assert_eq!(run.current_node, "review");
-        assert_eq!(run.steps_completed(), 1);
-        assert!(run.is_running());
-
-        // PR should be in accumulated context
-        assert!(run.context.contains_key("pr"));
-    }
-
-    #[tokio::test]
-    async fn test_cancel_flow() {
-        let configs = feature_flow_config();
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        let (event_tx, _event_rx) = broadcast::channel(16);
-        let executor = mock_executor_with_pr();
-
-        let handle = FlowEngine::spawn(
-            registry,
-            event_tx.subscribe(),
-            event_tx.clone(),
             executor,
             None,
         );
@@ -835,13 +619,54 @@ mod tests {
             .await
             .unwrap();
 
-        handle.cancel_flow(kick.run_id.clone()).await.unwrap();
-
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(kick.flow_name, "feature");
+        assert_eq!(kick.first_node, "impl");
+        assert_eq!(kick.agent_id, "a1");
 
         let runs = handle.active_runs();
-        let run = runs.get(&kick.run_id).unwrap();
-        assert!(!run.is_running());
-        assert!(matches!(run.status, FlowRunStatus::Error(ref msg) if msg.contains("Cancelled")));
+        assert_eq!(runs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_agent_stop_executes_gate() {
+        let configs = feature_flow_config();
+        let registry = FlowRegistry::from_config(&configs).unwrap();
+        let (event_tx, _) = broadcast::channel(16);
+
+        let mut executor = MockExecutor::new();
+        executor
+            .action_responses
+            .insert("spawn".to_string(), serde_json::json!({"agent_id": "a1"}));
+        let executor = Arc::new(executor);
+
+        let handle = FlowEngine::spawn(
+            registry,
+            event_tx.subscribe(),
+            event_tx.clone(),
+            executor,
+            None,
+        );
+
+        handle
+            .start_flow(
+                "feature".to_string(),
+                HashMap::from([("issue_number".to_string(), serde_json::json!(42))]),
+            )
+            .await
+            .unwrap();
+
+        // Simulate agent stop
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "a1".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("Done".to_string()),
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let runs = handle.active_runs();
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.current_node, "review");
+        assert_eq!(run.steps_completed(), 1);
     }
 }

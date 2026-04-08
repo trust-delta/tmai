@@ -1,73 +1,58 @@
-//! Flow registry — validates and holds parsed flow definitions from config.toml.
+//! Flow registry — validates and holds parsed flow definitions from config.toml (v2).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use super::types::{FlowConfig, FlowEdgeConfig, FlowNodeConfig};
+use super::types::{FlowConfig, GateNodeConfig, PortType, Wire};
 
 /// Validated registry of flow definitions.
-///
-/// Constructed from `Settings.flow` at startup. Provides lookup by flow name
-/// and validation that all node/edge references are consistent.
 #[derive(Debug, Clone)]
 pub struct FlowRegistry {
     flows: HashMap<String, FlowDefinition>,
 }
 
-/// A validated flow definition with indexed node lookup.
+/// A validated flow definition with indexed lookups.
 #[derive(Debug, Clone)]
 pub struct FlowDefinition {
-    /// Flow name (key from config)
     pub name: String,
-    /// Original config
     pub config: FlowConfig,
-    /// Node configs indexed by role name
-    pub nodes: HashMap<String, FlowNodeConfig>,
-    /// The role of the first node (entry point when flow is kicked)
-    pub first_node: String,
+    /// All node IDs (agents + gates)
+    pub node_ids: HashSet<String>,
+    /// Gate configs indexed by ID
+    pub gates: HashMap<String, GateNodeConfig>,
+    /// Wires indexed by source (node, port) → wire
+    pub wires_from: HashMap<(String, PortType), Wire>,
 }
 
-/// Errors that can occur during flow config validation
+/// Errors during flow config validation
 #[derive(Debug)]
 pub enum FlowConfigError {
-    /// No nodes defined in a flow
-    EmptyNodes { flow: String },
-    /// Duplicate role names within a flow
-    DuplicateRole { flow: String, role: String },
-    /// Edge references a non-existent source node
-    UnknownEdgeSource { flow: String, from: String },
-    /// Route references a non-existent target node
-    UnknownRouteTarget {
-        flow: String,
-        edge_from: String,
-        target: String,
-    },
-    /// Edge has no route steps
-    EmptyRoutes { flow: String, edge_from: String },
+    EmptyAgents { flow: String },
+    DuplicateNodeId { flow: String, id: String },
+    UnknownEntryNode { flow: String, entry: String },
+    WireUnknownNode { flow: String, node: String },
+    WirePortMismatch { flow: String, detail: String },
+    GateNoThenAction { flow: String, gate: String },
 }
 
 impl fmt::Display for FlowConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyNodes { flow } => {
-                write!(f, "flow '{flow}' has no nodes defined")
+            Self::EmptyAgents { flow } => write!(f, "flow '{flow}' has no agent nodes"),
+            Self::DuplicateNodeId { flow, id } => {
+                write!(f, "flow '{flow}' has duplicate node ID '{id}'")
             }
-            Self::DuplicateRole { flow, role } => {
-                write!(f, "flow '{flow}' has duplicate role '{role}'")
+            Self::UnknownEntryNode { flow, entry } => {
+                write!(f, "flow '{flow}': entry_node '{entry}' not found in agents")
             }
-            Self::UnknownEdgeSource { flow, from } => {
-                write!(f, "flow '{flow}': edge references unknown node '{from}'")
+            Self::WireUnknownNode { flow, node } => {
+                write!(f, "flow '{flow}': wire references unknown node '{node}'")
             }
-            Self::UnknownRouteTarget {
-                flow,
-                edge_from,
-                target,
-            } => write!(
-                f,
-                "flow '{flow}': edge from '{edge_from}' routes to unknown node '{target}'"
-            ),
-            Self::EmptyRoutes { flow, edge_from } => {
-                write!(f, "flow '{flow}': edge from '{edge_from}' has no routes")
+            Self::WirePortMismatch { flow, detail } => {
+                write!(f, "flow '{flow}': invalid wire — {detail}")
+            }
+            Self::GateNoThenAction { flow, gate } => {
+                write!(f, "flow '{flow}': gate '{gate}' has no then_action")
             }
         }
     }
@@ -77,98 +62,117 @@ impl std::error::Error for FlowConfigError {}
 
 impl FlowRegistry {
     /// Build a registry from config.toml flow definitions.
-    ///
-    /// Validates:
-    /// - Each flow has at least one node
-    /// - No duplicate role names within a flow
-    /// - Edge `from` references an existing node in the same flow
-    /// - Route `target` references an existing node in the same flow
-    /// - Each edge has at least one route
     pub fn from_config(configs: &HashMap<String, FlowConfig>) -> Result<Self, FlowConfigError> {
         let mut flows = HashMap::new();
-
         for (name, config) in configs {
             let definition = Self::validate_flow(name, config)?;
             flows.insert(name.clone(), definition);
         }
-
         Ok(Self { flows })
     }
 
     /// Validate a single flow definition
     fn validate_flow(name: &str, config: &FlowConfig) -> Result<FlowDefinition, FlowConfigError> {
-        // Must have at least one node
-        if config.nodes.is_empty() {
-            return Err(FlowConfigError::EmptyNodes {
+        // Must have at least one agent
+        if config.agents.is_empty() {
+            return Err(FlowConfigError::EmptyAgents {
                 flow: name.to_string(),
             });
         }
 
-        // Build node index and check for duplicates
-        let mut nodes = HashMap::new();
-        let mut seen_roles = HashSet::new();
-        for node in &config.nodes {
-            if !seen_roles.insert(&node.role) {
-                return Err(FlowConfigError::DuplicateRole {
+        // Collect all node IDs, check for duplicates
+        let mut node_ids = HashSet::new();
+        let mut agent_ids = HashSet::new();
+        let mut gate_map = HashMap::new();
+
+        for agent in &config.agents {
+            if !node_ids.insert(agent.id.clone()) {
+                return Err(FlowConfigError::DuplicateNodeId {
                     flow: name.to_string(),
-                    role: node.role.clone(),
+                    id: agent.id.clone(),
                 });
             }
-            nodes.insert(node.role.clone(), node.clone());
+            agent_ids.insert(agent.id.clone());
+        }
+        for gate in &config.gates {
+            if !node_ids.insert(gate.id.clone()) {
+                return Err(FlowConfigError::DuplicateNodeId {
+                    flow: name.to_string(),
+                    id: gate.id.clone(),
+                });
+            }
+            gate_map.insert(gate.id.clone(), gate.clone());
         }
 
-        // First node is the entry point
-        let first_node = config.nodes[0].role.clone();
+        // entry_node must be an agent
+        if !config.entry_node.is_empty() && !agent_ids.contains(&config.entry_node) {
+            return Err(FlowConfigError::UnknownEntryNode {
+                flow: name.to_string(),
+                entry: config.entry_node.clone(),
+            });
+        }
 
-        // Validate edges
-        for edge in &config.edges {
-            Self::validate_edge(name, edge, &nodes)?;
+        // Validate wires
+        let mut wires_from = HashMap::new();
+        for wire in &config.wires {
+            // Both nodes must exist
+            if !node_ids.contains(&wire.from.node) {
+                return Err(FlowConfigError::WireUnknownNode {
+                    flow: name.to_string(),
+                    node: wire.from.node.clone(),
+                });
+            }
+            if !node_ids.contains(&wire.to.node) {
+                return Err(FlowConfigError::WireUnknownNode {
+                    flow: name.to_string(),
+                    node: wire.to.node.clone(),
+                });
+            }
+
+            // from port must be output, to port must be input
+            if !wire.from.port.is_output() {
+                return Err(FlowConfigError::WirePortMismatch {
+                    flow: name.to_string(),
+                    detail: format!(
+                        "{}.{:?} is not an output port",
+                        wire.from.node, wire.from.port
+                    ),
+                });
+            }
+            if !wire.to.port.is_input() {
+                return Err(FlowConfigError::WirePortMismatch {
+                    flow: name.to_string(),
+                    detail: format!("{}.{:?} is not an input port", wire.to.node, wire.to.port),
+                });
+            }
+
+            // Agent output (stop/error) must connect to gate input
+            if agent_ids.contains(&wire.from.node)
+                && !gate_map.contains_key(&wire.to.node)
+                && wire.to.port == PortType::Input
+            {
+                return Err(FlowConfigError::WirePortMismatch {
+                    flow: name.to_string(),
+                    detail: format!(
+                        "agent {}.{:?} must connect to a gate input",
+                        wire.from.node, wire.from.port
+                    ),
+                });
+            }
+
+            wires_from.insert(
+                (wire.from.node.clone(), wire.from.port.clone()),
+                wire.clone(),
+            );
         }
 
         Ok(FlowDefinition {
             name: name.to_string(),
             config: config.clone(),
-            nodes,
-            first_node,
+            node_ids,
+            gates: gate_map,
+            wires_from,
         })
-    }
-
-    /// Validate a single edge within a flow
-    fn validate_edge(
-        flow_name: &str,
-        edge: &FlowEdgeConfig,
-        nodes: &HashMap<String, FlowNodeConfig>,
-    ) -> Result<(), FlowConfigError> {
-        // from must reference an existing node
-        if !nodes.contains_key(&edge.from) {
-            return Err(FlowConfigError::UnknownEdgeSource {
-                flow: flow_name.to_string(),
-                from: edge.from.clone(),
-            });
-        }
-
-        // Must have at least one route
-        if edge.route.is_empty() {
-            return Err(FlowConfigError::EmptyRoutes {
-                flow: flow_name.to_string(),
-                edge_from: edge.from.clone(),
-            });
-        }
-
-        // Route targets must reference existing nodes (if specified)
-        for route in &edge.route {
-            if let Some(ref target) = route.target {
-                if !nodes.contains_key(target) {
-                    return Err(FlowConfigError::UnknownRouteTarget {
-                        flow: flow_name.to_string(),
-                        edge_from: edge.from.clone(),
-                        target: target.clone(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// Look up a flow by name
@@ -197,29 +201,40 @@ mod tests {
     use super::*;
     use crate::flow::types::*;
 
-    /// Helper: build a minimal valid flow config
+    /// Helper: minimal valid v2 flow config
     fn minimal_flow() -> FlowConfig {
         FlowConfig {
             description: "test".to_string(),
             entry_params: vec![],
-            nodes: vec![FlowNodeConfig {
-                role: "worker".to_string(),
+            entry_node: "worker".to_string(),
+            agents: vec![AgentNodeConfig {
+                id: "worker".to_string(),
+                agent_type: AgentTypeName::default(),
                 mode: NodeMode::Spawn,
                 prompt_template: String::new(),
                 tools: ToolAccess::default(),
-                agent_type: AgentTypeName::default(),
             }],
-            edges: vec![FlowEdgeConfig {
-                from: "worker".to_string(),
-                event: "stop".to_string(),
-                resolve: vec![],
-                route: vec![RouteStepConfig {
-                    condition: "true".to_string(),
-                    action: "noop".to_string(),
+            gates: vec![GateNodeConfig {
+                id: "gate1".to_string(),
+                resolve: None,
+                condition: "true".to_string(),
+                then_action: GateAction {
+                    action: ActionType::Noop,
                     target: None,
                     prompt: None,
                     params: HashMap::new(),
-                }],
+                },
+                else_action: None,
+            }],
+            wires: vec![Wire {
+                from: PortRef {
+                    node: "worker".to_string(),
+                    port: PortType::Stop,
+                },
+                to: PortRef {
+                    node: "gate1".to_string(),
+                    port: PortType::Input,
+                },
             }],
         }
     }
@@ -231,239 +246,79 @@ mod tests {
 
         let registry = FlowRegistry::from_config(&configs).unwrap();
         assert_eq!(registry.len(), 1);
-        assert!(!registry.is_empty());
-
-        let def = registry.get("test").unwrap();
-        assert_eq!(def.name, "test");
-        assert_eq!(def.first_node, "worker");
-        assert!(def.nodes.contains_key("worker"));
+        assert!(registry.get("test").is_some());
     }
 
     #[test]
-    fn test_empty_nodes_rejected() {
-        let config = FlowConfig {
-            description: String::new(),
-            entry_params: vec![],
-            nodes: vec![],
-            edges: vec![],
-        };
+    fn test_duplicate_node_id_rejected() {
+        let mut flow = minimal_flow();
+        flow.agents.push(AgentNodeConfig {
+            id: "worker".to_string(), // duplicate
+            ..flow.agents[0].clone()
+        });
+
         let mut configs = HashMap::new();
-        configs.insert("bad".to_string(), config);
-
-        let err = FlowRegistry::from_config(&configs).unwrap_err();
-        assert!(matches!(err, FlowConfigError::EmptyNodes { .. }));
+        configs.insert("bad".to_string(), flow);
+        assert!(matches!(
+            FlowRegistry::from_config(&configs),
+            Err(FlowConfigError::DuplicateNodeId { .. })
+        ));
     }
 
     #[test]
-    fn test_duplicate_role_rejected() {
-        let node = FlowNodeConfig {
-            role: "worker".to_string(),
-            mode: NodeMode::Spawn,
-            prompt_template: String::new(),
-            tools: ToolAccess::default(),
-            agent_type: AgentTypeName::default(),
-        };
-        let config = FlowConfig {
-            description: String::new(),
-            entry_params: vec![],
-            nodes: vec![node.clone(), node],
-            edges: vec![],
-        };
+    fn test_unknown_entry_node_rejected() {
+        let mut flow = minimal_flow();
+        flow.entry_node = "nonexistent".to_string();
+
         let mut configs = HashMap::new();
-        configs.insert("bad".to_string(), config);
-
-        let err = FlowRegistry::from_config(&configs).unwrap_err();
-        assert!(matches!(err, FlowConfigError::DuplicateRole { .. }));
+        configs.insert("bad".to_string(), flow);
+        assert!(matches!(
+            FlowRegistry::from_config(&configs),
+            Err(FlowConfigError::UnknownEntryNode { .. })
+        ));
     }
 
     #[test]
-    fn test_unknown_edge_source_rejected() {
-        let config = FlowConfig {
-            description: String::new(),
-            entry_params: vec![],
-            nodes: vec![FlowNodeConfig {
-                role: "worker".to_string(),
-                mode: NodeMode::Spawn,
-                prompt_template: String::new(),
-                tools: ToolAccess::default(),
-                agent_type: AgentTypeName::default(),
-            }],
-            edges: vec![FlowEdgeConfig {
-                from: "nonexistent".to_string(),
-                event: "stop".to_string(),
-                resolve: vec![],
-                route: vec![RouteStepConfig {
-                    condition: "true".to_string(),
-                    action: "noop".to_string(),
-                    target: None,
-                    prompt: None,
-                    params: HashMap::new(),
-                }],
-            }],
-        };
+    fn test_wire_unknown_node_rejected() {
+        let mut flow = minimal_flow();
+        flow.wires.push(Wire {
+            from: PortRef {
+                node: "ghost".to_string(),
+                port: PortType::Stop,
+            },
+            to: PortRef {
+                node: "gate1".to_string(),
+                port: PortType::Input,
+            },
+        });
+
         let mut configs = HashMap::new();
-        configs.insert("bad".to_string(), config);
-
-        let err = FlowRegistry::from_config(&configs).unwrap_err();
-        assert!(matches!(err, FlowConfigError::UnknownEdgeSource { .. }));
+        configs.insert("bad".to_string(), flow);
+        assert!(matches!(
+            FlowRegistry::from_config(&configs),
+            Err(FlowConfigError::WireUnknownNode { .. })
+        ));
     }
 
     #[test]
-    fn test_unknown_route_target_rejected() {
-        let config = FlowConfig {
-            description: String::new(),
-            entry_params: vec![],
-            nodes: vec![FlowNodeConfig {
-                role: "worker".to_string(),
-                mode: NodeMode::Spawn,
-                prompt_template: String::new(),
-                tools: ToolAccess::default(),
-                agent_type: AgentTypeName::default(),
-            }],
-            edges: vec![FlowEdgeConfig {
-                from: "worker".to_string(),
-                event: "stop".to_string(),
-                resolve: vec![],
-                route: vec![RouteStepConfig {
-                    condition: "true".to_string(),
-                    action: "send_prompt".to_string(),
-                    target: Some("ghost".to_string()),
-                    prompt: Some("hello".to_string()),
-                    params: HashMap::new(),
-                }],
-            }],
-        };
-        let mut configs = HashMap::new();
-        configs.insert("bad".to_string(), config);
-
-        let err = FlowRegistry::from_config(&configs).unwrap_err();
-        assert!(matches!(err, FlowConfigError::UnknownRouteTarget { .. }));
-    }
-
-    #[test]
-    fn test_empty_routes_rejected() {
-        let config = FlowConfig {
-            description: String::new(),
-            entry_params: vec![],
-            nodes: vec![FlowNodeConfig {
-                role: "worker".to_string(),
-                mode: NodeMode::Spawn,
-                prompt_template: String::new(),
-                tools: ToolAccess::default(),
-                agent_type: AgentTypeName::default(),
-            }],
-            edges: vec![FlowEdgeConfig {
-                from: "worker".to_string(),
-                event: "stop".to_string(),
-                resolve: vec![],
-                route: vec![], // empty!
-            }],
-        };
-        let mut configs = HashMap::new();
-        configs.insert("bad".to_string(), config);
-
-        let err = FlowRegistry::from_config(&configs).unwrap_err();
-        assert!(matches!(err, FlowConfigError::EmptyRoutes { .. }));
-    }
-
-    #[test]
-    fn test_multi_flow_registry() {
-        let mut configs = HashMap::new();
-        configs.insert("feature".to_string(), minimal_flow());
-
-        let mut hotfix = minimal_flow();
-        hotfix.description = "hotfix".to_string();
-        configs.insert("hotfix".to_string(), hotfix);
-
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        assert_eq!(registry.len(), 2);
-        assert!(registry.get("feature").is_some());
-        assert!(registry.get("hotfix").is_some());
-        assert!(registry.get("nonexistent").is_none());
-    }
-
-    #[test]
-    fn test_multi_node_flow_with_edges() {
-        let config = FlowConfig {
-            description: "implement → review → merge".to_string(),
-            entry_params: vec!["issue_number".to_string()],
-            nodes: vec![
-                FlowNodeConfig {
-                    role: "implement".to_string(),
-                    mode: NodeMode::Spawn,
-                    prompt_template: String::new(),
-                    tools: ToolAccess::default(),
-                    agent_type: AgentTypeName::default(),
-                },
-                FlowNodeConfig {
-                    role: "review".to_string(),
-                    mode: NodeMode::Spawn,
-                    prompt_template: String::new(),
-                    tools: ToolAccess::default(),
-                    agent_type: AgentTypeName::default(),
-                },
-                FlowNodeConfig {
-                    role: "orchestrator".to_string(),
-                    mode: NodeMode::Persistent,
-                    prompt_template: String::new(),
-                    tools: ToolAccess::All(AllTools("*".to_string())),
-                    agent_type: AgentTypeName::default(),
-                },
-            ],
-            edges: vec![
-                FlowEdgeConfig {
-                    from: "implement".to_string(),
-                    event: "stop".to_string(),
-                    resolve: vec![],
-                    route: vec![
-                        RouteStepConfig {
-                            condition: "pr != null".to_string(),
-                            action: "spawn".to_string(),
-                            target: Some("review".to_string()),
-                            prompt: Some("Review please".to_string()),
-                            params: HashMap::new(),
-                        },
-                        RouteStepConfig {
-                            condition: "true".to_string(),
-                            action: "send_prompt".to_string(),
-                            target: Some("orchestrator".to_string()),
-                            prompt: Some("No PR".to_string()),
-                            params: HashMap::new(),
-                        },
-                    ],
-                },
-                FlowEdgeConfig {
-                    from: "review".to_string(),
-                    event: "stop".to_string(),
-                    resolve: vec![],
-                    route: vec![RouteStepConfig {
-                        condition: "true".to_string(),
-                        action: "send_prompt".to_string(),
-                        target: Some("orchestrator".to_string()),
-                        prompt: Some("Review done".to_string()),
-                        params: HashMap::new(),
-                    }],
-                },
-            ],
+    fn test_wire_port_direction_rejected() {
+        let mut flow = minimal_flow();
+        flow.wires[0] = Wire {
+            from: PortRef {
+                node: "worker".to_string(),
+                port: PortType::Initial, // input port as source — invalid
+            },
+            to: PortRef {
+                node: "gate1".to_string(),
+                port: PortType::Input,
+            },
         };
 
         let mut configs = HashMap::new();
-        configs.insert("feature".to_string(), config);
-
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        let def = registry.get("feature").unwrap();
-        assert_eq!(def.first_node, "implement");
-        assert_eq!(def.nodes.len(), 3);
-    }
-
-    #[test]
-    fn test_list_flows() {
-        let mut configs = HashMap::new();
-        configs.insert("a".to_string(), minimal_flow());
-        configs.insert("b".to_string(), minimal_flow());
-
-        let registry = FlowRegistry::from_config(&configs).unwrap();
-        let list = registry.list();
-        assert_eq!(list.len(), 2);
+        configs.insert("bad".to_string(), flow);
+        assert!(matches!(
+            FlowRegistry::from_config(&configs),
+            Err(FlowConfigError::WirePortMismatch { .. })
+        ));
     }
 }

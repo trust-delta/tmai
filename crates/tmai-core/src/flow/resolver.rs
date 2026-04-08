@@ -7,7 +7,7 @@ use tracing::debug;
 use super::condition;
 use super::executor::FlowExecutor;
 use super::template;
-use super::types::{FlowContext, PickMode, ResolveStepConfig};
+use super::types::{FlowContext, PickMode, ResolveStep};
 
 /// Execute a list of resolve steps sequentially, binding results into the context.
 ///
@@ -17,7 +17,7 @@ use super::types::{FlowContext, PickMode, ResolveStepConfig};
 ///
 /// On query failure, the variable is bound to `null`.
 pub async fn resolve_all(
-    steps: &[ResolveStepConfig],
+    steps: &[ResolveStep],
     context: &mut FlowContext,
     executor: &dyn FlowExecutor,
 ) -> Result<(), ResolveError> {
@@ -44,7 +44,7 @@ pub async fn resolve_all(
 
 /// Execute a single resolve step
 async fn resolve_one(
-    step: &ResolveStepConfig,
+    step: &ResolveStep,
     context: &FlowContext,
     executor: &dyn FlowExecutor,
 ) -> Result<serde_json::Value, ResolveError> {
@@ -182,7 +182,7 @@ mod tests {
             ]),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "pr".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::from([("repo".to_string(), "{{agent.cwd}}".to_string())]),
@@ -209,7 +209,7 @@ mod tests {
             ]),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "pr".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::new(),
@@ -234,7 +234,7 @@ mod tests {
             ]),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "pr_count".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::new(),
@@ -259,7 +259,7 @@ mod tests {
             ]),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "prs".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::new(),
@@ -279,7 +279,7 @@ mod tests {
     async fn test_resolve_query_failure_binds_null() {
         let executor = MockExecutor::new(); // no responses configured
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "pr".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::new(),
@@ -302,7 +302,7 @@ mod tests {
             serde_json::json!({"status": "success", "total_checks": 5}),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "ci".to_string(),
             query: "get_ci_status".to_string(),
             params: HashMap::from([("branch".to_string(), "{{agent.git_branch}}".to_string())]),
@@ -329,14 +329,14 @@ mod tests {
         );
 
         let steps = vec![
-            ResolveStepConfig {
+            ResolveStep {
                 name: "pr".to_string(),
                 query: "list_prs".to_string(),
                 params: HashMap::new(),
                 filter: Some("item.branch == agent.git_branch".to_string()),
                 pick: PickMode::First,
             },
-            ResolveStepConfig {
+            ResolveStep {
                 name: "merge_status".to_string(),
                 query: "get_pr_merge_status".to_string(),
                 params: HashMap::from([("pr_number".to_string(), "{{pr.number}}".to_string())]),
@@ -368,7 +368,7 @@ mod tests {
             ]),
         );
 
-        let steps = vec![ResolveStepConfig {
+        let steps = vec![ResolveStep {
             name: "pr".to_string(),
             query: "list_prs".to_string(),
             params: HashMap::new(),
