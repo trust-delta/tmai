@@ -70,6 +70,9 @@ pub struct ConnectionChannels {
     pub has_hook: bool,
     /// Codex CLI WebSocket connected
     pub has_websocket: bool,
+    /// PTY session managed by tmai (spawned directly, not via tmux)
+    #[serde(default)]
+    pub has_pty: bool,
 }
 
 /// Source of agent state detection
@@ -1420,6 +1423,41 @@ mod tests {
         );
         agent.git_branch = Some("dev/tmai-app".to_string());
         assert_eq!(agent.display_name(), "tmai [dev/tmai-app]");
+    }
+
+    #[test]
+    fn test_connection_channels_has_pty() {
+        // Default: all channels false
+        let channels = ConnectionChannels::default();
+        assert!(!channels.has_pty);
+        assert!(!channels.has_tmux);
+
+        // PTY session has has_pty = true
+        let channels = ConnectionChannels {
+            has_pty: true,
+            ..Default::default()
+        };
+        assert!(channels.has_pty);
+        assert!(!channels.has_tmux);
+    }
+
+    #[test]
+    fn test_connection_channels_deserialize_without_has_pty() {
+        // Backward compatibility: JSON without has_pty should default to false
+        let json = r#"{"has_tmux":true,"has_ipc":false,"has_hook":false,"has_websocket":false}"#;
+        let channels: ConnectionChannels = serde_json::from_str(json).unwrap();
+        assert!(channels.has_tmux);
+        assert!(!channels.has_pty);
+    }
+
+    #[test]
+    fn test_connection_channels_serialize_with_has_pty() {
+        let channels = ConnectionChannels {
+            has_pty: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&channels).unwrap();
+        assert!(json.contains("\"has_pty\":true"));
     }
 
     #[test]

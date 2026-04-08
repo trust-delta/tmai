@@ -62,6 +62,7 @@ function buildConnectionTooltip(
   if (channels.has_websocket) detectMethods.push("WebSocket");
   if (channels.has_ipc) detectMethods.push("IPC");
   if (channels.has_tmux) detectMethods.push("tmux");
+  if (channels.has_pty) detectMethods.push("PTY");
   if (detectMethods.length === 0) detectMethods.push("None");
 
   const sendLabels: Record<string, string> = {
@@ -72,14 +73,13 @@ function buildConnectionTooltip(
   };
   const sendLabel = sendLabels[sendCapability] ?? sendCapability;
 
-  const activeLabel =
-    detectionSource === "HttpHook"
-      ? "Hook"
-      : detectionSource === "IpcSocket"
-        ? "IPC"
-        : detectionSource === "WebSocket"
-          ? "WebSocket"
-          : "tmux";
+  const activeLabels: Record<DetectionSource, string> = {
+    HttpHook: "Hook",
+    IpcSocket: "IPC",
+    WebSocket: "WebSocket",
+    CapturePane: channels.has_pty ? "PTY" : "tmux",
+  };
+  const activeLabel = activeLabels[detectionSource] ?? detectionSource;
 
   return `Detect: ${detectMethods.join(" + ")} (active: ${activeLabel})\nSend: ${sendLabel}`;
 }
@@ -151,6 +151,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     has_ipc: agent.detection_source === "IpcSocket" || agent.send_capability === "Ipc",
     has_hook: agent.detection_source === "HttpHook",
     has_websocket: agent.detection_source === "WebSocket",
+    has_pty: false,
   };
 
   const tooltip = isAi
@@ -261,11 +262,13 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             {channels.has_tmux && (
               <ChannelBadge label="tmux" active={channels.has_tmux} activeColor="text-yellow-400" />
             )}
-            {/* Fallback: show capture-pane only when no other channel */}
+            {channels.has_pty && <ChannelBadge label="PTY" active activeColor="text-violet-400" />}
+            {/* Fallback: no known channel */}
             {!channels.has_hook &&
               !channels.has_websocket &&
               !channels.has_ipc &&
-              !channels.has_tmux && <ChannelBadge label="--" active={false} activeColor="" />}
+              !channels.has_tmux &&
+              !channels.has_pty && <ChannelBadge label="--" active={false} activeColor="" />}
           </div>
         )}
 

@@ -69,6 +69,7 @@ export interface ConnectionChannels {
   has_ipc: boolean;
   has_hook: boolean;
   has_websocket: boolean;
+  has_pty?: boolean;
 }
 export type AgentType = "ClaudeCode" | "OpenCode" | "CodexCli" | "GeminiCli" | { Custom: string };
 export type EffortLevel = "Low" | "Medium" | "High";
