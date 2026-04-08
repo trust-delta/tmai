@@ -169,7 +169,7 @@ function buildCanvas(flows: Record<string, FlowConfig>): { nodes: Node[]; edges:
             target: "__orch__",
             targetHandle: "queue",
             markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
-            style: { stroke: "#a78bfa", strokeWidth: 1.5, strokeDasharray: "4 2" },
+            style: { stroke: "#a78bfa", strokeWidth: 1.5 },
             label: branch === "then" ? "notify orch" : "else → orch",
             labelStyle: { fill: "#a78bfa", fontSize: 9, fontFamily: "monospace" },
           });
