@@ -57,8 +57,6 @@ pub struct TmaiCore {
     defer_registry: Arc<DeferRegistry>,
     /// Codex WebSocket sender registry for bidirectional control
     codex_ws_senders: RwLock<Option<CodexWsSenderRegistry>>,
-    /// Flow engine handle (set when flow definitions are present)
-    flow_engine: RwLock<Option<crate::flow::FlowEngineHandle>>,
 }
 
 impl TmaiCore {
@@ -95,7 +93,6 @@ impl TmaiCore {
             transcript_registry,
             defer_registry,
             codex_ws_senders: RwLock::new(None),
-            flow_engine: RwLock::new(None),
         }
     }
 
@@ -160,16 +157,6 @@ impl TmaiCore {
     /// Get the Codex WebSocket sender registry
     pub fn codex_ws_senders(&self) -> Option<CodexWsSenderRegistry> {
         self.codex_ws_senders.read().clone()
-    }
-
-    /// Set the flow engine handle (called after FlowEngine::spawn)
-    pub fn set_flow_engine(&self, handle: crate::flow::FlowEngineHandle) {
-        *self.flow_engine.write() = Some(handle);
-    }
-
-    /// Get the flow engine handle
-    pub fn flow_engine(&self) -> Option<crate::flow::FlowEngineHandle> {
-        self.flow_engine.read().clone()
     }
 
     /// Get a clone of the broadcast event sender.

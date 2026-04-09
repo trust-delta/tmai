@@ -1,6 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 
-type RightTab = "git" | "markdown" | "flow";
+type RightTab = "git" | "markdown";
 
 interface SplitPaneLayoutProps {
   left: ReactNode;
@@ -107,9 +107,6 @@ export function SplitPaneLayout({
           </TabButton>
           <TabButton active={rightTab === "markdown"} onClick={() => onTabChange("markdown")}>
             Docs
-          </TabButton>
-          <TabButton active={rightTab === "flow"} onClick={() => onTabChange("flow")}>
-            Flow
           </TabButton>
         </div>
 

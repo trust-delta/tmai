@@ -209,36 +209,6 @@ pub enum CoreEvent {
         error: String,
     },
 
-    /// A flow step completed (node finished, advancing to next)
-    FlowStepCompleted {
-        /// Flow run ID
-        run_id: String,
-        /// Flow definition name
-        flow_name: String,
-        /// Node that completed
-        node: String,
-        /// Step outcome
-        outcome: String,
-    },
-
-    /// A flow run completed all steps
-    FlowCompleted {
-        /// Flow run ID
-        run_id: String,
-        /// Flow definition name
-        flow_name: String,
-    },
-
-    /// Flow engine error (displayed in WebUI)
-    FlowError {
-        /// Flow run ID (if associated)
-        run_id: Option<String>,
-        /// Flow definition name (if associated)
-        flow_name: Option<String>,
-        /// Error message
-        message: String,
-    },
-
     /// A deferred tool call was resolved (approved/denied)
     ToolCallResolved {
         /// Unique deferred call ID

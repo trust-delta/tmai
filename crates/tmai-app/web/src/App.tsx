@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
-import { FlowEditor } from "@/components/flow/FlowEditor";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -65,7 +64,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown" | "flow">("git");
+  const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown">("git");
 
   // Split-pane layout state
   const {
@@ -428,8 +427,6 @@ export function App() {
                   actionPanelCollapsed={actionPanelCollapsed}
                   onToggleActionPanel={toggleActionPanel}
                 />
-              ) : rightPanelTab === "flow" ? (
-                <FlowEditor projectPath={agentProjectPath} />
               ) : (
                 <MarkdownPanel
                   key={agentProjectPath}
