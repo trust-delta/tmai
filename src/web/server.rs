@@ -136,6 +136,7 @@ impl WebServer {
             .route("/spawn", post(api::spawn_agent))
             .route("/spawn/worktree", post(api::spawn_worktree))
             .route("/orchestrator/spawn", post(api::spawn_orchestrator))
+            .route("/review/dispatch", post(api::dispatch_review))
             .route("/git/branches", get(api::list_branches))
             .route("/agents/{id}/output", get(api::get_agent_output))
             .route("/agents/{from}/send-to/{to}", post(api::send_to_agent))

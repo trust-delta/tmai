@@ -2459,6 +2459,139 @@ pub async fn git_merge(
 }
 
 // =========================================================
+// Review dispatch endpoint
+// =========================================================
+
+/// Request body for dispatch_review
+#[derive(Debug, Deserialize)]
+pub struct DispatchReviewRequest {
+    /// Pull request number to review
+    pub pr_number: u64,
+    /// Repository path
+    pub cwd: String,
+    /// Extra review instructions
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+}
+
+/// POST /api/review/dispatch — spawn a review agent for a pull request
+pub async fn dispatch_review(
+    State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<DispatchReviewRequest>,
+) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let origin = parse_origin(&headers);
+
+    // Validate cwd
+    if !std::path::Path::new(&req.cwd).is_dir() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Directory does not exist: {}", req.cwd),
+        ));
+    }
+
+    // Fetch PR info via gh CLI
+    let pr_view = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "view",
+            &req.pr_number.to_string(),
+            "--json",
+            "title,headRefName,baseRefName,body,url,additions,deletions",
+        ])
+        .current_dir(&req.cwd)
+        .output()
+        .await
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &format!("Failed to run gh: {e}")))?;
+
+    if !pr_view.status.success() {
+        let stderr = String::from_utf8_lossy(&pr_view.stderr);
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Failed to fetch PR #{}: {}", req.pr_number, stderr.trim()),
+        ));
+    }
+
+    let pr_json: serde_json::Value = serde_json::from_slice(&pr_view.stdout).map_err(|e| {
+        json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Failed to parse PR JSON: {e}"),
+        )
+    })?;
+
+    let pr_title = pr_json["title"].as_str().unwrap_or("(untitled)");
+    let pr_url = pr_json["url"].as_str().unwrap_or("");
+    let head_branch = pr_json["headRefName"].as_str().unwrap_or("");
+    let base_branch = pr_json["baseRefName"].as_str().unwrap_or("main");
+
+    // Compose review prompt
+    let extra = req
+        .additional_instructions
+        .as_deref()
+        .map(|s| format!("\n\nAdditional instructions:\n{s}"))
+        .unwrap_or_default();
+
+    let prompt = format!(
+        "You are a code reviewer. Review PR #{pr_number} and post your review via `gh pr review`.\n\n\
+         ## PR Context\n\
+         - Title: {title}\n\
+         - URL: {url}\n\
+         - Branch: {head} → {base}\n\n\
+         ## Steps\n\
+         1. Run `gh pr diff {pr_number}` to read the full diff\n\
+         2. Read relevant source files for context as needed\n\
+         3. Analyze the changes for correctness, edge cases, and style\n\
+         4. Post your review with `gh pr review {pr_number}` using --comment, --approve, or --request-changes\n\
+         5. If you find issues, include specific file/line references in your review body\n\
+         {extra}",
+        pr_number = req.pr_number,
+        title = pr_title,
+        url = pr_url,
+        head = head_branch,
+        base = base_branch,
+        extra = extra,
+    );
+
+    // Spawn agent in the main repo directory (no worktree)
+    let spawn_req = SpawnRequest {
+        command: "claude".to_string(),
+        args: vec![prompt],
+        cwd: req.cwd,
+        rows: req.rows,
+        cols: req.cols,
+        force_pty: false,
+    };
+
+    let use_tmux = {
+        #[allow(deprecated)]
+        let state = core.raw_state().read();
+        state.spawn_in_tmux
+    };
+    let result = if use_tmux && is_tmux_available() {
+        spawn_in_tmux(&core, &spawn_req).await
+    } else {
+        spawn_in_pty(&core, &spawn_req).await
+    };
+
+    if result.is_ok() {
+        let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+            origin,
+            action: "dispatch_review".to_string(),
+            summary: format!(
+                "Spawned review agent for PR #{} \"{}\" ({} → {})",
+                req.pr_number, pr_title, head_branch, base_branch
+            ),
+        });
+    }
+
+    result
+}
+
+// =========================================================
 // Worktree spawn endpoint
 // =========================================================
 
