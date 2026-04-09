@@ -15,6 +15,8 @@ use crate::github::{self, CheckStatus, PrInfo, ReviewDecision};
 /// Snapshot of a PR's state for change detection
 #[derive(Debug, Clone, PartialEq)]
 struct PrState {
+    title: String,
+    branch: String,
     check_status: Option<CheckStatus>,
     review_decision: Option<ReviewDecision>,
     comments: u64,
@@ -25,6 +27,8 @@ impl PrState {
     /// Build a snapshot from a PrInfo
     fn from_pr(pr: &PrInfo) -> Self {
         Self {
+            title: pr.title.clone(),
+            branch: pr.head_branch.clone(),
             check_status: pr.check_status.clone(),
             review_decision: pr.review_decision.clone(),
             comments: pr.comments,
@@ -158,7 +162,25 @@ impl PrMonitor {
             self.previous_states.insert(pr.number, current_state);
         }
 
-        // Remove PRs that are no longer open (merged/closed)
+        // Detect PRs that disappeared from open list (merged or closed)
+        let disappeared: Vec<(u64, PrState)> = self
+            .previous_states
+            .iter()
+            .filter(|(num, _)| !current_pr_numbers.contains(num))
+            .map(|(num, state)| (*num, state.clone()))
+            .collect();
+
+        for (pr_number, state) in &disappeared {
+            let notif = PrNotification::Closed {
+                pr_number: *pr_number,
+                title: state.title.clone(),
+                branch: state.branch.clone(),
+            };
+            self.emit_event(&notif);
+            notifications.push(notif);
+        }
+
+        // Remove closed PRs from tracking
         self.previous_states
             .retain(|num, _| current_pr_numbers.contains(num));
 
@@ -203,6 +225,15 @@ impl PrMonitor {
                 pr_number: *pr_number,
                 title: title.clone(),
                 comments_summary: comments_summary.clone(),
+            },
+            PrNotification::Closed {
+                pr_number,
+                title,
+                branch,
+            } => CoreEvent::PrClosed {
+                pr_number: *pr_number,
+                title: title.clone(),
+                branch: branch.clone(),
             },
         };
         let _ = self.event_tx.send(event);
@@ -318,6 +349,16 @@ impl PrMonitor {
                     pr_number, title, comments_summary
                 )
             }
+            PrNotification::Closed {
+                pr_number,
+                title,
+                branch,
+            } => {
+                format!(
+                    "[PR Monitor] PR #{} \"{}\" closed (branch: {})",
+                    pr_number, title, branch
+                )
+            }
         }
     }
 }
@@ -348,6 +389,12 @@ pub enum PrNotification {
         pr_number: u64,
         title: String,
         comments_summary: String,
+    },
+    /// PR disappeared from open list (merged or closed)
+    Closed {
+        pr_number: u64,
+        title: String,
+        branch: String,
     },
 }
 

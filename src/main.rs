@@ -233,6 +233,13 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         );
     }
 
+    // Start auto-cleanup service (rule-based agent/worktree cleanup on PR close)
+    tmai_core::auto_cleanup::AutoCleanupService::spawn(
+        app.shared_state(),
+        core.subscribe(),
+        core.event_sender(),
+    );
+
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
         let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(

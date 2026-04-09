@@ -317,6 +317,19 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::PrClosed { pr_number, ref title, ref branch }) => {
+                            let data = serde_json::json!({
+                                "pr_number": pr_number,
+                                "title": title,
+                                "branch": branch,
+                            });
+                            let event = Event::default()
+                                .event("pr_closed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ActionPerformed { ref origin, ref action, ref summary }) => {
                             let data = serde_json::json!({
                                 "origin": origin,

@@ -261,6 +261,16 @@ pub enum CoreEvent {
         comments_summary: String,
     },
 
+    /// A PR was closed (merged or closed without merging)
+    PrClosed {
+        /// PR number
+        pr_number: u64,
+        /// PR title
+        title: String,
+        /// Head branch name
+        branch: String,
+    },
+
     /// A side-effect API action was performed (for orchestrator notification)
     ActionPerformed {
         /// Who initiated the action
