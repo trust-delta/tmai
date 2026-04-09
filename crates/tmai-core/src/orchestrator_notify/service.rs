@@ -233,6 +233,16 @@ impl OrchestratorNotifier {
                 Some((msg, format!("pr-{pr_number}")))
             }
 
+            CoreEvent::PrClosed {
+                pr_number,
+                title,
+                branch,
+            } => {
+                let msg =
+                    format!("[PR Monitor] PR #{pr_number} \"{title}\" closed (branch: {branch})");
+                Some((msg, format!("pr-{pr_number}")))
+            }
+
             CoreEvent::ActionPerformed {
                 origin,
                 action,
