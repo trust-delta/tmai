@@ -544,18 +544,24 @@ mod tests {
     fn test_state_transition_detection() {
         // Verify that PrState comparison works for transition detection
         let pending = PrState {
+            title: "Test PR".to_string(),
+            branch: "test-branch".to_string(),
             check_status: Some(CheckStatus::Pending),
             review_decision: None,
             comments: 0,
             reviews: 0,
         };
         let success = PrState {
+            title: "Test PR".to_string(),
+            branch: "test-branch".to_string(),
             check_status: Some(CheckStatus::Success),
             review_decision: None,
             comments: 0,
             reviews: 0,
         };
         let failure = PrState {
+            title: "Test PR".to_string(),
+            branch: "test-branch".to_string(),
             check_status: Some(CheckStatus::Failure),
             review_decision: None,
             comments: 0,
