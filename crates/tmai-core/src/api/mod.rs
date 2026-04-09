@@ -33,7 +33,8 @@ pub use builder::TmaiCoreBuilder;
 pub use core::TmaiCore;
 pub use events::CoreEvent;
 pub use types::{
-    AgentSnapshot, ApiError, SendPromptResult, TeamSummary, TeamTaskInfo, WorktreeSnapshot,
+    ActionOrigin, AgentSnapshot, ApiError, SendPromptResult, TeamSummary, TeamTaskInfo,
+    WorktreeSnapshot,
 };
 
 // Re-export for web/api.rs usage
