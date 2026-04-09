@@ -1001,24 +1001,12 @@ impl TmaiCore {
 
     /// Compose a system prompt from orchestrator settings.
     ///
-    /// When the flow engine is active, includes flow topology and in-flight run status.
-    /// Otherwise falls back to the legacy role + rules + MCP instruction format.
+    /// Uses role + rules + MCP instruction format.
     /// When `project_path` is provided, uses per-project orchestrator override if set.
     pub fn compose_orchestrator_prompt(&self, project_path: Option<&str>) -> String {
         let settings = self.settings();
         let orch = settings.resolve_orchestrator(project_path);
 
-        // If flow engine is active, use flow-aware prompt
-        if let Some(handle) = self.flow_engine() {
-            let active_runs = handle.active_runs();
-            return crate::flow::prompt::compose_flow_aware_prompt(
-                handle.registry(),
-                &active_runs,
-                orch,
-            );
-        }
-
-        // Legacy prompt composition
         let mut parts: Vec<String> = Vec::new();
 
         // Role

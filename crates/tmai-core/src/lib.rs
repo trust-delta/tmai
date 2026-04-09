@@ -6,7 +6,6 @@ pub mod codex_ws;
 pub mod command_sender;
 pub mod config;
 pub mod detectors;
-pub mod flow;
 pub mod git;
 pub mod github;
 pub mod hooks;

@@ -243,31 +243,6 @@ pub struct ReviewPrParams {
     pub repo: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct RunFlowParams {
-    /// Flow name (e.g., "feature", "hotfix")
-    pub flow: String,
-    /// Entry parameters as JSON key-value pairs (e.g., {"issue_number": 42})
-    #[serde(default)]
-    pub params: std::collections::HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ListFlowsParams {}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ListFlowRunsParams {
-    /// Filter by status: "running", "completed", "error" (optional, returns all if omitted)
-    #[serde(default)]
-    pub status: Option<String>,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct CancelFlowParams {
-    /// Flow run ID to cancel
-    pub run_id: String,
-}
-
 fn default_merge_method() -> String {
     "squash".to_string()
 }
@@ -774,52 +749,6 @@ impl TmaiMcpServer {
             encode(&p.branch),
             encode(&repo)
         ))
-    }
-
-    // ----- Flow Orchestration -----
-
-    /// Start a named flow (e.g., "feature", "hotfix"). The flow engine handles
-    /// the node chain automatically — spawning agents, routing on stop events,
-    /// and merging PRs based on the flow definition in config.toml.
-    #[tool(
-        description = "Start a named flow (e.g., run_flow(flow='feature', params={issue_number: 42}))"
-    )]
-    fn run_flow(&self, Parameters(p): Parameters<RunFlowParams>) -> String {
-        let body = serde_json::json!({
-            "flow": p.flow,
-            "params": p.params,
-        });
-        self.client.post_json_or_error("/flow/run", &body)
-    }
-
-    /// List all available flow definitions configured in config.toml.
-    /// Shows flow name, description, entry parameters, and node chain.
-    #[tool(description = "List available flow definitions")]
-    fn list_flows(&self, Parameters(_p): Parameters<ListFlowsParams>) -> String {
-        self.client.get_json_or_error("/flow/list")
-    }
-
-    /// List active and completed flow runs. Optionally filter by status.
-    #[tool(description = "List flow runs (active and completed)")]
-    fn list_flow_runs(&self, Parameters(p): Parameters<ListFlowRunsParams>) -> String {
-        let query = p
-            .status
-            .as_ref()
-            .map(|s| format!("?status={s}"))
-            .unwrap_or_default();
-        self.client.get_json_or_error(&format!("/flow/runs{query}"))
-    }
-
-    /// Cancel an active flow run. The current agent is not killed but the flow
-    /// stops advancing to subsequent nodes.
-    #[tool(description = "Cancel an active flow run")]
-    fn cancel_flow(&self, Parameters(p): Parameters<CancelFlowParams>) -> String {
-        let body = serde_json::json!({"run_id": p.run_id});
-        self.client.post_ok_or_error(
-            "/flow/cancel",
-            &body,
-            format!("Flow run {} cancelled", p.run_id),
-        )
     }
 }
 

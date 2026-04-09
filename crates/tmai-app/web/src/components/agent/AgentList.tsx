@@ -18,7 +18,7 @@ interface AgentListProps {
   worktrees: WorktreeSnapshot[];
   onSpawned: (sessionId: string) => void;
   splitPaneProjectPath: string | null;
-  splitPaneTab: "git" | "markdown" | "flow" | null;
+  splitPaneTab: "git" | "markdown" | null;
 }
 
 // Scrollable list of agents grouped by project and worktree
