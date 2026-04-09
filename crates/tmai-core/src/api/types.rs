@@ -249,6 +249,8 @@ pub struct AgentSnapshot {
     /// Per-agent auto-approve override: None = follow global, Some(bool) = override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_override: Option<bool>,
+    /// Effective auto-approve state (resolved from global setting + per-agent override)
+    pub auto_approve_effective: bool,
     /// Which communication channels are currently available
     pub connection_channels: crate::agents::ConnectionChannels,
     /// Model ID (e.g., "claude-opus-4-6")
@@ -368,6 +370,7 @@ impl AgentSnapshot {
             pty_session_id: agent.pty_session_id.clone(),
             send_capability: agent.send_capability,
             auto_approve_override: agent.auto_approve_override,
+            auto_approve_effective: agent.auto_approve_override.unwrap_or(false),
             connection_channels: agent.connection_channels,
             model_display_name: agent
                 .model_id

@@ -84,14 +84,9 @@ function buildConnectionTooltip(
   return `Detect: ${detectMethods.join(" + ")} (active: ${activeLabel})\nSend: ${sendLabel}`;
 }
 
-/// Resolve effective auto-approve state: override > global
+/// Resolve effective auto-approve state from backend-computed field
 function autoApproveEffective(agent: AgentSnapshot): boolean {
-  if (agent.auto_approve_override !== null && agent.auto_approve_override !== undefined) {
-    return agent.auto_approve_override;
-  }
-  // No override — assume global default (we don't have global state here,
-  // but the badge only shows when override is explicitly set)
-  return true;
+  return agent.auto_approve_effective;
 }
 
 // Channel badge: rounded pill with color when active, gray when inactive
@@ -215,7 +210,12 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             onClick={handleAutoApproveToggle}
             className={cn(
               "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-subtle",
-              !hasOverride && "text-zinc-600 hover:text-zinc-400 hover:bg-white/5",
+              !hasOverride &&
+                isAutoApproveOn &&
+                "text-amber-400/60 hover:text-amber-300 hover:bg-white/5",
+              !hasOverride &&
+                !isAutoApproveOn &&
+                "text-zinc-700 hover:text-zinc-500 hover:bg-white/5",
               hasOverride &&
                 isAutoApproveOn &&
                 "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15",
@@ -223,7 +223,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             )}
             title={
               !hasOverride
-                ? "Auto-approve: global default (click to override)"
+                ? `Auto-approve: global default (${isAutoApproveOn ? "ON" : "OFF"}) — click to override`
                 : isAutoApproveOn
                   ? "Auto-approve: ON (click to cycle)"
                   : "Auto-approve: OFF (click to cycle)"

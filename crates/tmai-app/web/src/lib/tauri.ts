@@ -95,6 +95,7 @@ function convertTauriAgent(info: TauriAgentInfo): AgentSnapshot {
     team_info: info.team_name ? { team_name: info.team_name, member_name: "" } : null,
     auto_approve_phase: null,
     auto_approve_override: null,
+    auto_approve_effective: false,
   };
 }
 
