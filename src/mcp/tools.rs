@@ -193,6 +193,18 @@ pub struct DispatchIssueParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DispatchReviewParams {
+    /// Pull request number to review
+    pub pr_number: u64,
+    /// Repository path (optional, defaults to cwd or first registered project)
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Extra review instructions (e.g., "focus on security", "check error handling")
+    #[serde(default)]
+    pub additional_instructions: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SetOrchestratorParams {
     /// Agent ID — accepts stable ID, pane target, or PTY session UUID
     pub id: String,
@@ -557,6 +569,27 @@ impl TmaiMcpServer {
         self.client.post_json_or_error("/spawn/worktree", &body)
     }
 
+    /// Dispatch a PR review: spawn an agent in the main repo directory
+    /// with the PR context as its prompt. The agent reads the diff via
+    /// `gh pr diff` and posts review comments.
+    #[tool(
+        description = "Dispatch a PR review: spawn agent to review a pull request and post comments"
+    )]
+    fn dispatch_review(&self, Parameters(p): Parameters<DispatchReviewParams>) -> String {
+        let cwd = match self.client.resolve_repo(&p.repo) {
+            Ok(r) => r,
+            Err(e) => return format!("Error: {e}"),
+        };
+        let mut body = serde_json::json!({
+            "cwd": cwd,
+            "pr_number": p.pr_number,
+        });
+        if let Some(extra) = &p.additional_instructions {
+            body["additional_instructions"] = serde_json::json!(extra);
+        }
+        self.client.post_json_or_error("/review/dispatch", &body)
+    }
+
     /// Delete a git worktree by name.
     #[tool(description = "Delete a git worktree")]
     fn delete_worktree(&self, Parameters(p): Parameters<WorktreeDeleteParams>) -> String {
@@ -838,6 +871,37 @@ mod tests {
     fn dispatch_issue_params_missing_issue_number_fails() {
         let json = serde_json::json!({"repo": "/tmp/repo"});
         assert!(serde_json::from_value::<DispatchIssueParams>(json).is_err());
+    }
+
+    #[test]
+    fn dispatch_review_params_required_only() {
+        let json = serde_json::json!({"pr_number": 42});
+        let p: DispatchReviewParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.pr_number, 42);
+        assert!(p.repo.is_none());
+        assert!(p.additional_instructions.is_none());
+    }
+
+    #[test]
+    fn dispatch_review_params_all_fields() {
+        let json = serde_json::json!({
+            "pr_number": 99,
+            "repo": "/tmp/repo",
+            "additional_instructions": "Focus on security"
+        });
+        let p: DispatchReviewParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.pr_number, 99);
+        assert_eq!(p.repo.as_deref(), Some("/tmp/repo"));
+        assert_eq!(
+            p.additional_instructions.as_deref(),
+            Some("Focus on security")
+        );
+    }
+
+    #[test]
+    fn dispatch_review_params_missing_pr_number_fails() {
+        let json = serde_json::json!({"repo": "/tmp/repo"});
+        assert!(serde_json::from_value::<DispatchReviewParams>(json).is_err());
     }
 
     #[test]
