@@ -8,7 +8,20 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use tmai_core::api::{AgentSnapshot, ApiError, TmaiCore};
+use tmai_core::api::{ActionOrigin, AgentSnapshot, ApiError, CoreEvent, TmaiCore};
+
+/// Parse `ActionOrigin` from request headers.
+///
+/// Reads `X-Tmai-Origin` header (JSON-encoded ActionOrigin).
+/// Falls back to `Human(webui)` when the header is absent.
+#[allow(dead_code)] // Will be used by side-effect API handlers in next step
+pub fn parse_origin(headers: &axum::http::HeaderMap) -> ActionOrigin {
+    headers
+        .get("x-tmai-origin")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_else(ActionOrigin::webui)
+}
 
 /// Helper to create JSON error responses
 fn json_error(status: StatusCode, message: &str) -> (StatusCode, Json<serde_json::Value>) {
@@ -397,13 +410,22 @@ pub async fn send_text(
 /// Send a prompt to an agent with status-aware behavior (queue if Processing)
 pub async fn send_prompt(
     State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
     Json(req): Json<PromptRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: send_prompt agent_id={}", id);
+    let origin = parse_origin(&headers);
+    tracing::info!("API: send_prompt agent_id={} origin={}", id, origin);
     core.send_prompt(&id, &req.prompt)
         .await
-        .map(|result| Json(serde_json::json!({"status": "ok", "action": result.action, "queue_size": result.queue_size})))
+        .map(|result| {
+            let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+                origin,
+                action: "send_prompt".to_string(),
+                summary: format!("Sent prompt to agent {id}"),
+            });
+            Json(serde_json::json!({"status": "ok", "action": result.action, "queue_size": result.queue_size}))
+        })
         .map_err(|e| {
             tracing::warn!("API: send_prompt failed agent_id={}: {}", id, e);
             api_error_to_http(e)
@@ -481,11 +503,20 @@ pub async fn passthrough_input(
 /// Kill an agent (terminate PTY session or tmux pane)
 pub async fn kill_agent(
     State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("API: kill agent_id={}", id);
+    let origin = parse_origin(&headers);
+    tracing::info!("API: kill agent_id={} origin={}", id, origin);
     core.kill_pane(&id)
-        .map(|()| Json(serde_json::json!({"status": "ok"})))
+        .map(|()| {
+            let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+                origin,
+                action: "kill_agent".to_string(),
+                summary: format!("Killed agent {id}"),
+            });
+            Json(serde_json::json!({"status": "ok"}))
+        })
         .map_err(|e| {
             tracing::warn!("API: kill failed agent_id={}: {}", id, e);
             api_error_to_http(e)
@@ -2462,8 +2493,10 @@ pub struct WorktreeSpawnRequest {
 /// POST /api/spawn/worktree — create git worktree then spawn claude in it
 pub async fn spawn_worktree(
     State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<WorktreeSpawnRequest>,
 ) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let origin = parse_origin(&headers);
     // Validate cwd
     if !std::path::Path::new(&req.cwd).is_dir() {
         return Err(json_error(
@@ -2560,6 +2593,18 @@ pub async fn spawn_worktree(
         }
         s.pending_agent_worktrees
             .insert(worktree_path, std::time::Instant::now());
+    }
+
+    if result.is_ok() {
+        let issue_label = req
+            .issue_number
+            .map(|n| format!(" (issue #{n})"))
+            .unwrap_or_default();
+        let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+            origin,
+            action: "dispatch_issue".to_string(),
+            summary: format!("Spawned worktree agent \"{resolved_name}\"{issue_label}"),
+        });
     }
 
     result
@@ -3051,20 +3096,34 @@ pub struct PrReviewRequest {
 
 /// POST /api/github/pr/review — submit a review on a pull request
 pub async fn review_pr(
+    State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<PrReviewRequest>,
 ) -> Result<Json<tmai_core::github::ReviewResult>, (StatusCode, Json<serde_json::Value>)> {
+    let origin = parse_origin(&headers);
     let repo_dir = validate_repo(&body.repo)?;
 
-    tmai_core::github::review_pr(&repo_dir, body.pr_number, body.action, body.body.as_deref())
-        .await
-        .map(Json)
-        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))
+    let result =
+        tmai_core::github::review_pr(&repo_dir, body.pr_number, body.action, body.body.as_deref())
+            .await
+            .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e))?;
+
+    let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+        origin,
+        action: "review_pr".to_string(),
+        summary: format!("Reviewed PR #{} ({:?})", body.pr_number, body.action),
+    });
+
+    Ok(Json(result))
 }
 
 /// POST /api/github/pr/merge — merge a pull request
 pub async fn merge_pr(
+    State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<PrMergeRequest>,
 ) -> Result<Json<tmai_core::github::MergeResult>, (StatusCode, Json<serde_json::Value>)> {
+    let origin = parse_origin(&headers);
     let repo_dir = validate_repo(&body.repo)?;
 
     let mut result =
@@ -3097,6 +3156,12 @@ pub async fn merge_pr(
             result.worktree_cleanup = Some("Skipped: worktree_name not provided".to_string());
         }
     }
+
+    let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+        origin,
+        action: "merge_pr".to_string(),
+        summary: format!("Merged PR #{}", body.pr_number),
+    });
 
     Ok(Json(result))
 }

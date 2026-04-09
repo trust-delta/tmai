@@ -260,6 +260,16 @@ pub enum CoreEvent {
         /// Summary of review comments
         comments_summary: String,
     },
+
+    /// A side-effect API action was performed (for orchestrator notification)
+    ActionPerformed {
+        /// Who initiated the action
+        origin: super::types::ActionOrigin,
+        /// API action name (e.g., "dispatch_issue", "kill_agent", "merge_pr")
+        action: String,
+        /// Human-readable summary of the action
+        summary: String,
+    },
 }
 
 impl TmaiCore {

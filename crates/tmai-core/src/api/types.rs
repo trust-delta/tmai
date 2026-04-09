@@ -14,6 +14,87 @@ use crate::auto_approve::AutoApprovePhase;
 use crate::detectors::DetectionReason;
 use crate::teams::AgentDefinition;
 
+/// Origin of an API action — tracks who initiated the operation.
+///
+/// Used by the orchestrator notification middleware to provide context
+/// about what triggered a side-effect API call.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind")]
+pub enum ActionOrigin {
+    /// A human interacting through a UI surface
+    Human {
+        /// Which interface: "webui", "tui", "mobile", "cli", etc.
+        interface: String,
+    },
+    /// An AI agent (orchestrator or worker) via MCP tools
+    Agent {
+        /// Agent target ID (e.g., "main:0.0")
+        id: String,
+        /// Whether this agent is the orchestrator
+        is_orchestrator: bool,
+    },
+    /// An automated system process (auto_cleanup, pr_monitor, etc.)
+    System {
+        /// Subsystem name (e.g., "auto_cleanup", "pr_monitor")
+        subsystem: String,
+    },
+}
+
+impl ActionOrigin {
+    /// Create a Human origin from a WebUI request
+    pub fn webui() -> Self {
+        Self::Human {
+            interface: "webui".to_string(),
+        }
+    }
+
+    /// Create a Human origin from a TUI request
+    pub fn tui() -> Self {
+        Self::Human {
+            interface: "tui".to_string(),
+        }
+    }
+
+    /// Create an Agent origin
+    pub fn agent(id: impl Into<String>, is_orchestrator: bool) -> Self {
+        Self::Agent {
+            id: id.into(),
+            is_orchestrator,
+        }
+    }
+
+    /// Create a System origin
+    pub fn system(subsystem: impl Into<String>) -> Self {
+        Self::System {
+            subsystem: subsystem.into(),
+        }
+    }
+
+    /// Human-readable label for notification messages
+    pub fn label(&self) -> String {
+        match self {
+            Self::Human { interface } => format!("Human ({interface})"),
+            Self::Agent {
+                id,
+                is_orchestrator,
+            } => {
+                if *is_orchestrator {
+                    format!("Orchestrator ({id})")
+                } else {
+                    format!("Agent ({id})")
+                }
+            }
+            Self::System { subsystem } => format!("System ({subsystem})"),
+        }
+    }
+}
+
+impl std::fmt::Display for ActionOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 /// Error type for Facade API operations
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -592,5 +673,87 @@ mod tests {
 
         let err = ApiError::NoCommandSender;
         assert_eq!(err.to_string(), "command sender not available");
+    }
+
+    #[test]
+    fn test_action_origin_constructors() {
+        let webui = ActionOrigin::webui();
+        assert_eq!(
+            webui,
+            ActionOrigin::Human {
+                interface: "webui".to_string()
+            }
+        );
+
+        let tui = ActionOrigin::tui();
+        assert_eq!(
+            tui,
+            ActionOrigin::Human {
+                interface: "tui".to_string()
+            }
+        );
+
+        let agent = ActionOrigin::agent("main:0.0", false);
+        assert_eq!(
+            agent,
+            ActionOrigin::Agent {
+                id: "main:0.0".to_string(),
+                is_orchestrator: false,
+            }
+        );
+
+        let system = ActionOrigin::system("auto_cleanup");
+        assert_eq!(
+            system,
+            ActionOrigin::System {
+                subsystem: "auto_cleanup".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_action_origin_labels() {
+        assert_eq!(ActionOrigin::webui().label(), "Human (webui)");
+        assert_eq!(
+            ActionOrigin::agent("orch:0.0", true).label(),
+            "Orchestrator (orch:0.0)"
+        );
+        assert_eq!(
+            ActionOrigin::agent("worker:0.1", false).label(),
+            "Agent (worker:0.1)"
+        );
+        assert_eq!(
+            ActionOrigin::system("pr_monitor").label(),
+            "System (pr_monitor)"
+        );
+    }
+
+    #[test]
+    fn test_action_origin_serde_roundtrip() {
+        let origins = vec![
+            ActionOrigin::webui(),
+            ActionOrigin::agent("main:0.0", true),
+            ActionOrigin::system("auto_cleanup"),
+        ];
+
+        for origin in origins {
+            let json = serde_json::to_string(&origin).unwrap();
+            let deserialized: ActionOrigin = serde_json::from_str(&json).unwrap();
+            assert_eq!(origin, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_action_origin_json_format() {
+        let origin = ActionOrigin::webui();
+        let json = serde_json::to_value(&origin).unwrap();
+        assert_eq!(json["kind"], "Human");
+        assert_eq!(json["interface"], "webui");
+
+        let origin = ActionOrigin::agent("main:0.0", true);
+        let json = serde_json::to_value(&origin).unwrap();
+        assert_eq!(json["kind"], "Agent");
+        assert_eq!(json["id"], "main:0.0");
+        assert_eq!(json["is_orchestrator"], true);
     }
 }

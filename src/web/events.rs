@@ -317,6 +317,19 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::ActionPerformed { ref origin, ref action, ref summary }) => {
+                            let data = serde_json::json!({
+                                "origin": origin,
+                                "action": action,
+                                "summary": summary,
+                            });
+                            let event = Event::default()
+                                .event("action_performed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::ReviewReady { .. })

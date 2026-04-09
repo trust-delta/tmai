@@ -233,6 +233,24 @@ impl OrchestratorNotifier {
                 Some((msg, format!("pr-{pr_number}")))
             }
 
+            CoreEvent::ActionPerformed {
+                origin,
+                action,
+                summary,
+            } => {
+                // Don't notify the orchestrator about its own actions
+                if let crate::api::ActionOrigin::Agent {
+                    is_orchestrator: true,
+                    ..
+                } = origin
+                {
+                    return None;
+                }
+                let msg = format!("[tmai] {origin} performed {action}: {summary}");
+                // Use action as pseudo-target (no specific agent)
+                Some((msg, format!("action-{action}")))
+            }
+
             _ => None,
         }
     }
@@ -549,5 +567,57 @@ mod tests {
             }
         }
         assert!(found, "Expected PromptReady for orchestrator");
+    }
+
+    #[test]
+    fn test_action_performed_from_human_notifies() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::webui(),
+            action: "kill_agent".to_string(),
+            summary: "Killed agent worker:0.1".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, _) = result.unwrap();
+        assert!(msg.contains("Human (webui)"));
+        assert!(msg.contains("kill_agent"));
+        assert!(msg.contains("Killed agent worker:0.1"));
+    }
+
+    #[test]
+    fn test_action_performed_from_orchestrator_skipped() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::agent("orch:0.0", true),
+            action: "dispatch_issue".to_string(),
+            summary: "Spawned worktree".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Orchestrator's own actions should not trigger notification"
+        );
+    }
+
+    #[test]
+    fn test_action_performed_from_mcp_agent_notifies() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::agent("mcp", false),
+            action: "merge_pr".to_string(),
+            summary: "Merged PR #42".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, _) = result.unwrap();
+        assert!(msg.contains("Agent (mcp)"));
+        assert!(msg.contains("merge_pr"));
     }
 }

@@ -60,7 +60,8 @@ pub fn remove_api_info() {
 /// (e.g. after tmai restart) are picked up transparently.
 #[derive(Debug, Clone)]
 pub struct TmaiHttpClient {
-    _private: (),
+    /// JSON-encoded `X-Tmai-Origin` header value for all requests
+    origin_header: String,
 }
 
 impl TmaiHttpClient {
@@ -68,7 +69,14 @@ impl TmaiHttpClient {
     pub fn from_runtime() -> Result<Self> {
         // Validate that we can read the file now (fail-fast)
         Self::read_connection_info()?;
-        Ok(Self { _private: () })
+        let origin = tmai_core::api::ActionOrigin::Agent {
+            id: "mcp".to_string(),
+            is_orchestrator: false,
+        };
+        let origin_header = serde_json::to_string(&origin).unwrap_or_else(|_| {
+            r#"{"kind":"Agent","id":"mcp","is_orchestrator":false}"#.to_string()
+        });
+        Ok(Self { origin_header })
     }
 
     /// Read fresh connection info from `api.json`.
@@ -89,6 +97,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         let resp: T = ureq::get(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .call()
             .with_context(|| format!("GET {path} failed"))?
             .body_mut()
@@ -103,6 +112,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         let resp: T = ureq::post(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .send_json(body)
             .with_context(|| format!("POST {path} failed"))?
             .body_mut()
@@ -117,6 +127,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         ureq::post(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .send_json(body)
             .with_context(|| format!("POST {path} failed"))?;
         Ok(())
@@ -192,6 +203,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         match ureq::post(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .send_json(body)
         {
             Ok(mut resp) => {
@@ -212,6 +224,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         ureq::delete(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .call()
             .with_context(|| format!("DELETE {path} failed"))?;
         Ok(())
@@ -272,6 +285,7 @@ impl TmaiHttpClient {
         let url = format!("http://localhost:{}/api{}", info.port, path);
         let text = ureq::get(&url)
             .header("Authorization", &format!("Bearer {}", info.token))
+            .header("X-Tmai-Origin", &self.origin_header)
             .call()
             .with_context(|| format!("GET {path} failed"))?
             .body_mut()
