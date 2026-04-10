@@ -564,6 +564,37 @@ impl WorktreeSnapshot {
     }
 }
 
+/// A single task entry merging git worktree info with .task-meta/ metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskMetaEntry {
+    /// Branch name (the join key)
+    pub branch: String,
+    /// Associated GitHub issue number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<u64>,
+    /// Agent ID working on this task
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    /// Associated pull request number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr: Option<u64>,
+    /// Review agent ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_agent_id: Option<String>,
+    /// Worktree path (from git)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    /// Status of the linked agent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_status: Option<String>,
+    /// Whether the worktree has uncommitted changes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_dirty: Option<bool>,
+    /// Milestone history
+    #[serde(default)]
+    pub milestones: Vec<crate::task_meta::Milestone>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

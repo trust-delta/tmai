@@ -240,6 +240,12 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         core.event_sender(),
     );
 
+    // Start task metadata milestone service (records events to .task-meta/ files)
+    tmai_core::task_meta::TaskMetaService::spawn(app.shared_state(), core.subscribe());
+
+    // Restore in-memory issue/PR associations from persisted .task-meta/ files
+    tmai_core::task_meta::restore_from_disk(&app.shared_state(), &settings.project_paths());
+
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
         let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
@@ -412,6 +418,12 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         );
         eprintln!("tmai: orchestrator notifier service started");
     }
+
+    // Start task metadata milestone service (records events to .task-meta/ files)
+    tmai_core::task_meta::TaskMetaService::spawn(state.clone(), core.subscribe());
+
+    // Restore in-memory issue/PR associations from persisted .task-meta/ files
+    tmai_core::task_meta::restore_from_disk(&state, &settings.project_paths());
 
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
