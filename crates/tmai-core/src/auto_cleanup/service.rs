@@ -6,15 +6,16 @@ use tracing::{debug, info, warn};
 use crate::api::CoreEvent;
 use crate::state::SharedState;
 
-/// Background service that cleans up agents and worktrees when PRs close.
+/// Background service that cleans up agents and worktrees when PRs close
+/// or review agents stop.
 pub struct AutoCleanupService;
 
 impl AutoCleanupService {
     /// Spawn the auto-cleanup service as a background task.
     ///
-    /// Listens for `PrClosed` events and performs cleanup:
-    /// - Kill agents whose `git_branch` matches the closed PR's branch
-    /// - Delete worktrees associated with that branch
+    /// Listens for:
+    /// - `PrClosed` events: kill agents and delete worktrees for the closed PR's branch
+    /// - `AgentStopped` events: delete review worktrees when the review agent finishes
     pub fn spawn(
         state: SharedState,
         mut event_rx: broadcast::Receiver<CoreEvent>,
@@ -35,6 +36,9 @@ impl AutoCleanupService {
                         );
                         Self::cleanup_for_branch(&state, &event_tx, pr_number, &title, &branch)
                             .await;
+                    }
+                    Ok(CoreEvent::AgentStopped { target, cwd, .. }) => {
+                        Self::cleanup_review_worktree(&state, &event_tx, &target, &cwd).await;
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         debug!(skipped = n, "Auto-cleanup service lagged");
@@ -149,6 +153,73 @@ impl AutoCleanupService {
             ),
         });
     }
+
+    /// Clean up review worktree when a review agent stops.
+    ///
+    /// Review worktrees are identified by the `review-pr-` prefix in their name.
+    /// When a review agent finishes (posts its review and exits), the worktree
+    /// is no longer needed and can be deleted.
+    async fn cleanup_review_worktree(
+        state: &SharedState,
+        event_tx: &broadcast::Sender<CoreEvent>,
+        target: &str,
+        cwd: &str,
+    ) {
+        // Extract worktree name from cwd path (e.g., .../.claude/worktrees/review-pr-42)
+        let worktree_name = match crate::git::extract_claude_worktree_name(cwd) {
+            Some(name) if name.starts_with("review-pr-") => name,
+            _ => return, // Not a review worktree — nothing to clean up
+        };
+
+        // Resolve the repo path from the agent's git_common_dir
+        let repo_path = {
+            let s = state.read();
+            s.agents
+                .get(target)
+                .and_then(|a| a.git_common_dir.clone())
+                .map(|d| format!("{d}/.git"))
+        };
+
+        let repo_path = match repo_path {
+            Some(p) => p,
+            None => {
+                debug!(
+                    target = %target,
+                    worktree = %worktree_name,
+                    "Auto-cleanup: cannot resolve repo path for review worktree"
+                );
+                return;
+            }
+        };
+
+        let req = crate::worktree::WorktreeDeleteRequest {
+            repo_path,
+            worktree_name: worktree_name.to_string(),
+            force: true,
+        };
+        match crate::worktree::delete_worktree(&req).await {
+            Ok(()) => {
+                info!(
+                    worktree = %worktree_name,
+                    "Auto-cleanup: deleted review worktree after agent stopped"
+                );
+                let _ = event_tx.send(CoreEvent::ActionPerformed {
+                    origin: crate::api::ActionOrigin::system("auto_cleanup"),
+                    action: "auto_cleanup".to_string(),
+                    summary: format!(
+                        "Deleted review worktree \"{worktree_name}\" after review agent stopped"
+                    ),
+                });
+            }
+            Err(e) => {
+                warn!(
+                    worktree = %worktree_name,
+                    error = %e,
+                    "Auto-cleanup: failed to delete review worktree"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -246,6 +317,61 @@ mod tests {
             .await;
 
         // Should not emit (no agents found)
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        assert!(result.is_err(), "Should not have emitted any event");
+    }
+
+    /// Helper: insert an agent with a cwd in a review worktree path
+    fn insert_review_agent(state: &SharedState, target: &str, cwd: &str) {
+        let mut s = state.write();
+        let mut agent = MonitoredAgent::new(
+            target.to_string(),
+            AgentType::ClaudeCode,
+            String::new(),
+            cwd.to_string(),
+            0,
+            target.to_string(),
+            String::new(),
+            0,
+            0,
+        );
+        agent.status = AgentStatus::Idle;
+        agent.pr_number = Some(42);
+        agent.git_common_dir = Some("/tmp/repo".to_string());
+        s.agents.insert(target.to_string(), agent);
+    }
+
+    #[tokio::test]
+    async fn test_review_cleanup_skips_non_review_worktree() {
+        let state = AppState::shared();
+        // Agent in a regular worktree (not review-)
+        insert_review_agent(&state, "worker:0.0", "/tmp/repo/.claude/worktrees/42-auth");
+
+        let (tx, mut rx) = broadcast::channel(16);
+
+        AutoCleanupService::cleanup_review_worktree(
+            &state,
+            &tx,
+            "worker:0.0",
+            "/tmp/repo/.claude/worktrees/42-auth",
+        )
+        .await;
+
+        // Should not emit (not a review worktree)
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        assert!(result.is_err(), "Should not have emitted any event");
+    }
+
+    #[tokio::test]
+    async fn test_review_cleanup_skips_non_worktree_cwd() {
+        let state = AppState::shared();
+        insert_review_agent(&state, "worker:0.0", "/tmp/repo");
+
+        let (tx, mut rx) = broadcast::channel(16);
+
+        AutoCleanupService::cleanup_review_worktree(&state, &tx, "worker:0.0", "/tmp/repo").await;
+
+        // Should not emit (cwd is not in a worktree)
         let result = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
         assert!(result.is_err(), "Should not have emitted any event");
     }

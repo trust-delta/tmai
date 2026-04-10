@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   api,
   type BranchListResponse,
@@ -8,6 +10,20 @@ import {
   type PrMergeStatus,
   type WorktreeDiffResponse,
 } from "@/lib/api";
+
+const proseClassName = `prose prose-invert prose-sm max-w-none
+  prose-headings:text-zinc-100 prose-headings:font-semibold
+  prose-p:text-zinc-300 prose-p:leading-relaxed
+  prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+  prose-strong:text-zinc-200
+  prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+  prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg
+  prose-li:text-zinc-300
+  prose-th:text-zinc-300 prose-th:border-white/10
+  prose-td:text-zinc-400 prose-td:border-white/10
+  prose-hr:border-white/10
+  prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400`;
+
 import { DiffViewer } from "./DiffViewer";
 import type { BranchNode } from "./graph/types";
 
@@ -172,8 +188,8 @@ function PrCommentsView({ projectPath, prNumber }: { projectPath: string; prNumb
               )}
             </div>
           )}
-          <div className="mt-2 whitespace-pre-wrap break-words text-sm text-zinc-300">
-            {comment.body}
+          <div className={`mt-2 ${proseClassName}`}>
+            <Markdown remarkPlugins={[remarkGfm]}>{comment.body}</Markdown>
           </div>
         </div>
       ))}

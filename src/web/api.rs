@@ -2540,6 +2540,46 @@ pub async fn dispatch_review(
     let head_branch = pr_json["headRefName"].as_str().unwrap_or("");
     let base_branch = pr_json["baseRefName"].as_str().unwrap_or("main");
 
+    // Fetch latest remote main so worktree starts from up-to-date state
+    let fetch_output = tokio::process::Command::new("git")
+        .args(["-C", &req.cwd, "fetch", "origin", base_branch])
+        .output()
+        .await
+        .map_err(|e| {
+            json_error(
+                StatusCode::BAD_REQUEST,
+                &format!("Failed to fetch origin/{base_branch}: {e}"),
+            )
+        })?;
+
+    if !fetch_output.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch_output.stderr);
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            &format!("Failed to fetch origin/{}: {}", base_branch, stderr.trim()),
+        ));
+    }
+
+    // Create a dedicated worktree for the review agent
+    let worktree_name = format!("review-pr-{}", req.pr_number);
+    let wt_req = tmai_core::worktree::WorktreeCreateRequest {
+        repo_path: req.cwd.clone(),
+        branch_name: worktree_name.clone(),
+        dir_name: None,
+        base_branch: Some(format!("origin/{base_branch}")),
+    };
+
+    let wt_result = tmai_core::worktree::create_worktree(&wt_req)
+        .await
+        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+
+    tracing::info!(
+        "dispatch_review: created worktree '{}' at {} for PR #{}",
+        worktree_name,
+        wt_result.path,
+        req.pr_number,
+    );
+
     // Compose review prompt
     let extra = req
         .additional_instructions
@@ -2548,7 +2588,10 @@ pub async fn dispatch_review(
         .unwrap_or_default();
 
     let prompt = format!(
-        "You are a code reviewer. Review PR #{pr_number} and post your review via `gh pr review`.\n\n\
+        "IMPORTANT: You are working in a git worktree at: {worktree_path}\n\
+         All file reads and edits MUST use paths starting with this directory.\n\
+         NEVER edit files outside your worktree directory.\n\n\
+         You are a code reviewer. Review PR #{pr_number} and post your review via `gh pr review`.\n\n\
          ## PR Context\n\
          - Title: {title}\n\
          - URL: {url}\n\
@@ -2560,6 +2603,7 @@ pub async fn dispatch_review(
          4. Post your review with `gh pr review {pr_number}` using --comment, --approve, or --request-changes\n\
          5. If you find issues, include specific file/line references in your review body\n\
          {extra}",
+        worktree_path = wt_result.path,
         pr_number = req.pr_number,
         title = pr_title,
         url = pr_url,
@@ -2568,12 +2612,13 @@ pub async fn dispatch_review(
         extra = extra,
     );
 
-    // Spawn agent in the main repo directory (no worktree)
+    // Spawn agent in the review worktree directory
     let project_cwd = req.cwd.clone();
+    let worktree_path = wt_result.path.clone();
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
         args: vec![prompt],
-        cwd: req.cwd,
+        cwd: wt_result.path,
         rows: req.rows,
         cols: req.cols,
         force_pty: false,
@@ -2590,7 +2635,7 @@ pub async fn dispatch_review(
         spawn_in_pty(&core, &spawn_req).await
     };
 
-    // Set pr_number metadata on the spawned agent
+    // Set pr_number metadata and register pending worktree
     if let Ok(ref resp) = result {
         #[allow(deprecated)]
         let state = core.raw_state();
@@ -2607,6 +2652,9 @@ pub async fn dispatch_review(
                 },
             );
         }
+        // Protect worktree from premature deletion during agent detection
+        s.pending_agent_worktrees
+            .insert(worktree_path, std::time::Instant::now());
     }
 
     if let Ok(ref resp) = result {
@@ -2625,8 +2673,8 @@ pub async fn dispatch_review(
             origin,
             action: "dispatch_review".to_string(),
             summary: format!(
-                "Spawned review agent for PR #{} \"{}\" ({} → {})",
-                req.pr_number, pr_title, head_branch, base_branch
+                "Spawned review agent for PR #{} \"{}\" ({} → {}) in worktree {}",
+                req.pr_number, pr_title, head_branch, base_branch, worktree_name
             ),
         });
     }
