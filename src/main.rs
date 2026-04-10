@@ -482,10 +482,13 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
                     let project_orch = settings.resolve_orchestrator(Some(path));
                     if project_orch.pr_monitor_enabled {
                         tracing::info!("Starting PR monitor for project: {}", path);
+                        #[allow(deprecated)]
+                        let shared_state = core.raw_state().clone();
                         tmai_core::github::pr_monitor::spawn_pr_monitor(
                             path.clone(),
                             core.event_sender().clone(),
                             project_orch.clone(),
+                            Some(shared_state),
                         );
                     }
                 }

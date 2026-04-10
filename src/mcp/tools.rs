@@ -75,13 +75,13 @@ pub struct ListAgentsParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct AgentIdParams {
-    /// Agent ID — accepts stable ID (e.g., "a1b2c3d4"), pane target (e.g., "main:0.0"), or PTY session UUID
+    /// Agent ID — accepts stable ID (e.g., "a1b2c3d4"), pane target (e.g., "main:0.0"), PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendTextParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Text to send to the agent
     pub text: String,
@@ -89,7 +89,7 @@ pub struct SendTextParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendPromptParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Prompt text to send to the agent
     pub prompt: String,
@@ -97,7 +97,7 @@ pub struct SendPromptParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendKeyParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Key name (Enter, Escape, Space, Up, Down, Left, Right, Tab, BTab, BSpace)
     pub key: String,
@@ -105,7 +105,7 @@ pub struct SendKeyParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SelectChoiceParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Choice index (1-based)
     pub index: u32,
@@ -206,7 +206,7 @@ pub struct DispatchReviewParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SetOrchestratorParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
 }
 
@@ -323,12 +323,25 @@ impl TmaiMcpServer {
         match self.client.get::<serde_json::Value>("/agents") {
             Ok(data) => {
                 if let Some(agents) = data.as_array() {
-                    // Search by stable id (primary), pane_id, target, or pty_session_id
-                    if let Some(agent) = agents.iter().find(|a| {
-                        a.get("id").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("pane_id").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("target").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(&p.id)
+                    // Parse semantic addressing: "issue:N" or "pr:N"
+                    let semantic =
+                        p.id.split_once(':')
+                            .and_then(|(kind, n)| n.parse::<u64>().ok().map(|num| (kind, num)));
+
+                    // Search by semantic ID, stable id, pane_id, target, or pty_session_id
+                    if let Some(agent) = agents.iter().find(|a| match semantic {
+                        Some(("issue", num)) => {
+                            a.get("issue_number").and_then(|v| v.as_u64()) == Some(num)
+                        }
+                        Some(("pr", num)) => {
+                            a.get("pr_number").and_then(|v| v.as_u64()) == Some(num)
+                        }
+                        _ => {
+                            a.get("id").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("pane_id").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("target").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(&p.id)
+                        }
                     }) {
                         return format_json(agent);
                     }

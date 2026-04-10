@@ -806,6 +806,10 @@ pub struct MonitoredAgent {
     pub session_name: Option<String>,
     /// Whether this agent was spawned as an orchestrator
     pub is_orchestrator: bool,
+    /// Associated issue number (set at dispatch_issue time)
+    pub issue_number: Option<u64>,
+    /// Associated PR number (auto-detected from branch or set manually)
+    pub pr_number: Option<u64>,
 }
 
 impl MonitoredAgent {
@@ -874,6 +878,8 @@ impl MonitoredAgent {
             claude_version: None,
             session_name: None,
             is_orchestrator: false,
+            issue_number: None,
+            pr_number: None,
         }
     }
 

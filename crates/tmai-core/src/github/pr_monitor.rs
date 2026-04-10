@@ -11,6 +11,7 @@ use tokio::sync::broadcast;
 use crate::api::events::CoreEvent;
 use crate::config::OrchestratorSettings;
 use crate::github::{self, CheckStatus, PrInfo, ReviewDecision};
+use crate::state::SharedState;
 
 /// Snapshot of a PR's state for change detection
 #[derive(Debug, Clone, PartialEq)]
@@ -306,6 +307,16 @@ impl PrMonitor {
         }
     }
 
+    /// Get all tracked PR branch→number mappings for agent association.
+    ///
+    /// Returns all open PRs currently tracked, regardless of notification settings.
+    pub fn branch_pr_mappings(&self) -> Vec<(String, u64)> {
+        self.previous_states
+            .iter()
+            .map(|(num, state)| (state.branch.clone(), *num))
+            .collect()
+    }
+
     /// Format a notification as a prompt message for the orchestrator
     pub fn format_prompt(notif: &PrNotification) -> String {
         match notif {
@@ -398,14 +409,47 @@ pub enum PrNotification {
     },
 }
 
+/// Associate PR numbers with agents by matching PR head branch to agent git_branch.
+///
+/// Uses the full list of open PRs (not just notifications) so that association
+/// works regardless of the `on_pr_created` notification setting.
+fn associate_pr_numbers(state: &SharedState, branch_prs: &[(String, u64)]) {
+    if branch_prs.is_empty() {
+        return;
+    }
+
+    let mut s = state.write();
+    for agent in s.agents.values_mut() {
+        if agent.pr_number.is_some() {
+            continue; // already has a PR association
+        }
+        if let Some(ref git_branch) = agent.git_branch {
+            for (branch, pr_number) in branch_prs {
+                if git_branch == branch {
+                    tracing::info!(
+                        "Auto-associated PR #{} with agent {} (branch: {})",
+                        pr_number,
+                        agent.stable_id,
+                        branch
+                    );
+                    agent.pr_number = Some(*pr_number);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Spawn the PR monitor as a background task.
 ///
 /// Polls GitHub at the configured interval and emits CoreEvents.
 /// The OrchestratorNotifier service handles delivering these to orchestrator agents.
+/// When new PRs are detected, automatically associates pr_number with matching agents.
 pub fn spawn_pr_monitor(
     repo_dir: String,
     event_tx: broadcast::Sender<CoreEvent>,
     settings: OrchestratorSettings,
+    state: Option<SharedState>,
 ) -> tokio::task::JoinHandle<()> {
     let interval_secs = settings.pr_monitor_interval_secs.max(10); // minimum 10s
     let mut monitor = PrMonitor::new(repo_dir, event_tx, settings);
@@ -420,6 +464,14 @@ pub fn spawn_pr_monitor(
             let notifications = monitor.poll().await;
             for notif in &notifications {
                 tracing::info!("PR monitor detected: {}", PrMonitor::format_prompt(notif));
+            }
+
+            // Auto-associate PR numbers with agents by branch matching.
+            // Uses all tracked PRs (not just Created notifications) so association
+            // works even when on_pr_created is disabled.
+            if let Some(ref state) = state {
+                let branch_prs = monitor.branch_pr_mappings();
+                associate_pr_numbers(state, &branch_prs);
             }
         }
     })
@@ -644,5 +696,102 @@ mod tests {
         assert_eq!(interval, 10);
         let interval = 60u64.max(10);
         assert_eq!(interval, 60);
+    }
+
+    #[test]
+    fn test_associate_pr_numbers_matches_branch() {
+        use crate::agents::{AgentType, MonitoredAgent};
+        use crate::state::AppState;
+
+        let state = AppState::shared();
+        {
+            let mut s = state.write();
+            let mut agent = MonitoredAgent::new(
+                "main:0.0".to_string(),
+                AgentType::ClaudeCode,
+                "Test".to_string(),
+                "/tmp".to_string(),
+                100,
+                "main".to_string(),
+                "win".to_string(),
+                0,
+                0,
+            );
+            agent.git_branch = Some("feat/test-42".to_string());
+            s.update_agents(vec![agent]);
+        }
+
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
+
+        associate_pr_numbers(&state, &branch_prs);
+
+        let s = state.read();
+        let agent = s.agents.values().next().unwrap();
+        assert_eq!(agent.pr_number, Some(42));
+    }
+
+    #[test]
+    fn test_associate_pr_numbers_skips_already_set() {
+        use crate::agents::{AgentType, MonitoredAgent};
+        use crate::state::AppState;
+
+        let state = AppState::shared();
+        {
+            let mut s = state.write();
+            let mut agent = MonitoredAgent::new(
+                "main:0.0".to_string(),
+                AgentType::ClaudeCode,
+                "Test".to_string(),
+                "/tmp".to_string(),
+                100,
+                "main".to_string(),
+                "win".to_string(),
+                0,
+                0,
+            );
+            agent.git_branch = Some("feat/test-42".to_string());
+            agent.pr_number = Some(99); // already set
+            s.update_agents(vec![agent]);
+        }
+
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
+
+        associate_pr_numbers(&state, &branch_prs);
+
+        let s = state.read();
+        let agent = s.agents.values().next().unwrap();
+        assert_eq!(agent.pr_number, Some(99)); // unchanged
+    }
+
+    #[test]
+    fn test_associate_pr_numbers_no_match() {
+        use crate::agents::{AgentType, MonitoredAgent};
+        use crate::state::AppState;
+
+        let state = AppState::shared();
+        {
+            let mut s = state.write();
+            let mut agent = MonitoredAgent::new(
+                "main:0.0".to_string(),
+                AgentType::ClaudeCode,
+                "Test".to_string(),
+                "/tmp".to_string(),
+                100,
+                "main".to_string(),
+                "win".to_string(),
+                0,
+                0,
+            );
+            agent.git_branch = Some("feat/other".to_string());
+            s.update_agents(vec![agent]);
+        }
+
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
+
+        associate_pr_numbers(&state, &branch_prs);
+
+        let s = state.read();
+        let agent = s.agents.values().next().unwrap();
+        assert_eq!(agent.pr_number, None); // no match
     }
 }
