@@ -88,6 +88,7 @@ impl WebServer {
             .route("/agents/{id}/transcript", get(api::get_transcript))
             .route("/teams", get(api::get_teams))
             .route("/teams/{name}/tasks", get(api::get_team_tasks))
+            .route("/task-meta", get(api::get_task_meta))
             .route("/worktrees", get(api::get_worktrees))
             .route("/worktrees/delete", post(api::delete_worktree))
             .route("/worktrees/launch", post(api::launch_agent_in_worktree))

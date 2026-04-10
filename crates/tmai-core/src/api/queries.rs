@@ -460,6 +460,79 @@ impl TmaiCore {
         Ok(())
     }
 
+    // =========================================================
+    // Task metadata queries
+    // =========================================================
+
+    /// List all task metadata, merging .task-meta/ files with git worktree info.
+    ///
+    /// Returns entries keyed by branch name, combining metadata from disk
+    /// with live agent status and worktree details from state.
+    pub fn list_task_meta(&self) -> Vec<super::types::TaskMetaEntry> {
+        let state = self.state().read();
+        let mut entries: std::collections::HashMap<String, super::types::TaskMetaEntry> =
+            std::collections::HashMap::new();
+
+        // 1. Scan .task-meta/ from all registered projects
+        for project in &state.registered_projects {
+            for (branch, meta) in crate::task_meta::store::scan_all(std::path::Path::new(project)) {
+                entries.insert(
+                    branch.clone(),
+                    super::types::TaskMetaEntry {
+                        branch: branch.clone(),
+                        issue: meta.issue,
+                        agent_id: meta.agent_id,
+                        pr: meta.pr,
+                        review_agent_id: meta.review_agent_id,
+                        worktree_path: None,
+                        agent_status: None,
+                        is_dirty: None,
+                        milestones: meta.milestones,
+                    },
+                );
+            }
+        }
+
+        // 2. Merge with worktree info from state
+        for repo in &state.worktree_info {
+            for wt in &repo.worktrees {
+                if wt.is_main {
+                    continue;
+                }
+                let branch = match &wt.branch {
+                    Some(b) => b.clone(),
+                    None => continue,
+                };
+                let entry =
+                    entries
+                        .entry(branch.clone())
+                        .or_insert_with(|| super::types::TaskMetaEntry {
+                            branch: branch.clone(),
+                            issue: None,
+                            agent_id: None,
+                            pr: None,
+                            review_agent_id: None,
+                            worktree_path: None,
+                            agent_status: None,
+                            is_dirty: None,
+                            milestones: Vec::new(),
+                        });
+                entry.worktree_path = Some(wt.path.clone());
+                entry.is_dirty = wt.is_dirty;
+                if let Some(ref target) = wt.agent_target {
+                    entry.agent_id.get_or_insert_with(|| target.clone());
+                }
+                if let Some(ref status) = wt.agent_status {
+                    entry.agent_status = Some(format!("{:?}", status));
+                }
+            }
+        }
+
+        let mut result: Vec<_> = entries.into_values().collect();
+        result.sort_by(|a, b| a.branch.cmp(&b.branch));
+        result
+    }
+
     /// Remove a project directory. Persists to config.toml.
     pub fn remove_project(&self, path: &str) -> Result<(), ApiError> {
         let mut state = self.state().write();

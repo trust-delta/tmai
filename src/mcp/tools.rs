@@ -495,6 +495,16 @@ impl TmaiMcpServer {
         self.client.get_json_or_error("/worktrees")
     }
 
+    /// Get task metadata for all active branches. Returns issue/PR associations,
+    /// agent status, worktree info, and milestone history for each task branch.
+    /// Merges persisted .task-meta/ files with live git worktree information.
+    #[tool(
+        description = "Get task metadata (issue/PR associations, milestones) for all active branches"
+    )]
+    fn get_task_meta(&self, Parameters(_): Parameters<EmptyParams>) -> String {
+        self.client.get_json_or_error("/task-meta")
+    }
+
     /// Spawn a new AI agent (Claude Code) in a specified directory.
     #[tool(description = "Spawn a new AI agent in a directory")]
     fn spawn_agent(&self, Parameters(p): Parameters<SpawnAgentParams>) -> String {

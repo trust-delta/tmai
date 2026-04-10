@@ -21,6 +21,7 @@ pub mod security;
 pub mod session_discovery;
 pub mod session_lookup;
 pub mod state;
+pub mod task_meta;
 pub mod teams;
 pub mod tmux;
 pub mod transcript;

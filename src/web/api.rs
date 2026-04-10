@@ -732,6 +732,17 @@ pub async fn get_team_tasks(
 }
 
 // =========================================================
+// Task metadata endpoints
+// =========================================================
+
+/// GET /api/task-meta — list all task metadata merged with worktree info
+pub async fn get_task_meta(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<Vec<tmai_core::api::types::TaskMetaEntry>> {
+    Json(core.list_task_meta())
+}
+
+// =========================================================
 // Worktree endpoints
 // =========================================================
 
@@ -2558,6 +2569,7 @@ pub async fn dispatch_review(
     );
 
     // Spawn agent in the main repo directory (no worktree)
+    let project_cwd = req.cwd.clone();
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
         args: vec![prompt],
@@ -2597,7 +2609,18 @@ pub async fn dispatch_review(
         }
     }
 
-    if result.is_ok() {
+    if let Ok(ref resp) = result {
+        // Update .task-meta/{branch}.json with review agent and PR info
+        let project_root = std::path::Path::new(&project_cwd);
+        tmai_core::task_meta::store::update_meta(project_root, head_branch, |meta| {
+            meta.pr = Some(req.pr_number);
+            meta.review_agent_id = Some(resp.session_id.clone());
+            meta.add_milestone(&format!(
+                "Review dispatched for PR #{} \"{}\"",
+                req.pr_number, pr_title
+            ));
+        });
+
         let _ = core.event_sender().send(CoreEvent::ActionPerformed {
             origin,
             action: "dispatch_review".to_string(),
@@ -2759,7 +2782,21 @@ pub async fn spawn_worktree(
             .insert(worktree_path, std::time::Instant::now());
     }
 
-    if result.is_ok() {
+    if let Ok(ref resp) = result {
+        // Write .task-meta/{branch}.json for persistence across restarts
+        if let Some(issue_number) = req.issue_number {
+            let project_root = std::path::Path::new(&req.cwd);
+            let meta = tmai_core::task_meta::TaskMeta::for_issue(
+                issue_number,
+                Some(resp.session_id.clone()),
+            );
+            if let Err(e) =
+                tmai_core::task_meta::store::write_meta(project_root, &resolved_name, &meta)
+            {
+                tracing::warn!(error = %e, "Failed to write task meta for dispatch_issue");
+            }
+        }
+
         let issue_label = req
             .issue_number
             .map(|n| format!(" (issue #{n})"))
