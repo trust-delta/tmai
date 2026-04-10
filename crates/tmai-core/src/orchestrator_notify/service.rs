@@ -109,7 +109,7 @@ impl OrchestratorNotifier {
                     return None;
                 }
                 // Don't notify about orchestrator agents stopping
-                if Self::is_orchestrator(target, state) {
+                if Self::is_orchestrator_or_untracked(target, state) {
                     return None;
                 }
 
@@ -134,7 +134,7 @@ impl OrchestratorNotifier {
                 if !settings.on_idle {
                     return None;
                 }
-                if Self::is_orchestrator(target, state) {
+                if Self::is_orchestrator_or_untracked(target, state) {
                     return None;
                 }
 
@@ -265,13 +265,18 @@ impl OrchestratorNotifier {
         }
     }
 
-    /// Check if a target agent is an orchestrator
-    fn is_orchestrator(target: &str, state: &SharedState) -> bool {
+    /// Check if a target agent is an orchestrator or untracked (not in state).
+    ///
+    /// Returns true for orchestrator agents AND for targets not found in state.
+    /// Untracked agents (e.g., the user's own Claude Code session sending hooks)
+    /// should not generate notifications — they would be noise that triggers
+    /// unnecessary LLM responses.
+    fn is_orchestrator_or_untracked(target: &str, state: &SharedState) -> bool {
         let s = state.read();
-        s.agents
-            .get(target)
-            .map(|a| a.is_orchestrator)
-            .unwrap_or(false)
+        match s.agents.get(target) {
+            Some(a) => a.is_orchestrator,
+            None => true, // untracked session — suppress notification
+        }
     }
 
     /// Gather contextual info about an agent for notification formatting
@@ -629,5 +634,45 @@ mod tests {
         let (msg, _) = result.unwrap();
         assert!(msg.contains("Agent (mcp)"));
         assert!(msg.contains("merge_pr"));
+    }
+
+    #[test]
+    fn test_untracked_agent_stopped_not_notified() {
+        // An agent not in state (e.g., user's own Claude Code session)
+        // should not generate notifications
+        let state = AppState::shared();
+        // Don't insert any agent — "0" is untracked
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStopped {
+            target: "0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Untracked agent stop should not generate notification"
+        );
+    }
+
+    #[test]
+    fn test_untracked_agent_status_change_not_notified() {
+        let state = AppState::shared();
+        // Don't insert agent — untracked
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStatusChanged {
+            target: "unknown:0.0".to_string(),
+            old_status: "idle".to_string(),
+            new_status: "error".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Untracked agent status change should not generate notification"
+        );
     }
 }
