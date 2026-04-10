@@ -290,6 +290,12 @@ pub struct AgentSnapshot {
     /// Whether this agent was spawned as an orchestrator
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_orchestrator: bool,
+    /// Associated issue number (set at dispatch_issue time)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue_number: Option<u64>,
+    /// Associated PR number (auto-detected from branch or set manually)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
 }
 
 /// Helper for skip_serializing_if on u32
@@ -385,6 +391,8 @@ impl AgentSnapshot {
             claude_version: agent.claude_version.clone(),
             session_name: agent.session_name.clone(),
             is_orchestrator: agent.is_orchestrator,
+            issue_number: agent.issue_number,
+            pr_number: agent.pr_number,
         }
     }
 

@@ -2577,6 +2577,16 @@ pub async fn dispatch_review(
         spawn_in_pty(&core, &spawn_req).await
     };
 
+    // Set pr_number metadata on the spawned agent
+    if let Ok(ref resp) = result {
+        #[allow(deprecated)]
+        let state = core.raw_state();
+        let mut s = state.write();
+        if let Some(agent) = s.agents.get_mut(&resp.session_id) {
+            agent.pr_number = Some(req.pr_number);
+        }
+    }
+
     if result.is_ok() {
         let _ = core.event_sender().send(CoreEvent::ActionPerformed {
             origin,
@@ -2720,9 +2730,10 @@ pub async fn spawn_worktree(
         #[allow(deprecated)]
         let state = core.raw_state();
         let mut s = state.write();
-        // Set worktree_base_branch on the spawned agent
+        // Set worktree metadata on the spawned agent
         if let Some(agent) = s.agents.get_mut(&resp.session_id) {
             agent.worktree_base_branch = effective_base;
+            agent.issue_number = req.issue_number;
         }
         s.pending_agent_worktrees
             .insert(worktree_path, std::time::Instant::now());

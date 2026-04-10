@@ -21,10 +21,49 @@ impl TmaiCore {
     }
 
     /// Resolve agent ID within an already-locked state (avoids double-lock).
+    ///
+    /// Accepts any of:
+    /// - Direct HashMap key (target / session_id)
+    /// - stable_id (UUID short hash)
+    /// - pty_session_id
+    /// - `issue:N` — resolve to the agent working on issue #N
+    /// - `pr:N` — resolve to the agent associated with PR #N
     pub fn resolve_agent_key_in_state(
         state: &crate::state::AppState,
         id: &str,
     ) -> Result<String, ApiError> {
+        // Semantic addressing: issue:N or pr:N
+        if let Some(num_str) = id.strip_prefix("issue:") {
+            let issue_num: u64 = num_str.parse().map_err(|_| ApiError::AgentNotFound {
+                target: id.to_string(),
+            })?;
+            if let Some((key, _)) = state
+                .agents
+                .iter()
+                .find(|(_, a)| a.issue_number == Some(issue_num))
+            {
+                return Ok(key.clone());
+            }
+            return Err(ApiError::AgentNotFound {
+                target: id.to_string(),
+            });
+        }
+        if let Some(num_str) = id.strip_prefix("pr:") {
+            let pr_num: u64 = num_str.parse().map_err(|_| ApiError::AgentNotFound {
+                target: id.to_string(),
+            })?;
+            if let Some((key, _)) = state
+                .agents
+                .iter()
+                .find(|(_, a)| a.pr_number == Some(pr_num))
+            {
+                return Ok(key.clone());
+            }
+            return Err(ApiError::AgentNotFound {
+                target: id.to_string(),
+            });
+        }
+
         // 1) Direct HashMap key match (existing behavior)
         if state.agents.contains_key(id) {
             return Ok(id.to_string());
@@ -878,5 +917,84 @@ mod tests {
             "/home/user/project-b",
             "/home/user/project-b"
         ));
+    }
+
+    // =========================================================
+    // Semantic addressing tests
+    // =========================================================
+
+    #[test]
+    fn test_resolve_by_issue_number() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.issue_number = Some(322);
+        let core = make_core_with_agents(vec![agent]);
+
+        let result = core.get_agent("issue:322");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().pane_id, "main:0.0");
+    }
+
+    #[test]
+    fn test_resolve_by_pr_number() {
+        let mut agent = test_agent("main:0.1", AgentStatus::Idle);
+        agent.pr_number = Some(330);
+        let core = make_core_with_agents(vec![agent]);
+
+        let result = core.get_agent("pr:330");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().pane_id, "main:0.1");
+    }
+
+    #[test]
+    fn test_resolve_issue_not_found() {
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        let result = core.get_agent("issue:999");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_resolve_pr_not_found() {
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        let result = core.get_agent("pr:999");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_resolve_issue_invalid_number() {
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        let result = core.get_agent("issue:abc");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_resolve_pr_invalid_number() {
+        let core = make_core_with_agents(vec![test_agent("main:0.0", AgentStatus::Idle)]);
+        let result = core.get_agent("pr:abc");
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[test]
+    fn test_issue_and_pr_on_same_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.issue_number = Some(100);
+        agent.pr_number = Some(200);
+        let core = make_core_with_agents(vec![agent]);
+
+        // Both should resolve to the same agent
+        let by_issue = core.get_agent("issue:100").unwrap();
+        let by_pr = core.get_agent("pr:200").unwrap();
+        assert_eq!(by_issue.pane_id, by_pr.pane_id);
+    }
+
+    #[test]
+    fn test_snapshot_includes_issue_pr_numbers() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.issue_number = Some(42);
+        agent.pr_number = Some(99);
+        let core = make_core_with_agents(vec![agent]);
+
+        let snap = core.get_agent("main:0.0").unwrap();
+        assert_eq!(snap.issue_number, Some(42));
+        assert_eq!(snap.pr_number, Some(99));
     }
 }

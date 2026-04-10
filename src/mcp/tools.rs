@@ -75,13 +75,13 @@ pub struct ListAgentsParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct AgentIdParams {
-    /// Agent ID — accepts stable ID (e.g., "a1b2c3d4"), pane target (e.g., "main:0.0"), or PTY session UUID
+    /// Agent ID — accepts stable ID (e.g., "a1b2c3d4"), pane target (e.g., "main:0.0"), PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendTextParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Text to send to the agent
     pub text: String,
@@ -89,7 +89,7 @@ pub struct SendTextParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendPromptParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Prompt text to send to the agent
     pub prompt: String,
@@ -97,7 +97,7 @@ pub struct SendPromptParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SendKeyParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Key name (Enter, Escape, Space, Up, Down, Left, Right, Tab, BTab, BSpace)
     pub key: String,
@@ -105,7 +105,7 @@ pub struct SendKeyParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SelectChoiceParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
     /// Choice index (1-based)
     pub index: u32,
@@ -206,7 +206,7 @@ pub struct DispatchReviewParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SetOrchestratorParams {
-    /// Agent ID — accepts stable ID, pane target, or PTY session UUID
+    /// Agent ID — accepts stable ID, pane target, PTY session UUID, "issue:N", or "pr:N"
     pub id: String,
 }
 
