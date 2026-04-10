@@ -4,13 +4,23 @@
 //! Subscribes to `CoreEvent` stream and sends human-readable notifications
 //! to every registered orchestrator agent when significant events occur on
 //! sub-agents (idle/stopped, CI status, PR review comments).
+//!
+//! Each event type has an independent ON/OFF toggle and an optional prompt
+//! template override.  Settings are read from a shared `Arc<RwLock<>>` so
+//! changes made via the WebUI take effect immediately without restart.
 
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
 use crate::api::CoreEvent;
 use crate::config::OrchestratorNotifySettings;
 use crate::state::SharedState;
+
+/// Shared, hot-reloadable reference to notify settings
+pub type SharedNotifySettings = Arc<RwLock<OrchestratorNotifySettings>>;
 
 /// Background service that notifies orchestrator agents about sub-agent events
 pub struct OrchestratorNotifier;
@@ -28,8 +38,11 @@ impl OrchestratorNotifier {
     ///
     /// Listens for relevant `CoreEvent`s and sends notification prompts
     /// to all orchestrator agents (excluding the agent that triggered the event).
+    ///
+    /// Settings are read from the shared lock on each event so that WebUI
+    /// changes take effect without restarting the service.
     pub fn spawn(
-        settings: OrchestratorNotifySettings,
+        settings: SharedNotifySettings,
         state: SharedState,
         mut event_rx: broadcast::Receiver<CoreEvent>,
         event_tx: broadcast::Sender<CoreEvent>,
@@ -37,7 +50,10 @@ impl OrchestratorNotifier {
         tokio::spawn(async move {
             loop {
                 let notification = match event_rx.recv().await {
-                    Ok(event) => Self::build_notification(&event, &settings, &state),
+                    Ok(event) => {
+                        let s = settings.read().clone();
+                        Self::build_notification(&event, &s, &state)
+                    }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         debug!(skipped = n, "Orchestrator notifier lagged, skipping events");
                         continue;
@@ -105,7 +121,7 @@ impl OrchestratorNotifier {
                 last_assistant_message,
                 ..
             } => {
-                if !settings.on_idle {
+                if !settings.on_agent_stopped {
                     return None;
                 }
                 // Don't notify about orchestrator agents stopping
@@ -115,13 +131,21 @@ impl OrchestratorNotifier {
 
                 let ctx = Self::agent_context(target, state);
                 let name = Self::agent_label(&ctx);
-                let mut msg = format!("[tmai] Agent \"{name}\" has stopped.");
-                Self::append_branch_info(&mut msg, &ctx);
+                let branch = ctx.git_branch.as_deref().unwrap_or("");
+                let summary = last_assistant_message
+                    .as_deref()
+                    .map(|m| truncate(m, 200))
+                    .unwrap_or_default();
 
-                if let Some(last_msg) = last_assistant_message {
-                    let summary = truncate(last_msg, 200);
-                    msg.push_str(&format!("\n  Last message: {summary}"));
-                }
+                let msg = render_template(
+                    &settings.templates.agent_stopped,
+                    &format!("[tmai] Agent \"{name}\" has stopped.\n  Branch: {branch}\n  Last message: {summary}"),
+                    &[
+                        ("name", &name),
+                        ("branch", branch),
+                        ("summary", &summary),
+                    ],
+                );
 
                 Some((msg, target.clone()))
             }
@@ -131,32 +155,46 @@ impl OrchestratorNotifier {
                 old_status,
                 new_status,
             } => {
-                if !settings.on_idle {
-                    return None;
-                }
                 if Self::is_orchestrator_or_untracked(target, state) {
                     return None;
                 }
 
                 // Only notify on transitions to idle or error
-                let dominated = new_status == "idle" || new_status == "error";
-                if !dominated {
+                let is_error = new_status == "error";
+                let is_idle = new_status == "idle";
+                if !is_error && !is_idle {
+                    return None;
+                }
+
+                // Error transitions
+                if is_error {
+                    if !settings.on_agent_error {
+                        return None;
+                    }
+                    let ctx = Self::agent_context(target, state);
+                    let name = Self::agent_label(&ctx);
+                    let branch = ctx.git_branch.as_deref().unwrap_or("");
+
+                    let msg = render_template(
+                        &settings.templates.agent_error,
+                        &format!("[tmai] Agent \"{name}\" is now Error.\n  Branch: {branch}"),
+                        &[("name", &name), ("branch", branch)],
+                    );
+                    return Some((msg, target.clone()));
+                }
+
+                // Idle transitions — only if not covered by AgentStopped
+                if !settings.on_agent_stopped {
                     return None;
                 }
                 // Avoid duplicate notification if AgentStopped will also fire
-                if new_status == "idle" && old_status == "processing" {
-                    // AgentStopped covers stop→idle with more context; skip
+                if is_idle && old_status == "processing" {
                     return None;
                 }
 
                 let ctx = Self::agent_context(target, state);
                 let name = Self::agent_label(&ctx);
-                let status_display = match new_status.as_str() {
-                    "idle" => "Idle",
-                    "error" => "Error",
-                    _ => new_status.as_str(),
-                };
-                let mut msg = format!("[tmai] Agent \"{name}\" is now {status_display}.");
+                let mut msg = format!("[tmai] Agent \"{name}\" is now Idle.");
                 Self::append_branch_info(&mut msg, &ctx);
 
                 Some((msg, target.clone()))
@@ -167,14 +205,17 @@ impl OrchestratorNotifier {
                 worktree_path,
                 error,
             } => {
-                if !settings.on_idle {
+                if !settings.on_rebase_conflict {
                     return None;
                 }
-                // Find the agent working on this branch
                 let source = Self::find_agent_by_branch(branch, state)
                     .unwrap_or_else(|| worktree_path.clone());
-                let msg =
-                    format!("[tmai] Rebase conflict on branch \"{branch}\".\n  Error: {error}");
+
+                let msg = render_template(
+                    &settings.templates.rebase_conflict,
+                    &format!("[tmai] Rebase conflict on branch \"{branch}\".\n  Error: {error}"),
+                    &[("branch", branch.as_str()), ("error", error.as_str())],
+                );
                 Some((msg, source))
             }
 
@@ -186,9 +227,18 @@ impl OrchestratorNotifier {
                 if !settings.on_pr_created {
                     return None;
                 }
-                let msg =
-                    format!("[PR Monitor] PR #{pr_number} created: \"{title}\" (branch: {branch})");
-                // Use branch as pseudo-target (no specific agent)
+                let pr = pr_number.to_string();
+                let msg = render_template(
+                    &settings.templates.pr_created,
+                    &format!(
+                        "[PR Monitor] PR #{pr_number} created: \"{title}\" (branch: {branch})"
+                    ),
+                    &[
+                        ("pr_number", &pr),
+                        ("title", title.as_str()),
+                        ("branch", branch.as_str()),
+                    ],
+                );
                 Some((msg, branch.clone()))
             }
 
@@ -197,11 +247,20 @@ impl OrchestratorNotifier {
                 title,
                 checks_summary,
             } => {
-                if !settings.on_ci {
+                if !settings.on_ci_passed {
                     return None;
                 }
-                let msg = format!(
-                    "[PR Monitor] PR #{pr_number} \"{title}\" CI passed. Ready to merge. {checks_summary}"
+                let pr = pr_number.to_string();
+                let msg = render_template(
+                    &settings.templates.ci_passed,
+                    &format!(
+                        "[PR Monitor] PR #{pr_number} \"{title}\" CI passed. Ready to merge. {checks_summary}"
+                    ),
+                    &[
+                        ("pr_number", &pr),
+                        ("title", title.as_str()),
+                        ("summary", checks_summary.as_str()),
+                    ],
                 );
                 Some((msg, format!("pr-{pr_number}")))
             }
@@ -211,11 +270,21 @@ impl OrchestratorNotifier {
                 title,
                 failed_details,
             } => {
-                if !settings.on_ci {
+                if !settings.on_ci_failed {
                     return None;
                 }
-                let msg =
-                    format!("[PR Monitor] PR #{pr_number} \"{title}\" CI failed. {failed_details}");
+                let pr = pr_number.to_string();
+                let msg = render_template(
+                    &settings.templates.ci_failed,
+                    &format!(
+                        "[PR Monitor] PR #{pr_number} \"{title}\" CI failed. {failed_details}"
+                    ),
+                    &[
+                        ("pr_number", &pr),
+                        ("title", title.as_str()),
+                        ("failed_details", failed_details.as_str()),
+                    ],
+                );
                 Some((msg, format!("pr-{pr_number}")))
             }
 
@@ -227,8 +296,17 @@ impl OrchestratorNotifier {
                 if !settings.on_pr_comment {
                     return None;
                 }
-                let msg = format!(
-                    "[PR Monitor] PR #{pr_number} \"{title}\" has review feedback: {comments_summary}"
+                let pr = pr_number.to_string();
+                let msg = render_template(
+                    &settings.templates.pr_comment,
+                    &format!(
+                        "[PR Monitor] PR #{pr_number} \"{title}\" has review feedback: {comments_summary}"
+                    ),
+                    &[
+                        ("pr_number", &pr),
+                        ("title", title.as_str()),
+                        ("comments_summary", comments_summary.as_str()),
+                    ],
                 );
                 Some((msg, format!("pr-{pr_number}")))
             }
@@ -238,8 +316,19 @@ impl OrchestratorNotifier {
                 title,
                 branch,
             } => {
-                let msg =
-                    format!("[PR Monitor] PR #{pr_number} \"{title}\" closed (branch: {branch})");
+                if !settings.on_pr_closed {
+                    return None;
+                }
+                let pr = pr_number.to_string();
+                let msg = render_template(
+                    &settings.templates.pr_closed,
+                    &format!("[PR Monitor] PR #{pr_number} \"{title}\" closed (branch: {branch})"),
+                    &[
+                        ("pr_number", &pr),
+                        ("title", title.as_str()),
+                        ("branch", branch.as_str()),
+                    ],
+                );
                 Some((msg, format!("pr-{pr_number}")))
             }
 
@@ -327,6 +416,21 @@ impl OrchestratorNotifier {
     }
 }
 
+/// Render a notification message using a custom template or the built-in default.
+///
+/// If `custom_template` is empty, `default_msg` is returned as-is.
+/// Otherwise, `{{variable}}` placeholders in the template are expanded.
+fn render_template(custom_template: &str, default_msg: &str, vars: &[(&str, &str)]) -> String {
+    if custom_template.is_empty() {
+        return default_msg.to_string();
+    }
+    let mut result = custom_template.to_string();
+    for (key, value) in vars {
+        result = result.replace(&format!("{{{{{key}}}}}"), value);
+    }
+    result
+}
+
 /// Truncate a string to max_chars, appending "..." if truncated
 fn truncate(s: &str, max_chars: usize) -> String {
     // Take first line only, then truncate
@@ -388,6 +492,32 @@ mod tests {
     }
 
     #[test]
+    fn test_render_template_default() {
+        let msg = render_template("", "default message", &[("name", "test")]);
+        assert_eq!(msg, "default message");
+    }
+
+    #[test]
+    fn test_render_template_custom() {
+        let msg = render_template(
+            "[action required] Agent {{name}} on {{branch}} stopped",
+            "default",
+            &[("name", "worker-1"), ("branch", "feat/foo")],
+        );
+        assert_eq!(msg, "[action required] Agent worker-1 on feat/foo stopped");
+    }
+
+    #[test]
+    fn test_render_template_missing_var() {
+        let msg = render_template(
+            "PR #{{pr_number}} — {{missing_var}}",
+            "default",
+            &[("pr_number", "42")],
+        );
+        assert_eq!(msg, "PR #42 — {{missing_var}}");
+    }
+
+    #[test]
     fn test_agent_stopped_notification() {
         let state = AppState::shared();
         insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
@@ -407,6 +537,29 @@ mod tests {
         assert!(msg.contains("has stopped"));
         assert!(msg.contains("Branch: feat/sub:0.0"));
         assert!(msg.contains("Last message: Done implementing the feature."));
+    }
+
+    #[test]
+    fn test_agent_stopped_with_custom_template() {
+        let state = AppState::shared();
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.templates.agent_stopped =
+            "[notice] {{name}} stopped on {{branch}}. Summary: {{summary}}".to_string();
+
+        let event = CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("All done.".to_string()),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, _) = result.unwrap();
+        assert!(msg.starts_with("[notice]"));
+        assert!(msg.contains("feat/sub:0.0"));
+        assert!(msg.contains("All done."));
     }
 
     #[test]
@@ -452,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_status_changed_processing_to_idle_skipped() {
-        // processing→idle is covered by AgentStopped, so skip
+        // processing->idle is covered by AgentStopped, so skip
         let state = AppState::shared();
         insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
 
@@ -468,16 +621,12 @@ mod tests {
     }
 
     #[test]
-    fn test_disabled_on_idle_skips_all() {
+    fn test_disabled_on_agent_stopped_skips() {
         let state = AppState::shared();
         insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
 
-        let settings = OrchestratorNotifySettings {
-            on_idle: false,
-            on_ci: true,
-            on_pr_comment: true,
-            on_pr_created: true,
-        };
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.on_agent_stopped = false;
 
         let event = CoreEvent::AgentStopped {
             target: "sub:0.0".to_string(),
@@ -487,6 +636,80 @@ mod tests {
 
         let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_disabled_on_agent_error_skips() {
+        let state = AppState::shared();
+        insert_agent(
+            &state,
+            "sub:0.0",
+            false,
+            AgentStatus::Error {
+                message: "OOM".to_string(),
+            },
+        );
+
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.on_agent_error = false;
+
+        let event = CoreEvent::AgentStatusChanged {
+            target: "sub:0.0".to_string(),
+            old_status: "idle".to_string(),
+            new_status: "error".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_ci_passed_off_by_default() {
+        let settings = OrchestratorNotifySettings::default();
+        let state = AppState::shared();
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 42,
+            title: "feat: stuff".to_string(),
+            checks_summary: "all green".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none(), "CI passed should be OFF by default");
+    }
+
+    #[test]
+    fn test_ci_failed_on_by_default() {
+        let settings = OrchestratorNotifySettings::default();
+        let state = AppState::shared();
+
+        let event = CoreEvent::PrCiFailed {
+            pr_number: 42,
+            title: "feat: stuff".to_string(),
+            failed_details: "lint failed".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some(), "CI failed should be ON by default");
+    }
+
+    #[test]
+    fn test_pr_closed_configurable() {
+        let state = AppState::shared();
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.on_pr_closed = false;
+
+        let event = CoreEvent::PrClosed {
+            pr_number: 42,
+            title: "feat: stuff".to_string(),
+            branch: "feat/stuff".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "PR closed should respect on_pr_closed flag"
+        );
     }
 
     #[test]
@@ -553,7 +776,7 @@ mod tests {
         let event_rx = core.subscribe();
         let mut listen_rx = core.subscribe();
 
-        let settings = OrchestratorNotifySettings::default();
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
         let _handle =
             OrchestratorNotifier::spawn(settings, state.clone(), event_rx, event_tx.clone());
 

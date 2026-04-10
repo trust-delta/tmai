@@ -525,6 +525,10 @@ pub struct AppState {
     /// Key: session_id from spawn response. Applied and removed on first agent detection.
     /// Used by dispatch_issue (issue_number) and dispatch_review (pr_number).
     pub pending_agent_metadata: HashMap<String, PendingAgentMetadata>,
+
+    /// Shared handle to orchestrator notification settings (hot-reloadable from WebUI).
+    /// None if orchestrator is disabled.
+    pub notify_settings: Option<crate::orchestrator_notify::SharedNotifySettings>,
 }
 
 impl AppState {
@@ -568,6 +572,7 @@ impl AppState {
             prompt_queue: HashMap::new(),
             pending_orchestrator_ids: HashSet::new(),
             pending_agent_metadata: HashMap::new(),
+            notify_settings: None,
         }
     }
 

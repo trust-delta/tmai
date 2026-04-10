@@ -610,6 +610,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
                     />
                   </div>
+
+                  {/* Notifications */}
+                  <NotifySettingsSection
+                    orchestrator={orchestrator}
+                    setOrchestrator={setOrchestrator}
+                    orchProject={orchProject}
+                  />
                 </div>
               )}
             </div>
@@ -875,5 +882,188 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         </section>
       </div>
     </div>
+  );
+}
+
+// ── Notification settings sub-component ──────────────────────────
+
+/** Event definition for notification toggle rows */
+interface NotifyEventDef {
+  key: keyof Omit<import("@/lib/api").NotifySettings, "templates">;
+  templateKey: keyof import("@/lib/api").NotifyTemplates;
+  label: string;
+  description: string;
+}
+
+const NOTIFY_EVENTS: NotifyEventDef[] = [
+  {
+    key: "on_agent_stopped",
+    templateKey: "agent_stopped",
+    label: "Agent stopped",
+    description: "Sub-agent stopped normally (task completed)",
+  },
+  {
+    key: "on_agent_error",
+    templateKey: "agent_error",
+    label: "Agent error",
+    description: "Sub-agent entered error state",
+  },
+  {
+    key: "on_ci_passed",
+    templateKey: "ci_passed",
+    label: "CI passed",
+    description: "PR checks passed — usually no action needed",
+  },
+  {
+    key: "on_ci_failed",
+    templateKey: "ci_failed",
+    label: "CI failed",
+    description: "PR checks failed — action required",
+  },
+  {
+    key: "on_pr_created",
+    templateKey: "pr_created",
+    label: "PR created",
+    description: "New pull request opened",
+  },
+  {
+    key: "on_pr_comment",
+    templateKey: "pr_comment",
+    label: "Review feedback",
+    description: "PR received review comments (changes requested)",
+  },
+  {
+    key: "on_rebase_conflict",
+    templateKey: "rebase_conflict",
+    label: "Rebase conflict",
+    description: "Merge/rebase conflict detected",
+  },
+  {
+    key: "on_pr_closed",
+    templateKey: "pr_closed",
+    label: "PR closed",
+    description: "Pull request closed or merged",
+  },
+];
+
+/** Orchestrator notification settings with per-event toggles and template editing */
+function NotifySettingsSection({
+  orchestrator,
+  setOrchestrator,
+  orchProject,
+}: {
+  orchestrator: OrchestratorSettings;
+  setOrchestrator: (v: OrchestratorSettings) => void;
+  orchProject: string | undefined;
+}) {
+  const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+
+  // Toggle an event flag and persist
+  const toggleEvent = async (key: NotifyEventDef["key"], value: boolean) => {
+    const updated = {
+      ...orchestrator,
+      notify: { ...orchestrator.notify, [key]: value },
+    };
+    setOrchestrator(updated);
+    try {
+      await api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject);
+    } catch (_e) {
+      // Revert on error
+      setOrchestrator(orchestrator);
+    }
+  };
+
+  // Save a template change
+  const saveTemplate = async (templateKey: NotifyEventDef["templateKey"], value: string) => {
+    try {
+      const templates: Record<string, string> = { [templateKey]: value };
+      await api.updateOrchestratorSettings(
+        { notify: { templates: templates as Partial<import("@/lib/api").NotifyTemplates> } },
+        orchProject,
+      );
+    } catch (_e) {}
+  };
+
+  return (
+    <>
+      <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-1">
+        Notifications
+      </p>
+      <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
+        Control which events are forwarded to the orchestrator via send_prompt. OFF = silent
+        (recorded in task-meta only).
+      </p>
+
+      <div className="space-y-0.5">
+        {NOTIFY_EVENTS.map((evt) => {
+          const enabled = orchestrator.notify[evt.key] as boolean;
+          const templateValue = orchestrator.notify.templates[evt.templateKey];
+          const isExpanded = expandedTemplate === evt.key;
+
+          return (
+            <div key={evt.key}>
+              {/* Toggle row */}
+              <div className="flex items-center justify-between gap-2 py-1">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs text-zinc-300">{evt.label}</span>
+                  <p className="text-[10px] text-zinc-600 truncate">{evt.description}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {enabled && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTemplate(isExpanded ? null : evt.key)}
+                      className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors px-1"
+                      title="Edit prompt template"
+                    >
+                      {isExpanded ? "hide" : "template"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleEvent(evt.key, !enabled)}
+                    className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                      enabled ? "bg-cyan-500/40" : "bg-white/10"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 rounded-full transition-transform ${
+                        enabled ? "translate-x-[14px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Expandable template editor */}
+              {enabled && isExpanded && (
+                <div className="ml-2 mb-2">
+                  <textarea
+                    value={templateValue}
+                    onChange={(e) => {
+                      const updated = {
+                        ...orchestrator,
+                        notify: {
+                          ...orchestrator.notify,
+                          templates: {
+                            ...orchestrator.notify.templates,
+                            [evt.templateKey]: e.target.value,
+                          },
+                        },
+                      };
+                      setOrchestrator(updated);
+                    }}
+                    onBlur={() => saveTemplate(evt.templateKey, templateValue)}
+                    rows={2}
+                    placeholder="Empty = use built-in default. Variables: {{name}}, {{branch}}, {{pr_number}}, {{title}}, {{summary}}"
+                    className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }

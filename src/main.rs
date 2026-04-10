@@ -225,8 +225,13 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Start orchestrator notifier if enabled
     if settings.orchestrator.enabled {
         // Legacy mode — OrchestratorNotifier
-        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+        let notify_settings = std::sync::Arc::new(parking_lot::RwLock::new(
             settings.orchestrator.notify.clone(),
+        ));
+        // Store in state for hot-reload from WebUI settings API
+        app.shared_state().write().notify_settings = Some(notify_settings.clone());
+        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+            notify_settings,
             app.shared_state(),
             core.subscribe(),
             core.event_sender(),
@@ -410,8 +415,13 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
 
     // Start orchestrator notifier service
     if settings.orchestrator.enabled {
-        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+        let notify_settings = std::sync::Arc::new(parking_lot::RwLock::new(
             settings.orchestrator.notify.clone(),
+        ));
+        // Store in state for hot-reload from WebUI settings API
+        state.write().notify_settings = Some(notify_settings.clone());
+        tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
+            notify_settings,
             state.clone(),
             core.subscribe(),
             core.event_sender(),

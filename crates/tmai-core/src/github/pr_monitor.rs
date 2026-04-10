@@ -114,7 +114,7 @@ impl PrMonitor {
                 }
                 Some(prev) => {
                     // CI status transition: non-success → success
-                    if self.settings.notify.on_ci
+                    if self.settings.notify.on_ci_passed
                         && !is_success(&prev.check_status)
                         && is_success(&current_state.check_status)
                     {
@@ -129,7 +129,7 @@ impl PrMonitor {
                     }
 
                     // CI status transition: non-failure → failure
-                    if self.settings.notify.on_ci
+                    if self.settings.notify.on_ci_failed
                         && !is_failure(&prev.check_status)
                         && is_failure(&current_state.check_status)
                     {
@@ -684,7 +684,8 @@ mod tests {
         let settings = OrchestratorSettings::default();
         assert!(!settings.pr_monitor_enabled);
         assert_eq!(settings.pr_monitor_interval_secs, 60);
-        assert!(settings.notify.on_ci);
+        assert!(settings.notify.on_ci_failed);
+        assert!(!settings.notify.on_ci_passed);
         assert!(settings.notify.on_pr_comment);
         assert!(settings.notify.on_pr_created);
     }

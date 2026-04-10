@@ -590,10 +590,34 @@ export interface OrchestratorRules {
   custom: string;
 }
 
+export interface NotifyTemplates {
+  agent_stopped: string;
+  agent_error: string;
+  ci_passed: string;
+  ci_failed: string;
+  pr_created: string;
+  pr_comment: string;
+  rebase_conflict: string;
+  pr_closed: string;
+}
+
+export interface NotifySettings {
+  on_agent_stopped: boolean;
+  on_agent_error: boolean;
+  on_rebase_conflict: boolean;
+  on_ci_passed: boolean;
+  on_ci_failed: boolean;
+  on_pr_created: boolean;
+  on_pr_comment: boolean;
+  on_pr_closed: boolean;
+  templates: NotifyTemplates;
+}
+
 export interface OrchestratorSettings {
   enabled: boolean;
   role: string;
   rules: OrchestratorRules;
+  notify: NotifySettings;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
 }
@@ -954,6 +978,9 @@ export const api = {
       enabled?: boolean;
       role?: string;
       rules?: Partial<OrchestratorRules>;
+      notify?: Partial<Omit<NotifySettings, "templates">> & {
+        templates?: Partial<NotifyTemplates>;
+      };
     },
     project?: string,
   ) =>

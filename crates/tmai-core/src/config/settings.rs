@@ -883,35 +883,100 @@ pub struct OrchestratorSettings {
     pub pr_monitor_interval_secs: u64,
 }
 
-/// Settings controlling which sub-agent events notify the orchestrator
+/// Settings controlling which sub-agent events notify the orchestrator.
+///
+/// Each event type has an independent ON/OFF toggle and an optional
+/// prompt template override.  When a toggle is OFF the event is silently
+/// recorded in task-meta milestones but never forwarded to the orchestrator.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrchestratorNotifySettings {
-    /// Notify when a sub-agent becomes idle or stops
+    // ── Agent events ────────────────────────────────────────
+    /// Notify when a sub-agent stops normally
     #[serde(default = "default_true")]
-    pub on_idle: bool,
+    pub on_agent_stopped: bool,
 
-    /// Notify on CI status changes (passed/failed)
+    /// Notify when a sub-agent enters error state
     #[serde(default = "default_true")]
-    pub on_ci: bool,
+    pub on_agent_error: bool,
 
-    /// Notify on new PR review comments
+    /// Notify on rebase/merge conflicts
+    #[serde(default = "default_true")]
+    pub on_rebase_conflict: bool,
+
+    // ── CI events ───────────────────────────────────────────
+    /// Notify when CI passes (default: off — normal flow needs no action)
+    #[serde(default)]
+    pub on_ci_passed: bool,
+
+    /// Notify when CI fails (requires action)
+    #[serde(default = "default_true")]
+    pub on_ci_failed: bool,
+
+    // ── PR events ───────────────────────────────────────────
+    /// Notify when a new PR is created
+    #[serde(default = "default_true")]
+    pub on_pr_created: bool,
+
+    /// Notify on new PR review comments / feedback
     #[serde(default = "default_true")]
     pub on_pr_comment: bool,
 
-    /// Notify orchestrator when a new PR is created
+    /// Notify when a PR is closed or merged
     #[serde(default = "default_true")]
-    pub on_pr_created: bool,
+    pub on_pr_closed: bool,
+
+    // ── Template overrides ──────────────────────────────────
+    /// Per-event prompt template overrides (empty = use built-in default)
+    #[serde(default)]
+    pub templates: NotifyTemplates,
 }
 
 impl Default for OrchestratorNotifySettings {
     fn default() -> Self {
         Self {
-            on_idle: true,
-            on_ci: true,
-            on_pr_comment: true,
+            on_agent_stopped: true,
+            on_agent_error: true,
+            on_rebase_conflict: true,
+            on_ci_passed: false,
+            on_ci_failed: true,
             on_pr_created: true,
+            on_pr_comment: true,
+            on_pr_closed: true,
+            templates: NotifyTemplates::default(),
         }
     }
+}
+
+/// Per-event prompt template overrides.
+///
+/// Empty string means "use the built-in default template".
+/// Templates support `{{variable}}` placeholders that are expanded at
+/// notification time.  Available variables depend on the event type:
+///
+/// - All events: `{{name}}`, `{{branch}}`
+/// - Agent events: `{{summary}}`
+/// - CI/PR events: `{{pr_number}}`, `{{title}}`
+/// - CI failed: `{{failed_details}}`
+/// - PR comment: `{{comments_summary}}`
+/// - Rebase conflict: `{{error}}`
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct NotifyTemplates {
+    #[serde(default)]
+    pub agent_stopped: String,
+    #[serde(default)]
+    pub agent_error: String,
+    #[serde(default)]
+    pub ci_passed: String,
+    #[serde(default)]
+    pub ci_failed: String,
+    #[serde(default)]
+    pub pr_created: String,
+    #[serde(default)]
+    pub pr_comment: String,
+    #[serde(default)]
+    pub rebase_conflict: String,
+    #[serde(default)]
+    pub pr_closed: String,
 }
 
 /// Workflow rules for the orchestrator agent
