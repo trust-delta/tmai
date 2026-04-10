@@ -11,6 +11,18 @@ use crate::usage::UsageSnapshot;
 /// Shared state type alias
 pub type SharedState = Arc<RwLock<AppState>>;
 
+/// Metadata to apply to an agent on first detection.
+/// Used when spawning via tmux where the agent doesn't exist in state yet.
+#[derive(Debug, Clone, Default)]
+pub struct PendingAgentMetadata {
+    /// Issue number from dispatch_issue
+    pub issue_number: Option<u64>,
+    /// PR number from dispatch_review
+    pub pr_number: Option<u64>,
+    /// Worktree base branch
+    pub worktree_base_branch: Option<String>,
+}
+
 /// Input mode for the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
@@ -508,6 +520,11 @@ pub struct AppState {
     /// Populated by `spawn_orchestrator` before the agent appears in the agents map.
     /// Consumed by `update_agents` when the agent is first inserted.
     pub pending_orchestrator_ids: HashSet<String>,
+
+    /// Pending metadata for agents not yet detected by the poller.
+    /// Key: session_id from spawn response. Applied and removed on first agent detection.
+    /// Used by dispatch_issue (issue_number) and dispatch_review (pr_number).
+    pub pending_agent_metadata: HashMap<String, PendingAgentMetadata>,
 }
 
 impl AppState {
@@ -550,6 +567,7 @@ impl AppState {
             pending_agent_worktrees: HashMap::new(),
             prompt_queue: HashMap::new(),
             pending_orchestrator_ids: HashSet::new(),
+            pending_agent_metadata: HashMap::new(),
         }
     }
 
@@ -730,14 +748,24 @@ impl AppState {
                     existing.auto_approve_phase = None;
                 }
             } else {
-                // Apply pending orchestrator flag for newly detected agents
+                // Apply pending flags for newly detected agents
+                let mut agent = agent;
                 if self.pending_orchestrator_ids.remove(&id) {
-                    let mut agent = agent;
                     agent.is_orchestrator = true;
-                    self.agents.insert(id.clone(), agent);
-                } else {
-                    self.agents.insert(id.clone(), agent);
                 }
+                // Apply pending metadata (issue_number, pr_number, base_branch)
+                if let Some(meta) = self.pending_agent_metadata.remove(&id) {
+                    if meta.issue_number.is_some() {
+                        agent.issue_number = meta.issue_number;
+                    }
+                    if meta.pr_number.is_some() {
+                        agent.pr_number = meta.pr_number;
+                    }
+                    if meta.worktree_base_branch.is_some() {
+                        agent.worktree_base_branch = meta.worktree_base_branch;
+                    }
+                }
+                self.agents.insert(id.clone(), agent);
             }
         }
 

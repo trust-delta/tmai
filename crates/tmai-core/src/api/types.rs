@@ -130,6 +130,14 @@ pub enum ApiError {
     #[error("command failed: {0}")]
     CommandError(#[from] anyhow::Error),
 
+    /// Multiple agents match the same semantic identifier (issue:N or pr:N)
+    #[error("ambiguous identifier {identifier}: matches {count} agents ({matches})")]
+    AmbiguousAgent {
+        identifier: String,
+        count: usize,
+        matches: String,
+    },
+
     /// Agent belongs to a different project (cross-project operation denied)
     #[error("agent {agent_id} belongs to project {agent_project}, not {expected_project}")]
     ProjectScopeMismatch {

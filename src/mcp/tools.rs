@@ -323,12 +323,25 @@ impl TmaiMcpServer {
         match self.client.get::<serde_json::Value>("/agents") {
             Ok(data) => {
                 if let Some(agents) = data.as_array() {
-                    // Search by stable id (primary), pane_id, target, or pty_session_id
-                    if let Some(agent) = agents.iter().find(|a| {
-                        a.get("id").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("pane_id").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("target").and_then(|v| v.as_str()) == Some(&p.id)
-                            || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(&p.id)
+                    // Parse semantic addressing: "issue:N" or "pr:N"
+                    let semantic =
+                        p.id.split_once(':')
+                            .and_then(|(kind, n)| n.parse::<u64>().ok().map(|num| (kind, num)));
+
+                    // Search by semantic ID, stable id, pane_id, target, or pty_session_id
+                    if let Some(agent) = agents.iter().find(|a| match semantic {
+                        Some(("issue", num)) => {
+                            a.get("issue_number").and_then(|v| v.as_u64()) == Some(num)
+                        }
+                        Some(("pr", num)) => {
+                            a.get("pr_number").and_then(|v| v.as_u64()) == Some(num)
+                        }
+                        _ => {
+                            a.get("id").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("pane_id").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("target").and_then(|v| v.as_str()) == Some(&p.id)
+                                || a.get("pty_session_id").and_then(|v| v.as_str()) == Some(&p.id)
+                        }
                     }) {
                         return format_json(agent);
                     }

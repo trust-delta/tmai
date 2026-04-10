@@ -307,6 +307,16 @@ impl PrMonitor {
         }
     }
 
+    /// Get all tracked PR branch→number mappings for agent association.
+    ///
+    /// Returns all open PRs currently tracked, regardless of notification settings.
+    pub fn branch_pr_mappings(&self) -> Vec<(String, u64)> {
+        self.previous_states
+            .iter()
+            .map(|(num, state)| (state.branch.clone(), *num))
+            .collect()
+    }
+
     /// Format a notification as a prompt message for the orchestrator
     pub fn format_prompt(notif: &PrNotification) -> String {
         match notif {
@@ -401,23 +411,9 @@ pub enum PrNotification {
 
 /// Associate PR numbers with agents by matching PR head branch to agent git_branch.
 ///
-/// Called after each poll cycle to keep agent metadata up to date.
-fn associate_pr_numbers(state: &SharedState, notifications: &[PrNotification]) {
-    // Collect branch→pr_number mappings from Created notifications
-    let branch_prs: Vec<(String, u64)> = notifications
-        .iter()
-        .filter_map(|n| {
-            if let PrNotification::Created {
-                pr_number, branch, ..
-            } = n
-            {
-                Some((branch.clone(), *pr_number))
-            } else {
-                None
-            }
-        })
-        .collect();
-
+/// Uses the full list of open PRs (not just notifications) so that association
+/// works regardless of the `on_pr_created` notification setting.
+fn associate_pr_numbers(state: &SharedState, branch_prs: &[(String, u64)]) {
     if branch_prs.is_empty() {
         return;
     }
@@ -428,7 +424,7 @@ fn associate_pr_numbers(state: &SharedState, notifications: &[PrNotification]) {
             continue; // already has a PR association
         }
         if let Some(ref git_branch) = agent.git_branch {
-            for (branch, pr_number) in &branch_prs {
+            for (branch, pr_number) in branch_prs {
                 if git_branch == branch {
                     tracing::info!(
                         "Auto-associated PR #{} with agent {} (branch: {})",
@@ -470,9 +466,12 @@ pub fn spawn_pr_monitor(
                 tracing::info!("PR monitor detected: {}", PrMonitor::format_prompt(notif));
             }
 
-            // Auto-associate PR numbers with agents by branch matching
+            // Auto-associate PR numbers with agents by branch matching.
+            // Uses all tracked PRs (not just Created notifications) so association
+            // works even when on_pr_created is disabled.
             if let Some(ref state) = state {
-                associate_pr_numbers(state, &notifications);
+                let branch_prs = monitor.branch_pr_mappings();
+                associate_pr_numbers(state, &branch_prs);
             }
         }
     })
@@ -722,13 +721,9 @@ mod tests {
             s.update_agents(vec![agent]);
         }
 
-        let notifications = vec![PrNotification::Created {
-            pr_number: 42,
-            title: "Test PR".to_string(),
-            branch: "feat/test-42".to_string(),
-        }];
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
 
-        associate_pr_numbers(&state, &notifications);
+        associate_pr_numbers(&state, &branch_prs);
 
         let s = state.read();
         let agent = s.agents.values().next().unwrap();
@@ -759,13 +754,9 @@ mod tests {
             s.update_agents(vec![agent]);
         }
 
-        let notifications = vec![PrNotification::Created {
-            pr_number: 42,
-            title: "Test PR".to_string(),
-            branch: "feat/test-42".to_string(),
-        }];
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
 
-        associate_pr_numbers(&state, &notifications);
+        associate_pr_numbers(&state, &branch_prs);
 
         let s = state.read();
         let agent = s.agents.values().next().unwrap();
@@ -795,13 +786,9 @@ mod tests {
             s.update_agents(vec![agent]);
         }
 
-        let notifications = vec![PrNotification::Created {
-            pr_number: 42,
-            title: "Test PR".to_string(),
-            branch: "feat/test-42".to_string(),
-        }];
+        let branch_prs = vec![("feat/test-42".to_string(), 42u64)];
 
-        associate_pr_numbers(&state, &notifications);
+        associate_pr_numbers(&state, &branch_prs);
 
         let s = state.read();
         let agent = s.agents.values().next().unwrap();

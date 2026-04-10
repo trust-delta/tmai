@@ -98,6 +98,7 @@ fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
         ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
             StatusCode::BAD_REQUEST
         }
+        ApiError::AmbiguousAgent { .. } => StatusCode::CONFLICT,
         ApiError::ProjectScopeMismatch { .. } => StatusCode::FORBIDDEN,
         ApiError::WorktreeError(e) => match e {
             tmai_core::worktree::WorktreeOpsError::NotFound(_) => StatusCode::NOT_FOUND,
@@ -2584,6 +2585,15 @@ pub async fn dispatch_review(
         let mut s = state.write();
         if let Some(agent) = s.agents.get_mut(&resp.session_id) {
             agent.pr_number = Some(req.pr_number);
+        } else {
+            // Agent not yet in state (tmux spawn) — store for deferred application
+            s.pending_agent_metadata.insert(
+                resp.session_id.clone(),
+                tmai_core::state::PendingAgentMetadata {
+                    pr_number: Some(req.pr_number),
+                    ..Default::default()
+                },
+            );
         }
     }
 
@@ -2730,10 +2740,20 @@ pub async fn spawn_worktree(
         #[allow(deprecated)]
         let state = core.raw_state();
         let mut s = state.write();
-        // Set worktree metadata on the spawned agent
+        // Set worktree metadata on the spawned agent (or defer for tmux)
         if let Some(agent) = s.agents.get_mut(&resp.session_id) {
             agent.worktree_base_branch = effective_base;
             agent.issue_number = req.issue_number;
+        } else {
+            // Agent not yet in state (tmux spawn) — store for deferred application
+            s.pending_agent_metadata.insert(
+                resp.session_id.clone(),
+                tmai_core::state::PendingAgentMetadata {
+                    issue_number: req.issue_number,
+                    worktree_base_branch: effective_base,
+                    ..Default::default()
+                },
+            );
         }
         s.pending_agent_worktrees
             .insert(worktree_path, std::time::Instant::now());

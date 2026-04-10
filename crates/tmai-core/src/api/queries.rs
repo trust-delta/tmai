@@ -45,31 +45,45 @@ impl TmaiCore {
             let issue_num: u64 = num_str.parse().map_err(|_| ApiError::AgentNotFound {
                 target: id.to_string(),
             })?;
-            if let Some((key, _)) = state
+            let matches: Vec<String> = state
                 .agents
                 .iter()
-                .find(|(_, a)| a.issue_number == Some(issue_num))
-            {
-                return Ok(key.clone());
-            }
-            return Err(ApiError::AgentNotFound {
-                target: id.to_string(),
-            });
+                .filter(|(_, a)| a.issue_number == Some(issue_num))
+                .map(|(key, _)| key.clone())
+                .collect();
+            return match matches.len() {
+                0 => Err(ApiError::AgentNotFound {
+                    target: id.to_string(),
+                }),
+                1 => Ok(matches.into_iter().next().unwrap()),
+                n => Err(ApiError::AmbiguousAgent {
+                    identifier: id.to_string(),
+                    count: n,
+                    matches: matches.join(", "),
+                }),
+            };
         }
         if let Some(num_str) = id.strip_prefix("pr:") {
             let pr_num: u64 = num_str.parse().map_err(|_| ApiError::AgentNotFound {
                 target: id.to_string(),
             })?;
-            if let Some((key, _)) = state
+            let matches: Vec<String> = state
                 .agents
                 .iter()
-                .find(|(_, a)| a.pr_number == Some(pr_num))
-            {
-                return Ok(key.clone());
-            }
-            return Err(ApiError::AgentNotFound {
-                target: id.to_string(),
-            });
+                .filter(|(_, a)| a.pr_number == Some(pr_num))
+                .map(|(key, _)| key.clone())
+                .collect();
+            return match matches.len() {
+                0 => Err(ApiError::AgentNotFound {
+                    target: id.to_string(),
+                }),
+                1 => Ok(matches.into_iter().next().unwrap()),
+                n => Err(ApiError::AmbiguousAgent {
+                    identifier: id.to_string(),
+                    count: n,
+                    matches: matches.join(", "),
+                }),
+            };
         }
 
         // 1) Direct HashMap key match (existing behavior)
