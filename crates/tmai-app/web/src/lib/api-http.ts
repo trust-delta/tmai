@@ -139,6 +139,7 @@ export interface AgentSnapshot {
     | { ManualRequired: string }
     | null;
   auto_approve_override: boolean | null;
+  auto_approve_effective: boolean;
   connection_channels?: ConnectionChannels;
   model_id?: string | null;
   model_display_name?: string | null;

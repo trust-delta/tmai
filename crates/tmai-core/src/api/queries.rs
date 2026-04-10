@@ -6,6 +6,14 @@
 use super::core::TmaiCore;
 use super::types::{AgentDefinitionInfo, AgentSnapshot, ApiError, TeamSummary, TeamTaskInfo};
 
+/// Compute effective auto-approve state from global mode and per-agent override
+fn compute_auto_approve_effective(global_enabled: bool, override_val: Option<bool>) -> bool {
+    match override_val {
+        Some(v) => v,
+        None => global_enabled,
+    }
+}
+
 impl TmaiCore {
     // =========================================================
     // Agent ID resolution
@@ -93,6 +101,8 @@ impl TmaiCore {
     pub fn list_agents(&self) -> Vec<AgentSnapshot> {
         let state = self.state().read();
         let defs = &state.agent_definitions;
+        let global_aa = self.settings().auto_approve.effective_mode()
+            != crate::auto_approve::types::AutoApproveMode::Off;
         state
             .agent_order
             .iter()
@@ -100,6 +110,8 @@ impl TmaiCore {
             .map(|a| {
                 let mut snap = AgentSnapshot::from_agent(a);
                 snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap.auto_approve_effective =
+                    compute_auto_approve_effective(global_aa, a.auto_approve_override);
                 snap
             })
             .collect()
@@ -115,6 +127,8 @@ impl TmaiCore {
         let state = self.state().read();
         let defs = &state.agent_definitions;
         let project_git_dir = normalize_git_dir(project);
+        let global_aa = self.settings().auto_approve.effective_mode()
+            != crate::auto_approve::types::AutoApproveMode::Off;
         state
             .agent_order
             .iter()
@@ -123,6 +137,8 @@ impl TmaiCore {
             .map(|a| {
                 let mut snap = AgentSnapshot::from_agent(a);
                 snap.agent_definition = Self::match_agent_definition(a, defs);
+                snap.auto_approve_effective =
+                    compute_auto_approve_effective(global_aa, a.auto_approve_override);
                 snap
             })
             .collect()
@@ -156,9 +172,13 @@ impl TmaiCore {
         let state = self.state().read();
         let key = Self::resolve_agent_key_in_state(&state, id)?;
         let defs = &state.agent_definitions;
+        let global_aa = self.settings().auto_approve.effective_mode()
+            != crate::auto_approve::types::AutoApproveMode::Off;
         let a = state.agents.get(&key).unwrap();
         let mut snap = AgentSnapshot::from_agent(a);
         snap.agent_definition = Self::match_agent_definition(a, defs);
+        snap.auto_approve_effective =
+            compute_auto_approve_effective(global_aa, a.auto_approve_override);
         Ok(snap)
     }
 
@@ -166,11 +186,15 @@ impl TmaiCore {
     pub fn selected_agent(&self) -> Result<AgentSnapshot, ApiError> {
         let state = self.state().read();
         let defs = &state.agent_definitions;
+        let global_aa = self.settings().auto_approve.effective_mode()
+            != crate::auto_approve::types::AutoApproveMode::Off;
         state
             .selected_agent()
             .map(|agent| {
                 let mut snapshot = AgentSnapshot::from_agent(agent);
                 snapshot.agent_definition = Self::match_agent_definition(agent, defs);
+                snapshot.auto_approve_effective =
+                    compute_auto_approve_effective(global_aa, agent.auto_approve_override);
                 snapshot
             })
             .ok_or(ApiError::NoSelection)
@@ -191,12 +215,19 @@ impl TmaiCore {
     /// List agents that need attention (awaiting approval or error).
     pub fn agents_needing_attention(&self) -> Vec<AgentSnapshot> {
         let state = self.state().read();
+        let global_aa = self.settings().auto_approve.effective_mode()
+            != crate::auto_approve::types::AutoApproveMode::Off;
         state
             .agent_order
             .iter()
             .filter_map(|id| state.agents.get(id))
             .filter(|a| a.status.needs_attention())
-            .map(AgentSnapshot::from_agent)
+            .map(|a| {
+                let mut snap = AgentSnapshot::from_agent(a);
+                snap.auto_approve_effective =
+                    compute_auto_approve_effective(global_aa, a.auto_approve_override);
+                snap
+            })
             .collect()
     }
 
@@ -996,5 +1027,29 @@ mod tests {
         let snap = core.get_agent("main:0.0").unwrap();
         assert_eq!(snap.issue_number, Some(42));
         assert_eq!(snap.pr_number, Some(99));
+    }
+
+    // =========================================================
+    // Auto-approve effective state tests
+    // =========================================================
+
+    #[test]
+    fn test_compute_auto_approve_effective_global_off_no_override() {
+        assert!(!compute_auto_approve_effective(false, None));
+    }
+
+    #[test]
+    fn test_compute_auto_approve_effective_global_on_no_override() {
+        assert!(compute_auto_approve_effective(true, None));
+    }
+
+    #[test]
+    fn test_compute_auto_approve_effective_override_true_overrides_global_off() {
+        assert!(compute_auto_approve_effective(false, Some(true)));
+    }
+
+    #[test]
+    fn test_compute_auto_approve_effective_override_false_overrides_global_on() {
+        assert!(!compute_auto_approve_effective(true, Some(false)));
     }
 }

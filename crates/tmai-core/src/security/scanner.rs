@@ -137,8 +137,16 @@ impl ConfigAuditScanner {
         1
     }
 
-    /// Scan hook scripts in a directory. Returns number of files scanned.
-    fn scan_hooks_dir(dir: &Path, risks: &mut Vec<SecurityRisk>) -> usize {
+    /// Iterate directory entries and apply a per-file callback.
+    /// Handles read_dir errors, flattens entries, skips non-files,
+    /// and optionally recurses into subdirectories.
+    /// The callback receives a file path and risks vec; returns true if processed.
+    fn scan_dir(
+        dir: &Path,
+        recurse: bool,
+        risks: &mut Vec<SecurityRisk>,
+        process_file: &impl Fn(&Path, &mut Vec<SecurityRisk>) -> bool,
+    ) -> usize {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => return 0,
@@ -147,10 +155,25 @@ impl ConfigAuditScanner {
         let mut count = 0;
         for entry in entries.flatten() {
             let path = entry.path();
+            if path.is_dir() {
+                if recurse {
+                    count += Self::scan_dir(&path, recurse, risks, process_file);
+                }
+                continue;
+            }
             if !path.is_file() {
                 continue;
             }
+            if process_file(&path, risks) {
+                count += 1;
+            }
+        }
+        count
+    }
 
+    /// Scan hook scripts in a directory. Returns number of files scanned.
+    fn scan_hooks_dir(dir: &Path, risks: &mut Vec<SecurityRisk>) -> usize {
+        Self::scan_dir(dir, false, risks, &|path, risks| {
             // Only scan shell scripts and common script extensions
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let is_script = matches!(ext, "sh" | "bash" | "zsh" | "")
@@ -158,51 +181,35 @@ impl ConfigAuditScanner {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .is_some_and(|n| !n.contains('.'));
-
             if !is_script {
-                continue;
+                return false;
             }
 
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                let source = SettingsSource::HookScript(path);
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let source = SettingsSource::HookScript(path.to_path_buf());
                 rules::check_hook_background_processes(&content, &source, risks);
-                count += 1;
+                return true;
             }
-        }
-        count
+            false
+        })
     }
 
     /// Scan custom command files in a commands/ directory. Returns number of files scanned.
     fn scan_commands_dir(dir: &Path, risks: &mut Vec<SecurityRisk>) -> usize {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return 0,
-        };
-
-        let mut count = 0;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                // Recurse into subdirectories (commands can be nested)
-                if path.is_dir() {
-                    count += Self::scan_commands_dir(&path, risks);
-                }
-                continue;
-            }
-
+        Self::scan_dir(dir, true, risks, &|path, risks| {
             // Only scan markdown files (.md) which are the command format
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext != "md" {
-                continue;
+                return false;
             }
 
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                let source = SettingsSource::CustomCommand(path);
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let source = SettingsSource::CustomCommand(path.to_path_buf());
                 rules::check_custom_command_risks(&content, &source, risks);
-                count += 1;
+                return true;
             }
-        }
-        count
+            false
+        })
     }
 
     /// Scan a CLAUDE.md file for prompt injection. Returns 1 if scanned, 0 otherwise.
