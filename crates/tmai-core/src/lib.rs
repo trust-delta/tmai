@@ -15,7 +15,6 @@ pub mod monitor;
 pub mod orchestrator_notify;
 pub mod pty;
 pub mod pty_inject;
-pub mod review;
 pub mod runtime;
 pub mod security;
 pub mod session_discovery;

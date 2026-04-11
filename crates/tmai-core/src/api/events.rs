@@ -11,7 +11,6 @@ use std::fmt;
 use tokio::sync::broadcast;
 
 use crate::hooks::WorktreeInfo;
-use crate::review::ReviewRequest;
 
 use super::core::TmaiCore;
 
@@ -152,28 +151,6 @@ pub enum CoreEvent {
         target: String,
         /// How many compactions have occurred in this session
         compaction_count: u32,
-    },
-
-    /// An agent completed work and is ready for fresh-session review
-    ReviewReady {
-        /// Review request with context for launching a review session
-        request: ReviewRequest,
-    },
-
-    /// A review session was successfully launched
-    ReviewLaunched {
-        /// Original agent target that was reviewed
-        source_target: String,
-        /// tmux target of the review pane
-        review_target: String,
-    },
-
-    /// A review session completed and produced results
-    ReviewCompleted {
-        /// Original agent target that was reviewed
-        source_target: String,
-        /// One-line summary (first line of review output)
-        summary: String,
     },
 
     /// Worktree setup commands completed successfully

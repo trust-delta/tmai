@@ -16,9 +16,6 @@ export interface AppEventHandlers {
   onInstructionsLoaded?: () => void;
   onAgentStopped?: (target: string, reason?: string) => void;
   onContextCompacting?: (target: string, count?: number) => void;
-  onReviewReady?: () => void;
-  onReviewLaunched?: () => void;
-  onReviewCompleted?: () => void;
   onWorktreeSetupCompleted?: (name: string) => void;
   onWorktreeSetupFailed?: (name: string, error?: string) => void;
   onUsageUpdated?: () => void;
@@ -86,15 +83,6 @@ function dispatchEvent(handlers: AppEventHandlers, event: CoreEvent) {
         const data = event.data as { target?: string; count?: number };
         handlers.onContextCompacting?.(data.target || "", data.count);
       }
-      break;
-    case "review-ready":
-      handlers.onReviewReady?.();
-      break;
-    case "review-launched":
-      handlers.onReviewLaunched?.();
-      break;
-    case "review-completed":
-      handlers.onReviewCompleted?.();
       break;
     case "worktree-setup-completed":
       if (event.data && typeof event.data === "object" && "name" in event.data) {

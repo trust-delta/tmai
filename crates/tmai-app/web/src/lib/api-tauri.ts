@@ -13,7 +13,6 @@ import type {
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
-  ReviewSettings,
   SpawnRequest,
   UsageSettings,
   WorkflowSettings,
@@ -226,10 +225,6 @@ export const api = {
     notify_on_idle?: boolean;
     notify_idle_threshold_secs?: number;
   }) => httpApi.updateNotificationSettings(params),
-
-  // Review settings
-  getReviewSettings: () => httpApi.getReviewSettings(),
-  updateReviewSettings: (params: Partial<ReviewSettings>) => httpApi.updateReviewSettings(params),
 
   // Workflow settings
   getWorkflowSettings: () => httpApi.getWorkflowSettings(),
