@@ -309,6 +309,16 @@ pub enum CoreEvent {
         limit: u64,
     },
 
+    /// An agent's tmux target changed due to pane renumbering (PID-based reconciliation)
+    AgentTargetChanged {
+        /// Previous target ID (e.g., "main:0.2")
+        old_target: String,
+        /// New target ID (e.g., "main:0.1")
+        new_target: String,
+        /// Process ID that links the two targets
+        pid: u32,
+    },
+
     /// A side-effect API action was performed (for orchestrator notification)
     ActionPerformed {
         /// Who initiated the action

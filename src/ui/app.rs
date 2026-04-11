@@ -183,7 +183,7 @@ impl App {
             let initial_agents = DemoPoller::build_initial_agents();
             let mut state = self.state.write();
             state.current_session = Some("demo".to_string());
-            state.update_agents(initial_agents);
+            let _ = state.update_agents(initial_agents);
         }
 
         // Setup terminal
@@ -375,12 +375,29 @@ impl App {
             while let Ok(msg) = poll_rx.try_recv() {
                 match msg {
                     PollMessage::AgentsUpdated(agents) => {
-                        let mut state = self.state.write();
-                        state.update_agents(agents);
-                        state.clear_error();
-                        // Notify SSE subscribers via core event system
-                        drop(state);
+                        let target_changes = {
+                            let mut state = self.state.write();
+                            let changes = state.update_agents(agents);
+                            state.clear_error();
+                            changes
+                        };
+                        // Emit events for PID-based target migrations
                         if let Some(ref core) = self.core {
+                            for tc in &target_changes {
+                                tracing::info!(
+                                    old_target = %tc.old_target,
+                                    new_target = %tc.new_target,
+                                    pid = tc.pid,
+                                    "agent target migrated via PID reconciliation"
+                                );
+                                let _ = core.event_sender().send(
+                                    tmai_core::api::CoreEvent::AgentTargetChanged {
+                                        old_target: tc.old_target.clone(),
+                                        new_target: tc.new_target.clone(),
+                                        pid: tc.pid,
+                                    },
+                                );
+                            }
                             core.notify_agents_updated();
                         }
                     }

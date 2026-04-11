@@ -345,6 +345,29 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::AgentTargetChanged { old_target, new_target, pid }) => {
+                            let data = serde_json::json!({
+                                "old_target": old_target,
+                                "new_target": new_target,
+                                "pid": pid,
+                            });
+                            let event = Event::default()
+                                .event("agent_target_changed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                            // Also refresh agent list since targets changed
+                            let fingerprint = build_agents_fingerprint(&core);
+                            if fingerprint != last_agents_fingerprint {
+                                let agents_json = build_agents_json(&core);
+                                let event = Event::default().event("agents").data(&agents_json);
+                                if tx.send(Ok(event)).await.is_err() {
+                                    return;
+                                }
+                                last_agents_fingerprint = fingerprint;
+                            }
+                        }
                         Ok(CoreEvent::ActionPerformed { ref origin, ref action, ref summary }) => {
                             let data = serde_json::json!({
                                 "origin": origin,
