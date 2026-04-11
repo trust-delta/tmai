@@ -1840,6 +1840,11 @@ async fn spawn_in_tmux(
     core: &Arc<TmaiCore>,
     req: &SpawnRequest,
 ) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Serialize tmux spawn operations to prevent concurrent calls from receiving
+    // the same pane target (TOCTOU race on pane index assignment).
+    static TMUX_SPAWN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = TMUX_SPAWN_LOCK.lock().await;
+
     let tmux = tmai_core::tmux::TmuxClient::new();
 
     // Determine the tmux session to use.
@@ -4571,5 +4576,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Concurrent PTY spawns must return unique session IDs.
+    /// Regression test for #337: dispatch_issue returned duplicate session_id.
+    #[tokio::test]
+    async fn concurrent_pty_spawns_return_unique_session_ids() {
+        let state = test_app_state();
+        let runtime: Arc<dyn tmai_core::runtime::RuntimeAdapter> =
+            Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let cmd = CommandSender::new(None, runtime, state.clone());
+        let core = Arc::new(
+            TmaiCoreBuilder::new(tmai_core::config::Settings::default())
+                .with_state(state)
+                .with_command_sender(Arc::new(cmd))
+                .build(),
+        );
+
+        let n = 5;
+        let mut handles = Vec::new();
+        for _ in 0..n {
+            let core_clone = core.clone();
+            handles.push(tokio::spawn(async move {
+                let req = SpawnRequest {
+                    command: "echo".to_string(),
+                    args: vec!["hello".to_string()],
+                    cwd: "/tmp".to_string(),
+                    rows: 24,
+                    cols: 80,
+                    force_pty: false,
+                };
+                spawn_in_pty(&core_clone, &req).await
+            }));
+        }
+
+        let mut session_ids = std::collections::HashSet::new();
+        for handle in handles {
+            let result = handle.await.unwrap();
+            let resp = result.expect("spawn_in_pty should succeed");
+            assert!(
+                session_ids.insert(resp.session_id.clone()),
+                "Duplicate session_id detected: {}",
+                resp.session_id
+            );
+        }
+        assert_eq!(session_ids.len(), n, "All session IDs must be unique");
     }
 }
