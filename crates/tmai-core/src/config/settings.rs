@@ -377,6 +377,22 @@ pub struct WebSettings {
     /// Theme preference: "dark", "light", or "system"
     #[serde(default = "default_theme")]
     pub theme: String,
+
+    /// Preview polling interval (ms) when the browser tab is focused
+    #[serde(default = "default_preview_poll_focused_ms")]
+    pub preview_poll_focused_ms: u64,
+
+    /// Preview polling interval (ms) when the browser tab is unfocused
+    #[serde(default = "default_preview_poll_unfocused_ms")]
+    pub preview_poll_unfocused_ms: u64,
+
+    /// Preview polling interval (ms) during active input (passthrough typing)
+    #[serde(default = "default_preview_poll_active_input_ms")]
+    pub preview_poll_active_input_ms: u64,
+
+    /// Duration (ms) to stay in fast polling mode after the last input event
+    #[serde(default = "default_preview_active_input_window_ms")]
+    pub preview_active_input_window_ms: u64,
 }
 
 fn default_web_enabled() -> bool {
@@ -403,6 +419,22 @@ fn default_theme() -> String {
     "system".to_string()
 }
 
+fn default_preview_poll_focused_ms() -> u64 {
+    500
+}
+
+fn default_preview_poll_unfocused_ms() -> u64 {
+    2000
+}
+
+fn default_preview_poll_active_input_ms() -> u64 {
+    100
+}
+
+fn default_preview_active_input_window_ms() -> u64 {
+    2000
+}
+
 impl Default for WebSettings {
     fn default() -> Self {
         Self {
@@ -412,6 +444,10 @@ impl Default for WebSettings {
             notify_on_idle: default_notify_on_idle(),
             notify_idle_threshold_secs: default_notify_idle_threshold_secs(),
             theme: default_theme(),
+            preview_poll_focused_ms: default_preview_poll_focused_ms(),
+            preview_poll_unfocused_ms: default_preview_poll_unfocused_ms(),
+            preview_poll_active_input_ms: default_preview_poll_active_input_ms(),
+            preview_active_input_window_ms: default_preview_active_input_window_ms(),
         }
     }
 }
