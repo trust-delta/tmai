@@ -74,6 +74,112 @@ pub fn load_hook_token() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Ensure hooks are configured and in sync with the running tmai instance.
+///
+/// Called on webui/tui startup to guarantee that `~/.claude/settings.json` has
+/// hook entries pointing to the correct port with a valid token. This prevents
+/// stale hooks (wrong port, missing/mismatched token) from causing hook errors
+/// in spawned agents — especially worktree agents that inherit the global config.
+///
+/// Returns the hook token (existing or newly generated).
+pub fn ensure_hooks_configured(port: u16) -> Result<String> {
+    // Step 1: Ensure hook token exists (reuse existing, generate if missing)
+    let token = ensure_hook_token(false)?;
+
+    // Step 2: Read current Claude Code settings
+    let settings_path = claude_settings_path()?;
+    let mut settings: Value = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)
+            .with_context(|| format!("Failed to read {}", settings_path.display()))?;
+        serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse {}", settings_path.display()))?
+    } else {
+        json!({})
+    };
+
+    // Step 3: Check if hooks are already correctly configured
+    if hooks_are_current(&settings, &token, port) {
+        return Ok(token);
+    }
+
+    // Step 4: Merge tmai hooks with current token and port
+    // In webui mode, pane_id is resolved via session_id/cwd fallback (no tmux header)
+    let include_tmux_pane = std::env::var("TMUX").is_ok();
+    merge_hooks(&mut settings, &token, port, include_tmux_pane);
+
+    // Step 5: Write back settings
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let formatted = serde_json::to_string_pretty(&settings)?;
+    fs::write(&settings_path, &formatted)
+        .with_context(|| format!("Failed to write {}", settings_path.display()))?;
+
+    eprintln!(
+        "tmai: hooks synced in {} (port {}, token {}…)",
+        settings_path.display(),
+        port,
+        &token[..8.min(token.len())]
+    );
+
+    Ok(token)
+}
+
+/// Check if existing hooks in settings already have the correct token and port.
+///
+/// Returns true only when ALL target events have exactly one tmai hook entry
+/// whose URL matches the expected port and whose Authorization header matches
+/// the expected token. Any mismatch triggers a re-sync.
+fn hooks_are_current(settings: &Value, token: &str, port: u16) -> bool {
+    let expected_url_fragment = format!("localhost:{}/hooks/event", port);
+    let expected_auth = format!("Bearer {}", token);
+
+    let hooks = match settings.get("hooks").and_then(|h| h.as_object()) {
+        Some(h) => h,
+        None => return false,
+    };
+
+    for event in target_events() {
+        let event_hooks = match hooks.get(*event).and_then(|e| e.as_array()) {
+            Some(arr) => arr,
+            None => return false,
+        };
+
+        // Find exactly one tmai entry with correct token and port
+        let tmai_entries: Vec<_> = event_hooks.iter().filter(|e| is_tmai_entry(e)).collect();
+        if tmai_entries.len() != 1 {
+            return false;
+        }
+
+        let entry = tmai_entries[0];
+        // Check inside wrapper format: entry.hooks[0].url and entry.hooks[0].headers.Authorization
+        let inner = match entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .and_then(|a| a.first())
+        {
+            Some(h) => h,
+            None => return false,
+        };
+
+        let url_ok = inner
+            .get("url")
+            .and_then(|u| u.as_str())
+            .is_some_and(|u| u.contains(&expected_url_fragment));
+        let auth_ok = inner
+            .get("headers")
+            .and_then(|h| h.get("Authorization"))
+            .and_then(|a| a.as_str())
+            .is_some_and(|a| a == expected_auth);
+
+        if !url_ok || !auth_ok {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Generate the statusline.sh script that forwards JSON to tmai
 ///
 /// The script reads stdin (statusline JSON from Claude Code), forwards it to
@@ -1254,6 +1360,44 @@ mod tests {
             settings["mcpServers"]["tmai"]["args"],
             json!(["custom-arg"])
         );
+    }
+
+    #[test]
+    fn test_hooks_are_current_matching() {
+        let mut settings = json!({});
+        merge_hooks(&mut settings, "token-abc", 9876, false);
+        assert!(hooks_are_current(&settings, "token-abc", 9876));
+    }
+
+    #[test]
+    fn test_hooks_are_current_wrong_token() {
+        let mut settings = json!({});
+        merge_hooks(&mut settings, "token-abc", 9876, false);
+        // Different token → not current
+        assert!(!hooks_are_current(&settings, "token-xyz", 9876));
+    }
+
+    #[test]
+    fn test_hooks_are_current_wrong_port() {
+        let mut settings = json!({});
+        merge_hooks(&mut settings, "token-abc", 9876, false);
+        // Different port → not current
+        assert!(!hooks_are_current(&settings, "token-abc", 1234));
+    }
+
+    #[test]
+    fn test_hooks_are_current_empty_settings() {
+        let settings = json!({});
+        assert!(!hooks_are_current(&settings, "token-abc", 9876));
+    }
+
+    #[test]
+    fn test_hooks_are_current_missing_event() {
+        let mut settings = json!({});
+        merge_hooks(&mut settings, "token-abc", 9876, false);
+        // Remove one event → not current
+        settings["hooks"].as_object_mut().unwrap().remove("Stop");
+        assert!(!hooks_are_current(&settings, "token-abc", 9876));
     }
 
     #[test]
