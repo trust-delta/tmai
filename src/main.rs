@@ -258,7 +258,15 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     );
 
     // Start task metadata milestone service (records events to .task-meta/ files)
-    tmai_core::task_meta::TaskMetaService::spawn(app.shared_state(), core.subscribe());
+    let guardrails_settings = std::sync::Arc::new(parking_lot::RwLock::new(
+        settings.orchestrator.guardrails.clone(),
+    ));
+    tmai_core::task_meta::TaskMetaService::spawn(
+        app.shared_state(),
+        core.subscribe(),
+        guardrails_settings,
+        core.event_sender(),
+    );
 
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&app.shared_state(), &settings.project_paths());
@@ -453,7 +461,17 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     }
 
     // Start task metadata milestone service (records events to .task-meta/ files)
-    tmai_core::task_meta::TaskMetaService::spawn(state.clone(), core.subscribe());
+    let guardrails_settings = std::sync::Arc::new(parking_lot::RwLock::new(
+        settings.orchestrator.guardrails.clone(),
+    ));
+    // Store in state for hot-reload from WebUI settings API
+    state.write().guardrails_settings = Some(guardrails_settings.clone());
+    tmai_core::task_meta::TaskMetaService::spawn(
+        state.clone(),
+        core.subscribe(),
+        guardrails_settings,
+        core.event_sender(),
+    );
 
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&state, &settings.project_paths());

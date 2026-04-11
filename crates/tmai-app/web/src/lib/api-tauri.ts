@@ -8,6 +8,7 @@ export * from "./teams";
 import type {
   AgentSnapshot,
   AutoApproveRules,
+  GuardrailsSettings,
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
@@ -198,6 +199,7 @@ export const api = {
       notify?: Partial<Omit<NotifySettings, "templates">> & {
         templates?: Partial<NotifyTemplates>;
       };
+      guardrails?: Partial<GuardrailsSettings>;
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),

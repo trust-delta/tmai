@@ -6,12 +6,36 @@
 //! - **External mode**: The consumer (TUI) runs its own Poller and calls
 //!   `notify_agents_updated()` / `notify_teams_updated()` to emit events.
 
+use std::fmt;
+
 use tokio::sync::broadcast;
 
 use crate::hooks::WorktreeInfo;
 use crate::review::ReviewRequest;
 
 use super::core::TmaiCore;
+
+/// The type of guardrail that was exceeded
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GuardrailKind {
+    /// CI fix attempts exceeded max_ci_retries
+    CiRetries,
+    /// Review→fix cycles exceeded max_review_loops
+    ReviewLoops,
+    /// Consecutive failures exceeded escalate_to_human_after
+    ConsecutiveFailures,
+}
+
+impl fmt::Display for GuardrailKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GuardrailKind::CiRetries => write!(f, "CI retries"),
+            GuardrailKind::ReviewLoops => write!(f, "review loops"),
+            GuardrailKind::ConsecutiveFailures => write!(f, "consecutive failures"),
+        }
+    }
+}
 
 /// Events emitted by the core when state changes occur.
 ///
@@ -269,6 +293,20 @@ pub enum CoreEvent {
         title: String,
         /// Head branch name
         branch: String,
+    },
+
+    /// A guardrail limit was exceeded (CI retries, review loops, or consecutive failures)
+    GuardrailExceeded {
+        /// The type of guardrail that was exceeded
+        guardrail: GuardrailKind,
+        /// Associated branch
+        branch: String,
+        /// Associated PR number (if any)
+        pr_number: Option<u64>,
+        /// Current count that exceeded the limit
+        count: u64,
+        /// The configured limit
+        limit: u64,
     },
 
     /// A side-effect API action was performed (for orchestrator notification)

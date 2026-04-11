@@ -31,7 +31,7 @@ mod worktree_guard;
 
 pub use builder::TmaiCoreBuilder;
 pub use core::TmaiCore;
-pub use events::CoreEvent;
+pub use events::{CoreEvent, GuardrailKind};
 pub use types::{
     ActionOrigin, AgentSnapshot, ApiError, SendPromptResult, TeamSummary, TeamTaskInfo,
     WorktreeSnapshot,
