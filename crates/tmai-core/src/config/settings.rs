@@ -874,6 +874,10 @@ pub struct OrchestratorSettings {
     #[serde(default)]
     pub notify: OrchestratorNotifySettings,
 
+    /// Guardrail limits to prevent infinite loops
+    #[serde(default)]
+    pub guardrails: GuardrailsSettings,
+
     /// Enable automatic PR/CI status monitoring with notifications
     #[serde(default)]
     pub pr_monitor_enabled: bool,
@@ -925,6 +929,11 @@ pub struct OrchestratorNotifySettings {
     #[serde(default = "default_true")]
     pub on_pr_closed: bool,
 
+    // ── Guardrail events ────────────────────────────────────
+    /// Notify when a guardrail limit is exceeded (CI retries, review loops, etc.)
+    #[serde(default = "default_true")]
+    pub on_guardrail_exceeded: bool,
+
     // ── Template overrides ──────────────────────────────────
     /// Per-event prompt template overrides (empty = use built-in default)
     #[serde(default)]
@@ -942,6 +951,7 @@ impl Default for OrchestratorNotifySettings {
             on_pr_created: true,
             on_pr_comment: true,
             on_pr_closed: true,
+            on_guardrail_exceeded: true,
             templates: NotifyTemplates::default(),
         }
     }
@@ -977,6 +987,49 @@ pub struct NotifyTemplates {
     pub rebase_conflict: String,
     #[serde(default)]
     pub pr_closed: String,
+    #[serde(default)]
+    pub guardrail_exceeded: String,
+}
+
+/// Guardrail limits to prevent infinite loops and enable human escalation.
+///
+/// When a limit is hit, a `GuardrailExceeded` CoreEvent is emitted so the
+/// notification system can alert the orchestrator (or a human).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GuardrailsSettings {
+    /// Max CI fix attempts per PR before escalation
+    #[serde(default = "default_max_ci_retries")]
+    pub max_ci_retries: u64,
+
+    /// Max review→fix cycles per PR before escalation
+    #[serde(default = "default_max_review_loops")]
+    pub max_review_loops: u64,
+
+    /// Consecutive failures before notifying human
+    #[serde(default = "default_escalate_to_human_after")]
+    pub escalate_to_human_after: u64,
+}
+
+impl Default for GuardrailsSettings {
+    fn default() -> Self {
+        Self {
+            max_ci_retries: default_max_ci_retries(),
+            max_review_loops: default_max_review_loops(),
+            escalate_to_human_after: default_escalate_to_human_after(),
+        }
+    }
+}
+
+fn default_max_ci_retries() -> u64 {
+    3
+}
+
+fn default_max_review_loops() -> u64 {
+    5
+}
+
+fn default_escalate_to_human_after() -> u64 {
+    3
 }
 
 /// Workflow rules for the orchestrator agent
@@ -1014,6 +1067,7 @@ impl Default for OrchestratorSettings {
             role: default_orchestrator_role(),
             rules: OrchestratorRules::default(),
             notify: OrchestratorNotifySettings::default(),
+            guardrails: GuardrailsSettings::default(),
             pr_monitor_enabled: false,
             pr_monitor_interval_secs: default_pr_monitor_interval(),
         }
@@ -1730,5 +1784,57 @@ mod tests {
         assert!(rules.allow_format_lint);
         assert_eq!(rules.allow_patterns.len(), 2);
         assert_eq!(rules.allow_patterns[0], "cargo build.*");
+    }
+
+    #[test]
+    fn test_guardrails_defaults() {
+        let g = GuardrailsSettings::default();
+        assert_eq!(g.max_ci_retries, 3);
+        assert_eq!(g.max_review_loops, 5);
+        assert_eq!(g.escalate_to_human_after, 3);
+    }
+
+    #[test]
+    fn test_guardrails_serde_defaults() {
+        // Empty TOML should produce defaults
+        let toml = "";
+        let g: GuardrailsSettings = toml::from_str(toml).unwrap();
+        assert_eq!(g.max_ci_retries, 3);
+        assert_eq!(g.max_review_loops, 5);
+        assert_eq!(g.escalate_to_human_after, 3);
+    }
+
+    #[test]
+    fn test_guardrails_serde_partial() {
+        let toml = "max_ci_retries = 10";
+        let g: GuardrailsSettings = toml::from_str(toml).unwrap();
+        assert_eq!(g.max_ci_retries, 10);
+        assert_eq!(g.max_review_loops, 5); // default
+        assert_eq!(g.escalate_to_human_after, 3); // default
+    }
+
+    #[test]
+    fn test_orchestrator_settings_includes_guardrails() {
+        let toml = r#"
+            enabled = true
+            [guardrails]
+            max_ci_retries = 7
+            max_review_loops = 10
+            escalate_to_human_after = 5
+        "#;
+        let orch: OrchestratorSettings = toml::from_str(toml).unwrap();
+        assert!(orch.enabled);
+        assert_eq!(orch.guardrails.max_ci_retries, 7);
+        assert_eq!(orch.guardrails.max_review_loops, 10);
+        assert_eq!(orch.guardrails.escalate_to_human_after, 5);
+    }
+
+    #[test]
+    fn test_notify_settings_guardrail_exceeded_default() {
+        let n = OrchestratorNotifySettings::default();
+        assert!(
+            n.on_guardrail_exceeded,
+            "on_guardrail_exceeded should be ON by default"
+        );
     }
 }

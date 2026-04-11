@@ -529,6 +529,10 @@ pub struct AppState {
     /// Shared handle to orchestrator notification settings (hot-reloadable from WebUI).
     /// None if orchestrator is disabled.
     pub notify_settings: Option<crate::orchestrator_notify::SharedNotifySettings>,
+
+    /// Shared handle to guardrails settings (hot-reloadable from WebUI).
+    /// None until TaskMetaService is started.
+    pub guardrails_settings: Option<crate::task_meta::SharedGuardrailsSettings>,
 }
 
 impl AppState {
@@ -573,6 +577,7 @@ impl AppState {
             pending_orchestrator_ids: HashSet::new(),
             pending_agent_metadata: HashMap::new(),
             notify_settings: None,
+            guardrails_settings: None,
         }
     }
 

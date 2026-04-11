@@ -7,5 +7,8 @@
 mod service;
 pub mod store;
 
-pub use service::{restore_from_disk, TaskMetaService};
+pub use service::{
+    count_ci_failures, count_consecutive_failures, count_review_loops, restore_from_disk,
+    SharedGuardrailsSettings, TaskMetaService,
+};
 pub use store::{Milestone, TaskMeta};

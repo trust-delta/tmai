@@ -599,6 +599,7 @@ export interface NotifyTemplates {
   pr_comment: string;
   rebase_conflict: string;
   pr_closed: string;
+  guardrail_exceeded: string;
 }
 
 export interface NotifySettings {
@@ -610,7 +611,14 @@ export interface NotifySettings {
   on_pr_created: boolean;
   on_pr_comment: boolean;
   on_pr_closed: boolean;
+  on_guardrail_exceeded: boolean;
   templates: NotifyTemplates;
+}
+
+export interface GuardrailsSettings {
+  max_ci_retries: number;
+  max_review_loops: number;
+  escalate_to_human_after: number;
 }
 
 export interface OrchestratorSettings {
@@ -618,6 +626,7 @@ export interface OrchestratorSettings {
   role: string;
   rules: OrchestratorRules;
   notify: NotifySettings;
+  guardrails: GuardrailsSettings;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
 }
@@ -981,6 +990,7 @@ export const api = {
       notify?: Partial<Omit<NotifySettings, "templates">> & {
         templates?: Partial<NotifyTemplates>;
       };
+      guardrails?: Partial<GuardrailsSettings>;
     },
     project?: string,
   ) =>

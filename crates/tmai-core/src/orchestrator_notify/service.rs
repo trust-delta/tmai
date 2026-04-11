@@ -336,6 +336,32 @@ impl OrchestratorNotifier {
                 Some((msg, format!("pr-{pr_number}")))
             }
 
+            CoreEvent::GuardrailExceeded {
+                guardrail,
+                branch,
+                pr_number,
+                count,
+                limit,
+            } => {
+                if !settings.on_guardrail_exceeded {
+                    return None;
+                }
+                let pr_label = pr_number.map(|n| format!(" (PR #{n})")).unwrap_or_default();
+                let msg = render_template(
+                    &settings.templates.guardrail_exceeded,
+                    &format!(
+                        "[tmai] ⚠ Guardrail exceeded: {guardrail} on branch \"{branch}\"{pr_label}.\n  Count: {count} / limit: {limit}\n  Action required: please review and intervene."
+                    ),
+                    &[
+                        ("guardrail", &guardrail.to_string()),
+                        ("branch", branch.as_str()),
+                        ("count", &count.to_string()),
+                        ("limit", &limit.to_string()),
+                    ],
+                );
+                Some((msg, branch.clone()))
+            }
+
             CoreEvent::ActionPerformed {
                 origin,
                 action,
@@ -1051,5 +1077,72 @@ mod tests {
             !found_prompt,
             "Orchestrator should NOT receive its own stop notification via pane_id"
         );
+    }
+
+    #[test]
+    fn test_guardrail_exceeded_notification() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+
+        let event = CoreEvent::GuardrailExceeded {
+            guardrail: crate::api::GuardrailKind::CiRetries,
+            branch: "feat/42-auth".to_string(),
+            pr_number: Some(10),
+            count: 3,
+            limit: 3,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_some(),
+            "Guardrail exceeded should notify by default"
+        );
+        let (msg, source) = result.unwrap();
+        assert_eq!(source, "feat/42-auth");
+        assert!(msg.contains("Guardrail exceeded"));
+        assert!(msg.contains("CI retries"));
+        assert!(msg.contains("PR #10"));
+        assert!(msg.contains("3 / limit: 3"));
+    }
+
+    #[test]
+    fn test_guardrail_exceeded_disabled() {
+        let state = AppState::shared();
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.on_guardrail_exceeded = false;
+
+        let event = CoreEvent::GuardrailExceeded {
+            guardrail: crate::api::GuardrailKind::ReviewLoops,
+            branch: "feat/50-api".to_string(),
+            pr_number: Some(20),
+            count: 5,
+            limit: 5,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Guardrail exceeded should not notify when disabled"
+        );
+    }
+
+    #[test]
+    fn test_guardrail_exceeded_consecutive_failures() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+
+        let event = CoreEvent::GuardrailExceeded {
+            guardrail: crate::api::GuardrailKind::ConsecutiveFailures,
+            branch: "feat/99-bug".to_string(),
+            pr_number: None,
+            count: 3,
+            limit: 3,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+        let (msg, _) = result.unwrap();
+        assert!(msg.contains("consecutive failures"));
+        assert!(!msg.contains("PR #")); // No PR number
     }
 }

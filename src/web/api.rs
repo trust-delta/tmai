@@ -1261,8 +1261,17 @@ pub struct OrchestratorSettingsResponse {
     pub role: String,
     pub rules: OrchestratorRulesResponse,
     pub notify: NotifySettingsResponse,
+    pub guardrails: GuardrailsSettingsResponse,
     /// Whether this is a per-project override (true) or global fallback (false)
     pub is_project_override: bool,
+}
+
+/// Guardrails settings response
+#[derive(Debug, Serialize)]
+pub struct GuardrailsSettingsResponse {
+    pub max_ci_retries: u64,
+    pub max_review_loops: u64,
+    pub escalate_to_human_after: u64,
 }
 
 /// Rules sub-object in orchestrator settings response
@@ -1285,6 +1294,7 @@ pub struct NotifySettingsResponse {
     pub on_pr_created: bool,
     pub on_pr_comment: bool,
     pub on_pr_closed: bool,
+    pub on_guardrail_exceeded: bool,
     pub templates: NotifyTemplatesResponse,
 }
 
@@ -1299,6 +1309,7 @@ pub struct NotifyTemplatesResponse {
     pub pr_comment: String,
     pub rebase_conflict: String,
     pub pr_closed: String,
+    pub guardrail_exceeded: String,
 }
 
 /// Request body for updating orchestrator settings
@@ -1312,6 +1323,19 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub rules: Option<UpdateOrchestratorRulesRequest>,
     #[serde(default)]
     pub notify: Option<UpdateNotifySettingsRequest>,
+    #[serde(default)]
+    pub guardrails: Option<UpdateGuardrailsRequest>,
+}
+
+/// Guardrails settings update request (all fields optional for partial updates)
+#[derive(Debug, Deserialize)]
+pub struct UpdateGuardrailsRequest {
+    #[serde(default)]
+    pub max_ci_retries: Option<u64>,
+    #[serde(default)]
+    pub max_review_loops: Option<u64>,
+    #[serde(default)]
+    pub escalate_to_human_after: Option<u64>,
 }
 
 /// Rules sub-object in orchestrator settings update request
@@ -1347,6 +1371,8 @@ pub struct UpdateNotifySettingsRequest {
     #[serde(default)]
     pub on_pr_closed: Option<bool>,
     #[serde(default)]
+    pub on_guardrail_exceeded: Option<bool>,
+    #[serde(default)]
     pub templates: Option<UpdateNotifyTemplatesRequest>,
 }
 
@@ -1369,6 +1395,8 @@ pub struct UpdateNotifyTemplatesRequest {
     pub rebase_conflict: Option<String>,
     #[serde(default)]
     pub pr_closed: Option<String>,
+    #[serde(default)]
+    pub guardrail_exceeded: Option<String>,
 }
 
 /// GET /api/settings/orchestrator — get orchestrator settings
@@ -1402,6 +1430,7 @@ pub async fn get_orchestrator_settings(
             on_pr_created: orch.notify.on_pr_created,
             on_pr_comment: orch.notify.on_pr_comment,
             on_pr_closed: orch.notify.on_pr_closed,
+            on_guardrail_exceeded: orch.notify.on_guardrail_exceeded,
             templates: NotifyTemplatesResponse {
                 agent_stopped: orch.notify.templates.agent_stopped.clone(),
                 agent_error: orch.notify.templates.agent_error.clone(),
@@ -1411,7 +1440,13 @@ pub async fn get_orchestrator_settings(
                 pr_comment: orch.notify.templates.pr_comment.clone(),
                 rebase_conflict: orch.notify.templates.rebase_conflict.clone(),
                 pr_closed: orch.notify.templates.pr_closed.clone(),
+                guardrail_exceeded: orch.notify.templates.guardrail_exceeded.clone(),
             },
+        },
+        guardrails: GuardrailsSettingsResponse {
+            max_ci_retries: orch.guardrails.max_ci_retries,
+            max_review_loops: orch.guardrails.max_review_loops,
+            escalate_to_human_after: orch.guardrails.escalate_to_human_after,
         },
         is_project_override: is_override,
     })
@@ -1490,6 +1525,10 @@ pub async fn update_orchestrator_settings(
                     .as_ref()
                     .and_then(|r| r.on_pr_closed)
                     .unwrap_or(n.on_pr_closed),
+                on_guardrail_exceeded: nr
+                    .as_ref()
+                    .and_then(|r| r.on_guardrail_exceeded)
+                    .unwrap_or(n.on_guardrail_exceeded),
                 templates: tmai_core::config::NotifyTemplates {
                     agent_stopped: t
                         .and_then(|t| t.agent_stopped.clone())
@@ -1515,7 +1554,28 @@ pub async fn update_orchestrator_settings(
                     pr_closed: t
                         .and_then(|t| t.pr_closed.clone())
                         .unwrap_or_else(|| n.templates.pr_closed.clone()),
+                    guardrail_exceeded: t
+                        .and_then(|t| t.guardrail_exceeded.clone())
+                        .unwrap_or_else(|| n.templates.guardrail_exceeded.clone()),
                 },
+            }
+        },
+        guardrails: {
+            let g = &current.guardrails;
+            let gr = &req.guardrails;
+            tmai_core::config::GuardrailsSettings {
+                max_ci_retries: gr
+                    .as_ref()
+                    .and_then(|r| r.max_ci_retries)
+                    .unwrap_or(g.max_ci_retries),
+                max_review_loops: gr
+                    .as_ref()
+                    .and_then(|r| r.max_review_loops)
+                    .unwrap_or(g.max_review_loops),
+                escalate_to_human_after: gr
+                    .as_ref()
+                    .and_then(|r| r.escalate_to_human_after)
+                    .unwrap_or(g.escalate_to_human_after),
             }
         },
         pr_monitor_enabled: current.pr_monitor_enabled,
@@ -1526,18 +1586,21 @@ pub async fn update_orchestrator_settings(
     tmai_core::config::Settings::save_project_orchestrator(q.project.as_deref(), &updated);
     core.reload_settings();
 
-    // Hot-reload the live notifier service if running
+    // Hot-reload the live notifier and guardrails services if running
     #[allow(deprecated)]
     let state = core.raw_state();
     let s = state.read();
     if let Some(ref ns) = s.notify_settings {
         *ns.write() = updated.notify;
     }
+    if let Some(ref gs) = s.guardrails_settings {
+        *gs.write() = updated.guardrails;
+    }
     drop(s);
 
     tracing::info!(
         project = ?q.project,
-        "Orchestrator settings updated (including notify)"
+        "Orchestrator settings updated (including notify and guardrails)"
     );
     Json(serde_json::json!({"ok": true}))
 }
