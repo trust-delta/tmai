@@ -1260,6 +1260,7 @@ pub struct OrchestratorSettingsResponse {
     pub enabled: bool,
     pub role: String,
     pub rules: OrchestratorRulesResponse,
+    pub notify: NotifySettingsResponse,
     /// Whether this is a per-project override (true) or global fallback (false)
     pub is_project_override: bool,
 }
@@ -1273,6 +1274,33 @@ pub struct OrchestratorRulesResponse {
     pub custom: String,
 }
 
+/// Notification settings response (per-event toggles + templates)
+#[derive(Debug, Serialize)]
+pub struct NotifySettingsResponse {
+    pub on_agent_stopped: bool,
+    pub on_agent_error: bool,
+    pub on_rebase_conflict: bool,
+    pub on_ci_passed: bool,
+    pub on_ci_failed: bool,
+    pub on_pr_created: bool,
+    pub on_pr_comment: bool,
+    pub on_pr_closed: bool,
+    pub templates: NotifyTemplatesResponse,
+}
+
+/// Template overrides response
+#[derive(Debug, Serialize)]
+pub struct NotifyTemplatesResponse {
+    pub agent_stopped: String,
+    pub agent_error: String,
+    pub ci_passed: String,
+    pub ci_failed: String,
+    pub pr_created: String,
+    pub pr_comment: String,
+    pub rebase_conflict: String,
+    pub pr_closed: String,
+}
+
 /// Request body for updating orchestrator settings
 #[derive(Debug, Deserialize)]
 pub struct UpdateOrchestratorSettingsRequest {
@@ -1282,6 +1310,8 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub role: Option<String>,
     #[serde(default)]
     pub rules: Option<UpdateOrchestratorRulesRequest>,
+    #[serde(default)]
+    pub notify: Option<UpdateNotifySettingsRequest>,
 }
 
 /// Rules sub-object in orchestrator settings update request
@@ -1295,6 +1325,50 @@ pub struct UpdateOrchestratorRulesRequest {
     pub review: Option<String>,
     #[serde(default)]
     pub custom: Option<String>,
+}
+
+/// Notification settings update request (all fields optional for partial updates)
+#[derive(Debug, Deserialize)]
+pub struct UpdateNotifySettingsRequest {
+    #[serde(default)]
+    pub on_agent_stopped: Option<bool>,
+    #[serde(default)]
+    pub on_agent_error: Option<bool>,
+    #[serde(default)]
+    pub on_rebase_conflict: Option<bool>,
+    #[serde(default)]
+    pub on_ci_passed: Option<bool>,
+    #[serde(default)]
+    pub on_ci_failed: Option<bool>,
+    #[serde(default)]
+    pub on_pr_created: Option<bool>,
+    #[serde(default)]
+    pub on_pr_comment: Option<bool>,
+    #[serde(default)]
+    pub on_pr_closed: Option<bool>,
+    #[serde(default)]
+    pub templates: Option<UpdateNotifyTemplatesRequest>,
+}
+
+/// Template overrides update request
+#[derive(Debug, Deserialize)]
+pub struct UpdateNotifyTemplatesRequest {
+    #[serde(default)]
+    pub agent_stopped: Option<String>,
+    #[serde(default)]
+    pub agent_error: Option<String>,
+    #[serde(default)]
+    pub ci_passed: Option<String>,
+    #[serde(default)]
+    pub ci_failed: Option<String>,
+    #[serde(default)]
+    pub pr_created: Option<String>,
+    #[serde(default)]
+    pub pr_comment: Option<String>,
+    #[serde(default)]
+    pub rebase_conflict: Option<String>,
+    #[serde(default)]
+    pub pr_closed: Option<String>,
 }
 
 /// GET /api/settings/orchestrator — get orchestrator settings
@@ -1318,6 +1392,26 @@ pub async fn get_orchestrator_settings(
             merge: orch.rules.merge.clone(),
             review: orch.rules.review.clone(),
             custom: orch.rules.custom.clone(),
+        },
+        notify: NotifySettingsResponse {
+            on_agent_stopped: orch.notify.on_agent_stopped,
+            on_agent_error: orch.notify.on_agent_error,
+            on_rebase_conflict: orch.notify.on_rebase_conflict,
+            on_ci_passed: orch.notify.on_ci_passed,
+            on_ci_failed: orch.notify.on_ci_failed,
+            on_pr_created: orch.notify.on_pr_created,
+            on_pr_comment: orch.notify.on_pr_comment,
+            on_pr_closed: orch.notify.on_pr_closed,
+            templates: NotifyTemplatesResponse {
+                agent_stopped: orch.notify.templates.agent_stopped.clone(),
+                agent_error: orch.notify.templates.agent_error.clone(),
+                ci_passed: orch.notify.templates.ci_passed.clone(),
+                ci_failed: orch.notify.templates.ci_failed.clone(),
+                pr_created: orch.notify.templates.pr_created.clone(),
+                pr_comment: orch.notify.templates.pr_comment.clone(),
+                rebase_conflict: orch.notify.templates.rebase_conflict.clone(),
+                pr_closed: orch.notify.templates.pr_closed.clone(),
+            },
         },
         is_project_override: is_override,
     })
@@ -1359,7 +1453,71 @@ pub async fn update_orchestrator_settings(
                 .and_then(|r| r.custom.clone())
                 .unwrap_or_else(|| current.rules.custom.clone()),
         },
-        notify: current.notify.clone(),
+        notify: {
+            let n = &current.notify;
+            let nr = &req.notify;
+            let t = nr.as_ref().and_then(|r| r.templates.as_ref());
+            tmai_core::config::OrchestratorNotifySettings {
+                on_agent_stopped: nr
+                    .as_ref()
+                    .and_then(|r| r.on_agent_stopped)
+                    .unwrap_or(n.on_agent_stopped),
+                on_agent_error: nr
+                    .as_ref()
+                    .and_then(|r| r.on_agent_error)
+                    .unwrap_or(n.on_agent_error),
+                on_rebase_conflict: nr
+                    .as_ref()
+                    .and_then(|r| r.on_rebase_conflict)
+                    .unwrap_or(n.on_rebase_conflict),
+                on_ci_passed: nr
+                    .as_ref()
+                    .and_then(|r| r.on_ci_passed)
+                    .unwrap_or(n.on_ci_passed),
+                on_ci_failed: nr
+                    .as_ref()
+                    .and_then(|r| r.on_ci_failed)
+                    .unwrap_or(n.on_ci_failed),
+                on_pr_created: nr
+                    .as_ref()
+                    .and_then(|r| r.on_pr_created)
+                    .unwrap_or(n.on_pr_created),
+                on_pr_comment: nr
+                    .as_ref()
+                    .and_then(|r| r.on_pr_comment)
+                    .unwrap_or(n.on_pr_comment),
+                on_pr_closed: nr
+                    .as_ref()
+                    .and_then(|r| r.on_pr_closed)
+                    .unwrap_or(n.on_pr_closed),
+                templates: tmai_core::config::NotifyTemplates {
+                    agent_stopped: t
+                        .and_then(|t| t.agent_stopped.clone())
+                        .unwrap_or_else(|| n.templates.agent_stopped.clone()),
+                    agent_error: t
+                        .and_then(|t| t.agent_error.clone())
+                        .unwrap_or_else(|| n.templates.agent_error.clone()),
+                    ci_passed: t
+                        .and_then(|t| t.ci_passed.clone())
+                        .unwrap_or_else(|| n.templates.ci_passed.clone()),
+                    ci_failed: t
+                        .and_then(|t| t.ci_failed.clone())
+                        .unwrap_or_else(|| n.templates.ci_failed.clone()),
+                    pr_created: t
+                        .and_then(|t| t.pr_created.clone())
+                        .unwrap_or_else(|| n.templates.pr_created.clone()),
+                    pr_comment: t
+                        .and_then(|t| t.pr_comment.clone())
+                        .unwrap_or_else(|| n.templates.pr_comment.clone()),
+                    rebase_conflict: t
+                        .and_then(|t| t.rebase_conflict.clone())
+                        .unwrap_or_else(|| n.templates.rebase_conflict.clone()),
+                    pr_closed: t
+                        .and_then(|t| t.pr_closed.clone())
+                        .unwrap_or_else(|| n.templates.pr_closed.clone()),
+                },
+            }
+        },
         pr_monitor_enabled: current.pr_monitor_enabled,
         pr_monitor_interval_secs: current.pr_monitor_interval_secs,
     };
@@ -1367,9 +1525,19 @@ pub async fn update_orchestrator_settings(
 
     tmai_core::config::Settings::save_project_orchestrator(q.project.as_deref(), &updated);
     core.reload_settings();
+
+    // Hot-reload the live notifier service if running
+    #[allow(deprecated)]
+    let state = core.raw_state();
+    let s = state.read();
+    if let Some(ref ns) = s.notify_settings {
+        *ns.write() = updated.notify;
+    }
+    drop(s);
+
     tracing::info!(
         project = ?q.project,
-        "Orchestrator settings updated"
+        "Orchestrator settings updated (including notify)"
     );
     Json(serde_json::json!({"ok": true}))
 }

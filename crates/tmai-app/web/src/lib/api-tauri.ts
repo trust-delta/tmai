@@ -8,6 +8,8 @@ export * from "./teams";
 import type {
   AgentSnapshot,
   AutoApproveRules,
+  NotifySettings,
+  NotifyTemplates,
   OrchestratorRules,
   SpawnRequest,
   UsageSettings,
@@ -193,6 +195,9 @@ export const api = {
       enabled?: boolean;
       role?: string;
       rules?: Partial<OrchestratorRules>;
+      notify?: Partial<Omit<NotifySettings, "templates">> & {
+        templates?: Partial<NotifyTemplates>;
+      };
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),

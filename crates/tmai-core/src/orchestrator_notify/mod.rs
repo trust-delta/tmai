@@ -1,3 +1,3 @@
 pub mod service;
 
-pub use service::OrchestratorNotifier;
+pub use service::{OrchestratorNotifier, SharedNotifySettings};
