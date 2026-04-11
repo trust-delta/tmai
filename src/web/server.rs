@@ -164,6 +164,18 @@ impl WebServer {
                 "/settings/theme",
                 get(api::get_theme_settings).put(api::update_theme_settings),
             )
+            .route(
+                "/settings/review",
+                get(api::get_review_settings).put(api::update_review_settings),
+            )
+            .route(
+                "/settings/workflow",
+                get(api::get_workflow_settings).put(api::update_workflow_settings),
+            )
+            .route(
+                "/settings/worktree",
+                get(api::get_worktree_settings).put(api::update_worktree_settings),
+            )
             .with_state(api_state)
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),

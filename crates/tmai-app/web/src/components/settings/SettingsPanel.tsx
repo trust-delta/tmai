@@ -4,8 +4,11 @@ import {
   type AutoApproveSettings,
   api,
   type OrchestratorSettings,
+  type ReviewSettings,
   type SpawnSettings,
   type UsageSettings,
+  type WorkflowSettings,
+  type WorktreeSettings,
 } from "@/lib/api";
 
 interface SettingsPanelProps {
@@ -28,6 +31,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [newPattern, setNewPattern] = useState("");
   const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
   const [orchScope, setOrchScope] = useState<string>("global");
+  const [reviewSettings, setReviewSettings] = useState<ReviewSettings | null>(null);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings | null>(null);
+  const [worktreeSettings, setWorktreeSettings] = useState<WorktreeSettings | null>(null);
+  const [newSetupCommand, setNewSetupCommand] = useState("");
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -66,6 +73,18 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         setNotifyOnIdle(s.notify_on_idle);
         setNotifyThresholdSecs(s.notify_idle_threshold_secs);
       })
+      .catch(() => {});
+    api
+      .getReviewSettings()
+      .then(setReviewSettings)
+      .catch(() => {});
+    api
+      .getWorkflowSettings()
+      .then(setWorkflowSettings)
+      .catch(() => {});
+    api
+      .getWorktreeSettings()
+      .then(setWorktreeSettings)
       .catch(() => {});
   }, [
     refreshProjects,
@@ -819,6 +838,325 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
             )}
           </div>
         </section>
+
+        {/* Review section */}
+        {reviewSettings && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Fresh Session Review</h3>
+            <p className="mt-1 text-xs text-zinc-600">
+              Automatically launch a code review when an agent stops.
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Enabled</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !reviewSettings.enabled;
+                    setReviewSettings({ ...reviewSettings, enabled: next });
+                    try {
+                      await api.updateReviewSettings({ enabled: next });
+                    } catch (_e) {}
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    reviewSettings.enabled ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      reviewSettings.enabled
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Agent</span>
+                <select
+                  value={reviewSettings.agent}
+                  onChange={async (e) => {
+                    const agent = e.target.value;
+                    setReviewSettings({ ...reviewSettings, agent });
+                    try {
+                      await api.updateReviewSettings({ agent });
+                    } catch (_e) {}
+                  }}
+                  className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                >
+                  <option value="claudecode">Claude Code</option>
+                  <option value="codex">Codex</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Base branch</span>
+                <input
+                  type="text"
+                  value={reviewSettings.base_branch}
+                  onChange={(e) =>
+                    setReviewSettings({ ...reviewSettings, base_branch: e.target.value })
+                  }
+                  onBlur={async () => {
+                    const v = reviewSettings.base_branch.trim();
+                    if (v) {
+                      try {
+                        await api.updateReviewSettings({ base_branch: v });
+                      } catch (_e) {}
+                    }
+                  }}
+                  className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                />
+              </div>
+
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Auto-launch on agent stop</span>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    Automatically start review when a hook-detected agent completes.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !reviewSettings.auto_launch;
+                    setReviewSettings({ ...reviewSettings, auto_launch: next });
+                    try {
+                      await api.updateReviewSettings({ auto_launch: next });
+                    } catch (_e) {}
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    reviewSettings.auto_launch ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      reviewSettings.auto_launch
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Auto-feedback</span>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    Automatically send review results back to the original agent.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !reviewSettings.auto_feedback;
+                    setReviewSettings({ ...reviewSettings, auto_feedback: next });
+                    try {
+                      await api.updateReviewSettings({ auto_feedback: next });
+                    } catch (_e) {}
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    reviewSettings.auto_feedback ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      reviewSettings.auto_feedback
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
+              <div>
+                <span className="text-xs text-zinc-500">Custom instructions</span>
+                <textarea
+                  value={reviewSettings.custom_instructions}
+                  onChange={(e) =>
+                    setReviewSettings({ ...reviewSettings, custom_instructions: e.target.value })
+                  }
+                  onBlur={async () => {
+                    try {
+                      await api.updateReviewSettings({
+                        custom_instructions: reviewSettings.custom_instructions,
+                      });
+                    } catch (_e) {}
+                  }}
+                  rows={3}
+                  placeholder="Additional review instructions..."
+                  className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Workflow section */}
+        {workflowSettings && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Workflow</h3>
+            <p className="mt-1 text-xs text-zinc-600">Workflow automation settings.</p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-sm text-zinc-300">Auto-rebase on merge</span>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    Automatically rebase open worktree branches onto main after a PR merge.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !workflowSettings.auto_rebase_on_merge;
+                    setWorkflowSettings({ ...workflowSettings, auto_rebase_on_merge: next });
+                    try {
+                      await api.updateWorkflowSettings({ auto_rebase_on_merge: next });
+                    } catch (_e) {}
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    workflowSettings.auto_rebase_on_merge ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      workflowSettings.auto_rebase_on_merge
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
+          </section>
+        )}
+
+        {/* Worktree section */}
+        {worktreeSettings && (
+          <section>
+            <h3 className="text-sm font-medium text-zinc-300">Worktree</h3>
+            <p className="mt-1 text-xs text-zinc-600">Git worktree settings for spawned agents.</p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+              <div>
+                <span className="text-xs text-zinc-500">Setup commands</span>
+                <p className="text-[10px] text-zinc-600 mt-0.5">
+                  Commands to run after creating a new worktree (e.g., npm install).
+                </p>
+                <div className="mt-2 space-y-1">
+                  {worktreeSettings.setup_commands.map((cmd) => (
+                    <div key={cmd} className="flex items-center gap-1.5">
+                      <code className="flex-1 rounded bg-white/5 px-2 py-1 text-xs text-zinc-300">
+                        {cmd}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const cmds = worktreeSettings.setup_commands.filter((c) => c !== cmd);
+                          setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
+                          try {
+                            await api.updateWorktreeSettings({ setup_commands: cmds });
+                          } catch (_e) {}
+                        }}
+                        className="rounded px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  <input
+                    type="text"
+                    value={newSetupCommand}
+                    onChange={(e) => setNewSetupCommand(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter" && newSetupCommand.trim()) {
+                        const cmds = [...worktreeSettings.setup_commands, newSetupCommand.trim()];
+                        setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
+                        setNewSetupCommand("");
+                        try {
+                          await api.updateWorktreeSettings({ setup_commands: cmds });
+                        } catch (_e) {}
+                      }
+                    }}
+                    placeholder="e.g., npm install"
+                    className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!newSetupCommand.trim()) return;
+                      const cmds = [...worktreeSettings.setup_commands, newSetupCommand.trim()];
+                      setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
+                      setNewSetupCommand("");
+                      try {
+                        await api.updateWorktreeSettings({ setup_commands: cmds });
+                      } catch (_e) {}
+                    }}
+                    className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Setup timeout</span>
+                <input
+                  type="number"
+                  min={30}
+                  max={3600}
+                  value={worktreeSettings.setup_timeout_secs}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(val)) {
+                      setWorktreeSettings({ ...worktreeSettings, setup_timeout_secs: val });
+                    }
+                  }}
+                  onBlur={async () => {
+                    const val = Math.max(30, worktreeSettings.setup_timeout_secs);
+                    try {
+                      await api.updateWorktreeSettings({ setup_timeout_secs: val });
+                    } catch (_e) {}
+                  }}
+                  className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                />
+                <span className="text-xs text-zinc-500">seconds</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-500">Branch depth warning</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={worktreeSettings.branch_depth_warning}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(val)) {
+                      setWorktreeSettings({ ...worktreeSettings, branch_depth_warning: val });
+                    }
+                  }}
+                  onBlur={async () => {
+                    const val = Math.max(1, worktreeSettings.branch_depth_warning);
+                    try {
+                      await api.updateWorktreeSettings({ branch_depth_warning: val });
+                    } catch (_e) {}
+                  }}
+                  className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                />
+                <span className="text-xs text-zinc-500">levels</span>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Projects section */}
         <section>
