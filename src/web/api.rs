@@ -1639,12 +1639,28 @@ pub async fn update_orchestrator_settings(
 /// Response body for auto-approve settings
 #[derive(Debug, Serialize)]
 pub struct AutoApproveSettingsResponse {
+    /// Master enable/disable
+    pub enabled: bool,
     /// Current effective mode
     pub mode: String,
     /// Whether the service is running
     pub running: bool,
     /// Rule presets
     pub rules: RuleSettingsResponse,
+    /// AI provider for auto-approve decisions
+    pub provider: String,
+    /// Model name
+    pub model: String,
+    /// Timeout for each judgment in seconds
+    pub timeout_secs: u64,
+    /// Cooldown after judgment (seconds)
+    pub cooldown_secs: u64,
+    /// Interval between checking for candidates (milliseconds)
+    pub check_interval_ms: u64,
+    /// Allowed approval types (empty = all except UserQuestion)
+    pub allowed_types: Vec<String>,
+    /// Maximum concurrent judgments
+    pub max_concurrent: usize,
 }
 
 /// Rule presets included in the auto-approve response
@@ -1667,6 +1683,30 @@ pub struct UpdateAutoApproveRequest {
     /// Rule preset updates (partial)
     #[serde(default)]
     pub rules: Option<UpdateRuleSettingsRequest>,
+    /// Master enable/disable
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// AI provider
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Model name
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Timeout for each judgment (seconds)
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+    /// Cooldown after judgment (seconds)
+    #[serde(default)]
+    pub cooldown_secs: Option<u64>,
+    /// Interval between checking for candidates (milliseconds)
+    #[serde(default)]
+    pub check_interval_ms: Option<u64>,
+    /// Allowed approval types
+    #[serde(default)]
+    pub allowed_types: Option<Vec<String>>,
+    /// Maximum concurrent judgments
+    #[serde(default)]
+    pub max_concurrent: Option<usize>,
 }
 
 /// Partial update for rule presets
@@ -1701,9 +1741,17 @@ pub async fn get_auto_approve_settings(
     };
 
     Json(AutoApproveSettingsResponse {
+        enabled: aa.enabled,
         mode,
         running,
         rules,
+        provider: aa.provider.clone(),
+        model: aa.model.clone(),
+        timeout_secs: aa.timeout_secs,
+        cooldown_secs: aa.cooldown_secs,
+        check_interval_ms: aa.check_interval_ms,
+        allowed_types: aa.allowed_types.clone(),
+        max_concurrent: aa.max_concurrent,
     })
 }
 
@@ -1778,6 +1826,68 @@ pub async fn update_auto_approve_settings(
             );
         }
         tracing::info!("Auto-approve rules updated (restart to apply)");
+    }
+
+    // Persist scalar field changes
+    if let Some(v) = req.enabled {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "enabled",
+            toml_edit::Value::from(v),
+        );
+    }
+    if let Some(ref v) = req.provider {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "provider",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(ref v) = req.model {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "model",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(v) = req.timeout_secs {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "timeout_secs",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.cooldown_secs {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "cooldown_secs",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.check_interval_ms {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "check_interval_ms",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(ref types) = req.allowed_types {
+        let arr = types
+            .iter()
+            .map(|s| toml_edit::Value::from(s.as_str()))
+            .collect::<toml_edit::Array>();
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "allowed_types",
+            toml_edit::Value::Array(arr),
+        );
+    }
+    if let Some(v) = req.max_concurrent {
+        tmai_core::config::Settings::save_toml_value(
+            "auto_approve",
+            "max_concurrent",
+            toml_edit::Value::from(v as i64),
+        );
     }
 
     // Reload live settings from config.toml

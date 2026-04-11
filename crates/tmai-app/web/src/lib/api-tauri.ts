@@ -8,6 +8,7 @@ export * from "./teams";
 import type {
   AgentSnapshot,
   AutoApproveRules,
+  AutoApproveSettings,
   GuardrailsSettings,
   NotifySettings,
   NotifyTemplates,
@@ -181,6 +182,9 @@ export const api = {
   updateAutoApproveMode: (mode: string) => httpApi.updateAutoApproveMode(mode),
   updateAutoApproveRules: (rules: Partial<AutoApproveRules>) =>
     httpApi.updateAutoApproveRules(rules),
+  updateAutoApproveFields: (
+    fields: Partial<Omit<AutoApproveSettings, "running" | "rules" | "mode">>,
+  ) => httpApi.updateAutoApproveFields(fields),
 
   // Files
   readFile: (path: string) => httpApi.readFile(path),

@@ -193,12 +193,192 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 </select>
               </div>
 
+              {/* Enabled toggle */}
+              <label className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-xs text-zinc-300">Enabled</span>
+                  <p className="text-[10px] text-zinc-600">Master enable/disable switch</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !autoApprove.enabled;
+                    setAutoApprove({ ...autoApprove, enabled: next });
+                    try {
+                      await api.updateAutoApproveFields({ enabled: next });
+                    } catch (_err) {}
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    autoApprove.enabled ? "bg-cyan-500/40" : "bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+                      autoApprove.enabled
+                        ? "translate-x-[18px] bg-cyan-400"
+                        : "translate-x-0.5 bg-zinc-500"
+                    }`}
+                  />
+                </button>
+              </label>
+
               {/* Status indicator */}
               {autoApprove.running && (
                 <p className="text-[11px] text-emerald-500/70">Service running</p>
               )}
               {autoApprove.mode !== "off" && !autoApprove.running && (
                 <p className="text-[11px] text-amber-500/70">Restart tmai to activate</p>
+              )}
+
+              {/* Provider & model — visible when mode uses AI */}
+              {(autoApprove.mode === "ai" || autoApprove.mode === "hybrid") && (
+                <div className="space-y-2 border-t border-white/5 pt-3">
+                  <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                    AI Provider
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-xs text-zinc-500 w-16">Provider</span>
+                    <input
+                      type="text"
+                      value={autoApprove.provider}
+                      onChange={(e) => setAutoApprove({ ...autoApprove, provider: e.target.value })}
+                      onBlur={async () => {
+                        try {
+                          await api.updateAutoApproveFields({ provider: autoApprove.provider });
+                        } catch (_err) {}
+                      }}
+                      className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-xs text-zinc-500 w-16">Model</span>
+                    <input
+                      type="text"
+                      value={autoApprove.model}
+                      onChange={(e) => setAutoApprove({ ...autoApprove, model: e.target.value })}
+                      onBlur={async () => {
+                        try {
+                          await api.updateAutoApproveFields({ model: autoApprove.model });
+                        } catch (_err) {}
+                      }}
+                      className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Advanced settings */}
+              {autoApprove.mode !== "off" && (
+                <div className="space-y-2 border-t border-white/5 pt-3">
+                  <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                    Advanced
+                  </p>
+                  {(
+                    [
+                      {
+                        key: "timeout_secs" as const,
+                        label: "Timeout (sec)",
+                        desc: "Max seconds per judgment",
+                      },
+                      {
+                        key: "cooldown_secs" as const,
+                        label: "Cooldown (sec)",
+                        desc: "Pause after each judgment",
+                      },
+                      {
+                        key: "check_interval_ms" as const,
+                        label: "Check interval (ms)",
+                        desc: "Polling interval for candidates",
+                      },
+                      {
+                        key: "max_concurrent" as const,
+                        label: "Max concurrent",
+                        desc: "Parallel judgment limit",
+                      },
+                    ] as const
+                  ).map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <span className="text-xs text-zinc-300">{label}</span>
+                        <p className="text-[10px] text-zinc-600">{desc}</p>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={autoApprove[key]}
+                        onChange={(e) => {
+                          const val = Number.parseInt(e.target.value, 10);
+                          if (!Number.isNaN(val) && val >= 0) {
+                            setAutoApprove({ ...autoApprove, [key]: val });
+                          }
+                        }}
+                        onBlur={async () => {
+                          try {
+                            await api.updateAutoApproveFields({ [key]: autoApprove[key] });
+                          } catch (_err) {}
+                        }}
+                        className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 text-right outline-none focus:border-cyan-500/30"
+                      />
+                    </div>
+                  ))}
+
+                  {/* Allowed types */}
+                  <div className="border-t border-white/5 pt-3 space-y-2">
+                    <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+                      Allowed Types
+                    </p>
+                    <p className="text-[10px] text-zinc-600">
+                      Tool types that can be auto-approved (empty = all except UserQuestion).
+                    </p>
+
+                    {autoApprove.allowed_types.length > 0 && (
+                      <div className="space-y-1">
+                        {autoApprove.allowed_types.map((t) => (
+                          <div
+                            key={t}
+                            className="group flex items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-white/5"
+                          >
+                            <code className="flex-1 text-[11px] text-zinc-300 font-mono">{t}</code>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const updated = autoApprove.allowed_types.filter((x) => x !== t);
+                                setAutoApprove({ ...autoApprove, allowed_types: updated });
+                                try {
+                                  await api.updateAutoApproveFields({ allowed_types: updated });
+                                } catch (_err) {}
+                              }}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. Bash, Read, Write"
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            const input = e.currentTarget;
+                            const val = input.value.trim();
+                            if (!val) return;
+                            const updated = [...autoApprove.allowed_types, val];
+                            setAutoApprove({ ...autoApprove, allowed_types: updated });
+                            input.value = "";
+                            try {
+                              await api.updateAutoApproveFields({ allowed_types: updated });
+                            } catch (_err) {}
+                          }
+                        }}
+                        className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-mono text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
+                      />
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Rule presets — visible when mode uses rules */}
