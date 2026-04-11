@@ -572,9 +572,17 @@ export interface AutoApproveRules {
 }
 
 export interface AutoApproveSettings {
+  enabled: boolean;
   mode: string;
   running: boolean;
   rules: AutoApproveRules;
+  provider: string;
+  model: string;
+  timeout_secs: number;
+  cooldown_secs: number;
+  check_interval_ms: number;
+  allowed_types: string[];
+  max_concurrent: number;
 }
 
 export interface SpawnSettings {
@@ -977,6 +985,13 @@ export const api = {
     apiFetch("/settings/auto-approve", {
       method: "PUT",
       body: JSON.stringify({ rules }),
+    }),
+  updateAutoApproveFields: (
+    fields: Partial<Omit<AutoApproveSettings, "running" | "rules" | "mode">>,
+  ) =>
+    apiFetch("/settings/auto-approve", {
+      method: "PUT",
+      body: JSON.stringify(fields),
     }),
 
   // Files
