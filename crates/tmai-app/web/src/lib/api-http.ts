@@ -627,6 +627,8 @@ export interface OrchestratorSettings {
   rules: OrchestratorRules;
   notify: NotifySettings;
   guardrails: GuardrailsSettings;
+  pr_monitor_enabled: boolean;
+  pr_monitor_interval_secs: number;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
 }
@@ -991,6 +993,8 @@ export const api = {
         templates?: Partial<NotifyTemplates>;
       };
       guardrails?: Partial<GuardrailsSettings>;
+      pr_monitor_enabled?: boolean;
+      pr_monitor_interval_secs?: number;
     },
     project?: string,
   ) =>
