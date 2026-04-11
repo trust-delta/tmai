@@ -12,8 +12,11 @@ import type {
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
+  ReviewSettings,
   SpawnRequest,
   UsageSettings,
+  WorkflowSettings,
+  WorktreeSettings,
 } from "./api-http";
 import { api as httpApi } from "./api-http";
 // Import for implementation
@@ -219,6 +222,20 @@ export const api = {
     notify_on_idle?: boolean;
     notify_idle_threshold_secs?: number;
   }) => httpApi.updateNotificationSettings(params),
+
+  // Review settings
+  getReviewSettings: () => httpApi.getReviewSettings(),
+  updateReviewSettings: (params: Partial<ReviewSettings>) => httpApi.updateReviewSettings(params),
+
+  // Workflow settings
+  getWorkflowSettings: () => httpApi.getWorkflowSettings(),
+  updateWorkflowSettings: (params: Partial<WorkflowSettings>) =>
+    httpApi.updateWorkflowSettings(params),
+
+  // Worktree settings
+  getWorktreeSettings: () => httpApi.getWorktreeSettings(),
+  updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
+    httpApi.updateWorktreeSettings(params),
 
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),

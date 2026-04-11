@@ -664,6 +664,25 @@ export interface UsageSettings {
   auto_refresh_min: number;
 }
 
+export interface ReviewSettings {
+  enabled: boolean;
+  agent: string;
+  base_branch: string;
+  custom_instructions: string;
+  auto_launch: boolean;
+  auto_feedback: boolean;
+}
+
+export interface WorkflowSettings {
+  auto_rebase_on_merge: boolean;
+}
+
+export interface WorktreeSettings {
+  setup_commands: string[];
+  setup_timeout_secs: number;
+  branch_depth_warning: number;
+}
+
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
@@ -1028,6 +1047,30 @@ export const api = {
     notify_idle_threshold_secs?: number;
   }) =>
     apiFetch("/settings/notification", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
+  // Review settings
+  getReviewSettings: () => apiFetch<ReviewSettings>("/settings/review"),
+  updateReviewSettings: (params: Partial<ReviewSettings>) =>
+    apiFetch("/settings/review", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
+  // Workflow settings
+  getWorkflowSettings: () => apiFetch<WorkflowSettings>("/settings/workflow"),
+  updateWorkflowSettings: (params: Partial<WorkflowSettings>) =>
+    apiFetch("/settings/workflow", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
+  // Worktree settings
+  getWorktreeSettings: () => apiFetch<WorktreeSettings>("/settings/worktree"),
+  updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
+    apiFetch("/settings/worktree", {
       method: "PUT",
       body: JSON.stringify(params),
     }),

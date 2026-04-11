@@ -4024,6 +4024,211 @@ pub async fn update_theme_settings(
 }
 
 // =========================================================
+// Review settings
+// =========================================================
+
+/// Response for GET /api/settings/review
+#[derive(Debug, Serialize)]
+pub struct ReviewSettingsResponse {
+    pub enabled: bool,
+    pub agent: String,
+    pub base_branch: String,
+    pub custom_instructions: String,
+    pub auto_launch: bool,
+    pub auto_feedback: bool,
+}
+
+/// Request for PUT /api/settings/review
+#[derive(Debug, Deserialize)]
+pub struct ReviewSettingsRequest {
+    pub enabled: Option<bool>,
+    pub agent: Option<String>,
+    pub base_branch: Option<String>,
+    pub custom_instructions: Option<String>,
+    pub auto_launch: Option<bool>,
+    pub auto_feedback: Option<bool>,
+}
+
+/// GET /api/settings/review
+pub async fn get_review_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<ReviewSettingsResponse> {
+    let review = &core.settings().review;
+    Json(ReviewSettingsResponse {
+        enabled: review.enabled,
+        agent: format!("{:?}", review.agent).to_lowercase(),
+        base_branch: review.base_branch.clone(),
+        custom_instructions: review.custom_instructions.clone(),
+        auto_launch: review.auto_launch,
+        auto_feedback: review.auto_feedback,
+    })
+}
+
+/// PUT /api/settings/review — update review settings and persist
+pub async fn update_review_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<ReviewSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(v) = req.enabled {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "enabled",
+            toml_edit::Value::from(v),
+        );
+    }
+    if let Some(ref v) = req.agent {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "agent",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(ref v) = req.base_branch {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "base_branch",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(ref v) = req.custom_instructions {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "custom_instructions",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(v) = req.auto_launch {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "auto_launch",
+            toml_edit::Value::from(v),
+        );
+    }
+    if let Some(v) = req.auto_feedback {
+        tmai_core::config::Settings::save_toml_value(
+            "review",
+            "auto_feedback",
+            toml_edit::Value::from(v),
+        );
+    }
+
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
+// Workflow settings
+// =========================================================
+
+/// Response for GET /api/settings/workflow
+#[derive(Debug, Serialize)]
+pub struct WorkflowSettingsResponse {
+    pub auto_rebase_on_merge: bool,
+}
+
+/// Request for PUT /api/settings/workflow
+#[derive(Debug, Deserialize)]
+pub struct WorkflowSettingsRequest {
+    pub auto_rebase_on_merge: Option<bool>,
+}
+
+/// GET /api/settings/workflow
+pub async fn get_workflow_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<WorkflowSettingsResponse> {
+    Json(WorkflowSettingsResponse {
+        auto_rebase_on_merge: core.settings().workflow.auto_rebase_on_merge,
+    })
+}
+
+/// PUT /api/settings/workflow — update workflow settings and persist
+pub async fn update_workflow_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorkflowSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(v) = req.auto_rebase_on_merge {
+        tmai_core::config::Settings::save_toml_value(
+            "workflow",
+            "auto_rebase_on_merge",
+            toml_edit::Value::from(v),
+        );
+    }
+
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
+// Worktree settings
+// =========================================================
+
+/// Response for GET /api/settings/worktree
+#[derive(Debug, Serialize)]
+pub struct WorktreeSettingsResponse {
+    pub setup_commands: Vec<String>,
+    pub setup_timeout_secs: u64,
+    pub branch_depth_warning: u32,
+}
+
+/// Request for PUT /api/settings/worktree
+#[derive(Debug, Deserialize)]
+pub struct WorktreeSettingsRequest {
+    pub setup_commands: Option<Vec<String>>,
+    pub setup_timeout_secs: Option<u64>,
+    pub branch_depth_warning: Option<u32>,
+}
+
+/// GET /api/settings/worktree
+pub async fn get_worktree_settings(
+    State(core): State<Arc<TmaiCore>>,
+) -> Json<WorktreeSettingsResponse> {
+    let wt = &core.settings().worktree;
+    Json(WorktreeSettingsResponse {
+        setup_commands: wt.setup_commands.clone(),
+        setup_timeout_secs: wt.setup_timeout_secs,
+        branch_depth_warning: wt.branch_depth_warning,
+    })
+}
+
+/// PUT /api/settings/worktree — update worktree settings and persist
+pub async fn update_worktree_settings(
+    State(core): State<Arc<TmaiCore>>,
+    Json(req): Json<WorktreeSettingsRequest>,
+) -> Json<serde_json::Value> {
+    if let Some(ref cmds) = req.setup_commands {
+        let mut arr = toml_edit::Array::new();
+        for cmd in cmds {
+            arr.push(cmd.as_str());
+        }
+        tmai_core::config::Settings::save_toml_value(
+            "worktree",
+            "setup_commands",
+            toml_edit::Value::Array(arr),
+        );
+    }
+    if let Some(v) = req.setup_timeout_secs {
+        tmai_core::config::Settings::save_toml_value(
+            "worktree",
+            "setup_timeout_secs",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.branch_depth_warning {
+        tmai_core::config::Settings::save_toml_value(
+            "worktree",
+            "branch_depth_warning",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+
+    core.reload_settings();
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =========================================================
 // Deferred tool call endpoints
 // =========================================================
 
