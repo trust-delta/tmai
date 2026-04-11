@@ -613,6 +613,8 @@ export interface NotifySettings {
   on_pr_closed: boolean;
   on_guardrail_exceeded: boolean;
   templates: NotifyTemplates;
+  /** Built-in default templates (for UI placeholder display) */
+  default_templates: NotifyTemplates;
 }
 
 export interface GuardrailsSettings {

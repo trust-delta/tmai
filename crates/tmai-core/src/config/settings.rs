@@ -991,6 +991,24 @@ pub struct NotifyTemplates {
     pub guardrail_exceeded: String,
 }
 
+impl NotifyTemplates {
+    /// Returns built-in default templates using `{{variable}}` placeholder syntax.
+    /// These are shown as placeholder text in the UI so users know the format.
+    pub fn defaults() -> Self {
+        Self {
+            agent_stopped: "[tmai] Agent \"{{name}}\" has stopped.\n  Branch: {{branch}}\n  Last message: {{summary}}".into(),
+            agent_error: "[tmai] Agent \"{{name}}\" is now Error.\n  Branch: {{branch}}".into(),
+            ci_passed: "[PR Monitor] PR #{{pr_number}} \"{{title}}\" CI passed. Ready to merge. {{summary}}".into(),
+            ci_failed: "[PR Monitor] PR #{{pr_number}} \"{{title}}\" CI failed. {{failed_details}}".into(),
+            pr_created: "[PR Monitor] PR #{{pr_number}} created: \"{{title}}\" (branch: {{branch}})".into(),
+            pr_comment: "[PR Monitor] PR #{{pr_number}} \"{{title}}\" has review feedback: {{comments_summary}}".into(),
+            rebase_conflict: "[tmai] Rebase conflict on branch \"{{branch}}\".\n  Error: {{error}}".into(),
+            pr_closed: "[PR Monitor] PR #{{pr_number}} \"{{title}}\" closed (branch: {{branch}})".into(),
+            guardrail_exceeded: "[tmai] Guardrail exceeded: {{guardrail}} on branch \"{{branch}}\".\n  Count: {{count}} / limit: {{limit}}\n  Action required: please review and intervene.".into(),
+        }
+    }
+}
+
 /// Guardrail limits to prevent infinite loops and enable human escalation.
 ///
 /// When a limit is hit, a `GuardrailExceeded` CoreEvent is emitted so the
@@ -1836,5 +1854,29 @@ mod tests {
             n.on_guardrail_exceeded,
             "on_guardrail_exceeded should be ON by default"
         );
+    }
+
+    #[test]
+    fn test_notify_templates_defaults_non_empty() {
+        let d = NotifyTemplates::defaults();
+        assert!(!d.agent_stopped.is_empty());
+        assert!(!d.agent_error.is_empty());
+        assert!(!d.ci_passed.is_empty());
+        assert!(!d.ci_failed.is_empty());
+        assert!(!d.pr_created.is_empty());
+        assert!(!d.pr_comment.is_empty());
+        assert!(!d.rebase_conflict.is_empty());
+        assert!(!d.pr_closed.is_empty());
+        assert!(!d.guardrail_exceeded.is_empty());
+    }
+
+    #[test]
+    fn test_notify_templates_defaults_contain_placeholders() {
+        let d = NotifyTemplates::defaults();
+        assert!(d.agent_stopped.contains("{{name}}"));
+        assert!(d.agent_stopped.contains("{{summary}}"));
+        assert!(d.ci_failed.contains("{{failed_details}}"));
+        assert!(d.pr_comment.contains("{{comments_summary}}"));
+        assert!(d.guardrail_exceeded.contains("{{guardrail}}"));
     }
 }

@@ -903,10 +903,12 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
 
 /** Event definition for notification toggle rows */
 interface NotifyEventDef {
-  key: keyof Omit<import("@/lib/api").NotifySettings, "templates">;
+  key: keyof Omit<import("@/lib/api").NotifySettings, "templates" | "default_templates">;
   templateKey: keyof import("@/lib/api").NotifyTemplates;
   label: string;
   description: string;
+  /** Available {{variable}} placeholders for this event type */
+  variables: string[];
 }
 
 const NOTIFY_EVENTS: NotifyEventDef[] = [
@@ -915,54 +917,63 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "agent_stopped",
     label: "Agent stopped",
     description: "Sub-agent stopped normally (task completed)",
+    variables: ["name", "branch", "summary"],
   },
   {
     key: "on_agent_error",
     templateKey: "agent_error",
     label: "Agent error",
     description: "Sub-agent entered error state",
+    variables: ["name", "branch"],
   },
   {
     key: "on_ci_passed",
     templateKey: "ci_passed",
     label: "CI passed",
     description: "PR checks passed — usually no action needed",
+    variables: ["pr_number", "title", "summary"],
   },
   {
     key: "on_ci_failed",
     templateKey: "ci_failed",
     label: "CI failed",
     description: "PR checks failed — action required",
+    variables: ["pr_number", "title", "failed_details"],
   },
   {
     key: "on_pr_created",
     templateKey: "pr_created",
     label: "PR created",
     description: "New pull request opened",
+    variables: ["pr_number", "title", "branch"],
   },
   {
     key: "on_pr_comment",
     templateKey: "pr_comment",
     label: "Review feedback",
     description: "PR received review comments (changes requested)",
+    variables: ["pr_number", "title", "comments_summary"],
   },
   {
     key: "on_rebase_conflict",
     templateKey: "rebase_conflict",
     label: "Rebase conflict",
     description: "Merge/rebase conflict detected",
+    variables: ["branch", "error"],
   },
   {
     key: "on_pr_closed",
     templateKey: "pr_closed",
     label: "PR closed",
     description: "Pull request closed or merged",
+    variables: ["pr_number", "title", "branch"],
   },
   {
     key: "on_guardrail_exceeded",
     templateKey: "guardrail_exceeded",
     label: "Guardrail exceeded",
     description: "CI retries, review loops, or failure limit exceeded",
+    variables: ["guardrail", "branch", "count", "limit"],
   },
 ];
 
@@ -1058,26 +1069,70 @@ function NotifySettingsSection({
               {/* Expandable template editor */}
               {enabled && isExpanded && (
                 <div className="ml-2 mb-2">
-                  <textarea
-                    value={templateValue}
-                    onChange={(e) => {
-                      const updated = {
-                        ...orchestrator,
-                        notify: {
-                          ...orchestrator.notify,
-                          templates: {
-                            ...orchestrator.notify.templates,
-                            [evt.templateKey]: e.target.value,
+                  <div className="relative">
+                    <textarea
+                      value={templateValue}
+                      onChange={(e) => {
+                        const updated = {
+                          ...orchestrator,
+                          notify: {
+                            ...orchestrator.notify,
+                            templates: {
+                              ...orchestrator.notify.templates,
+                              [evt.templateKey]: e.target.value,
+                            },
                           },
-                        },
-                      };
-                      setOrchestrator(updated);
-                    }}
-                    onBlur={() => saveTemplate(evt.templateKey, templateValue)}
-                    rows={2}
-                    placeholder="Empty = use built-in default. Variables: {{name}}, {{branch}}, {{pr_number}}, {{title}}, {{summary}}"
-                    className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
-                  />
+                        };
+                        setOrchestrator(updated);
+                      }}
+                      onBlur={() => saveTemplate(evt.templateKey, templateValue)}
+                      rows={2}
+                      placeholder={
+                        orchestrator.notify.default_templates[evt.templateKey] ||
+                        "Empty = use built-in default"
+                      }
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 pr-7 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
+                    />
+                    {templateValue && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const updated = {
+                            ...orchestrator,
+                            notify: {
+                              ...orchestrator.notify,
+                              templates: {
+                                ...orchestrator.notify.templates,
+                                [evt.templateKey]: "",
+                              },
+                            },
+                          };
+                          setOrchestrator(updated);
+                          await saveTemplate(evt.templateKey, "");
+                        }}
+                        className="absolute top-1.5 right-1.5 text-zinc-600 hover:text-zinc-300 transition-colors"
+                        title="Reset to default template"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="w-3.5 h-3.5"
+                          role="img"
+                          aria-label="Reset to default"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M3.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-9ZM6.354 5.646a.5.5 0 1 0-.708.708L7.293 8l-1.647 1.646a.5.5 0 0 0 .708.708L8 8.707l1.646 1.647a.5.5 0 0 0 .708-.708L8.707 8l1.647-1.646a.5.5 0 1 0-.708-.708L8 7.293 6.354 5.646Z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-600 mt-0.5">
+                    Variables: {evt.variables.map((v) => `{{${v}}}`).join(", ")}
+                  </p>
                 </div>
               )}
             </div>
