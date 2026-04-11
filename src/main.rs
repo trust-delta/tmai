@@ -134,10 +134,22 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Build TmaiCore facade (shared between Web and TUI for event broadcasting)
     let app_state = app.shared_state();
 
-    // Create hook registry and load hook token
+    // Create hook registry and ensure hooks are configured
     let hook_registry = tmai_core::hooks::new_hook_registry();
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
-    let hook_token = tmai::init::load_hook_token();
+    // Auto-sync hooks in ~/.claude/settings.json with current token and port.
+    // This prevents stale hooks from causing errors in spawned worktree agents.
+    let hook_token = if settings.web.enabled {
+        match tmai::init::ensure_hooks_configured(settings.web.port) {
+            Ok(token) => Some(token),
+            Err(e) => {
+                tracing::warn!("Failed to auto-sync hooks: {} — falling back to load", e);
+                tmai::init::load_hook_token()
+            }
+        }
+    } else {
+        tmai::init::load_hook_token()
+    };
 
     let core_cmd_sender = Arc::new(
         CommandSender::new(Some(ipc_server.clone()), runtime.clone(), app_state.clone())
@@ -326,7 +338,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         s.spawn_tmux_window_name = settings.spawn.tmux_window_name.clone();
     }
 
-    // Create hook registry and load token
+    // Create hook registry and ensure hooks are configured
     let hook_registry = tmai_core::hooks::new_hook_registry();
 
     // Create command sender (PTY session → IPC → tmux → PTY inject)
@@ -336,7 +348,18 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     );
     // Note: pty_registry is attached after core is built (see below)
     let session_pane_map = tmai_core::hooks::new_session_pane_map();
-    let hook_token = tmai::init::load_hook_token();
+    // Auto-sync hooks in ~/.claude/settings.json with current token and port.
+    // This prevents stale hooks from causing errors in spawned worktree agents.
+    let hook_token = match tmai::init::ensure_hooks_configured(settings.web.port) {
+        Ok(token) => Some(token),
+        Err(e) => {
+            eprintln!(
+                "tmai: failed to auto-sync hooks: {} — falling back to load",
+                e
+            );
+            tmai::init::load_hook_token()
+        }
+    };
 
     // Create shared transcript registry (shared between Poller and TmaiCore)
     let transcript_registry = tmai_core::transcript::watcher::new_transcript_registry();
