@@ -2,7 +2,7 @@ import { AnsiUp } from "ansi_up";
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { TranscriptRecord } from "@/lib/api-http";
+import type { PreviewSettingsResponse, TranscriptRecord } from "@/lib/api-http";
 
 interface PreviewPanelProps {
   agentId: string;
@@ -215,11 +215,26 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return a;
   }, []);
 
-  // Load cursor visibility setting from server
+  // Default polling intervals (overridden by server settings)
+  const pollSettings = useRef<PreviewSettingsResponse>({
+    show_cursor: true,
+    preview_poll_focused_ms: 500,
+    preview_poll_unfocused_ms: 2000,
+    preview_poll_active_input_ms: 100,
+    preview_active_input_window_ms: 2000,
+  });
+
+  // Timestamp of the last passthrough input event
+  const lastInputTime = useRef(0);
+
+  // Load preview settings (cursor visibility + poll intervals) from server
   useEffect(() => {
     api
       .getPreviewSettings()
-      .then((s) => setShowCursor(s.show_cursor))
+      .then((s) => {
+        setShowCursor(s.show_cursor);
+        pollSettings.current = s;
+      })
       .catch(() => {});
   }, []);
 
@@ -293,8 +308,15 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     }
   }, [focused]);
 
-  // Polling interval: faster when focused for interactive feel
-  const pollInterval = focused ? 500 : 2000;
+  // Compute adaptive polling interval based on input activity
+  const getPollInterval = useCallback(() => {
+    const s = pollSettings.current;
+    const elapsed = Date.now() - lastInputTime.current;
+    if (elapsed < s.preview_active_input_window_ms) {
+      return s.preview_poll_active_input_ms;
+    }
+    return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
+  }, [focused]);
 
   // Fetch preview content, shared between polling and post-keystroke refresh
   // Skips DOM update while user has an active text selection
@@ -315,11 +337,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     }
   }, [agentId]);
 
+  // Self-rescheduling poll loop: recalculates interval each tick so it adapts
+  // to active-input vs focused vs unfocused state without re-mounting.
   useEffect(() => {
-    fetchPreview();
-    const interval = setInterval(fetchPreview, pollInterval);
-    return () => clearInterval(interval);
-  }, [fetchPreview, pollInterval]);
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      fetchPreview();
+      const next = getPollInterval();
+      timer = setTimeout(tick, next);
+    };
+    let timer = setTimeout(tick, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [fetchPreview, getPollInterval]);
 
   // Fetch transcript records (slower cadence — history changes less often)
   const fetchTranscript = useCallback(async () => {
@@ -353,6 +386,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // for responsive cursor tracking
   const sendPassthrough = useCallback(
     (input: { chars?: string; key?: string }) => {
+      lastInputTime.current = Date.now();
       api
         .passthrough(agentId, input)
         .then(() => {

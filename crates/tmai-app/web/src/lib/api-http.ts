@@ -682,6 +682,22 @@ export interface WorktreeSettings {
   branch_depth_warning: number;
 }
 
+export interface PreviewSettingsResponse {
+  show_cursor: boolean;
+  preview_poll_focused_ms: number;
+  preview_poll_unfocused_ms: number;
+  preview_poll_active_input_ms: number;
+  preview_active_input_window_ms: number;
+}
+
+export interface PreviewSettingsUpdate {
+  show_cursor?: boolean;
+  preview_poll_focused_ms?: number;
+  preview_poll_unfocused_ms?: number;
+  preview_poll_active_input_ms?: number;
+  preview_active_input_window_ms?: number;
+}
+
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
@@ -1036,8 +1052,8 @@ export const api = {
     }),
 
   // Preview settings
-  getPreviewSettings: () => apiFetch<{ show_cursor: boolean }>("/settings/preview"),
-  updatePreviewSettings: (params: { show_cursor: boolean }) =>
+  getPreviewSettings: () => apiFetch<PreviewSettingsResponse>("/settings/preview"),
+  updatePreviewSettings: (params: PreviewSettingsUpdate) =>
     apiFetch("/settings/preview", {
       method: "PUT",
       body: JSON.stringify(params),

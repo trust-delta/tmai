@@ -216,7 +216,7 @@ export const api = {
 
   // Preview settings
   getPreviewSettings: () => httpApi.getPreviewSettings(),
-  updatePreviewSettings: (params: { show_cursor: boolean }) =>
+  updatePreviewSettings: (params: Parameters<typeof httpApi.updatePreviewSettings>[0]) =>
     httpApi.updatePreviewSettings(params),
 
   // Notification settings

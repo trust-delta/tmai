@@ -3997,20 +3997,33 @@ fn strip_git_suffix(path: &str) -> &str {
 #[derive(Debug, Serialize)]
 pub struct PreviewSettingsResponse {
     pub show_cursor: bool,
+    pub preview_poll_focused_ms: u64,
+    pub preview_poll_unfocused_ms: u64,
+    pub preview_poll_active_input_ms: u64,
+    pub preview_active_input_window_ms: u64,
 }
 
 /// Request for PUT /api/settings/preview
 #[derive(Debug, Deserialize)]
 pub struct PreviewSettingsRequest {
     pub show_cursor: Option<bool>,
+    pub preview_poll_focused_ms: Option<u64>,
+    pub preview_poll_unfocused_ms: Option<u64>,
+    pub preview_poll_active_input_ms: Option<u64>,
+    pub preview_active_input_window_ms: Option<u64>,
 }
 
 /// GET /api/settings/preview
 pub async fn get_preview_settings(
     State(core): State<Arc<TmaiCore>>,
 ) -> Json<PreviewSettingsResponse> {
+    let web = &core.settings().web;
     Json(PreviewSettingsResponse {
-        show_cursor: core.settings().web.show_cursor,
+        show_cursor: web.show_cursor,
+        preview_poll_focused_ms: web.preview_poll_focused_ms,
+        preview_poll_unfocused_ms: web.preview_poll_unfocused_ms,
+        preview_poll_active_input_ms: web.preview_poll_active_input_ms,
+        preview_active_input_window_ms: web.preview_active_input_window_ms,
     })
 }
 
@@ -4024,6 +4037,34 @@ pub async fn update_preview_settings(
             "web",
             "show_cursor",
             toml_edit::Value::from(v),
+        );
+    }
+    if let Some(v) = req.preview_poll_focused_ms {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "preview_poll_focused_ms",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.preview_poll_unfocused_ms {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "preview_poll_unfocused_ms",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.preview_poll_active_input_ms {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "preview_poll_active_input_ms",
+            toml_edit::Value::from(v as i64),
+        );
+    }
+    if let Some(v) = req.preview_active_input_window_ms {
+        tmai_core::config::Settings::save_toml_value(
+            "web",
+            "preview_active_input_window_ms",
+            toml_edit::Value::from(v as i64),
         );
     }
 
