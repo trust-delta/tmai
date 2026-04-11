@@ -165,10 +165,6 @@ impl WebServer {
                 get(api::get_theme_settings).put(api::update_theme_settings),
             )
             .route(
-                "/settings/review",
-                get(api::get_review_settings).put(api::update_review_settings),
-            )
-            .route(
                 "/settings/workflow",
                 get(api::get_workflow_settings).put(api::update_workflow_settings),
             )
@@ -200,7 +196,6 @@ impl WebServer {
         let hook_routes = Router::new()
             .route("/event", post(hooks::hook_event))
             .route("/statusline", post(hooks::statusline))
-            .route("/review-complete", post(hooks::review_complete))
             .with_state(self.core.clone());
 
         // Combine all routes

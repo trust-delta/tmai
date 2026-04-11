@@ -383,36 +383,11 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         }
                         Ok(CoreEvent::ConfigChanged { .. })
                         | Ok(CoreEvent::InstructionsLoaded { .. })
-                        | Ok(CoreEvent::ReviewReady { .. })
                         | Ok(CoreEvent::WorktreeSetupCompleted { .. })
                         | Ok(CoreEvent::WorktreeSetupFailed { .. })
                         | Ok(CoreEvent::PromptReady { .. }) => {
                             // PromptReady is handled by the background prompt delivery task.
                             // Other events: forward to SSE subscribers in the future if needed.
-                        }
-                        Ok(CoreEvent::ReviewLaunched { source_target, review_target }) => {
-                            let data = serde_json::json!({
-                                "source_target": source_target,
-                                "review_target": review_target,
-                            });
-                            let event = Event::default()
-                                .event("review_launched")
-                                .data(data.to_string());
-                            if tx.send(Ok(event)).await.is_err() {
-                                return;
-                            }
-                        }
-                        Ok(CoreEvent::ReviewCompleted { source_target, summary }) => {
-                            let data = serde_json::json!({
-                                "source_target": source_target,
-                                "summary": summary,
-                            });
-                            let event = Event::default()
-                                .event("review_completed")
-                                .data(data.to_string());
-                            if tx.send(Ok(event)).await.is_err() {
-                                return;
-                            }
                         }
                         Err(RecvError::Lagged(skipped)) => {
                             tracing::debug!(skipped, "SSE subscriber lagged, re-sending full state");

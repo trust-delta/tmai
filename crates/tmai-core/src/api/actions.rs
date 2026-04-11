@@ -390,53 +390,6 @@ impl TmaiCore {
         Ok(())
     }
 
-    /// Request a fresh-session code review for a specific agent.
-    ///
-    /// Directly launches a review session in a new tmux window (blocking I/O
-    /// is offloaded to `spawn_blocking`). Works regardless of `review.enabled`.
-    pub fn request_review(&self, id: &str) -> Result<(), ApiError> {
-        let target = self.resolve_agent_key(id)?;
-        let (cwd, branch) = {
-            let state = self.state().read();
-            let a = state.agents.get(&target).unwrap();
-            (a.cwd.clone(), a.git_branch.clone())
-        };
-
-        let request = crate::review::ReviewRequest {
-            target: target.to_string(),
-            cwd,
-            branch,
-            base_branch: self.settings().review.base_branch.clone(),
-            last_message: None,
-        };
-
-        let settings = self.settings().review.clone();
-        let event_tx = self.event_sender();
-        let req_target = request.target.clone();
-
-        tokio::task::spawn_blocking(move || {
-            match crate::review::service::launch_review(&request, &settings, None) {
-                Ok((review_target, output_file)) => {
-                    tracing::info!(
-                        source_target = %req_target,
-                        review_target = %review_target,
-                        output = %output_file.display(),
-                        "Review session launched"
-                    );
-                    let _ = event_tx.send(super::events::CoreEvent::ReviewLaunched {
-                        source_target: req_target,
-                        review_target,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!(target = %req_target, %e, "Failed to launch review");
-                }
-            }
-        });
-
-        Ok(())
-    }
-
     // =========================================================
     // Worktree actions
     // =========================================================

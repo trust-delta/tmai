@@ -211,29 +211,6 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         }
     }
 
-    // Start review service if enabled
-    if settings.review.enabled {
-        let review_notification = if settings.web.enabled {
-            core.hook_token().map(|token| {
-                std::sync::Arc::new(tmai_core::review::types::ReviewNotification {
-                    port: settings.web.port,
-                    token: token.to_string(),
-                    source_target: String::new(),
-                })
-            })
-        } else {
-            None
-        };
-
-        tmai_core::review::ReviewService::spawn(
-            std::sync::Arc::new(settings.review.clone()),
-            app.shared_state(),
-            core.subscribe(),
-            core.event_sender(),
-            review_notification,
-        );
-    }
-
     // Start orchestrator notifier if enabled
     if settings.orchestrator.enabled {
         // Legacy mode — OrchestratorNotifier

@@ -672,15 +672,6 @@ export interface UsageSettings {
   auto_refresh_min: number;
 }
 
-export interface ReviewSettings {
-  enabled: boolean;
-  agent: string;
-  base_branch: string;
-  custom_instructions: string;
-  auto_launch: boolean;
-  auto_feedback: boolean;
-}
-
 export interface WorkflowSettings {
   auto_rebase_on_merge: boolean;
 }
@@ -1066,14 +1057,6 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // Review settings
-  getReviewSettings: () => apiFetch<ReviewSettings>("/settings/review"),
-  updateReviewSettings: (params: Partial<ReviewSettings>) =>
-    apiFetch("/settings/review", {
-      method: "PUT",
-      body: JSON.stringify(params),
-    }),
-
   // Workflow settings
   getWorkflowSettings: () => apiFetch<WorkflowSettings>("/settings/workflow"),
   updateWorkflowSettings: (params: Partial<WorkflowSettings>) =>
@@ -1130,8 +1113,6 @@ export function subscribeSSE(handlers: {
     "teammate_idle",
     "task_completed",
     "context_compacting",
-    "review_launched",
-    "review_completed",
     "usage",
     "worktree_created",
     "worktree_removed",

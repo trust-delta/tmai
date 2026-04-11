@@ -456,16 +456,6 @@ impl App {
                                 task_subject, team_name
                             ));
                         }
-                        tmai_core::api::CoreEvent::ReviewCompleted {
-                            source_target,
-                            summary,
-                        } => {
-                            let mut state = self.state.write();
-                            state.set_notification(format!(
-                                "Review [{}]: {}",
-                                source_target, summary
-                            ));
-                        }
                         tmai_core::api::CoreEvent::WorktreeSetupCompleted { branch, .. } => {
                             let mut state = self.state.write();
                             state.set_notification(format!("Worktree setup completed: {}", branch));
@@ -828,29 +818,6 @@ impl App {
             // Fetch usage (Shift+U)
             KeyCode::Char('U') => {
                 self.trigger_usage_fetch();
-            }
-
-            // Request fresh-session review for selected agent (Shift+R)
-            KeyCode::Char('R') => {
-                tracing::debug!("Shift+R pressed: requesting review");
-                if let Some(ref core) = self.core {
-                    let target = {
-                        let state = self.state.read();
-                        state
-                            .selected_agent()
-                            .filter(|a| !a.is_virtual)
-                            .map(|a| a.target.clone())
-                    };
-                    tracing::debug!(?target, "Review target resolved");
-                    if let Some(target) = target {
-                        match core.request_review(&target) {
-                            Ok(()) => tracing::info!(target, "Review requested"),
-                            Err(e) => tracing::warn!(target, %e, "Review request failed"),
-                        }
-                    }
-                } else {
-                    tracing::debug!("No core available for review");
-                }
             }
 
             _ => {}
