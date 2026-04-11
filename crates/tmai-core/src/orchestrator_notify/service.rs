@@ -78,6 +78,10 @@ impl OrchestratorNotifier {
                                 && !a.is_virtual
                                 && a.status.is_idle()
                                 && *target != &source_target
+                                // Also skip when source_target is this orchestrator's
+                                // pane_id (hook events use pane_id, not agent map key)
+                                && s.target_to_pane_id.get(*target)
+                                    != Some(&source_target)
                         })
                         .map(|(target, _)| target.clone())
                         .collect()
@@ -360,12 +364,29 @@ impl OrchestratorNotifier {
     /// Untracked agents (e.g., the user's own Claude Code session sending hooks)
     /// should not generate notifications — they would be noise that triggers
     /// unnecessary LLM responses.
+    ///
+    /// Handles ID mismatch between hook-sourced pane_ids (e.g. "0") and
+    /// agent map keys (e.g. "main:0.0") via reverse `target_to_pane_id` lookup.
     fn is_orchestrator_or_untracked(target: &str, state: &SharedState) -> bool {
         let s = state.read();
-        match s.agents.get(target) {
-            Some(a) => a.is_orchestrator,
-            None => true, // untracked session — suppress notification
+        // Direct lookup by agent ID
+        if let Some(a) = s.agents.get(target) {
+            return a.is_orchestrator;
         }
+        // Reverse lookup: target might be a pane_id (from hook handler) that
+        // maps to a known agent via target_to_pane_id (agent_target → pane_id).
+        for (agent_target, pane_id) in &s.target_to_pane_id {
+            if pane_id == target {
+                if let Some(agent) = s.agents.get(agent_target) {
+                    return agent.is_orchestrator;
+                }
+            }
+        }
+        // Check pending orchestrators (spawned but not yet detected by poller)
+        if s.pending_orchestrator_ids.contains(target) {
+            return true;
+        }
+        true // untracked session — suppress notification
     }
 
     /// Gather contextual info about an agent for notification formatting
@@ -896,6 +917,139 @@ mod tests {
         assert!(
             result.is_none(),
             "Untracked agent status change should not generate notification"
+        );
+    }
+
+    #[test]
+    fn test_orchestrator_stopped_via_pane_id_not_notified() {
+        // Simulate: orchestrator registered as "main:0.0" but AgentStopped
+        // target is pane_id "5" (from hook handler). The reverse lookup via
+        // target_to_pane_id should identify the orchestrator and suppress.
+        let state = AppState::shared();
+        insert_agent(&state, "main:0.0", true, AgentStatus::Idle);
+        {
+            let mut s = state.write();
+            s.target_to_pane_id
+                .insert("main:0.0".to_string(), "5".to_string());
+        }
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStopped {
+            target: "5".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Orchestrator stop via pane_id should be suppressed"
+        );
+    }
+
+    #[test]
+    fn test_orchestrator_status_changed_via_pane_id_not_notified() {
+        // Same pane_id mismatch scenario but for AgentStatusChanged
+        let state = AppState::shared();
+        insert_agent(
+            &state,
+            "main:0.0",
+            true,
+            AgentStatus::Error {
+                message: "OOM".to_string(),
+            },
+        );
+        {
+            let mut s = state.write();
+            s.target_to_pane_id
+                .insert("main:0.0".to_string(), "5".to_string());
+        }
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStatusChanged {
+            target: "5".to_string(),
+            old_status: "idle".to_string(),
+            new_status: "error".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Orchestrator status change via pane_id should be suppressed"
+        );
+    }
+
+    #[test]
+    fn test_pending_orchestrator_stopped_not_notified() {
+        // Agent not yet detected by poller but queued in pending_orchestrator_ids
+        let state = AppState::shared();
+        {
+            let mut s = state.write();
+            s.pending_orchestrator_ids
+                .insert("pending-orch".to_string());
+        }
+
+        let settings = OrchestratorNotifySettings::default();
+        let event = CoreEvent::AgentStopped {
+            target: "pending-orch".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: None,
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "Pending orchestrator stop should be suppressed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_does_not_deliver_to_self_via_pane_id() {
+        // Orchestrator "main:0.0" with pane_id "5". A non-orchestrator sub-agent
+        // event with source_target "5" should NOT be delivered to "main:0.0"
+        // because "5" is that orchestrator's pane_id.
+        let state = AppState::shared();
+        insert_agent(&state, "main:0.0", true, AgentStatus::Idle);
+        insert_agent(&state, "sub:0.1", false, AgentStatus::Idle);
+        {
+            let mut s = state.write();
+            s.target_to_pane_id
+                .insert("main:0.0".to_string(), "5".to_string());
+        }
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let _handle =
+            OrchestratorNotifier::spawn(settings, state.clone(), event_rx, event_tx.clone());
+
+        // Emit AgentStopped with pane_id "5" (same as orchestrator's pane_id)
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "5".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        // The notifier should NOT emit PromptReady for the orchestrator
+        let mut found_prompt = false;
+        for _ in 0..10 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), listen_rx.recv()).await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, .. })) => {
+                    if target == "main:0.0" {
+                        found_prompt = true;
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        assert!(
+            !found_prompt,
+            "Orchestrator should NOT receive its own stop notification via pane_id"
         );
     }
 }
