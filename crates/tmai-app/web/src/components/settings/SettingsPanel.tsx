@@ -1143,7 +1143,7 @@ function GuardrailsSection({
               value={orchestrator.guardrails[field.key]}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
-                if (!isNaN(val)) {
+                if (!Number.isNaN(val)) {
                   setOrchestrator({
                     ...orchestrator,
                     guardrails: { ...orchestrator.guardrails, [field.key]: val },
@@ -1152,7 +1152,7 @@ function GuardrailsSection({
               }}
               onBlur={(e) => {
                 const val = parseInt(e.target.value, 10);
-                if (!isNaN(val) && val >= 1) {
+                if (!Number.isNaN(val) && val >= 1) {
                   updateField(field.key, val);
                 }
               }}
