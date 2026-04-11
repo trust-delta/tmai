@@ -11,6 +11,17 @@ use crate::usage::UsageSnapshot;
 /// Shared state type alias
 pub type SharedState = Arc<RwLock<AppState>>;
 
+/// Record of a target change detected by PID-based reconciliation.
+#[derive(Debug, Clone)]
+pub struct TargetChange {
+    /// Previous tmux target (e.g., "main:0.2")
+    pub old_target: String,
+    /// New tmux target (e.g., "main:0.1")
+    pub new_target: String,
+    /// Process ID that links the two targets
+    pub pid: u32,
+}
+
 /// Metadata to apply to an agent on first detection.
 /// Used when spawning via tmux where the agent doesn't exist in state yet.
 #[derive(Debug, Clone, Default)]
@@ -681,11 +692,72 @@ impl AppState {
     }
 
     /// Update agents from a new list
-    pub fn update_agents(&mut self, agents: Vec<MonitoredAgent>) {
+    /// Update agents from a new list.
+    ///
+    /// Returns a list of target changes detected via PID-based reconciliation.
+    /// Callers should emit `CoreEvent::AgentTargetChanged` for each entry.
+    pub fn update_agents(&mut self, agents: Vec<MonitoredAgent>) -> Vec<TargetChange> {
+        let mut target_changes: Vec<TargetChange> = Vec::new();
+
         // Use HashSet for O(1) lookup instead of Vec::contains O(n)
         let new_ids: HashSet<String> = agents.iter().map(|a| a.id.clone()).collect();
         // Also collect as Vec for agent_order (preserves input order)
         let new_order: Vec<String> = agents.iter().map(|a| a.id.clone()).collect();
+
+        // --- PID-based reconciliation ---
+        // Build pid → existing_target index for agents with non-zero PIDs.
+        // When a new agent's target doesn't match any existing key but its PID
+        // matches an existing agent, it's the same process after pane renumbering.
+        let pid_to_old_target: HashMap<u32, String> = self
+            .agents
+            .iter()
+            .filter(|(_, a)| a.pid != 0 && a.pty_session_id.is_none())
+            .map(|(id, a)| (a.pid, id.clone()))
+            .collect();
+
+        // Detect target changes and migrate agents under their new keys
+        for agent in &agents {
+            let new_target = &agent.id;
+            if self.agents.contains_key(new_target) {
+                // Target unchanged — normal update path will handle it
+                continue;
+            }
+            if agent.pid == 0 {
+                continue;
+            }
+            if let Some(old_target) = pid_to_old_target.get(&agent.pid) {
+                if old_target == new_target {
+                    continue;
+                }
+                // PID match with different target → pane was renumbered
+                if let Some(mut old_agent) = self.agents.remove(old_target) {
+                    // Update the target/id fields to the new target
+                    old_agent.id = new_target.clone();
+                    old_agent.target = new_target.clone();
+                    // Insert under new key so the normal update path below can find it
+                    self.agents.insert(new_target.clone(), old_agent);
+
+                    // Migrate pending_orchestrator_ids if keyed by old target
+                    if self.pending_orchestrator_ids.remove(old_target) {
+                        self.pending_orchestrator_ids.insert(new_target.clone());
+                    }
+                    // Migrate pending_agent_metadata if keyed by old target
+                    if let Some(meta) = self.pending_agent_metadata.remove(old_target) {
+                        self.pending_agent_metadata.insert(new_target.clone(), meta);
+                    }
+                    // Update target_to_pane_id mapping
+                    if let Some(pane_id) = self.target_to_pane_id.remove(old_target) {
+                        self.target_to_pane_id.insert(new_target.clone(), pane_id);
+                    }
+
+                    target_changes.push(TargetChange {
+                        old_target: old_target.clone(),
+                        new_target: new_target.clone(),
+                        pid: agent.pid,
+                    });
+                }
+            }
+        }
 
         // Remove agents that no longer exist (O(n) instead of O(n²))
         // Keep PTY-spawned agents — they are managed by PtyRegistry, not the Poller
@@ -781,6 +853,13 @@ impl AppState {
 
         // Update order, preserving selection if possible
         let old_selected = self.selected_target().map(|s| s.to_string());
+        // If the selected target was migrated, track its new target for selection preservation
+        let migrated_selected = old_selected.as_ref().and_then(|old_id| {
+            target_changes
+                .iter()
+                .find(|tc| tc.old_target == *old_id)
+                .map(|tc| tc.new_target.clone())
+        });
         // Append PTY-spawned agents that aren't in the poller results
         let mut final_order = new_order;
         for (id, agent) in &self.agents {
@@ -793,9 +872,10 @@ impl AppState {
         // Apply current sort
         self.sort_agents();
 
-        // Try to preserve selection
-        if let Some(old_id) = old_selected {
-            if let Some(new_index) = self.agent_order.iter().position(|id| id == &old_id) {
+        // Try to preserve selection (check migrated target first, then original)
+        let effective_selected = migrated_selected.or(old_selected);
+        if let Some(target_id) = effective_selected {
+            if let Some(new_index) = self.agent_order.iter().position(|id| id == &target_id) {
                 self.selection.selected_index = new_index;
             } else {
                 // Selected agent was removed — fall back to orchestrator or first agent
@@ -811,6 +891,8 @@ impl AppState {
         }
 
         self.last_poll = Some(chrono::Utc::now());
+
+        target_changes
     }
 
     /// Cycle through sort methods
@@ -2027,5 +2109,184 @@ mod tests {
     fn test_focus_fallback_index_returns_none_when_empty() {
         let state = AppState::new();
         assert_eq!(state.focus_fallback_index(), None);
+    }
+
+    /// Helper: create a test agent with a specific PID
+    fn create_test_agent_with_pid(id: &str, pid: u32) -> MonitoredAgent {
+        MonitoredAgent::new(
+            id.to_string(),
+            AgentType::ClaudeCode,
+            "Test".to_string(),
+            "/home".to_string(),
+            pid,
+            "main".to_string(),
+            "window".to_string(),
+            0,
+            0,
+        )
+    }
+
+    #[test]
+    fn test_pid_reconciliation_detects_target_change() {
+        let mut state = AppState::new();
+
+        // Initial: agent at main:0.2 with PID 5000
+        let agent = create_test_agent_with_pid("main:0.2", 5000);
+        let changes = state.update_agents(vec![agent]);
+        assert!(changes.is_empty());
+        assert!(state.agents.contains_key("main:0.2"));
+
+        // Pane renumbered: same PID 5000, but now at main:0.1
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        let changes = state.update_agents(vec![renumbered]);
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].old_target, "main:0.2");
+        assert_eq!(changes[0].new_target, "main:0.1");
+        assert_eq!(changes[0].pid, 5000);
+        assert!(state.agents.contains_key("main:0.1"));
+        assert!(!state.agents.contains_key("main:0.2"));
+    }
+
+    #[test]
+    fn test_pid_reconciliation_preserves_orchestrator_flag() {
+        let mut state = AppState::new();
+
+        // Initial: orchestrator at main:0.2
+        let mut agent = create_test_agent_with_pid("main:0.2", 5000);
+        agent.is_orchestrator = true;
+        state.update_agents(vec![agent]);
+        assert!(state.agents["main:0.2"].is_orchestrator);
+
+        // Pane renumbered: same PID, new target
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![renumbered]);
+
+        assert!(
+            state.agents["main:0.1"].is_orchestrator,
+            "orchestrator flag must survive pane renumbering"
+        );
+    }
+
+    #[test]
+    fn test_pid_reconciliation_preserves_stable_id() {
+        let mut state = AppState::new();
+
+        let agent = create_test_agent_with_pid("main:0.2", 5000);
+        state.update_agents(vec![agent]);
+        let original_stable_id = state.agents["main:0.2"].stable_id.clone();
+
+        // Pane renumbered
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![renumbered]);
+
+        assert_eq!(
+            state.agents["main:0.1"].stable_id, original_stable_id,
+            "stable_id must survive pane renumbering"
+        );
+    }
+
+    #[test]
+    fn test_pid_reconciliation_migrates_pending_orchestrator() {
+        let mut state = AppState::new();
+
+        // Agent at main:0.2 with PID 5000
+        let agent = create_test_agent_with_pid("main:0.2", 5000);
+        state.update_agents(vec![agent]);
+
+        // Queue pending orchestrator for old target
+        state
+            .pending_orchestrator_ids
+            .insert("main:0.2".to_string());
+
+        // Pane renumbered
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![renumbered]);
+
+        assert!(
+            !state.pending_orchestrator_ids.contains("main:0.2"),
+            "old target must be removed from pending_orchestrator_ids"
+        );
+        assert!(
+            state.pending_orchestrator_ids.contains("main:0.1"),
+            "new target must be in pending_orchestrator_ids"
+        );
+    }
+
+    #[test]
+    fn test_pid_reconciliation_migrates_pending_metadata() {
+        let mut state = AppState::new();
+
+        let agent = create_test_agent_with_pid("main:0.2", 5000);
+        state.update_agents(vec![agent]);
+
+        // Queue pending metadata for old target
+        let meta = PendingAgentMetadata {
+            issue_number: Some(42),
+            pr_number: Some(100),
+            ..Default::default()
+        };
+        state
+            .pending_agent_metadata
+            .insert("main:0.2".to_string(), meta);
+
+        // Pane renumbered
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![renumbered]);
+
+        assert!(
+            !state.pending_agent_metadata.contains_key("main:0.2"),
+            "old target must be removed from pending_agent_metadata"
+        );
+        let migrated = state.pending_agent_metadata.get("main:0.1");
+        assert!(
+            migrated.is_some(),
+            "metadata must be migrated to new target"
+        );
+        assert_eq!(migrated.unwrap().issue_number, Some(42));
+        assert_eq!(migrated.unwrap().pr_number, Some(100));
+    }
+
+    #[test]
+    fn test_pid_reconciliation_preserves_selection() {
+        let mut state = AppState::new();
+
+        // Two agents
+        let agent0 = create_test_agent_with_pid("main:0.0", 4000);
+        let agent1 = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![agent0, agent1]);
+
+        // Select agent1 (main:0.1)
+        state.selection.selected_index = 1;
+        assert_eq!(state.selected_target(), Some("main:0.1"));
+
+        // agent1 renumbered to main:0.0, agent0 renumbered to main:0.2
+        let r0 = create_test_agent_with_pid("main:0.2", 4000);
+        let r1 = create_test_agent_with_pid("main:0.0", 5000);
+        state.update_agents(vec![r0, r1]);
+
+        // Selection should follow the PID (5000) to new target main:0.0
+        assert_eq!(
+            state.selected_target(),
+            Some("main:0.0"),
+            "selection must follow the agent through pane renumbering"
+        );
+    }
+
+    #[test]
+    fn test_pid_zero_agents_are_not_reconciled() {
+        let mut state = AppState::new();
+
+        // Agent with PID 0 (unknown PID)
+        let agent = create_test_agent_with_pid("main:0.2", 0);
+        state.update_agents(vec![agent]);
+
+        // New agent at different target with PID 0 — should NOT be reconciled
+        let new_agent = create_test_agent_with_pid("main:0.1", 0);
+        let changes = state.update_agents(vec![new_agent]);
+
+        assert!(changes.is_empty(), "PID 0 agents must not be reconciled");
+        assert!(state.agents.contains_key("main:0.1"));
+        assert!(!state.agents.contains_key("main:0.2"));
     }
 }

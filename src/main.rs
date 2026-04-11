@@ -569,10 +569,27 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             msg = poll_rx.recv() => {
                 match msg {
                     Some(tmai_core::monitor::PollMessage::AgentsUpdated(agents)) => {
-                        {
+                        let target_changes = {
                             let mut s = state.write();
-                            s.update_agents(agents);
+                            let changes = s.update_agents(agents);
                             s.clear_error();
+                            changes
+                        };
+                        // Emit events for PID-based target migrations
+                        for tc in target_changes {
+                            tracing::info!(
+                                old_target = %tc.old_target,
+                                new_target = %tc.new_target,
+                                pid = tc.pid,
+                                "agent target migrated via PID reconciliation"
+                            );
+                            let _ = core.event_sender().send(
+                                tmai_core::api::CoreEvent::AgentTargetChanged {
+                                    old_target: tc.old_target,
+                                    new_target: tc.new_target,
+                                    pid: tc.pid,
+                                },
+                            );
                         }
                         core.notify_agents_updated();
                     }
