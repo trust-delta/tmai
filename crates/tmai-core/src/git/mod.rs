@@ -634,72 +634,57 @@ fn fetch_head_time(repo_dir: &str) -> Option<u64> {
 }
 
 /// Fetch last commit timestamp for each local and remote-only branch
+///
+/// Uses a single `git for-each-ref` call covering both refs/heads/ and
+/// refs/remotes/ to avoid an extra process spawn.
 async fn fetch_last_commit_times(
     repo_dir: &str,
     branches: &[String],
     remote_only_branches: &[String],
 ) -> HashMap<String, i64> {
-    let mut result = HashMap::new();
-
-    // Fetch timestamps for local branches using for-each-ref
-    if !branches.is_empty() {
-        if let Ok(Ok(output)) = tokio::time::timeout(
-            GIT_TIMEOUT,
-            Command::new("git")
-                .args([
-                    "-C",
-                    repo_dir,
-                    "for-each-ref",
-                    "--format=%(refname:short) %(committerdate:unix)",
-                    "refs/heads/",
-                ])
-                .output(),
-        )
-        .await
-        {
-            if output.status.success() {
-                for line in String::from_utf8_lossy(&output.stdout).lines() {
-                    if let Some((name, ts_str)) = line.rsplit_once(' ') {
-                        if let Ok(ts) = ts_str.parse::<i64>() {
-                            result.insert(name.to_string(), ts);
-                        }
-                    }
-                }
-            }
-        }
+    if branches.is_empty() && remote_only_branches.is_empty() {
+        return HashMap::new();
     }
 
-    // Fetch timestamps for remote-only branches
+    let mut args = vec![
+        "-C",
+        repo_dir,
+        "for-each-ref",
+        "--format=%(refname:short) %(committerdate:unix)",
+    ];
+    if !branches.is_empty() {
+        args.push("refs/heads/");
+    }
     if !remote_only_branches.is_empty() {
-        if let Ok(Ok(output)) = tokio::time::timeout(
-            GIT_TIMEOUT,
-            Command::new("git")
-                .args([
-                    "-C",
-                    repo_dir,
-                    "for-each-ref",
-                    "--format=%(refname:short) %(committerdate:unix)",
-                    "refs/remotes/",
-                ])
-                .output(),
-        )
-        .await
-        {
-            if output.status.success() {
-                let remote_set: std::collections::HashSet<&str> =
-                    remote_only_branches.iter().map(|s| s.as_str()).collect();
-                for line in String::from_utf8_lossy(&output.stdout).lines() {
-                    if let Some((name, ts_str)) = line.rsplit_once(' ') {
-                        // Strip "origin/" prefix to match remote_only_branches naming
-                        let short = name.strip_prefix("origin/").unwrap_or(name);
-                        if remote_set.contains(short) {
-                            if let Ok(ts) = ts_str.parse::<i64>() {
-                                result.insert(short.to_string(), ts);
-                            }
-                        }
-                    }
-                }
+        args.push("refs/remotes/");
+    }
+
+    let output =
+        match tokio::time::timeout(GIT_TIMEOUT, Command::new("git").args(&args).output()).await {
+            Ok(Ok(o)) if o.status.success() => o,
+            _ => return HashMap::new(),
+        };
+
+    let remote_set: std::collections::HashSet<&str> =
+        remote_only_branches.iter().map(|s| s.as_str()).collect();
+    let mut result = HashMap::new();
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Some((name, ts_str)) = line.rsplit_once(' ') else {
+            continue;
+        };
+        let Ok(ts) = ts_str.parse::<i64>() else {
+            continue;
+        };
+        // Local branches appear as-is (e.g. "main"), remote branches as
+        // "origin/feat-x". Strip the remote prefix and only keep entries
+        // that match the caller's remote_only_branches list.
+        if let Some(short) = name.strip_prefix("origin/") {
+            if remote_set.contains(short) {
+                result.insert(short.to_string(), ts);
             }
+        } else {
+            result.insert(name.to_string(), ts);
         }
     }
 
