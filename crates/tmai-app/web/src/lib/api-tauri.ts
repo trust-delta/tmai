@@ -200,6 +200,8 @@ export const api = {
         templates?: Partial<NotifyTemplates>;
       };
       guardrails?: Partial<GuardrailsSettings>;
+      pr_monitor_enabled?: boolean;
+      pr_monitor_interval_secs?: number;
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),

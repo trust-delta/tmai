@@ -1262,6 +1262,8 @@ pub struct OrchestratorSettingsResponse {
     pub rules: OrchestratorRulesResponse,
     pub notify: NotifySettingsResponse,
     pub guardrails: GuardrailsSettingsResponse,
+    pub pr_monitor_enabled: bool,
+    pub pr_monitor_interval_secs: u64,
     /// Whether this is a per-project override (true) or global fallback (false)
     pub is_project_override: bool,
 }
@@ -1325,6 +1327,10 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub notify: Option<UpdateNotifySettingsRequest>,
     #[serde(default)]
     pub guardrails: Option<UpdateGuardrailsRequest>,
+    #[serde(default)]
+    pub pr_monitor_enabled: Option<bool>,
+    #[serde(default)]
+    pub pr_monitor_interval_secs: Option<u64>,
 }
 
 /// Guardrails settings update request (all fields optional for partial updates)
@@ -1448,6 +1454,8 @@ pub async fn get_orchestrator_settings(
             max_review_loops: orch.guardrails.max_review_loops,
             escalate_to_human_after: orch.guardrails.escalate_to_human_after,
         },
+        pr_monitor_enabled: orch.pr_monitor_enabled,
+        pr_monitor_interval_secs: orch.pr_monitor_interval_secs,
         is_project_override: is_override,
     })
 }
@@ -1578,8 +1586,10 @@ pub async fn update_orchestrator_settings(
                     .unwrap_or(g.escalate_to_human_after),
             }
         },
-        pr_monitor_enabled: current.pr_monitor_enabled,
-        pr_monitor_interval_secs: current.pr_monitor_interval_secs,
+        pr_monitor_enabled: req.pr_monitor_enabled.unwrap_or(current.pr_monitor_enabled),
+        pr_monitor_interval_secs: req
+            .pr_monitor_interval_secs
+            .unwrap_or(current.pr_monitor_interval_secs),
     };
     drop(settings);
 
