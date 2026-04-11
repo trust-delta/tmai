@@ -127,14 +127,13 @@ pub fn handle_hook_event(
                     .unwrap_or_default()
                     .as_millis() as u64,
             };
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
                 save_transcript_path(state, payload);
                 push_activity(state, activity);
                 state.touch();
-            }
+            });
             None
         }
 
@@ -181,39 +180,33 @@ pub fn handle_hook_event(
         HookEventName::Stop => {
             // Clear last_tool on stop (session returns to idle)
             let ctx = build_context(payload);
-            let cwd = {
-                let mut reg = hook_registry.write();
-                let cwd = if let Some(state) = reg.get_mut(pane_id) {
-                    state.status = HookStatus::Idle;
-                    state.last_tool = None;
-                    state.last_context = ctx;
-                    save_transcript_path(state, payload);
-                    // Add last assistant message to activity log
-                    if let Some(ref msg) = payload.last_assistant_message {
-                        if !msg.is_empty() {
-                            push_activity(
-                                state,
-                                ToolActivity {
-                                    tool: crate::agents::Activity::Other("Assistant".to_string()),
-                                    input_summary: String::new(),
-                                    response_summary: truncate_string(msg, 300),
-                                    outcome: crate::agents::ToolOutcome::Success,
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis()
-                                        as u64,
-                                },
-                            );
-                        }
+            let cwd = update_hook_state(hook_registry, pane_id, |state| {
+                state.status = HookStatus::Idle;
+                state.last_tool = None;
+                state.last_context = ctx;
+                save_transcript_path(state, payload);
+                // Add last assistant message to activity log
+                if let Some(ref msg) = payload.last_assistant_message {
+                    if !msg.is_empty() {
+                        push_activity(
+                            state,
+                            ToolActivity {
+                                tool: crate::agents::Activity::Other("Assistant".to_string()),
+                                input_summary: String::new(),
+                                response_summary: truncate_string(msg, 300),
+                                outcome: crate::agents::ToolOutcome::Success,
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64,
+                            },
+                        );
                     }
-                    state.touch();
-                    state.cwd.clone()
-                } else {
-                    None
-                };
-                cwd
-            };
+                }
+                state.touch();
+                state.cwd.clone()
+            })
+            .flatten();
 
             // Emit AgentStopped event for review service and other listeners
             Some(CoreEvent::AgentStopped {
@@ -247,10 +240,9 @@ pub fn handle_hook_event(
                 HookStatus::Processing,
                 None,
             );
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.active_subagents = state.active_subagents.saturating_add(1);
-            }
+            });
             None
         }
 
@@ -263,10 +255,9 @@ pub fn handle_hook_event(
                 HookStatus::Processing,
                 None,
             );
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.active_subagents = state.active_subagents.saturating_sub(1);
-            }
+            });
             None
         }
 
@@ -319,11 +310,10 @@ pub fn handle_hook_event(
             let ctx = build_context(payload);
             let source = payload.source.clone().unwrap_or_default();
             let file_path = payload.file_path.clone().unwrap_or_default();
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.last_context = ctx;
                 state.touch();
-            }
+            });
             Some(CoreEvent::ConfigChanged {
                 target: pane_id.to_string(),
                 source,
@@ -343,10 +333,9 @@ pub fn handle_hook_event(
             );
             // Store worktree info in HookState
             if worktree_info.is_some() {
-                let mut reg = hook_registry.write();
-                if let Some(state) = reg.get_mut(pane_id) {
+                update_hook_state(hook_registry, pane_id, |state| {
                     state.worktree = worktree_info.clone();
-                }
+                });
             }
             Some(CoreEvent::WorktreeCreated {
                 target: pane_id.to_string(),
@@ -358,13 +347,12 @@ pub fn handle_hook_event(
             // Worktree removed — touch timestamp, emit event with worktree info
             let worktree_info = payload.worktree.clone();
             let ctx = build_context(payload);
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.last_context = ctx;
                 state.touch();
                 // Clear worktree info on removal
                 state.worktree = None;
-            }
+            });
             Some(CoreEvent::WorktreeRemoved {
                 target: pane_id.to_string(),
                 worktree: worktree_info,
@@ -374,18 +362,14 @@ pub fn handle_hook_event(
         HookEventName::PreCompact => {
             // Context compaction starting — set Compacting status, increment counter
             let ctx = build_context(payload);
-            let count = {
-                let mut reg = hook_registry.write();
-                if let Some(state) = reg.get_mut(pane_id) {
-                    state.status = HookStatus::Compacting;
-                    state.compaction_count = state.compaction_count.saturating_add(1);
-                    state.last_context = ctx;
-                    state.touch();
-                    state.compaction_count
-                } else {
-                    1
-                }
-            };
+            let count = update_hook_state(hook_registry, pane_id, |state| {
+                state.status = HookStatus::Compacting;
+                state.compaction_count = state.compaction_count.saturating_add(1);
+                state.last_context = ctx;
+                state.touch();
+                state.compaction_count
+            })
+            .unwrap_or(1);
             Some(CoreEvent::ContextCompacting {
                 target: pane_id.to_string(),
                 compaction_count: count,
@@ -395,11 +379,10 @@ pub fn handle_hook_event(
         HookEventName::InstructionsLoaded => {
             // CLAUDE.md or rules files loaded — touch timestamp, emit event
             let ctx = build_context(payload);
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.last_context = ctx;
                 state.touch();
-            }
+            });
             Some(CoreEvent::InstructionsLoaded {
                 target: pane_id.to_string(),
             })
@@ -408,12 +391,11 @@ pub fn handle_hook_event(
         HookEventName::PostToolUseFailure => {
             // Tool failed — same as PostToolUse (Processing continues, keep last_tool)
             let ctx = build_context(payload);
-            let mut reg = hook_registry.write();
-            if let Some(state) = reg.get_mut(pane_id) {
+            update_hook_state(hook_registry, pane_id, |state| {
                 state.status = HookStatus::Processing;
                 state.last_context = ctx;
                 state.touch();
-            }
+            });
             None
         }
     }
@@ -688,6 +670,16 @@ pub fn format_activity_log(activities: &[ToolActivity]) -> String {
     }
 
     lines.join("\n")
+}
+
+/// Apply a mutation to an existing HookState entry, returning the closure's result.
+/// Returns `None` if the pane has no entry in the registry.
+fn update_hook_state<F, T>(registry: &HookRegistry, pane_id: &str, f: F) -> Option<T>
+where
+    F: FnOnce(&mut HookState) -> T,
+{
+    let mut reg = registry.write();
+    reg.get_mut(pane_id).map(f)
 }
 
 /// Update hook state for a pane, creating entry if needed
