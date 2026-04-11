@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use tmai_core::api::{ActionOrigin, AgentSnapshot, ApiError, CoreEvent, TmaiCore};
+use tmai_core::config::NotifyTemplates;
 
 /// Parse `ActionOrigin` from request headers.
 ///
@@ -1298,6 +1299,8 @@ pub struct NotifySettingsResponse {
     pub on_pr_closed: bool,
     pub on_guardrail_exceeded: bool,
     pub templates: NotifyTemplatesResponse,
+    /// Built-in default templates (for UI placeholder display)
+    pub default_templates: NotifyTemplatesResponse,
 }
 
 /// Template overrides response
@@ -1447,6 +1450,20 @@ pub async fn get_orchestrator_settings(
                 rebase_conflict: orch.notify.templates.rebase_conflict.clone(),
                 pr_closed: orch.notify.templates.pr_closed.clone(),
                 guardrail_exceeded: orch.notify.templates.guardrail_exceeded.clone(),
+            },
+            default_templates: {
+                let d = NotifyTemplates::defaults();
+                NotifyTemplatesResponse {
+                    agent_stopped: d.agent_stopped,
+                    agent_error: d.agent_error,
+                    ci_passed: d.ci_passed,
+                    ci_failed: d.ci_failed,
+                    pr_created: d.pr_created,
+                    pr_comment: d.pr_comment,
+                    rebase_conflict: d.rebase_conflict,
+                    pr_closed: d.pr_closed,
+                    guardrail_exceeded: d.guardrail_exceeded,
+                }
             },
         },
         guardrails: GuardrailsSettingsResponse {
