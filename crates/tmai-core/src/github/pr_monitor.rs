@@ -63,6 +63,12 @@ pub struct PrMonitor {
     event_tx: broadcast::Sender<CoreEvent>,
     /// Monitor configuration
     settings: OrchestratorSettings,
+    /// Whether the first poll has completed. Until warmed_up is true, the
+    /// initial observation is treated as the baseline: all existing PRs are
+    /// recorded as `previous_states` but no CoreEvents are emitted. This
+    /// prevents every pre-existing open PR from firing a `PrCreated` flood
+    /// on tmai restart (see #377).
+    warmed_up: bool,
 }
 
 impl PrMonitor {
@@ -77,6 +83,7 @@ impl PrMonitor {
             previous_states: HashMap::new(),
             event_tx,
             settings,
+            warmed_up: false,
         }
     }
 
@@ -91,6 +98,23 @@ impl PrMonitor {
                 return Vec::new();
             }
         };
+
+        // On the very first poll, just record every open PR as the baseline
+        // without emitting events. Pre-existing PRs aren't "created" events
+        // we care about — they're ground truth. Subsequent polls then emit
+        // only for real transitions. Fixes #377.
+        if !self.warmed_up {
+            for pr in prs.values() {
+                self.previous_states.insert(pr.number, PrState::from_pr(pr));
+            }
+            self.warmed_up = true;
+            tracing::info!(
+                repo = %self.repo_dir,
+                count = prs.len(),
+                "PR monitor: warmed up baseline (no events emitted this cycle)"
+            );
+            return Vec::new();
+        }
 
         let mut notifications = Vec::new();
         let mut current_pr_numbers: Vec<u64> = Vec::new();
@@ -637,6 +661,20 @@ mod tests {
         // Transition: pending → failure
         assert!(!is_failure(&pending.check_status));
         assert!(is_failure(&failure.check_status));
+    }
+
+    #[tokio::test]
+    async fn test_new_starts_not_warmed_up() {
+        // warmed_up must be false at construction so the first poll treats
+        // existing PRs as baseline (not as new events). Guards against a
+        // regression of the #377 cold-start flood.
+        let (tx, _rx) = broadcast::channel(16);
+        let monitor = PrMonitor::new(
+            "/nonexistent".to_string(),
+            tx,
+            OrchestratorSettings::default(),
+        );
+        assert!(!monitor.warmed_up);
     }
 
     #[tokio::test]
