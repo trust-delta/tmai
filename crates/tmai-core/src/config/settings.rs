@@ -1044,6 +1044,30 @@ pub struct OrchestratorNotifySettings {
     /// Per-event prompt template overrides (empty = use built-in default)
     #[serde(default)]
     pub templates: NotifyTemplates,
+
+    // ── Busy-state buffering (#372) ─────────────────────────
+    /// Buffer notifications when the target orchestrator is busy and flush
+    /// on transition to idle. Disabling falls back to the legacy
+    /// "drop when no idle orchestrator" behaviour.
+    #[serde(default = "default_true")]
+    pub buffer_when_busy: bool,
+
+    /// Buffered entries older than this are dropped on next append/flush.
+    #[serde(default = "default_buffer_ttl_secs")]
+    pub buffer_ttl_secs: u64,
+
+    /// Maximum number of buffered entries per orchestrator.
+    /// Oldest is dropped on overflow.
+    #[serde(default = "default_buffer_max_messages")]
+    pub buffer_max_messages: usize,
+}
+
+fn default_buffer_ttl_secs() -> u64 {
+    600
+}
+
+fn default_buffer_max_messages() -> usize {
+    20
 }
 
 impl Default for OrchestratorNotifySettings {
@@ -1059,6 +1083,9 @@ impl Default for OrchestratorNotifySettings {
             on_pr_closed: EventHandling::NotifyOrchestrator,
             on_guardrail_exceeded: EventHandling::NotifyOrchestrator,
             templates: NotifyTemplates::default(),
+            buffer_when_busy: true,
+            buffer_ttl_secs: 600,
+            buffer_max_messages: 20,
         }
     }
 }

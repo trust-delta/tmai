@@ -1333,6 +1333,12 @@ pub struct NotifySettingsResponse {
     pub templates: NotifyTemplatesResponse,
     /// Built-in default templates (for UI placeholder display)
     pub default_templates: NotifyTemplatesResponse,
+    /// Buffer notifications when the target orchestrator is busy (#372)
+    pub buffer_when_busy: bool,
+    /// Buffered entries older than this are dropped on next append/flush
+    pub buffer_ttl_secs: u64,
+    /// Maximum buffered entries per orchestrator (oldest dropped on overflow)
+    pub buffer_max_messages: usize,
 }
 
 /// Template overrides response
@@ -1417,6 +1423,12 @@ pub struct UpdateNotifySettingsRequest {
     pub on_guardrail_exceeded: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
     pub templates: Option<UpdateNotifyTemplatesRequest>,
+    #[serde(default)]
+    pub buffer_when_busy: Option<bool>,
+    #[serde(default)]
+    pub buffer_ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub buffer_max_messages: Option<usize>,
 }
 
 /// AutoAction template overrides update request (partial)
@@ -1508,6 +1520,9 @@ pub async fn get_orchestrator_settings(
                     guardrail_exceeded: d.guardrail_exceeded,
                 }
             },
+            buffer_when_busy: orch.notify.buffer_when_busy,
+            buffer_ttl_secs: orch.notify.buffer_ttl_secs,
+            buffer_max_messages: orch.notify.buffer_max_messages,
         },
         guardrails: GuardrailsSettingsResponse {
             max_ci_retries: orch.guardrails.max_ci_retries,
@@ -1627,6 +1642,22 @@ pub async fn update_orchestrator_settings(
                         .and_then(|t| t.guardrail_exceeded.clone())
                         .unwrap_or_else(|| n.templates.guardrail_exceeded.clone()),
                 },
+                // #372 buffer-when-busy fields: request values override,
+                // fall back to current. Hot-reload happens via the existing
+                // `*ns.write() = updated.notify` block below since these
+                // fields live inside OrchestratorNotifySettings.
+                buffer_when_busy: nr
+                    .as_ref()
+                    .and_then(|r| r.buffer_when_busy)
+                    .unwrap_or(n.buffer_when_busy),
+                buffer_ttl_secs: nr
+                    .as_ref()
+                    .and_then(|r| r.buffer_ttl_secs)
+                    .unwrap_or(n.buffer_ttl_secs),
+                buffer_max_messages: nr
+                    .as_ref()
+                    .and_then(|r| r.buffer_max_messages)
+                    .unwrap_or(n.buffer_max_messages),
             }
         },
         guardrails: {

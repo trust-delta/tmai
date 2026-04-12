@@ -219,9 +219,12 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         ));
         // Store in state for hot-reload from WebUI settings API
         app.shared_state().write().notify_settings = Some(notify_settings.clone());
+        let notify_buffer = tmai_core::orchestrator_notify::new_shared_buffer();
+        app.shared_state().write().orchestrator_notify_buffer = Some(notify_buffer.clone());
         tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
             notify_settings,
             app.shared_state(),
+            notify_buffer,
             core.subscribe(),
             core.event_sender(),
         );
@@ -454,9 +457,12 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         ));
         // Store in state for hot-reload from WebUI settings API
         state.write().notify_settings = Some(notify_settings.clone());
+        let notify_buffer = tmai_core::orchestrator_notify::new_shared_buffer();
+        state.write().orchestrator_notify_buffer = Some(notify_buffer.clone());
         tmai_core::orchestrator_notify::OrchestratorNotifier::spawn(
             notify_settings,
             state.clone(),
+            notify_buffer,
             core.subscribe(),
             core.event_sender(),
         );

@@ -548,6 +548,12 @@ pub struct AppState {
     /// Shared handle to auto-action templates (hot-reloadable from WebUI).
     /// None if orchestrator is disabled or AutoActionExecutor is not started.
     pub auto_action_templates: Option<crate::auto_action::SharedAutoActionTemplates>,
+
+    /// Shared buffer for notifications targeted at busy orchestrators (#372).
+    /// None until OrchestratorNotifier is spawned. Shared (clone of `Arc`)
+    /// between the producer (notifier busy branch) and the consumer
+    /// (flush-on-idle / flush-on-appear).
+    pub orchestrator_notify_buffer: Option<crate::orchestrator_notify::SharedNotifyBuffer>,
 }
 
 impl AppState {
@@ -594,6 +600,7 @@ impl AppState {
             notify_settings: None,
             guardrails_settings: None,
             auto_action_templates: None,
+            orchestrator_notify_buffer: None,
         }
     }
 
@@ -753,6 +760,15 @@ impl AppState {
                     // Update target_to_pane_id mapping
                     if let Some(pane_id) = self.target_to_pane_id.remove(old_target) {
                         self.target_to_pane_id.insert(new_target.clone(), pane_id);
+                    }
+                    // Migrate orchestrator_notify_buffer so buffered
+                    // notifications survive pane renumbering and flush under
+                    // the new target rather than stranding.
+                    if let Some(ref buffer) = self.orchestrator_notify_buffer {
+                        let mut b = buffer.write();
+                        if let Some(entries) = b.remove(old_target) {
+                            b.entry(new_target.clone()).or_default().extend(entries);
+                        }
                     }
 
                     target_changes.push(TargetChange {
@@ -2250,6 +2266,44 @@ mod tests {
         );
         assert_eq!(migrated.unwrap().issue_number, Some(42));
         assert_eq!(migrated.unwrap().pr_number, Some(100));
+    }
+
+    #[test]
+    fn test_pid_reconciliation_migrates_notify_buffer() {
+        use crate::orchestrator_notify::{new_shared_buffer, BufferedNotification};
+        use std::time::Instant;
+
+        let mut state = AppState::new();
+        let buffer = new_shared_buffer();
+        state.orchestrator_notify_buffer = Some(buffer.clone());
+
+        let agent = create_test_agent_with_pid("main:0.2", 5000);
+        state.update_agents(vec![agent]);
+
+        // Seed buffer keyed by old target
+        buffer
+            .write()
+            .entry("main:0.2".to_string())
+            .or_default()
+            .push(BufferedNotification {
+                message: "queued notice".to_string(),
+                source: "sub:0.0".to_string(),
+                timestamp: Instant::now(),
+            });
+
+        // Pane renumbered to main:0.1
+        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
+        state.update_agents(vec![renumbered]);
+
+        let b = buffer.read();
+        assert!(
+            b.get("main:0.2").is_none(),
+            "old target must be removed from notify buffer"
+        );
+        let migrated = b.get("main:0.1");
+        assert!(migrated.is_some(), "buffer must migrate to new target");
+        assert_eq!(migrated.unwrap().len(), 1);
+        assert_eq!(migrated.unwrap()[0].message, "queued notice");
     }
 
     #[test]

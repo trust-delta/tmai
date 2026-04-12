@@ -9,12 +9,20 @@
 //! template override.  Settings are read from a shared `Arc<RwLock<>>` so
 //! changes made via the WebUI take effect immediately without restart.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// Monotonic counter used to give every `ActionPerformed` event a unique
+/// dedup key so distinct invocations of the same action (e.g. two
+/// `kill_agent` calls) stay as separate buffer entries.
+static ACTION_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 use parking_lot::RwLock;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
+use super::buffer::{self, BufferedNotification, SharedNotifyBuffer};
 use crate::api::CoreEvent;
 use crate::config::{EventHandling, OrchestratorNotifySettings};
 use crate::state::SharedState;
@@ -44,16 +52,14 @@ impl OrchestratorNotifier {
     pub fn spawn(
         settings: SharedNotifySettings,
         state: SharedState,
+        buffer_handle: SharedNotifyBuffer,
         mut event_rx: broadcast::Receiver<CoreEvent>,
         event_tx: broadcast::Sender<CoreEvent>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                let notification = match event_rx.recv().await {
-                    Ok(event) => {
-                        let s = settings.read().clone();
-                        Self::build_notification(&event, &s, &state)
-                    }
+                let event = match event_rx.recv().await {
+                    Ok(event) => event,
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         debug!(skipped = n, "Orchestrator notifier lagged, skipping events");
                         continue;
@@ -64,53 +70,139 @@ impl OrchestratorNotifier {
                     }
                 };
 
-                let Some((message, source_target)) = notification else {
+                // Handle flush triggers first so a status transition to idle
+                // (or orchestrator appearance) delivers any buffered prompts.
+                Self::maybe_flush_for_event(&event, &state, &buffer_handle, &settings, &event_tx);
+
+                let s = settings.read().clone();
+                let Some((message, source_target)) = Self::build_notification(&event, &s, &state)
+                else {
                     continue;
                 };
 
-                // Find all orchestrator agents (excluding the source agent)
-                let orchestrators: Vec<String> = {
-                    let s = state.read();
-                    s.agents
-                        .iter()
-                        .filter(|(target, a)| {
-                            a.is_orchestrator
-                                && !a.is_virtual
-                                && a.status.is_idle()
-                                && *target != &source_target
-                                // Also skip when source_target is this orchestrator's
-                                // pane_id (hook events use pane_id, not agent map key)
-                                && s.target_to_pane_id.get(*target)
-                                    != Some(&source_target)
-                        })
-                        .map(|(target, _)| target.clone())
-                        .collect()
+                // Split orchestrators into idle (send now) and busy (buffer).
+                let (idle_targets, busy_targets) = {
+                    let st = state.read();
+                    let mut idle: Vec<String> = Vec::new();
+                    let mut busy: Vec<String> = Vec::new();
+                    for (target, a) in &st.agents {
+                        if !a.is_orchestrator || a.is_virtual {
+                            continue;
+                        }
+                        if *target == source_target {
+                            continue;
+                        }
+                        // Also exclude when source_target matches this
+                        // orchestrator's pane_id (hook events use pane_id,
+                        // not agent map key).
+                        if st.target_to_pane_id.get(target) == Some(&source_target) {
+                            continue;
+                        }
+                        if a.status.is_idle() {
+                            idle.push(target.clone());
+                        } else {
+                            busy.push(target.clone());
+                        }
+                    }
+                    (idle, busy)
                 };
 
-                if orchestrators.is_empty() {
+                if idle_targets.is_empty() && busy_targets.is_empty() {
                     debug!(
                         message = %message,
-                        "No idle orchestrator agents to notify"
+                        "No orchestrator agents to notify"
                     );
                     continue;
                 }
 
-                for target in &orchestrators {
+                for target in &idle_targets {
                     info!(
                         orchestrator = %target,
                         source = %source_target,
                         "Sending sub-agent notification to orchestrator"
                     );
-
-                    // Queue the notification via PromptReady event so the
-                    // existing prompt delivery infrastructure handles sending.
                     let _ = event_tx.send(CoreEvent::PromptReady {
                         target: target.clone(),
                         prompt: message.clone(),
                     });
                 }
+
+                if s.buffer_when_busy {
+                    let ttl = Duration::from_secs(s.buffer_ttl_secs);
+                    for target in &busy_targets {
+                        debug!(
+                            orchestrator = %target,
+                            source = %source_target,
+                            "Buffering notification for busy orchestrator"
+                        );
+                        buffer::append(
+                            &buffer_handle,
+                            target,
+                            BufferedNotification {
+                                message: message.clone(),
+                                source: source_target.clone(),
+                                timestamp: Instant::now(),
+                            },
+                            ttl,
+                            s.buffer_max_messages,
+                        );
+                    }
+                } else if idle_targets.is_empty() {
+                    debug!(
+                        message = %message,
+                        "No idle orchestrator agents to notify (buffering disabled)"
+                    );
+                }
             }
         })
+    }
+
+    /// Flush buffered notifications for an orchestrator on status→idle
+    /// transitions and on orchestrator appearance (session start / poller
+    /// first-detection).
+    fn maybe_flush_for_event(
+        event: &CoreEvent,
+        state: &SharedState,
+        buffer_handle: &SharedNotifyBuffer,
+        settings: &SharedNotifySettings,
+        event_tx: &broadcast::Sender<CoreEvent>,
+    ) {
+        let target = match event {
+            CoreEvent::AgentStatusChanged {
+                target, new_status, ..
+            } if new_status == "idle" => target,
+            CoreEvent::AgentAppeared { target } => target,
+            _ => return,
+        };
+
+        // Only flush for orchestrator agents that are currently idle.
+        let is_orch_idle = {
+            let st = state.read();
+            match st.agents.get(target) {
+                Some(a) => a.is_orchestrator && !a.is_virtual && a.status.is_idle(),
+                None => false,
+            }
+        };
+        if !is_orch_idle {
+            return;
+        }
+
+        let ttl = Duration::from_secs(settings.read().buffer_ttl_secs);
+        let entries = buffer::take_for_flush(buffer_handle, target, ttl);
+        if entries.is_empty() {
+            return;
+        }
+
+        let combined = buffer::combine_messages(&entries);
+        info!(
+            orchestrator = %target,
+            count = entries.len(),
+            "Flushing buffered notifications to orchestrator"
+        );
+        let _ = event_tx.send(CoreEvent::PromptReady {
+            target: target.clone(),
+            prompt: combined,
+        });
     }
 
     /// Build a notification message from an event, or None if the event is not relevant.
@@ -376,8 +468,11 @@ impl OrchestratorNotifier {
                     return None;
                 }
                 let msg = format!("[tmai] {origin} performed {action}: {summary}");
-                // Use action as pseudo-target (no specific agent)
-                Some((msg, format!("action-{action}")))
+                // Each action invocation must stay as a distinct buffer entry,
+                // so include a monotonic sequence number in the dedup key —
+                // otherwise two `kill_agent` events would collapse into one.
+                let seq = ACTION_EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
+                Some((msg, format!("action-{action}-{origin}-{seq}")))
             }
 
             _ => None,
@@ -862,8 +957,13 @@ mod tests {
         let mut listen_rx = core.subscribe();
 
         let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
-        let _handle =
-            OrchestratorNotifier::spawn(settings, state.clone(), event_rx, event_tx.clone());
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            super::buffer::new_shared_buffer(),
+            event_rx,
+            event_tx.clone(),
+        );
 
         // Emit an AgentStopped event for the sub-agent
         let _ = event_tx.send(CoreEvent::AgentStopped {
@@ -1087,8 +1187,13 @@ mod tests {
         let mut listen_rx = core.subscribe();
 
         let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
-        let _handle =
-            OrchestratorNotifier::spawn(settings, state.clone(), event_rx, event_tx.clone());
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            super::buffer::new_shared_buffer(),
+            event_rx,
+            event_tx.clone(),
+        );
 
         // Emit AgentStopped with pane_id "5" (same as orchestrator's pane_id)
         let _ = event_tx.send(CoreEvent::AgentStopped {
@@ -1182,5 +1287,299 @@ mod tests {
         let (msg, _) = result.unwrap();
         assert!(msg.contains("consecutive failures"));
         assert!(!msg.contains("PR #")); // No PR number
+    }
+
+    // ── #372 busy-state buffering tests ────────────────────────
+
+    fn processing_status() -> AgentStatus {
+        AgentStatus::Processing {
+            activity: crate::agents::Activity::Thinking,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_busy_orchestrator_buffers_instead_of_dropping() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, processing_status());
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        // Wait for the notifier to process the event
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            if !buf.read().is_empty() {
+                break;
+            }
+        }
+
+        let entries = buf.read();
+        let orch_entries = entries.get("orch:0.0").cloned().unwrap_or_default();
+        assert_eq!(orch_entries.len(), 1, "expected one buffered entry");
+        assert!(orch_entries[0].message.contains("has stopped"));
+    }
+
+    #[tokio::test]
+    async fn test_flush_on_idle_transition_delivers_combined_prompt() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, processing_status());
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        // Fire two events while busy
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("first".to_string()),
+        });
+        let _ = event_tx.send(CoreEvent::PrCiFailed {
+            pr_number: 42,
+            title: "t".to_string(),
+            failed_details: "lint".to_string(),
+        });
+
+        // Wait until both are buffered
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            if buf.read().get("orch:0.0").map(|v| v.len()).unwrap_or(0) >= 2 {
+                break;
+            }
+        }
+
+        // Transition orchestrator to idle (required for flush)
+        state.write().agents.get_mut("orch:0.0").unwrap().status = AgentStatus::Idle;
+        let _ = event_tx.send(CoreEvent::AgentStatusChanged {
+            target: "orch:0.0".to_string(),
+            old_status: "processing".to_string(),
+            new_status: "idle".to_string(),
+        });
+
+        // Expect a single combined PromptReady for the orchestrator
+        let mut found_combined = false;
+        for _ in 0..50 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), listen_rx.recv()).await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, prompt })) if target == "orch:0.0" => {
+                    if prompt.contains("\n\n---\n\n") && prompt.contains("has stopped") {
+                        found_combined = true;
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        assert!(
+            found_combined,
+            "expected a single combined PromptReady on flush"
+        );
+        assert!(
+            buf.read().get("orch:0.0").is_none(),
+            "buffer should be empty after flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_on_agent_appeared_for_orchestrator() {
+        let state = AppState::shared();
+        // Pre-seed buffer as if a prior lifecycle left entries.
+        let buf = super::buffer::new_shared_buffer();
+        buf.write()
+            .entry("orch:0.0".to_string())
+            .or_default()
+            .push(BufferedNotification {
+                message: "previous notice".to_string(),
+                source: "sub:0.0".to_string(),
+                timestamp: Instant::now(),
+            });
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentAppeared {
+            target: "orch:0.0".to_string(),
+        });
+
+        let mut flushed = false;
+        for _ in 0..50 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), listen_rx.recv()).await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, prompt })) if target == "orch:0.0" => {
+                    if prompt.contains("previous notice") {
+                        flushed = true;
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        assert!(flushed, "expected buffered entry to flush on AgentAppeared");
+    }
+
+    #[tokio::test]
+    async fn test_buffer_when_busy_false_falls_back_to_drop() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, processing_status());
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+
+        let mut ns = OrchestratorNotifySettings::default();
+        ns.buffer_when_busy = false;
+        let settings = Arc::new(RwLock::new(ns));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(
+            buf.read().is_empty(),
+            "buffering disabled — nothing should be buffered"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_action_performed_distinct_events_not_deduped() {
+        // Two ActionPerformed events with the same action string must both
+        // survive in the buffer — collapsing them would defeat the PR's
+        // motivating use case (multiple kill_agent invocations).
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, processing_status());
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        for i in 0..2 {
+            let _ = event_tx.send(CoreEvent::ActionPerformed {
+                origin: crate::api::ActionOrigin::webui(),
+                action: "kill_agent".to_string(),
+                summary: format!("killed agent worker:{i}"),
+            });
+        }
+
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            if buf.read().get("orch:0.0").map(|v| v.len()).unwrap_or(0) >= 2 {
+                break;
+            }
+        }
+
+        let entries = buf.read().get("orch:0.0").cloned().unwrap_or_default();
+        assert_eq!(
+            entries.len(),
+            2,
+            "two distinct ActionPerformed events must not collapse"
+        );
+        assert!(entries[0].message.contains("worker:0"));
+        assert!(entries[1].message.contains("worker:1"));
+    }
+
+    #[tokio::test]
+    async fn test_multiple_orchestrators_buffered_independently() {
+        let state = AppState::shared();
+        insert_agent(&state, "orch:a", true, processing_status());
+        insert_agent(&state, "orch:b", true, processing_status());
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            let map = buf.read();
+            if map.get("orch:a").map(|v| v.len()).unwrap_or(0) >= 1
+                && map.get("orch:b").map(|v| v.len()).unwrap_or(0) >= 1
+            {
+                break;
+            }
+        }
+
+        let map = buf.read();
+        assert_eq!(map.get("orch:a").map(|v| v.len()), Some(1));
+        assert_eq!(map.get("orch:b").map(|v| v.len()), Some(1));
     }
 }
