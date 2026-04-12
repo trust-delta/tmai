@@ -184,6 +184,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // identical string through setContent → AnsiUp → DOMPurify → innerHTML
   // on every 100ms active-input tick was the main cause of input lag.
   const lastContentRef = useRef<string | null>(null);
+
+  // Input-box overlay: a small <div> at the bottom of the preview that
+  // refreshes at 100ms cadence while the user is actively typing, via
+  // the /preview-input fast path. The heavy full preview above keeps
+  // its slower cadence and doesn't need to rewrite on every keystroke.
+  const inputBoxRef = useRef<HTMLDivElement>(null);
+  const lastInputBoxContentRef = useRef<string>("");
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
   // Wrap setter to persist preference per agent
@@ -263,6 +270,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setComposing(false);
     lastContentRef.current = null;
     lastHtmlRef.current = "";
+    lastInputBoxContentRef.current = "";
+    if (inputBoxRef.current) inputBoxRef.current.innerHTML = "";
   }, [agentId]);
 
   // Switch to input mode (passthrough ON)
@@ -330,14 +339,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // visible lag that shows up when the backend rewrites the preview a
   // bit later (tmux repaint after send-keys); the active-input window
   // keeps the preview caught up while the user is actively typing.
+  // Full preview polls at the focused/unfocused cadence only — the fast
+  // active-input cadence now drives the input-box overlay instead, which
+  // fetches only the last few lines via /preview-input and writes to a
+  // small dedicated <div> without touching the 1.4MB main content tree.
   const getPollInterval = useCallback(() => {
     const s = pollSettings.current;
-    if (!focused) return s.preview_poll_unfocused_ms;
-    const elapsed = Date.now() - lastInputTime.current;
-    if (elapsed < s.preview_active_input_window_ms) {
-      return s.preview_poll_active_input_ms;
-    }
-    return s.preview_poll_focused_ms;
+    return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
   }, [focused]);
 
   // Fetch preview content, shared between polling and post-keystroke refresh.
@@ -389,6 +397,40 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       clearTimeout(timer);
     };
   }, [fetchPreview, getPollInterval]);
+
+  // Input-box fast path: poll /preview-input at `preview_poll_active_input_ms`
+  // (default 100ms) and write the last few lines directly into a tiny
+  // dedicated <div>. Skipped during IME composition (same reason as the
+  // main fetch: avoid re-render mid-composition).
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      if (!composingRef.current) {
+        try {
+          const data = await api.getPreviewInput(agentId, 10);
+          if (
+            data.content &&
+            data.content !== lastInputBoxContentRef.current &&
+            inputBoxRef.current
+          ) {
+            lastInputBoxContentRef.current = data.content;
+            const html = DOMPurify.sanitize(ansi.ansi_to_html(data.content));
+            inputBoxRef.current.innerHTML = html;
+          }
+        } catch {
+          // agent gone or transient — swallow
+        }
+      }
+      const interval = pollSettings.current.preview_poll_active_input_ms;
+      timer = setTimeout(tick, interval);
+    };
+    let timer = setTimeout(tick, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [agentId, ansi]);
 
   // Fetch transcript records (slower cadence — history changes less often)
   const fetchTranscript = useCallback(async () => {
@@ -673,6 +715,21 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Input-box fast overlay — pinned to the bottom of the preview
+          container. Refreshed at 100ms via /preview-input, small payload,
+          writes innerHTML on a dedicated <div> so focus in the hidden
+          <input> below is never churned. */}
+      <div
+        ref={inputBoxRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 overflow-hidden whitespace-pre-wrap break-words bg-[#0c0c0c] px-3 py-1"
+        style={{
+          fontFamily: MONO_FONT_STACK,
+          zIndex: 5,
+          maxHeight: "14em",
+        }}
+      />
 
       {/* Hidden IME input — outside scroll container to avoid interfering with text selection */}
       <input

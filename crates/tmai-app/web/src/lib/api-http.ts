@@ -806,6 +806,11 @@ export const api = {
     apiFetch<{ content: string; cursor_x?: number; cursor_y?: number }>(
       `/agents/${encodeURIComponent(target)}/preview`,
     ),
+  // Fast path: only the last `lines` rows of the ANSI preview cache.
+  getPreviewInput: (target: string, lines = 8) =>
+    apiFetch<{ content: string; lines: number }>(
+      `/agents/${encodeURIComponent(target)}/preview-input?lines=${lines}`,
+    ),
   getTranscript: (target: string) =>
     apiFetch<{ records: TranscriptRecord[] }>(`/agents/${encodeURIComponent(target)}/transcript`),
 

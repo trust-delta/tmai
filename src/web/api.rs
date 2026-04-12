@@ -165,6 +165,28 @@ pub struct PreviewResponse {
     pub cursor_y: Option<u32>,
 }
 
+/// Input-box fast-path response — only the last N lines of the ANSI
+/// preview, used by the WebUI's high-cadence polling path so it can
+/// refresh the prompt area without transferring the full scrollback.
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct PreviewInputResponse {
+    pub content: String,
+    pub lines: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct PreviewInputQuery {
+    #[serde(default = "default_preview_input_lines")]
+    pub lines: usize,
+}
+
+#[allow(dead_code)]
+fn default_preview_input_lines() -> usize {
+    8
+}
+
 /// Summary of a task for API response
 #[derive(Debug, Serialize)]
 pub struct TaskSummaryResponse {
@@ -643,6 +665,32 @@ pub async fn get_preview(
                 cursor_y: None,
             }))
         }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+// =========================================================
+// Preview (input-box fast path)
+// =========================================================
+
+/// GET /api/agents/{id}/preview-input?lines=N
+///
+/// Returns only the last N lines of the ANSI preview cache so the
+/// WebUI can refresh the prompt area without transferring the full
+/// scrollback (which can exceed 1 MB in a long session). The heavy
+/// `/preview` endpoint stays available for the full view.
+#[allow(dead_code)]
+pub async fn get_preview_input(
+    State(core): State<Arc<TmaiCore>>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<PreviewInputQuery>,
+) -> Result<Json<PreviewInputResponse>, StatusCode> {
+    match core.get_preview_input(&id, q.lines) {
+        Ok(content) => {
+            let lines = content.lines().count();
+            Ok(Json(PreviewInputResponse { content, lines }))
+        }
+        Err(tmai_core::api::ApiError::AgentNotFound { .. }) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
@@ -4527,6 +4575,7 @@ mod tests {
             .route("/agents/{id}/input", post(send_text))
             .route("/agents/{id}/key", post(send_key))
             .route("/agents/{id}/preview", get(get_preview))
+            .route("/agents/{id}/preview-input", get(get_preview_input))
             .route("/agents/{id}/transcript", get(get_transcript))
             .route("/teams", get(get_teams))
             .route("/teams/{name}/tasks", get(get_team_tasks))
