@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { type AgentSnapshot, api, needsAttention, subscribeSSE } from "@/lib/api";
+import { type AgentSnapshot, api, needsAttention } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
 import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
 // Hook to fetch and reactively update agent list via Tauri events + HTTP fallback
@@ -40,21 +41,17 @@ export function useAgents() {
     const retryInterval = setInterval(() => {
       refresh().then(() => clearInterval(retryInterval));
     }, 500);
-
-    // Also try SSE subscription as fallback
-    const { unlisten } = subscribeSSE({
-      onAgents: (agentList) => {
-        setAgents(agentList);
-        setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
-        setLoading(false);
-      },
-    });
-
-    return () => {
-      clearInterval(retryInterval);
-      unlisten();
-    };
+    return () => clearInterval(retryInterval);
   }, [refresh]);
+
+  // Shared SSE subscription (previously opened its own EventSource)
+  useSSE({
+    onAgents: (agentList) => {
+      setAgents(agentList);
+      setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
+      setLoading(false);
+    },
+  });
 
   return { agents, attentionCount, loading, refresh };
 }
