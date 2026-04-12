@@ -177,6 +177,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   useEffect(() => {
     composingRef.current = composing;
   }, [composing]);
+
+  // Latest preview payload, used to skip setContent when the backend
+  // returned the same content we already rendered. Preview responses can
+  // be hundreds of KB to several MB (Hybrid Scrollback), and feeding an
+  // identical string through setContent → AnsiUp → DOMPurify → innerHTML
+  // on every 100ms active-input tick was the main cause of input lag.
+  const lastContentRef = useRef<string | null>(null);
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
   // Wrap setter to persist preference per agent
@@ -254,6 +261,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setHasDomFocus(true);
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
+    lastContentRef.current = null;
   }, [agentId]);
 
   // Switch to input mode (passthrough ON)
@@ -343,11 +351,21 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       if (!data.content) return;
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
-      setContent(data.content);
+      // Skip the expensive AnsiUp + DOMPurify + innerHTML path when the
+      // content is byte-identical to the last render. Cursor position is
+      // still small and is updated unconditionally.
+      if (data.content !== lastContentRef.current) {
+        lastContentRef.current = data.content;
+        setContent(data.content);
+      }
       if (data.cursor_x != null && data.cursor_y != null) {
-        setCursorPos({ x: data.cursor_x, y: data.cursor_y });
+        setCursorPos((prev) =>
+          prev?.x === data.cursor_x && prev?.y === data.cursor_y
+            ? prev
+            : { x: data.cursor_x as number, y: data.cursor_y as number },
+        );
       } else {
-        setCursorPos(null);
+        setCursorPos((prev) => (prev === null ? prev : null));
       }
     } catch {
       // Agent may not have content yet
