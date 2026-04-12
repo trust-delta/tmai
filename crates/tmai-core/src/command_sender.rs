@@ -276,6 +276,24 @@ mod tests {
     }
 
     #[test]
+    fn send_variant_keys_literal_preserves_newlines() {
+        // Multi-line content must not be converted into multiple Enters — the
+        // caller is responsible for appending Enter explicitly when submitting.
+        let payload = "line1\nline2\n```\nfn main() {}\n```";
+        let bytes = SendVariant::KeysLiteral.to_pty_bytes(payload);
+        assert_eq!(bytes, payload.as_bytes());
+    }
+
+    #[test]
+    fn send_variant_text_and_enter_single_trailing_cr_for_multiline() {
+        // Exactly one trailing \r is appended, regardless of embedded newlines.
+        let payload = "line1\nline2";
+        let bytes = SendVariant::TextAndEnter.to_pty_bytes(payload);
+        assert_eq!(bytes, b"line1\nline2\r");
+        assert_eq!(bytes.iter().filter(|&&b| b == b'\r').count(), 1);
+    }
+
+    #[test]
     fn send_variant_names() {
         assert_eq!(SendVariant::Keys.name(), "send_keys");
         assert_eq!(SendVariant::KeysLiteral.name(), "send_keys_literal");

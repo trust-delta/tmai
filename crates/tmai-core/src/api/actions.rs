@@ -254,10 +254,32 @@ impl TmaiCore {
         Ok(())
     }
 
+    /// Type `text` into an agent's input and submit it with a guaranteed Enter.
+    ///
+    /// Builds on [`send_text`](Self::send_text) (which already types text and
+    /// sends one Enter) and appends a safety-net second Enter after a delay.
+    /// Claude Code's TUI treats multi-line bursts as a paste and can absorb the
+    /// first Enter into the paste buffer instead of submitting; sending a second
+    /// Enter after paste-detection has timed out guarantees submission.
+    ///
+    /// The extra Enter is a no-op when the input buffer is already empty (i.e.
+    /// when the first Enter did submit), so callers can rely on a single submit
+    /// per call in the common case.
+    pub async fn deliver_prompt(&self, id: &str, text: &str) -> Result<(), ApiError> {
+        self.send_text(id, text).await?;
+        let target = self.resolve_agent_key(id)?;
+        let cmd = self.require_command_sender()?;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        cmd.send_keys(&target, "Enter")?;
+        Ok(())
+    }
+
     /// Send a prompt to an agent with status-aware behavior.
     ///
-    /// - **Idle**: sends the prompt immediately (text + Enter).
-    /// - **Offline** (stopped): sends the prompt to restart the agent.
+    /// - **Idle**: submits the prompt immediately (text + Enter, with a safety-net
+    ///   second Enter so multi-line content is not left unsubmitted by Claude
+    ///   Code's paste detection).
+    /// - **Offline** (stopped): submits the prompt to restart the agent.
     /// - **Processing**: queues the prompt (max 5); delivered when agent becomes Idle.
     /// - **Other** (AwaitingApproval, Error, Unknown): queues like Processing.
     ///
@@ -285,7 +307,7 @@ impl TmaiCore {
 
         match status {
             AgentStatus::Idle | AgentStatus::Offline => {
-                self.send_text(&target, prompt).await?;
+                self.deliver_prompt(&target, prompt).await?;
                 let action = if status.is_idle() {
                     "sent"
                 } else {
@@ -923,6 +945,8 @@ impl TmaiCore {
     ///
     /// Any previous orchestrator for the same project is automatically demoted.
     /// Emits `AgentsUpdated` so all subscribers (WebUI, notifier) reflect the change.
+    /// Persists the `(project_path, claude_session_id)` record so the flag is
+    /// auto-restored across tmai restarts (#380).
     pub fn set_orchestrator(&self, id: &str) -> Result<(), ApiError> {
         let target = self.resolve_agent_key(id)?;
 
@@ -934,6 +958,14 @@ impl TmaiCore {
             .get(&target)
             .map(|a| a.cwd.clone())
             .unwrap_or_default();
+
+        // Preferred project path for persistence: git_common_dir when present,
+        // otherwise cwd.
+        let project_for_persist = state
+            .agents
+            .get(&target)
+            .and_then(|a| a.git_common_dir.clone())
+            .unwrap_or_else(|| project.clone());
 
         // Demote any existing orchestrator for the same project
         for agent in state.agents.values_mut() {
@@ -947,9 +979,109 @@ impl TmaiCore {
             agent.is_orchestrator = true;
         }
 
+        // Persist the identity record (Tier 1 bootstrap) if a store handle
+        // and session_id are available.
+        let store_handle = state.orchestrator_state.clone();
+        let pane_id = state.target_to_pane_id.get(&target).cloned();
         drop(state);
+
+        if let Some(store) = store_handle {
+            let session_id = pane_id.and_then(|pid| {
+                self.session_pane_map().read().iter().find_map(|(sid, p)| {
+                    if p == &pid {
+                        Some(sid.clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+            if let Some(sid) = session_id {
+                let mut w = store.write();
+                if let Err(e) = w.upsert_and_save(&project_for_persist, &sid) {
+                    tracing::warn!(error = %e, "failed to persist orchestrator state on set_orchestrator");
+                }
+            } else {
+                tracing::debug!(
+                    target = %target,
+                    "set_orchestrator: no Claude session_id resolvable — record not persisted",
+                );
+            }
+        }
+
         self.notify_agents_updated();
         Ok(())
+    }
+
+    /// Apply a poll-batch update to the shared state and attempt orchestrator
+    /// flag auto-restoration for every newly-inserted agent (#380).
+    ///
+    /// Mirrors `AppState::update_agents` and returns the same `TargetChange` list
+    /// so callers can emit `AgentTargetChanged` events. Newly-detected agents
+    /// that match a persisted orchestrator record (Tier 1) or single-candidate
+    /// Tier 2 criteria are silently promoted.
+    pub fn apply_agents_poll_update(
+        &self,
+        agents: Vec<crate::agents::MonitoredAgent>,
+    ) -> Vec<crate::state::TargetChange> {
+        let new_ids: Vec<String> = {
+            let s = self.state().read();
+            agents
+                .iter()
+                .filter(|a| !s.agents.contains_key(&a.id))
+                .map(|a| a.id.clone())
+                .collect()
+        };
+
+        let target_changes = {
+            let mut s = self.state().write();
+            let changes = s.update_agents(agents);
+            s.clear_error();
+            changes
+        };
+
+        if !new_ids.is_empty() {
+            let store_handle = self.state().read().orchestrator_state.clone();
+            if let Some(store) = store_handle {
+                let mut s = self.state().write();
+                for id in &new_ids {
+                    let outcome = crate::orchestrator_state::try_restore_agent(
+                        &mut s,
+                        id,
+                        &store,
+                        self.session_pane_map(),
+                    );
+                    match outcome {
+                        crate::orchestrator_state::restore::RestoreOutcome::Tier1Exact => {
+                            tracing::info!(
+                                target = %id,
+                                "orchestrator flag auto-restored (Tier 1 exact match)",
+                            );
+                        }
+                        crate::orchestrator_state::restore::RestoreOutcome::Tier2RotateSession => {
+                            tracing::info!(
+                                target = %id,
+                                "orchestrator flag auto-restored (Tier 2 session rotation)",
+                            );
+                        }
+                        crate::orchestrator_state::restore::RestoreOutcome::NoAction => {}
+                    }
+                }
+            }
+        }
+
+        target_changes
+    }
+
+    /// Refresh the `last_seen` timestamp on every persisted orchestrator record
+    /// whose agent is currently online. Intended to be called periodically
+    /// from the polling loop (#380).
+    pub fn refresh_orchestrator_last_seen(&self) {
+        let store_handle = self.state().read().orchestrator_state.clone();
+        let Some(store) = store_handle else {
+            return;
+        };
+        let s = self.state().read();
+        crate::orchestrator_state::update_last_seen_for_online(&s, &store, self.session_pane_map());
     }
 
     /// Compose a system prompt from orchestrator settings.
@@ -1201,6 +1333,42 @@ mod tests {
         let text = "x".repeat(MAX_TEXT_LENGTH);
         let result = core.send_text("main:0.0", &text).await;
         assert!(!matches!(result, Err(ApiError::InvalidInput { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_too_long() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        let long_text = "x".repeat(MAX_TEXT_LENGTH + 1);
+        let result = core.deliver_prompt("main:0.0", &long_text).await;
+        assert!(matches!(result, Err(ApiError::InvalidInput { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.deliver_prompt("nonexistent", "hello").await;
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.deliver_prompt("main:0.0", "hello").await;
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_multiline_no_command_sender() {
+        // Without a CommandSender, deliver_prompt should fail at the send_text stage
+        // (before any Enter is issued), proving that validation happens before typing.
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        let multiline = "line1\nline2\n```rust\nfn main() {}\n```\nend";
+        let result = core.deliver_prompt("main:0.0", multiline).await;
+        assert!(matches!(result, Err(ApiError::NoCommandSender)));
     }
 
     #[test]

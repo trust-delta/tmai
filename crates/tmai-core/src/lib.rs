@@ -14,6 +14,7 @@ pub mod hooks;
 pub mod ipc;
 pub mod monitor;
 pub mod orchestrator_notify;
+pub mod orchestrator_state;
 pub mod pty;
 pub mod pty_inject;
 pub mod runtime;
