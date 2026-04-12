@@ -31,6 +31,22 @@ fn validate_pane_id(pane_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Pane dimensions + cursor snapshot, queried in a single tmux call.
+///
+/// Used to split `capture_pane_full` output into history/live regions so the
+/// preview client can skip re-rendering scrollback on every poll tick.
+#[derive(Debug, Clone, Copy)]
+pub struct PaneView {
+    /// Cursor column (0-indexed).
+    pub cursor_x: u32,
+    /// Cursor row within the visible region (0-indexed, 0..pane_height).
+    pub cursor_y: u32,
+    /// Scrollback line count (lines before the visible region in full capture).
+    pub history_size: u32,
+    /// Visible region height in lines.
+    pub pane_height: u32,
+}
+
 /// Client for interacting with tmux
 #[derive(Clone)]
 pub struct TmuxClient {
@@ -210,6 +226,17 @@ impl TmuxClient {
     /// - `absolute_cursor_y`: absolute row in the full capture output (history + visible),
     ///   suitable for use with `capture_pane_full` output
     pub fn get_cursor_position(&self, target: &str) -> Result<(u32, u32)> {
+        let view = self.get_pane_view_info(target)?;
+        Ok((view.cursor_x, view.history_size + view.cursor_y))
+    }
+
+    /// Query pane dimensions and cursor in a single tmux call.
+    ///
+    /// Used by the preview endpoint to split `capture_pane_full` output into
+    /// the immutable scrollback history (lines `[0, history_size)`) and the
+    /// live visible region (lines `[history_size, history_size + pane_height)`).
+    /// Splitting lets the client skip re-rendering history on every poll tick.
+    pub fn get_pane_view_info(&self, target: &str) -> Result<PaneView> {
         validate_target(target)?;
         let output = Command::new("tmux")
             .args([
@@ -217,15 +244,15 @@ impl TmuxClient {
                 "-p",
                 "-t",
                 target,
-                "#{cursor_x} #{cursor_y} #{history_size}",
+                "#{cursor_x} #{cursor_y} #{history_size} #{pane_height}",
             ])
             .output()
-            .context("Failed to execute tmux display-message for cursor")?;
+            .context("Failed to execute tmux display-message for pane view")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!(
-                "tmux display-message (cursor) failed for {}: {}",
+                "tmux display-message (pane view) failed for {}: {}",
                 target,
                 stderr
             );
@@ -234,14 +261,19 @@ impl TmuxClient {
         let text = String::from_utf8_lossy(&output.stdout);
         let text = text.trim();
         let parts: Vec<&str> = text.split(' ').collect();
-        if parts.len() != 3 {
-            anyhow::bail!("unexpected cursor position format: {:?}", text);
+        if parts.len() != 4 {
+            anyhow::bail!("unexpected pane view format: {:?}", text);
         }
-        let x: u32 = parts[0].parse().context("failed to parse cursor_x")?;
-        let y: u32 = parts[1].parse().context("failed to parse cursor_y")?;
-        let history: u32 = parts[2].parse().context("failed to parse history_size")?;
-        let absolute_y = history + y;
-        Ok((x, absolute_y))
+        let cursor_x: u32 = parts[0].parse().context("failed to parse cursor_x")?;
+        let cursor_y: u32 = parts[1].parse().context("failed to parse cursor_y")?;
+        let history_size: u32 = parts[2].parse().context("failed to parse history_size")?;
+        let pane_height: u32 = parts[3].parse().context("failed to parse pane_height")?;
+        Ok(PaneView {
+            cursor_x,
+            cursor_y,
+            history_size,
+            pane_height,
+        })
     }
 
     /// Sends keys to a specific pane

@@ -13,7 +13,7 @@ pub use tmux_adapter::TmuxAdapter;
 
 use anyhow::Result;
 
-use crate::tmux::PaneInfo;
+use crate::tmux::{PaneInfo, PaneView};
 
 /// Abstraction over the terminal multiplexer / process runtime.
 ///
@@ -58,6 +58,13 @@ pub trait RuntimeAdapter: Send + Sync {
     /// Get terminal cursor position (col, row) for a pane, both 0-indexed.
     /// Returns None if the runtime does not support cursor queries.
     fn get_cursor_position(&self, _target: &str) -> Result<Option<(u32, u32)>> {
+        Ok(None)
+    }
+
+    /// Get pane dimensions + cursor in a single call, used by the preview
+    /// endpoint to split scrollback history from the live visible region.
+    /// Returns None if the runtime does not support the query.
+    fn get_pane_view_info(&self, _target: &str) -> Result<Option<PaneView>> {
         Ok(None)
     }
 

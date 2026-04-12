@@ -6,7 +6,7 @@
 use anyhow::Result;
 
 use super::RuntimeAdapter;
-use crate::tmux::{PaneInfo, TmuxClient};
+use crate::tmux::{PaneInfo, PaneView, TmuxClient};
 
 /// RuntimeAdapter implementation backed by tmux.
 pub struct TmuxAdapter {
@@ -61,6 +61,10 @@ impl RuntimeAdapter for TmuxAdapter {
 
     fn get_cursor_position(&self, target: &str) -> Result<Option<(u32, u32)>> {
         self.client.get_cursor_position(target).map(Some)
+    }
+
+    fn get_pane_view_info(&self, target: &str) -> Result<Option<PaneView>> {
+        self.client.get_pane_view_info(target).map(Some)
     }
 
     // --- Control ---

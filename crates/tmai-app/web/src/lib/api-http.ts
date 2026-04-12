@@ -803,9 +803,13 @@ export const api = {
       body: JSON.stringify(input),
     }),
   getPreview: (target: string) =>
-    apiFetch<{ content: string; cursor_x?: number; cursor_y?: number }>(
-      `/agents/${encodeURIComponent(target)}/preview`,
-    ),
+    apiFetch<{
+      content: string;
+      lines: number;
+      live_start_line: number;
+      cursor_x?: number;
+      cursor_y?: number;
+    }>(`/agents/${encodeURIComponent(target)}/preview`),
   // Fast path: only the last `lines` rows of the ANSI preview cache.
   getPreviewInput: (target: string, lines = 8) =>
     apiFetch<{ content: string; lines: number }>(
