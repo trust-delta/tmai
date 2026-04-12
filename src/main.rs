@@ -209,6 +209,7 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         if let Err(e) = tmai::mcp::client::write_api_info(settings.web.port, &token) {
             eprintln!("tmai: warning: failed to write API info: {e}");
         }
+        tmai::mcp::client::spawn_api_info_watchdog(settings.web.port, token.clone());
     }
 
     // Start orchestrator notifier if enabled
@@ -423,6 +424,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     if let Err(e) = tmai::mcp::client::write_api_info(port, &token) {
         eprintln!("tmai: warning: failed to write API info: {e}");
     }
+    tmai::mcp::client::spawn_api_info_watchdog(port, token.clone());
 
     let url = format!("http://localhost:{port}/?token={token}");
     eprintln!("tmai: web server running at {url}");
