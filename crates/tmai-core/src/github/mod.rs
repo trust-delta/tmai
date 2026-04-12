@@ -870,127 +870,127 @@ pub async fn get_pr_comments(repo_dir: &str, pr_number: u64) -> Option<Vec<PrCom
         return None;
     }
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let resp: GhPrCommentsResponse = serde_json::from_slice(&output.stdout).ok()?;
+    Some(build_pr_comments(resp))
+}
 
+#[derive(Debug, serde::Deserialize, Default)]
+struct GhPrCommentsResponse {
+    #[serde(default)]
+    comments: Vec<GhConversationComment>,
+    #[serde(default)]
+    reviews: Vec<GhReview>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GhAuthor {
+    #[serde(default)]
+    login: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GhConversationComment {
+    #[serde(default)]
+    author: Option<GhAuthor>,
+    #[serde(default)]
+    body: String,
+    #[serde(default, rename = "createdAt")]
+    created_at: String,
+    #[serde(default)]
+    url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GhReview {
+    #[serde(default)]
+    author: Option<GhAuthor>,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default, rename = "submittedAt")]
+    submitted_at: Option<String>,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(default)]
+    comments: Vec<GhReviewInlineComment>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GhReviewInlineComment {
+    #[serde(default)]
+    body: String,
+    #[serde(default, rename = "createdAt")]
+    created_at: String,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default, rename = "diffHunk")]
+    diff_hunk: Option<String>,
+}
+
+/// Convert a resolved Option<GhAuthor> into the canonical login, preserving
+/// the prior "unknown" fallback for missing or empty authors.
+fn author_login(author: Option<GhAuthor>) -> String {
+    author
+        .map(|a| a.login)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Flatten the deserialized PR comments/reviews into the public `PrComment`
+/// timeline, sorted by created_at.
+fn build_pr_comments(resp: GhPrCommentsResponse) -> Vec<PrComment> {
     let mut result = Vec::new();
 
-    // Conversation comments: {author:{login}, body, createdAt, url}
-    if let Some(comments) = json.get("comments").and_then(|v| v.as_array()) {
-        for c in comments {
-            let author = c
-                .pointer("/author/login")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let body = c
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let created_at = c
-                .get("createdAt")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let url = c
-                .get("url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+    for c in resp.comments {
+        result.push(PrComment {
+            author: author_login(c.author),
+            body: c.body,
+            created_at: c.created_at,
+            url: c.url,
+            comment_type: "comment".to_string(),
+            path: None,
+            diff_hunk: None,
+        });
+    }
+
+    for r in resp.reviews {
+        let review_author = author_login(r.author);
+
+        if !r.body.is_empty() {
+            let created_at = r
+                .submitted_at
+                .clone()
+                .or(r.created_at.clone())
+                .unwrap_or_default();
             result.push(PrComment {
-                author,
-                body,
+                author: review_author.clone(),
+                body: format!("[{}] {}", r.state, r.body),
                 created_at,
-                url,
-                comment_type: "comment".to_string(),
+                url: String::new(),
+                comment_type: "review".to_string(),
                 path: None,
                 diff_hunk: None,
             });
         }
-    }
 
-    // Reviews: {author:{login}, body, state, comments:[{path, body, diffHunk, createdAt, url}]}
-    if let Some(reviews) = json.get("reviews").and_then(|v| v.as_array()) {
-        for r in reviews {
-            let review_author = r
-                .pointer("/author/login")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-
-            // Top-level review body (if non-empty)
-            let review_body = r
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if !review_body.is_empty() {
-                let review_state = r
-                    .get("state")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let created_at = r
-                    .get("submittedAt")
-                    .or_else(|| r.get("createdAt"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                result.push(PrComment {
-                    author: review_author.clone(),
-                    body: format!("[{}] {}", review_state, review_body),
-                    created_at,
-                    url: String::new(),
-                    comment_type: "review".to_string(),
-                    path: None,
-                    diff_hunk: None,
-                });
-            }
-
-            // Inline review comments
-            if let Some(comments) = r.get("comments").and_then(|v| v.as_array()) {
-                for c in comments {
-                    let body = c
-                        .get("body")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let created_at = c
-                        .get("createdAt")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let url = c
-                        .get("url")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let path = c
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let diff_hunk = c
-                        .get("diffHunk")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    result.push(PrComment {
-                        author: review_author.clone(),
-                        body,
-                        created_at,
-                        url,
-                        comment_type: "review".to_string(),
-                        path,
-                        diff_hunk,
-                    });
-                }
-            }
+        for c in r.comments {
+            result.push(PrComment {
+                author: review_author.clone(),
+                body: c.body,
+                created_at: c.created_at,
+                url: c.url,
+                comment_type: "review".to_string(),
+                path: c.path,
+                diff_hunk: c.diff_hunk,
+            });
         }
     }
 
-    // Sort by created_at
     result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-
-    Some(result)
+    result
 }
 
 /// Fetch changed files for a pull request
@@ -1640,6 +1640,98 @@ mod tests {
     fn test_compute_rollup_pending_lowercase() {
         let checks = vec![check_run(None, Some("in_progress"))];
         assert!(matches!(compute_rollup(&checks), CheckStatus::Pending));
+    }
+
+    #[test]
+    fn test_build_pr_comments_full() {
+        let json = serde_json::json!({
+            "comments": [
+                {
+                    "author": {"login": "alice"},
+                    "body": "Looks good",
+                    "createdAt": "2026-04-10T10:00:00Z",
+                    "url": "https://example.com/c/1"
+                },
+                {
+                    "author": null,
+                    "body": "",
+                    "createdAt": "2026-04-10T09:00:00Z"
+                }
+            ],
+            "reviews": [
+                {
+                    "author": {"login": "bob"},
+                    "body": "Please revise",
+                    "state": "CHANGES_REQUESTED",
+                    "submittedAt": "2026-04-10T11:00:00Z",
+                    "comments": [
+                        {
+                            "body": "nit",
+                            "createdAt": "2026-04-10T11:05:00Z",
+                            "url": "https://example.com/r/1",
+                            "path": "src/lib.rs",
+                            "diffHunk": "@@ -1,1 +1,1 @@"
+                        }
+                    ]
+                },
+                {
+                    "author": {"login": "carol"},
+                    "body": "",
+                    "state": "APPROVED",
+                    "createdAt": "2026-04-10T12:00:00Z"
+                }
+            ]
+        });
+
+        let resp: GhPrCommentsResponse = serde_json::from_value(json).unwrap();
+        let out = build_pr_comments(resp);
+
+        // 2 conversation + 1 review body + 1 inline = 4 (empty review body skipped)
+        assert_eq!(out.len(), 4);
+
+        // Sorted by created_at ascending
+        assert_eq!(out[0].created_at, "2026-04-10T09:00:00Z");
+        assert_eq!(out[0].author, "unknown");
+        assert_eq!(out[0].comment_type, "comment");
+
+        assert_eq!(out[1].created_at, "2026-04-10T10:00:00Z");
+        assert_eq!(out[1].author, "alice");
+        assert_eq!(out[1].body, "Looks good");
+
+        assert_eq!(out[2].created_at, "2026-04-10T11:00:00Z");
+        assert_eq!(out[2].author, "bob");
+        assert_eq!(out[2].body, "[CHANGES_REQUESTED] Please revise");
+        assert_eq!(out[2].comment_type, "review");
+
+        assert_eq!(out[3].created_at, "2026-04-10T11:05:00Z");
+        assert_eq!(out[3].author, "bob");
+        assert_eq!(out[3].path.as_deref(), Some("src/lib.rs"));
+        assert_eq!(out[3].diff_hunk.as_deref(), Some("@@ -1,1 +1,1 @@"));
+    }
+
+    #[test]
+    fn test_build_pr_comments_empty() {
+        let resp: GhPrCommentsResponse = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(build_pr_comments(resp).is_empty());
+    }
+
+    #[test]
+    fn test_build_pr_comments_review_created_at_fallback() {
+        // Review has body but only createdAt (no submittedAt) — should use createdAt
+        let json = serde_json::json!({
+            "reviews": [
+                {
+                    "author": {"login": "dave"},
+                    "body": "nit",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-04-11T00:00:00Z"
+                }
+            ]
+        });
+        let resp: GhPrCommentsResponse = serde_json::from_value(json).unwrap();
+        let out = build_pr_comments(resp);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].created_at, "2026-04-11T00:00:00Z");
     }
 
     #[test]
