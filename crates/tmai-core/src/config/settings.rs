@@ -866,6 +866,10 @@ pub struct OrchestratorSettings {
     #[serde(default)]
     pub guardrails: GuardrailsSettings,
 
+    /// Templates used when `EventHandling::AutoAction` directly instructs a worker
+    #[serde(default)]
+    pub auto_action_templates: crate::auto_action::AutoActionTemplates,
+
     /// Enable automatic PR/CI status monitoring with notifications
     #[serde(default)]
     pub pr_monitor_enabled: bool,
@@ -1157,6 +1161,7 @@ impl Default for OrchestratorSettings {
             rules: OrchestratorRules::default(),
             notify: OrchestratorNotifySettings::default(),
             guardrails: GuardrailsSettings::default(),
+            auto_action_templates: crate::auto_action::AutoActionTemplates::default(),
             pr_monitor_enabled: false,
             pr_monitor_interval_secs: default_pr_monitor_interval(),
         }
