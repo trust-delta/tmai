@@ -245,19 +245,25 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
         core.event_sender(),
     );
 
-    // Start AutoActionExecutor (directly instructs workers on configured events)
+    // Start AutoActionExecutor (directly instructs workers on configured events).
+    // Uses the SAME notify_settings Arc as OrchestratorNotifier so WebUI settings
+    // edits propagate to both services without a restart.
     if settings.orchestrator.enabled {
-        let auto_action_notify = std::sync::Arc::new(parking_lot::RwLock::new(
-            settings.orchestrator.notify.clone(),
-        ));
+        let notify_settings = app
+            .shared_state()
+            .read()
+            .notify_settings
+            .clone()
+            .expect("notify_settings must be set when orchestrator is enabled");
         let auto_action_templates = std::sync::Arc::new(parking_lot::RwLock::new(
             settings.orchestrator.auto_action_templates.clone(),
         ));
+        app.shared_state().write().auto_action_templates = Some(auto_action_templates.clone());
         tmai_core::auto_action::AutoActionExecutor::spawn(
             app.shared_state(),
             core.subscribe(),
             core.event_sender(),
-            auto_action_notify,
+            notify_settings,
             guardrails_settings,
             auto_action_templates,
             std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
@@ -470,19 +476,24 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         core.event_sender(),
     );
 
-    // Start AutoActionExecutor (directly instructs workers on configured events)
+    // Start AutoActionExecutor (directly instructs workers on configured events).
+    // Uses the SAME notify_settings Arc as OrchestratorNotifier so WebUI settings
+    // edits propagate to both services without a restart.
     if settings.orchestrator.enabled {
-        let auto_action_notify = std::sync::Arc::new(parking_lot::RwLock::new(
-            settings.orchestrator.notify.clone(),
-        ));
+        let notify_settings = state
+            .read()
+            .notify_settings
+            .clone()
+            .expect("notify_settings must be set when orchestrator is enabled");
         let auto_action_templates = std::sync::Arc::new(parking_lot::RwLock::new(
             settings.orchestrator.auto_action_templates.clone(),
         ));
+        state.write().auto_action_templates = Some(auto_action_templates.clone());
         tmai_core::auto_action::AutoActionExecutor::spawn(
             state.clone(),
             core.subscribe(),
             core.event_sender(),
-            auto_action_notify,
+            notify_settings,
             guardrails_settings,
             auto_action_templates,
             std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),

@@ -1650,7 +1650,7 @@ pub async fn update_orchestrator_settings(
     tmai_core::config::Settings::save_project_orchestrator(q.project.as_deref(), &updated);
     core.reload_settings();
 
-    // Hot-reload the live notifier and guardrails services if running
+    // Hot-reload the live notifier, guardrails, and auto-action services if running
     #[allow(deprecated)]
     let state = core.raw_state();
     let s = state.read();
@@ -1659,6 +1659,9 @@ pub async fn update_orchestrator_settings(
     }
     if let Some(ref gs) = s.guardrails_settings {
         *gs.write() = updated.guardrails;
+    }
+    if let Some(ref aat) = s.auto_action_templates {
+        *aat.write() = updated.auto_action_templates;
     }
     drop(s);
 
