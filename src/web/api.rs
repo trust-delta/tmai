@@ -1606,6 +1606,12 @@ pub async fn update_orchestrator_settings(
                         .and_then(|t| t.guardrail_exceeded.clone())
                         .unwrap_or_else(|| n.templates.guardrail_exceeded.clone()),
                 },
+                // #372 buffer-when-busy fields inherit current values when
+                // not present in the request body. They still hot-reload via
+                // the existing `*ns.write() = updated.notify` block below.
+                buffer_when_busy: n.buffer_when_busy,
+                buffer_ttl_secs: n.buffer_ttl_secs,
+                buffer_max_messages: n.buffer_max_messages,
             }
         },
         guardrails: {

@@ -548,6 +548,12 @@ pub struct AppState {
     /// Shared handle to auto-action templates (hot-reloadable from WebUI).
     /// None if orchestrator is disabled or AutoActionExecutor is not started.
     pub auto_action_templates: Option<crate::auto_action::SharedAutoActionTemplates>,
+
+    /// Shared buffer for notifications targeted at busy orchestrators (#372).
+    /// None until OrchestratorNotifier is spawned. Shared (clone of `Arc`)
+    /// between the producer (notifier busy branch) and the consumer
+    /// (flush-on-idle / flush-on-appear).
+    pub orchestrator_notify_buffer: Option<crate::orchestrator_notify::SharedNotifyBuffer>,
 }
 
 impl AppState {
@@ -594,6 +600,7 @@ impl AppState {
             notify_settings: None,
             guardrails_settings: None,
             auto_action_templates: None,
+            orchestrator_notify_buffer: None,
         }
     }
 
