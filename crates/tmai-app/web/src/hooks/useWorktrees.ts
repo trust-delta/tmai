@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, subscribeSSE, type WorktreeSnapshot } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type WorktreeSnapshot } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
 
 // Hook to fetch and reactively update worktree list via SSE events
 export function useWorktrees(): {
@@ -21,26 +22,40 @@ export function useWorktrees(): {
     }
   }, []);
 
+  // Initial fetch only on mount; subsequent updates are debounced below.
   useEffect(() => {
-    // Initial fetch
     refresh();
-
-    // Re-fetch on worktree or agent changes
-    const { unlisten } = subscribeSSE({
-      onAgents: () => {
-        refresh();
-      },
-      onEvent: (eventName) => {
-        if (eventName === "worktree_created" || eventName === "worktree_removed") {
-          refresh();
-        }
-      },
-    });
-
-    return () => {
-      unlisten();
-    };
   }, [refresh]);
+
+  // Debounce rapid onAgents bursts (cold-start PR flood, monitor ticks)
+  // so we don't re-GET /api/worktrees per event. 250ms collapses a burst
+  // into one refresh.
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      refresh();
+    }, 250);
+  }, [refresh]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useSSE({
+    onAgents: scheduleRefresh,
+    onEvent: (eventName) => {
+      if (eventName === "worktree_created" || eventName === "worktree_removed") {
+        refresh();
+      }
+    },
+  });
 
   return { worktrees, loading, refresh };
 }

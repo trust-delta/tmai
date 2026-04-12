@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, subscribeSSE, type UsageSnapshot } from "@/lib/api";
+import { api, type UsageSnapshot } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
 
 // Color class based on usage percentage
 function meterColor(percent: number): string {
@@ -37,18 +38,15 @@ export function UsagePanel() {
     api.getUsage().then(setUsage).catch(console.error);
   }, []);
 
-  // SSE subscription for real-time updates
-  useEffect(() => {
-    const { unlisten } = subscribeSSE({
-      onEvent: (eventName, data) => {
-        if (eventName === "usage") {
-          setUsage(data as UsageSnapshot);
-          setFetching(false);
-        }
-      },
-    });
-    return unlisten;
-  }, []);
+  // SSE subscription for real-time updates (shared connection)
+  useSSE({
+    onEvent: (eventName, data) => {
+      if (eventName === "usage") {
+        setUsage(data as UsageSnapshot);
+        setFetching(false);
+      }
+    },
+  });
 
   // Trigger a fetch
   const handleFetch = useCallback(() => {

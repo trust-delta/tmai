@@ -20,7 +20,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, isAiAgent, type Selection, statusName, subscribeSSE } from "@/lib/api";
+import { api, isAiAgent, type Selection, statusName } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -46,18 +47,15 @@ export function App() {
   const { handleAgentStopped } = useIdleNotification(agents, notifyConfig);
 
   // Listen for agent_stopped SSE event for immediate hook-based notifications
-  useEffect(() => {
-    const { unlisten } = subscribeSSE({
-      onEvent: (eventName, data) => {
-        if (eventName === "agent_stopped") {
-          handleAgentStopped(
-            data as { target: string; cwd: string; last_assistant_message?: string },
-          );
-        }
-      },
-    });
-    return unlisten;
-  }, [handleAgentStopped]);
+  useSSE({
+    onEvent: (eventName, data) => {
+      if (eventName === "agent_stopped") {
+        handleAgentStopped(
+          data as { target: string; cwd: string; last_assistant_message?: string },
+        );
+      }
+    },
+  });
   const [selection, setSelection] = useState<Selection | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
