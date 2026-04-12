@@ -185,12 +185,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // on every 100ms active-input tick was the main cause of input lag.
   const lastContentRef = useRef<string | null>(null);
 
-  // Input-box overlay: a small <div> at the bottom of the preview that
-  // refreshes at 100ms cadence while the user is actively typing, via
-  // the /preview-input fast path. The heavy full preview above keeps
-  // its slower cadence and doesn't need to rewrite on every keystroke.
-  const inputBoxRef = useRef<HTMLDivElement>(null);
-  const lastInputBoxContentRef = useRef<string>("");
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
   // Wrap setter to persist preference per agent
@@ -239,7 +233,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Default polling intervals (overridden by server settings)
   const pollSettings = useRef<PreviewSettingsResponse>({
     show_cursor: true,
-    preview_poll_focused_ms: 500,
+    preview_poll_focused_ms: 200,
     preview_poll_unfocused_ms: 2000,
     preview_poll_active_input_ms: 50,
     preview_active_input_window_ms: 2000,
@@ -270,8 +264,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setComposing(false);
     lastContentRef.current = null;
     lastHtmlRef.current = "";
-    lastInputBoxContentRef.current = "";
-    if (inputBoxRef.current) inputBoxRef.current.innerHTML = "";
   }, [agentId]);
 
   // Switch to input mode (passthrough ON)
@@ -339,10 +331,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // visible lag that shows up when the backend rewrites the preview a
   // bit later (tmux repaint after send-keys); the active-input window
   // keeps the preview caught up while the user is actively typing.
-  // Full preview polls at the focused/unfocused cadence only — the fast
-  // active-input cadence now drives the input-box overlay instead, which
-  // fetches only the last few lines via /preview-input and writes to a
-  // small dedicated <div> without touching the 1.4MB main content tree.
+  // Preview polling cadence: focused vs unfocused only. Keystroke-driven
+  // post-passthrough fetches (50ms + 200ms) complement the steady poll.
   const getPollInterval = useCallback(() => {
     const s = pollSettings.current;
     return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
@@ -397,53 +387,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       clearTimeout(timer);
     };
   }, [fetchPreview, getPollInterval]);
-
-  // Input-box fast path: poll /preview-input and write the last few lines
-  // directly into a tiny dedicated <div>. Skipped during IME composition.
-  // Errors are logged (not silently swallowed) so a broken render path
-  // surfaces in devtools instead of leaving the overlay blank.
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      if (!composingRef.current) {
-        let data: { content: string; lines: number } | null = null;
-        try {
-          data = await api.getPreviewInput(agentId, 10);
-        } catch (err) {
-          console.warn("[tmai] preview-input fetch failed:", err);
-        }
-        if (data?.content && inputBoxRef.current) {
-          const el = inputBoxRef.current;
-          if (data.content !== lastInputBoxContentRef.current) {
-            lastInputBoxContentRef.current = data.content;
-            let html: string;
-            try {
-              html = DOMPurify.sanitize(ansi.ansi_to_html(data.content), {
-                ADD_ATTR: ["data-tmai-cursor"],
-              });
-            } catch (err) {
-              console.warn("[tmai] preview-input ANSI render failed:", err);
-              // Fallback: plain text so the overlay still shows something
-              html = DOMPurify.sanitize(data.content);
-            }
-            try {
-              el.innerHTML = html;
-            } catch (err) {
-              console.warn("[tmai] preview-input innerHTML assign failed:", err);
-            }
-          }
-        }
-      }
-      const interval = pollSettings.current.preview_poll_active_input_ms;
-      timer = setTimeout(tick, interval);
-    };
-    let timer = setTimeout(tick, 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [agentId, ansi]);
 
   // Fetch transcript records (slower cadence — history changes less often)
   const fetchTranscript = useCallback(async () => {
@@ -728,21 +671,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         )}
         <div ref={bottomRef} />
       </div>
-
-      {/* Input-box fast overlay — pinned to the bottom of the preview
-          container. Refreshed at 100ms via /preview-input, small payload,
-          writes innerHTML on a dedicated <div> so focus in the hidden
-          <input> below is never churned. */}
-      <div
-        ref={inputBoxRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-0 right-0 overflow-hidden whitespace-pre-wrap break-words bg-[#0c0c0c] px-3 py-1"
-        style={{
-          fontFamily: MONO_FONT_STACK,
-          zIndex: 5,
-          maxHeight: "14em",
-        }}
-      />
 
       {/* Hidden IME input — outside scroll container to avoid interfering with text selection */}
       <input
