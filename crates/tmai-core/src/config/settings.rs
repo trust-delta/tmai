@@ -430,7 +430,7 @@ fn default_preview_poll_unfocused_ms() -> u64 {
 }
 
 fn default_preview_poll_active_input_ms() -> u64 {
-    100
+    50
 }
 
 fn default_preview_active_input_window_ms() -> u64 {

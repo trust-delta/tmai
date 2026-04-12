@@ -241,7 +241,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     show_cursor: true,
     preview_poll_focused_ms: 500,
     preview_poll_unfocused_ms: 2000,
-    preview_poll_active_input_ms: 100,
+    preview_poll_active_input_ms: 50,
     preview_active_input_window_ms: 2000,
   });
 
