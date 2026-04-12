@@ -3200,7 +3200,10 @@ pub async fn perform_dispatch_review(
         }
     };
 
-    // Set pr_number metadata and register pending worktree
+    // Set pr_number metadata and register pending worktree.
+    // Pending metadata is keyed by worktree path (#414) so concurrent
+    // dispatches cannot cross-wire attribution even if the spawn layer
+    // reports a duplicate session_id.
     {
         #[allow(deprecated)]
         let state = core.raw_state();
@@ -3209,7 +3212,7 @@ pub async fn perform_dispatch_review(
             agent.pr_number = Some(pr_number);
         } else {
             s.pending_agent_metadata.insert(
-                resp.session_id.clone(),
+                worktree_path.clone(),
                 tmai_core::state::PendingAgentMetadata {
                     pr_number: Some(pr_number),
                     ..Default::default()
@@ -3371,7 +3374,10 @@ pub async fn spawn_worktree(
         spawn_in_pty(&core, &spawn_req).await
     };
 
-    // Record pending agent state to prevent premature worktree deletion
+    // Record pending agent state to prevent premature worktree deletion.
+    // Pending metadata is keyed by worktree path (#414) so concurrent
+    // dispatches cannot cross-wire attribution even if the spawn layer
+    // reports a duplicate session_id.
     if let Ok(ref resp) = result {
         #[allow(deprecated)]
         let state = core.raw_state();
@@ -3383,7 +3389,7 @@ pub async fn spawn_worktree(
         } else {
             // Agent not yet in state (tmux spawn) — store for deferred application
             s.pending_agent_metadata.insert(
-                resp.session_id.clone(),
+                worktree_path.clone(),
                 tmai_core::state::PendingAgentMetadata {
                     issue_number: req.issue_number,
                     worktree_base_branch: effective_base,

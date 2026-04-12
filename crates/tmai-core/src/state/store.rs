@@ -539,7 +539,10 @@ pub struct AppState {
     pub pending_orchestrator_ids: HashSet<String>,
 
     /// Pending metadata for agents not yet detected by the poller.
-    /// Key: session_id from spawn response. Applied and removed on first agent detection.
+    /// Key: worktree path (agent `cwd`). Keyed by a stable path rather than
+    /// the spawn-returned `session_id` so that concurrent dispatches cannot
+    /// cross-wire attribution if the spawn layer ever reports a duplicate or
+    /// stale target (#414). Applied and removed on first agent detection.
     /// Used by dispatch_issue (issue_number) and dispatch_review (pr_number).
     pub pending_agent_metadata: HashMap<String, PendingAgentMetadata>,
 
@@ -767,10 +770,8 @@ impl AppState {
                     if self.pending_orchestrator_ids.remove(old_target) {
                         self.pending_orchestrator_ids.insert(new_target.clone());
                     }
-                    // Migrate pending_agent_metadata if keyed by old target
-                    if let Some(meta) = self.pending_agent_metadata.remove(old_target) {
-                        self.pending_agent_metadata.insert(new_target.clone(), meta);
-                    }
+                    // pending_agent_metadata is keyed by worktree path
+                    // (stable across pane renumbering, #414) — no migration.
                     // Update target_to_pane_id mapping
                     if let Some(pane_id) = self.target_to_pane_id.remove(old_target) {
                         self.target_to_pane_id.insert(new_target.clone(), pane_id);
@@ -870,8 +871,10 @@ impl AppState {
                 if self.pending_orchestrator_ids.remove(&id) {
                     agent.is_orchestrator = true;
                 }
-                // Apply pending metadata (issue_number, pr_number, base_branch)
-                if let Some(meta) = self.pending_agent_metadata.remove(&id) {
+                // Apply pending metadata (issue_number, pr_number, base_branch).
+                // Keyed by worktree path (agent.cwd) — stable across pane
+                // renumbering and robust to duplicate spawn session_ids (#414).
+                if let Some(meta) = self.pending_agent_metadata.remove(&agent.cwd) {
                     if meta.issue_number.is_some() {
                         agent.issue_number = meta.issue_number;
                     }
@@ -2263,38 +2266,67 @@ mod tests {
         );
     }
 
+    /// Helper: create a test agent at a specific pane target and worktree cwd.
+    fn create_test_agent_with_cwd(id: &str, cwd: &str) -> MonitoredAgent {
+        MonitoredAgent::new(
+            id.to_string(),
+            AgentType::ClaudeCode,
+            "Test".to_string(),
+            cwd.to_string(),
+            0,
+            "main".to_string(),
+            "window".to_string(),
+            0,
+            0,
+        )
+    }
+
+    /// Regression test for #414: pending_agent_metadata is keyed by worktree path
+    /// (not the spawn-returned session_id), so parallel dispatch_issue calls do
+    /// not cross-wire issue_number/pr_number attribution even if the spawn layer
+    /// ever reports a duplicate or stale session_id.
     #[test]
-    fn test_pid_reconciliation_migrates_pending_metadata() {
+    fn test_pending_metadata_keyed_by_worktree_path_attributes_correctly() {
         let mut state = AppState::new();
+        let wt_399 = "/tmp/wt/399-feat-queue".to_string();
+        let wt_413 = "/tmp/wt/413-perf-preview".to_string();
 
-        let agent = create_test_agent_with_pid("main:0.2", 5000);
-        state.update_agents(vec![agent]);
-
-        // Queue pending metadata for old target
-        let meta = PendingAgentMetadata {
-            issue_number: Some(42),
-            pr_number: Some(100),
-            ..Default::default()
-        };
-        state
-            .pending_agent_metadata
-            .insert("main:0.2".to_string(), meta);
-
-        // Pane renumbered
-        let renumbered = create_test_agent_with_pid("main:0.1", 5000);
-        state.update_agents(vec![renumbered]);
-
-        assert!(
-            !state.pending_agent_metadata.contains_key("main:0.2"),
-            "old target must be removed from pending_agent_metadata"
+        // Simulates two parallel dispatch_issue calls queuing metadata for
+        // their respective worktrees. The tmux spawn may land them on any
+        // pane (here 2.3 runs issue-399, 2.2 runs issue-413).
+        state.pending_agent_metadata.insert(
+            wt_399.clone(),
+            PendingAgentMetadata {
+                issue_number: Some(399),
+                ..Default::default()
+            },
         );
-        let migrated = state.pending_agent_metadata.get("main:0.1");
-        assert!(
-            migrated.is_some(),
-            "metadata must be migrated to new target"
+        state.pending_agent_metadata.insert(
+            wt_413.clone(),
+            PendingAgentMetadata {
+                issue_number: Some(413),
+                ..Default::default()
+            },
         );
-        assert_eq!(migrated.unwrap().issue_number, Some(42));
-        assert_eq!(migrated.unwrap().pr_number, Some(100));
+
+        let agent_22 = create_test_agent_with_cwd("main:2.2", &wt_413);
+        let agent_23 = create_test_agent_with_cwd("main:2.3", &wt_399);
+        state.update_agents(vec![agent_22, agent_23]);
+
+        assert_eq!(
+            state.agents["main:2.2"].issue_number,
+            Some(413),
+            "pane 2.2 runs worktree 413 → must be attributed issue 413"
+        );
+        assert_eq!(
+            state.agents["main:2.3"].issue_number,
+            Some(399),
+            "pane 2.3 runs worktree 399 → must be attributed issue 399"
+        );
+        assert!(
+            state.pending_agent_metadata.is_empty(),
+            "pending metadata must be consumed on first detection"
+        );
     }
 
     #[test]
