@@ -1494,6 +1494,36 @@ impl Settings {
         &self.orchestrator
     }
 
+    /// Serialize a full `OrchestratorSettings` as a `toml_edit::Item::Table`
+    /// so both global and per-project save paths persist every field (not just
+    /// the hand-enumerated `enabled`/`role`/`rules.*` subset that caused #376).
+    ///
+    /// Returns `None` if serialization fails — callers should skip writing
+    /// rather than corrupt the config.
+    fn orchestrator_as_toml_item(orch: &OrchestratorSettings) -> Option<toml_edit::Item> {
+        // Wrap in `{ orchestrator = ... }` so sub-tables render as
+        // `[orchestrator.rules]`, `[orchestrator.notify]`, etc.  We then lift
+        // the single `orchestrator` item out and return it to the caller,
+        // which splices it at whatever path the target document needs.
+        let mut wrapper = std::collections::BTreeMap::new();
+        wrapper.insert("orchestrator", orch);
+        let s = match toml::to_string(&wrapper) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(%e, "Failed to serialize orchestrator settings");
+                return None;
+            }
+        };
+        let parsed: toml_edit::DocumentMut = match s.parse() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(%e, "Failed to re-parse serialized orchestrator");
+                return None;
+            }
+        };
+        parsed.as_table().get("orchestrator").cloned()
+    }
+
     /// Persist project configs to config.toml as `[[project]]` table array.
     /// Preserves orchestrator overrides for paths that remain in the list.
     pub fn save_project_configs(configs: &[ProjectConfig]) {
@@ -1522,33 +1552,12 @@ impl Settings {
             let mut tbl = toml_edit::Table::new();
             tbl["path"] = toml_edit::value(cfg.path.as_str());
             if let Some(ref orch) = cfg.orchestrator {
-                let mut orch_tbl = toml_edit::Table::new();
-                orch_tbl["enabled"] = toml_edit::value(orch.enabled);
-                if orch.role != default_orchestrator_role() {
-                    orch_tbl["role"] = toml_edit::value(orch.role.as_str());
+                // Serialize the full struct so notify/guardrails/pr_monitor/
+                // auto_action_templates persist (#376 — same bug as the global
+                // branch but via this array-of-tables path).
+                if let Some(item) = Self::orchestrator_as_toml_item(orch) {
+                    tbl["orchestrator"] = item;
                 }
-                let rules = &orch.rules;
-                if !rules.branch.is_empty()
-                    || !rules.merge.is_empty()
-                    || !rules.review.is_empty()
-                    || !rules.custom.is_empty()
-                {
-                    let mut rules_tbl = toml_edit::Table::new();
-                    if !rules.branch.is_empty() {
-                        rules_tbl["branch"] = toml_edit::value(rules.branch.as_str());
-                    }
-                    if !rules.merge.is_empty() {
-                        rules_tbl["merge"] = toml_edit::value(rules.merge.as_str());
-                    }
-                    if !rules.review.is_empty() {
-                        rules_tbl["review"] = toml_edit::value(rules.review.as_str());
-                    }
-                    if !rules.custom.is_empty() {
-                        rules_tbl["custom"] = toml_edit::value(rules.custom.as_str());
-                    }
-                    orch_tbl["rules"] = toml_edit::Item::Table(rules_tbl);
-                }
-                tbl["orchestrator"] = toml_edit::Item::Table(orch_tbl);
             }
             arr.push(tbl);
         }
@@ -1569,41 +1578,44 @@ impl Settings {
     pub fn save_project_orchestrator(project_path: Option<&str>, orch: &OrchestratorSettings) {
         match project_path {
             None => {
-                // Save to global [orchestrator] section
-                Self::save_toml_value(
-                    "orchestrator",
-                    "enabled",
-                    toml_edit::Value::from(orch.enabled),
-                );
-                Self::save_toml_value(
-                    "orchestrator",
-                    "role",
-                    toml_edit::Value::from(orch.role.as_str()),
-                );
-                Self::save_toml_nested_value(
-                    "orchestrator",
-                    "rules",
-                    "branch",
-                    toml_edit::Value::from(orch.rules.branch.as_str()),
-                );
-                Self::save_toml_nested_value(
-                    "orchestrator",
-                    "rules",
-                    "merge",
-                    toml_edit::Value::from(orch.rules.merge.as_str()),
-                );
-                Self::save_toml_nested_value(
-                    "orchestrator",
-                    "rules",
-                    "review",
-                    toml_edit::Value::from(orch.rules.review.as_str()),
-                );
-                Self::save_toml_nested_value(
-                    "orchestrator",
-                    "rules",
-                    "custom",
-                    toml_edit::Value::from(orch.rules.custom.as_str()),
-                );
+                // Rewrite the whole `[orchestrator]` table in place. Previously this
+                // branch hand-wrote only `enabled`/`role`/`rules.*` and silently dropped
+                // every other field (notify/guardrails/auto_action_templates/
+                // pr_monitor_*) on save (#376). Serializing the full struct auto-covers
+                // future field additions and mirrors the per-project branch below.
+                let Some(path) = Self::config_path() else {
+                    tracing::debug!("No config path available, skipping save");
+                    return;
+                };
+                let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    tracing::debug!(?path, %e, "Could not read config, starting fresh");
+                    String::new()
+                });
+                let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!(?path, %e, "Failed to parse config, starting fresh");
+                        toml_edit::DocumentMut::default()
+                    }
+                };
+
+                let Some(new_item) = Self::orchestrator_as_toml_item(orch) else {
+                    tracing::warn!("Failed to render orchestrator settings; aborting save");
+                    return;
+                };
+                // Assigning replaces the old `Item::Table` and all nested subtables,
+                // so stale entries from prior saves do not leak through.
+                doc["orchestrator"] = new_item;
+
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        tracing::warn!(?path, %e, "Failed to create config directory");
+                        return;
+                    }
+                }
+                if let Err(e) = std::fs::write(&path, doc.to_string()) {
+                    tracing::warn!(?path, %e, "Failed to write config file");
+                }
             }
             Some(proj_path) => {
                 // Save per-project orchestrator by rewriting [[project]] array
@@ -2128,5 +2140,163 @@ mod tests {
         assert!(d.ci_failed.contains("{{failed_details}}"));
         assert!(d.pr_comment.contains("{{comments_summary}}"));
         assert!(d.guardrail_exceeded.contains("{{guardrail}}"));
+    }
+
+    // ── save_project_orchestrator persistence tests (#376) ──
+    //
+    // Regression coverage for the bug where the global `None` branch of
+    // `save_project_orchestrator` silently dropped `notify`, `guardrails`,
+    // `auto_action_templates`, and `pr_monitor_*` fields on save.
+
+    /// Redirect `Settings::config_path()` to an isolated tempdir for the
+    /// duration of `body`. Sets both `XDG_CONFIG_HOME` and `HOME` so `dirs`
+    /// fallbacks cannot leak into the real user config.
+    fn with_isolated_config<F: FnOnce(&std::path::Path) + std::panic::UnwindSafe>(body: F) {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let xdg = tmp.path().join("xdg");
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&xdg).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        let expected_path = xdg.join("tmai/config.toml");
+        temp_env::with_vars(
+            [
+                ("XDG_CONFIG_HOME", Some(xdg.to_str().unwrap())),
+                ("HOME", Some(home.to_str().unwrap())),
+            ],
+            || body(&expected_path),
+        );
+    }
+
+    fn sample_non_default_orch() -> OrchestratorSettings {
+        let mut orch = OrchestratorSettings::default();
+        orch.enabled = true;
+        orch.role = "Test orchestrator role".into();
+        orch.rules.branch = "test branch rule".into();
+        orch.rules.merge = "test merge rule".into();
+        orch.notify.on_ci_failed = EventHandling::AutoAction;
+        orch.notify.on_ci_passed = EventHandling::NotifyOrchestrator;
+        orch.notify.on_pr_comment = EventHandling::Off;
+        orch.notify.buffer_ttl_secs = 1234;
+        orch.notify.buffer_max_messages = 77;
+        orch.notify.templates.ci_failed = "custom ci_failed template".into();
+        orch.guardrails.max_ci_retries = 11;
+        orch.guardrails.max_review_loops = 22;
+        orch.guardrails.escalate_to_human_after = 33;
+        orch.auto_action_templates.ci_failed_implementer = "custom ci-failed prompt".into();
+        orch.auto_action_templates.review_feedback_implementer = "custom review prompt".into();
+        orch.pr_monitor_enabled = true;
+        orch.pr_monitor_interval_secs = 91;
+        orch
+    }
+
+    #[test]
+    fn save_project_orchestrator_global_persists_all_fields() {
+        with_isolated_config(|config_path| {
+            let orch = sample_non_default_orch();
+            Settings::save_project_orchestrator(None, &orch);
+
+            let content =
+                std::fs::read_to_string(config_path).expect("config.toml should have been written");
+            let reloaded: Settings = toml::from_str(&content).expect("config.toml must parse");
+
+            // The exact reason this bug existed: these fields used to revert on reload.
+            assert_eq!(
+                reloaded.orchestrator, orch,
+                "every OrchestratorSettings field must survive a save + reload round-trip"
+            );
+        });
+    }
+
+    #[test]
+    fn save_project_orchestrator_global_overwrites_previous_save() {
+        with_isolated_config(|config_path| {
+            let first = sample_non_default_orch();
+            Settings::save_project_orchestrator(None, &first);
+
+            // Second save with different values — must not leak stale entries
+            // from the first save (e.g. via orphaned subtables).
+            let mut second = OrchestratorSettings::default();
+            second.enabled = false;
+            second.role = "Second role".into();
+            second.pr_monitor_enabled = false;
+            second.guardrails.max_ci_retries = 1;
+            Settings::save_project_orchestrator(None, &second);
+
+            let content = std::fs::read_to_string(config_path).unwrap();
+            let reloaded: Settings = toml::from_str(&content).unwrap();
+            assert_eq!(reloaded.orchestrator, second);
+            // Specifically: previously-saved custom templates must be gone.
+            assert!(reloaded
+                .orchestrator
+                .auto_action_templates
+                .ci_failed_implementer
+                .is_empty());
+            assert!(reloaded.orchestrator.notify.templates.ci_failed.is_empty());
+        });
+    }
+
+    #[test]
+    fn save_project_orchestrator_global_preserves_unrelated_sections() {
+        with_isolated_config(|config_path| {
+            // Seed config with content outside [orchestrator] that must survive.
+            std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            std::fs::write(
+                config_path,
+                "# top comment\npoll_interval_ms = 777\n\n[ui]\nshow_preview = false\n",
+            )
+            .unwrap();
+
+            let orch = sample_non_default_orch();
+            Settings::save_project_orchestrator(None, &orch);
+
+            let content = std::fs::read_to_string(config_path).unwrap();
+            // Non-orchestrator values must still be present after save, and
+            // top-level comments must survive (locks the preservation contract).
+            assert!(
+                content.contains("# top comment"),
+                "top-level comment should survive orchestrator save"
+            );
+            let reloaded: Settings = toml::from_str(&content).unwrap();
+            assert_eq!(reloaded.poll_interval_ms, 777);
+            assert!(!reloaded.ui.show_preview);
+            assert_eq!(reloaded.orchestrator, orch);
+        });
+    }
+
+    #[test]
+    fn save_project_orchestrator_per_project_persists_all_fields() {
+        // Regression coverage for the per-project (`Some(proj_path)`) branch —
+        // same bug class as #376 but via `save_project_configs`. Asserts full
+        // `OrchestratorSettings` equality so any future field addition that
+        // gets dropped on save surfaces here.
+        with_isolated_config(|config_path| {
+            std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            std::fs::write(
+                config_path,
+                "[[project]]\npath = \"/test/proj\"\n\n[[project]]\npath = \"/other\"\n",
+            )
+            .unwrap();
+
+            let orch = sample_non_default_orch();
+            Settings::save_project_orchestrator(Some("/test/proj"), &orch);
+
+            let content = std::fs::read_to_string(config_path).unwrap();
+            let reloaded: Settings = toml::from_str(&content).unwrap();
+            let proj = reloaded
+                .project
+                .iter()
+                .find(|p| p.path == "/test/proj")
+                .expect("target project entry must remain");
+            let saved = proj
+                .orchestrator
+                .as_ref()
+                .expect("per-project orchestrator must be written");
+            assert_eq!(
+                saved, &orch,
+                "every OrchestratorSettings field must survive per-project save + reload"
+            );
+            // Other project entry must still be present.
+            assert!(reloaded.project.iter().any(|p| p.path == "/other"));
+        });
     }
 }
