@@ -560,7 +560,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             while let Ok(event) = event_rx.recv().await {
                 if let tmai_core::api::CoreEvent::PromptReady { target, prompt } = event {
                     tracing::info!("Delivering queued prompt to agent {}", target);
-                    if let Err(e) = core.send_text(&target, &prompt).await {
+                    if let Err(e) = core.deliver_prompt(&target, &prompt).await {
                         tracing::warn!("Failed to deliver queued prompt to {}: {}", target, e);
                     }
                 }
