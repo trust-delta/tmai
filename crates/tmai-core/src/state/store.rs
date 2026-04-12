@@ -554,6 +554,12 @@ pub struct AppState {
     /// between the producer (notifier busy branch) and the consumer
     /// (flush-on-idle / flush-on-appear).
     pub orchestrator_notify_buffer: Option<crate::orchestrator_notify::SharedNotifyBuffer>,
+
+    /// Shared handle to the persisted orchestrator identity store.
+    /// Populated at tmai startup from `$XDG_STATE_HOME/tmai/orchestrators.json`.
+    /// Used to auto-restore `is_orchestrator=true` across tmai restart and
+    /// Claude Code `/resume` (#380).
+    pub orchestrator_state: Option<crate::orchestrator_state::SharedOrchestratorStore>,
 }
 
 impl AppState {
@@ -601,6 +607,7 @@ impl AppState {
             guardrails_settings: None,
             auto_action_templates: None,
             orchestrator_notify_buffer: None,
+            orchestrator_state: None,
         }
     }
 
