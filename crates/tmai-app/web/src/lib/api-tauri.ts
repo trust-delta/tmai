@@ -16,6 +16,7 @@ import type {
   OrchestratorRules,
   SpawnRequest,
   UsageSettings,
+  WorkerPermissionMode,
   WorkflowSettings,
   WorktreeSettings,
 } from "./api-http";
@@ -193,8 +194,11 @@ export const api = {
 
   // Spawn settings
   getSpawnSettings: () => httpApi.getSpawnSettings(),
-  updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
-    httpApi.updateSpawnSettings(params),
+  updateSpawnSettings: (params: {
+    use_tmux_window: boolean;
+    tmux_window_name?: string;
+    worker_permission_mode?: WorkerPermissionMode;
+  }) => httpApi.updateSpawnSettings(params),
 
   // Orchestrator settings (per-project scope via optional project param)
   getOrchestratorSettings: (project?: string) => httpApi.getOrchestratorSettings(project),
