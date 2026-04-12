@@ -810,9 +810,9 @@ export function ActionPanel({
         {targetPrs.length > 0 && (
           <div className="mb-4">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-              Incoming PRs
+              Incoming PRs ({targetPrs.length})
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto pr-1">
               {targetPrs.map((pr) => (
                 <PrCard
                   key={pr.number}
