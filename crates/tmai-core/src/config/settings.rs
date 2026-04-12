@@ -422,7 +422,7 @@ fn default_theme() -> String {
 }
 
 fn default_preview_poll_focused_ms() -> u64 {
-    500
+    200
 }
 
 fn default_preview_poll_unfocused_ms() -> u64 {
