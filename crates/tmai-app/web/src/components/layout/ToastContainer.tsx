@@ -100,12 +100,16 @@ export function useToast() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const success = useCallback((message: string) => addToast(message, "success"), [addToast]);
+  const error = useCallback((message: string) => addToast(message, "error", 5000), [addToast]);
+  const info = useCallback((message: string) => addToast(message, "info"), [addToast]);
+
   return {
     toasts,
     addToast,
     removeToast,
-    success: (message: string) => addToast(message, "success"),
-    error: (message: string) => addToast(message, "error", 5000),
-    info: (message: string) => addToast(message, "info"),
+    success,
+    error,
+    info,
   };
 }

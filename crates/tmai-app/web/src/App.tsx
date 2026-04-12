@@ -26,6 +26,7 @@ export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const toast = useToast();
+  const { success: toastSuccess, error: toastError, info: toastInfo } = toast;
   const [notifyConfig, setNotifyConfig] = useState({ enabled: true, thresholdSecs: 10 });
 
   // Load notification settings from backend
@@ -94,9 +95,9 @@ export function App() {
         }
       })
       .catch((_e) => {
-        toast.error("Failed to load projects");
+        toastError("Failed to load projects");
       });
-  }, [toast]);
+  }, [toastError]);
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
@@ -124,9 +125,9 @@ export function App() {
       setShowSettings(false);
       setShowSecurity(false);
       refresh();
-      toast.success("Agent spawned");
+      toastSuccess("Agent spawned");
     },
-    [refresh, toast],
+    [refresh, toastSuccess],
   );
 
   // Select handler for agents
@@ -222,7 +223,7 @@ export function App() {
         setCurrentProjectIndex(newIndex);
         if (registeredProjects[newIndex]) {
           setCurrentProject(registeredProjects[newIndex]);
-          toast.info("Previous project");
+          toastInfo("Previous project");
         }
       },
     },
@@ -252,7 +253,7 @@ export function App() {
         setCurrentProjectIndex(newIndex);
         if (registeredProjects[newIndex]) {
           setCurrentProject(registeredProjects[newIndex]);
-          toast.info("Next project");
+          toastInfo("Next project");
         }
       },
     },
@@ -392,7 +393,7 @@ export function App() {
               onDeleted={() => {
                 setSelection(null);
                 refreshWorktrees();
-                toast.success("Worktree deleted");
+                toastSuccess("Worktree deleted");
               }}
             />
           </div>

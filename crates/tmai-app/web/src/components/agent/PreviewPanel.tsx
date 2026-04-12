@@ -308,13 +308,12 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     }
   }, [focused]);
 
-  // Compute adaptive polling interval based on input activity
+  // Polling interval: focused vs unfocused.
+  // During typing, keystroke-triggered fetches (50ms + 200ms post-passthrough)
+  // provide responsive feedback; aggressive active-input polling was redundant
+  // and caused input lag due to ANSI parsing + DOMPurify on every poll.
   const getPollInterval = useCallback(() => {
     const s = pollSettings.current;
-    const elapsed = Date.now() - lastInputTime.current;
-    if (elapsed < s.preview_active_input_window_ms) {
-      return s.preview_poll_active_input_ms;
-    }
     return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
   }, [focused]);
 
