@@ -262,6 +262,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
     lastContentRef.current = null;
+    lastHtmlRef.current = "";
   }, [agentId]);
 
   // Switch to input mode (passthrough ON)
@@ -554,11 +555,20 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Set innerHTML via ref to bypass React's DOM diffing, which destroys text selection.
   // Also handles auto-scroll after content update to ensure correct ordering.
   const contentRef = useRef<HTMLDivElement>(null);
+  // Cache the last rendered HTML so we can skip the DOMPurify + innerHTML
+  // write when nothing changed since the previous render. htmlWithCursor
+  // recomputes whenever the cursor moves, but content-wise the document
+  // may be identical or only differ by the cursor marker; rewriting the
+  // entire innerHTML (1.4MB in an active session) unmounts the hidden
+  // <input> nested inside this tree and pushes focus out → the UI is
+  // then stuck in select mode. Keep the write-path idempotent.
+  const lastHtmlRef = useRef<string>("");
   useEffect(() => {
     if (contentRef.current) {
       const sel = window.getSelection();
       const hasSelection = sel && sel.toString().length > 0;
-      if (!hasSelection) {
+      if (!hasSelection && html !== lastHtmlRef.current) {
+        lastHtmlRef.current = html;
         contentRef.current.innerHTML = DOMPurify.sanitize(html, {
           ADD_ATTR: ["data-tmai-cursor"],
         });
