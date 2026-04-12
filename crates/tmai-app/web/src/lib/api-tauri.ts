@@ -7,6 +7,7 @@ export * from "./teams";
 
 import type {
   AgentSnapshot,
+  AutoActionTemplates,
   AutoApproveRules,
   AutoApproveSettings,
   GuardrailsSettings,
@@ -206,6 +207,7 @@ export const api = {
         templates?: Partial<NotifyTemplates>;
       };
       guardrails?: Partial<GuardrailsSettings>;
+      auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
     },

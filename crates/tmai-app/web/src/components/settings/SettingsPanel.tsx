@@ -1255,14 +1255,18 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
 
 // ── Notification settings sub-component ──────────────────────────
 
-/** Event definition for notification toggle rows */
+/** Event definition for notification rows */
 interface NotifyEventDef {
   key: keyof Omit<import("@/lib/api").NotifySettings, "templates" | "default_templates">;
   templateKey: keyof import("@/lib/api").NotifyTemplates;
   label: string;
   description: string;
-  /** Available {{variable}} placeholders for this event type */
+  /** Available {{variable}} placeholders for the Notify-mode template */
   variables: string[];
+  /** If set, an Auto Action handler exists for this event. */
+  autoActionTemplateKey?: keyof import("@/lib/api").AutoActionTemplates;
+  /** Available {{variable}} placeholders for the Auto Action template. */
+  autoActionVariables?: string[];
 }
 
 const NOTIFY_EVENTS: NotifyEventDef[] = [
@@ -1286,6 +1290,7 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     label: "CI passed",
     description: "PR checks passed — usually no action needed",
     variables: ["pr_number", "title", "summary"],
+    autoActionTemplateKey: undefined,
   },
   {
     key: "on_ci_failed",
@@ -1293,6 +1298,8 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     label: "CI failed",
     description: "PR checks failed — action required",
     variables: ["pr_number", "title", "failed_details"],
+    autoActionTemplateKey: "ci_failed_implementer",
+    autoActionVariables: ["pr_number", "title", "branch", "failed_details"],
   },
   {
     key: "on_pr_created",
@@ -1307,6 +1314,8 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     label: "Review feedback",
     description: "PR received review comments (changes requested)",
     variables: ["pr_number", "title", "comments_summary"],
+    autoActionTemplateKey: "review_feedback_implementer",
+    autoActionVariables: ["pr_number", "title", "branch", "comments_summary"],
   },
   {
     key: "on_rebase_conflict",
@@ -1331,6 +1340,16 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
   },
 ];
 
+/**
+ * Events whose handling can be AutoAction. The row for `on_ci_passed` also
+ * supports AutoAction (dispatches a reviewer) even though it has no template.
+ */
+const AUTO_ACTION_EVENTS: ReadonlySet<NotifyEventDef["key"]> = new Set([
+  "on_ci_failed",
+  "on_pr_comment",
+  "on_ci_passed",
+]);
+
 /** Orchestrator notification settings with per-event toggles and template editing */
 function NotifySettingsSection({
   orchestrator,
@@ -1343,8 +1362,11 @@ function NotifySettingsSection({
 }) {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
 
-  // Toggle an event flag and persist
-  const toggleEvent = async (key: NotifyEventDef["key"], value: boolean) => {
+  // Change the per-event handling mode (off / notify / auto_action) and persist
+  const setHandling = async (
+    key: NotifyEventDef["key"],
+    value: import("@/lib/api").EventHandling,
+  ) => {
     const updated = {
       ...orchestrator,
       notify: { ...orchestrator.notify, [key]: value },
@@ -1358,12 +1380,28 @@ function NotifySettingsSection({
     }
   };
 
-  // Save a template change
+  // Save a notify-mode template change
   const saveTemplate = async (templateKey: NotifyEventDef["templateKey"], value: string) => {
     try {
       const templates: Record<string, string> = { [templateKey]: value };
       await api.updateOrchestratorSettings(
         { notify: { templates: templates as Partial<import("@/lib/api").NotifyTemplates> } },
+        orchProject,
+      );
+    } catch (_e) {}
+  };
+
+  // Save an auto-action template change
+  const saveAutoActionTemplate = async (
+    templateKey: keyof import("@/lib/api").AutoActionTemplates,
+    value: string,
+  ) => {
+    try {
+      const templates: Record<string, string> = { [templateKey]: value };
+      await api.updateOrchestratorSettings(
+        {
+          auto_action_templates: templates as Partial<import("@/lib/api").AutoActionTemplates>,
+        },
         orchProject,
       );
     } catch (_e) {}
@@ -1375,26 +1413,33 @@ function NotifySettingsSection({
         Notifications
       </p>
       <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
-        Control which events are forwarded to the orchestrator via send_prompt. OFF = silent
-        (recorded in task-meta only).
+        Off = silent (recorded in task-meta only). Notify = forward to orchestrator via send_prompt.
+        Auto Action = tmai directly instructs the target worker / dispatches a reviewer.
       </p>
 
       <div className="space-y-0.5">
         {NOTIFY_EVENTS.map((evt) => {
-          const enabled = orchestrator.notify[evt.key] as boolean;
+          const current = orchestrator.notify[evt.key] as import("@/lib/api").EventHandling;
           const templateValue = orchestrator.notify.templates[evt.templateKey];
           const isExpanded = expandedTemplate === evt.key;
+          const supportsAutoAction = AUTO_ACTION_EVENTS.has(evt.key);
+          const autoActionTpl = evt.autoActionTemplateKey
+            ? (orchestrator.auto_action_templates?.[evt.autoActionTemplateKey] ?? "")
+            : "";
+          const showNotifyTemplate = current === "notify" && isExpanded;
+          const showAutoActionTemplate =
+            current === "auto_action" && isExpanded && !!evt.autoActionTemplateKey;
 
           return (
             <div key={evt.key}>
-              {/* Toggle row */}
+              {/* Row: radio group + template toggle */}
               <div className="flex items-center justify-between gap-2 py-1">
                 <div className="flex-1 min-w-0">
                   <span className="text-xs text-zinc-300">{evt.label}</span>
                   <p className="text-[10px] text-zinc-600 truncate">{evt.description}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {enabled && (
+                  {current !== "off" && (current === "notify" || evt.autoActionTemplateKey) && (
                     <button
                       type="button"
                       onClick={() => setExpandedTemplate(isExpanded ? null : evt.key)}
@@ -1404,24 +1449,17 @@ function NotifySettingsSection({
                       {isExpanded ? "hide" : "template"}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => toggleEvent(evt.key, !enabled)}
-                    className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-                      enabled ? "bg-cyan-500/40" : "bg-white/10"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-3 w-3 rounded-full transition-transform ${
-                        enabled ? "translate-x-[14px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
-                      }`}
-                    />
-                  </button>
+                  <HandlingRadioGroup
+                    name={evt.key}
+                    value={current}
+                    onChange={(v) => setHandling(evt.key, v)}
+                    supportsAutoAction={supportsAutoAction}
+                  />
                 </div>
               </div>
 
-              {/* Expandable template editor */}
-              {enabled && isExpanded && (
+              {/* Expandable notify-mode template editor */}
+              {showNotifyTemplate && (
                 <div className="ml-2 mb-2">
                   <div className="relative">
                     <textarea
@@ -1489,11 +1527,126 @@ function NotifySettingsSection({
                   </p>
                 </div>
               )}
+
+              {/* Expandable auto-action template editor */}
+              {showAutoActionTemplate && evt.autoActionTemplateKey && (
+                <AutoActionTemplateEditor
+                  autoActionKey={evt.autoActionTemplateKey}
+                  value={autoActionTpl}
+                  onChange={(next) => {
+                    const updated = {
+                      ...orchestrator,
+                      auto_action_templates: {
+                        ...(orchestrator.auto_action_templates ?? {
+                          ci_failed_implementer: "",
+                          review_feedback_implementer: "",
+                        }),
+                        [evt.autoActionTemplateKey as string]: next,
+                      },
+                    };
+                    setOrchestrator(updated);
+                  }}
+                  onSave={(next) =>
+                    saveAutoActionTemplate(
+                      evt.autoActionTemplateKey as keyof import("@/lib/api").AutoActionTemplates,
+                      next,
+                    )
+                  }
+                  variables={evt.autoActionVariables ?? []}
+                />
+              )}
             </div>
           );
         })}
       </div>
     </>
+  );
+}
+
+/** Inline editor for an AutoAction template. */
+function AutoActionTemplateEditor({
+  autoActionKey: _autoActionKey,
+  value,
+  onChange,
+  onSave,
+  variables,
+}: {
+  autoActionKey: keyof import("@/lib/api").AutoActionTemplates;
+  value: string;
+  onChange: (next: string) => void;
+  onSave: (next: string) => void | Promise<void>;
+  variables: string[];
+}) {
+  return (
+    <div className="ml-2 mb-2">
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onSave(value)}
+        rows={2}
+        placeholder="Empty = use built-in default"
+        className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 pr-7 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
+      />
+      <p className="text-[10px] text-zinc-600 mt-0.5">
+        Auto Action prompt — sent directly to the target worker. Variables:{" "}
+        {variables.map((v) => `{{${v}}}`).join(", ")}
+      </p>
+    </div>
+  );
+}
+
+/** Tri-state radio group for per-event handling. */
+function HandlingRadioGroup({
+  name,
+  value,
+  onChange,
+  supportsAutoAction,
+}: {
+  name: string;
+  value: import("@/lib/api").EventHandling;
+  onChange: (v: import("@/lib/api").EventHandling) => void;
+  supportsAutoAction: boolean;
+}) {
+  const options: {
+    v: import("@/lib/api").EventHandling;
+    label: string;
+    title: string;
+  }[] = [
+    { v: "off", label: "Off", title: "Silent — no orchestrator notification, no auto action" },
+    { v: "notify", label: "Notify", title: "Forward to the orchestrator via send_prompt" },
+  ];
+  if (supportsAutoAction) {
+    options.push({
+      v: "auto_action",
+      label: "Auto",
+      title: "tmai instructs the target worker directly (bypasses orchestrator)",
+    });
+  }
+  return (
+    <div
+      title={`Handling for ${name}`}
+      className="inline-flex items-center rounded-md overflow-hidden border border-white/10"
+    >
+      {options.map((opt) => {
+        const selected = value === opt.v;
+        return (
+          <button
+            key={opt.v}
+            type="button"
+            aria-pressed={selected}
+            title={opt.title}
+            onClick={() => onChange(opt.v)}
+            className={`text-[10px] px-1.5 py-0.5 transition-colors ${
+              selected
+                ? "bg-cyan-500/30 text-cyan-200"
+                : "bg-transparent text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

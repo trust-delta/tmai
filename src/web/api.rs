@@ -1263,6 +1263,8 @@ pub struct OrchestratorSettingsResponse {
     pub rules: OrchestratorRulesResponse,
     pub notify: NotifySettingsResponse,
     pub guardrails: GuardrailsSettingsResponse,
+    /// AutoAction prompt templates, sent directly to the target worker
+    pub auto_action_templates: tmai_core::auto_action::AutoActionTemplates,
     pub pr_monitor_enabled: bool,
     pub pr_monitor_interval_secs: u64,
     /// Whether this is a per-project override (true) or global fallback (false)
@@ -1286,42 +1288,27 @@ pub struct OrchestratorRulesResponse {
     pub custom: String,
 }
 
-/// Map tri-state handling → bool for the current 2-state WebUI contract.
-/// Only `NotifyOrchestrator` is treated as "on"; `AutoAction` is opaque to
-/// the current UI and is reported as "off" (it will gain a dedicated control
-/// once PR-C lands).
-fn handling_to_bool(h: tmai_core::config::EventHandling) -> bool {
-    matches!(h, tmai_core::config::EventHandling::NotifyOrchestrator)
-}
-
-/// Merge an optional bool override from the WebUI into an existing handling
-/// value.  `None` keeps the current (possibly `AutoAction`) setting; `Some`
-/// replaces it with the 2-state mapping (`true` → NotifyOrchestrator, `false`
-/// → Off) so that legacy clients cannot silently destroy an AutoAction
-/// configuration they don't know about — unless they explicitly toggle.
+/// Merge an optional `EventHandling` override from the WebUI into an existing
+/// handling value.  `None` keeps the current setting.
 fn merge_handling(
-    override_val: Option<bool>,
+    override_val: Option<tmai_core::config::EventHandling>,
     current: tmai_core::config::EventHandling,
 ) -> tmai_core::config::EventHandling {
-    match override_val {
-        None => current,
-        Some(true) => tmai_core::config::EventHandling::NotifyOrchestrator,
-        Some(false) => tmai_core::config::EventHandling::Off,
-    }
+    override_val.unwrap_or(current)
 }
 
-/// Notification settings response (per-event toggles + templates)
+/// Notification settings response (per-event handling + templates)
 #[derive(Debug, Serialize)]
 pub struct NotifySettingsResponse {
-    pub on_agent_stopped: bool,
-    pub on_agent_error: bool,
-    pub on_rebase_conflict: bool,
-    pub on_ci_passed: bool,
-    pub on_ci_failed: bool,
-    pub on_pr_created: bool,
-    pub on_pr_comment: bool,
-    pub on_pr_closed: bool,
-    pub on_guardrail_exceeded: bool,
+    pub on_agent_stopped: tmai_core::config::EventHandling,
+    pub on_agent_error: tmai_core::config::EventHandling,
+    pub on_rebase_conflict: tmai_core::config::EventHandling,
+    pub on_ci_passed: tmai_core::config::EventHandling,
+    pub on_ci_failed: tmai_core::config::EventHandling,
+    pub on_pr_created: tmai_core::config::EventHandling,
+    pub on_pr_comment: tmai_core::config::EventHandling,
+    pub on_pr_closed: tmai_core::config::EventHandling,
+    pub on_guardrail_exceeded: tmai_core::config::EventHandling,
     pub templates: NotifyTemplatesResponse,
     /// Built-in default templates (for UI placeholder display)
     pub default_templates: NotifyTemplatesResponse,
@@ -1354,6 +1341,8 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub notify: Option<UpdateNotifySettingsRequest>,
     #[serde(default)]
     pub guardrails: Option<UpdateGuardrailsRequest>,
+    #[serde(default)]
+    pub auto_action_templates: Option<UpdateAutoActionTemplatesRequest>,
     #[serde(default)]
     pub pr_monitor_enabled: Option<bool>,
     #[serde(default)]
@@ -1388,25 +1377,34 @@ pub struct UpdateOrchestratorRulesRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateNotifySettingsRequest {
     #[serde(default)]
-    pub on_agent_stopped: Option<bool>,
+    pub on_agent_stopped: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_agent_error: Option<bool>,
+    pub on_agent_error: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_rebase_conflict: Option<bool>,
+    pub on_rebase_conflict: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_ci_passed: Option<bool>,
+    pub on_ci_passed: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_ci_failed: Option<bool>,
+    pub on_ci_failed: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_pr_created: Option<bool>,
+    pub on_pr_created: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_pr_comment: Option<bool>,
+    pub on_pr_comment: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_pr_closed: Option<bool>,
+    pub on_pr_closed: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
-    pub on_guardrail_exceeded: Option<bool>,
+    pub on_guardrail_exceeded: Option<tmai_core::config::EventHandling>,
     #[serde(default)]
     pub templates: Option<UpdateNotifyTemplatesRequest>,
+}
+
+/// AutoAction template overrides update request (partial)
+#[derive(Debug, Deserialize)]
+pub struct UpdateAutoActionTemplatesRequest {
+    #[serde(default)]
+    pub ci_failed_implementer: Option<String>,
+    #[serde(default)]
+    pub review_feedback_implementer: Option<String>,
 }
 
 /// Template overrides update request
@@ -1455,15 +1453,15 @@ pub async fn get_orchestrator_settings(
             custom: orch.rules.custom.clone(),
         },
         notify: NotifySettingsResponse {
-            on_agent_stopped: handling_to_bool(orch.notify.on_agent_stopped),
-            on_agent_error: handling_to_bool(orch.notify.on_agent_error),
-            on_rebase_conflict: handling_to_bool(orch.notify.on_rebase_conflict),
-            on_ci_passed: handling_to_bool(orch.notify.on_ci_passed),
-            on_ci_failed: handling_to_bool(orch.notify.on_ci_failed),
-            on_pr_created: handling_to_bool(orch.notify.on_pr_created),
-            on_pr_comment: handling_to_bool(orch.notify.on_pr_comment),
-            on_pr_closed: handling_to_bool(orch.notify.on_pr_closed),
-            on_guardrail_exceeded: handling_to_bool(orch.notify.on_guardrail_exceeded),
+            on_agent_stopped: orch.notify.on_agent_stopped,
+            on_agent_error: orch.notify.on_agent_error,
+            on_rebase_conflict: orch.notify.on_rebase_conflict,
+            on_ci_passed: orch.notify.on_ci_passed,
+            on_ci_failed: orch.notify.on_ci_failed,
+            on_pr_created: orch.notify.on_pr_created,
+            on_pr_comment: orch.notify.on_pr_comment,
+            on_pr_closed: orch.notify.on_pr_closed,
+            on_guardrail_exceeded: orch.notify.on_guardrail_exceeded,
             templates: NotifyTemplatesResponse {
                 agent_stopped: orch.notify.templates.agent_stopped.clone(),
                 agent_error: orch.notify.templates.agent_error.clone(),
@@ -1495,6 +1493,7 @@ pub async fn get_orchestrator_settings(
             max_review_loops: orch.guardrails.max_review_loops,
             escalate_to_human_after: orch.guardrails.escalate_to_human_after,
         },
+        auto_action_templates: orch.auto_action_templates.clone(),
         pr_monitor_enabled: orch.pr_monitor_enabled,
         pr_monitor_interval_secs: orch.pr_monitor_interval_secs,
         is_project_override: is_override,
@@ -1627,7 +1626,20 @@ pub async fn update_orchestrator_settings(
                     .unwrap_or(g.escalate_to_human_after),
             }
         },
-        auto_action_templates: current.auto_action_templates.clone(),
+        auto_action_templates: {
+            let t = &current.auto_action_templates;
+            let r = &req.auto_action_templates;
+            tmai_core::auto_action::AutoActionTemplates {
+                ci_failed_implementer: r
+                    .as_ref()
+                    .and_then(|r| r.ci_failed_implementer.clone())
+                    .unwrap_or_else(|| t.ci_failed_implementer.clone()),
+                review_feedback_implementer: r
+                    .as_ref()
+                    .and_then(|r| r.review_feedback_implementer.clone())
+                    .unwrap_or_else(|| t.review_feedback_implementer.clone()),
+            }
+        },
         pr_monitor_enabled: req.pr_monitor_enabled.unwrap_or(current.pr_monitor_enabled),
         pr_monitor_interval_secs: req
             .pr_monitor_interval_secs
@@ -2895,12 +2907,37 @@ pub async fn dispatch_review(
     Json(req): Json<DispatchReviewRequest>,
 ) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
     let origin = parse_origin(&headers);
+    perform_dispatch_review(
+        core,
+        req.pr_number,
+        req.cwd,
+        req.additional_instructions,
+        req.rows,
+        req.cols,
+        origin,
+    )
+    .await
+    .map(Json)
+    .map_err(|(status, msg)| json_error(status, &msg))
+}
 
+/// Core dispatch_review implementation shared by the HTTP handler and the
+/// AutoActionExecutor `ReviewDispatcher` impl. Returns `(StatusCode, message)`
+/// on failure so callers can map it to their own error type.
+pub async fn perform_dispatch_review(
+    core: Arc<TmaiCore>,
+    pr_number: u64,
+    cwd: String,
+    additional_instructions: Option<String>,
+    rows: u16,
+    cols: u16,
+    origin: ActionOrigin,
+) -> Result<SpawnResponse, (StatusCode, String)> {
     // Validate cwd
-    if !std::path::Path::new(&req.cwd).is_dir() {
-        return Err(json_error(
+    if !std::path::Path::new(&cwd).is_dir() {
+        return Err((
             StatusCode::BAD_REQUEST,
-            &format!("Directory does not exist: {}", req.cwd),
+            format!("Directory does not exist: {cwd}"),
         ));
     }
 
@@ -2909,27 +2946,27 @@ pub async fn dispatch_review(
         .args([
             "pr",
             "view",
-            &req.pr_number.to_string(),
+            &pr_number.to_string(),
             "--json",
             "title,headRefName,baseRefName,body,url,additions,deletions",
         ])
-        .current_dir(&req.cwd)
+        .current_dir(&cwd)
         .output()
         .await
-        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &format!("Failed to run gh: {e}")))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Failed to run gh: {e}")))?;
 
     if !pr_view.status.success() {
         let stderr = String::from_utf8_lossy(&pr_view.stderr);
-        return Err(json_error(
+        return Err((
             StatusCode::BAD_REQUEST,
-            &format!("Failed to fetch PR #{}: {}", req.pr_number, stderr.trim()),
+            format!("Failed to fetch PR #{pr_number}: {}", stderr.trim()),
         ));
     }
 
     let pr_json: serde_json::Value = serde_json::from_slice(&pr_view.stdout).map_err(|e| {
-        json_error(
+        (
             StatusCode::BAD_REQUEST,
-            &format!("Failed to parse PR JSON: {e}"),
+            format!("Failed to parse PR JSON: {e}"),
         )
     })?;
 
@@ -2940,28 +2977,28 @@ pub async fn dispatch_review(
 
     // Fetch latest remote main so worktree starts from up-to-date state
     let fetch_output = tokio::process::Command::new("git")
-        .args(["-C", &req.cwd, "fetch", "origin", base_branch])
+        .args(["-C", &cwd, "fetch", "origin", base_branch])
         .output()
         .await
         .map_err(|e| {
-            json_error(
+            (
                 StatusCode::BAD_REQUEST,
-                &format!("Failed to fetch origin/{base_branch}: {e}"),
+                format!("Failed to fetch origin/{base_branch}: {e}"),
             )
         })?;
 
     if !fetch_output.status.success() {
         let stderr = String::from_utf8_lossy(&fetch_output.stderr);
-        return Err(json_error(
+        return Err((
             StatusCode::BAD_REQUEST,
-            &format!("Failed to fetch origin/{}: {}", base_branch, stderr.trim()),
+            format!("Failed to fetch origin/{}: {}", base_branch, stderr.trim()),
         ));
     }
 
     // Create a dedicated worktree for the review agent
-    let worktree_name = format!("review-pr-{}", req.pr_number);
+    let worktree_name = format!("review-pr-{pr_number}");
     let wt_req = tmai_core::worktree::WorktreeCreateRequest {
-        repo_path: req.cwd.clone(),
+        repo_path: cwd.clone(),
         branch_name: worktree_name.clone(),
         dir_name: None,
         base_branch: Some(format!("origin/{base_branch}")),
@@ -2969,18 +3006,17 @@ pub async fn dispatch_review(
 
     let wt_result = tmai_core::worktree::create_worktree(&wt_req)
         .await
-        .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     tracing::info!(
         "dispatch_review: created worktree '{}' at {} for PR #{}",
         worktree_name,
         wt_result.path,
-        req.pr_number,
+        pr_number,
     );
 
     // Compose review prompt
-    let extra = req
-        .additional_instructions
+    let extra = additional_instructions
         .as_deref()
         .map(|s| format!("\n\nAdditional instructions:\n{s}"))
         .unwrap_or_default();
@@ -3002,7 +3038,7 @@ pub async fn dispatch_review(
          5. If you find issues, include specific file/line references in your review body\n\
          {extra}",
         worktree_path = wt_result.path,
-        pr_number = req.pr_number,
+        pr_number = pr_number,
         title = pr_title,
         url = pr_url,
         head = head_branch,
@@ -3011,14 +3047,14 @@ pub async fn dispatch_review(
     );
 
     // Spawn agent in the review worktree directory
-    let project_cwd = req.cwd.clone();
+    let project_cwd = cwd.clone();
     let worktree_path = wt_result.path.clone();
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
         args: vec![prompt],
         cwd: wt_result.path,
-        rows: req.rows,
-        cols: req.cols,
+        rows,
+        cols,
         force_pty: false,
     };
 
@@ -3027,57 +3063,63 @@ pub async fn dispatch_review(
         let state = core.raw_state().read();
         state.spawn_in_tmux
     };
-    let result = if use_tmux && is_tmux_available() {
+    let raw_result = if use_tmux && is_tmux_available() {
         spawn_in_tmux(&core, &spawn_req).await
     } else {
         spawn_in_pty(&core, &spawn_req).await
     };
 
+    let resp = match raw_result {
+        Ok(Json(r)) => r,
+        Err((status, body)) => {
+            let msg = body
+                .get("error")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "spawn failed".to_string());
+            return Err((status, msg));
+        }
+    };
+
     // Set pr_number metadata and register pending worktree
-    if let Ok(ref resp) = result {
+    {
         #[allow(deprecated)]
         let state = core.raw_state();
         let mut s = state.write();
         if let Some(agent) = s.agents.get_mut(&resp.session_id) {
-            agent.pr_number = Some(req.pr_number);
+            agent.pr_number = Some(pr_number);
         } else {
-            // Agent not yet in state (tmux spawn) — store for deferred application
             s.pending_agent_metadata.insert(
                 resp.session_id.clone(),
                 tmai_core::state::PendingAgentMetadata {
-                    pr_number: Some(req.pr_number),
+                    pr_number: Some(pr_number),
                     ..Default::default()
                 },
             );
         }
-        // Protect worktree from premature deletion during agent detection
         s.pending_agent_worktrees
             .insert(worktree_path, std::time::Instant::now());
     }
 
-    if let Ok(ref resp) = result {
-        // Update .task-meta/{branch}.json with review agent and PR info
-        let project_root = std::path::Path::new(&project_cwd);
-        tmai_core::task_meta::store::update_meta(project_root, head_branch, |meta| {
-            meta.pr = Some(req.pr_number);
-            meta.review_agent_id = Some(resp.session_id.clone());
-            meta.add_milestone(&format!(
-                "Review dispatched for PR #{} \"{}\"",
-                req.pr_number, pr_title
-            ));
-        });
+    // Update .task-meta/{branch}.json with review agent and PR info
+    let project_root = std::path::Path::new(&project_cwd);
+    tmai_core::task_meta::store::update_meta(project_root, head_branch, |meta| {
+        meta.pr = Some(pr_number);
+        meta.review_agent_id = Some(resp.session_id.clone());
+        meta.add_milestone(&format!(
+            "Review dispatched for PR #{pr_number} \"{pr_title}\""
+        ));
+    });
 
-        let _ = core.event_sender().send(CoreEvent::ActionPerformed {
-            origin,
-            action: "dispatch_review".to_string(),
-            summary: format!(
-                "Spawned review agent for PR #{} \"{}\" ({} → {}) in worktree {}",
-                req.pr_number, pr_title, head_branch, base_branch, worktree_name
-            ),
-        });
-    }
+    let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+        origin,
+        action: "dispatch_review".to_string(),
+        summary: format!(
+            "Spawned review agent for PR #{pr_number} \"{pr_title}\" ({head_branch} → {base_branch}) in worktree {worktree_name}"
+        ),
+    });
 
-    result
+    Ok(resp)
 }
 
 // =========================================================

@@ -887,13 +887,30 @@ pub struct OrchestratorSettings {
 /// - `AutoAction`: tmai handles the event directly (see `AutoActionExecutor`,
 ///   implemented in a follow-up PR).  `OrchestratorNotifier` skips these
 ///   events so they are not double-handled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EventHandling {
     #[default]
     Off,
     NotifyOrchestrator,
     AutoAction,
+}
+
+impl Serialize for EventHandling {
+    /// Serialize as short lowercase tokens matching the WebUI's `EventHandling`
+    /// TypeScript union: `"off" | "notify" | "auto_action"`.  The deserializer
+    /// still accepts the legacy `"notify_orchestrator"` form for config files
+    /// written before this alias existed.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let s = match self {
+            EventHandling::Off => "off",
+            EventHandling::NotifyOrchestrator => "notify",
+            EventHandling::AutoAction => "auto_action",
+        };
+        serializer.serialize_str(s)
+    }
 }
 
 /// Serde default helper: events that default to notifying the orchestrator.
@@ -1708,10 +1725,16 @@ mod tests {
 
     #[test]
     fn event_handling_round_trip_notify_orchestrator() {
+        // Serialization now emits the short `"notify"` form to match the WebUI's
+        // `EventHandling` TS union.  Deserialization still accepts the legacy
+        // `"notify_orchestrator"` spelling for backwards-compat with older TOML.
         let encoded = serde_json::to_string(&EventHandling::NotifyOrchestrator).unwrap();
-        assert_eq!(encoded, "\"notify_orchestrator\"");
+        assert_eq!(encoded, "\"notify\"");
         let decoded: EventHandling = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded, EventHandling::NotifyOrchestrator);
+
+        let legacy: EventHandling = serde_json::from_str("\"notify_orchestrator\"").unwrap();
+        assert_eq!(legacy, EventHandling::NotifyOrchestrator);
     }
 
     #[test]

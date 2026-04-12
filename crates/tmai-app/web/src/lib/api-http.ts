@@ -610,16 +610,25 @@ export interface NotifyTemplates {
   guardrail_exceeded: string;
 }
 
+/** Tri-state handling per notification event: off / forward to orchestrator / auto-action. */
+export type EventHandling = "off" | "notify" | "auto_action";
+
+/** AutoAction prompt templates, sent directly to the target worker. */
+export interface AutoActionTemplates {
+  ci_failed_implementer: string;
+  review_feedback_implementer: string;
+}
+
 export interface NotifySettings {
-  on_agent_stopped: boolean;
-  on_agent_error: boolean;
-  on_rebase_conflict: boolean;
-  on_ci_passed: boolean;
-  on_ci_failed: boolean;
-  on_pr_created: boolean;
-  on_pr_comment: boolean;
-  on_pr_closed: boolean;
-  on_guardrail_exceeded: boolean;
+  on_agent_stopped: EventHandling;
+  on_agent_error: EventHandling;
+  on_rebase_conflict: EventHandling;
+  on_ci_passed: EventHandling;
+  on_ci_failed: EventHandling;
+  on_pr_created: EventHandling;
+  on_pr_comment: EventHandling;
+  on_pr_closed: EventHandling;
+  on_guardrail_exceeded: EventHandling;
   templates: NotifyTemplates;
   /** Built-in default templates (for UI placeholder display) */
   default_templates: NotifyTemplates;
@@ -637,6 +646,7 @@ export interface OrchestratorSettings {
   rules: OrchestratorRules;
   notify: NotifySettings;
   guardrails: GuardrailsSettings;
+  auto_action_templates: AutoActionTemplates;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
   /** Whether this is a per-project override (true) or global fallback (false) */
@@ -1036,6 +1046,7 @@ export const api = {
         templates?: Partial<NotifyTemplates>;
       };
       guardrails?: Partial<GuardrailsSettings>;
+      auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
     },

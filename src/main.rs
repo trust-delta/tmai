@@ -261,6 +261,7 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             guardrails_settings,
             auto_action_templates,
             std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+            std::sync::Arc::new(ReviewDispatcherImpl::new(core.clone())),
         );
     }
 
@@ -485,6 +486,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             guardrails_settings,
             auto_action_templates,
             std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+            std::sync::Arc::new(ReviewDispatcherImpl::new(core.clone())),
         );
         eprintln!("tmai: auto-action executor started");
     }
@@ -717,6 +719,46 @@ fn open_in_browser(url: &str, debug: bool) {
 }
 
 /// Run in wrap mode (PTY proxy for AI agent)
+/// `ReviewDispatcher` impl used by AutoActionExecutor to trigger `dispatch_review`
+/// programmatically — shares the same internal path as the HTTP endpoint.
+struct ReviewDispatcherImpl {
+    core: Arc<tmai_core::api::TmaiCore>,
+}
+
+impl ReviewDispatcherImpl {
+    fn new(core: Arc<tmai_core::api::TmaiCore>) -> Self {
+        Self { core }
+    }
+}
+
+impl tmai_core::auto_action::ReviewDispatcher for ReviewDispatcherImpl {
+    fn dispatch_review<'a>(
+        &'a self,
+        pr_number: u64,
+        cwd: String,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = std::result::Result<(), String>> + Send + 'a>,
+    > {
+        let core = self.core.clone();
+        Box::pin(async move {
+            match tmai::web::perform_dispatch_review(
+                core,
+                pr_number,
+                cwd,
+                None,
+                24,
+                80,
+                tmai_core::api::ActionOrigin::system("auto_action"),
+            )
+            .await
+            {
+                Ok(_) => Ok(()),
+                Err((_, msg)) => Err(msg),
+            }
+        })
+    }
+}
+
 fn run_wrap_mode(cli: &Config) -> Result<()> {
     let (command, args) = cli.get_wrap_args().ok_or_else(|| {
         anyhow::anyhow!("No command specified for wrap mode. Usage: tmai wrap <command> [args...]")

@@ -37,6 +37,35 @@ pub trait GithubApi: Send + Sync + 'static {
     fn fetch_pr_comments<'a>(&'a self, repo_dir: &'a str, pr_number: u64) -> GhFuture<'a>;
 }
 
+/// Abstraction over `dispatch_review` so AutoActionExecutor can trigger a review-agent
+/// dispatch without depending on the bin crate's HTTP handler directly.
+///
+/// The concrete implementation lives in the bin crate (see `src/main.rs`)
+/// and calls the same internal path used by the `/api/review/dispatch` endpoint.
+pub trait ReviewDispatcher: Send + Sync + 'static {
+    /// Dispatch a review agent for `pr_number` rooted at `cwd` (project root).
+    /// Returns a human-readable error string on failure.
+    fn dispatch_review<'a>(
+        &'a self,
+        pr_number: u64,
+        cwd: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+}
+
+/// No-op `ReviewDispatcher` — used by tests and as a safe default when no
+/// concrete dispatcher is wired (in which case PrCiPassed auto-dispatch is a no-op).
+pub struct NoopReviewDispatcher;
+
+impl ReviewDispatcher for NoopReviewDispatcher {
+    fn dispatch_review<'a>(
+        &'a self,
+        _pr_number: u64,
+        _cwd: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
+    }
+}
+
 /// Default `GithubApi` implementation that shells out to `gh` via `crate::github`.
 pub struct RealGithubApi;
 
@@ -95,6 +124,7 @@ impl AutoActionExecutor {
     ///
     /// Mirrors the lifecycle of `OrchestratorNotifier`: reads settings fresh
     /// on each event, handles `Lagged` gracefully, exits on channel close.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         state: SharedState,
         mut event_rx: broadcast::Receiver<CoreEvent>,
@@ -103,6 +133,7 @@ impl AutoActionExecutor {
         guardrails: SharedGuardrailsSettings,
         templates: Arc<parking_lot::RwLock<AutoActionTemplates>>,
         github: Arc<dyn GithubApi>,
+        review_dispatcher: Arc<dyn ReviewDispatcher>,
     ) -> tokio::task::JoinHandle<()> {
         let tracker = Arc::new(AutoActionTracker::new());
 
@@ -119,6 +150,7 @@ impl AutoActionExecutor {
                             &templates,
                             &tracker,
                             github.as_ref(),
+                            review_dispatcher.as_ref(),
                             &event,
                         )
                         .await;
@@ -146,6 +178,7 @@ impl AutoActionExecutor {
         templates: &Arc<parking_lot::RwLock<AutoActionTemplates>>,
         tracker: &Arc<AutoActionTracker>,
         github: &dyn GithubApi,
+        review_dispatcher: &dyn ReviewDispatcher,
         event: &CoreEvent,
     ) {
         match event {
@@ -193,6 +226,27 @@ impl AutoActionExecutor {
                 .await;
             }
 
+            CoreEvent::PrCiPassed {
+                pr_number,
+                title,
+                checks_summary: _,
+            } => {
+                if notify.on_ci_passed != EventHandling::AutoAction {
+                    return;
+                }
+                Self::handle_pr_ci_passed(
+                    state,
+                    event_tx,
+                    guardrails,
+                    tracker,
+                    github,
+                    review_dispatcher,
+                    *pr_number,
+                    title,
+                )
+                .await;
+            }
+
             CoreEvent::PrClosed {
                 pr_number, branch, ..
             } => {
@@ -201,6 +255,92 @@ impl AutoActionExecutor {
             }
 
             _ => {}
+        }
+    }
+
+    /// Handle `PrCiPassed` as AutoAction: if the PR has no existing reviewer
+    /// and no review comments yet, dispatch a new reviewer via the injected
+    /// `ReviewDispatcher`. Respects `max_review_loops` guardrail.
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_pr_ci_passed(
+        state: &SharedState,
+        event_tx: &broadcast::Sender<CoreEvent>,
+        guardrails: &SharedGuardrailsSettings,
+        tracker: &Arc<AutoActionTracker>,
+        github: &dyn GithubApi,
+        review_dispatcher: &dyn ReviewDispatcher,
+        pr_number: u64,
+        title: &str,
+    ) {
+        // Resolve project root + branch + meta from task-meta files
+        let Some((project_root, branch, meta)) = resolve_meta_for_pr(state, pr_number) else {
+            warn!(
+                pr = pr_number,
+                "AutoAction: no task-meta found for PrCiPassed; skipping auto-dispatch"
+            );
+            return;
+        };
+
+        // Skip if an existing reviewer is still active for this PR
+        if let Some(rid) = &meta.review_agent_id {
+            let agents = snapshot_agents(state);
+            if let Some(agent) = find_agent_by_id(&agents, rid) {
+                if is_agent_online(agent) {
+                    info!(
+                        pr = pr_number,
+                        reviewer = %rid,
+                        "AutoAction: existing reviewer active — skip auto-dispatch"
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Skip if the PR already has review comments (human or bot)
+        if github
+            .fetch_pr_comments(project_root_str(&project_root), pr_number)
+            .await
+            .is_some()
+        {
+            info!(
+                pr = pr_number,
+                "AutoAction: PR already has review comments — skip auto-dispatch"
+            );
+            return;
+        }
+
+        // Guardrail: cap review dispatches by review_loops limit
+        let count = tracker.increment_review(pr_number);
+        let limit = guardrails.read().max_review_loops;
+        if count > limit {
+            info!(
+                pr = pr_number,
+                count, limit, "AutoAction: review dispatch limit exceeded — halting and escalating"
+            );
+            let _ = event_tx.send(CoreEvent::GuardrailExceeded {
+                guardrail: GuardrailKind::ReviewLoops,
+                branch: branch.clone(),
+                pr_number: Some(pr_number),
+                count,
+                limit,
+            });
+            return;
+        }
+
+        // Dispatch
+        info!(
+            pr = pr_number,
+            title = title,
+            cwd = %project_root.display(),
+            "AutoAction: dispatching reviewer for PrCiPassed"
+        );
+        let cwd = project_root.to_string_lossy().to_string();
+        if let Err(e) = review_dispatcher.dispatch_review(pr_number, cwd).await {
+            warn!(
+                pr = pr_number,
+                error = %e,
+                "AutoAction: dispatch_review failed"
+            );
         }
     }
 
@@ -469,6 +609,47 @@ fn resolve_branch_for_pr(state: &SharedState, pr_number: u64) -> Option<(PathBuf
     None
 }
 
+/// Resolve `(project_root, branch, meta)` for a PR. Prefers a live agent's
+/// branch (when known) but ultimately scans task-meta files across registered
+/// projects for the first entry with a matching `pr` field.
+fn resolve_meta_for_pr(
+    state: &SharedState,
+    pr_number: u64,
+) -> Option<(PathBuf, String, crate::task_meta::store::TaskMeta)> {
+    let (branch_from_agent, project_roots) = {
+        let s = state.read();
+        let branch = s
+            .agents
+            .values()
+            .find(|a| a.pr_number == Some(pr_number))
+            .and_then(|a| a.git_branch.clone());
+        let roots: Vec<PathBuf> = s.registered_projects.iter().map(PathBuf::from).collect();
+        (branch, roots)
+    };
+
+    if project_roots.is_empty() {
+        return None;
+    }
+
+    if let Some(branch) = branch_from_agent {
+        for root in &project_roots {
+            if let Some(meta) = meta_store::read_meta(root, &branch) {
+                if meta.pr == Some(pr_number) {
+                    return Some((root.clone(), branch, meta));
+                }
+            }
+        }
+    }
+
+    for root in &project_roots {
+        if let Some((branch, meta)) = meta_store::find_by_pr(root, pr_number) {
+            return Some((root.clone(), branch, meta));
+        }
+    }
+
+    None
+}
+
 fn project_root_str(p: &Path) -> &str {
     p.to_str().unwrap_or("")
 }
@@ -505,6 +686,30 @@ mod tests {
     struct StubGithub {
         ci_log: Mutex<Option<String>>,
         pr_comments: Mutex<Option<String>>,
+    }
+
+    #[derive(Default)]
+    struct StubDispatcher {
+        calls: Mutex<Vec<(u64, String)>>,
+        fail: Mutex<bool>,
+    }
+
+    impl ReviewDispatcher for StubDispatcher {
+        fn dispatch_review<'a>(
+            &'a self,
+            pr_number: u64,
+            cwd: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+            let fail = *self.fail.lock().unwrap();
+            self.calls.lock().unwrap().push((pr_number, cwd));
+            Box::pin(async move {
+                if fail {
+                    Err("forced failure".into())
+                } else {
+                    Ok(())
+                }
+            })
+        }
     }
 
     impl GithubApi for StubGithub {
@@ -600,6 +805,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         *gh.ci_log.lock().unwrap() = Some("=== pytest failed ===".to_string());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::NotifyOrchestrator);
 
@@ -608,8 +814,18 @@ mod tests {
             title: "Add feature".into(),
             failed_details: "1/3 checks failed".into(),
         };
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         let prompt = events
@@ -635,6 +851,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
         let event = CoreEvent::PrCiFailed {
@@ -642,8 +859,18 @@ mod tests {
             title: "x".into(),
             failed_details: "d".into(),
         };
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         assert!(
@@ -664,6 +891,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::AutoAction);
 
         let event = CoreEvent::PrCiFailed {
@@ -671,8 +899,18 @@ mod tests {
             title: "x".into(),
             failed_details: "d".into(),
         };
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         let fallback = events.iter().find_map(|e| match e {
@@ -696,6 +934,7 @@ mod tests {
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         g.write().max_ci_retries = 2;
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::NotifyOrchestrator);
 
         let event = CoreEvent::PrCiFailed {
@@ -706,12 +945,32 @@ mod tests {
 
         // Under limit: 2 prompts
         for _ in 0..2 {
-            AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-                .await;
+            AutoActionExecutor::handle_event(
+                &state,
+                &tx,
+                &ns,
+                &g,
+                &tpl,
+                &tr,
+                gh.as_ref(),
+                dispatcher.as_ref(),
+                &event,
+            )
+            .await;
         }
         // 3rd exceeds
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         let prompts = events
@@ -726,8 +985,18 @@ mod tests {
         assert_eq!(guardrails, 1);
 
         // Further triggers remain halted
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
         let events = drain(&mut rx).await;
         assert!(events
             .iter()
@@ -746,6 +1015,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         *gh.pr_comments.lock().unwrap() = Some("- @alice: please rename foo".to_string());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
@@ -754,8 +1024,18 @@ mod tests {
             title: "Y".into(),
             comments_summary: "1 comment".into(),
         };
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         let (target, prompt) = events
@@ -781,6 +1061,7 @@ mod tests {
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         g.write().max_review_loops = 1;
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
         let event = CoreEvent::PrReviewFeedback {
@@ -789,10 +1070,30 @@ mod tests {
             comments_summary: "c".into(),
         };
 
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         let events = drain(&mut rx).await;
         assert_eq!(
@@ -831,16 +1132,249 @@ mod tests {
         assert_eq!(tr.review_count(42), 1);
 
         let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::AutoAction);
         let event = CoreEvent::PrClosed {
             pr_number: 42,
             title: "Z".into(),
             branch: "feat/z".into(),
         };
-        AutoActionExecutor::handle_event(&state, &tx, &ns, &g, &tpl, &tr, gh.as_ref(), &event)
-            .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
 
         assert_eq!(tr.ci_count("feat/z"), 0);
         assert_eq!(tr.review_count(42), 0);
+    }
+
+    // ── PrCiPassed ──────────────────────────────────────────────────
+
+    fn settings_with_ci_passed(on_ci_passed: EventHandling) -> OrchestratorNotifySettings {
+        let mut s = OrchestratorNotifySettings::default();
+        s.on_ci_passed = on_ci_passed;
+        s
+    }
+
+    #[tokio::test]
+    async fn test_pr_ci_passed_autoaction_dispatches_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::shared();
+        // Task-meta with pr=20 and no review_agent_id
+        let mut meta = TaskMeta::for_issue(5, Some("main:0.1".into()));
+        meta.pr = Some(20);
+        meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
+
+        let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
+        let gh = Arc::new(StubGithub::default()); // no pr_comments → None
+        let dispatcher = Arc::new(StubDispatcher::default());
+        let ns = settings_with_ci_passed(EventHandling::AutoAction);
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 20,
+            title: "T".into(),
+            checks_summary: "ok".into(),
+        };
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+
+        let calls = dispatcher.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, 20);
+    }
+
+    #[tokio::test]
+    async fn test_pr_ci_passed_skips_when_reviewer_active() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::shared();
+        // Insert an online reviewer agent matched by review_agent_id
+        insert_agent(&state, "rev:0.1", "feat/a", Some(21), AgentStatus::Idle);
+        let mut meta = TaskMeta::for_issue(6, Some("main:0.1".into()));
+        meta.pr = Some(21);
+        meta.review_agent_id = Some("rev:0.1".into());
+        meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
+
+        let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
+        let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
+        let ns = settings_with_ci_passed(EventHandling::AutoAction);
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 21,
+            title: "T".into(),
+            checks_summary: "ok".into(),
+        };
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+
+        assert!(
+            dispatcher.calls.lock().unwrap().is_empty(),
+            "should not dispatch when an active reviewer exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pr_ci_passed_skips_when_pr_has_review_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::shared();
+        let mut meta = TaskMeta::for_issue(7, Some("main:0.1".into()));
+        meta.pr = Some(22);
+        meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
+
+        let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
+        let gh = Arc::new(StubGithub::default());
+        *gh.pr_comments.lock().unwrap() = Some("- @bob: nit".to_string());
+        let dispatcher = Arc::new(StubDispatcher::default());
+        let ns = settings_with_ci_passed(EventHandling::AutoAction);
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 22,
+            title: "T".into(),
+            checks_summary: "ok".into(),
+        };
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+
+        assert!(
+            dispatcher.calls.lock().unwrap().is_empty(),
+            "should not dispatch when PR already has review comments"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pr_ci_passed_guardrail_exceeded() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::shared();
+        let mut meta = TaskMeta::for_issue(8, Some("main:0.1".into()));
+        meta.pr = Some(23);
+        meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
+
+        let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
+        g.write().max_review_loops = 1;
+        let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
+        let ns = settings_with_ci_passed(EventHandling::AutoAction);
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 23,
+            title: "T".into(),
+            checks_summary: "ok".into(),
+        };
+        // First call dispatches, second exceeds the limit
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+
+        assert_eq!(dispatcher.calls.lock().unwrap().len(), 1);
+        let events = drain(&mut rx).await;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    CoreEvent::GuardrailExceeded {
+                        guardrail: GuardrailKind::ReviewLoops,
+                        ..
+                    }
+                ))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pr_ci_passed_notify_mode_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::shared();
+        let mut meta = TaskMeta::for_issue(9, Some("main:0.1".into()));
+        meta.pr = Some(24);
+        meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
+
+        let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
+        let gh = Arc::new(StubGithub::default());
+        let dispatcher = Arc::new(StubDispatcher::default());
+        let ns = settings_with_ci_passed(EventHandling::NotifyOrchestrator);
+
+        let event = CoreEvent::PrCiPassed {
+            pr_number: 24,
+            title: "T".into(),
+            checks_summary: "ok".into(),
+        };
+        AutoActionExecutor::handle_event(
+            &state,
+            &tx,
+            &ns,
+            &g,
+            &tpl,
+            &tr,
+            gh.as_ref(),
+            dispatcher.as_ref(),
+            &event,
+        )
+        .await;
+
+        assert!(
+            dispatcher.calls.lock().unwrap().is_empty(),
+            "no dispatch when event is NotifyOrchestrator mode"
+        );
     }
 }
