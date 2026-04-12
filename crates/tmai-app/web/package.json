@@ -36,7 +36,7 @@
     "@types/node": "^25.6.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^5",
+    "@vitejs/plugin-react": "^6",
     "tailwindcss": "^4",
     "typescript": "~5.8",
     "vite": "^8",
