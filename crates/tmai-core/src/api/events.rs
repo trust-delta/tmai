@@ -260,6 +260,12 @@ pub enum CoreEvent {
         title: String,
         /// Summary of review comments
         comments_summary: String,
+        /// Monotonic review count from PR state — distinguishes
+        /// back-to-back ChangesRequested transitions so the notifier
+        /// can dedupe on `(pr_number, review_count)` instead of
+        /// collapsing distinct rounds into one entry.
+        #[serde(default)]
+        review_count: u64,
     },
 
     /// A PR was closed (merged or closed without merging)

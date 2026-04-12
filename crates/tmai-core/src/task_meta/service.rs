@@ -610,6 +610,7 @@ mod tests {
             pr_number: 20,
             title: "API endpoints".to_string(),
             comments_summary: "needs more tests".to_string(),
+            review_count: 5,
         };
         TaskMetaService::handle_event(&state, &event, &g, &tx);
 
