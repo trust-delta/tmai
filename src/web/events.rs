@@ -304,11 +304,12 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
-                        Ok(CoreEvent::PrReviewFeedback { pr_number, title, comments_summary }) => {
+                        Ok(CoreEvent::PrReviewFeedback { pr_number, title, comments_summary, review_count }) => {
                             let data = serde_json::json!({
                                 "pr_number": pr_number,
                                 "title": title,
                                 "comments_summary": comments_summary,
+                                "review_count": review_count,
                             });
                             let event = Event::default()
                                 .event("pr_review_feedback")

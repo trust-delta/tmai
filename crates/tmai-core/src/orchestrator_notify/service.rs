@@ -358,7 +358,10 @@ impl OrchestratorNotifier {
                         ("summary", checks_summary.as_str()),
                     ],
                 );
-                Some((msg, format!("pr-{pr_number}")))
+                // Intentional: CI latest-wins. A fresh CI pass on the same PR
+                // (after a re-run) supersedes any earlier pending notification
+                // in the busy-buffer; no value in queuing multiple CI states.
+                Some((msg, format!("pr-{pr_number}-ci")))
             }
 
             CoreEvent::PrCiFailed {
@@ -381,13 +384,17 @@ impl OrchestratorNotifier {
                         ("failed_details", failed_details.as_str()),
                     ],
                 );
-                Some((msg, format!("pr-{pr_number}")))
+                // Intentional: CI latest-wins (see PrCiPassed for rationale).
+                // Uses the same `pr-{N}-ci` key so pass/fail on the same PR
+                // collapse to one entry — whichever state is most recent wins.
+                Some((msg, format!("pr-{pr_number}-ci")))
             }
 
             CoreEvent::PrReviewFeedback {
                 pr_number,
                 title,
                 comments_summary,
+                review_count,
             } => {
                 if settings.on_pr_comment != EventHandling::NotifyOrchestrator {
                     return None;
@@ -404,7 +411,11 @@ impl OrchestratorNotifier {
                         ("comments_summary", comments_summary.as_str()),
                     ],
                 );
-                Some((msg, format!("pr-{pr_number}")))
+                // Distinct review rounds (ChangesRequested → dismissed → ChangesRequested)
+                // get distinct keys so back-to-back rounds don't overwrite each other in
+                // the busy-buffer. CI state dedup remains pr-level (latest-wins) because
+                // a fresh CI failure supersedes any stale earlier failure notification.
+                Some((msg, format!("pr-{pr_number}-review-{review_count}")))
             }
 
             CoreEvent::PrClosed {
@@ -890,6 +901,74 @@ mod tests {
             result.is_none(),
             "PR closed should respect on_pr_closed flag"
         );
+    }
+
+    #[test]
+    fn test_review_feedback_dedup_key_includes_review_count() {
+        // Distinct review rounds on the same PR must produce distinct dedup
+        // keys so the busy-buffer keeps both entries instead of collapsing
+        // them. Without review_count in the key, a second ChangesRequested
+        // transition on the same PR (after dismissal) would overwrite the
+        // first entry silently.
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+
+        let first = CoreEvent::PrReviewFeedback {
+            pr_number: 42,
+            title: "feat: x".to_string(),
+            comments_summary: "round 1".to_string(),
+            review_count: 1,
+        };
+        let second = CoreEvent::PrReviewFeedback {
+            pr_number: 42,
+            title: "feat: x".to_string(),
+            comments_summary: "round 2".to_string(),
+            review_count: 2,
+        };
+
+        let (_, k1) = OrchestratorNotifier::build_notification(&first, &settings, &state).unwrap();
+        let (_, k2) = OrchestratorNotifier::build_notification(&second, &settings, &state).unwrap();
+
+        assert_ne!(k1, k2, "distinct review rounds must produce distinct keys");
+        assert!(k1.contains("review-1"));
+        assert!(k2.contains("review-2"));
+    }
+
+    #[test]
+    fn test_ci_dedup_key_is_stable_latest_wins() {
+        // CI pass/fail on the same PR share a single `pr-{N}-ci` dedup key
+        // by design. When orchestrator is busy and CI flips state multiple
+        // times, only the most recent CI status reaches the orchestrator on
+        // flush — the older, superseded notification is intentionally dropped.
+        // This test locks that invariant so future refactors don't split the
+        // CI key without consideration.
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+
+        let failed = CoreEvent::PrCiFailed {
+            pr_number: 42,
+            title: "feat: x".to_string(),
+            failed_details: "lint".to_string(),
+        };
+        let passed = CoreEvent::PrCiPassed {
+            pr_number: 42,
+            title: "feat: x".to_string(),
+            checks_summary: "all green".to_string(),
+        };
+
+        let (_, k_fail) =
+            OrchestratorNotifier::build_notification(&failed, &settings, &state).unwrap();
+        // PrCiPassed is OFF by default; flip to NotifyOrchestrator for the test.
+        let mut settings_with_pass = settings.clone();
+        settings_with_pass.on_ci_passed = EventHandling::NotifyOrchestrator;
+        let (_, k_pass) =
+            OrchestratorNotifier::build_notification(&passed, &settings_with_pass, &state).unwrap();
+
+        assert_eq!(
+            k_fail, k_pass,
+            "CI pass and fail on the same PR must share one dedup key (latest-wins)"
+        );
+        assert_eq!(k_fail, "pr-42-ci");
     }
 
     #[test]

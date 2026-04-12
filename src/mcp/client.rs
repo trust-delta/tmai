@@ -55,6 +55,37 @@ pub fn remove_api_info() {
     let _ = std::fs::remove_file(api_info_path());
 }
 
+/// Spawn a background task that rewrites `api.json` whenever it disappears.
+///
+/// api.json has been observed going missing while tmai is still running
+/// (root cause undetermined — no code path in the tmai binary removes it
+/// while the main loop is live). MCP clients depend on the file to
+/// discover port+token, so the watchdog makes the file self-healing.
+/// Noop while the file exists; writes exactly the same port+token the
+/// parent already uses. Task runs for the lifetime of the tokio runtime.
+pub fn spawn_api_info_watchdog(port: u16, token: String) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        interval.tick().await; // skip first fire
+        loop {
+            interval.tick().await;
+            if !api_info_path().exists() {
+                match write_api_info(port, &token) {
+                    Ok(()) => {
+                        tracing::info!(
+                            path = %api_info_path().display(),
+                            "api.json watchdog: rewrote missing connection file"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("api.json watchdog: rewrite failed: {e}");
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// HTTP client for tmai's Web API.
 /// Re-reads `api.json` on every request so that token and port changes
 /// (e.g. after tmai restart) are picked up transparently.
@@ -364,6 +395,30 @@ mod tests {
         remove_api_info();
         let result = TmaiHttpClient::from_runtime();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn watchdog_rewrite_step_restores_missing_file() {
+        // Covers the core of spawn_api_info_watchdog: when api.json is gone,
+        // calling write_api_info with the original port/token recreates it
+        // with the same contents a client would expect. We exercise the
+        // write step directly (the periodic tokio interval is an
+        // integration concern not worth the async scaffolding in a unit
+        // test).
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
+        write_api_info(5000, "watchdog-token").unwrap();
+        remove_api_info();
+        assert!(!api_info_path().exists());
+
+        write_api_info(5000, "watchdog-token").unwrap();
+        assert!(api_info_path().exists());
+
+        let info = TmaiHttpClient::read_connection_info().unwrap();
+        assert_eq!(info.port, 5000);
+        assert_eq!(info.token, "watchdog-token");
+
+        remove_api_info();
     }
 
     #[test]
