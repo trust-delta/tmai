@@ -1,12 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
+import { isValidElement, type ReactNode, useCallback, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type MdTreeEntry } from "@/lib/api";
+import { MermaidBlock } from "./MermaidBlock";
 
 interface MarkdownPanelProps {
   projectPath: string;
   projectName: string;
 }
+
+interface CodeElementProps {
+  className?: string;
+  children?: ReactNode;
+}
+
+// Extract the source text of a fenced code block from react-markdown's `children` prop
+function extractCodeSource(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map(extractCodeSource).join("");
+  return String(children ?? "");
+}
+
+// react-markdown component overrides: intercept mermaid fenced blocks and render them as SVG
+const markdownComponents = {
+  pre({ children, ...props }: { children?: ReactNode }) {
+    if (isValidElement<CodeElementProps>(children)) {
+      const className = children.props.className ?? "";
+      if (className === "language-mermaid") {
+        const source = extractCodeSource(children.props.children).replace(/\n$/, "");
+        return <MermaidBlock source={source} />;
+      }
+    }
+    return <pre {...props}>{children}</pre>;
+  },
+};
 
 // Panel for browsing and editing markdown files in a project
 export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) {
@@ -228,7 +255,9 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                     prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400
                   "
                   >
-                    <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                      {content}
+                    </Markdown>
                   </div>
                 ) : (
                   <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-words select-text leading-relaxed">
