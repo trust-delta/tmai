@@ -170,6 +170,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [showCursor, setShowCursor] = useState(true);
   const [focused, setFocused] = useState(true);
   const [composing, setComposing] = useState(false);
+  // Mirror `composing` into a ref so fetchPreview / poll-tick closures can
+  // read the current composition state without being re-created (which
+  // would restart the poll timer and disrupt IME UI timing).
+  const composingRef = useRef(false);
+  useEffect(() => {
+    composingRef.current = composing;
+  }, [composing]);
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
   // Wrap setter to persist preference per agent
@@ -317,9 +324,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
   }, [focused]);
 
-  // Fetch preview content, shared between polling and post-keystroke refresh
-  // Skips DOM update while user has an active text selection
+  // Fetch preview content, shared between polling and post-keystroke refresh.
+  // Skips DOM update while user has an active text selection, or while an
+  // IME composition is in progress — re-rendering the preview during
+  // composition disrupts the IME candidate window and causes visible
+  // typing lag in CJK input methods.
   const fetchPreview = useCallback(async () => {
+    if (composingRef.current) return;
     try {
       const data = await api.getPreview(agentId);
       if (!data.content) return;
@@ -644,6 +655,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             sendPassthrough({ chars: value });
             e.currentTarget.value = "";
           }
+          // Re-sync preview once IME is done — sendPassthrough's own
+          // fetchPreview scheduling covers the non-empty case, but for
+          // the rare empty-confirm branch we explicitly catch up here.
+          composingRef.current = false;
         }}
         autoComplete="off"
         autoCorrect="off"
