@@ -375,7 +375,9 @@ impl App {
             while let Ok(msg) = poll_rx.try_recv() {
                 match msg {
                     PollMessage::AgentsUpdated(agents) => {
-                        let target_changes = {
+                        let target_changes = if let Some(ref core) = self.core {
+                            core.apply_agents_poll_update(agents)
+                        } else {
                             let mut state = self.state.write();
                             let changes = state.update_agents(agents);
                             state.clear_error();
@@ -471,7 +473,7 @@ impl App {
                                 let core = core.clone();
                                 tokio::spawn(async move {
                                     tracing::info!("Delivering queued prompt to agent {}", target);
-                                    if let Err(e) = core.send_text(&target, &prompt).await {
+                                    if let Err(e) = core.deliver_prompt(&target, &prompt).await {
                                         tracing::warn!(
                                             "Failed to deliver queued prompt to {}: {}",
                                             target,
