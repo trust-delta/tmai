@@ -254,10 +254,32 @@ impl TmaiCore {
         Ok(())
     }
 
+    /// Type `text` into an agent's input and submit it with a guaranteed Enter.
+    ///
+    /// Builds on [`send_text`](Self::send_text) (which already types text and
+    /// sends one Enter) and appends a safety-net second Enter after a delay.
+    /// Claude Code's TUI treats multi-line bursts as a paste and can absorb the
+    /// first Enter into the paste buffer instead of submitting; sending a second
+    /// Enter after paste-detection has timed out guarantees submission.
+    ///
+    /// The extra Enter is a no-op when the input buffer is already empty (i.e.
+    /// when the first Enter did submit), so callers can rely on a single submit
+    /// per call in the common case.
+    pub async fn deliver_prompt(&self, id: &str, text: &str) -> Result<(), ApiError> {
+        self.send_text(id, text).await?;
+        let target = self.resolve_agent_key(id)?;
+        let cmd = self.require_command_sender()?;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        cmd.send_keys(&target, "Enter")?;
+        Ok(())
+    }
+
     /// Send a prompt to an agent with status-aware behavior.
     ///
-    /// - **Idle**: sends the prompt immediately (text + Enter).
-    /// - **Offline** (stopped): sends the prompt to restart the agent.
+    /// - **Idle**: submits the prompt immediately (text + Enter, with a safety-net
+    ///   second Enter so multi-line content is not left unsubmitted by Claude
+    ///   Code's paste detection).
+    /// - **Offline** (stopped): submits the prompt to restart the agent.
     /// - **Processing**: queues the prompt (max 5); delivered when agent becomes Idle.
     /// - **Other** (AwaitingApproval, Error, Unknown): queues like Processing.
     ///
@@ -285,7 +307,7 @@ impl TmaiCore {
 
         match status {
             AgentStatus::Idle | AgentStatus::Offline => {
-                self.send_text(&target, prompt).await?;
+                self.deliver_prompt(&target, prompt).await?;
                 let action = if status.is_idle() {
                     "sent"
                 } else {
@@ -1311,6 +1333,42 @@ mod tests {
         let text = "x".repeat(MAX_TEXT_LENGTH);
         let result = core.send_text("main:0.0", &text).await;
         assert!(!matches!(result, Err(ApiError::InvalidInput { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_too_long() {
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        let long_text = "x".repeat(MAX_TEXT_LENGTH + 1);
+        let result = core.deliver_prompt("main:0.0", &long_text).await;
+        assert!(matches!(result, Err(ApiError::InvalidInput { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_not_found() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let result = core.deliver_prompt("nonexistent", "hello").await;
+        assert!(matches!(result, Err(ApiError::AgentNotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_virtual_agent() {
+        let mut agent = test_agent("main:0.0", AgentStatus::Idle);
+        agent.is_virtual = true;
+        let core = make_core_with_agents(vec![agent]);
+        let result = core.deliver_prompt("main:0.0", "hello").await;
+        assert!(matches!(result, Err(ApiError::VirtualAgent { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_deliver_prompt_multiline_no_command_sender() {
+        // Without a CommandSender, deliver_prompt should fail at the send_text stage
+        // (before any Enter is issued), proving that validation happens before typing.
+        let agent = test_agent("main:0.0", AgentStatus::Idle);
+        let core = make_core_with_agents(vec![agent]);
+        let multiline = "line1\nline2\n```rust\nfn main() {}\n```\nend";
+        let result = core.deliver_prompt("main:0.0", multiline).await;
+        assert!(matches!(result, Err(ApiError::NoCommandSender)));
     }
 
     #[test]
