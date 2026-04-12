@@ -398,28 +398,41 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, [fetchPreview, getPollInterval]);
 
-  // Input-box fast path: poll /preview-input at `preview_poll_active_input_ms`
-  // (default 100ms) and write the last few lines directly into a tiny
-  // dedicated <div>. Skipped during IME composition (same reason as the
-  // main fetch: avoid re-render mid-composition).
+  // Input-box fast path: poll /preview-input and write the last few lines
+  // directly into a tiny dedicated <div>. Skipped during IME composition.
+  // Errors are logged (not silently swallowed) so a broken render path
+  // surfaces in devtools instead of leaving the overlay blank.
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
       if (!composingRef.current) {
+        let data: { content: string; lines: number } | null = null;
         try {
-          const data = await api.getPreviewInput(agentId, 10);
-          if (
-            data.content &&
-            data.content !== lastInputBoxContentRef.current &&
-            inputBoxRef.current
-          ) {
+          data = await api.getPreviewInput(agentId, 10);
+        } catch (err) {
+          console.warn("[tmai] preview-input fetch failed:", err);
+        }
+        if (data?.content && inputBoxRef.current) {
+          const el = inputBoxRef.current;
+          if (data.content !== lastInputBoxContentRef.current) {
             lastInputBoxContentRef.current = data.content;
-            const html = DOMPurify.sanitize(ansi.ansi_to_html(data.content));
-            inputBoxRef.current.innerHTML = html;
+            let html: string;
+            try {
+              html = DOMPurify.sanitize(ansi.ansi_to_html(data.content), {
+                ADD_ATTR: ["data-tmai-cursor"],
+              });
+            } catch (err) {
+              console.warn("[tmai] preview-input ANSI render failed:", err);
+              // Fallback: plain text so the overlay still shows something
+              html = DOMPurify.sanitize(data.content);
+            }
+            try {
+              el.innerHTML = html;
+            } catch (err) {
+              console.warn("[tmai] preview-input innerHTML assign failed:", err);
+            }
           }
-        } catch {
-          // agent gone or transient — swallow
         }
       }
       const interval = pollSettings.current.preview_poll_active_input_ms;
