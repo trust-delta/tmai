@@ -810,6 +810,11 @@ pub struct MonitoredAgent {
     pub issue_number: Option<u64>,
     /// Associated PR number (auto-detected from branch or set manually)
     pub pr_number: Option<u64>,
+    /// Timestamp of the most recent human-originated keystroke into this
+    /// agent's pane. Used by `OrchestratorNotifier` to defer notifications
+    /// while the operator is composing input but has not submitted yet (#399).
+    /// Not serialized — purely an in-memory signal.
+    pub last_human_input_at: Option<std::time::Instant>,
 }
 
 impl MonitoredAgent {
@@ -880,7 +885,23 @@ impl MonitoredAgent {
             is_orchestrator: false,
             issue_number: None,
             pr_number: None,
+            last_human_input_at: None,
         }
+    }
+
+    /// Stamp `last_human_input_at` with the current time. Called from
+    /// `CommandSender` when a keystroke originates from `ActionOrigin::Human`.
+    pub fn note_human_input(&mut self) {
+        self.last_human_input_at = Some(std::time::Instant::now());
+    }
+
+    /// Returns true when the operator is actively composing input into this
+    /// pane (i.e. a Human keystroke landed within the last `grace` window).
+    /// Used by the orchestrator notifier to avoid clobbering in-flight input.
+    pub fn is_operator_typing(&self, grace: std::time::Duration) -> bool {
+        self.last_human_input_at
+            .map(|t| t.elapsed() < grace)
+            .unwrap_or(false)
     }
 
     /// Set the detection source

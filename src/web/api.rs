@@ -493,6 +493,7 @@ pub async fn set_auto_approve(
 #[allow(deprecated)]
 pub async fn passthrough_input(
     State(core): State<Arc<TmaiCore>>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
     Json(req): Json<PassthroughRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -512,12 +513,16 @@ pub async fn passthrough_input(
     let cmd = core
         .raw_command_sender()
         .ok_or_else(|| json_error(StatusCode::INTERNAL_SERVER_ERROR, "No command sender"))?;
+    // Passthrough input is always human-originated (WebUI keystrokes). Use
+    // the origin-aware send so the orchestrator notifier can defer
+    // auto-injection while the operator is composing (#399).
+    let origin = parse_origin(&headers);
     if let Some(ref chars) = req.chars {
-        cmd.send_keys_literal(send_target, chars)
+        cmd.send_keys_literal_with_origin(send_target, chars, &origin)
             .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     }
     if let Some(ref key) = req.key {
-        cmd.send_keys(send_target, key)
+        cmd.send_keys_with_origin(send_target, key, &origin)
             .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     }
 
@@ -1394,6 +1399,9 @@ pub struct NotifySettingsResponse {
     pub buffer_ttl_secs: u64,
     /// Maximum buffered entries per orchestrator (oldest dropped on overflow)
     pub buffer_max_messages: usize,
+    /// Grace window (seconds) during which human keystrokes block
+    /// auto-injection into the same orchestrator pane (#399)
+    pub typing_grace_secs: u64,
 }
 
 /// Template overrides response
@@ -1484,6 +1492,8 @@ pub struct UpdateNotifySettingsRequest {
     pub buffer_ttl_secs: Option<u64>,
     #[serde(default)]
     pub buffer_max_messages: Option<usize>,
+    #[serde(default)]
+    pub typing_grace_secs: Option<u64>,
 }
 
 /// AutoAction template overrides update request (partial)
@@ -1578,6 +1588,7 @@ pub async fn get_orchestrator_settings(
             buffer_when_busy: orch.notify.buffer_when_busy,
             buffer_ttl_secs: orch.notify.buffer_ttl_secs,
             buffer_max_messages: orch.notify.buffer_max_messages,
+            typing_grace_secs: orch.notify.typing_grace_secs,
         },
         guardrails: GuardrailsSettingsResponse {
             max_ci_retries: orch.guardrails.max_ci_retries,
@@ -1713,6 +1724,10 @@ pub async fn update_orchestrator_settings(
                     .as_ref()
                     .and_then(|r| r.buffer_max_messages)
                     .unwrap_or(n.buffer_max_messages),
+                typing_grace_secs: nr
+                    .as_ref()
+                    .and_then(|r| r.typing_grace_secs)
+                    .unwrap_or(n.typing_grace_secs),
             }
         },
         guardrails: {
