@@ -544,6 +544,10 @@ pub struct AppState {
     /// Shared handle to guardrails settings (hot-reloadable from WebUI).
     /// None until TaskMetaService is started.
     pub guardrails_settings: Option<crate::task_meta::SharedGuardrailsSettings>,
+
+    /// Shared handle to auto-action templates (hot-reloadable from WebUI).
+    /// None if orchestrator is disabled or AutoActionExecutor is not started.
+    pub auto_action_templates: Option<crate::auto_action::SharedAutoActionTemplates>,
 }
 
 impl AppState {
@@ -589,6 +593,7 @@ impl AppState {
             pending_agent_metadata: HashMap::new(),
             notify_settings: None,
             guardrails_settings: None,
+            auto_action_templates: None,
         }
     }
 

@@ -14,6 +14,13 @@ pub mod templates;
 pub mod tracker;
 
 pub use resolver::{is_agent_online, resolve_target_agent, AgentRole};
-pub use service::{AutoActionExecutor, GithubApi, RealGithubApi};
+pub use service::{
+    AutoActionExecutor, GithubApi, NoopReviewDispatcher, RealGithubApi, ReviewDispatcher,
+};
 pub use templates::{render, AutoActionTemplates};
 pub use tracker::AutoActionTracker;
+
+/// Shared handle to auto-action templates (hot-reloadable from WebUI).
+/// Both `AutoActionExecutor` and the REST settings handler hold clones of this
+/// same `Arc` so that template edits take effect without a tmai restart.
+pub type SharedAutoActionTemplates = std::sync::Arc<parking_lot::RwLock<AutoActionTemplates>>;

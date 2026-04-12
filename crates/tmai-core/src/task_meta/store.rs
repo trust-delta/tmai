@@ -163,6 +163,13 @@ pub fn scan_all(project_root: &Path) -> Vec<(String, TaskMeta)> {
     results
 }
 
+/// Scan `.task-meta/*.json` and return the first entry whose `pr` field matches `pr_number`.
+pub fn find_by_pr(project_root: &Path, pr_number: u64) -> Option<(String, TaskMeta)> {
+    scan_all(project_root)
+        .into_iter()
+        .find(|(_, meta)| meta.pr == Some(pr_number))
+}
+
 /// Update task meta for a branch: read existing or create new, apply changes, write back.
 pub fn update_meta<F>(project_root: &Path, branch: &str, updater: F)
 where
@@ -298,6 +305,26 @@ mod tests {
         assert_eq!(loaded.issue, Some(10));
         assert_eq!(loaded.pr, Some(42));
         assert_eq!(loaded.milestones.len(), 2);
+    }
+
+    #[test]
+    fn test_find_by_pr() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let mut m1 = TaskMeta::for_issue(1, None);
+        m1.pr = Some(100);
+        let mut m2 = TaskMeta::for_issue(2, None);
+        m2.pr = Some(200);
+        write_meta(root, "feat/a", &m1).unwrap();
+        write_meta(root, "feat/b", &m2).unwrap();
+        write_meta(root, "no-pr", &TaskMeta::for_issue(3, None)).unwrap();
+
+        let found = find_by_pr(root, 200).unwrap();
+        assert_eq!(found.0, "feat/b");
+        assert_eq!(found.1.pr, Some(200));
+
+        assert!(find_by_pr(root, 999).is_none());
     }
 
     #[test]
