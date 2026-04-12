@@ -256,6 +256,20 @@ impl TmaiCore {
         Ok(state.agents.get(&key).unwrap().last_content_ansi.clone())
     }
 
+    /// Get only the last N lines of the ANSI preview content — used for the
+    /// input-box fast-path so the WebUI can poll the prompt area without
+    /// transferring the whole scrollback (which can be several MB).
+    /// `lines` is clamped to `[1, 200]`.
+    pub fn get_preview_input(&self, id: &str, lines: usize) -> Result<String, ApiError> {
+        let state = self.state().read();
+        let key = Self::resolve_agent_key_in_state(&state, id)?;
+        let content = &state.agents.get(&key).unwrap().last_content_ansi;
+        let take = lines.clamp(1, 200);
+        let all: Vec<&str> = content.lines().collect();
+        let start = all.len().saturating_sub(take);
+        Ok(all[start..].join("\n"))
+    }
+
     /// Get the plain-text content for an agent.
     pub fn get_content(&self, id: &str) -> Result<String, ApiError> {
         let state = self.state().read();

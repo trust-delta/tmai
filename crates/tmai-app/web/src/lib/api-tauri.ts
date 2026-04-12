@@ -105,6 +105,7 @@ export const api = {
   passthrough: (target: string, input: { chars?: string; key?: string }) =>
     httpApi.passthrough(target, input),
   getPreview: (target: string) => httpApi.getPreview(target),
+  getPreviewInput: (target: string, lines = 8) => httpApi.getPreviewInput(target, lines),
   getTranscript: (target: string) => httpApi.getTranscript(target),
 
   // Spawn
