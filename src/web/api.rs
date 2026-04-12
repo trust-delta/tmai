@@ -521,6 +521,13 @@ pub async fn passthrough_input(
             .map_err(|e| json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     }
 
+    // Tell the Poller to switch to fast-tick mode so the preview cache
+    // reflects this keystroke within ms (instead of 500ms default).
+    {
+        #[allow(deprecated)]
+        core.raw_state().write().note_webui_keystroke();
+    }
+
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 

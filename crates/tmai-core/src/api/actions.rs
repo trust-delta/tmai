@@ -248,6 +248,8 @@ impl TmaiCore {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         cmd.send_keys(&target, "Enter")?;
 
+        self.state().write().note_webui_keystroke();
+
         self.audit_helper()
             .maybe_emit_input(&target, "input_text", "api_input", None);
 
@@ -373,6 +375,8 @@ impl TmaiCore {
             let cmd = self.require_command_sender()?;
             cmd.send_keys(&target, key)?;
         }
+
+        self.state().write().note_webui_keystroke();
 
         self.audit_helper()
             .maybe_emit_input(&target, "special_key", "api_input", None);
