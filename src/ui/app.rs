@@ -471,7 +471,7 @@ impl App {
                                 let core = core.clone();
                                 tokio::spawn(async move {
                                     tracing::info!("Delivering queued prompt to agent {}", target);
-                                    if let Err(e) = core.send_text(&target, &prompt).await {
+                                    if let Err(e) = core.deliver_prompt(&target, &prompt).await {
                                         tracing::warn!(
                                             "Failed to deliver queued prompt to {}: {}",
                                             target,
