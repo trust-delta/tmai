@@ -58,8 +58,10 @@ pub fn append(
         return;
     }
 
-    // Overflow: drop oldest until we have room
-    while entries.len() >= max_messages {
+    // Overflow: drop oldest until we have room.
+    // Clamp to 1 — a configured 0 would otherwise panic on the empty Vec.
+    let max = max_messages.max(1);
+    while entries.len() >= max {
         entries.remove(0);
     }
 
@@ -184,6 +186,18 @@ mod tests {
     fn combine_uses_separator() {
         let entries = vec![make("a", "first"), make("b", "second")];
         assert_eq!(combine_messages(&entries), "first\n\n---\n\nsecond");
+    }
+
+    #[test]
+    fn max_messages_zero_does_not_panic() {
+        // Zero is clamped to 1 — never panics on the empty Vec during
+        // overflow drop. Only one entry is retained.
+        let buf = new_shared_buffer();
+        append(&buf, "orch", make("a", "m1"), Duration::from_secs(600), 0);
+        append(&buf, "orch", make("b", "m2"), Duration::from_secs(600), 0);
+        let entries = take_for_flush(&buf, "orch", Duration::from_secs(600));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source, "b");
     }
 
     #[test]

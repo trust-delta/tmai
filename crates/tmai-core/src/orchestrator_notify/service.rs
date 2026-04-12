@@ -9,8 +9,14 @@
 //! template override.  Settings are read from a shared `Arc<RwLock<>>` so
 //! changes made via the WebUI take effect immediately without restart.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Monotonic counter used to give every `ActionPerformed` event a unique
+/// dedup key so distinct invocations of the same action (e.g. two
+/// `kill_agent` calls) stay as separate buffer entries.
+static ACTION_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 use parking_lot::RwLock;
 use tokio::sync::broadcast;
@@ -462,8 +468,11 @@ impl OrchestratorNotifier {
                     return None;
                 }
                 let msg = format!("[tmai] {origin} performed {action}: {summary}");
-                // Use action as pseudo-target (no specific agent)
-                Some((msg, format!("action-{action}")))
+                // Each action invocation must stay as a distinct buffer entry,
+                // so include a monotonic sequence number in the dedup key —
+                // otherwise two `kill_agent` events would collapse into one.
+                let seq = ACTION_EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
+                Some((msg, format!("action-{action}-{origin}-{seq}")))
             }
 
             _ => None,
@@ -1483,6 +1492,53 @@ mod tests {
             buf.read().is_empty(),
             "buffering disabled — nothing should be buffered"
         );
+    }
+
+    #[tokio::test]
+    async fn test_action_performed_distinct_events_not_deduped() {
+        // Two ActionPerformed events with the same action string must both
+        // survive in the buffer — collapsing them would defeat the PR's
+        // motivating use case (multiple kill_agent invocations).
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, processing_status());
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        for i in 0..2 {
+            let _ = event_tx.send(CoreEvent::ActionPerformed {
+                origin: crate::api::ActionOrigin::webui(),
+                action: "kill_agent".to_string(),
+                summary: format!("killed agent worker:{i}"),
+            });
+        }
+
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            if buf.read().get("orch:0.0").map(|v| v.len()).unwrap_or(0) >= 2 {
+                break;
+            }
+        }
+
+        let entries = buf.read().get("orch:0.0").cloned().unwrap_or_default();
+        assert_eq!(
+            entries.len(),
+            2,
+            "two distinct ActionPerformed events must not collapse"
+        );
+        assert!(entries[0].message.contains("worker:0"));
+        assert!(entries[1].message.contains("worker:1"));
     }
 
     #[tokio::test]
