@@ -256,15 +256,39 @@ impl TmaiCore {
         Ok(state.agents.get(&key).unwrap().last_content_ansi.clone())
     }
 
-    /// Get only the last N lines of the ANSI preview content — used for the
-    /// input-box fast-path so the WebUI can poll the prompt area without
-    /// transferring the whole scrollback (which can be several MB).
-    /// `lines` is clamped to `[1, 200]`.
+    /// Get only the last N lines of the ANSI preview — used for the input-box
+    /// fast-path so the WebUI can poll the prompt area without transferring
+    /// the whole scrollback. `lines` is clamped to `[1, 200]`.
+    ///
+    /// Performs a fresh `capture_pane` on every call rather than reading the
+    /// Poller's `last_content_ansi` cache, which is refreshed only at the
+    /// slow monitor interval (~2s) — a high-cadence WebUI poll against that
+    /// cache would otherwise stale by seconds. Falls back to the cache if
+    /// the runtime can't capture (standalone/no tmux).
     pub fn get_preview_input(&self, id: &str, lines: usize) -> Result<String, ApiError> {
-        let state = self.state().read();
-        let key = Self::resolve_agent_key_in_state(&state, id)?;
-        let content = &state.agents.get(&key).unwrap().last_content_ansi;
         let take = lines.clamp(1, 200);
+
+        let target = {
+            let state = self.state().read();
+            let key = Self::resolve_agent_key_in_state(&state, id)?;
+            state.agents.get(&key).unwrap().target.clone()
+        };
+
+        let content = if let Some(cmd) = self.command_sender_ref() {
+            match cmd.runtime().capture_pane(&target) {
+                Ok(s) if !s.is_empty() => s,
+                _ => {
+                    let state = self.state().read();
+                    let key = Self::resolve_agent_key_in_state(&state, id)?;
+                    state.agents.get(&key).unwrap().last_content_ansi.clone()
+                }
+            }
+        } else {
+            let state = self.state().read();
+            let key = Self::resolve_agent_key_in_state(&state, id)?;
+            state.agents.get(&key).unwrap().last_content_ansi.clone()
+        };
+
         let all: Vec<&str> = content.lines().collect();
         let start = all.len().saturating_sub(take);
         Ok(all[start..].join("\n"))
