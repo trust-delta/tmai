@@ -3,6 +3,12 @@ import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { PreviewSettingsResponse, TranscriptRecord } from "@/lib/api-http";
+import {
+  charColumns,
+  shrinkContentToWidth,
+  splitPreviewContent,
+  trimPreviewContent,
+} from "./preview-content";
 
 interface PreviewPanelProps {
   agentId: string;
@@ -58,99 +64,6 @@ const MONO_FONT_STACK =
   "'Liberation Mono', 'Courier New', " +
   "'Symbols Nerd Font Mono', monospace";
 
-// Terminal column width of a character (full-width CJK = 2, others = 1).
-// Matches wcwidth behavior for common Unicode ranges.
-function charColumns(cp: number): number {
-  if (
-    (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
-    (cp >= 0x2e80 && cp <= 0x303e) || // CJK Radicals, Kangxi, Ideographic
-    (cp >= 0x3041 && cp <= 0x33bf) || // Hiragana, Katakana, Bopomofo, CJK compat
-    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Unified Ideographs Extension A
-    (cp >= 0x4e00 && cp <= 0xa4cf) || // CJK Unified Ideographs, Yi
-    (cp >= 0xac00 && cp <= 0xd7af) || // Hangul Syllables
-    (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
-    (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
-    (cp >= 0xff01 && cp <= 0xff60) || // Fullwidth Forms
-    (cp >= 0xffe0 && cp <= 0xffe6) || // Fullwidth Signs
-    (cp >= 0x20000 && cp <= 0x2fffd) || // CJK Ext B-F
-    (cp >= 0x30000 && cp <= 0x3fffd) // CJK Ext G+
-  ) {
-    return 2;
-  }
-  return 1;
-}
-
-// Consecutive Box Drawing horizontal characters (U+2500–U+257F runs of 4+)
-const HLINE_RUN_RE = /[\u2500-\u257f]{4,}/g;
-
-// ANSI escape patterns (constructed via RegExp to avoid control-char lint)
-const ESC = "\x1b";
-const CSI_RE = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
-const OSC_RE = new RegExp(`${ESC}\\][^\\x07${ESC}]*(?:\\x07|${ESC}\\\\)`, "g");
-
-// Shrink Box Drawing horizontal runs so the line fits within `cols` columns.
-// Text portions are preserved; only the ──── runs get shortened.
-function shrinkHorizontalRuns(visible: string, cols: number): string {
-  if (visible.length <= cols) return visible;
-
-  const excess = visible.length - cols;
-
-  // Collect all runs
-  const runs: { index: number; length: number }[] = [];
-  HLINE_RUN_RE.lastIndex = 0;
-  for (const m of visible.matchAll(HLINE_RUN_RE)) {
-    if (m.index != null) runs.push({ index: m.index, length: m[0].length });
-  }
-  if (runs.length === 0) return visible;
-
-  const totalRunChars = runs.reduce((s, r) => s + r.length, 0);
-  if (totalRunChars <= excess) {
-    // Even removing all runs isn't enough — just trim to cols
-    return visible.slice(0, cols);
-  }
-
-  // Shrink each run proportionally to its share of the total run length
-  const newLengths = runs.map((r) => {
-    const shrink = Math.ceil((r.length / totalRunChars) * excess);
-    return Math.max(1, r.length - shrink);
-  });
-
-  // Rebuild the string with shortened runs
-  let result = "";
-  let pos = 0;
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs[i];
-    result += visible.slice(pos, run.index);
-    result += visible.slice(run.index, run.index + newLengths[i]);
-    pos = run.index + run.length;
-  }
-  result += visible.slice(pos);
-  return result;
-}
-
-// Trim trailing blank lines and shrink Box Drawing horizontal runs to fit container width
-function trimPreviewContent(raw: string, cols: number): string {
-  // Strip trailing blank lines (may contain ANSI escapes but no visible chars)
-  const trimmed = raw.replace(/(\s*\n)*\s*$/, "");
-  if (cols <= 0) return trimmed;
-
-  return trimmed.replace(/^.*$/gm, (line) => {
-    // Strip ANSI escapes to measure visible length
-    const visible = line.replace(CSI_RE, "").replace(OSC_RE, "");
-    if (visible.length <= cols) return line;
-    // Only process lines that contain box-drawing runs
-    if (!HLINE_RUN_RE.test(visible)) return line;
-    HLINE_RUN_RE.lastIndex = 0;
-
-    // Rebuild line: replace visible content with shrunk version, keep ANSI intact
-    const shrunk = shrinkHorizontalRuns(visible, cols);
-    // Re-attach leading/trailing ANSI sequences from original line
-    const leadAnsi = line.match(new RegExp(`^(${ESC}\\[[0-9;?]*[ -/]*[@-~])*`))?.[0] ?? "";
-    const trailAnsi = line.match(new RegExp(`(${ESC}\\[[0-9;?]*[ -/]*[@-~])*$`))?.[0] ?? "";
-    return leadAnsi + shrunk + trailAnsi;
-  });
-}
-
 // Interactive terminal preview with passthrough input.
 // Renders capture-pane output with ANSI colors and forwards keystrokes
 // to the agent's terminal. Passthrough is button-controlled.
@@ -164,7 +77,14 @@ interface CursorPos {
 import { TranscriptView } from "./TranscriptView";
 
 export function PreviewPanel({ agentId }: PreviewPanelProps) {
-  const [content, setContent] = useState<string>("");
+  // Preview is split into two regions so scrollback history (immutable,
+  // often >1MB) is not re-parsed through AnsiUp / DOMPurify / innerHTML on
+  // every poll tick — the dominant input-lag cost in long sessions (#413).
+  // `history` changes rarely (only when new output scrolls off the top);
+  // `live` covers the visible capture-pane region and updates each tick.
+  const [history, setHistory] = useState<string>("");
+  const [live, setLive] = useState<string>("");
+  const [liveStartLine, setLiveStartLine] = useState<number>(0);
   const [transcriptRecords, setTranscriptRecords] = useState<TranscriptRecord[]>([]);
   const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
   const [showCursor, setShowCursor] = useState(true);
@@ -178,11 +98,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     composingRef.current = composing;
   }, [composing]);
 
-  // Latest preview payload, used to skip setContent when the backend
-  // returned the same content we already rendered. Preview responses can
-  // be hundreds of KB to several MB (Hybrid Scrollback), and feeding an
-  // identical string through setContent → AnsiUp → DOMPurify → innerHTML
-  // on every 100ms active-input tick was the main cause of input lag.
+  // Latest raw content payload, used to skip the split/render path when
+  // the backend returned byte-identical content. Preview responses can
+  // be hundreds of KB to several MB (Hybrid Scrollback).
   const lastContentRef = useRef<string | null>(null);
 
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
@@ -255,7 +173,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
   // Reset state when switching agents (autoScroll restored from per-agent map)
   useEffect(() => {
-    setContent("");
+    setHistory("");
+    setLive("");
+    setLiveStartLine(0);
     setTranscriptRecords([]);
     setCursorPos(null);
     setFocused(true);
@@ -263,7 +183,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
     lastContentRef.current = null;
-    lastHtmlRef.current = "";
+    lastHistoryHtmlRef.current = "";
+    lastLiveHtmlRef.current = "";
   }, [agentId]);
 
   // Switch to input mode (passthrough ON)
@@ -350,12 +271,18 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       if (!data.content) return;
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
-      // Skip the expensive AnsiUp + DOMPurify + innerHTML path when the
-      // content is byte-identical to the last render. Cursor position is
-      // still small and is updated unconditionally.
+      // Split scrollback history from the live visible region so the history
+      // path stays out of the hot render loop (#413). `history` updates only
+      // when it actually changed — React bails on setState with identical
+      // primitives, which skips the heavy history memo downstream.
       if (data.content !== lastContentRef.current) {
         lastContentRef.current = data.content;
-        setContent(data.content);
+        const split = splitPreviewContent(data.content, data.live_start_line ?? 0);
+        setHistory((prev) => (prev === split.history ? prev : split.history));
+        setLive((prev) => (prev === split.live ? prev : split.live));
+        setLiveStartLine((prev) =>
+          prev === (data.live_start_line ?? 0) ? prev : (data.live_start_line ?? 0),
+        );
       }
       if (data.cursor_x != null && data.cursor_y != null) {
         setCursorPos((prev) =>
@@ -492,19 +419,41 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     ],
   );
 
-  // Inject cursor marker into ANSI HTML at the cursor position.
-  // Counts visible characters (skipping HTML tags/entities) to find the exact column.
-  const htmlWithCursor = useMemo(() => {
-    const base = ansi.ansi_to_html(trimPreviewContent(content, cols));
-    if (!cursorPos || !showCursor) return base;
+  // History HTML: heavy path (AnsiUp on potentially 1MB+ of text). Memoized
+  // on the `history` string so it only re-runs when scrollback actually
+  // grew — not on every poll tick that re-fetches identical scrollback
+  // alongside fresh live output. This is the core of the #413 fix.
+  //
+  // Trailing-blank-line stripping is intentionally skipped here: blank lines
+  // at the history/live boundary may be real printed blanks, not cosmetic.
+  const historyHtml = useMemo(() => {
+    if (!history) return "";
+    return ansi.ansi_to_html(shrinkContentToWidth(history, cols));
+  }, [ansi, history, cols]);
+
+  // Cursor row within the live region. The backend returns cursor_y as an
+  // absolute row within the full capture output; since the tmux cursor is
+  // always on the visible screen, subtracting `liveStartLine` yields the
+  // row inside live.
+  const liveCursor = useMemo(() => {
+    if (!cursorPos) return null;
+    const relY = cursorPos.y - liveStartLine;
+    if (relY < 0) return null;
+    return { x: cursorPos.x, y: relY };
+  }, [cursorPos, liveStartLine]);
+
+  // Live HTML: cheap path (AnsiUp on ~one screenful). Re-runs each tick and
+  // when the cursor moves — but operates on a small string so it's fast.
+  const liveHtml = useMemo(() => {
+    const base = ansi.ansi_to_html(trimPreviewContent(live, cols));
+    if (!liveCursor || !showCursor) return base;
 
     const lines = base.split("\n");
     if (lines.length === 0) return base;
-    // Clamp cursor_y to content bounds instead of giving up
-    const clampedY = Math.min(cursorPos.y, lines.length - 1);
+    const clampedY = Math.min(liveCursor.y, lines.length - 1);
 
     const line = lines[clampedY];
-    let col = 0; // column count (full-width chars = 2)
+    let col = 0;
     let inTag = false;
     let insertAt = line.length;
     for (let i = 0; i < line.length; i++) {
@@ -517,16 +466,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         continue;
       }
       if (inTag) continue;
-      if (col >= cursorPos.x) {
+      if (col >= liveCursor.x) {
         insertAt = i;
         break;
       }
-      // Skip HTML entities like &amp; (counts as 1 char)
       let ch = line[i];
       if (ch === "&") {
         const semi = line.indexOf(";", i);
         if (semi > i && semi - i < 10) {
-          // Decode common entities to get the actual character
           const entity = line.slice(i, semi + 1);
           if (entity === "&amp;") ch = "&";
           else if (entity === "&lt;") ch = "<";
@@ -542,32 +489,39 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       '<span data-tmai-cursor="1" style="display:inline-block;width:0;height:0;vertical-align:top;overflow:hidden"></span>';
     lines[clampedY] = line.slice(0, insertAt) + marker + line.slice(insertAt);
     return lines.join("\n");
-  }, [ansi, content, cols, cursorPos, showCursor]);
+  }, [ansi, live, cols, liveCursor, showCursor]);
   const hasTranscript = transcriptRecords.length > 0;
-
-  const html = htmlWithCursor;
+  const hasContent = history.length > 0 || live.length > 0;
 
   // Cursor overlay position, read from the injected marker element
   const [cursorStyle, setCursorStyle] = useState<React.CSSProperties | null>(null);
 
-  // Set innerHTML via ref to bypass React's DOM diffing, which destroys text selection.
-  // Also handles auto-scroll after content update to ensure correct ordering.
-  const contentRef = useRef<HTMLDivElement>(null);
-  // Cache the last rendered HTML so we can skip the DOMPurify + innerHTML
-  // write when nothing changed since the previous render. htmlWithCursor
-  // recomputes whenever the cursor moves, but content-wise the document
-  // may be identical or only differ by the cursor marker; rewriting the
-  // entire innerHTML (1.4MB in an active session) unmounts the hidden
-  // <input> nested inside this tree and pushes focus out → the UI is
-  // then stuck in select mode. Keep the write-path idempotent.
-  const lastHtmlRef = useRef<string>("");
+  // Two refs, two writes: history gets its own innerHTML write that only
+  // runs when historyHtml actually changed; live gets updated on every
+  // tick. The old design wrote the concatenated blob on every tick, which
+  // is what caused the input lag in long sessions.
+  const historyRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef<HTMLDivElement>(null);
+  const lastHistoryHtmlRef = useRef<string>("");
+  const lastLiveHtmlRef = useRef<string>("");
+
   useEffect(() => {
-    if (contentRef.current) {
+    if (!historyRef.current) return;
+    const sel = window.getSelection();
+    const hasSelection = sel && sel.toString().length > 0;
+    if (hasSelection) return;
+    if (historyHtml === lastHistoryHtmlRef.current) return;
+    lastHistoryHtmlRef.current = historyHtml;
+    historyRef.current.innerHTML = DOMPurify.sanitize(historyHtml);
+  }, [historyHtml]);
+
+  useEffect(() => {
+    if (liveRef.current) {
       const sel = window.getSelection();
       const hasSelection = sel && sel.toString().length > 0;
-      if (!hasSelection && html !== lastHtmlRef.current) {
-        lastHtmlRef.current = html;
-        contentRef.current.innerHTML = DOMPurify.sanitize(html, {
+      if (!hasSelection && liveHtml !== lastLiveHtmlRef.current) {
+        lastLiveHtmlRef.current = liveHtml;
+        liveRef.current.innerHTML = DOMPurify.sanitize(liveHtml, {
           ADD_ATTR: ["data-tmai-cursor"],
         });
       }
@@ -576,12 +530,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
 
-    // Read cursor position from the injected marker's offsetTop/offsetLeft
-    if (!cursorPos || !contentRef.current) {
+    // Cursor marker lives inside liveRef; offsetTop is relative to the
+    // nearest positioned ancestor (.ansi-preview), so it correctly accounts
+    // for the history block above.
+    if (!liveCursor || !liveRef.current) {
       setCursorStyle(null);
       return;
     }
-    const marker = contentRef.current.querySelector("[data-tmai-cursor]") as HTMLElement | null;
+    const marker = liveRef.current.querySelector("[data-tmai-cursor]") as HTMLElement | null;
     const charSpan = measureRef.current;
     if (!marker || !charSpan) {
       setCursorStyle(null);
@@ -600,7 +556,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       width: `${charW}px`,
       height: `${lineH}px`,
     });
-  }, [html, autoScroll, cursorPos]);
+  }, [liveHtml, autoScroll, liveCursor]);
 
   return (
     <div
@@ -649,15 +605,17 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             <TranscriptView records={transcriptRecords} />
           </div>
         )}
-        {/* Live capture-pane output */}
-        {content ? (
+        {/* Capture-pane output — split into scrollback history (rendered
+            once, cached) and live visible region (re-rendered each tick). */}
+        {hasContent ? (
           <div
             className="ansi-preview relative m-0 cursor-text select-text whitespace-pre-wrap break-words"
             style={{
               fontFamily: MONO_FONT_STACK,
             }}
           >
-            <div ref={contentRef} />
+            <div ref={historyRef} />
+            <div ref={liveRef} />
             {cursorStyle && focused && hasDomFocus && showCursor && (
               <div
                 className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
