@@ -1627,6 +1627,7 @@ pub async fn update_orchestrator_settings(
                     .unwrap_or(g.escalate_to_human_after),
             }
         },
+        auto_action_templates: current.auto_action_templates.clone(),
         pr_monitor_enabled: req.pr_monitor_enabled.unwrap_or(current.pr_monitor_enabled),
         pr_monitor_interval_secs: req
             .pr_monitor_interval_secs

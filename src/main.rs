@@ -241,9 +241,28 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     tmai_core::task_meta::TaskMetaService::spawn(
         app.shared_state(),
         core.subscribe(),
-        guardrails_settings,
+        guardrails_settings.clone(),
         core.event_sender(),
     );
+
+    // Start AutoActionExecutor (directly instructs workers on configured events)
+    if settings.orchestrator.enabled {
+        let auto_action_notify = std::sync::Arc::new(parking_lot::RwLock::new(
+            settings.orchestrator.notify.clone(),
+        ));
+        let auto_action_templates = std::sync::Arc::new(parking_lot::RwLock::new(
+            settings.orchestrator.auto_action_templates.clone(),
+        ));
+        tmai_core::auto_action::AutoActionExecutor::spawn(
+            app.shared_state(),
+            core.subscribe(),
+            core.event_sender(),
+            auto_action_notify,
+            guardrails_settings,
+            auto_action_templates,
+            std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+        );
+    }
 
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&app.shared_state(), &settings.project_paths());
@@ -446,9 +465,29 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     tmai_core::task_meta::TaskMetaService::spawn(
         state.clone(),
         core.subscribe(),
-        guardrails_settings,
+        guardrails_settings.clone(),
         core.event_sender(),
     );
+
+    // Start AutoActionExecutor (directly instructs workers on configured events)
+    if settings.orchestrator.enabled {
+        let auto_action_notify = std::sync::Arc::new(parking_lot::RwLock::new(
+            settings.orchestrator.notify.clone(),
+        ));
+        let auto_action_templates = std::sync::Arc::new(parking_lot::RwLock::new(
+            settings.orchestrator.auto_action_templates.clone(),
+        ));
+        tmai_core::auto_action::AutoActionExecutor::spawn(
+            state.clone(),
+            core.subscribe(),
+            core.event_sender(),
+            auto_action_notify,
+            guardrails_settings,
+            auto_action_templates,
+            std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+        );
+        eprintln!("tmai: auto-action executor started");
+    }
 
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&state, &settings.project_paths());
