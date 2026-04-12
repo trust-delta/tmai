@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::api::ActionOrigin;
 use crate::codex_ws::CodexWsSender;
 use crate::hooks::registry::HookRegistry;
 use crate::ipc::server::IpcServer;
@@ -154,6 +155,67 @@ impl CommandSender {
     /// Send text + Enter via PTY session → IPC → tmux send-keys → PTY inject
     pub fn send_text_and_enter(&self, target: &str, text: &str) -> Result<()> {
         self.try_send_via_tiers(target, text, SendVariant::TextAndEnter)
+    }
+
+    /// Send keys with an `ActionOrigin`. When the origin is `Human`, stamps
+    /// `last_human_input_at` on the target agent so the orchestrator
+    /// notifier can defer auto-injection while the operator is composing
+    /// input (#399). Non-Human origins behave identically to `send_keys`.
+    pub fn send_keys_with_origin(
+        &self,
+        target: &str,
+        keys: &str,
+        origin: &ActionOrigin,
+    ) -> Result<()> {
+        self.maybe_stamp_human_input(target, origin);
+        self.send_keys(target, keys)
+    }
+
+    /// Origin-aware counterpart of `send_keys_literal`. See
+    /// `send_keys_with_origin` for the "typing marker" semantics (#399).
+    pub fn send_keys_literal_with_origin(
+        &self,
+        target: &str,
+        keys: &str,
+        origin: &ActionOrigin,
+    ) -> Result<()> {
+        self.maybe_stamp_human_input(target, origin);
+        self.send_keys_literal(target, keys)
+    }
+
+    /// Origin-aware counterpart of `send_text_and_enter`. See
+    /// `send_keys_with_origin` for the "typing marker" semantics (#399).
+    pub fn send_text_and_enter_with_origin(
+        &self,
+        target: &str,
+        text: &str,
+        origin: &ActionOrigin,
+    ) -> Result<()> {
+        self.maybe_stamp_human_input(target, origin);
+        self.send_text_and_enter(target, text)
+    }
+
+    /// Stamp `last_human_input_at` on the agent matching `target` iff the
+    /// originating action is `ActionOrigin::Human`. Agent-originated and
+    /// System-originated sends must NOT stamp — otherwise the notifier's
+    /// auto-injection would be self-suppressing.
+    fn maybe_stamp_human_input(&self, target: &str, origin: &ActionOrigin) {
+        if !matches!(origin, ActionOrigin::Human { .. }) {
+            return;
+        }
+        let mut state = self.app_state.write();
+        if let Some(agent) = state.agents.get_mut(target) {
+            agent.note_human_input();
+            return;
+        }
+        // Fallback: match by tmux target field (when the caller passed a
+        // tmux-style "session:win.pane" that isn't the agent map key).
+        for agent in state.agents.values_mut() {
+            if agent.target == target {
+                agent.note_human_input();
+                return;
+            }
+        }
     }
 
     /// Generic 4-tier fallback: PTY session → IPC → RuntimeAdapter → PTY inject
@@ -321,5 +383,123 @@ mod tests {
             .send_text_and_enter("no-such-target", "echo hi")
             .unwrap_err();
         assert!(err.to_string().contains("send_text_and_enter"));
+    }
+
+    /// Build a CommandSender wired to a fresh AppState containing one agent
+    /// whose map key equals `target`. Used by the "typing marker" tests.
+    fn sender_with_agent(target: &str) -> (CommandSender, SharedState) {
+        use crate::agents::{AgentType, MonitoredAgent};
+        use crate::runtime::StandaloneAdapter;
+        use crate::state::AppState;
+        use parking_lot::RwLock;
+
+        let state: SharedState = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            let agent = MonitoredAgent::new(
+                target.to_string(),
+                AgentType::ClaudeCode,
+                String::new(),
+                "/tmp".to_string(),
+                0,
+                target.to_string(),
+                String::new(),
+                0,
+                0,
+            );
+            s.agents.insert(target.to_string(), agent);
+        }
+        let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+        let sender = CommandSender::new(None, runtime, state.clone());
+        (sender, state)
+    }
+
+    #[test]
+    fn human_origin_stamps_last_human_input_at() {
+        // Human-originated send marks the agent as "operator is typing".
+        let (sender, state) = sender_with_agent("orch:0.0");
+        let origin = ActionOrigin::webui();
+        // Send fails (no tiers wired) — but stamping runs regardless.
+        let _ = sender.send_keys_literal_with_origin("orch:0.0", "hello", &origin);
+
+        let s = state.read();
+        let agent = s.agents.get("orch:0.0").expect("agent present");
+        assert!(
+            agent.last_human_input_at.is_some(),
+            "Human origin must stamp last_human_input_at"
+        );
+        assert!(
+            agent.is_operator_typing(std::time::Duration::from_secs(5)),
+            "freshly stamped agent must be within typing grace"
+        );
+    }
+
+    #[test]
+    fn agent_origin_does_not_stamp_last_human_input_at() {
+        // Agent-originated sends (tmai auto-injection) must NOT stamp the
+        // typing marker — otherwise the notifier would self-suppress every
+        // subsequent auto-injection.
+        let (sender, state) = sender_with_agent("orch:0.0");
+        let origin = ActionOrigin::agent("orchestrator", true);
+        let _ = sender.send_keys_literal_with_origin("orch:0.0", "hello", &origin);
+
+        let s = state.read();
+        let agent = s.agents.get("orch:0.0").expect("agent present");
+        assert!(
+            agent.last_human_input_at.is_none(),
+            "Agent origin must not stamp last_human_input_at"
+        );
+    }
+
+    #[test]
+    fn system_origin_does_not_stamp_last_human_input_at() {
+        let (sender, state) = sender_with_agent("orch:0.0");
+        let origin = ActionOrigin::system("pr_monitor");
+        let _ = sender.send_keys_with_origin("orch:0.0", "Enter", &origin);
+
+        let s = state.read();
+        let agent = s.agents.get("orch:0.0").expect("agent present");
+        assert!(agent.last_human_input_at.is_none());
+    }
+
+    #[test]
+    fn stamp_falls_back_to_tmux_target_match() {
+        // The agent map key ("orch:0.0") differs from the tmux target the
+        // caller passes ("main:1.2"). The stamping fallback must match via
+        // `agent.target`, so WebUI passthrough (which resolves to the tmux
+        // target) still stamps the correct agent.
+        use crate::agents::{AgentType, MonitoredAgent};
+        use crate::runtime::StandaloneAdapter;
+        use crate::state::AppState;
+        use parking_lot::RwLock;
+
+        let state: SharedState = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            let mut agent = MonitoredAgent::new(
+                "main:1.2".to_string(),
+                AgentType::ClaudeCode,
+                String::new(),
+                "/tmp".to_string(),
+                0,
+                "main".to_string(),
+                String::new(),
+                1,
+                2,
+            );
+            agent.target = "main:1.2".to_string();
+            s.agents.insert("orch:0.0".to_string(), agent);
+        }
+        let runtime: Arc<dyn RuntimeAdapter> = Arc::new(StandaloneAdapter::new());
+        let sender = CommandSender::new(None, runtime, state.clone());
+
+        let _ = sender.send_keys_literal_with_origin("main:1.2", "a", &ActionOrigin::webui());
+
+        let s = state.read();
+        let agent = s.agents.get("orch:0.0").expect("agent present");
+        assert!(
+            agent.last_human_input_at.is_some(),
+            "stamping must find agent by tmux target field when map key differs"
+        );
     }
 }

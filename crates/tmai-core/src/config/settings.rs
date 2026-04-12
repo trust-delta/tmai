@@ -1060,6 +1060,13 @@ pub struct OrchestratorNotifySettings {
     /// Oldest is dropped on overflow.
     #[serde(default = "default_buffer_max_messages")]
     pub buffer_max_messages: usize,
+
+    /// Grace window (seconds) after a human keystroke lands in an
+    /// orchestrator pane during which incoming notifications are buffered
+    /// instead of delivered — keeps in-flight operator composition safe
+    /// from auto-injection (#399).
+    #[serde(default = "default_typing_grace_secs")]
+    pub typing_grace_secs: u64,
 }
 
 fn default_buffer_ttl_secs() -> u64 {
@@ -1068,6 +1075,10 @@ fn default_buffer_ttl_secs() -> u64 {
 
 fn default_buffer_max_messages() -> usize {
     20
+}
+
+fn default_typing_grace_secs() -> u64 {
+    5
 }
 
 impl Default for OrchestratorNotifySettings {
@@ -1086,6 +1097,7 @@ impl Default for OrchestratorNotifySettings {
             buffer_when_busy: true,
             buffer_ttl_secs: 600,
             buffer_max_messages: 20,
+            typing_grace_secs: 5,
         }
     }
 }
