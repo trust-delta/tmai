@@ -6,6 +6,7 @@ import {
   type OrchestratorSettings,
   type SpawnSettings,
   type UsageSettings,
+  type WorkerPermissionMode,
   type WorkflowSettings,
   type WorktreeSettings,
 } from "@/lib/api";
@@ -138,6 +139,18 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
       await api.updateSpawnSettings({
         use_tmux_window: spawnSettings.use_tmux_window,
         tmux_window_name: trimmed,
+      });
+    } catch (_e) {}
+  };
+
+  // Change worker permission mode (for dispatched workers)
+  const handleWorkerPermissionModeChange = async (mode: WorkerPermissionMode) => {
+    if (!spawnSettings) return;
+    setSpawnSettings({ ...spawnSettings, worker_permission_mode: mode });
+    try {
+      await api.updateSpawnSettings({
+        use_tmux_window: spawnSettings.use_tmux_window,
+        worker_permission_mode: mode,
       });
     } catch (_e) {}
   };
@@ -605,6 +618,33 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   />
                 </div>
               )}
+
+              {/* Worker permission mode — applies to dispatched workers only */}
+              <div className="mt-4 border-t border-white/5 pt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <span className="text-xs text-zinc-400">Worker permission mode</span>
+                    <p className="mt-0.5 text-[10px] text-zinc-600">
+                      Injected as <code>--permission-mode</code> for Claude Code workers spawned via
+                      <code> dispatch_issue</code> / <code>dispatch_review</code>. Does not apply to
+                      the orchestrator itself. <code>acceptEdits</code> lets workers edit files
+                      without per-tool approval while still gating Bash via tmai auto-approve.
+                    </p>
+                  </div>
+                  <select
+                    value={spawnSettings.worker_permission_mode}
+                    onChange={(e) =>
+                      handleWorkerPermissionModeChange(e.target.value as WorkerPermissionMode)
+                    }
+                    className="shrink-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+                  >
+                    <option value="acceptEdits">acceptEdits (recommended)</option>
+                    <option value="default">default</option>
+                    <option value="plan">plan</option>
+                    <option value="dontAsk">dontAsk</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </section>
         )}

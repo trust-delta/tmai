@@ -817,6 +817,14 @@ pub struct SpawnSettings {
     /// Name of the tmux window for spawned agents
     #[serde(default = "default_spawn_window_name")]
     pub tmux_window_name: String,
+
+    /// Permission mode to inject for Claude Code workers spawned via
+    /// `dispatch_issue` / `dispatch_review`. Does NOT apply to manual
+    /// `spawn_agent` calls or to the orchestrator itself. Valid values:
+    /// `"default"`, `"plan"`, `"acceptEdits"`, `"dontAsk"`. Set to
+    /// `"default"` (or any non-`claude` command) to skip injection.
+    #[serde(default = "default_worker_permission_mode")]
+    pub worker_permission_mode: String,
 }
 
 /// Default tmux window name for spawned agents
@@ -824,11 +832,22 @@ fn default_spawn_window_name() -> String {
     "tmai-agents".to_string()
 }
 
+/// Default permission mode for dispatched workers.
+///
+/// `acceptEdits` lets the worker make file edits without per-tool approval
+/// prompts while still gating Bash (which tmai auto-approve handles).
+/// This is the sweet spot for implementation throughput under tmai's
+/// external safety controls.
+fn default_worker_permission_mode() -> String {
+    "acceptEdits".to_string()
+}
+
 impl Default for SpawnSettings {
     fn default() -> Self {
         Self {
             use_tmux_window: false,
             tmux_window_name: default_spawn_window_name(),
+            worker_permission_mode: default_worker_permission_mode(),
         }
     }
 }
