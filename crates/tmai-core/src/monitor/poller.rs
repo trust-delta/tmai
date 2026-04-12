@@ -273,10 +273,16 @@ impl Poller {
         // poll_count is now tracked as self.poll_count for use in poll_once()
 
         loop {
-            // Check if we should stop and get passthrough state
+            // Check if we should stop and get passthrough state. TUI enters
+            // passthrough via `is_passthrough_mode`; WebUI can't flip that
+            // flag (different input subsystem) so we also treat a recent
+            // WebUI keystroke (passthrough/send_text/send_key/send_prompt)
+            // as a fast-interval trigger for 2s after the last event.
             let (should_stop, is_passthrough) = {
                 let state = self.state.read();
-                (!state.running, state.is_passthrough_mode())
+                let tui_passthrough = state.is_passthrough_mode();
+                let webui_passthrough = state.is_webui_keystroke_active(Duration::from_secs(2));
+                (!state.running, tui_passthrough || webui_passthrough)
             };
 
             if should_stop {

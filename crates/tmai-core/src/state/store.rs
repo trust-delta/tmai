@@ -486,6 +486,12 @@ pub struct AppState {
     /// Whether the app is running
     pub running: bool,
 
+    /// Timestamp of the most recent WebUI passthrough-style send
+    /// (passthrough input, send_text, send_key, send_prompt). Used by the
+    /// Poller to switch to the fast tick interval so the preview cache
+    /// reflects keystrokes within tens of ms instead of 500ms.
+    pub last_webui_keystroke_at: Option<std::time::Instant>,
+
     /// Show activity name (tool/verb) during Processing instead of generic "Processing"
     pub show_activity_name: bool,
 
@@ -588,6 +594,7 @@ impl AppState {
             error_message: None,
             last_poll: None,
             running: true,
+            last_webui_keystroke_at: None,
             show_activity_name: true,
             line_wrap: false,
             notification: None,
@@ -1359,6 +1366,21 @@ impl AppState {
     /// Check if in passthrough mode
     pub fn is_passthrough_mode(&self) -> bool {
         self.input.mode == InputMode::Passthrough
+    }
+
+    /// Mark that a WebUI keystroke-like action just happened. Called from
+    /// every REST handler that pushes bytes into an agent (passthrough,
+    /// send_text, send_key, send_prompt) so the Poller can momentarily
+    /// switch to its fast tick interval.
+    pub fn note_webui_keystroke(&mut self) {
+        self.last_webui_keystroke_at = Some(std::time::Instant::now());
+    }
+
+    /// Returns true if a WebUI keystroke-like action happened within the
+    /// given window. Used by the Poller to decide the next tick interval.
+    pub fn is_webui_keystroke_active(&self, window: std::time::Duration) -> bool {
+        self.last_webui_keystroke_at
+            .is_some_and(|t| t.elapsed() < window)
     }
 
     /// Get the input buffer
