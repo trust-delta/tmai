@@ -1286,6 +1286,30 @@ pub struct OrchestratorRulesResponse {
     pub custom: String,
 }
 
+/// Map tri-state handling → bool for the current 2-state WebUI contract.
+/// Only `NotifyOrchestrator` is treated as "on"; `AutoAction` is opaque to
+/// the current UI and is reported as "off" (it will gain a dedicated control
+/// once PR-C lands).
+fn handling_to_bool(h: tmai_core::config::EventHandling) -> bool {
+    matches!(h, tmai_core::config::EventHandling::NotifyOrchestrator)
+}
+
+/// Merge an optional bool override from the WebUI into an existing handling
+/// value.  `None` keeps the current (possibly `AutoAction`) setting; `Some`
+/// replaces it with the 2-state mapping (`true` → NotifyOrchestrator, `false`
+/// → Off) so that legacy clients cannot silently destroy an AutoAction
+/// configuration they don't know about — unless they explicitly toggle.
+fn merge_handling(
+    override_val: Option<bool>,
+    current: tmai_core::config::EventHandling,
+) -> tmai_core::config::EventHandling {
+    match override_val {
+        None => current,
+        Some(true) => tmai_core::config::EventHandling::NotifyOrchestrator,
+        Some(false) => tmai_core::config::EventHandling::Off,
+    }
+}
+
 /// Notification settings response (per-event toggles + templates)
 #[derive(Debug, Serialize)]
 pub struct NotifySettingsResponse {
@@ -1431,15 +1455,15 @@ pub async fn get_orchestrator_settings(
             custom: orch.rules.custom.clone(),
         },
         notify: NotifySettingsResponse {
-            on_agent_stopped: orch.notify.on_agent_stopped,
-            on_agent_error: orch.notify.on_agent_error,
-            on_rebase_conflict: orch.notify.on_rebase_conflict,
-            on_ci_passed: orch.notify.on_ci_passed,
-            on_ci_failed: orch.notify.on_ci_failed,
-            on_pr_created: orch.notify.on_pr_created,
-            on_pr_comment: orch.notify.on_pr_comment,
-            on_pr_closed: orch.notify.on_pr_closed,
-            on_guardrail_exceeded: orch.notify.on_guardrail_exceeded,
+            on_agent_stopped: handling_to_bool(orch.notify.on_agent_stopped),
+            on_agent_error: handling_to_bool(orch.notify.on_agent_error),
+            on_rebase_conflict: handling_to_bool(orch.notify.on_rebase_conflict),
+            on_ci_passed: handling_to_bool(orch.notify.on_ci_passed),
+            on_ci_failed: handling_to_bool(orch.notify.on_ci_failed),
+            on_pr_created: handling_to_bool(orch.notify.on_pr_created),
+            on_pr_comment: handling_to_bool(orch.notify.on_pr_comment),
+            on_pr_closed: handling_to_bool(orch.notify.on_pr_closed),
+            on_guardrail_exceeded: handling_to_bool(orch.notify.on_guardrail_exceeded),
             templates: NotifyTemplatesResponse {
                 agent_stopped: orch.notify.templates.agent_stopped.clone(),
                 agent_error: orch.notify.templates.agent_error.clone(),
@@ -1518,42 +1542,42 @@ pub async fn update_orchestrator_settings(
             let nr = &req.notify;
             let t = nr.as_ref().and_then(|r| r.templates.as_ref());
             tmai_core::config::OrchestratorNotifySettings {
-                on_agent_stopped: nr
-                    .as_ref()
-                    .and_then(|r| r.on_agent_stopped)
-                    .unwrap_or(n.on_agent_stopped),
-                on_agent_error: nr
-                    .as_ref()
-                    .and_then(|r| r.on_agent_error)
-                    .unwrap_or(n.on_agent_error),
-                on_rebase_conflict: nr
-                    .as_ref()
-                    .and_then(|r| r.on_rebase_conflict)
-                    .unwrap_or(n.on_rebase_conflict),
-                on_ci_passed: nr
-                    .as_ref()
-                    .and_then(|r| r.on_ci_passed)
-                    .unwrap_or(n.on_ci_passed),
-                on_ci_failed: nr
-                    .as_ref()
-                    .and_then(|r| r.on_ci_failed)
-                    .unwrap_or(n.on_ci_failed),
-                on_pr_created: nr
-                    .as_ref()
-                    .and_then(|r| r.on_pr_created)
-                    .unwrap_or(n.on_pr_created),
-                on_pr_comment: nr
-                    .as_ref()
-                    .and_then(|r| r.on_pr_comment)
-                    .unwrap_or(n.on_pr_comment),
-                on_pr_closed: nr
-                    .as_ref()
-                    .and_then(|r| r.on_pr_closed)
-                    .unwrap_or(n.on_pr_closed),
-                on_guardrail_exceeded: nr
-                    .as_ref()
-                    .and_then(|r| r.on_guardrail_exceeded)
-                    .unwrap_or(n.on_guardrail_exceeded),
+                on_agent_stopped: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_agent_stopped),
+                    n.on_agent_stopped,
+                ),
+                on_agent_error: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_agent_error),
+                    n.on_agent_error,
+                ),
+                on_rebase_conflict: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_rebase_conflict),
+                    n.on_rebase_conflict,
+                ),
+                on_ci_passed: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_ci_passed),
+                    n.on_ci_passed,
+                ),
+                on_ci_failed: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_ci_failed),
+                    n.on_ci_failed,
+                ),
+                on_pr_created: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_pr_created),
+                    n.on_pr_created,
+                ),
+                on_pr_comment: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_pr_comment),
+                    n.on_pr_comment,
+                ),
+                on_pr_closed: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_pr_closed),
+                    n.on_pr_closed,
+                ),
+                on_guardrail_exceeded: merge_handling(
+                    nr.as_ref().and_then(|r| r.on_guardrail_exceeded),
+                    n.on_guardrail_exceeded,
+                ),
                 templates: tmai_core::config::NotifyTemplates {
                     agent_stopped: t
                         .and_then(|t| t.agent_stopped.clone())

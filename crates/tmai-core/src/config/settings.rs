@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 
 /// Command line arguments
@@ -873,52 +875,130 @@ pub struct OrchestratorSettings {
     pub pr_monitor_interval_secs: u64,
 }
 
+/// Tri-state handling for orchestrator-observable events.
+///
+/// - `Off`: ignore the event entirely.
+/// - `NotifyOrchestrator`: current behaviour — push a notification to the
+///   orchestrator via `OrchestratorNotifier`.
+/// - `AutoAction`: tmai handles the event directly (see `AutoActionExecutor`,
+///   implemented in a follow-up PR).  `OrchestratorNotifier` skips these
+///   events so they are not double-handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EventHandling {
+    #[default]
+    Off,
+    NotifyOrchestrator,
+    AutoAction,
+}
+
+/// Serde default helper: events that default to notifying the orchestrator.
+fn default_notify() -> EventHandling {
+    EventHandling::NotifyOrchestrator
+}
+
+impl<'de> Deserialize<'de> for EventHandling {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EventHandlingVisitor;
+
+        impl<'de> Visitor<'de> for EventHandlingVisitor {
+            type Value = EventHandling;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "a bool or one of \"off\", \"notify\", \"notify_orchestrator\", \"auto_action\"",
+                )
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<EventHandling, E>
+            where
+                E: de::Error,
+            {
+                Ok(if v {
+                    EventHandling::NotifyOrchestrator
+                } else {
+                    EventHandling::Off
+                })
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<EventHandling, E>
+            where
+                E: de::Error,
+            {
+                match v {
+                    "off" => Ok(EventHandling::Off),
+                    "notify" | "notify_orchestrator" => Ok(EventHandling::NotifyOrchestrator),
+                    "auto_action" => Ok(EventHandling::AutoAction),
+                    other => Err(E::custom(format!(
+                        "invalid EventHandling value {other:?}: expected bool or one of \"off\", \"notify\", \"notify_orchestrator\", \"auto_action\""
+                    ))),
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<EventHandling, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&v)
+            }
+        }
+
+        deserializer.deserialize_any(EventHandlingVisitor)
+    }
+}
+
 /// Settings controlling which sub-agent events notify the orchestrator.
 ///
-/// Each event type has an independent ON/OFF toggle and an optional
-/// prompt template override.  When a toggle is OFF the event is silently
-/// recorded in task-meta milestones but never forwarded to the orchestrator.
+/// Each event type has an independent handling mode (`EventHandling`) and an
+/// optional prompt template override.  When a mode is `Off` the event is
+/// silently recorded in task-meta milestones but never forwarded to the
+/// orchestrator.  `AutoAction` routes the event to `AutoActionExecutor`
+/// instead (see PR-B); `OrchestratorNotifier` treats `AutoAction` the same
+/// as `Off`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrchestratorNotifySettings {
     // ── Agent events ────────────────────────────────────────
     /// Notify when a sub-agent stops normally
-    #[serde(default = "default_true")]
-    pub on_agent_stopped: bool,
+    #[serde(default = "default_notify")]
+    pub on_agent_stopped: EventHandling,
 
     /// Notify when a sub-agent enters error state
-    #[serde(default = "default_true")]
-    pub on_agent_error: bool,
+    #[serde(default = "default_notify")]
+    pub on_agent_error: EventHandling,
 
     /// Notify on rebase/merge conflicts
-    #[serde(default = "default_true")]
-    pub on_rebase_conflict: bool,
+    #[serde(default = "default_notify")]
+    pub on_rebase_conflict: EventHandling,
 
     // ── CI events ───────────────────────────────────────────
     /// Notify when CI passes (default: off — normal flow needs no action)
     #[serde(default)]
-    pub on_ci_passed: bool,
+    pub on_ci_passed: EventHandling,
 
     /// Notify when CI fails (requires action)
-    #[serde(default = "default_true")]
-    pub on_ci_failed: bool,
+    #[serde(default = "default_notify")]
+    pub on_ci_failed: EventHandling,
 
     // ── PR events ───────────────────────────────────────────
     /// Notify when a new PR is created
-    #[serde(default = "default_true")]
-    pub on_pr_created: bool,
+    #[serde(default = "default_notify")]
+    pub on_pr_created: EventHandling,
 
     /// Notify on new PR review comments / feedback
-    #[serde(default = "default_true")]
-    pub on_pr_comment: bool,
+    #[serde(default = "default_notify")]
+    pub on_pr_comment: EventHandling,
 
     /// Notify when a PR is closed or merged
-    #[serde(default = "default_true")]
-    pub on_pr_closed: bool,
+    #[serde(default = "default_notify")]
+    pub on_pr_closed: EventHandling,
 
     // ── Guardrail events ────────────────────────────────────
     /// Notify when a guardrail limit is exceeded (CI retries, review loops, etc.)
-    #[serde(default = "default_true")]
-    pub on_guardrail_exceeded: bool,
+    #[serde(default = "default_notify")]
+    pub on_guardrail_exceeded: EventHandling,
 
     // ── Template overrides ──────────────────────────────────
     /// Per-event prompt template overrides (empty = use built-in default)
@@ -929,15 +1009,15 @@ pub struct OrchestratorNotifySettings {
 impl Default for OrchestratorNotifySettings {
     fn default() -> Self {
         Self {
-            on_agent_stopped: true,
-            on_agent_error: true,
-            on_rebase_conflict: true,
-            on_ci_passed: false,
-            on_ci_failed: true,
-            on_pr_created: true,
-            on_pr_comment: true,
-            on_pr_closed: true,
-            on_guardrail_exceeded: true,
+            on_agent_stopped: EventHandling::NotifyOrchestrator,
+            on_agent_error: EventHandling::NotifyOrchestrator,
+            on_rebase_conflict: EventHandling::NotifyOrchestrator,
+            on_ci_passed: EventHandling::Off,
+            on_ci_failed: EventHandling::NotifyOrchestrator,
+            on_pr_created: EventHandling::NotifyOrchestrator,
+            on_pr_comment: EventHandling::NotifyOrchestrator,
+            on_pr_closed: EventHandling::NotifyOrchestrator,
+            on_guardrail_exceeded: EventHandling::NotifyOrchestrator,
             templates: NotifyTemplates::default(),
         }
     }
@@ -1542,6 +1622,111 @@ mod tests {
         assert_eq!(settings.setup_timeout_secs, 300);
     }
 
+    // ── EventHandling / OrchestratorNotifySettings migration tests ──
+    //
+    // These cover the backward-compat path added in PR-A of #364: old
+    // `bool` config values must still deserialize, while the new `string`
+    // form unlocks the forthcoming `AutoAction` state.
+
+    #[derive(Debug, Deserialize)]
+    struct OneField {
+        on_ci_failed: EventHandling,
+    }
+
+    #[test]
+    fn event_handling_legacy_bool_true_becomes_notify() {
+        let v: OneField = toml::from_str("on_ci_failed = true").unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::NotifyOrchestrator);
+    }
+
+    #[test]
+    fn event_handling_legacy_bool_false_becomes_off() {
+        let v: OneField = toml::from_str("on_ci_failed = false").unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::Off);
+    }
+
+    #[test]
+    fn event_handling_string_auto_action() {
+        let v: OneField = toml::from_str(r#"on_ci_failed = "auto_action""#).unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::AutoAction);
+    }
+
+    #[test]
+    fn event_handling_string_notify() {
+        let v: OneField = toml::from_str(r#"on_ci_failed = "notify""#).unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::NotifyOrchestrator);
+    }
+
+    #[test]
+    fn event_handling_string_notify_orchestrator_alias() {
+        let v: OneField = toml::from_str(r#"on_ci_failed = "notify_orchestrator""#).unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::NotifyOrchestrator);
+    }
+
+    #[test]
+    fn event_handling_string_off() {
+        let v: OneField = toml::from_str(r#"on_ci_failed = "off""#).unwrap();
+        assert_eq!(v.on_ci_failed, EventHandling::Off);
+    }
+
+    #[test]
+    fn event_handling_invalid_string_errors() {
+        let err = toml::from_str::<OneField>(r#"on_ci_failed = "wrong""#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("wrong") || msg.to_lowercase().contains("invalid"),
+            "expected error mentioning the invalid value, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn orchestrator_notify_settings_defaults_match_legacy_semantics() {
+        let s = OrchestratorNotifySettings::default();
+        assert_eq!(s.on_ci_passed, EventHandling::Off);
+        assert_eq!(s.on_ci_failed, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_agent_stopped, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_agent_error, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_rebase_conflict, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_pr_created, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_pr_comment, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_pr_closed, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_guardrail_exceeded, EventHandling::NotifyOrchestrator);
+    }
+
+    #[test]
+    fn event_handling_round_trip_auto_action() {
+        let encoded = serde_json::to_string(&EventHandling::AutoAction).unwrap();
+        assert_eq!(encoded, "\"auto_action\"");
+        let decoded: EventHandling = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, EventHandling::AutoAction);
+    }
+
+    #[test]
+    fn event_handling_round_trip_notify_orchestrator() {
+        let encoded = serde_json::to_string(&EventHandling::NotifyOrchestrator).unwrap();
+        assert_eq!(encoded, "\"notify_orchestrator\"");
+        let decoded: EventHandling = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, EventHandling::NotifyOrchestrator);
+    }
+
+    #[test]
+    fn orchestrator_notify_settings_mixed_toml_migration() {
+        // Some fields legacy bool, some new string — must all coexist.
+        let toml_text = r#"
+            on_ci_failed = "auto_action"
+            on_ci_passed = true
+            on_pr_comment = false
+            on_pr_created = "notify"
+        "#;
+        let s: OrchestratorNotifySettings = toml::from_str(toml_text).unwrap();
+        assert_eq!(s.on_ci_failed, EventHandling::AutoAction);
+        assert_eq!(s.on_ci_passed, EventHandling::NotifyOrchestrator);
+        assert_eq!(s.on_pr_comment, EventHandling::Off);
+        assert_eq!(s.on_pr_created, EventHandling::NotifyOrchestrator);
+        // unset fields fall back to defaults
+        assert_eq!(s.on_pr_closed, EventHandling::NotifyOrchestrator);
+    }
+
     #[test]
     fn test_worktree_settings_deserialization() {
         let toml = r#"
@@ -1840,9 +2025,10 @@ mod tests {
     #[test]
     fn test_notify_settings_guardrail_exceeded_default() {
         let n = OrchestratorNotifySettings::default();
-        assert!(
+        assert_eq!(
             n.on_guardrail_exceeded,
-            "on_guardrail_exceeded should be ON by default"
+            EventHandling::NotifyOrchestrator,
+            "on_guardrail_exceeded should default to NotifyOrchestrator"
         );
     }
 
