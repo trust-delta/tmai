@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, info};
 
 use crate::api::CoreEvent;
-use crate::config::OrchestratorNotifySettings;
+use crate::config::{EventHandling, OrchestratorNotifySettings};
 use crate::state::SharedState;
 
 /// Shared, hot-reloadable reference to notify settings
@@ -125,7 +125,7 @@ impl OrchestratorNotifier {
                 last_assistant_message,
                 ..
             } => {
-                if !settings.on_agent_stopped {
+                if settings.on_agent_stopped != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 // Don't notify about orchestrator agents stopping
@@ -172,7 +172,7 @@ impl OrchestratorNotifier {
 
                 // Error transitions
                 if is_error {
-                    if !settings.on_agent_error {
+                    if settings.on_agent_error != EventHandling::NotifyOrchestrator {
                         return None;
                     }
                     let ctx = Self::agent_context(target, state);
@@ -188,7 +188,7 @@ impl OrchestratorNotifier {
                 }
 
                 // Idle transitions — only if not covered by AgentStopped
-                if !settings.on_agent_stopped {
+                if settings.on_agent_stopped != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 // Avoid duplicate notification if AgentStopped will also fire
@@ -209,7 +209,7 @@ impl OrchestratorNotifier {
                 worktree_path,
                 error,
             } => {
-                if !settings.on_rebase_conflict {
+                if settings.on_rebase_conflict != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let source = Self::find_agent_by_branch(branch, state)
@@ -228,7 +228,7 @@ impl OrchestratorNotifier {
                 title,
                 branch,
             } => {
-                if !settings.on_pr_created {
+                if settings.on_pr_created != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr = pr_number.to_string();
@@ -251,7 +251,7 @@ impl OrchestratorNotifier {
                 title,
                 checks_summary,
             } => {
-                if !settings.on_ci_passed {
+                if settings.on_ci_passed != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr = pr_number.to_string();
@@ -274,7 +274,7 @@ impl OrchestratorNotifier {
                 title,
                 failed_details,
             } => {
-                if !settings.on_ci_failed {
+                if settings.on_ci_failed != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr = pr_number.to_string();
@@ -297,7 +297,7 @@ impl OrchestratorNotifier {
                 title,
                 comments_summary,
             } => {
-                if !settings.on_pr_comment {
+                if settings.on_pr_comment != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr = pr_number.to_string();
@@ -320,7 +320,7 @@ impl OrchestratorNotifier {
                 title,
                 branch,
             } => {
-                if !settings.on_pr_closed {
+                if settings.on_pr_closed != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr = pr_number.to_string();
@@ -343,7 +343,7 @@ impl OrchestratorNotifier {
                 count,
                 limit,
             } => {
-                if !settings.on_guardrail_exceeded {
+                if settings.on_guardrail_exceeded != EventHandling::NotifyOrchestrator {
                     return None;
                 }
                 let pr_label = pr_number.map(|n| format!(" (PR #{n})")).unwrap_or_default();
@@ -495,7 +495,7 @@ mod tests {
     use super::*;
     use crate::agents::{AgentStatus, AgentType, MonitoredAgent};
     use crate::api::TmaiCoreBuilder;
-    use crate::config::{OrchestratorNotifySettings, Settings};
+    use crate::config::{EventHandling, OrchestratorNotifySettings, Settings};
     use crate::state::AppState;
 
     /// Helper: insert a sub-agent into state
@@ -673,7 +673,7 @@ mod tests {
         insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
 
         let mut settings = OrchestratorNotifySettings::default();
-        settings.on_agent_stopped = false;
+        settings.on_agent_stopped = EventHandling::Off;
 
         let event = CoreEvent::AgentStopped {
             target: "sub:0.0".to_string(),
@@ -698,7 +698,7 @@ mod tests {
         );
 
         let mut settings = OrchestratorNotifySettings::default();
-        settings.on_agent_error = false;
+        settings.on_agent_error = EventHandling::Off;
 
         let event = CoreEvent::AgentStatusChanged {
             target: "sub:0.0".to_string(),
@@ -726,6 +726,44 @@ mod tests {
     }
 
     #[test]
+    fn test_ci_failed_auto_action_skips_notify() {
+        // When CiFailed is configured for AutoAction, OrchestratorNotifier
+        // must leave the event alone so AutoActionExecutor (PR-B) owns it.
+        let state = AppState::shared();
+        let mut settings = OrchestratorNotifySettings::default();
+        settings.on_ci_failed = EventHandling::AutoAction;
+
+        let event = CoreEvent::PrCiFailed {
+            pr_number: 42,
+            title: "feat: stuff".to_string(),
+            failed_details: "lint failed".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "AutoAction-configured events must not reach the orchestrator"
+        );
+    }
+
+    #[test]
+    fn test_ci_failed_notify_still_reaches_orchestrator() {
+        // Baseline sanity: same event with NotifyOrchestrator still notifies.
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings::default();
+        assert_eq!(settings.on_ci_failed, EventHandling::NotifyOrchestrator);
+
+        let event = CoreEvent::PrCiFailed {
+            pr_number: 42,
+            title: "feat: stuff".to_string(),
+            failed_details: "lint failed".to_string(),
+        };
+
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_some());
+    }
+
+    #[test]
     fn test_ci_failed_on_by_default() {
         let settings = OrchestratorNotifySettings::default();
         let state = AppState::shared();
@@ -744,7 +782,7 @@ mod tests {
     fn test_pr_closed_configurable() {
         let state = AppState::shared();
         let mut settings = OrchestratorNotifySettings::default();
-        settings.on_pr_closed = false;
+        settings.on_pr_closed = EventHandling::Off;
 
         let event = CoreEvent::PrClosed {
             pr_number: 42,
@@ -1109,7 +1147,7 @@ mod tests {
     fn test_guardrail_exceeded_disabled() {
         let state = AppState::shared();
         let mut settings = OrchestratorNotifySettings::default();
-        settings.on_guardrail_exceeded = false;
+        settings.on_guardrail_exceeded = EventHandling::Off;
 
         let event = CoreEvent::GuardrailExceeded {
             guardrail: crate::api::GuardrailKind::ReviewLoops,

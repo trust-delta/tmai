@@ -102,7 +102,7 @@ impl PrMonitor {
             match self.previous_states.get(&pr.number) {
                 None => {
                     // New PR detected
-                    if self.settings.notify.on_pr_created {
+                    if self.settings.notify.on_pr_created != crate::config::EventHandling::Off {
                         let notif = PrNotification::Created {
                             pr_number: pr.number,
                             title: pr.title.clone(),
@@ -114,7 +114,7 @@ impl PrMonitor {
                 }
                 Some(prev) => {
                     // CI status transition: non-success → success
-                    if self.settings.notify.on_ci_passed
+                    if self.settings.notify.on_ci_passed != crate::config::EventHandling::Off
                         && !is_success(&prev.check_status)
                         && is_success(&current_state.check_status)
                     {
@@ -129,7 +129,7 @@ impl PrMonitor {
                     }
 
                     // CI status transition: non-failure → failure
-                    if self.settings.notify.on_ci_failed
+                    if self.settings.notify.on_ci_failed != crate::config::EventHandling::Off
                         && !is_failure(&prev.check_status)
                         && is_failure(&current_state.check_status)
                     {
@@ -144,7 +144,7 @@ impl PrMonitor {
                     }
 
                     // Review feedback: transition to ChangesRequested
-                    if self.settings.notify.on_pr_comment
+                    if self.settings.notify.on_pr_comment != crate::config::EventHandling::Off
                         && !is_changes_requested(&prev.review_decision)
                         && is_changes_requested(&current_state.review_decision)
                     {
@@ -684,10 +684,20 @@ mod tests {
         let settings = OrchestratorSettings::default();
         assert!(!settings.pr_monitor_enabled);
         assert_eq!(settings.pr_monitor_interval_secs, 60);
-        assert!(settings.notify.on_ci_failed);
-        assert!(!settings.notify.on_ci_passed);
-        assert!(settings.notify.on_pr_comment);
-        assert!(settings.notify.on_pr_created);
+        use crate::config::EventHandling;
+        assert_eq!(
+            settings.notify.on_ci_failed,
+            EventHandling::NotifyOrchestrator
+        );
+        assert_eq!(settings.notify.on_ci_passed, EventHandling::Off);
+        assert_eq!(
+            settings.notify.on_pr_comment,
+            EventHandling::NotifyOrchestrator
+        );
+        assert_eq!(
+            settings.notify.on_pr_created,
+            EventHandling::NotifyOrchestrator
+        );
     }
 
     #[test]
