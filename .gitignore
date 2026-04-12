@@ -14,6 +14,9 @@ knowledge/
 .cursor/
 .aider*
 
+# tmai dispatch state (per-local-environment)
+.task-meta/
+
 # IDE / Editor
 .idea/
 .vscode/
