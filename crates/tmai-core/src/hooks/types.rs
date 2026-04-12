@@ -65,7 +65,8 @@ impl fmt::Display for HookEventName {
 
 /// Permission mode reported by Claude Code in hook payloads.
 ///
-/// Maps to the session's current permission level (e.g., "default", "plan", "dontAsk").
+/// Maps to the session's current permission level (e.g., "default", "plan",
+/// "dontAsk", "acceptEdits").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PermissionMode {
@@ -75,16 +76,18 @@ pub enum PermissionMode {
     Plan,
     /// Auto-approve all tool uses without prompting
     DontAsk,
+    /// Auto-approve file edits only (introduced in Claude Code 2.1.x)
+    AcceptEdits,
 }
 
 /// Notification type for the Notification hook event.
-///
-/// Currently only "permission_prompt" is defined by Claude Code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationType {
     /// Agent is waiting for a permission prompt response
     PermissionPrompt,
+    /// Agent is idle and waiting for user prompt (added in later Claude Code versions)
+    IdlePrompt,
 }
 
 /// Worktree information attached to hook events in `--worktree` sessions
@@ -728,6 +731,33 @@ mod tests {
         assert!(payload.tool_name.is_none());
         assert!(payload.stop_hook_active.is_none());
         assert!(payload.teammate_name.is_none());
+    }
+
+    /// PermissionMode variants added in later Claude Code versions
+    #[test]
+    fn test_permission_mode_accept_edits() {
+        let json = r#"{
+            "hook_event_name": "SessionStart",
+            "session_id": "s",
+            "permission_mode": "acceptEdits"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.permission_mode, Some(PermissionMode::AcceptEdits));
+    }
+
+    /// NotificationType::IdlePrompt added in later Claude Code versions
+    #[test]
+    fn test_notification_type_idle_prompt() {
+        let json = r#"{
+            "hook_event_name": "Notification",
+            "session_id": "s",
+            "notification_type": "idle_prompt"
+        }"#;
+        let payload: HookEventPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            payload.notification_type,
+            Some(NotificationType::IdlePrompt)
+        );
     }
 
     /// InstructionsLoaded payload (fires when CLAUDE.md or rules files are loaded)
