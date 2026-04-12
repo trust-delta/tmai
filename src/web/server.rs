@@ -85,6 +85,7 @@ impl WebServer {
             .route("/agents/{id}/set-orchestrator", post(api::set_orchestrator))
             .route("/agents/{id}/passthrough", post(api::passthrough_input))
             .route("/agents/{id}/preview", get(api::get_preview))
+            .route("/agents/{id}/preview-input", get(api::get_preview_input))
             .route("/agents/{id}/transcript", get(api::get_transcript))
             .route("/teams", get(api::get_teams))
             .route("/teams/{name}/tasks", get(api::get_team_tasks))
