@@ -403,11 +403,16 @@ impl TmaiMcpServer {
         )
     }
 
-    /// Send a prompt to an agent with status-aware delivery. If the agent is idle, the prompt is
-    /// sent immediately. If the agent is processing, the prompt is queued (max 5) and delivered
-    /// automatically when the agent becomes idle. If the agent is stopped/offline, the prompt is
-    /// sent to restart it. Only agents within the same project scope can receive prompts.
-    #[tool(description = "Send a prompt to an agent (queues if busy, delivers when idle)")]
+    /// Send a prompt to an agent with status-aware delivery. The prompt is submitted
+    /// (typed into the agent's input and followed by Enter). If the agent is idle, the
+    /// prompt is submitted immediately. If the agent is processing, the prompt is
+    /// queued (max 5) and submitted automatically when the agent becomes idle. If the
+    /// agent is stopped/offline, the prompt is submitted to restart it. Contrast with
+    /// `send_text`, which only types into the terminal without a reliable submit.
+    /// Only agents within the same project scope can receive prompts.
+    #[tool(
+        description = "Send and submit a prompt to an agent (queues if busy, delivers when idle; Enter is appended)"
+    )]
     fn send_prompt(&self, Parameters(p): Parameters<SendPromptParams>) -> String {
         if let Some(err) = self.validate_project_scope(&p.id) {
             return err;

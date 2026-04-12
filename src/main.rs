@@ -278,6 +278,13 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&app.shared_state(), &settings.project_paths());
 
+    // Load persisted orchestrator identity store (#380) — enables auto-restore
+    // of is_orchestrator across tmai restart and Claude Code /resume.
+    {
+        let orch_store = tmai_core::orchestrator_state::new_shared();
+        app.shared_state().write().orchestrator_state = Some(orch_store);
+    }
+
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
         let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
@@ -513,6 +520,13 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     // Restore in-memory issue/PR associations from persisted .task-meta/ files
     tmai_core::task_meta::restore_from_disk(&state, &settings.project_paths());
 
+    // Load persisted orchestrator identity store (#380) — enables auto-restore
+    // of is_orchestrator across tmai restart and Claude Code /resume.
+    {
+        let orch_store = tmai_core::orchestrator_state::new_shared();
+        state.write().orchestrator_state = Some(orch_store);
+    }
+
     // Start Codex CLI app-server WebSocket connections if configured
     if !settings.codex_ws.connections.is_empty() {
         let codex_ws_service = tmai_core::codex_ws::CodexWsService::new(
@@ -562,7 +576,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             while let Ok(event) = event_rx.recv().await {
                 if let tmai_core::api::CoreEvent::PromptReady { target, prompt } = event {
                     tracing::info!("Delivering queued prompt to agent {}", target);
-                    if let Err(e) = core.send_text(&target, &prompt).await {
+                    if let Err(e) = core.deliver_prompt(&target, &prompt).await {
                         tracing::warn!("Failed to deliver queued prompt to {}: {}", target, e);
                     }
                 }
@@ -600,18 +614,19 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
     pty_sync_interval.tick().await; // skip first tick
 
+    // Periodic refresh for orchestrator last_seen (#380) — touches the
+    // persisted record every 60s for every online orchestrator so TTL pruning
+    // doesn't reap active sessions.
+    let mut orch_last_seen_interval = tokio::time::interval(std::time::Duration::from_secs(60));
+    orch_last_seen_interval.tick().await; // skip first tick
+
     // Main loop: process poll messages and update state until shutdown
     loop {
         tokio::select! {
             msg = poll_rx.recv() => {
                 match msg {
                     Some(tmai_core::monitor::PollMessage::AgentsUpdated(agents)) => {
-                        let target_changes = {
-                            let mut s = state.write();
-                            let changes = s.update_agents(agents);
-                            s.clear_error();
-                            changes
-                        };
+                        let target_changes = core.apply_agents_poll_update(agents);
                         // Emit events for PID-based target migrations
                         for tc in target_changes {
                             tracing::info!(
@@ -641,6 +656,9 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
                 if core.sync_pty_sessions() {
                     core.notify_agents_updated();
                 }
+            }
+            _ = orch_last_seen_interval.tick() => {
+                core.refresh_orchestrator_last_seen();
             }
             _ = tokio::signal::ctrl_c() => {
                 eprintln!("\ntmai: shutting down...");
