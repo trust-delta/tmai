@@ -1172,6 +1172,8 @@ pub struct SpawnSettingsResponse {
     pub tmux_available: bool,
     /// Window name for tmux-spawned agents
     pub tmux_window_name: String,
+    /// Permission mode injected for dispatched workers
+    pub worker_permission_mode: String,
 }
 
 /// Request body for updating spawn settings
@@ -1182,6 +1184,10 @@ pub struct UpdateSpawnSettingsRequest {
     /// Window name for tmux-spawned agents (optional, keeps current if omitted)
     #[serde(default)]
     pub tmux_window_name: Option<String>,
+    /// Permission mode for dispatched workers: `"default"`, `"plan"`,
+    /// `"acceptEdits"`, or `"dontAsk"`. Empty / missing keeps current.
+    #[serde(default)]
+    pub worker_permission_mode: Option<String>,
 }
 
 /// GET /api/settings/spawn — get spawn settings
@@ -1192,11 +1198,13 @@ pub async fn get_spawn_settings(State(core): State<Arc<TmaiCore>>) -> Json<Spawn
         (state.spawn_in_tmux, state.spawn_tmux_window_name.clone())
     };
     let tmux_available = is_tmux_available();
+    let worker_permission_mode = core.settings().spawn.worker_permission_mode.clone();
 
     Json(SpawnSettingsResponse {
         use_tmux_window,
         tmux_available,
         tmux_window_name,
+        worker_permission_mode,
     })
 }
 
@@ -1231,14 +1239,27 @@ pub async fn update_spawn_settings(
             );
         }
     }
+    if let Some(ref mode) = req.worker_permission_mode {
+        // Validate against the known CC permission modes; empty string is
+        // treated as "keep current" (handled by the outer Option).
+        const VALID: [&str; 4] = ["default", "plan", "acceptEdits", "dontAsk"];
+        if VALID.contains(&mode.as_str()) {
+            tmai_core::config::Settings::save_toml_value(
+                "spawn",
+                "worker_permission_mode",
+                toml_edit::Value::from(mode.as_str()),
+            );
+        }
+    }
 
     // Reload live settings from config.toml
     core.reload_settings();
 
     tracing::info!(
-        "Spawn settings updated: use_tmux_window={} window_name={:?}",
+        "Spawn settings updated: use_tmux_window={} window_name={:?} worker_permission_mode={:?}",
         req.use_tmux_window,
-        req.tmux_window_name
+        req.tmux_window_name,
+        req.worker_permission_mode,
     );
     Json(serde_json::json!({"ok": true}))
 }
@@ -3080,12 +3101,21 @@ pub async fn perform_dispatch_review(
         extra = extra,
     );
 
-    // Spawn agent in the review worktree directory
+    // Spawn agent in the review worktree directory.
+    // Inject --permission-mode for dispatched workers (same as dispatch_issue):
+    // acceptEdits by default, configurable via [spawn].worker_permission_mode.
     let project_cwd = cwd.clone();
     let worktree_path = wt_result.path.clone();
+    let mut args: Vec<String> = Vec::new();
+    let worker_mode = core.settings().spawn.worker_permission_mode.clone();
+    if !worker_mode.is_empty() && worker_mode != "default" {
+        args.push("--permission-mode".to_string());
+        args.push(worker_mode);
+    }
+    args.push(prompt);
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
-        args: vec![prompt],
+        args,
         cwd: wt_result.path,
         rows,
         cols,
@@ -3247,12 +3277,18 @@ pub async fn spawn_worktree(
         resolved_prompt
     };
 
-    // Build args — pass resolved prompt as first positional argument if provided
-    let args = if !worktree_prompt.is_empty() {
-        vec![worktree_prompt]
-    } else {
-        vec![]
-    };
+    // Build args — inject --permission-mode for dispatched workers (acceptEdits
+    // by default; user-configurable via [spawn].worker_permission_mode). The
+    // flag is omitted when set to "default" so Claude Code uses its own default.
+    let mut args: Vec<String> = Vec::new();
+    let worker_mode = core.settings().spawn.worker_permission_mode.clone();
+    if !worker_mode.is_empty() && worker_mode != "default" {
+        args.push("--permission-mode".to_string());
+        args.push(worker_mode);
+    }
+    if !worktree_prompt.is_empty() {
+        args.push(worktree_prompt);
+    }
 
     // Spawn claude in the worktree directory
     let worktree_path = wt_result.path.clone();

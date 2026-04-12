@@ -585,10 +585,14 @@ export interface AutoApproveSettings {
   max_concurrent: number;
 }
 
+export type WorkerPermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
+
 export interface SpawnSettings {
   use_tmux_window: boolean;
   tmux_available: boolean;
   tmux_window_name: string;
+  /** Permission mode injected for dispatched workers (dispatch_issue / dispatch_review). */
+  worker_permission_mode: WorkerPermissionMode;
 }
 
 export interface OrchestratorRules {
@@ -1026,7 +1030,11 @@ export const api = {
 
   // Spawn settings
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
-  updateSpawnSettings: (params: { use_tmux_window: boolean; tmux_window_name?: string }) =>
+  updateSpawnSettings: (params: {
+    use_tmux_window: boolean;
+    tmux_window_name?: string;
+    worker_permission_mode?: WorkerPermissionMode;
+  }) =>
     apiFetch("/settings/spawn", {
       method: "PUT",
       body: JSON.stringify(params),
