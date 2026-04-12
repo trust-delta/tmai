@@ -208,6 +208,7 @@ impl AutoActionExecutor {
                 pr_number,
                 title,
                 comments_summary,
+                ..
             } => {
                 if notify.on_pr_comment != EventHandling::AutoAction {
                     return;
@@ -1023,6 +1024,7 @@ mod tests {
             pr_number: 11,
             title: "Y".into(),
             comments_summary: "1 comment".into(),
+            review_count: 1,
         };
         AutoActionExecutor::handle_event(
             &state,
@@ -1068,6 +1070,7 @@ mod tests {
             pr_number: 11,
             title: "Y".into(),
             comments_summary: "c".into(),
+            review_count: 1,
         };
 
         AutoActionExecutor::handle_event(

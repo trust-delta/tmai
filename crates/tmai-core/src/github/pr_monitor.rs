@@ -153,6 +153,7 @@ impl PrMonitor {
                             pr_number: pr.number,
                             title: pr.title.clone(),
                             comments_summary,
+                            review_count: current_state.reviews,
                         };
                         self.emit_event(&notif);
                         notifications.push(notif);
@@ -222,10 +223,12 @@ impl PrMonitor {
                 pr_number,
                 title,
                 comments_summary,
+                review_count,
             } => CoreEvent::PrReviewFeedback {
                 pr_number: *pr_number,
                 title: title.clone(),
                 comments_summary: comments_summary.clone(),
+                review_count: *review_count,
             },
             PrNotification::Closed {
                 pr_number,
@@ -354,6 +357,7 @@ impl PrMonitor {
                 pr_number,
                 title,
                 comments_summary,
+                ..
             } => {
                 format!(
                     "[PR Monitor] PR #{} \"{}\" has review feedback: {}",
@@ -400,6 +404,7 @@ pub enum PrNotification {
         pr_number: u64,
         title: String,
         comments_summary: String,
+        review_count: u64,
     },
     /// PR disappeared from open list (merged or closed)
     Closed {
@@ -586,6 +591,7 @@ mod tests {
             pr_number: 10,
             title: "Fix bug".to_string(),
             comments_summary: "Please fix the typo".to_string(),
+            review_count: 1,
         };
         let prompt = PrMonitor::format_prompt(&notif);
         assert!(prompt.contains("review feedback"));
