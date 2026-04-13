@@ -711,15 +711,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel\n\
     } = status
     {
         assert!(matches!(approval_type, ApprovalCategory::UserQuestion));
-        if let Some(InteractionMode::SingleSelect {
-            choices,
-            cursor_position,
-        }) = interaction
-        {
+        if let Some(InteractionMode::MultiSelect { choices }) = interaction {
             assert_eq!(choices.len(), 6, "Expected 6 choices, got {:?}", choices);
-            assert_eq!(cursor_position, 1);
         } else {
-            panic!("Expected SingleSelect interaction, got {:?}", interaction);
+            panic!("Expected MultiSelect interaction, got {:?}", interaction);
         }
     }
 }
