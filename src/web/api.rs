@@ -157,6 +157,15 @@ pub struct AutoApproveOverrideRequest {
 pub struct PreviewResponse {
     pub content: String,
     pub lines: usize,
+    /// Line index (0-based) within `content` where the live/visible region
+    /// begins. Lines `[0, live_start_line)` are immutable scrollback history;
+    /// lines `[live_start_line, lines)` are the live capture-pane region that
+    /// updates every poll tick. The client uses this split to skip re-rendering
+    /// scrollback on every tick — the dominant input-lag cost in long sessions
+    /// (#413). Falls back to 0 (whole content treated as live) when the
+    /// runtime cannot provide pane dimensions.
+    #[serde(default)]
+    pub live_start_line: usize,
     /// Terminal cursor column (0-indexed)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_x: Option<u32>,
@@ -590,34 +599,44 @@ pub async fn get_preview(
     };
 
     // Try capture-pane with ANSI colors first (via tmux target).
-    // Query cursor BEFORE capture to reduce race conditions: if new content
-    // appears between the two calls, the cursor position still references a
-    // valid line in the (larger) captured output.
+    // Query pane view (cursor + dimensions) BEFORE capture to reduce race
+    // conditions: if new content appears between the two calls, the cursor
+    // position still references a valid line in the (larger) captured output.
+    // pane_height lets us split scrollback history from the live visible
+    // region so the client can skip re-rendering history on every tick (#413).
     if let Some(ref target) = agent_target {
         if let Some(cmd) = core.raw_command_sender() {
-            // Pre-query cursor position
-            let pre_cursor = if show_cursor {
-                let cursor_result = cmd.runtime().get_cursor_position(target);
-                tracing::debug!("cursor query for {}: {:?}", target, cursor_result);
-                cursor_result.ok().flatten()
-            } else {
-                None
+            let pre_view = {
+                let view_result = cmd.runtime().get_pane_view_info(target);
+                tracing::debug!("pane view query for {}: {:?}", target, view_result);
+                view_result.ok().flatten()
             };
 
             if let Ok(content) = cmd.runtime().capture_pane_full(target) {
                 if !content.trim().is_empty() {
                     let lines = content.lines().count();
-                    // Clamp cursor_y to captured content bounds
-                    let (cursor_x, cursor_y) = match pre_cursor {
-                        Some((x, y)) if lines > 0 => {
-                            let clamped_y = y.min((lines - 1) as u32);
-                            (Some(x), Some(clamped_y))
+                    let (cursor_x, cursor_y, live_start_line) = match pre_view {
+                        Some(v) if lines > 0 => {
+                            let absolute_y = v.history_size + v.cursor_y;
+                            let clamped_y = absolute_y.min((lines - 1) as u32);
+                            // Split boundary: history occupies the first
+                            // `history_size` lines, live is the remaining
+                            // pane_height lines. Clamp to `lines` in case
+                            // capture returned fewer rows than expected.
+                            let live_start = (v.history_size as usize).min(lines);
+                            let (cx, cy) = if show_cursor {
+                                (Some(v.cursor_x), Some(clamped_y))
+                            } else {
+                                (None, None)
+                            };
+                            (cx, cy, live_start)
                         }
-                        _ => (None, None),
+                        _ => (None, None, 0),
                     };
                     return Ok(Json(PreviewResponse {
                         content,
                         lines,
+                        live_start_line,
                         cursor_x,
                         cursor_y,
                     }));
@@ -632,6 +651,7 @@ pub async fn get_preview(
         return Ok(Json(PreviewResponse {
             content,
             lines,
+            live_start_line: 0,
             cursor_x: if show_cursor { agent_cursor.0 } else { None },
             cursor_y: if show_cursor { agent_cursor.1 } else { None },
         }));
@@ -673,6 +693,7 @@ pub async fn get_preview(
             Ok(Json(PreviewResponse {
                 content: display_content,
                 lines,
+                live_start_line: 0,
                 cursor_x: None,
                 cursor_y: None,
             }))
