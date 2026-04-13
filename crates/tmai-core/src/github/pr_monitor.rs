@@ -2,16 +2,59 @@
 //!
 //! Tracks open PRs and their CI/review states, emitting [`CoreEvent`] variants
 //! when transitions occur (new PR, CI pass/fail, review feedback).
+//!
+//! Also maintains [`GithubSnapshot`], the in-memory source-of-truth that
+//! WebUI endpoints (`/api/github/prs`) read from so the UI and the
+//! notification stream both observe the same poll tick (#422).
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Duration;
 
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
 use crate::api::events::CoreEvent;
 use crate::config::OrchestratorSettings;
 use crate::github::{self, CheckStatus, PrInfo, ReviewDecision};
 use crate::state::SharedState;
+
+/// In-memory snapshot of open PRs per repository, maintained by [`PrMonitor`].
+///
+/// Endpoints read this instead of calling `gh` directly once `warmed_up`,
+/// so the WebUI sees state transitions on the same poll tick that drives
+/// `CoreEvent::Pr*` broadcasts.
+#[derive(Debug, Default, Clone)]
+pub struct GithubSnapshot {
+    /// Open PRs keyed by head branch
+    pub open_prs: HashMap<String, PrInfo>,
+    /// Set to true after the first successful poll; until then, endpoints
+    /// should fall back to `gh` so cold-start requests still work.
+    pub warmed_up: bool,
+}
+
+/// Module-level snapshot store keyed by repo directory.
+///
+/// The PR monitor writes after each poll; API endpoints read for the SoT
+/// path. Module-level is intentional and mirrors [`super::GH_CACHE`].
+static MONITOR_SNAPSHOTS: LazyLock<RwLock<HashMap<String, GithubSnapshot>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Read the snapshot for `repo_dir`, if the PR monitor has populated it.
+///
+/// Returns `None` if no monitor has ever run for this repo (cold start),
+/// or if it hasn't warmed up yet. Endpoints should fall back to `gh` in
+/// that case.
+pub async fn snapshot_for(repo_dir: &str) -> Option<GithubSnapshot> {
+    let guard = MONITOR_SNAPSHOTS.read().await;
+    guard.get(repo_dir).filter(|s| s.warmed_up).cloned()
+}
+
+/// Test-only: seed a snapshot directly. Not exposed outside the crate.
+#[cfg(test)]
+pub(crate) async fn set_snapshot_for_test(repo_dir: &str, snapshot: GithubSnapshot) {
+    let mut guard = MONITOR_SNAPSHOTS.write().await;
+    guard.insert(repo_dir.to_string(), snapshot);
+}
 
 /// Snapshot of a PR's state for change detection
 #[derive(Debug, Clone, PartialEq)]
@@ -159,6 +202,9 @@ impl PrMonitor {
                 self.previous_states.insert(pr.number, PrState::from_pr(pr));
             }
             self.warmed_up = true;
+            // Publish the baseline so endpoints can start serving from the
+            // snapshot immediately, even though no events were emitted.
+            self.publish_snapshot(&prs).await;
             tracing::info!(
                 repo = %self.repo_dir,
                 count = prs.len(),
@@ -261,7 +307,21 @@ impl PrMonitor {
         self.previous_states
             .retain(|num, _| current_pr_numbers.contains(num));
 
+        // Publish the freshly-polled view so endpoints see it on the same
+        // tick the events were broadcast.
+        self.publish_snapshot(&prs).await;
+
         notifications
+    }
+
+    /// Write the current open-PR view into the module-level snapshot store.
+    async fn publish_snapshot(&self, open_prs: &HashMap<String, PrInfo>) {
+        let snapshot = GithubSnapshot {
+            open_prs: open_prs.clone(),
+            warmed_up: true,
+        };
+        let mut guard = MONITOR_SNAPSHOTS.write().await;
+        guard.insert(self.repo_dir.clone(), snapshot);
     }
 
     /// Emit a CoreEvent for a notification
@@ -756,6 +816,64 @@ mod tests {
 
         assert_eq!(monitor.previous_states.len(), 1);
         assert_eq!(monitor.previous_states.get(&1), Some(&state));
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_for_returns_none_before_warmup() {
+        // snapshot_for must refuse to return a stored snapshot until warmed_up=true,
+        // otherwise a half-initialized entry could be served to endpoints.
+        let repo = "/tmp/test-snapshot-cold";
+        set_snapshot_for_test(
+            repo,
+            GithubSnapshot {
+                open_prs: HashMap::new(),
+                warmed_up: false,
+            },
+        )
+        .await;
+        assert!(snapshot_for(repo).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_for_returns_warm_snapshot() {
+        let repo = "/tmp/test-snapshot-warm";
+        let mut open_prs = HashMap::new();
+        open_prs.insert(
+            "feat/x".to_string(),
+            make_pr(7, Some(CheckStatus::Success), None),
+        );
+        set_snapshot_for_test(
+            repo,
+            GithubSnapshot {
+                open_prs: open_prs.clone(),
+                warmed_up: true,
+            },
+        )
+        .await;
+
+        let snap = snapshot_for(repo).await.expect("warmed snapshot");
+        assert!(snap.warmed_up);
+        assert_eq!(snap.open_prs.len(), 1);
+        assert!(snap.open_prs.contains_key("feat/x"));
+    }
+
+    #[tokio::test]
+    async fn test_publish_snapshot_sets_warmed_up() {
+        let repo = "/tmp/test-publish-snapshot";
+        let (tx, _rx) = broadcast::channel(16);
+        let monitor = PrMonitor::new(repo.to_string(), tx, OrchestratorSettings::default());
+
+        let mut open_prs = HashMap::new();
+        open_prs.insert(
+            "feat/y".to_string(),
+            make_pr(12, Some(CheckStatus::Pending), None),
+        );
+        monitor.publish_snapshot(&open_prs).await;
+
+        let snap = snapshot_for(repo).await.expect("published");
+        assert!(snap.warmed_up);
+        assert_eq!(snap.open_prs.len(), 1);
+        assert_eq!(snap.open_prs.get("feat/y").unwrap().number, 12);
     }
 
     #[tokio::test]

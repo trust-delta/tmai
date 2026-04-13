@@ -3770,6 +3770,10 @@ pub struct PrQueryParams {
 /// Returns both open PRs and recently merged PRs whose head branch still
 /// exists locally. Merged PRs include `merge_commit_sha` for drawing
 /// merge lines in the git graph.
+///
+/// Open PRs are served from the PR Monitor's in-memory snapshot when it
+/// has warmed up (#422 — single source of truth); falls back to calling
+/// `gh pr list` on cold start.
 pub async fn list_prs(
     axum::extract::Query(params): axum::extract::Query<PrQueryParams>,
 ) -> Result<
@@ -3778,14 +3782,17 @@ pub async fn list_prs(
 > {
     let repo_dir = validate_repo(&params.repo)?;
 
-    let mut map = tmai_core::github::list_open_prs(&repo_dir)
-        .await
-        .ok_or_else(|| {
-            json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to list PRs (is gh CLI authenticated?)",
-            )
-        })?;
+    let mut map = match tmai_core::github::pr_monitor::snapshot_for(&repo_dir).await {
+        Some(snap) => snap.open_prs,
+        None => tmai_core::github::list_open_prs(&repo_dir)
+            .await
+            .ok_or_else(|| {
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to list PRs (is gh CLI authenticated?)",
+                )
+            })?,
+    };
 
     // Fetch merged PRs for local branches (best-effort, don't fail if unavailable)
     if let Some(branch_list) = tmai_core::git::list_branches(&repo_dir).await {

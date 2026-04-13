@@ -1168,6 +1168,12 @@ export function subscribeSSE(handlers: {
     "worktree_created",
     "worktree_removed",
     "agent_stopped",
+    // PR monitor events — drive WebUI lockstep with PR Monitor's poll tick (#422)
+    "pr_created",
+    "pr_ci_passed",
+    "pr_ci_failed",
+    "pr_review_feedback",
+    "pr_closed",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {
