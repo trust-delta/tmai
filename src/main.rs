@@ -705,9 +705,11 @@ const CHROME_DEBUG_PORT: u16 = 9222;
 /// Chrome DevTools MCP can connect even when Chrome is already running.
 /// Decide whether a registered project path refers to the same project the
 /// tmai process is running in. Used by PR Monitor's `scope=current_project`
-/// filter. Falls back to a raw string prefix if canonicalization fails (e.g.
-/// the project path is stale and no longer exists on disk) so misconfigured
-/// entries still disable themselves instead of crashing.
+/// filter. Only the `cwd-inside-project` direction is accepted: matching the
+/// reverse (`project-inside-cwd`) would make a `cwd=/home` launch silently
+/// pick up every registered project, defeating the scope filter's purpose.
+/// Falls back to the raw path when canonicalization fails (stale entry on
+/// disk) so misconfigured entries disable themselves rather than crash.
 fn project_matches_cwd(project_path: &str, cwd: Option<&std::path::Path>) -> bool {
     let Some(cwd) = cwd else {
         return false;
@@ -715,7 +717,7 @@ fn project_matches_cwd(project_path: &str, cwd: Option<&std::path::Path>) -> boo
     let proj = std::path::Path::new(project_path);
     let canonical_proj = proj.canonicalize();
     let proj_ref: &std::path::Path = canonical_proj.as_deref().unwrap_or(proj);
-    cwd.starts_with(proj_ref) || proj_ref.starts_with(cwd)
+    cwd.starts_with(proj_ref)
 }
 
 fn open_in_browser(url: &str, debug: bool) {

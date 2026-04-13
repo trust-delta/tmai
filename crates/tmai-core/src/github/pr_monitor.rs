@@ -53,18 +53,32 @@ fn is_changes_requested(decision: &Option<ReviewDecision>) -> bool {
     matches!(decision, Some(ReviewDecision::ChangesRequested))
 }
 
+/// Normalize a GitHub author login for comparison. `gh pr list --json author`
+/// emits the GraphQL-form `app/dependabot`, while PR URLs and the UI show the
+/// REST-form `dependabot[bot]`. Strip both the `app/` prefix and the `[bot]`
+/// suffix so either surface is copy-pasteable into `exclude_authors` and still
+/// matches the other. Lowercased for case-insensitive match.
+fn normalize_author(s: &str) -> String {
+    let s = s.strip_prefix("app/").unwrap_or(s);
+    let s = s.strip_suffix("[bot]").unwrap_or(s);
+    s.to_ascii_lowercase()
+}
+
 /// Whether a PR should be dropped before any state is recorded or emitted.
 ///
 /// Applied to every `PrInfo` returned by `gh pr list` each poll. Matching PRs
 /// are treated as if they didn't exist: no baseline entry, no notifications,
-/// no auto-association. Matching is exact against `author.login` (the form gh
-/// returns, e.g. `dependabot[bot]`) so the default list entries are
-/// copy-pasteable from PR URLs.
+/// no auto-association. Comparison is normalized (`normalize_author`) so users
+/// can paste either the GraphQL form (`app/dependabot`) or the UI form
+/// (`dependabot[bot]`) into the config and match what `gh` emits.
 pub(crate) fn is_author_excluded(pr: &PrInfo, exclude_authors: &[String]) -> bool {
     if pr.author.is_empty() {
         return false;
     }
-    exclude_authors.iter().any(|a| a == &pr.author)
+    let needle = normalize_author(&pr.author);
+    exclude_authors
+        .iter()
+        .any(|a| normalize_author(a) == needle)
 }
 
 /// PR/CI status monitor that polls GitHub and emits events on state changes
@@ -775,6 +789,48 @@ mod tests {
         // Default exclude list matches the conventional bot logins gh emits.
         let exclude = vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()];
         let pr = make_pr_with_author(1, None, None, "dependabot[bot]");
+        assert!(is_author_excluded(&pr, &exclude));
+    }
+
+    #[test]
+    fn test_is_author_excluded_matches_gh_graphql_form() {
+        // Real `gh pr list --json author` emits `app/dependabot` (GraphQL
+        // form), not the REST `dependabot[bot]` shown on PR URLs. Normalizing
+        // both sides lets either surface land in the config and still match
+        // — this is the case that fires in production on PRs like #390-#392.
+        let exclude_ui_form = vec!["dependabot[bot]".to_string()];
+        let pr_from_gh = make_pr_with_author(1, None, None, "app/dependabot");
+        assert!(
+            is_author_excluded(&pr_from_gh, &exclude_ui_form),
+            "UI-form config entry must match GraphQL-form author from gh"
+        );
+
+        let exclude_gh_form = vec!["app/dependabot".to_string()];
+        let pr_from_ui = make_pr_with_author(2, None, None, "dependabot[bot]");
+        assert!(
+            is_author_excluded(&pr_from_ui, &exclude_gh_form),
+            "GraphQL-form config entry must match UI-form author"
+        );
+    }
+
+    #[test]
+    fn test_default_excludes_catch_real_dependabot_prs() {
+        // Regression guard: the shipped defaults must actually match the
+        // author string gh emits, otherwise the "out of the box" promise is
+        // broken. Mirrors the authors observed on #390-#392.
+        let exclude = vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()];
+        let gh_dependabot = make_pr_with_author(390, None, None, "app/dependabot");
+        let gh_renovate = make_pr_with_author(1, None, None, "app/renovate");
+        assert!(is_author_excluded(&gh_dependabot, &exclude));
+        assert!(is_author_excluded(&gh_renovate, &exclude));
+    }
+
+    #[test]
+    fn test_normalize_author_is_case_insensitive() {
+        // Defensive: gh has been consistent about casing but normalize via
+        // lowercase so config-entry case mismatches don't silently fail.
+        let exclude = vec!["Dependabot[bot]".to_string()];
+        let pr = make_pr_with_author(1, None, None, "app/dependabot");
         assert!(is_author_excluded(&pr, &exclude));
     }
 

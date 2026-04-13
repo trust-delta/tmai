@@ -1460,6 +1460,10 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub pr_monitor_enabled: Option<bool>,
     #[serde(default)]
     pub pr_monitor_interval_secs: Option<u64>,
+    /// When present, **replaces the entire exclude list**. Clients must send
+    /// the full desired list (merged with any additions/removals) — there is
+    /// no add/remove granularity. Sending `[]` clears the filter; omitting
+    /// the field leaves the current value untouched.
     #[serde(default)]
     pub pr_monitor_exclude_authors: Option<Vec<String>>,
     #[serde(default)]
