@@ -1854,6 +1854,7 @@ pub struct RuleSettingsResponse {
     pub allow_fetch: bool,
     pub allow_git_readonly: bool,
     pub allow_format_lint: bool,
+    pub allow_tmai_mcp: bool,
     pub allow_patterns: Vec<String>,
 }
 
@@ -1900,6 +1901,7 @@ pub struct UpdateRuleSettingsRequest {
     pub allow_fetch: Option<bool>,
     pub allow_git_readonly: Option<bool>,
     pub allow_format_lint: Option<bool>,
+    pub allow_tmai_mcp: Option<bool>,
     pub allow_patterns: Option<Vec<String>>,
 }
 
@@ -1920,6 +1922,7 @@ pub async fn get_auto_approve_settings(
         allow_fetch: aa.rules.allow_fetch,
         allow_git_readonly: aa.rules.allow_git_readonly,
         allow_format_lint: aa.rules.allow_format_lint,
+        allow_tmai_mcp: aa.rules.allow_tmai_mcp,
         allow_patterns: aa.rules.allow_patterns.clone(),
     };
 
@@ -1993,6 +1996,14 @@ pub async fn update_auto_approve_settings(
                 "auto_approve",
                 "rules",
                 "allow_format_lint",
+                toml_edit::Value::from(v),
+            );
+        }
+        if let Some(v) = rules.allow_tmai_mcp {
+            tmai_core::config::Settings::save_toml_nested_value(
+                "auto_approve",
+                "rules",
+                "allow_tmai_mcp",
                 toml_edit::Value::from(v),
             );
         }
@@ -5208,5 +5219,37 @@ mod tests {
             );
         }
         assert_eq!(session_ids.len(), n, "All session IDs must be unique");
+    }
+
+    /// Regression test for #428: the PUT request body schema must accept
+    /// `allow_tmai_mcp` so the toggle reaches the persistence branch instead
+    /// of being silently dropped by serde.
+    #[test]
+    fn test_update_rule_settings_accepts_allow_tmai_mcp() {
+        let body = r#"{"rules": {"allow_tmai_mcp": false}}"#;
+        let req: UpdateAutoApproveRequest = serde_json::from_str(body).expect("should deserialize");
+        let rules = req.rules.expect("rules present");
+        assert_eq!(rules.allow_tmai_mcp, Some(false));
+    }
+
+    /// Regression test for #428: the GET response must round-trip
+    /// `allow_tmai_mcp` from settings so the UI hydrates with the persisted value.
+    #[tokio::test]
+    async fn test_get_auto_approve_returns_allow_tmai_mcp() {
+        let mut settings = tmai_core::config::Settings::default();
+        settings.auto_approve.rules.allow_tmai_mcp = false;
+        let state = test_app_state();
+        let runtime: Arc<dyn tmai_core::runtime::RuntimeAdapter> =
+            Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let cmd = CommandSender::new(None, runtime, state.clone());
+        let core = Arc::new(
+            TmaiCoreBuilder::new(settings)
+                .with_state(state)
+                .with_command_sender(Arc::new(cmd))
+                .build(),
+        );
+
+        let Json(resp) = get_auto_approve_settings(axum::extract::State(core)).await;
+        assert!(!resp.rules.allow_tmai_mcp);
     }
 }
