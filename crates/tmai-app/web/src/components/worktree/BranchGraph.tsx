@@ -430,6 +430,21 @@ export function BranchGraph({
       .catch(() => {});
   }, [projectPath]);
 
+  // Refetch branches + graph when the git monitor observes a transition
+  // (#423 — sibling SoT pattern for the git domain). Runs in parallel
+  // so the tree and the lane graph stay consistent. Independent of
+  // refetchPrs because a git-only change (e.g. local branch created,
+  // remote push observed) doesn't need a PR refetch.
+  const refetchGit = useCallback(() => {
+    if (!projectPath) return;
+    Promise.all([api.listBranches(projectPath), api.gitGraph(projectPath, graphLimit)])
+      .then(([branchResult, graphResult]) => {
+        setBranches(branchResult);
+        setGraphData(graphResult);
+      })
+      .catch(() => {});
+  }, [projectPath, graphLimit]);
+
   useSSE({
     onEvent: (eventName) => {
       if (
@@ -440,12 +455,18 @@ export function BranchGraph({
         eventName === "pr_review_feedback"
       ) {
         refetchPrs();
+      } else if (eventName === "git_state_changed") {
+        refetchGit();
       }
     },
     // SSE auto-reconnect doesn't replay named events missed during the
-    // disconnect (laptop sleep, network blip). Resync the PR list on
-    // every reopen so the panel can't get stuck on pre-disconnect state.
-    onReconnect: refetchPrs,
+    // disconnect (laptop sleep, network blip). Resync both PR list and
+    // git state on every reopen so the panel can't get stuck on
+    // pre-disconnect state.
+    onReconnect: () => {
+      refetchPrs();
+      refetchGit();
+    },
   });
 
   // Low-frequency refresh for issues (not yet covered by a monitor).

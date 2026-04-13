@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 
+pub mod monitor;
+
 /// Timeout for git commands to prevent hanging on unresponsive repos
 const GIT_TIMEOUT: Duration = Duration::from_secs(5);
 

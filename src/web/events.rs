@@ -315,6 +315,15 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                                 return;
                             }
                         }
+                        Ok(CoreEvent::GitStateChanged { ref repo }) => {
+                            let data = serde_json::json!({ "repo": repo });
+                            let event = Event::default()
+                                .event("git_state_changed")
+                                .data(data.to_string());
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
                         Ok(CoreEvent::GuardrailExceeded { ref guardrail, ref branch, pr_number, count, limit }) => {
                             let data = serde_json::json!({
                                 "guardrail": guardrail,

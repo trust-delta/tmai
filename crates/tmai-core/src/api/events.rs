@@ -278,6 +278,17 @@ pub enum CoreEvent {
         branch: String,
     },
 
+    /// Git state changed for a repository (branches, HEAD, commit graph).
+    ///
+    /// Emitted by [`crate::git::monitor::GitMonitor`] when its poll detects
+    /// a transition. WebUI subscribers refetch `/api/git/*` in response so
+    /// the UI and the monitor snapshot observe the same tick (#423 — sibling
+    /// of the PR Monitor SoT pattern).
+    GitStateChanged {
+        /// Repository directory path
+        repo: String,
+    },
+
     /// A guardrail limit was exceeded (CI retries, review loops, or consecutive failures)
     GuardrailExceeded {
         /// The type of guardrail that was exceeded

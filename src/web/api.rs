@@ -2701,6 +2701,11 @@ pub struct BranchQueryParams {
 }
 
 /// GET /api/git/branches — list branches for a repository
+///
+/// Served from the git monitor's in-memory snapshot when it has warmed up
+/// (#423 — single source of truth); falls back to a live `git` call on
+/// cold start so the first request before the monitor has polled still
+/// returns data.
 pub async fn list_branches(
     axum::extract::Query(params): axum::extract::Query<BranchQueryParams>,
 ) -> Result<Json<tmai_core::git::BranchListResult>, (StatusCode, Json<serde_json::Value>)> {
@@ -2709,6 +2714,12 @@ pub async fn list_branches(
             StatusCode::BAD_REQUEST,
             &format!("Directory does not exist: {}", params.repo),
         ));
+    }
+
+    if let Some(snap) = tmai_core::git::monitor::snapshot_for(&params.repo).await {
+        if let Some(branches) = snap.branches {
+            return Ok(Json(branches));
+        }
     }
 
     tmai_core::git::list_branches(&params.repo)
@@ -2817,10 +2828,35 @@ fn default_graph_limit() -> usize {
 }
 
 /// GET /api/git/graph — get full commit graph for lane visualization
+///
+/// Served from the git monitor's snapshot when the request's `limit` is
+/// within the cached graph window (`DEFAULT_GRAPH_LIMIT`). Requests asking
+/// for more commits than the cache contains — or that arrive before the
+/// monitor has warmed up — fall through to a live `git log --all`.
 pub async fn git_graph(
     axum::extract::Query(params): axum::extract::Query<GraphQueryParams>,
 ) -> Result<Json<tmai_core::git::GraphData>, (StatusCode, Json<serde_json::Value>)> {
     let repo_dir = validate_repo(&params.repo)?;
+
+    if let Some(snap) = tmai_core::git::monitor::snapshot_for(&repo_dir).await {
+        if let Some(graph) = snap.graph {
+            // A cached graph satisfies a request as long as it contains
+            // at least as many commits as the caller asked for, OR the
+            // cache already holds every commit in the repo (total_count
+            // bound) — neither case benefits from shelling out again.
+            if graph.commits.len() >= params.limit || graph.commits.len() >= graph.total_count {
+                let truncated = if graph.commits.len() > params.limit {
+                    tmai_core::git::GraphData {
+                        commits: graph.commits.into_iter().take(params.limit).collect(),
+                        total_count: graph.total_count,
+                    }
+                } else {
+                    graph
+                };
+                return Ok(Json(truncated));
+            }
+        }
+    }
 
     tmai_core::git::log_graph(&repo_dir, params.limit)
         .await
