@@ -57,6 +57,14 @@ pub struct TmaiCore {
     defer_registry: Arc<DeferRegistry>,
     /// Codex WebSocket sender registry for bidirectional control
     codex_ws_senders: RwLock<Option<CodexWsSenderRegistry>>,
+    /// Last agent-list fingerprint used to dedup `CoreEvent::AgentsUpdated`.
+    ///
+    /// The poller already debounces sub-threshold phase flips (see
+    /// `debounce_threshold()` in `monitor/poller.rs`), so the snapshot
+    /// returned by `list_agents()` is already post-debounce. Gating
+    /// event emission on fingerprint equality ensures subscribers never
+    /// see spurious `AgentsUpdated` notifications when nothing changed.
+    pub(crate) last_agents_fingerprint: RwLock<String>,
 }
 
 impl TmaiCore {
@@ -93,6 +101,7 @@ impl TmaiCore {
             transcript_registry,
             defer_registry,
             codex_ws_senders: RwLock::new(None),
+            last_agents_fingerprint: RwLock::new(String::new()),
         }
     }
 

@@ -2713,4 +2713,157 @@ mod tests {
             "interval must be <= 100 to maintain audit coverage"
         );
     }
+
+    // ── debounce_threshold policy ──
+
+    #[test]
+    fn test_debounce_threshold_idle_processing_oscillation_500ms() {
+        assert_eq!(
+            debounce_threshold("idle", "processing"),
+            Duration::from_millis(500),
+        );
+        assert_eq!(
+            debounce_threshold("processing", "idle"),
+            Duration::from_millis(500),
+        );
+    }
+
+    #[test]
+    fn test_debounce_threshold_awaiting_approval_is_immediate() {
+        // Approval must surface to the UI immediately — latency is user-visible.
+        assert_eq!(
+            debounce_threshold("idle", "awaiting_approval"),
+            Duration::from_millis(0),
+        );
+        assert_eq!(
+            debounce_threshold("processing", "awaiting_approval"),
+            Duration::from_millis(0),
+        );
+    }
+
+    #[test]
+    fn test_debounce_threshold_post_approval_fast() {
+        // User action after an approval prompt clears should not be
+        // held behind the full oscillation debounce.
+        assert!(debounce_threshold("awaiting_approval", "processing") < Duration::from_millis(500),);
+    }
+
+    // ── emit_audit_events debounce behaviour ──
+
+    fn make_poller() -> Poller {
+        let settings = Settings::default();
+        let state = AppState::shared();
+        let ipc_registry = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
+        let hook_registry = crate::hooks::new_hook_registry();
+        let runtime: Arc<dyn crate::runtime::RuntimeAdapter> =
+            Arc::new(crate::runtime::StandaloneAdapter::new());
+        Poller::new(settings, state, runtime, ipc_registry, hook_registry, None)
+    }
+
+    fn make_monitored_agent(id: &str, status: AgentStatus) -> MonitoredAgent {
+        let mut a = MonitoredAgent::new(
+            id.to_string(),
+            AgentType::ClaudeCode,
+            "Test Title".to_string(),
+            "/home/user/project".to_string(),
+            1234,
+            "main".to_string(),
+            "window0".to_string(),
+            0,
+            0,
+        );
+        a.status = status;
+        a
+    }
+
+    /// Sub-threshold Idle→Processing→Idle blip must not commit a transition.
+    /// The committed status (and therefore the agent's exported status on
+    /// this tick) stays at Idle until the 500ms threshold is met.
+    #[test]
+    fn test_debounce_suppresses_sub_threshold_idle_processing_blip() {
+        let mut poller = make_poller();
+
+        // Tick 1: agent appears as Idle. AgentAppeared commits Idle immediately.
+        let mut tick1 = vec![make_monitored_agent("main:0.1", AgentStatus::Idle)];
+        poller.emit_audit_events(&mut tick1);
+        assert_eq!(
+            poller.previous_statuses.get("main:0.1").unwrap().status,
+            "idle"
+        );
+
+        // Tick 2: Processing detected briefly (the blip).
+        let mut tick2 = vec![make_monitored_agent(
+            "main:0.1",
+            AgentStatus::Processing {
+                activity: Activity::Thinking,
+            },
+        )];
+        poller.emit_audit_events(&mut tick2);
+
+        // Committed status must still be Idle — Processing is only pending.
+        assert_eq!(
+            poller.previous_statuses.get("main:0.1").unwrap().status,
+            "idle",
+            "sub-threshold Processing must not yet be committed"
+        );
+        // Poller must override agent.status back to Idle so the exported
+        // snapshot hides the flicker from downstream consumers.
+        assert!(
+            matches!(tick2[0].status, AgentStatus::Idle),
+            "agent.status must be overridden to committed Idle during debounce window"
+        );
+
+        // Tick 3 (immediately after): back to Idle. Pending transition must
+        // be cancelled, committed remains Idle — the blip leaves no trace.
+        let mut tick3 = vec![make_monitored_agent("main:0.1", AgentStatus::Idle)];
+        poller.emit_audit_events(&mut tick3);
+        assert_eq!(
+            poller.previous_statuses.get("main:0.1").unwrap().status,
+            "idle",
+            "post-blip committed status must remain Idle"
+        );
+        assert!(
+            !poller.pending_transitions.contains_key("main:0.1"),
+            "pending transition must be cleared once agent returns to committed status"
+        );
+    }
+
+    /// `awaiting_approval` has a 0ms debounce — it commits on the first tick
+    /// because approval latency is user-visible.
+    #[test]
+    fn test_awaiting_approval_commits_immediately_bypassing_debounce() {
+        let mut poller = make_poller();
+
+        // Start committed at Idle.
+        let mut tick1 = vec![make_monitored_agent("main:0.1", AgentStatus::Idle)];
+        poller.emit_audit_events(&mut tick1);
+        assert_eq!(
+            poller.previous_statuses.get("main:0.1").unwrap().status,
+            "idle"
+        );
+
+        // AwaitingApproval must commit on the very next tick, no debounce wait.
+        let approval_status = AgentStatus::AwaitingApproval {
+            approval_type: ApprovalCategory::ShellCommand,
+            details: "ls".to_string(),
+            interaction: None,
+        };
+        let mut tick2 = vec![make_monitored_agent("main:0.1", approval_status)];
+        poller.emit_audit_events(&mut tick2);
+
+        assert_eq!(
+            poller.previous_statuses.get("main:0.1").unwrap().status,
+            "awaiting_approval",
+            "awaiting_approval must commit immediately (0ms threshold)"
+        );
+        assert!(
+            !poller.pending_transitions.contains_key("main:0.1"),
+            "awaiting_approval must not be left pending"
+        );
+        // Agent's exported status must carry the approval through (not overridden).
+        assert!(matches!(
+            tick2[0].status,
+            AgentStatus::AwaitingApproval { .. }
+        ));
+    }
 }
