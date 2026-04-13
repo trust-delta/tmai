@@ -89,16 +89,31 @@ pub(crate) async fn set_snapshot_for_test(repo_dir: &str, snapshot: GitSnapshot)
     guard.insert(repo_dir.to_string(), snapshot);
 }
 
+/// Distinguishes local vs remote-only branches inside [`GitFingerprint`].
+///
+/// Namespacing fingerprint keys by `(BranchKind, name)` avoids collisions
+/// where a local branch happens to share a stringified prefix with a
+/// remote (e.g., a local branch literally named `remote:foo` would have
+/// silently aliased the remote-only branch `foo` under a string-only key).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum BranchKind {
+    /// `Local` comes first so sorted fingerprints list local branches
+    /// before remote-only ones, giving a deterministic, stable order.
+    Local,
+    Remote,
+}
+
 /// Condensed fingerprint used to detect "did anything change" between
 /// polls without comparing the full snapshot. Cheap to build and compare.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct GitFingerprint {
     current_branch: Option<String>,
     default_branch: String,
-    /// Sorted `(branch, last_commit_time_unix)` pairs. Covers both new
-    /// branches and updates to existing branches (commit timestamp moves
-    /// when a branch advances). Sorting keeps comparison order-stable.
-    branches_and_times: Vec<(String, i64)>,
+    /// Sorted `((kind, name), last_commit_time_unix)` entries. Covers both
+    /// new branches and updates to existing branches (commit timestamp
+    /// moves when a branch advances). Keying by `BranchKind` prevents a
+    /// local/remote name collision from hiding a real transition.
+    branches_and_times: Vec<((BranchKind, String), i64)>,
     /// SHA of the newest commit across all branches. Catches graph
     /// updates even on the default branch, where `last_commit_times`
     /// alone would also suffice but this is redundant defense.
@@ -112,21 +127,23 @@ impl GitFingerprint {
     fn from_snapshot(branches: &Option<BranchListResult>, graph: &Option<GraphData>) -> Self {
         let (current_branch, default_branch, branches_and_times) = match branches {
             Some(b) => {
-                let mut pairs: Vec<(String, i64)> = b
+                let mut pairs: Vec<((BranchKind, String), i64)> = b
                     .branches
                     .iter()
                     .map(|br| {
                         (
-                            br.clone(),
+                            (BranchKind::Local, br.clone()),
                             b.last_commit_times.get(br).copied().unwrap_or(0),
                         )
                     })
                     .collect();
-                // Also include remote-only branches so a new push observed
-                // only in refs/remotes still triggers a transition.
+                // Include remote-only branches under a distinct kind so a
+                // new push observed only in refs/remotes still triggers a
+                // transition, and so name collisions with local branches
+                // are impossible.
                 for rb in &b.remote_only_branches {
                     pairs.push((
-                        format!("remote:{}", rb),
+                        (BranchKind::Remote, rb.clone()),
                         b.last_commit_times.get(rb).copied().unwrap_or(0),
                     ));
                 }
@@ -406,5 +423,151 @@ mod tests {
         let fp1 = GitFingerprint::from_snapshot(&Some(b1), &None);
         let fp2 = GitFingerprint::from_snapshot(&Some(b2), &None);
         assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn fingerprint_separates_local_and_remote_with_same_name() {
+        // A local branch literally named "remote:foo" must not collide
+        // with a remote-only branch "foo" — `BranchKind` keying prevents
+        // the stringified-prefix aliasing that a plain string key had.
+        let mut b_local_only = empty_branch_list();
+        b_local_only.branches.push("remote:foo".to_string());
+        b_local_only
+            .last_commit_times
+            .insert("remote:foo".to_string(), 1_700_000_000);
+
+        let mut b_remote_only = empty_branch_list();
+        b_remote_only.remote_only_branches.push("foo".to_string());
+        b_remote_only
+            .last_commit_times
+            .insert("foo".to_string(), 1_700_000_000);
+
+        let fp_local = GitFingerprint::from_snapshot(&Some(b_local_only), &None);
+        let fp_remote = GitFingerprint::from_snapshot(&Some(b_remote_only), &None);
+        assert_ne!(
+            fp_local, fp_remote,
+            "a local branch named 'remote:foo' must not alias a remote-only 'foo'"
+        );
+    }
+
+    // ── Integration test: real git repo ──────────────────────────────
+
+    /// Run `git <args>` inside `dir`, panicking on non-zero exit. Sync
+    /// (`std::process::Command`) so we don't need to await inside the
+    /// helper; the monitor itself still calls async git under the hood.
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            // Keep the test hermetic even when the user's global git
+            // config sets hooks, signing keys, or templates.
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "tmai-test")
+            .env("GIT_AUTHOR_EMAIL", "tmai-test@example.com")
+            .env("GIT_COMMITTER_NAME", "tmai-test")
+            .env("GIT_COMMITTER_EMAIL", "tmai-test@example.com")
+            .output()
+            .expect("git invocation failed to spawn");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: stderr={}",
+            args,
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_emits_event_on_real_commit_advance() {
+        // End-to-end: init a real repo, take the warm-up baseline, add a
+        // second commit, and verify the next poll (a) does not emit
+        // during warm-up, (b) publishes a snapshot with warmed_up=true,
+        // and (c) emits `GitStateChanged` after a real transition.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path();
+        git(repo, &["init", "-q", "-b", "main"]);
+        git(repo, &["commit", "--allow-empty", "-m", "init"]);
+
+        let (tx, mut rx) = broadcast::channel::<CoreEvent>(16);
+        let repo_str = repo.to_string_lossy().to_string();
+        let mut monitor = GitMonitor::new(repo_str.clone(), tx);
+
+        // First poll: establishes the baseline. Must NOT emit.
+        let emitted_first = monitor.poll().await;
+        assert!(
+            !emitted_first,
+            "warm-up baseline must not emit GitStateChanged"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "no broadcast event should land on the first poll"
+        );
+
+        // Snapshot is published after warm-up and serves endpoints.
+        let snap_after_warmup = snapshot_for(&repo_str)
+            .await
+            .expect("snapshot published after warm-up");
+        assert!(snap_after_warmup.warmed_up);
+        let main_time_before = snap_after_warmup
+            .branches
+            .as_ref()
+            .and_then(|b| b.last_commit_times.get("main").copied())
+            .expect("main last_commit_time present");
+
+        // Force the committer date forward so fetch_last_commit_times
+        // observes a distinct value on the next poll (same-second commits
+        // can otherwise share a unix timestamp and mask the transition in
+        // this very fast test). `committerdate:unix` is what the monitor
+        // compares, so setting GIT_COMMITTER_DATE is what matters.
+        let future = format!("{} +0000", main_time_before + 10);
+        let output = std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "advance"])
+            .current_dir(repo)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "tmai-test")
+            .env("GIT_AUTHOR_EMAIL", "tmai-test@example.com")
+            .env("GIT_COMMITTER_NAME", "tmai-test")
+            .env("GIT_COMMITTER_EMAIL", "tmai-test@example.com")
+            .env("GIT_COMMITTER_DATE", &future)
+            .env("GIT_AUTHOR_DATE", &future)
+            .output()
+            .expect("second commit failed to spawn");
+        assert!(
+            output.status.success(),
+            "advance commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Second poll: should detect the HEAD advance and emit.
+        let emitted_second = monitor.poll().await;
+        assert!(
+            emitted_second,
+            "advancing HEAD must trigger GitStateChanged"
+        );
+        match rx.try_recv() {
+            Ok(CoreEvent::GitStateChanged { repo }) => {
+                assert_eq!(repo, repo_str);
+            }
+            other => panic!("expected GitStateChanged, got {:?}", other),
+        }
+
+        // Snapshot remains warmed_up and reflects the new HEAD time.
+        let snap_after_advance = snapshot_for(&repo_str)
+            .await
+            .expect("snapshot still present");
+        let main_time_after = snap_after_advance
+            .branches
+            .as_ref()
+            .and_then(|b| b.last_commit_times.get("main").copied())
+            .expect("main last_commit_time after advance");
+        assert!(
+            main_time_after > main_time_before,
+            "main last_commit_time must advance (before={}, after={})",
+            main_time_before,
+            main_time_after
+        );
+
+        clear_snapshot_for(&repo_str).await;
     }
 }
