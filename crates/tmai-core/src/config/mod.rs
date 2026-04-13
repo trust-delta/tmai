@@ -8,5 +8,5 @@ pub use settings::{
     AuditCommand, AutoApproveSettings, CodexWsConnection, CodexWsSettings, Command, Config,
     CreateProcessSettings, EventHandling, ExfilDetectionSettings, GuardrailsSettings,
     NotifyTemplates, OrchestratorNotifySettings, OrchestratorRules, OrchestratorSettings,
-    ProjectConfig, RuleSettings, Settings, TeamSettings,
+    PrMonitorScope, ProjectConfig, RuleSettings, Settings, TeamSettings,
 };

@@ -14,6 +14,7 @@ import type {
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
+  PrMonitorScope,
   SpawnRequest,
   UsageSettings,
   WorkerPermissionMode,
@@ -215,6 +216,8 @@ export const api = {
       auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
+      pr_monitor_exclude_authors?: string[];
+      pr_monitor_scope?: PrMonitorScope;
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),

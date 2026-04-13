@@ -447,6 +447,7 @@ export interface PrInfo {
   deletions: number;
   comments: number;
   reviews: number;
+  author?: string;
   merge_commit_sha?: string;
 }
 
@@ -644,6 +645,8 @@ export interface GuardrailsSettings {
   escalate_to_human_after: number;
 }
 
+export type PrMonitorScope = "current_project" | "all";
+
 export interface OrchestratorSettings {
   enabled: boolean;
   role: string;
@@ -653,6 +656,8 @@ export interface OrchestratorSettings {
   auto_action_templates: AutoActionTemplates;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
+  pr_monitor_exclude_authors: string[];
+  pr_monitor_scope: PrMonitorScope;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
 }
@@ -1066,6 +1071,8 @@ export const api = {
       auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
+      pr_monitor_exclude_authors?: string[];
+      pr_monitor_scope?: PrMonitorScope;
     },
     project?: string,
   ) =>

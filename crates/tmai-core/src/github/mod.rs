@@ -132,6 +132,10 @@ pub struct PrInfo {
     pub comments: u64,
     /// Review count
     pub reviews: u64,
+    /// PR author login (e.g., `dependabot[bot]`). Used by PR Monitor's
+    /// `pr_monitor_exclude_authors` filter to skip bot-authored noise.
+    #[serde(default)]
+    pub author: String,
     /// Merge commit SHA (only for merged PRs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_commit_sha: Option<String>,
@@ -155,6 +159,8 @@ struct GhPrEntry {
     deletions: Option<u64>,
     comments: Option<Vec<serde_json::Value>>,
     reviews: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    author: Option<GhAuthor>,
 }
 
 /// Individual check run from statusCheckRollup
@@ -228,7 +234,7 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
                 "--state",
                 "open",
                 "--json",
-                "number,title,state,headRefName,headRefOid,baseRefName,url,reviewDecision,statusCheckRollup,isDraft,additions,deletions,comments,reviews",
+                "number,title,state,headRefName,headRefOid,baseRefName,url,reviewDecision,statusCheckRollup,isDraft,additions,deletions,comments,reviews,author",
                 "--limit",
                 "50",
             ])
@@ -274,6 +280,7 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
             deletions: entry.deletions.unwrap_or(0),
             comments: entry.comments.map(|c| c.len() as u64).unwrap_or(0),
             reviews: entry.reviews.map(|r| r.len() as u64).unwrap_or(0),
+            author: author_login(entry.author),
             merge_commit_sha: None,
         };
         map.insert(entry.head_ref_name, pr);
@@ -380,6 +387,7 @@ pub async fn list_merged_prs(
             deletions: 0,
             comments: 0,
             reviews: 0,
+            author: String::new(),
             merge_commit_sha,
         };
         map.insert(entry.head_ref_name, pr);

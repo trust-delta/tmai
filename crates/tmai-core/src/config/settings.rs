@@ -896,6 +896,31 @@ pub struct OrchestratorSettings {
     /// Polling interval for PR/CI status checks (seconds)
     #[serde(default = "default_pr_monitor_interval")]
     pub pr_monitor_interval_secs: u64,
+
+    /// PR authors whose PRs are skipped before events are emitted.
+    /// Matched exactly against `author.login` from `gh pr list`.
+    /// Default keeps dependabot/renovate noise out of the orchestrator loop.
+    #[serde(default = "default_pr_monitor_exclude_authors")]
+    pub pr_monitor_exclude_authors: Vec<String>,
+
+    /// Project scope for PR Monitor spawning. `CurrentProject` skips
+    /// registered projects whose path does not match the process cwd,
+    /// so multi-project tmai instances don't flood the orchestrator with
+    /// events from repos the user isn't actively working on.
+    #[serde(default)]
+    pub pr_monitor_scope: PrMonitorScope,
+}
+
+/// Scope filter for PR Monitor spawning.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PrMonitorScope {
+    /// Only spawn PR Monitor for the project the tmai process is running in
+    /// (matched against `std::env::current_dir()`).
+    #[default]
+    CurrentProject,
+    /// Spawn PR Monitor for every registered project (legacy behaviour).
+    All,
 }
 
 /// Tri-state handling for orchestrator-observable events.
@@ -1239,6 +1264,8 @@ impl Default for OrchestratorSettings {
             auto_action_templates: crate::auto_action::AutoActionTemplates::default(),
             pr_monitor_enabled: false,
             pr_monitor_interval_secs: default_pr_monitor_interval(),
+            pr_monitor_exclude_authors: default_pr_monitor_exclude_authors(),
+            pr_monitor_scope: PrMonitorScope::default(),
         }
     }
 }
@@ -1246,6 +1273,12 @@ impl Default for OrchestratorSettings {
 /// Default PR monitor polling interval (60 seconds)
 fn default_pr_monitor_interval() -> u64 {
     60
+}
+
+/// Default PR Monitor author exclusions — bots whose PRs are almost always
+/// noise for a single-developer orchestrator workflow.
+fn default_pr_monitor_exclude_authors() -> Vec<String> {
+    vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()]
 }
 
 /// Codex CLI app-server WebSocket connection settings
@@ -2198,6 +2231,8 @@ mod tests {
         orch.auto_action_templates.review_feedback_implementer = "custom review prompt".into();
         orch.pr_monitor_enabled = true;
         orch.pr_monitor_interval_secs = 91;
+        orch.pr_monitor_exclude_authors = vec!["someone[bot]".into(), "otherbot".into()];
+        orch.pr_monitor_scope = PrMonitorScope::All;
         orch
     }
 
