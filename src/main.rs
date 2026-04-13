@@ -592,19 +592,38 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             if project_paths.is_empty() {
                 tracing::info!("PR monitor enabled but no projects registered, skipping");
             } else {
+                // Resolve the process cwd once so each project's scope check
+                // compares against the same canonical path. Canonicalize to
+                // survive symlinked worktree setups that would otherwise miss
+                // the registered project path.
+                let cwd = std::env::current_dir()
+                    .ok()
+                    .and_then(|p| p.canonicalize().ok().or(Some(p)));
+
                 for path in &project_paths {
                     let project_orch = settings.resolve_orchestrator(Some(path));
-                    if project_orch.pr_monitor_enabled {
-                        tracing::info!("Starting PR monitor for project: {}", path);
-                        #[allow(deprecated)]
-                        let shared_state = core.raw_state().clone();
-                        tmai_core::github::pr_monitor::spawn_pr_monitor(
-                            path.clone(),
-                            core.event_sender().clone(),
-                            project_orch.clone(),
-                            Some(shared_state),
-                        );
+                    if !project_orch.pr_monitor_enabled {
+                        continue;
                     }
+                    if project_orch.pr_monitor_scope
+                        == tmai_core::config::PrMonitorScope::CurrentProject
+                        && !project_matches_cwd(path, cwd.as_deref())
+                    {
+                        tracing::info!(
+                            project = %path,
+                            "PR monitor: scope=current_project, skipping non-cwd project"
+                        );
+                        continue;
+                    }
+                    tracing::info!("Starting PR monitor for project: {}", path);
+                    #[allow(deprecated)]
+                    let shared_state = core.raw_state().clone();
+                    tmai_core::github::pr_monitor::spawn_pr_monitor(
+                        path.clone(),
+                        core.event_sender().clone(),
+                        project_orch.clone(),
+                        Some(shared_state),
+                    );
                 }
             }
         }
@@ -684,6 +703,23 @@ const CHROME_DEBUG_PORT: u16 = 9222;
 /// When `debug` is true, launches Chrome as a separate process with
 /// `--remote-debugging-port=9222` and a dedicated user-data-dir so that
 /// Chrome DevTools MCP can connect even when Chrome is already running.
+/// Decide whether a registered project path refers to the same project the
+/// tmai process is running in. Used by PR Monitor's `scope=current_project`
+/// filter. Only the `cwd-inside-project` direction is accepted: matching the
+/// reverse (`project-inside-cwd`) would make a `cwd=/home` launch silently
+/// pick up every registered project, defeating the scope filter's purpose.
+/// Falls back to the raw path when canonicalization fails (stale entry on
+/// disk) so misconfigured entries disable themselves rather than crash.
+fn project_matches_cwd(project_path: &str, cwd: Option<&std::path::Path>) -> bool {
+    let Some(cwd) = cwd else {
+        return false;
+    };
+    let proj = std::path::Path::new(project_path);
+    let canonical_proj = proj.canonicalize();
+    let proj_ref: &std::path::Path = canonical_proj.as_deref().unwrap_or(proj);
+    cwd.starts_with(proj_ref)
+}
+
 fn open_in_browser(url: &str, debug: bool) {
     use std::process::Command;
 

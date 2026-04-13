@@ -53,6 +53,34 @@ fn is_changes_requested(decision: &Option<ReviewDecision>) -> bool {
     matches!(decision, Some(ReviewDecision::ChangesRequested))
 }
 
+/// Normalize a GitHub author login for comparison. `gh pr list --json author`
+/// emits the GraphQL-form `app/dependabot`, while PR URLs and the UI show the
+/// REST-form `dependabot[bot]`. Strip both the `app/` prefix and the `[bot]`
+/// suffix so either surface is copy-pasteable into `exclude_authors` and still
+/// matches the other. Lowercased for case-insensitive match.
+fn normalize_author(s: &str) -> String {
+    let s = s.strip_prefix("app/").unwrap_or(s);
+    let s = s.strip_suffix("[bot]").unwrap_or(s);
+    s.to_ascii_lowercase()
+}
+
+/// Whether a PR should be dropped before any state is recorded or emitted.
+///
+/// Applied to every `PrInfo` returned by `gh pr list` each poll. Matching PRs
+/// are treated as if they didn't exist: no baseline entry, no notifications,
+/// no auto-association. Comparison is normalized (`normalize_author`) so users
+/// can paste either the GraphQL form (`app/dependabot`) or the UI form
+/// (`dependabot[bot]`) into the config and match what `gh` emits.
+pub(crate) fn is_author_excluded(pr: &PrInfo, exclude_authors: &[String]) -> bool {
+    if pr.author.is_empty() {
+        return false;
+    }
+    let needle = normalize_author(&pr.author);
+    exclude_authors
+        .iter()
+        .any(|a| normalize_author(a) == needle)
+}
+
 /// PR/CI status monitor that polls GitHub and emits events on state changes
 pub struct PrMonitor {
     /// Repository directory path for gh CLI
@@ -91,13 +119,36 @@ impl PrMonitor {
     ///
     /// Returns the list of notifications generated (for testing/logging).
     pub async fn poll(&mut self) -> Vec<PrNotification> {
-        let prs = match github::list_open_prs(&self.repo_dir).await {
+        let raw_prs = match github::list_open_prs(&self.repo_dir).await {
             Some(prs) => prs,
             None => {
                 tracing::debug!("PR monitor: failed to fetch open PRs");
                 return Vec::new();
             }
         };
+
+        // Drop excluded-author PRs (dependabot etc.) upstream of both the
+        // warm-up baseline and the transition loop. Skipping here means they
+        // never enter `previous_states`, so re-enabling them later by editing
+        // `pr_monitor_exclude_authors` correctly fires a `PrCreated` next
+        // poll — the state machine can't tell "never seen" from "explicitly
+        // ignored" otherwise.
+        let exclude_authors = self.settings.pr_monitor_exclude_authors.clone();
+        let prs: HashMap<String, PrInfo> = raw_prs
+            .into_iter()
+            .filter(|(_, pr)| {
+                if is_author_excluded(pr, &exclude_authors) {
+                    tracing::debug!(
+                        pr_number = pr.number,
+                        author = %pr.author,
+                        "PR monitor: excluding PR by author filter"
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
         // On the very first poll, just record every open PR as the baseline
         // without emitting events. Pre-existing PRs aren't "created" events
@@ -516,6 +567,15 @@ mod tests {
         check_status: Option<CheckStatus>,
         review_decision: Option<ReviewDecision>,
     ) -> PrInfo {
+        make_pr_with_author(number, check_status, review_decision, "alice")
+    }
+
+    fn make_pr_with_author(
+        number: u64,
+        check_status: Option<CheckStatus>,
+        review_decision: Option<ReviewDecision>,
+        author: &str,
+    ) -> PrInfo {
         PrInfo {
             number,
             title: format!("Test PR #{}", number),
@@ -531,6 +591,7 @@ mod tests {
             deletions: 5,
             comments: 0,
             reviews: 0,
+            author: author.to_string(),
             merge_commit_sha: None,
         }
     }
@@ -724,10 +785,169 @@ mod tests {
     }
 
     #[test]
+    fn test_is_author_excluded_hit() {
+        // Default exclude list matches the conventional bot logins gh emits.
+        let exclude = vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()];
+        let pr = make_pr_with_author(1, None, None, "dependabot[bot]");
+        assert!(is_author_excluded(&pr, &exclude));
+    }
+
+    #[test]
+    fn test_is_author_excluded_matches_gh_graphql_form() {
+        // Real `gh pr list --json author` emits `app/dependabot` (GraphQL
+        // form), not the REST `dependabot[bot]` shown on PR URLs. Normalizing
+        // both sides lets either surface land in the config and still match
+        // — this is the case that fires in production on PRs like #390-#392.
+        let exclude_ui_form = vec!["dependabot[bot]".to_string()];
+        let pr_from_gh = make_pr_with_author(1, None, None, "app/dependabot");
+        assert!(
+            is_author_excluded(&pr_from_gh, &exclude_ui_form),
+            "UI-form config entry must match GraphQL-form author from gh"
+        );
+
+        let exclude_gh_form = vec!["app/dependabot".to_string()];
+        let pr_from_ui = make_pr_with_author(2, None, None, "dependabot[bot]");
+        assert!(
+            is_author_excluded(&pr_from_ui, &exclude_gh_form),
+            "GraphQL-form config entry must match UI-form author"
+        );
+    }
+
+    #[test]
+    fn test_default_excludes_catch_real_dependabot_prs() {
+        // Regression guard: the shipped defaults must actually match the
+        // author string gh emits, otherwise the "out of the box" promise is
+        // broken. Mirrors the authors observed on #390-#392.
+        let exclude = vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()];
+        let gh_dependabot = make_pr_with_author(390, None, None, "app/dependabot");
+        let gh_renovate = make_pr_with_author(1, None, None, "app/renovate");
+        assert!(is_author_excluded(&gh_dependabot, &exclude));
+        assert!(is_author_excluded(&gh_renovate, &exclude));
+    }
+
+    #[test]
+    fn test_normalize_author_is_case_insensitive() {
+        // Defensive: gh has been consistent about casing but normalize via
+        // lowercase so config-entry case mismatches don't silently fail.
+        let exclude = vec!["Dependabot[bot]".to_string()];
+        let pr = make_pr_with_author(1, None, None, "app/dependabot");
+        assert!(is_author_excluded(&pr, &exclude));
+    }
+
+    #[test]
+    fn test_is_author_excluded_miss() {
+        let exclude = vec!["dependabot[bot]".to_string()];
+        let pr = make_pr_with_author(1, None, None, "alice");
+        assert!(!is_author_excluded(&pr, &exclude));
+    }
+
+    #[test]
+    fn test_is_author_excluded_empty_author() {
+        // Missing author data (e.g. merged PR list) must never be excluded —
+        // we have no evidence this is a bot.
+        let exclude = vec!["dependabot[bot]".to_string()];
+        let pr = make_pr_with_author(1, None, None, "");
+        assert!(!is_author_excluded(&pr, &exclude));
+    }
+
+    #[test]
+    fn test_is_author_excluded_empty_list() {
+        let exclude: Vec<String> = Vec::new();
+        let pr = make_pr_with_author(1, None, None, "dependabot[bot]");
+        assert!(!is_author_excluded(&pr, &exclude));
+    }
+
+    #[tokio::test]
+    async fn test_poll_warmup_skips_excluded_authors() {
+        // Verify that the baseline warm-up honours the author filter: an
+        // excluded-author PR visible on the very first poll must NOT land in
+        // previous_states, otherwise a later rename/authorship change could
+        // emit a spurious transition.
+        use crate::config::OrchestratorSettings;
+
+        let (tx, _rx) = broadcast::channel(16);
+        let settings = OrchestratorSettings {
+            pr_monitor_enabled: true,
+            pr_monitor_exclude_authors: vec!["dependabot[bot]".to_string()],
+            ..Default::default()
+        };
+        let mut monitor = PrMonitor::new("/nonexistent".to_string(), tx, settings);
+
+        // Simulate the filtered map that poll() would produce after the
+        // `is_author_excluded` stage. Assert the helper drops bot PRs.
+        let bot_pr = make_pr_with_author(1, None, None, "dependabot[bot]");
+        let human_pr = make_pr_with_author(2, None, None, "alice");
+        assert!(is_author_excluded(
+            &bot_pr,
+            &monitor.settings.pr_monitor_exclude_authors
+        ));
+        assert!(!is_author_excluded(
+            &human_pr,
+            &monitor.settings.pr_monitor_exclude_authors
+        ));
+
+        // Simulate the baseline: only the human PR reaches previous_states.
+        monitor
+            .previous_states
+            .insert(human_pr.number, PrState::from_pr(&human_pr));
+        monitor.warmed_up = true;
+        assert_eq!(monitor.previous_states.len(), 1);
+        assert!(monitor.previous_states.contains_key(&2));
+        assert!(!monitor.previous_states.contains_key(&1));
+    }
+
+    #[tokio::test]
+    async fn test_excluded_author_pr_never_emits_events() {
+        // End-to-end-ish: feed PRs directly through the filter + emit_event
+        // path and assert no CoreEvent is broadcast for the bot author.
+        use crate::config::OrchestratorSettings;
+
+        let (tx, mut rx) = broadcast::channel(16);
+        let settings = OrchestratorSettings {
+            pr_monitor_enabled: true,
+            pr_monitor_exclude_authors: default_pr_monitor_exclude_authors_for_test(),
+            ..Default::default()
+        };
+        let monitor = PrMonitor::new("/nonexistent".to_string(), tx, settings);
+
+        // A human PR transitioning to "created" still emits — the filter
+        // must be author-scoped, not a blanket mute.
+        let human_notif = PrNotification::Created {
+            pr_number: 2,
+            title: "Fix bug".to_string(),
+            branch: "feat/bug".to_string(),
+        };
+        monitor.emit_event(&human_notif);
+        let event = rx.try_recv().expect("human PR event should be emitted");
+        assert!(matches!(event, CoreEvent::PrCreated { .. }));
+
+        // Sanity-check: is_author_excluded gates the bot PR out of poll()
+        // before emit_event is ever called.
+        let bot_pr = make_pr_with_author(1, None, None, "dependabot[bot]");
+        assert!(is_author_excluded(
+            &bot_pr,
+            &monitor.settings.pr_monitor_exclude_authors
+        ));
+        assert!(rx.try_recv().is_err(), "no event should be queued for bot");
+    }
+
+    fn default_pr_monitor_exclude_authors_for_test() -> Vec<String> {
+        vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()]
+    }
+
+    #[test]
     fn test_settings_defaults() {
         let settings = OrchestratorSettings::default();
         assert!(!settings.pr_monitor_enabled);
         assert_eq!(settings.pr_monitor_interval_secs, 60);
+        assert_eq!(
+            settings.pr_monitor_exclude_authors,
+            vec!["dependabot[bot]".to_string(), "renovate[bot]".to_string()]
+        );
+        assert_eq!(
+            settings.pr_monitor_scope,
+            crate::config::PrMonitorScope::CurrentProject
+        );
         use crate::config::EventHandling;
         assert_eq!(
             settings.notify.on_ci_failed,

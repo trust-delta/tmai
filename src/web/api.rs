@@ -1369,6 +1369,8 @@ pub struct OrchestratorSettingsResponse {
     pub auto_action_templates: tmai_core::auto_action::AutoActionTemplates,
     pub pr_monitor_enabled: bool,
     pub pr_monitor_interval_secs: u64,
+    pub pr_monitor_exclude_authors: Vec<String>,
+    pub pr_monitor_scope: tmai_core::config::PrMonitorScope,
     /// Whether this is a per-project override (true) or global fallback (false)
     pub is_project_override: bool,
 }
@@ -1458,6 +1460,14 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub pr_monitor_enabled: Option<bool>,
     #[serde(default)]
     pub pr_monitor_interval_secs: Option<u64>,
+    /// When present, **replaces the entire exclude list**. Clients must send
+    /// the full desired list (merged with any additions/removals) — there is
+    /// no add/remove granularity. Sending `[]` clears the filter; omitting
+    /// the field leaves the current value untouched.
+    #[serde(default)]
+    pub pr_monitor_exclude_authors: Option<Vec<String>>,
+    #[serde(default)]
+    pub pr_monitor_scope: Option<tmai_core::config::PrMonitorScope>,
 }
 
 /// Guardrails settings update request (all fields optional for partial updates)
@@ -1619,6 +1629,8 @@ pub async fn get_orchestrator_settings(
         auto_action_templates: orch.auto_action_templates.clone(),
         pr_monitor_enabled: orch.pr_monitor_enabled,
         pr_monitor_interval_secs: orch.pr_monitor_interval_secs,
+        pr_monitor_exclude_authors: orch.pr_monitor_exclude_authors.clone(),
+        pr_monitor_scope: orch.pr_monitor_scope,
         is_project_override: is_override,
     })
 }
@@ -1787,6 +1799,10 @@ pub async fn update_orchestrator_settings(
         pr_monitor_interval_secs: req
             .pr_monitor_interval_secs
             .unwrap_or(current.pr_monitor_interval_secs),
+        pr_monitor_exclude_authors: req
+            .pr_monitor_exclude_authors
+            .unwrap_or_else(|| current.pr_monitor_exclude_authors.clone()),
+        pr_monitor_scope: req.pr_monitor_scope.unwrap_or(current.pr_monitor_scope),
     };
     drop(settings);
 
