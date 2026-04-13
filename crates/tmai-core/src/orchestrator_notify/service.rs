@@ -57,104 +57,187 @@ impl OrchestratorNotifier {
         event_tx: broadcast::Sender<CoreEvent>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
+            // Periodic tick drives the "typing grace expired" flush — the
+            // grace timer can lapse with no incoming events (operator stops
+            // typing without submitting), so we can't rely on event-driven
+            // flush alone (#399).
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                let event = match event_rx.recv().await {
-                    Ok(event) => event,
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        debug!(skipped = n, "Orchestrator notifier lagged, skipping events");
-                        continue;
+                tokio::select! {
+                    biased;
+                    recv = event_rx.recv() => {
+                        let event = match recv {
+                            Ok(event) => event,
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                debug!(skipped = n, "Orchestrator notifier lagged, skipping events");
+                                continue;
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                debug!("Event channel closed, stopping orchestrator notifier");
+                                break;
+                            }
+                        };
+                        Self::handle_event(event, &settings, &state, &buffer_handle, &event_tx);
                     }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        debug!("Event channel closed, stopping orchestrator notifier");
-                        break;
+                    _ = tick.tick() => {
+                        Self::flush_expired_typing_graces(&settings, &state, &buffer_handle, &event_tx);
                     }
-                };
-
-                // Handle flush triggers first so a status transition to idle
-                // (or orchestrator appearance) delivers any buffered prompts.
-                Self::maybe_flush_for_event(&event, &state, &buffer_handle, &settings, &event_tx);
-
-                let s = settings.read().clone();
-                let Some((message, source_target)) = Self::build_notification(&event, &s, &state)
-                else {
-                    continue;
-                };
-
-                // Split orchestrators into idle (send now) and busy (buffer).
-                let (idle_targets, busy_targets) = {
-                    let st = state.read();
-                    let mut idle: Vec<String> = Vec::new();
-                    let mut busy: Vec<String> = Vec::new();
-                    for (target, a) in &st.agents {
-                        if !a.is_orchestrator || a.is_virtual {
-                            continue;
-                        }
-                        if *target == source_target {
-                            continue;
-                        }
-                        // Also exclude when source_target matches this
-                        // orchestrator's pane_id (hook events use pane_id,
-                        // not agent map key).
-                        if st.target_to_pane_id.get(target) == Some(&source_target) {
-                            continue;
-                        }
-                        if a.status.is_idle() {
-                            idle.push(target.clone());
-                        } else {
-                            busy.push(target.clone());
-                        }
-                    }
-                    (idle, busy)
-                };
-
-                if idle_targets.is_empty() && busy_targets.is_empty() {
-                    debug!(
-                        message = %message,
-                        "No orchestrator agents to notify"
-                    );
-                    continue;
-                }
-
-                for target in &idle_targets {
-                    info!(
-                        orchestrator = %target,
-                        source = %source_target,
-                        "Sending sub-agent notification to orchestrator"
-                    );
-                    let _ = event_tx.send(CoreEvent::PromptReady {
-                        target: target.clone(),
-                        prompt: message.clone(),
-                    });
-                }
-
-                if s.buffer_when_busy {
-                    let ttl = Duration::from_secs(s.buffer_ttl_secs);
-                    for target in &busy_targets {
-                        debug!(
-                            orchestrator = %target,
-                            source = %source_target,
-                            "Buffering notification for busy orchestrator"
-                        );
-                        buffer::append(
-                            &buffer_handle,
-                            target,
-                            BufferedNotification {
-                                message: message.clone(),
-                                source: source_target.clone(),
-                                timestamp: Instant::now(),
-                            },
-                            ttl,
-                            s.buffer_max_messages,
-                        );
-                    }
-                } else if idle_targets.is_empty() {
-                    debug!(
-                        message = %message,
-                        "No idle orchestrator agents to notify (buffering disabled)"
-                    );
                 }
             }
         })
+    }
+
+    /// Process a single incoming event: handle flush triggers, build the
+    /// notification, then route to idle/busy orchestrators.
+    fn handle_event(
+        event: CoreEvent,
+        settings: &SharedNotifySettings,
+        state: &SharedState,
+        buffer_handle: &SharedNotifyBuffer,
+        event_tx: &broadcast::Sender<CoreEvent>,
+    ) {
+        // Handle flush triggers first so a status transition to idle
+        // (or orchestrator appearance) delivers any buffered prompts.
+        Self::maybe_flush_for_event(&event, state, buffer_handle, settings, event_tx);
+
+        let s = settings.read().clone();
+        let Some((message, source_target)) = Self::build_notification(&event, &s, state) else {
+            return;
+        };
+
+        let typing_grace = std::time::Duration::from_secs(s.typing_grace_secs);
+
+        // Split orchestrators into idle (send now) and busy (buffer).
+        // An orchestrator with an in-flight human composition is treated as
+        // busy even when `status.is_idle()` — auto-injection would otherwise
+        // clobber the operator's half-typed prompt (#399).
+        let (idle_targets, busy_targets) = {
+            let st = state.read();
+            let mut idle: Vec<String> = Vec::new();
+            let mut busy: Vec<String> = Vec::new();
+            for (target, a) in &st.agents {
+                if !a.is_orchestrator || a.is_virtual {
+                    continue;
+                }
+                if *target == source_target {
+                    continue;
+                }
+                // Also exclude when source_target matches this
+                // orchestrator's pane_id (hook events use pane_id,
+                // not agent map key).
+                if st.target_to_pane_id.get(target) == Some(&source_target) {
+                    continue;
+                }
+                if a.status.is_idle() && !a.is_operator_typing(typing_grace) {
+                    idle.push(target.clone());
+                } else {
+                    busy.push(target.clone());
+                }
+            }
+            (idle, busy)
+        };
+
+        if idle_targets.is_empty() && busy_targets.is_empty() {
+            debug!(
+                message = %message,
+                "No orchestrator agents to notify"
+            );
+            return;
+        }
+
+        for target in &idle_targets {
+            info!(
+                orchestrator = %target,
+                source = %source_target,
+                "Sending sub-agent notification to orchestrator"
+            );
+            let _ = event_tx.send(CoreEvent::PromptReady {
+                target: target.clone(),
+                prompt: message.clone(),
+            });
+        }
+
+        if s.buffer_when_busy {
+            let ttl = Duration::from_secs(s.buffer_ttl_secs);
+            for target in &busy_targets {
+                debug!(
+                    orchestrator = %target,
+                    source = %source_target,
+                    "Buffering notification for busy orchestrator"
+                );
+                buffer::append(
+                    buffer_handle,
+                    target,
+                    BufferedNotification {
+                        message: message.clone(),
+                        source: source_target.clone(),
+                        timestamp: Instant::now(),
+                    },
+                    ttl,
+                    s.buffer_max_messages,
+                );
+            }
+        } else if idle_targets.is_empty() {
+            debug!(
+                message = %message,
+                "No idle orchestrator agents to notify (buffering disabled)"
+            );
+        }
+    }
+
+    /// Periodic flush: for each orchestrator with buffered entries, deliver
+    /// them if the orchestrator is idle AND the typing grace window has
+    /// elapsed (i.e., no recent human composition). Keeps auto-injection
+    /// deferred until the operator has finished typing (#399).
+    fn flush_expired_typing_graces(
+        settings: &SharedNotifySettings,
+        state: &SharedState,
+        buffer_handle: &SharedNotifyBuffer,
+        event_tx: &broadcast::Sender<CoreEvent>,
+    ) {
+        let s = settings.read().clone();
+        if !s.buffer_when_busy {
+            return;
+        }
+        let typing_grace = std::time::Duration::from_secs(s.typing_grace_secs);
+        let ttl = Duration::from_secs(s.buffer_ttl_secs);
+
+        // Snapshot the set of target keys that currently have buffered entries.
+        let targets: Vec<String> = buffer_handle.read().keys().cloned().collect();
+
+        for target in targets {
+            // Only flush when the orchestrator is idle AND no longer typing.
+            let eligible = {
+                let st = state.read();
+                match st.agents.get(&target) {
+                    Some(a) => {
+                        a.is_orchestrator
+                            && !a.is_virtual
+                            && a.status.is_idle()
+                            && !a.is_operator_typing(typing_grace)
+                    }
+                    None => false,
+                }
+            };
+            if !eligible {
+                continue;
+            }
+            let entries = buffer::take_for_flush(buffer_handle, &target, ttl);
+            if entries.is_empty() {
+                continue;
+            }
+            let combined = buffer::combine_messages(&entries);
+            info!(
+                orchestrator = %target,
+                count = entries.len(),
+                "Flushing buffered notifications after typing grace expired"
+            );
+            let _ = event_tx.send(CoreEvent::PromptReady {
+                target: target.clone(),
+                prompt: combined,
+            });
+        }
     }
 
     /// Flush buffered notifications for an orchestrator on status→idle
@@ -175,11 +258,20 @@ impl OrchestratorNotifier {
             _ => return,
         };
 
-        // Only flush for orchestrator agents that are currently idle.
+        // Only flush for orchestrator agents that are currently idle AND
+        // not mid-composition — otherwise the flush would clobber the
+        // operator's in-flight input. The periodic tick will re-attempt
+        // once the typing grace window expires (#399).
+        let typing_grace = std::time::Duration::from_secs(settings.read().typing_grace_secs);
         let is_orch_idle = {
             let st = state.read();
             match st.agents.get(target) {
-                Some(a) => a.is_orchestrator && !a.is_virtual && a.status.is_idle(),
+                Some(a) => {
+                    a.is_orchestrator
+                        && !a.is_virtual
+                        && a.status.is_idle()
+                        && !a.is_operator_typing(typing_grace)
+                }
                 None => false,
             }
         };
@@ -1660,5 +1752,187 @@ mod tests {
         let map = buf.read();
         assert_eq!(map.get("orch:a").map(|v| v.len()), Some(1));
         assert_eq!(map.get("orch:b").map(|v| v.len()), Some(1));
+    }
+
+    // ── #399 typing-grace (operator-composing) tests ───────────
+
+    #[tokio::test]
+    async fn test_idle_orchestrator_within_typing_grace_buffers() {
+        // Orchestrator status is Idle but the operator just struck a key
+        // into its pane — notification must be buffered, not delivered
+        // (would otherwise clobber in-flight composition).
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+        {
+            let mut s = state.write();
+            s.agents.get_mut("orch:0.0").unwrap().note_human_input();
+        }
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let mut ns = OrchestratorNotifySettings::default();
+        ns.typing_grace_secs = 5;
+        let settings = Arc::new(RwLock::new(ns));
+        let buf = super::buffer::new_shared_buffer();
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        // Wait briefly; the notifier must *not* emit PromptReady for the
+        // orchestrator while it's mid-composition.
+        let mut delivered = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(std::time::Duration::from_millis(25), listen_rx.recv()).await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, .. })) if target == "orch:0.0" => {
+                    delivered = true;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        assert!(
+            !delivered,
+            "notification must be buffered while operator is typing"
+        );
+        assert_eq!(
+            buf.read().get("orch:0.0").map(|v| v.len()),
+            Some(1),
+            "entry should be in the buffer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_idle_without_recent_input_delivers_immediately() {
+        // Baseline: no recorded human keystroke → notification delivered
+        // immediately, matching pre-#399 behaviour. Guards against the
+        // typing-grace check accidentally gating the never-typed case.
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        let settings = Arc::new(RwLock::new(OrchestratorNotifySettings::default()));
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            super::buffer::new_shared_buffer(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        let _ = event_tx.send(CoreEvent::AgentStopped {
+            target: "sub:0.0".to_string(),
+            cwd: "/tmp".to_string(),
+            last_assistant_message: Some("done".to_string()),
+        });
+
+        let mut found = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), listen_rx.recv()).await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, .. })) if target == "orch:0.0" => {
+                    found = true;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        assert!(
+            found,
+            "idle orchestrator with no typing marker must receive notification immediately"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_typing_grace_expiry_flushes_buffered_entry() {
+        // Fire a notification while typing is active, then let the grace
+        // window elapse — the periodic tick should flush the buffered
+        // entry to the orchestrator.
+        let state = AppState::shared();
+        insert_agent(&state, "orch:0.0", true, AgentStatus::Idle);
+        insert_agent(&state, "sub:0.0", false, AgentStatus::Idle);
+        {
+            let mut s = state.write();
+            // Stamp a timestamp in the past so the grace window has
+            // already elapsed by the time the tick fires. This keeps the
+            // test fast while still exercising the "typing→flush" path.
+            s.agents.get_mut("orch:0.0").unwrap().last_human_input_at =
+                Some(std::time::Instant::now() - std::time::Duration::from_secs(10));
+        }
+
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let event_tx = core.event_sender();
+        let event_rx = core.subscribe();
+        let mut listen_rx = core.subscribe();
+
+        // Use a very short grace (1s) so the check treats the stamped-10s-ago
+        // timestamp as expired but also exercises the same code path as prod.
+        let mut ns = OrchestratorNotifySettings::default();
+        ns.typing_grace_secs = 1;
+        let settings = Arc::new(RwLock::new(ns));
+        let buf = super::buffer::new_shared_buffer();
+
+        // Pre-seed the buffer as if a prior notification was queued while
+        // typing was in progress. This isolates the "tick flush" behaviour
+        // from the "buffer-on-send" behaviour.
+        buf.write()
+            .entry("orch:0.0".to_string())
+            .or_default()
+            .push(BufferedNotification {
+                message: "queued while typing".to_string(),
+                source: "sub:0.0".to_string(),
+                timestamp: Instant::now(),
+            });
+
+        let _handle = OrchestratorNotifier::spawn(
+            settings,
+            state.clone(),
+            buf.clone(),
+            event_rx,
+            event_tx.clone(),
+        );
+
+        // Wait for the 1-second periodic tick to fire + flush.
+        let mut flushed = false;
+        for _ in 0..40 {
+            match tokio::time::timeout(std::time::Duration::from_millis(100), listen_rx.recv())
+                .await
+            {
+                Ok(Ok(CoreEvent::PromptReady { target, prompt })) if target == "orch:0.0" => {
+                    if prompt.contains("queued while typing") {
+                        flushed = true;
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        assert!(
+            flushed,
+            "periodic tick must flush buffered entries once the typing grace elapses"
+        );
+        assert!(
+            buf.read().get("orch:0.0").is_none(),
+            "buffer should be drained after flush"
+        );
     }
 }
