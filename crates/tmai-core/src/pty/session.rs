@@ -67,6 +67,8 @@ impl ScrollbackBuffer {
 /// consumers (WebSocket connections, analyzers) can subscribe independently.
 /// A scrollback buffer is maintained so that late-joining consumers can
 /// replay past output (e.g. when switching between agents in the UI).
+/// A VT100 parser is also fed raw output so the visible terminal screen can
+/// be reconstructed for status detection (issue #320).
 pub struct PtySession {
     /// Unique session identifier
     pub id: String,
@@ -78,6 +80,11 @@ pub struct PtySession {
     output_tx: broadcast::Sender<Bytes>,
     /// Scrollback buffer for replay on reconnect
     scrollback: parking_lot::Mutex<ScrollbackBuffer>,
+    /// VT100 parser for reconstructing the visible terminal screen.
+    /// Unlike the raw scrollback (which contains every intermediate redraw),
+    /// this yields the final on-screen state — required for approval-prompt
+    /// detection in PTY mode where hooks/IPC are unavailable.
+    vt_parser: parking_lot::Mutex<vt100::Parser>,
     /// Whether the child process is still running
     running: Arc<AtomicBool>,
     /// Working directory the command was started in
@@ -156,6 +163,7 @@ impl PtySession {
             master: parking_lot::Mutex::new(pair.master),
             output_tx: output_tx.clone(),
             scrollback: parking_lot::Mutex::new(ScrollbackBuffer::new()),
+            vt_parser: parking_lot::Mutex::new(vt100::Parser::new(rows, cols, 0)),
             running: running.clone(),
             cwd: cwd.to_string(),
             command: command.to_string(),
@@ -192,6 +200,7 @@ impl PtySession {
                 Ok(n) => {
                     let data = Bytes::copy_from_slice(&buf[..n]);
                     session.scrollback.lock().push(data.clone());
+                    session.vt_parser.lock().process(&buf[..n]);
                     let _ = tx.send(data);
                 }
                 Err(e) => {
@@ -236,6 +245,14 @@ impl PtySession {
         self.scrollback.lock().snapshot()
     }
 
+    /// Reconstructed visible terminal screen as plain text.
+    /// Used for status detection in PTY mode where hooks/IPC are unavailable —
+    /// the raw scrollback contains every intermediate redraw, which defeats
+    /// pattern matching on the current on-screen prompt (issue #320).
+    pub fn screen_snapshot(&self) -> String {
+        self.vt_parser.lock().screen().contents()
+    }
+
     /// Write input bytes to the PTY
     pub fn write_input(&self, data: &[u8]) -> Result<()> {
         let mut w = self.writer.lock();
@@ -254,6 +271,7 @@ impl PtySession {
             pixel_height: 0,
         })
         .context("Failed to resize PTY")?;
+        self.vt_parser.lock().screen_mut().set_size(rows, cols);
         Ok(())
     }
 
@@ -372,6 +390,100 @@ mod tests {
         // Resize should not error
         session.resize(40, 120).expect("resize failed");
         session.kill();
+    }
+
+    /// Wait until `predicate(snapshot)` is true or 3s elapse. Returns the final snapshot.
+    async fn wait_for_screen<F: Fn(&str) -> bool>(
+        session: &Arc<PtySession>,
+        predicate: F,
+    ) -> String {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let snapshot = session.screen_snapshot();
+            if predicate(&snapshot) {
+                return snapshot;
+            }
+            if tokio::time::Instant::now() > deadline {
+                return snapshot;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_screen_snapshot_returns_rendered_text() {
+        let session = PtySession::spawn("echo", &["hello world"], "/tmp", 24, 80, &[])
+            .expect("Failed to spawn echo");
+
+        let snapshot = wait_for_screen(&session, |s| s.contains("hello world")).await;
+        assert!(
+            snapshot.contains("hello world"),
+            "Expected screen snapshot to contain 'hello world', got: {:?}",
+            snapshot
+        );
+    }
+
+    /// Issue #320 regression: the VT100 screen snapshot must collapse cursor
+    /// repositioning so that the final on-screen state — not every intermediate
+    /// redraw — is what status detection sees. This is what lets pure-PTY mode
+    /// (no hooks, no IPC) detect approval prompts.
+    #[tokio::test]
+    async fn test_screen_snapshot_collapses_cursor_redraws() {
+        // printf sequence: write "OLD", move cursor to column 1 of row 1, overwrite with "NEW".
+        // Raw scrollback contains both "OLD" and "NEW"; screen contains only "NEW".
+        let script = r#"printf 'OLD\033[1;1HNEW'; sleep 0.5"#;
+        let session = PtySession::spawn("sh", &["-c", script], "/tmp", 24, 80, &[])
+            .expect("Failed to spawn sh");
+
+        let snapshot = wait_for_screen(&session, |s| s.contains("NEW")).await;
+        assert!(
+            snapshot.contains("NEW"),
+            "Expected NEW in screen snapshot, got: {:?}",
+            snapshot
+        );
+        // The raw scrollback should still contain "OLD" — proving the contrast.
+        let raw = session.scrollback_snapshot();
+        assert!(
+            raw.windows(3).any(|w| w == b"OLD"),
+            "Sanity check: scrollback should contain OLD bytes"
+        );
+    }
+
+    /// Issue #320: in PTY mode without hooks/IPC, an approval prompt rendered
+    /// to the terminal must be detected as `AwaitingApproval`. This validates
+    /// the end-to-end path: PTY output → VT100 screen → ClaudeCodeDetector.
+    #[tokio::test]
+    async fn test_pty_approval_prompt_detected() {
+        use crate::agents::{AgentStatus, AgentType};
+        use crate::detectors::get_detector;
+
+        // Render a Claude-Code-style proceed prompt. \r\n is required because
+        // the PTY runs in cooked mode for the slave but the parser sees the
+        // raw bytes we wrote — without \r the cursor stays at column N and the
+        // next line gets clobbered. Three numbered choices with "1. Yes" and
+        // "3. No" match what detect_proceed_prompt looks for.
+        let script = "printf 'Do you want to proceed?\\r\\n  1. Yes\\r\\n  2. Yes, and don'\"'\"'t ask again\\r\\n  3. No\\r\\n'; sleep 0.5";
+        let session = PtySession::spawn("sh", &["-c", script], "/tmp", 24, 80, &[])
+            .expect("Failed to spawn sh");
+
+        let snapshot = wait_for_screen(&session, |s| {
+            s.contains("Do you want to proceed?") && s.contains("1. Yes") && s.contains("3. No")
+        })
+        .await;
+        assert!(
+            snapshot.contains("Do you want to proceed?"),
+            "Approval prompt missing from screen snapshot: {:?}",
+            snapshot
+        );
+
+        let detector = get_detector(&AgentType::ClaudeCode);
+        let status = detector.detect_status("", &snapshot);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Expected AwaitingApproval from PTY screen snapshot, got: {:?}\nSnapshot:\n{}",
+            status,
+            snapshot
+        );
     }
 
     #[test]

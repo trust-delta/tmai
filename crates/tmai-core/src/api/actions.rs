@@ -911,18 +911,13 @@ impl TmaiCore {
                 continue;
             }
 
-            // No hook state — detect status from PTY scrollback (capture-pane equivalent)
+            // No hook state — detect status from the reconstructed terminal screen.
+            // We use the VT100-parsed screen rather than the raw scrollback because
+            // the scrollback contains every intermediate redraw (spinner frames,
+            // cleared lines, repositioned cursors). Pattern matching on that flat
+            // byte stream misses the current on-screen approval prompt (issue #320).
             if let Some(session) = self.pty_registry().get(id) {
-                let snapshot = session.scrollback_snapshot();
-                let raw_text = String::from_utf8_lossy(&snapshot);
-                // Take last ~4KB for detection (equivalent to capture-pane last N lines)
-                let tail = if raw_text.len() > 4096 {
-                    let start = raw_text.floor_char_boundary(raw_text.len() - 4096);
-                    &raw_text[start..]
-                } else {
-                    &raw_text
-                };
-                let content = crate::utils::strip_ansi(tail);
+                let content = session.screen_snapshot();
                 let detector = crate::detectors::get_detector(&agent.agent_type);
                 let new_status = detector.detect_status("", &content);
                 if agent.status != new_status {
