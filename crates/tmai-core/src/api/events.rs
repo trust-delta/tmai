@@ -326,8 +326,57 @@ impl TmaiCore {
     ///
     /// Called by external consumers (e.g. TUI main loop) after processing
     /// `PollMessage::AgentsUpdated`. Ignored if no subscribers are listening.
+    ///
+    /// Emits `CoreEvent::AgentsUpdated` only when the post-debounce agent
+    /// snapshot actually changed since the previous emission. Because the
+    /// poller already collapses sub-threshold phase flips via
+    /// `debounce_threshold()`, this fingerprint check means sub-threshold
+    /// Idle↔Processing blips never become `AgentsUpdated` events — the UI
+    /// sees a single stable signal per real transition.
     pub fn notify_agents_updated(&self) {
+        let fingerprint = self.compute_agents_fingerprint();
+        let changed = {
+            let mut last = self.last_agents_fingerprint.write();
+            if *last == fingerprint {
+                false
+            } else {
+                *last = fingerprint;
+                true
+            }
+        };
+        if changed {
+            let _ = self.event_sender().send(CoreEvent::AgentsUpdated);
+        }
+    }
+
+    /// Force-emit `CoreEvent::AgentsUpdated` and refresh the fingerprint,
+    /// bypassing the dedup check. Used by tests and in rare cases where a
+    /// subscriber needs an unconditional refresh signal.
+    pub fn notify_agents_updated_force(&self) {
+        let fingerprint = self.compute_agents_fingerprint();
+        *self.last_agents_fingerprint.write() = fingerprint;
         let _ = self.event_sender().send(CoreEvent::AgentsUpdated);
+    }
+
+    /// Build a fingerprint over the current agent list, excluding volatile
+    /// fields (`last_update`) that change every poll regardless of phase.
+    ///
+    /// Matches the prior SSE-side dedup in `src/web/events.rs`; moving it
+    /// here means all subscribers (TUI, Tauri, MCP, SSE) share one consistent
+    /// debounced signal.
+    fn compute_agents_fingerprint(&self) -> String {
+        let agents = self.list_agents();
+        let stripped: Vec<serde_json::Value> = agents
+            .iter()
+            .filter_map(|a| {
+                let mut v = serde_json::to_value(a).ok()?;
+                if let Some(obj) = v.as_object_mut() {
+                    obj.remove("last_update");
+                }
+                Some(v)
+            })
+            .collect();
+        serde_json::to_string(&stripped).unwrap_or_default()
     }
 
     /// Notify subscribers that team data was updated.
@@ -392,6 +441,43 @@ mod tests {
 
         let event = rx.recv().await.unwrap();
         assert!(matches!(event, CoreEvent::TeamsUpdated));
+    }
+
+    #[tokio::test]
+    async fn test_notify_agents_updated_dedups_same_fingerprint() {
+        // With no state change between calls the fingerprint is identical,
+        // so the second notify_agents_updated() must NOT emit an event.
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let mut rx = core.subscribe();
+
+        core.notify_agents_updated();
+        let first = rx.recv().await.unwrap();
+        assert!(matches!(first, CoreEvent::AgentsUpdated));
+
+        // Second call with no state change: no event expected.
+        core.notify_agents_updated();
+        let pending = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        assert!(
+            pending.is_err(),
+            "duplicate AgentsUpdated should be suppressed when fingerprint is unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_notify_agents_updated_force_bypasses_dedup() {
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let mut rx = core.subscribe();
+
+        core.notify_agents_updated();
+        let _ = rx.recv().await.unwrap();
+
+        // force-variant must emit even when fingerprint is unchanged.
+        core.notify_agents_updated_force();
+        let forced = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        assert!(
+            matches!(forced, Ok(Ok(CoreEvent::AgentsUpdated))),
+            "force-variant should bypass fingerprint dedup"
+        );
     }
 
     #[test]
