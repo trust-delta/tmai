@@ -10,6 +10,7 @@ import {
   statusName,
   type WorktreeSnapshot,
 } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
 import { ActionPanel } from "./ActionPanel";
 import { DetailPanel, type DetailView } from "./DetailPanel";
 import { LaneGraph } from "./graph/LaneGraph";
@@ -418,17 +419,43 @@ export function BranchGraph({
     refreshBranches,
   ]);
 
-  // Auto-refresh PR/Issues data every 30 seconds
+  // Refetch PRs on any PR monitor event (#422). Since PR Monitor is the
+  // single source of truth, we only refetch when it has observed a real
+  // transition — no independent polling timer.
+  const refetchPrs = useCallback(() => {
+    if (!projectPath) return;
+    api
+      .listPrs(projectPath)
+      .then((prResult) => setPrMap(prResult as Record<string, PrInfo>))
+      .catch(() => {});
+  }, [projectPath]);
+
+  useSSE({
+    onEvent: (eventName) => {
+      if (
+        eventName === "pr_created" ||
+        eventName === "pr_closed" ||
+        eventName === "pr_ci_passed" ||
+        eventName === "pr_ci_failed" ||
+        eventName === "pr_review_feedback"
+      ) {
+        refetchPrs();
+      }
+    },
+    // SSE auto-reconnect doesn't replay named events missed during the
+    // disconnect (laptop sleep, network blip). Resync the PR list on
+    // every reopen so the panel can't get stuck on pre-disconnect state.
+    onReconnect: refetchPrs,
+  });
+
+  // Low-frequency refresh for issues (not yet covered by a monitor).
   useEffect(() => {
     const interval = setInterval(() => {
       if (!projectPath) return;
-      Promise.all([
-        api.listPrs(projectPath).catch(() => ({})),
-        api.listIssues(projectPath).catch(() => []),
-      ]).then(([prResult, issueResult]) => {
-        if (prResult) setPrMap(prResult as Record<string, PrInfo>);
-        if (issueResult) setIssues(issueResult as IssueInfo[]);
-      });
+      api
+        .listIssues(projectPath)
+        .then((issueResult) => setIssues(issueResult as IssueInfo[]))
+        .catch(() => {});
     }, 30_000);
     return () => clearInterval(interval);
   }, [projectPath]);

@@ -1144,9 +1144,26 @@ export const api = {
 export function subscribeSSE(handlers: {
   onAgents?: (agents: AgentSnapshot[]) => void;
   onEvent?: (eventName: string, data: unknown) => void;
+  /// Fires on every SSE connection *after* the first successful open.
+  /// Subscribers use this to refetch domain data they missed while the
+  /// socket was disconnected (EventSource doesn't replay named events
+  /// across auto-reconnect).
+  onReconnect?: () => void;
 }): { unlisten: () => void } {
   const url = `${config.baseUrl}/api/events?token=${config.token}`;
   const es = new EventSource(url);
+
+  // Track first-vs-subsequent opens so onReconnect only fires on reopen.
+  // Without this, initial mount would trigger a redundant refetch on top
+  // of the component's own first-fetch.
+  let firstOpen = true;
+  es.addEventListener("open", () => {
+    if (firstOpen) {
+      firstOpen = false;
+      return;
+    }
+    handlers.onReconnect?.();
+  });
 
   // "agents" named event — full agent list
   es.addEventListener("agents", (e) => {
@@ -1168,6 +1185,12 @@ export function subscribeSSE(handlers: {
     "worktree_created",
     "worktree_removed",
     "agent_stopped",
+    // PR monitor events — drive WebUI lockstep with PR Monitor's poll tick (#422)
+    "pr_created",
+    "pr_ci_passed",
+    "pr_ci_failed",
+    "pr_review_feedback",
+    "pr_closed",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {
