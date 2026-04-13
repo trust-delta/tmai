@@ -5,6 +5,10 @@ import { type AgentSnapshot, subscribeSSE } from "./api";
 interface SSEHandlers {
   onAgents?: (agents: AgentSnapshot[]) => void;
   onEvent?: (eventName: string, data: unknown) => void;
+  /// Fires after SSE reconnects (not on the first open). Subscribers
+  /// that rely on event-driven state should refetch their snapshot
+  /// here, since EventSource doesn't replay missed named events.
+  onReconnect?: () => void;
 }
 
 interface SSEContextValue {
@@ -31,6 +35,11 @@ export function SSEProvider({ children }: { children: ReactNode }) {
       onEvent: (eventName, data) => {
         for (const sub of subscribersRef.current) {
           sub.onEvent?.(eventName, data);
+        }
+      },
+      onReconnect: () => {
+        for (const sub of subscribersRef.current) {
+          sub.onReconnect?.();
         }
       },
     });
@@ -62,6 +71,7 @@ export function useSSE(handlers: SSEHandlers): void {
     const stable: SSEHandlers = {
       onAgents: (agents) => handlersRef.current.onAgents?.(agents),
       onEvent: (eventName, data) => handlersRef.current.onEvent?.(eventName, data),
+      onReconnect: () => handlersRef.current.onReconnect?.(),
     };
     return ctx.subscribe(stable);
   }, [ctx]);

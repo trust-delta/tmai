@@ -49,6 +49,36 @@ pub async fn snapshot_for(repo_dir: &str) -> Option<GithubSnapshot> {
     guard.get(repo_dir).filter(|s| s.warmed_up).cloned()
 }
 
+/// Drop the snapshot for `repo_dir`. Called when the owning monitor task
+/// exits (normally, via cancellation, or via panic) so endpoints stop
+/// serving a frozen view of a monitor that is no longer running.
+pub async fn clear_snapshot_for(repo_dir: &str) {
+    let mut guard = MONITOR_SNAPSHOTS.write().await;
+    guard.remove(repo_dir);
+}
+
+/// Guard that clears the snapshot entry for a repo when the owning
+/// monitor task is dropped (normal exit, cancellation, or panic).
+///
+/// Without this, a crashed or stopped monitor would leave its last
+/// published snapshot wedged in `MONITOR_SNAPSHOTS` forever, and
+/// `/api/github/prs` would keep returning stale data indefinitely.
+struct SnapshotGuard {
+    repo_dir: String,
+}
+
+impl Drop for SnapshotGuard {
+    fn drop(&mut self) {
+        // Schedule the clear; we can't await in Drop. A short-lived
+        // task is cheap and fires even on tokio runtime shutdown for
+        // the common case (normal process exit happens later).
+        let repo_dir = std::mem::take(&mut self.repo_dir);
+        tokio::spawn(async move {
+            clear_snapshot_for(&repo_dir).await;
+        });
+    }
+}
+
 /// Test-only: seed a snapshot directly. Not exposed outside the crate.
 #[cfg(test)]
 pub(crate) async fn set_snapshot_for_test(repo_dir: &str, snapshot: GithubSnapshot) {
@@ -213,6 +243,15 @@ impl PrMonitor {
             return Vec::new();
         }
 
+        // Publish the freshly-polled view BEFORE emitting any events. A
+        // listener that refetches `/api/github/prs` in response to a
+        // `CoreEvent::Pr*` must see the post-transition state — otherwise
+        // the SoT contract (UI + notifications observe the same tick)
+        // breaks at the event boundary. Closed PRs aren't in `prs` yet,
+        // which is correct: after a PrClosed event the snapshot no
+        // longer lists them.
+        self.publish_snapshot(&prs).await;
+
         let mut notifications = Vec::new();
         let mut current_pr_numbers: Vec<u64> = Vec::new();
 
@@ -306,10 +345,6 @@ impl PrMonitor {
         // Remove closed PRs from tracking
         self.previous_states
             .retain(|num, _| current_pr_numbers.contains(num));
-
-        // Publish the freshly-polled view so endpoints see it on the same
-        // tick the events were broadcast.
-        self.publish_snapshot(&prs).await;
 
         notifications
     }
@@ -592,9 +627,15 @@ pub fn spawn_pr_monitor(
     state: Option<SharedState>,
 ) -> tokio::task::JoinHandle<()> {
     let interval_secs = settings.pr_monitor_interval_secs.max(10); // minimum 10s
-    let mut monitor = PrMonitor::new(repo_dir, event_tx, settings);
+    let mut monitor = PrMonitor::new(repo_dir.clone(), event_tx, settings);
 
     tokio::spawn(async move {
+        // Clear the published snapshot when this task exits (normal,
+        // cancellation, or panic). Otherwise endpoints would keep
+        // returning a frozen view from a monitor that is no longer
+        // running.
+        let _guard = SnapshotGuard { repo_dir };
+
         let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
         interval.tick().await; // skip first tick
 
@@ -855,6 +896,24 @@ mod tests {
         assert!(snap.warmed_up);
         assert_eq!(snap.open_prs.len(), 1);
         assert!(snap.open_prs.contains_key("feat/x"));
+    }
+
+    #[tokio::test]
+    async fn test_clear_snapshot_drops_entry() {
+        // After clear, snapshot_for must return None even if the entry was warm.
+        let repo = "/tmp/test-snapshot-clear";
+        set_snapshot_for_test(
+            repo,
+            GithubSnapshot {
+                open_prs: HashMap::new(),
+                warmed_up: true,
+            },
+        )
+        .await;
+        assert!(snapshot_for(repo).await.is_some());
+
+        clear_snapshot_for(repo).await;
+        assert!(snapshot_for(repo).await.is_none());
     }
 
     #[tokio::test]

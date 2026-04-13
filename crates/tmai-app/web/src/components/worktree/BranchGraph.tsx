@@ -442,6 +442,10 @@ export function BranchGraph({
         refetchPrs();
       }
     },
+    // SSE auto-reconnect doesn't replay named events missed during the
+    // disconnect (laptop sleep, network blip). Resync the PR list on
+    // every reopen so the panel can't get stuck on pre-disconnect state.
+    onReconnect: refetchPrs,
   });
 
   // Low-frequency refresh for issues (not yet covered by a monitor).
