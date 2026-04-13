@@ -629,6 +629,24 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
         }
     }
 
+    // Start git state monitor per registered project. Mirrors the PR
+    // monitor SoT pattern (#423): the monitor is the single producer of
+    // per-repo branch/graph state, and `/api/git/*` endpoints read from
+    // its snapshot. Runs unconditionally — git state is cheap to poll
+    // and always useful for WebUI consumers; no feature flag.
+    {
+        let project_paths = settings.project_paths();
+        const GIT_MONITOR_INTERVAL_SECS: u64 = 15;
+        for path in &project_paths {
+            tracing::info!("Starting git monitor for project: {}", path);
+            tmai_core::git::monitor::spawn_git_monitor(
+                path.clone(),
+                core.event_sender().clone(),
+                GIT_MONITOR_INTERVAL_SECS,
+            );
+        }
+    }
+
     // Interval for syncing PTY session liveness with agent status
     let mut pty_sync_interval = tokio::time::interval(std::time::Duration::from_secs(2));
     pty_sync_interval.tick().await; // skip first tick
