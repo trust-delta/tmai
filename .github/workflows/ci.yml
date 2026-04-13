@@ -77,6 +77,15 @@ jobs:
         run: npx tsc --noEmit
       - name: Build
         run: pnpm build
+      - name: Verify committed bundle matches fresh build (drift check)
+        working-directory: ${{ github.workspace }}
+        run: |
+          if ! git diff --exit-code -- src/web/assets/; then
+            echo "::error::src/web/assets/ drifted from a fresh build of crates/tmai-app/web. Rebuild locally (cd crates/tmai-app/web && pnpm install --frozen-lockfile && pnpm build) and commit the result."
+            echo "--- git diff --stat ---"
+            git diff --stat -- src/web/assets/
+            exit 1
+          fi
 
   guard:
     name: gitignore guard
