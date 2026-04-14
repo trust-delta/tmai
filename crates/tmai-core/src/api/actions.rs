@@ -456,6 +456,11 @@ impl TmaiCore {
                 }),
             });
 
+        // Trigger an immediate poller rescan so `/api/worktrees` reflects
+        // the new worktree on the next tick instead of waiting up to the
+        // baseline scan interval (#425).
+        crate::monitor::request_worktree_rescan();
+
         // Spawn setup commands in background if configured
         let setup_commands = self.settings().worktree.setup_commands.clone();
         if !setup_commands.is_empty() {
@@ -586,6 +591,10 @@ impl TmaiCore {
                 }),
             });
 
+        // Trigger an immediate poller rescan so the removal is visible to
+        // `/api/worktrees` on the next tick (#425).
+        crate::monitor::request_worktree_rescan();
+
         Ok(())
     }
 
@@ -610,6 +619,9 @@ impl TmaiCore {
                     original_repo: Some(req.repo_path.clone()),
                 }),
             });
+
+        // Trigger an immediate poller rescan for API/SSE freshness (#425).
+        crate::monitor::request_worktree_rescan();
 
         // Run setup commands in background if configured
         let setup_commands = self.settings().worktree.setup_commands.clone();

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
 use crate::agents::{
     Activity, AgentStatus, AgentTeamInfo, AgentType, ApprovalCategory, DetectionSource,
@@ -70,6 +70,39 @@ pub enum PollMessage {
 
 /// Run audit validation only every Nth poll to reduce capture-pane overhead
 const AUDIT_VALIDATION_INTERVAL: u32 = 10;
+
+/// Module-level trigger for "rescan worktrees now, don't wait for the baseline tick."
+///
+/// Worktree state lives in `state.worktree_info`, written exclusively by
+/// [`Poller::scan_worktrees`]. Actions that create or delete worktrees
+/// (`create_worktree`, `delete_worktree`, `move_to_worktree`, `spawn_worktree`
+/// endpoint, `perform_dispatch_review`) call [`request_worktree_rescan`] so the
+/// `/api/worktrees` response and the dedicated `worktree_*` SSE events observe
+/// the post-action state on the very next poll tick instead of waiting up to
+/// the baseline scan interval (#425). Mirrors the single-producer SoT pattern
+/// established by PR Monitor (#433) and the git monitor (#423).
+static WORKTREE_RESCAN_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
+
+/// Request an immediate worktree rescan from the poller.
+///
+/// Coalesces: multiple calls before the poller wakes result in a single rescan.
+/// Safe to call from any async or sync context — `Notify::notify_one` is
+/// sync-callable.
+pub fn request_worktree_rescan() {
+    WORKTREE_RESCAN_NOTIFY.notify_one();
+}
+
+/// Test-only: await a pending worktree rescan request, bounded by `timeout`.
+///
+/// Returns `true` if a rescan was observed, `false` on timeout. Consumes one
+/// permit from [`WORKTREE_RESCAN_NOTIFY`] so callers should drain before
+/// asserting a fresh request.
+#[cfg(test)]
+pub(crate) async fn observe_worktree_rescan_for_test(timeout: Duration) -> bool {
+    tokio::time::timeout(timeout, WORKTREE_RESCAN_NOTIFY.notified())
+        .await
+        .is_ok()
+}
 
 /// Poller for monitoring tmux panes
 pub struct Poller {
@@ -296,7 +329,21 @@ impl Poller {
                 normal_interval
             };
             let interval_ms = base_interval_ms.saturating_add(backoff_ms);
-            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+            // Sleep until either the interval elapses OR an action requests an
+            // immediate worktree rescan (#425). Wake-early path sets
+            // `force_worktree_scan` so the scan runs this iteration regardless
+            // of the baseline cadence gate below.
+            let mut force_worktree_scan = false;
+            {
+                let sleep = tokio::time::sleep(Duration::from_millis(interval_ms));
+                tokio::pin!(sleep);
+                tokio::select! {
+                    _ = &mut sleep => {}
+                    _ = WORKTREE_RESCAN_NOTIFY.notified() => {
+                        force_worktree_scan = true;
+                    }
+                }
+            }
 
             match self.poll_once().await {
                 Ok((mut agents, all_panes)) => {
@@ -353,8 +400,14 @@ impl Poller {
                         self.apply_cached_git_info(&mut agents);
                     }
 
-                    // Worktree scan (every 30 polls, offset from git scan)
-                    if self.poll_count % 30 == 5 {
+                    // Worktree scan. The baseline cadence is intentionally
+                    // slow (~120s) because worktree-mutating actions already
+                    // call `request_worktree_rescan` for immediate pickup
+                    // (#425). The baseline only needs to catch external
+                    // `git worktree add/remove` invocations the poller didn't
+                    // originate. Offset from the git scan (poll_count % 20)
+                    // to avoid piling both scans on the same tick.
+                    if force_worktree_scan || self.poll_count % 240 == 5 {
                         self.scan_worktrees(&agents).await;
                     }
 
@@ -2973,5 +3026,61 @@ mod tests {
             tick2[0].status,
             AgentStatus::AwaitingApproval { .. }
         ));
+    }
+
+    // ── worktree rescan notify (#425) ──
+
+    /// Serialize tests that touch the module-level `WORKTREE_RESCAN_NOTIFY`.
+    /// Parallel tests racing on the shared static can swap permits between
+    /// each other; the mutex keeps each test's drain/request/observe window
+    /// exclusive without forcing a `--test-threads=1` invocation.
+    static WORKTREE_RESCAN_TEST_MUTEX: LazyLock<tokio::sync::Mutex<()>> =
+        LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+    /// Drain any pending permit on the module-level notify so tests start
+    /// from a known-quiet state. Callers must hold `WORKTREE_RESCAN_TEST_MUTEX`.
+    async fn drain_worktree_rescan_permit() {
+        let _ = observe_worktree_rescan_for_test(Duration::from_millis(0)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_request_worktree_rescan_delivers_notification() {
+        let _guard = WORKTREE_RESCAN_TEST_MUTEX.lock().await;
+        drain_worktree_rescan_permit().await;
+
+        // Spawn a waiter BEFORE the notify is issued so we exercise the
+        // "waiter present" path (mirrors how the Poller's select! arm waits
+        // on `.notified()` during sleep).
+        let waiter = tokio::spawn(async {
+            observe_worktree_rescan_for_test(Duration::from_millis(500)).await
+        });
+        // Small yield so the waiter registers before we notify.
+        tokio::task::yield_now().await;
+
+        request_worktree_rescan();
+
+        let got = waiter.await.expect("waiter task panicked");
+        assert!(
+            got,
+            "request_worktree_rescan() must wake a pending .notified() waiter"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_request_worktree_rescan_stores_permit_when_no_waiter() {
+        let _guard = WORKTREE_RESCAN_TEST_MUTEX.lock().await;
+        drain_worktree_rescan_permit().await;
+
+        // Action path: tmai calls request_worktree_rescan() while the
+        // Poller is busy inside poll_once() (no live .notified() future).
+        // The permit must persist and be consumed by the next select! arm.
+        request_worktree_rescan();
+
+        let got = observe_worktree_rescan_for_test(Duration::from_millis(50)).await;
+        assert!(
+            got,
+            "a rescan permit issued while nobody is waiting must still be \
+             observed by the next .notified() call"
+        );
     }
 }

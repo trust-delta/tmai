@@ -3224,6 +3224,10 @@ pub async fn perform_dispatch_review(
         pr_number,
     );
 
+    // Poller-driven SoT: trigger immediate worktree rescan so the review
+    // worktree is visible to `/api/worktrees` on the next tick (#425).
+    tmai_core::monitor::request_worktree_rescan();
+
     // Compose review prompt
     let extra = additional_instructions
         .as_deref()
@@ -3419,6 +3423,11 @@ pub async fn spawn_worktree(
         wt_result.path,
         wt_result.branch
     );
+
+    // Poller-driven SoT: trigger immediate worktree rescan so
+    // `/api/worktrees` reflects the new worktree on the next tick without
+    // waiting for the baseline scan interval (#425).
+    tmai_core::monitor::request_worktree_rescan();
 
     // Inject worktree path constraint into the prompt (defense in depth)
     let worktree_prompt = if !resolved_prompt.is_empty() {

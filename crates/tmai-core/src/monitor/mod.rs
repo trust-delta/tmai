@@ -1,3 +1,3 @@
 mod poller;
 
-pub use poller::{PollMessage, Poller};
+pub use poller::{request_worktree_rescan, PollMessage, Poller};
