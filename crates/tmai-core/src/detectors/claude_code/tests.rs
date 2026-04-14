@@ -1344,3 +1344,68 @@ fn test_effort_icon_not_misdetected_as_spinner() {
         status
     );
 }
+
+// ============================================================
+// Issue #442 regression: compound-command approval persistence
+// ============================================================
+
+/// Build a realistic capture-pane snapshot for a compound `cd && git` Bash
+/// approval prompt (the scenario that produced #442).
+fn compound_command_approval_content() -> String {
+    let content = r#"● Bash(cd /home/trustdelta/works/tmai && git diff main..HEAD -- crates/)
+  ⎿  Interrupted by user
+
+───────────────────────────────────────────────────────────────────────────────
+ Bash command
+ cd /home/trustdelta/works/tmai && git diff main..HEAD -- crates/tmai-core/src/git/
+ Show recent diff against main for the git module
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for Bash(cd /home/trustdelta/works/tmai && git diff main..HEAD:*) commands in /home/trustdelta/works/tmai
+   3. No (esc)
+
+ Esc to cancel · Tab to add additional instructions
+"#;
+    // Simulate tmux pane height padding that capture-pane adds below the content.
+    let mut padded = content.to_string();
+    for _ in 0..10 {
+        padded.push('\n');
+    }
+    padded
+}
+
+/// Regression test for #442: compound-command approval must be detected as
+/// AwaitingApproval (not fall through to Idle via title_idle_indicator).
+#[test]
+fn test_compound_command_approval_detected() {
+    let detector = ClaudeCodeDetector::new();
+    let content = compound_command_approval_content();
+    // Title shows ✳ (idle indicator) — if approval detection misses the
+    // prompt, the detector would fall through to title_idle_indicator → Idle.
+    let status = detector.detect_status("✳ Claude Code", &content);
+    assert!(
+        matches!(status, AgentStatus::AwaitingApproval { .. }),
+        "Expected AwaitingApproval for compound cd && git prompt, got {:?}",
+        status
+    );
+}
+
+/// Regression test for #442: the detector must be stable across repeated
+/// ticks with unchanged content. If the prompt is visible on tick N, it must
+/// still be AwaitingApproval on tick N+1, N+2, etc. No auto-approve keys are
+/// sent, so the screen content is identical across ticks.
+#[test]
+fn test_compound_command_approval_persists_across_ticks() {
+    let detector = ClaudeCodeDetector::new();
+    let content = compound_command_approval_content();
+    for tick in 0..5 {
+        let status = detector.detect_status("✳ Claude Code", &content);
+        assert!(
+            matches!(status, AgentStatus::AwaitingApproval { .. }),
+            "Tick {}: expected AwaitingApproval, got {:?}",
+            tick,
+            status
+        );
+    }
+}
