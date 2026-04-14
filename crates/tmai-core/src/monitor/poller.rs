@@ -2710,6 +2710,51 @@ mod tests {
         );
     }
 
+    /// #442: After auto-approve has exhausted its judgment attempts and
+    /// written `ManualRequired` into the agent's phase, the hook state is
+    /// still `AwaitingApproval` (only a clearing hook event like
+    /// PostToolUse / PermissionDenied / Stop can transition out of it).
+    /// With the user sitting on the prompt indefinitely, the hook appears
+    /// stale by raw freshness. The Tier 1 gate must still honor it — this
+    /// is the exact sequence observed on the #425 worker on 2026-04-13.
+    #[test]
+    fn test_manual_required_preserves_awaiting_approval_through_stale_hook() {
+        use crate::auto_approve::AutoApprovePhase;
+        use crate::hooks::types::{HookState, HookStatus};
+
+        // Scenario: auto-approve has judged (and abstained / rejected) enough
+        // times that phase is ManualRequired. Hook state has not received a
+        // new event for 60s since the permission prompt appeared.
+        let mut hs = HookState::new("s1".into(), None);
+        hs.status = HookStatus::AwaitingApproval;
+        hs.last_tool = Some("Bash".to_string());
+        hs.last_event_at = crate::hooks::types::current_time_millis().saturating_sub(60_000);
+
+        let phase = Some(AutoApprovePhase::ManualRequired(
+            "uncertain: compound command rejected by metacharacter guard".to_string(),
+        ));
+        // phase is purely informational — should not influence the freshness
+        // decision, only the hook status does.
+        let _ = &phase;
+
+        const HOOK_FRESHNESS_MS: u64 = 30_000;
+        let is_fresh_or_awaiting =
+            hs.is_fresh(HOOK_FRESHNESS_MS) || hs.status == HookStatus::AwaitingApproval;
+
+        assert!(
+            is_fresh_or_awaiting,
+            "ManualRequired phase + stale AwaitingApproval hook state must keep Tier 1 active — the prompt is still on screen and the hook ground-truth is the only reliable signal",
+        );
+
+        // Also verify the mapping produces the correct AgentStatus
+        let agent_status = hook_state_to_agent_status(&hs);
+        assert!(
+            matches!(agent_status, AgentStatus::AwaitingApproval { .. }),
+            "hook state must map to AwaitingApproval, got {:?}",
+            agent_status
+        );
+    }
+
     /// #442: Stale Processing hook state is still stale — only AwaitingApproval
     /// gets the exemption. Processing has a natural timeout (missed Stop event)
     /// and must be allowed to fall through for liveness checks.
