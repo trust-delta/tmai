@@ -1447,6 +1447,25 @@ function NotifySettingsSection({
     } catch (_e) {}
   };
 
+  // Toggle one of the origin-aware filter booleans (#440)
+  type OriginFilterKey =
+    | "suppress_self"
+    | "notify_on_human_action"
+    | "notify_on_agent_action"
+    | "notify_on_system_action";
+  const setOriginFlag = async (key: OriginFilterKey, value: boolean) => {
+    const updated = {
+      ...orchestrator,
+      notify: { ...orchestrator.notify, [key]: value },
+    };
+    setOrchestrator(updated);
+    try {
+      await api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject);
+    } catch (_e) {
+      setOrchestrator(orchestrator);
+    }
+  };
+
   return (
     <>
       <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-1">
@@ -1599,7 +1618,76 @@ function NotifySettingsSection({
           );
         })}
       </div>
+
+      {/* #440 Origin-aware filtering for ActionPerformed events */}
+      <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-4">Sources</p>
+      <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
+        Choose which initiators of side-effect actions trigger a notification. Self-suppress hides
+        echoes for actions you (an orchestrator) just performed.
+      </p>
+      <div className="space-y-0.5">
+        <OriginToggleRow
+          label="Skip my own actions"
+          description="Suppress echoes when an orchestrator initiated the action"
+          checked={orchestrator.notify.suppress_self}
+          onChange={(v) => setOriginFlag("suppress_self", v)}
+        />
+        <OriginToggleRow
+          label="Human actions"
+          description="WebUI / TUI / CLI initiated actions (kill_agent, approve, …)"
+          checked={orchestrator.notify.notify_on_human_action}
+          onChange={(v) => setOriginFlag("notify_on_human_action", v)}
+        />
+        <OriginToggleRow
+          label="Agent actions"
+          description="Actions from MCP, sub-agents, AutoActionExecutor"
+          checked={orchestrator.notify.notify_on_agent_action}
+          onChange={(v) => setOriginFlag("notify_on_agent_action", v)}
+        />
+        <OriginToggleRow
+          label="System actions"
+          description="auto_cleanup, pr_monitor, and other tmai-internal subsystems"
+          checked={orchestrator.notify.notify_on_system_action}
+          onChange={(v) => setOriginFlag("notify_on_system_action", v)}
+        />
+      </div>
     </>
+  );
+}
+
+/** One row of the Sources subsection — label/description + toggle. */
+function OriginToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1">
+      <div className="flex-1 min-w-0">
+        <span className="text-xs text-zinc-300">{label}</span>
+        <p className="text-[10px] text-zinc-600 truncate">{description}</p>
+      </div>
+      <button
+        type="button"
+        aria-pressed={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-cyan-500/40" : "bg-white/10"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
+            checked ? "translate-x-[18px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+          }`}
+        />
+      </button>
+    </div>
   );
 }
 

@@ -1425,6 +1425,14 @@ pub struct NotifySettingsResponse {
     /// Grace window (seconds) during which human keystrokes block
     /// auto-injection into the same orchestrator pane (#399)
     pub typing_grace_secs: u64,
+    /// Skip ActionPerformed echoes for actions initiated by an orchestrator (#440)
+    pub suppress_self: bool,
+    /// Deliver ActionPerformed notifications whose origin is a human (#440)
+    pub notify_on_human_action: bool,
+    /// Deliver ActionPerformed notifications whose origin is a non-orchestrator agent (#440)
+    pub notify_on_agent_action: bool,
+    /// Deliver ActionPerformed notifications whose origin is a system process (#440)
+    pub notify_on_system_action: bool,
 }
 
 /// Template overrides response
@@ -1525,6 +1533,14 @@ pub struct UpdateNotifySettingsRequest {
     pub buffer_max_messages: Option<usize>,
     #[serde(default)]
     pub typing_grace_secs: Option<u64>,
+    #[serde(default)]
+    pub suppress_self: Option<bool>,
+    #[serde(default)]
+    pub notify_on_human_action: Option<bool>,
+    #[serde(default)]
+    pub notify_on_agent_action: Option<bool>,
+    #[serde(default)]
+    pub notify_on_system_action: Option<bool>,
 }
 
 /// AutoAction template overrides update request (partial)
@@ -1620,6 +1636,10 @@ pub async fn get_orchestrator_settings(
             buffer_ttl_secs: orch.notify.buffer_ttl_secs,
             buffer_max_messages: orch.notify.buffer_max_messages,
             typing_grace_secs: orch.notify.typing_grace_secs,
+            suppress_self: orch.notify.suppress_self,
+            notify_on_human_action: orch.notify.notify_on_human_action,
+            notify_on_agent_action: orch.notify.notify_on_agent_action,
+            notify_on_system_action: orch.notify.notify_on_system_action,
         },
         guardrails: GuardrailsSettingsResponse {
             max_ci_retries: orch.guardrails.max_ci_retries,
@@ -1761,6 +1781,24 @@ pub async fn update_orchestrator_settings(
                     .as_ref()
                     .and_then(|r| r.typing_grace_secs)
                     .unwrap_or(n.typing_grace_secs),
+                // #440 origin-aware filtering. Hot-reload happens via the
+                // existing `*ns.write() = updated.notify` block below.
+                suppress_self: nr
+                    .as_ref()
+                    .and_then(|r| r.suppress_self)
+                    .unwrap_or(n.suppress_self),
+                notify_on_human_action: nr
+                    .as_ref()
+                    .and_then(|r| r.notify_on_human_action)
+                    .unwrap_or(n.notify_on_human_action),
+                notify_on_agent_action: nr
+                    .as_ref()
+                    .and_then(|r| r.notify_on_agent_action)
+                    .unwrap_or(n.notify_on_agent_action),
+                notify_on_system_action: nr
+                    .as_ref()
+                    .and_then(|r| r.notify_on_system_action)
+                    .unwrap_or(n.notify_on_system_action),
             }
         },
         guardrails: {
