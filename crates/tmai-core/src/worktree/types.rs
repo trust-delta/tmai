@@ -13,6 +13,11 @@ pub struct WorktreeCreateRequest {
     pub dir_name: Option<String>,
     /// Branch to fork from (default: HEAD)
     pub base_branch: Option<String>,
+    /// When true and `base_branch` is a real branch (not HEAD/SHA), fetch
+    /// `origin/<base>` first and — if local `<base>` is behind — silently
+    /// branch off `origin/<base>` instead so the new worktree starts from
+    /// the latest upstream commit. Prevents PR-from-stale-base conflicts (#334).
+    pub auto_fetch_base: bool,
 }
 
 /// Worktree deletion request
@@ -91,6 +96,28 @@ pub struct WorktreeCreateResult {
     pub path: String,
     /// Branch name
     pub branch: String,
+    /// When the request had `auto_fetch_base = true` and the local base
+    /// branch was found to be behind origin, this records what was detected
+    /// and how the request was handled. `None` means no staleness was
+    /// observed (or the check did not run).
+    pub staleness: Option<BaseStalenessReport>,
+}
+
+/// Describes a stale local base branch that was bypassed at worktree creation.
+///
+/// Returned when `auto_fetch_base` is set and the local `base_branch` was
+/// found to be `behind` commits behind `origin/<base_branch>` after a fetch.
+/// In this case the worktree is created from `origin/<base_branch>` instead
+/// of the local ref, so the new branch starts from the latest upstream tip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseStalenessReport {
+    /// The base branch name as the caller requested it (e.g. "main").
+    pub base_branch: String,
+    /// Number of commits the local base was behind `origin/<base>`.
+    pub behind: usize,
+    /// Resolved ref actually passed to `git worktree add`
+    /// (e.g. "origin/main").
+    pub used_ref: String,
 }
 
 #[cfg(test)]
@@ -104,6 +131,7 @@ mod tests {
             branch_name: "feat-auth".to_string(),
             dir_name: None,
             base_branch: Some("main".to_string()),
+            auto_fetch_base: false,
         };
         assert_eq!(req.repo_path, "/home/user/project");
         assert_eq!(req.branch_name, "feat-auth");

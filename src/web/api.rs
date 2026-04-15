@@ -3405,6 +3405,10 @@ pub async fn perform_dispatch_review(
         branch_name: worktree_name.clone(),
         dir_name: None,
         base_branch: Some(format!("origin/{base_branch}")),
+        // dispatch_review already pinned the base to origin/<base> above
+        // and just ran an explicit fetch, so the staleness rerun would be
+        // redundant work.
+        auto_fetch_base: false,
     };
 
     let wt_result = tmai_core::worktree::create_worktree(&wt_req)
@@ -3615,12 +3619,15 @@ pub async fn spawn_worktree(
         ));
     }
 
-    // Create git worktree using tmai-core
+    // Create git worktree using tmai-core. Enable auto_fetch_base so a stale
+    // local base branch (#334) gets bypassed in favour of `origin/<base>`,
+    // preventing the new worktree from starting on outdated commits.
     let wt_req = tmai_core::worktree::WorktreeCreateRequest {
         repo_path: req.cwd.clone(),
         branch_name: resolved_name.clone(),
         dir_name: None,
         base_branch: req.base_branch.clone(),
+        auto_fetch_base: true,
     };
 
     let wt_result = tmai_core::worktree::create_worktree(&wt_req)
@@ -3628,11 +3635,31 @@ pub async fn spawn_worktree(
         .map_err(|e| json_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
 
     tracing::info!(
-        "API: created worktree '{}' at {} (branch: {})",
+        "API: created worktree '{}' at {} (branch: {}, staleness: {:?})",
         resolved_name,
         wt_result.path,
-        wt_result.branch
+        wt_result.branch,
+        wt_result.staleness,
     );
+
+    // Surface a stale-base warning to the orchestrator so it knows the
+    // worktree was branched off `origin/<base>` rather than the local ref.
+    // Without this signal the orchestrator could not explain why the new
+    // branch already contains "unexpected" commits relative to the local
+    // tree it observes.
+    if let Some(ref report) = wt_result.staleness {
+        let _ = core.event_sender().send(CoreEvent::ActionPerformed {
+            origin: origin.clone(),
+            action: "spawn_worktree_stale_base".to_string(),
+            summary: format!(
+                "Local '{base}' was {behind} commit(s) behind {used}; worktree '{name}' was branched off {used} instead.",
+                base = report.base_branch,
+                behind = report.behind,
+                used = report.used_ref,
+                name = resolved_name,
+            ),
+        });
+    }
 
     // Poller-driven SoT: trigger immediate worktree rescan so
     // `/api/worktrees` reflects the new worktree on the next tick without
