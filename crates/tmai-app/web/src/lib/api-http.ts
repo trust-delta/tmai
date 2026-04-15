@@ -658,6 +658,8 @@ export interface OrchestratorSettings {
   pr_monitor_interval_secs: number;
   pr_monitor_exclude_authors: string[];
   pr_monitor_scope: PrMonitorScope;
+  /** Append a live state summary to the orchestrator's spawn prompt (#381) */
+  inject_state_snapshot: boolean;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
 }
@@ -1073,6 +1075,7 @@ export const api = {
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
+      inject_state_snapshot?: boolean;
     },
     project?: string,
   ) =>

@@ -1371,6 +1371,8 @@ pub struct OrchestratorSettingsResponse {
     pub pr_monitor_interval_secs: u64,
     pub pr_monitor_exclude_authors: Vec<String>,
     pub pr_monitor_scope: tmai_core::config::PrMonitorScope,
+    /// Append a live state summary to the orchestrator's spawn prompt (#381)
+    pub inject_state_snapshot: bool,
     /// Whether this is a per-project override (true) or global fallback (false)
     pub is_project_override: bool,
 }
@@ -1468,6 +1470,8 @@ pub struct UpdateOrchestratorSettingsRequest {
     pub pr_monitor_exclude_authors: Option<Vec<String>>,
     #[serde(default)]
     pub pr_monitor_scope: Option<tmai_core::config::PrMonitorScope>,
+    #[serde(default)]
+    pub inject_state_snapshot: Option<bool>,
 }
 
 /// Guardrails settings update request (all fields optional for partial updates)
@@ -1631,6 +1635,7 @@ pub async fn get_orchestrator_settings(
         pr_monitor_interval_secs: orch.pr_monitor_interval_secs,
         pr_monitor_exclude_authors: orch.pr_monitor_exclude_authors.clone(),
         pr_monitor_scope: orch.pr_monitor_scope,
+        inject_state_snapshot: orch.inject_state_snapshot,
         is_project_override: is_override,
     })
 }
@@ -1803,6 +1808,9 @@ pub async fn update_orchestrator_settings(
             .pr_monitor_exclude_authors
             .unwrap_or_else(|| current.pr_monitor_exclude_authors.clone()),
         pr_monitor_scope: req.pr_monitor_scope.unwrap_or(current.pr_monitor_scope),
+        inject_state_snapshot: req
+            .inject_state_snapshot
+            .unwrap_or(current.inject_state_snapshot),
     };
     drop(settings);
 
@@ -2498,8 +2506,12 @@ pub async fn spawn_orchestrator(
         ));
     }
 
-    // Compose orchestrator prompt from settings (with per-project override)
-    let mut prompt = core.compose_orchestrator_prompt(Some(&cwd));
+    // Compose orchestrator prompt from settings (with per-project override).
+    // `_with_state` variant appends a live snapshot (open PRs/agents/merges/
+    // issues) when `inject_state_snapshot` is on — see #381.
+    let mut prompt = core
+        .compose_orchestrator_prompt_with_state(Some(&cwd))
+        .await;
     if let Some(ref extra) = req.additional_instructions {
         if !extra.is_empty() {
             prompt.push_str("\n\n");

@@ -1135,6 +1135,39 @@ impl TmaiCore {
 
         parts.join("\n")
     }
+
+    /// Compose an orchestrator prompt and, when the resolved settings enable
+    /// it, append a current-state snapshot (open PRs, active agents, recent
+    /// merges on `main`, open issues) so a freshly-spawned orchestrator does
+    /// not need to burn initial turns on state reconstruction (#381).
+    ///
+    /// Snapshot collection goes through existing facade methods and shells
+    /// out only to `git log` / `gh`; any individual source failing is
+    /// treated as an empty section so spawn never aborts on snapshot
+    /// generation (matches #381 graceful-degradation requirement).
+    pub async fn compose_orchestrator_prompt_with_state(
+        &self,
+        project_path: Option<&str>,
+    ) -> String {
+        let mut prompt = self.compose_orchestrator_prompt(project_path);
+
+        let include = self
+            .settings()
+            .resolve_orchestrator(project_path)
+            .inject_state_snapshot;
+        let Some(path) = project_path else {
+            return prompt;
+        };
+        if !include {
+            return prompt;
+        }
+
+        let data = super::state_snapshot::collect(self, path).await;
+        let snapshot = super::state_snapshot::format(&data);
+        prompt.push_str("\n\n");
+        prompt.push_str(&snapshot);
+        prompt
+    }
 }
 
 #[cfg(test)]
@@ -1740,6 +1773,32 @@ mod tests {
         assert!(prompt.contains("tmai MCP tools"));
         // No rules section with empty rules
         assert!(!prompt.contains("Workflow rules:"));
+    }
+
+    #[tokio::test]
+    async fn test_compose_with_state_disabled_matches_legacy() {
+        // When inject_state_snapshot is off, the async path must return the
+        // exact same prompt as the sync composer — this preserves legacy
+        // behaviour for power users who opted out via config (#381).
+        let mut settings = Settings::default();
+        settings.orchestrator.inject_state_snapshot = false;
+        let core = TmaiCoreBuilder::new(settings).build();
+
+        let legacy = core.compose_orchestrator_prompt(Some("/tmp"));
+        let with_state = core
+            .compose_orchestrator_prompt_with_state(Some("/tmp"))
+            .await;
+        assert_eq!(legacy, with_state);
+        assert!(!with_state.contains("Current state snapshot"));
+    }
+
+    #[tokio::test]
+    async fn test_compose_with_state_without_project_path_skips_snapshot() {
+        // No project_path means we cannot scope the snapshot; skip injection
+        // rather than leak cross-project state (#381 scope-by-cwd rule).
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let prompt = core.compose_orchestrator_prompt_with_state(None).await;
+        assert!(!prompt.contains("Current state snapshot"));
     }
 
     #[test]

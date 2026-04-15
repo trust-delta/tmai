@@ -218,6 +218,7 @@ export const api = {
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
+      inject_state_snapshot?: boolean;
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),
