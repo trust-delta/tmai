@@ -42,6 +42,13 @@ pub fn socket_path() -> PathBuf {
     state_dir().join("control.sock")
 }
 
+/// Get the loopback API Unix socket path used by `tmai mcp` to call the
+/// Web API without going through the rotating TCP port. Stable across
+/// tmai restarts so MCP clients do not need to reconnect. See issue #448.
+pub fn api_socket_path() -> PathBuf {
+    state_dir().join("api.sock")
+}
+
 /// Status of a wrapped agent
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -363,6 +370,12 @@ mod tests {
     fn test_socket_path_contains_control_sock() {
         let path = socket_path();
         assert!(path.ends_with("control.sock"));
+    }
+
+    #[test]
+    fn test_api_socket_path_ends_with_api_sock() {
+        let path = api_socket_path();
+        assert!(path.ends_with("api.sock"));
     }
 
     #[test]

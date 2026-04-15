@@ -1,8 +1,22 @@
-//! HTTP client for connecting to the running tmai instance's Web API.
+//! Loopback client for connecting to the running tmai instance's Web API
+//! over a Unix domain socket (see issue #448).
+//!
+//! The MCP server (spawned as `tmai mcp` by Claude Code) needs to call the
+//! same Web API handlers browsers use, but it reaches them through
+//! `$XDG_RUNTIME_DIR/tmai/api.sock` instead of the rotating TCP port. The
+//! socket path is stable across tmai restarts, so MCP clients do not need
+//! to reconnect after a restart.
+//!
+//! `api.json` is still written by the parent tmai process because the
+//! Web/Tauri paths continue to use bearer-token auth over TCP. The MCP
+//! client no longer reads it.
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Error type for operations that need to distinguish HTTP status codes.
 #[derive(Debug)]
@@ -13,19 +27,24 @@ pub enum ValidateError {
     Transport(anyhow::Error),
 }
 
-/// Connection info for the tmai HTTP API
+/// Connection info for the tmai HTTP API — written to `api.json` for
+/// external consumers (Web frontend served over TCP, Tauri). The MCP
+/// server no longer consults this file.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ApiConnectionInfo {
     pub port: u16,
     pub token: String,
 }
 
-/// Path to the runtime API connection file
+/// Path to the runtime API connection file (still used by Web/Tauri).
 fn api_info_path() -> PathBuf {
     tmai_core::ipc::protocol::state_dir().join("api.json")
 }
 
-/// Write API connection info (called by tmai when starting the web server)
+/// Write API connection info (called by tmai when starting the web server).
+///
+/// Kept for Web/Tauri clients that still authenticate over TCP with the
+/// rotating bearer token. The MCP loopback path ignores this file.
 pub fn write_api_info(port: u16, token: &str) -> Result<()> {
     let dir = tmai_core::ipc::protocol::state_dir();
     std::fs::create_dir_all(&dir)
@@ -59,8 +78,8 @@ pub fn remove_api_info() {
 ///
 /// api.json has been observed going missing while tmai is still running
 /// (root cause undetermined — no code path in the tmai binary removes it
-/// while the main loop is live). MCP clients depend on the file to
-/// discover port+token, so the watchdog makes the file self-healing.
+/// while the main loop is live). Web/Tauri clients still depend on the
+/// file for port+token discovery, so the watchdog makes it self-healing.
 /// Noop while the file exists; writes exactly the same port+token the
 /// parent already uses. Task runs for the lifetime of the tokio runtime.
 pub fn spawn_api_info_watchdog(port: u16, token: String) {
@@ -86,20 +105,25 @@ pub fn spawn_api_info_watchdog(port: u16, token: String) {
     });
 }
 
-/// HTTP client for tmai's Web API.
-/// Re-reads `api.json` on every request so that token and port changes
-/// (e.g. after tmai restart) are picked up transparently.
+/// Loopback HTTP client that speaks HTTP/1.1 over the tmai Unix domain
+/// socket. Each call opens a new socket connection (HTTP `Connection:
+/// close` semantics) so there is no cached state to invalidate across a
+/// tmai restart — once the socket path is rebound, subsequent calls just
+/// succeed.
+///
+/// Retains the `TmaiHttpClient` name from the pre-#448 implementation so
+/// call sites throughout `mcp/tools.rs` do not need to change.
 #[derive(Debug, Clone)]
 pub struct TmaiHttpClient {
-    /// JSON-encoded `X-Tmai-Origin` header value for all requests
+    /// JSON-encoded `X-Tmai-Origin` header value for all requests.
     origin_header: String,
 }
 
 impl TmaiHttpClient {
-    /// Create a new client. Validates that `api.json` is readable at construction time.
+    /// Create a new client. Verifies that the loopback socket is reachable
+    /// right now (fail-fast if tmai isn't running).
     pub fn from_runtime() -> Result<Self> {
-        // Validate that we can read the file now (fail-fast)
-        Self::read_connection_info()?;
+        probe_socket()?;
         let origin = tmai_core::api::ActionOrigin::Agent {
             id: "mcp".to_string(),
             is_orchestrator: false,
@@ -110,58 +134,28 @@ impl TmaiHttpClient {
         Ok(Self { origin_header })
     }
 
-    /// Read fresh connection info from `api.json`.
-    fn read_connection_info() -> Result<ApiConnectionInfo> {
-        let path = api_info_path();
-        let data = std::fs::read_to_string(&path).with_context(|| {
-            format!(
-                "tmai is not running (no API info at {}). Start tmai first.",
-                path.display()
-            )
-        })?;
-        serde_json::from_str(&data).context("Invalid API info file")
-    }
-
     /// Make a GET request to the tmai API
     pub fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let info = Self::read_connection_info()?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        let resp: T = ureq::get(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .call()
-            .with_context(|| format!("GET {path} failed"))?
-            .body_mut()
-            .read_json()
-            .with_context(|| format!("Failed to parse response from {path}"))?;
-        Ok(resp)
+        let (status, body) = http_request("GET", path, None, &self.origin_header)?;
+        check_status(status, &body, path)?;
+        serde_json::from_slice(&body)
+            .with_context(|| format!("Failed to parse response from {path}"))
     }
 
     /// Make a POST request to the tmai API with a JSON body
     pub fn post<T: DeserializeOwned>(&self, path: &str, body: &serde_json::Value) -> Result<T> {
-        let info = Self::read_connection_info()?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        let resp: T = ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .send_json(body)
-            .with_context(|| format!("POST {path} failed"))?
-            .body_mut()
-            .read_json()
-            .with_context(|| format!("Failed to parse response from {path}"))?;
-        Ok(resp)
+        let body_bytes = serde_json::to_vec(body)?;
+        let (status, resp) = http_request("POST", path, Some(&body_bytes), &self.origin_header)?;
+        check_status(status, &resp, path)?;
+        serde_json::from_slice(&resp)
+            .with_context(|| format!("Failed to parse response from {path}"))
     }
 
     /// Make a POST request that returns a simple status (no body parsing)
     pub fn post_ok(&self, path: &str, body: &serde_json::Value) -> Result<()> {
-        let info = Self::read_connection_info()?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .send_json(body)
-            .with_context(|| format!("POST {path} failed"))?;
-        Ok(())
+        let body_bytes = serde_json::to_vec(body)?;
+        let (status, resp) = http_request("POST", path, Some(&body_bytes), &self.origin_header)?;
+        check_status(status, &resp, path)
     }
 
     /// Resolve the repository path: use the given repo, fall back to cwd, then first registered project.
@@ -224,41 +218,29 @@ impl TmaiHttpClient {
     /// Make a POST request and return the parsed JSON error body on failure.
     ///
     /// Unlike `post()`, HTTP 4xx/5xx responses are read and returned as a
-    /// structured error value instead of a generic ureq error.
+    /// structured error value instead of a generic transport error.
     pub fn post_with_error_body(
         &self,
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, ValidateError> {
-        let info = Self::read_connection_info().map_err(ValidateError::Transport)?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        match ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .send_json(body)
-        {
-            Ok(mut resp) => {
-                let val: serde_json::Value = resp
-                    .body_mut()
-                    .read_json()
-                    .map_err(|e| ValidateError::Transport(e.into()))?;
-                Ok(val)
-            }
-            Err(ureq::Error::StatusCode(status)) => Err(ValidateError::HttpError { status }),
-            Err(e) => Err(ValidateError::Transport(e.into())),
+        let body_bytes =
+            serde_json::to_vec(body).map_err(|e| ValidateError::Transport(e.into()))?;
+        let (status, resp) = http_request("POST", path, Some(&body_bytes), &self.origin_header)
+            .map_err(ValidateError::Transport)?;
+        if (200..300).contains(&status) {
+            let val =
+                serde_json::from_slice(&resp).map_err(|e| ValidateError::Transport(e.into()))?;
+            Ok(val)
+        } else {
+            Err(ValidateError::HttpError { status })
         }
     }
 
     /// Make a DELETE request that returns a simple status (no body parsing)
     pub fn delete_ok(&self, path: &str) -> Result<()> {
-        let info = Self::read_connection_info()?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        ureq::delete(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .call()
-            .with_context(|| format!("DELETE {path} failed"))?;
-        Ok(())
+        let (status, resp) = http_request("DELETE", path, None, &self.origin_header)?;
+        check_status(status, &resp, path)
     }
 
     // =========================================================
@@ -312,23 +294,184 @@ impl TmaiHttpClient {
 
     /// Make a GET request that returns raw text.
     pub fn get_text(&self, path: &str) -> Result<String> {
-        let info = Self::read_connection_info()?;
-        let url = format!("http://localhost:{}/api{}", info.port, path);
-        let text = ureq::get(&url)
-            .header("Authorization", &format!("Bearer {}", info.token))
-            .header("X-Tmai-Origin", &self.origin_header)
-            .call()
-            .with_context(|| format!("GET {path} failed"))?
-            .body_mut()
-            .read_to_string()
-            .with_context(|| format!("Failed to read response from {path}"))?;
-        Ok(text)
+        let (status, body) = http_request("GET", path, None, &self.origin_header)?;
+        check_status(status, &body, path)?;
+        String::from_utf8(body).context("Response is not valid UTF-8")
     }
 }
 
 /// Format a JSON value as pretty-printed string for MCP tool responses.
 pub fn format_json(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+}
+
+// =========================================================
+// Minimal HTTP/1.1-over-UDS transport
+// =========================================================
+
+/// Connect once to verify the API socket is reachable.
+///
+/// Used by `from_runtime` to fail fast with a descriptive error when
+/// tmai isn't running. A bare connect is enough — we don't need to send
+/// any traffic.
+fn probe_socket() -> Result<()> {
+    let socket = tmai_core::ipc::protocol::api_socket_path();
+    UnixStream::connect(&socket).with_context(|| {
+        format!(
+            "tmai is not running (no API socket at {}). Start tmai first.",
+            socket.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// Perform a single HTTP/1.1 request over the Unix domain socket.
+///
+/// Opens a fresh `UnixStream`, writes a request with `Connection: close`,
+/// half-closes the write side, and reads until EOF. Returns the parsed
+/// `(status, body)` pair. `method` must be a valid HTTP token; `path` is
+/// the path below `/api` (e.g. `/agents`).
+fn http_request(
+    method: &str,
+    path: &str,
+    body: Option<&[u8]>,
+    origin_header: &str,
+) -> Result<(u16, Vec<u8>)> {
+    let socket = tmai_core::ipc::protocol::api_socket_path();
+    let mut stream = UnixStream::connect(&socket).with_context(|| {
+        format!(
+            "Cannot connect to tmai API socket at {} — is tmai running?",
+            socket.display()
+        )
+    })?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .context("failed to set read timeout on API socket")?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(30)))
+        .context("failed to set write timeout on API socket")?;
+
+    let mut req = Vec::with_capacity(256);
+    write!(&mut req, "{method} /api{path} HTTP/1.1\r\n")?;
+    // Host header is required by HTTP/1.1. Value is irrelevant for a
+    // loopback socket — axum routes by path.
+    req.extend_from_slice(b"Host: tmai.local\r\n");
+    write!(&mut req, "X-Tmai-Origin: {origin_header}\r\n")?;
+    req.extend_from_slice(b"Connection: close\r\n");
+    if let Some(body) = body {
+        req.extend_from_slice(b"Content-Type: application/json\r\n");
+        write!(&mut req, "Content-Length: {}\r\n", body.len())?;
+        req.extend_from_slice(b"\r\n");
+        req.extend_from_slice(body);
+    } else {
+        req.extend_from_slice(b"\r\n");
+    }
+    stream.write_all(&req)?;
+    stream.flush()?;
+    // Half-close the write side so the server sees EOF on its read end
+    // and can flush the response. `Connection: close` then triggers the
+    // server to close its side after writing.
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw)?;
+
+    parse_http_response(&raw)
+}
+
+/// Parse a complete HTTP/1.1 response. Handles both `Content-Length` and
+/// `Transfer-Encoding: chunked` framing; falls back to "everything after
+/// the headers" when neither is present (valid for `Connection: close`).
+fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<u8>)> {
+    let header_end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .context("Malformed HTTP response: no header terminator")?;
+    let head = std::str::from_utf8(&raw[..header_end])
+        .context("Malformed HTTP response: invalid UTF-8 in headers")?;
+    let mut lines = head.split("\r\n");
+    let status_line = lines
+        .next()
+        .context("Malformed HTTP response: no status line")?;
+    let mut parts = status_line.split_whitespace();
+    parts.next(); // HTTP/1.1
+    let status: u16 = parts
+        .next()
+        .context("Malformed HTTP response: no status code")?
+        .parse()
+        .context("Malformed HTTP response: non-numeric status")?;
+
+    let mut chunked = false;
+    let mut content_length: Option<usize> = None;
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            let name = name.trim();
+            let value = value.trim();
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.parse().ok();
+            } else if name.eq_ignore_ascii_case("transfer-encoding")
+                && value.eq_ignore_ascii_case("chunked")
+            {
+                chunked = true;
+            }
+        }
+    }
+
+    let body_start = header_end + 4;
+    let raw_body = &raw[body_start..];
+
+    let body = if chunked {
+        decode_chunked(raw_body)?
+    } else if let Some(len) = content_length {
+        raw_body.get(..len).unwrap_or(raw_body).to_vec()
+    } else {
+        raw_body.to_vec()
+    };
+    Ok((status, body))
+}
+
+/// Decode a chunked transfer-coding body. hyper (which powers axum) uses
+/// chunked when the response size isn't known up front; our JSON and text
+/// handlers produce known-size bodies, but SSE and future streaming
+/// endpoints could trip this path, so we handle it.
+fn decode_chunked(raw: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    loop {
+        let eol = raw[pos..]
+            .windows(2)
+            .position(|w| w == b"\r\n")
+            .context("Malformed chunked response: missing size CRLF")?;
+        let size_line = std::str::from_utf8(&raw[pos..pos + eol])
+            .context("Malformed chunked response: invalid UTF-8 in size line")?;
+        // Strip any chunk-extensions after ';'
+        let size_hex = size_line.split(';').next().unwrap_or("").trim();
+        let size = usize::from_str_radix(size_hex, 16)
+            .context("Malformed chunked response: invalid hex size")?;
+        pos += eol + 2;
+        if size == 0 {
+            break;
+        }
+        if pos + size > raw.len() {
+            anyhow::bail!("Malformed chunked response: truncated chunk data");
+        }
+        out.extend_from_slice(&raw[pos..pos + size]);
+        pos += size;
+        if raw.get(pos..pos + 2) != Some(b"\r\n") {
+            anyhow::bail!("Malformed chunked response: missing CRLF after chunk");
+        }
+        pos += 2;
+    }
+    Ok(out)
+}
+
+fn check_status(status: u16, body: &[u8], path: &str) -> Result<()> {
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        let body_str = std::str::from_utf8(body).unwrap_or("<non-utf8 body>");
+        anyhow::bail!("HTTP {status} from {path}: {body_str}")
+    }
 }
 
 #[cfg(test)]
@@ -341,84 +484,129 @@ mod tests {
     static API_FILE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn read_connection_info_picks_up_updated_token() {
+    fn write_api_info_round_trips_port_and_token() {
         let _lock = API_FILE_LOCK.lock().unwrap();
 
-        // Write initial api.json
         write_api_info(3000, "token-old").unwrap();
-
-        // Client reads and validates at construction
-        let info = TmaiHttpClient::read_connection_info().unwrap();
+        let data = std::fs::read_to_string(api_info_path()).unwrap();
+        let info: ApiConnectionInfo = serde_json::from_str(&data).unwrap();
         assert_eq!(info.port, 3000);
         assert_eq!(info.token, "token-old");
 
         // Simulate tmai restart: new port and token
         write_api_info(3001, "token-new").unwrap();
-
-        // read_connection_info picks up the new values
-        let info = TmaiHttpClient::read_connection_info().unwrap();
+        let data = std::fs::read_to_string(api_info_path()).unwrap();
+        let info: ApiConnectionInfo = serde_json::from_str(&data).unwrap();
         assert_eq!(info.port, 3001);
         assert_eq!(info.token, "token-new");
 
-        // Cleanup
         remove_api_info();
     }
 
     #[test]
-    fn read_connection_info_error_when_file_missing() {
+    fn from_runtime_fails_when_socket_missing() {
+        // XDG_RUNTIME_DIR is process-global, so hold API_FILE_LOCK to
+        // serialize with tests that also read the env var or state_dir().
         let _lock = API_FILE_LOCK.lock().unwrap();
-
-        // Ensure no api.json exists
-        remove_api_info();
-
-        let err = TmaiHttpClient::read_connection_info().unwrap_err();
-        assert!(
-            err.to_string().contains("tmai is not running"),
-            "Expected 'tmai is not running' error, got: {err}"
+        temp_env::with_var(
+            "XDG_RUNTIME_DIR",
+            Some("/nonexistent-xdg-for-tmai-tests"),
+            || {
+                let result = TmaiHttpClient::from_runtime();
+                assert!(
+                    result.is_err(),
+                    "from_runtime should fail when socket dir does not exist"
+                );
+                let err = result.unwrap_err().to_string();
+                assert!(
+                    err.contains("tmai is not running"),
+                    "Expected 'tmai is not running' error, got: {err}"
+                );
+            },
         );
     }
 
     #[test]
-    fn from_runtime_succeeds_when_api_json_exists() {
-        let _lock = API_FILE_LOCK.lock().unwrap();
-
-        write_api_info(4000, "test-token").unwrap();
-        let client = TmaiHttpClient::from_runtime();
-        assert!(client.is_ok());
-        remove_api_info();
+    fn parse_http_response_basic_ok() {
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nContent-Type: application/json\r\n\r\n{\"ok\":true}\r\n";
+        let (status, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, b"{\"ok\":true}\r\n");
     }
 
     #[test]
-    fn from_runtime_fails_when_api_json_missing() {
-        let _lock = API_FILE_LOCK.lock().unwrap();
-
-        remove_api_info();
-        let result = TmaiHttpClient::from_runtime();
-        assert!(result.is_err());
+    fn parse_http_response_truncates_to_content_length() {
+        // Trailing garbage after Content-Length bytes is ignored.
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhellodropped";
+        let (status, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, b"hello");
     }
 
     #[test]
-    fn watchdog_rewrite_step_restores_missing_file() {
-        // Covers the core of spawn_api_info_watchdog: when api.json is gone,
-        // calling write_api_info with the original port/token recreates it
-        // with the same contents a client would expect. We exercise the
-        // write step directly (the periodic tokio interval is an
-        // integration concern not worth the async scaffolding in a unit
-        // test).
-        let _lock = API_FILE_LOCK.lock().unwrap();
+    fn parse_http_response_no_length_reads_to_eof() {
+        // With Connection: close and no Content-Length, everything after
+        // the header terminator is the body.
+        let raw = b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
+        let (status, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 204);
+        assert_eq!(body, b"");
+    }
 
-        write_api_info(5000, "watchdog-token").unwrap();
-        remove_api_info();
-        assert!(!api_info_path().exists());
+    #[test]
+    fn parse_http_response_rejects_malformed() {
+        let raw = b"not an http response";
+        assert!(parse_http_response(raw).is_err());
+    }
 
-        write_api_info(5000, "watchdog-token").unwrap();
-        assert!(api_info_path().exists());
+    #[test]
+    fn parse_http_response_picks_up_status_code() {
+        let raw = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
+        let (status, _) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 403);
+    }
 
-        let info = TmaiHttpClient::read_connection_info().unwrap();
-        assert_eq!(info.port, 5000);
-        assert_eq!(info.token, "watchdog-token");
+    #[test]
+    fn decode_chunked_joins_chunks() {
+        let raw = b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+        let body = decode_chunked(raw).unwrap();
+        assert_eq!(body, b"hello world");
+    }
 
-        remove_api_info();
+    #[test]
+    fn decode_chunked_handles_empty_body() {
+        let raw = b"0\r\n\r\n";
+        let body = decode_chunked(raw).unwrap();
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn decode_chunked_rejects_bad_size() {
+        let raw = b"zz\r\nhello\r\n0\r\n\r\n";
+        assert!(decode_chunked(raw).is_err());
+    }
+
+    #[test]
+    fn parse_http_response_chunked_roundtrip() {
+        let raw = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n3\r\ndef\r\n0\r\n\r\n";
+        let (status, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, b"abcdef");
+    }
+
+    #[test]
+    fn check_status_accepts_2xx() {
+        assert!(check_status(200, b"", "/x").is_ok());
+        assert!(check_status(201, b"", "/x").is_ok());
+        assert!(check_status(299, b"", "/x").is_ok());
+    }
+
+    #[test]
+    fn check_status_rejects_non_2xx_with_body_in_message() {
+        let err = check_status(500, b"boom", "/foo").unwrap_err().to_string();
+        assert!(err.contains("500"));
+        assert!(err.contains("/foo"));
+        assert!(err.contains("boom"));
     }
 
     #[test]

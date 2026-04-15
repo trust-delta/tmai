@@ -1,6 +1,6 @@
 //! Web server implementation using axum
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::http::{HeaderName, Method};
 use axum::{
     middleware,
@@ -67,8 +67,8 @@ impl WebServer {
                 HeaderName::from_static("authorization"),
             ]);
 
-        // API routes (require authentication)
-        let api_routes = Router::new()
+        // API routes — handlers only; auth is applied per-transport below.
+        let api_routes_base = Router::new()
             .route("/agents", get(api::get_agents))
             .route("/agents/{id}/approve", post(api::approve_agent))
             .route(
@@ -173,20 +173,29 @@ impl WebServer {
                 "/settings/worktree",
                 get(api::get_worktree_settings).put(api::update_worktree_settings),
             )
-            .with_state(api_state)
-            .route_layer(middleware::from_fn_with_state(
-                auth_state.clone(),
-                auth::auth_middleware,
-            ));
+            .with_state(api_state);
 
-        // SSE route (require authentication)
-        let events_routes = Router::new()
+        // SSE route — handlers only; auth is applied per-transport below.
+        let events_routes_base = Router::new()
             .route("/events", get(events::events))
-            .with_state(sse_state)
+            .with_state(sse_state);
+
+        // TCP path: browser-facing transport. Bearer token (or ?token=) is
+        // required because the listener binds to 0.0.0.0 and can be reached
+        // from anywhere on the LAN.
+        let api_routes_tcp = api_routes_base
+            .clone()
             .route_layer(middleware::from_fn_with_state(
                 auth_state.clone(),
                 auth::auth_middleware,
             ));
+        let events_routes_tcp =
+            events_routes_base
+                .clone()
+                .route_layer(middleware::from_fn_with_state(
+                    auth_state.clone(),
+                    auth::auth_middleware,
+                ));
 
         // Static file routes (no auth for loading the page, token is in URL)
         let static_routes = Router::new()
@@ -199,18 +208,63 @@ impl WebServer {
             .route("/statusline", post(hooks::statusline))
             .with_state(self.core.clone());
 
-        // Combine all routes
-        let app = Router::new()
-            .nest("/api", api_routes)
-            .nest("/api", events_routes)
+        // TCP app: browser transport with auth + CORS
+        let tcp_app = Router::new()
+            .nest("/api", api_routes_tcp)
+            .nest("/api", events_routes_tcp)
+            .nest("/hooks", hook_routes.clone())
+            .merge(static_routes.clone())
+            .layer(cors.clone());
+
+        // Unix-socket app: loopback-only transport (MCP server, local tools).
+        // No bearer auth — filesystem permissions on the socket (0600 owner)
+        // are the effective access control. CORS is a no-op here (UDS has
+        // no Origin concept) but we keep it uniform for simplicity.
+        let uds_app = Router::new()
+            .nest("/api", api_routes_base)
+            .nest("/api", events_routes_base)
             .nest("/hooks", hook_routes)
             .merge(static_routes)
             .layer(cors);
 
         tracing::info!("Web server starting on http://0.0.0.0:{}", port);
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, app).await?;
+        let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
+        let tcp_task = tokio::spawn(async move {
+            axum::serve(tcp_listener, tcp_app).await?;
+            Ok::<_, anyhow::Error>(())
+        });
+
+        // Bind the loopback Unix domain socket. Rebinding requires removing
+        // any stale socket file from a previous tmai process.
+        let uds_path = tmai_core::ipc::protocol::api_socket_path();
+        if let Some(parent) = uds_path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create API socket directory {}", parent.display())
+            })?;
+        }
+        let _ = std::fs::remove_file(&uds_path);
+        let uds_listener = tokio::net::UnixListener::bind(&uds_path)
+            .with_context(|| format!("failed to bind API socket {}", uds_path.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&uds_path, std::fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("failed to chmod API socket {}", uds_path.display()))?;
+        }
+        tracing::info!("Loopback API socket listening at {}", uds_path.display());
+
+        let uds_task = tokio::spawn(async move {
+            axum::serve(uds_listener, uds_app).await?;
+            Ok::<_, anyhow::Error>(())
+        });
+
+        // If either listener exits, surface the error. Panics in spawn are
+        // propagated via the JoinError branch.
+        tokio::select! {
+            res = tcp_task => res.context("TCP server task panicked")??,
+            res = uds_task => res.context("UDS server task panicked")??,
+        }
 
         Ok(())
     }
