@@ -270,7 +270,7 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
             notify_settings,
             guardrails_settings,
             auto_action_templates,
-            std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+            std::sync::Arc::new(tmai_core::github::GhCliClient::new()),
             std::sync::Arc::new(ReviewDispatcherImpl::new(core.clone())),
         );
     }
@@ -511,7 +511,7 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
             notify_settings,
             guardrails_settings,
             auto_action_templates,
-            std::sync::Arc::new(tmai_core::auto_action::RealGithubApi),
+            std::sync::Arc::new(tmai_core::github::GhCliClient::new()),
             std::sync::Arc::new(ReviewDispatcherImpl::new(core.clone())),
         );
         eprintln!("tmai: auto-action executor started");

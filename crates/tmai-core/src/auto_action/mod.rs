@@ -14,9 +14,7 @@ pub mod templates;
 pub mod tracker;
 
 pub use resolver::{is_agent_online, resolve_target_agent, AgentRole};
-pub use service::{
-    AutoActionExecutor, GithubApi, NoopReviewDispatcher, RealGithubApi, ReviewDispatcher,
-};
+pub use service::{AutoActionExecutor, NoopReviewDispatcher, ReviewDispatcher};
 pub use templates::{render, AutoActionTemplates};
 pub use tracker::AutoActionTracker;
 

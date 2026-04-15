@@ -1,15 +1,22 @@
-//! GitHub integration via `gh` CLI — fetches PR, CI, and issue data.
+//! GitHub integration — public types, the process-wide TTL cache, and free
+//! functions that delegate to the [`GhClient`] trait.
+//!
+//! The `gh` CLI transport lives in [`mod@client`]; the cache is intentionally
+//! kept at this outer layer so it wraps any [`GhClient`] impl (production or
+//! test). Swapping the default implementation therefore changes transport
+//! only — caching behavior stays constant.
 
+pub mod client;
+pub mod error;
 pub mod pr_monitor;
+
+pub use client::{GhCliClient, GhClient, GhFuture, MockGhClient};
+pub use error::GhError;
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
-use tokio::process::Command;
 use tokio::sync::RwLock;
-
-/// Timeout for gh CLI commands
-const GH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// TTL for cached GitHub data
 const CACHE_TTL: Duration = Duration::from_secs(30);
@@ -144,34 +151,34 @@ pub struct PrInfo {
 /// Raw PR data from gh CLI JSON output
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GhPrEntry {
-    number: u64,
-    title: String,
-    state: String,
-    head_ref_name: String,
-    head_ref_oid: String,
-    base_ref_name: String,
-    url: String,
-    review_decision: Option<String>,
-    status_check_rollup: Option<Vec<GhCheckRun>>,
-    is_draft: bool,
-    additions: Option<u64>,
-    deletions: Option<u64>,
-    comments: Option<Vec<serde_json::Value>>,
-    reviews: Option<Vec<serde_json::Value>>,
+pub(super) struct GhPrEntry {
+    pub(super) number: u64,
+    pub(super) title: String,
+    pub(super) state: String,
+    pub(super) head_ref_name: String,
+    pub(super) head_ref_oid: String,
+    pub(super) base_ref_name: String,
+    pub(super) url: String,
+    pub(super) review_decision: Option<String>,
+    pub(super) status_check_rollup: Option<Vec<GhCheckRun>>,
+    pub(super) is_draft: bool,
+    pub(super) additions: Option<u64>,
+    pub(super) deletions: Option<u64>,
+    pub(super) comments: Option<Vec<serde_json::Value>>,
+    pub(super) reviews: Option<Vec<serde_json::Value>>,
     #[serde(default)]
-    author: Option<GhAuthor>,
+    pub(super) author: Option<GhAuthor>,
 }
 
 /// Individual check run from statusCheckRollup
 #[derive(Debug, serde::Deserialize)]
-struct GhCheckRun {
+pub(super) struct GhCheckRun {
     conclusion: Option<String>,
     status: Option<String>,
 }
 
 /// Trait for types that carry CI check conclusion/status (used by compute_rollup)
-trait CheckRunLike {
+pub(super) trait CheckRunLike {
     fn has_failure_conclusion(&self) -> bool;
     fn has_pending_status(&self) -> bool;
 }
@@ -211,11 +218,9 @@ impl CheckRunLike for CiCheck {
     }
 }
 
-/// Fetch open PRs for a repository using gh CLI (cached with 30s TTL)
-///
-/// Returns a map of head_branch -> PrInfo for quick lookup.
+/// Fetch open PRs for a repository (cached with 30s TTL). Delegates to
+/// [`GhClient::list_open_prs`] on cache miss.
 pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
-    // Check cache first
     {
         let cache_read = GH_CACHE.prs.read().await;
         if let Some(entry) = cache_read.get(repo_dir) {
@@ -225,68 +230,11 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
         }
     }
 
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "pr",
-                "list",
-                "--state",
-                "open",
-                "--json",
-                "number,title,state,headRefName,headRefOid,baseRefName,url,reviewDecision,statusCheckRollup,isDraft,additions,deletions,comments,reviews,author",
-                "--limit",
-                "50",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
+    let map = client::default_client()
+        .list_open_prs(repo_dir)
+        .await
+        .ok()?;
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let entries: Vec<GhPrEntry> = serde_json::from_slice(&output.stdout).ok()?;
-
-    let mut map = HashMap::new();
-    for entry in entries {
-        let check_status = entry
-            .status_check_rollup
-            .as_ref()
-            .map(|checks| compute_rollup(checks));
-
-        let review_decision = entry.review_decision.as_deref().and_then(|s| match s {
-            "APPROVED" => Some(ReviewDecision::Approved),
-            "CHANGES_REQUESTED" => Some(ReviewDecision::ChangesRequested),
-            "REVIEW_REQUIRED" => Some(ReviewDecision::ReviewRequired),
-            _ => None,
-        });
-
-        let pr = PrInfo {
-            number: entry.number,
-            title: entry.title,
-            state: entry.state,
-            head_branch: entry.head_ref_name.clone(),
-            head_sha: entry.head_ref_oid.clone(),
-            url: entry.url,
-            base_branch: entry.base_ref_name.clone(),
-            review_decision,
-            check_status,
-            is_draft: entry.is_draft,
-            additions: entry.additions.unwrap_or(0),
-            deletions: entry.deletions.unwrap_or(0),
-            comments: entry.comments.map(|c| c.len() as u64).unwrap_or(0),
-            reviews: entry.reviews.map(|r| r.len() as u64).unwrap_or(0),
-            author: author_login(entry.author),
-            merge_commit_sha: None,
-        };
-        map.insert(entry.head_ref_name, pr);
-    }
-
-    // Store in cache
     {
         let mut cache_write = GH_CACHE.prs.write().await;
         cache_write.insert(
@@ -304,20 +252,20 @@ pub async fn list_open_prs(repo_dir: &str) -> Option<HashMap<String, PrInfo>> {
 /// Raw merged PR data from gh CLI JSON output
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GhMergedPrEntry {
-    number: u64,
-    title: String,
-    head_ref_name: String,
-    head_ref_oid: String,
-    base_ref_name: String,
-    url: String,
-    merge_commit: Option<GhMergeCommit>,
+pub(super) struct GhMergedPrEntry {
+    pub(super) number: u64,
+    pub(super) title: String,
+    pub(super) head_ref_name: String,
+    pub(super) head_ref_oid: String,
+    pub(super) base_ref_name: String,
+    pub(super) url: String,
+    pub(super) merge_commit: Option<GhMergeCommit>,
 }
 
 /// Merge commit info from gh CLI
 #[derive(Debug, serde::Deserialize)]
-struct GhMergeCommit {
-    oid: String,
+pub(super) struct GhMergeCommit {
+    pub(super) oid: String,
 }
 
 /// Fetch recently merged PRs for branches that still exist locally.
@@ -329,71 +277,10 @@ pub async fn list_merged_prs(
     repo_dir: &str,
     local_branches: &[String],
 ) -> Option<HashMap<String, PrInfo>> {
-    if local_branches.is_empty() {
-        return Some(HashMap::new());
-    }
-
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "pr",
-                "list",
-                "--state",
-                "merged",
-                "--json",
-                "number,title,headRefName,headRefOid,baseRefName,url,mergeCommit",
-                "--limit",
-                "30",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let entries: Vec<GhMergedPrEntry> = serde_json::from_slice(&output.stdout).ok()?;
-
-    // Build a set for O(1) lookup
-    let branch_set: std::collections::HashSet<&str> =
-        local_branches.iter().map(|s| s.as_str()).collect();
-
-    let mut map = HashMap::new();
-    for entry in entries {
-        // Only include PRs whose head branch still exists locally
-        if !branch_set.contains(entry.head_ref_name.as_str()) {
-            continue;
-        }
-
-        let merge_commit_sha = entry.merge_commit.map(|mc| mc.oid);
-
-        let pr = PrInfo {
-            number: entry.number,
-            title: entry.title,
-            state: "MERGED".to_string(),
-            head_branch: entry.head_ref_name.clone(),
-            head_sha: entry.head_ref_oid,
-            base_branch: entry.base_ref_name,
-            url: entry.url,
-            review_decision: None,
-            check_status: None,
-            is_draft: false,
-            additions: 0,
-            deletions: 0,
-            comments: 0,
-            reviews: 0,
-            author: String::new(),
-            merge_commit_sha,
-        };
-        map.insert(entry.head_ref_name, pr);
-    }
-
-    Some(map)
+    client::default_client()
+        .list_merged_prs(repo_dir, local_branches)
+        .await
+        .ok()
 }
 
 /// Check if a specific branch has an associated merged PR.
@@ -402,29 +289,10 @@ pub async fn list_merged_prs(
 /// branches that `git branch -d` would refuse to delete.
 /// Returns `true` if at least one merged PR exists for the given branch.
 pub async fn has_merged_pr(repo_dir: &str, branch: &str) -> bool {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "pr", "list", "--state", "merged", "--head", branch, "--json", "number", "--limit",
-                "1",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok());
-
-    match output {
-        Some(o) if o.status.success() => {
-            // Parse JSON array — non-empty means at least one merged PR
-            serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
-                .map(|v| !v.is_empty())
-                .unwrap_or(false)
-        }
-        _ => false,
-    }
+    client::default_client()
+        .has_merged_pr(repo_dir, branch)
+        .await
+        .unwrap_or(false)
 }
 
 /// A single CI check / workflow run
@@ -482,7 +350,7 @@ pub enum MergeMethod {
 
 impl MergeMethod {
     /// Convert to the `gh pr merge` CLI flag
-    fn as_flag(self) -> &'static str {
+    pub(super) fn as_flag(self) -> &'static str {
         match self {
             MergeMethod::Squash => "--squash",
             MergeMethod::Merge => "--merge",
@@ -516,7 +384,7 @@ pub enum ReviewAction {
 
 impl ReviewAction {
     /// Convert to the `gh pr review` CLI flag
-    fn as_flag(self) -> &'static str {
+    pub(super) fn as_flag(self) -> &'static str {
         match self {
             ReviewAction::Approve => "--approve",
             ReviewAction::RequestChanges => "--request-changes",
@@ -552,79 +420,29 @@ pub struct CiSummary {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
-struct GhRunEntry {
-    name: String,
-    status: CiRunStatus,
-    conclusion: Option<CiConclusion>,
-    url: String,
-    head_branch: String,
-    created_at: Option<String>,
-    updated_at: Option<String>,
-    database_id: Option<u64>,
+pub(super) struct GhRunEntry {
+    pub(super) name: String,
+    pub(super) status: CiRunStatus,
+    pub(super) conclusion: Option<CiConclusion>,
+    pub(super) url: String,
+    pub(super) head_branch: String,
+    pub(super) created_at: Option<String>,
+    pub(super) updated_at: Option<String>,
+    pub(super) database_id: Option<u64>,
 }
 
-/// Fetch CI checks for a specific branch
-///
-/// Uses `gh run list --branch <branch>` to get recent workflow runs.
+/// Fetch CI checks for a specific branch. Delegates to
+/// [`GhClient::list_checks`].
 pub async fn list_checks(repo_dir: &str, branch: &str) -> Option<CiSummary> {
-    if branch.is_empty() || branch.starts_with('-') {
-        return None;
-    }
-
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "run",
-                "list",
-                "--branch",
-                branch,
-                "--json",
-                "name,status,conclusion,url,headBranch,createdAt,updatedAt,databaseId",
-                "--limit",
-                "10",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let entries: Vec<GhRunEntry> = serde_json::from_slice(&output.stdout).ok()?;
-
-    // Deduplicate by workflow name (keep most recent = first in list)
-    let mut seen = std::collections::HashSet::new();
-    let checks: Vec<CiCheck> = entries
-        .into_iter()
-        .filter(|e| seen.insert(e.name.clone()))
-        .map(|e| CiCheck {
-            name: e.name,
-            status: e.status,
-            conclusion: e.conclusion,
-            url: e.url,
-            started_at: e.created_at,
-            completed_at: e.updated_at,
-            run_id: e.database_id,
-        })
-        .collect();
-
-    // Compute rollup from individual checks
-    let rollup = compute_rollup(&checks);
-
-    Some(CiSummary {
-        branch: branch.to_string(),
-        checks,
-        rollup,
-    })
+    client::default_client()
+        .list_checks(repo_dir, branch)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Compute rollup status from a list of checks
-fn compute_rollup<T: CheckRunLike>(checks: &[T]) -> CheckStatus {
+pub(super) fn compute_rollup<T: CheckRunLike>(checks: &[T]) -> CheckStatus {
     if checks.is_empty() {
         return CheckStatus::Unknown;
     }
@@ -681,25 +499,24 @@ pub struct IssueDetail {
 
 /// Raw assignee from `gh issue list`
 #[derive(Debug, serde::Deserialize)]
-struct GhAssignee {
-    login: String,
+pub(super) struct GhAssignee {
+    pub(super) login: String,
 }
 
 /// Raw issue from `gh issue list`
 #[derive(Debug, serde::Deserialize)]
-struct GhIssueEntry {
-    number: u64,
-    title: String,
-    state: String,
-    url: String,
-    labels: Vec<IssueLabel>,
+pub(super) struct GhIssueEntry {
+    pub(super) number: u64,
+    pub(super) title: String,
+    pub(super) state: String,
+    pub(super) url: String,
+    pub(super) labels: Vec<IssueLabel>,
     #[serde(default)]
-    assignees: Vec<GhAssignee>,
+    pub(super) assignees: Vec<GhAssignee>,
 }
 
-/// Fetch open issues for a repository using gh CLI (cached with 30s TTL)
+/// Fetch open issues for a repository (cached with 30s TTL).
 pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
-    // Check cache first
     {
         let cache_read = GH_CACHE.issues.read().await;
         if let Some(entry) = cache_read.get(repo_dir) {
@@ -709,45 +526,8 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
         }
     }
 
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--json",
-                "number,title,state,url,labels,assignees",
-                "--limit",
-                "50",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
+    let issues = client::default_client().list_issues(repo_dir).await.ok()?;
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let entries: Vec<GhIssueEntry> = serde_json::from_slice(&output.stdout).ok()?;
-
-    let issues: Vec<IssueInfo> = entries
-        .into_iter()
-        .map(|e| IssueInfo {
-            number: e.number,
-            title: e.title,
-            state: e.state,
-            url: e.url,
-            labels: e.labels,
-            assignees: e.assignees.into_iter().map(|a| a.login).collect(),
-        })
-        .collect();
-
-    // Store in cache
     {
         let mut cache_write = GH_CACHE.issues.write().await;
         cache_write.insert(
@@ -764,33 +544,15 @@ pub async fn list_issues(repo_dir: &str) -> Option<Vec<IssueInfo>> {
 
 /// Fetch detailed information for a single GitHub issue (body, comments, metadata)
 pub async fn get_issue_detail(repo_dir: &str, issue_number: u64) -> Option<IssueDetail> {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "issue",
-                "view",
-                &issue_number.to_string(),
-                "--json",
-                "number,title,state,url,body,labels,assignees,createdAt,updatedAt,comments",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let val: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    parse_issue_detail_json(&val)
+    client::default_client()
+        .get_issue_detail(repo_dir, issue_number)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Parse gh issue view JSON into IssueDetail
-fn parse_issue_detail_json(val: &serde_json::Value) -> Option<IssueDetail> {
+pub(super) fn parse_issue_detail_json(val: &serde_json::Value) -> Option<IssueDetail> {
     let number = val["number"].as_u64()?;
     let title = val["title"].as_str()?.to_string();
     let state = val["state"].as_str()?.to_string();
@@ -857,90 +619,71 @@ fn parse_issue_detail_json(val: &serde_json::Value) -> Option<IssueDetail> {
 /// Combines conversation comments and review comments into a single timeline,
 /// sorted by created_at.
 pub async fn get_pr_comments(repo_dir: &str, pr_number: u64) -> Option<Vec<PrComment>> {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "pr",
-                "view",
-                &pr_number.to_string(),
-                "--json",
-                "comments,reviews",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let resp: GhPrCommentsResponse = serde_json::from_slice(&output.stdout).ok()?;
-    Some(build_pr_comments(resp))
+    client::default_client()
+        .get_pr_comments(repo_dir, pr_number)
+        .await
+        .ok()
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
-struct GhPrCommentsResponse {
+pub(super) struct GhPrCommentsResponse {
     #[serde(default)]
-    comments: Vec<GhConversationComment>,
+    pub(super) comments: Vec<GhConversationComment>,
     #[serde(default)]
-    reviews: Vec<GhReview>,
+    pub(super) reviews: Vec<GhReview>,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct GhAuthor {
+pub(super) struct GhAuthor {
     #[serde(default)]
-    login: String,
+    pub(super) login: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct GhConversationComment {
+pub(super) struct GhConversationComment {
     #[serde(default)]
-    author: Option<GhAuthor>,
+    pub(super) author: Option<GhAuthor>,
     #[serde(default)]
-    body: String,
+    pub(super) body: String,
     #[serde(default, rename = "createdAt")]
-    created_at: String,
+    pub(super) created_at: String,
     #[serde(default)]
-    url: String,
+    pub(super) url: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct GhReview {
+pub(super) struct GhReview {
     #[serde(default)]
-    author: Option<GhAuthor>,
+    pub(super) author: Option<GhAuthor>,
     #[serde(default)]
-    body: String,
+    pub(super) body: String,
     #[serde(default)]
-    state: String,
+    pub(super) state: String,
     #[serde(default, rename = "submittedAt")]
-    submitted_at: Option<String>,
+    pub(super) submitted_at: Option<String>,
     #[serde(default, rename = "createdAt")]
-    created_at: Option<String>,
+    pub(super) created_at: Option<String>,
     #[serde(default)]
-    comments: Vec<GhReviewInlineComment>,
+    pub(super) comments: Vec<GhReviewInlineComment>,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct GhReviewInlineComment {
+pub(super) struct GhReviewInlineComment {
     #[serde(default)]
-    body: String,
+    pub(super) body: String,
     #[serde(default, rename = "createdAt")]
-    created_at: String,
+    pub(super) created_at: String,
     #[serde(default)]
-    url: String,
+    pub(super) url: String,
     #[serde(default)]
-    path: Option<String>,
+    pub(super) path: Option<String>,
     #[serde(default, rename = "diffHunk")]
-    diff_hunk: Option<String>,
+    pub(super) diff_hunk: Option<String>,
 }
 
 /// Convert a resolved Option<GhAuthor> into the canonical login, preserving
 /// the prior "unknown" fallback for missing or empty authors.
-fn author_login(author: Option<GhAuthor>) -> String {
+pub(super) fn author_login(author: Option<GhAuthor>) -> String {
     author
         .map(|a| a.login)
         .filter(|s| !s.is_empty())
@@ -949,7 +692,7 @@ fn author_login(author: Option<GhAuthor>) -> String {
 
 /// Flatten the deserialized PR comments/reviews into the public `PrComment`
 /// timeline, sorted by created_at.
-fn build_pr_comments(resp: GhPrCommentsResponse) -> Vec<PrComment> {
+pub(super) fn build_pr_comments(resp: GhPrCommentsResponse) -> Vec<PrComment> {
     let mut result = Vec::new();
 
     for c in resp.comments {
@@ -1003,306 +746,73 @@ fn build_pr_comments(resp: GhPrCommentsResponse) -> Vec<PrComment> {
 
 /// Fetch changed files for a pull request
 pub async fn get_pr_files(repo_dir: &str, pr_number: u64) -> Option<Vec<PrChangedFile>> {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args(["pr", "view", &pr_number.to_string(), "--json", "files"])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    #[derive(serde::Deserialize)]
-    struct FilesResponse {
-        files: Vec<GhFileEntry>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct GhFileEntry {
-        path: String,
-        additions: u64,
-        deletions: u64,
-    }
-
-    let resp: FilesResponse = serde_json::from_slice(&output.stdout).ok()?;
-
-    Some(
-        resp.files
-            .into_iter()
-            .map(|f| PrChangedFile {
-                path: f.path,
-                additions: f.additions,
-                deletions: f.deletions,
-            })
-            .collect(),
-    )
+    client::default_client()
+        .get_pr_files(repo_dir, pr_number)
+        .await
+        .ok()
 }
 
 /// Fetch merge readiness status for a pull request
 pub async fn get_pr_merge_status(repo_dir: &str, pr_number: u64) -> Option<PrMergeStatus> {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args([
-                "pr",
-                "view",
-                &pr_number.to_string(),
-                "--json",
-                "mergeable,mergeStateStatus,reviewDecision,statusCheckRollup",
-            ])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-
-    let mergeable = json
-        .get("mergeable")
-        .and_then(|v| v.as_str())
-        .unwrap_or("UNKNOWN")
-        .to_string();
-
-    let merge_state_status = json
-        .get("mergeStateStatus")
-        .and_then(|v| v.as_str())
-        .unwrap_or("UNKNOWN")
-        .to_string();
-
-    let review_decision = json
-        .get("reviewDecision")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    // Compute check status from statusCheckRollup using shared compute_rollup()
-    let check_status: Option<CheckStatus> = json
-        .get("statusCheckRollup")
-        .and_then(|v| serde_json::from_value::<Vec<GhCheckRun>>(v.clone()).ok())
-        .map(|checks| compute_rollup(&checks));
-
-    Some(PrMergeStatus {
-        mergeable,
-        merge_state_status,
-        review_decision,
-        check_status,
-    })
+    client::default_client()
+        .get_pr_merge_status(repo_dir, pr_number)
+        .await
+        .ok()
+        .flatten()
 }
 
-/// Maximum size for CI failure log output (50KB)
-const CI_LOG_MAX_BYTES: usize = 50 * 1024;
-
-/// Fetch failure log for a CI run
-///
-/// Uses `gh run view --log-failed` which returns plain text (not JSON).
-/// Output is truncated to 50KB.
+/// Fetch failure log for a CI run. Truncated to 50KB.
 pub async fn get_ci_failure_log(repo_dir: &str, run_id: u64) -> Option<CiFailureLog> {
-    let output = tokio::time::timeout(
-        Duration::from_secs(30), // longer timeout for log fetching
-        Command::new("gh")
-            .args(["run", "view", &run_id.to_string(), "--log-failed"])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    if output.stdout.is_empty() {
-        return None;
-    }
-
-    // Truncate to 50KB
-    let text = if output.stdout.len() > CI_LOG_MAX_BYTES {
-        let truncated = &output.stdout[..CI_LOG_MAX_BYTES];
-        // Find last valid UTF-8 boundary
-        let s = String::from_utf8_lossy(truncated);
-        format!("{}\n\n... (truncated, showing first 50KB)", s)
-    } else {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    };
-
-    Some(CiFailureLog {
-        run_id,
-        log_text: text,
-    })
+    client::default_client()
+        .get_ci_failure_log(repo_dir, run_id)
+        .await
+        .ok()
+        .flatten()
 }
 
-/// Re-run failed jobs for a CI workflow run
-///
-/// Uses `gh run rerun <run_id> --failed` to re-trigger only failed jobs.
+/// Re-run failed jobs for a CI workflow run.
 pub async fn rerun_failed_checks(repo_dir: &str, run_id: u64) -> Option<()> {
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args(["run", "rerun", &run_id.to_string(), "--failed"])
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())?;
-
-    if output.status.success() {
-        Some(())
-    } else {
-        None
-    }
+    client::default_client()
+        .rerun_failed_checks(repo_dir, run_id)
+        .await
+        .ok()
 }
 
-/// Merge a pull request using `gh pr merge`
-///
-/// Checks merge readiness (CI status, mergeable state) before attempting merge.
-/// Optionally deletes the remote branch after successful merge (gh does this by default
-/// with `--delete-branch`).
+/// Merge a pull request. Checks merge readiness first, invalidates the PR
+/// cache on success so the next read reflects the merged state immediately.
 pub async fn merge_pr(
     repo_dir: &str,
     pr_number: u64,
     method: MergeMethod,
     delete_branch: bool,
 ) -> Result<MergeResult, String> {
-    // Pre-flight: check merge readiness
-    if let Some(status) = get_pr_merge_status(repo_dir, pr_number).await {
-        if status.mergeable == "CONFLICTING" {
-            return Err(format!(
-                "PR #{} has merge conflicts — resolve conflicts before merging",
-                pr_number
-            ));
-        }
-        if let Some(CheckStatus::Failure) = status.check_status {
-            return Err(format!(
-                "PR #{} has failing CI checks — fix CI before merging",
-                pr_number
-            ));
-        }
-        if let Some(CheckStatus::Pending) = status.check_status {
-            return Err(format!(
-                "PR #{} has pending CI checks — wait for CI to complete before merging",
-                pr_number
-            ));
-        }
-    }
+    let result = client::default_client()
+        .merge_pr(repo_dir, pr_number, method, delete_branch)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let mut args = vec![
-        "pr".to_string(),
-        "merge".to_string(),
-        pr_number.to_string(),
-        method.as_flag().to_string(),
-    ];
-    if delete_branch {
-        args.push("--delete-branch".to_string());
-    }
-
-    let output = tokio::time::timeout(
-        Duration::from_secs(30), // longer timeout for merge operations
-        Command::new("gh")
-            .args(&args)
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .map_err(|_| "gh pr merge timed out".to_string())?
-    .map_err(|e| format!("Failed to run gh: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    if !output.status.success() {
-        return Err(format!("gh pr merge failed: {}", stderr));
-    }
-
-    // Invalidate PR cache after successful merge
+    // Invalidate PR cache after successful merge — kept here (not on the
+    // trait) so the cache stays a concern of the outer layer and any
+    // GhClient impl can be dropped in without re-implementing invalidation.
     {
         let mut cache = GH_CACHE.prs.write().await;
         cache.remove(repo_dir);
     }
 
-    let message = if stdout.is_empty() {
-        stderr.clone()
-    } else {
-        stdout
-    };
-
-    let method_str = match method {
-        MergeMethod::Squash => "squash",
-        MergeMethod::Merge => "merge",
-        MergeMethod::Rebase => "rebase",
-    };
-
-    Ok(MergeResult {
-        pr_number,
-        merged: true,
-        method: method_str.to_string(),
-        message,
-        branch_deleted: delete_branch,
-        worktree_cleanup: None,
-    })
+    Ok(result)
 }
 
-/// Submit a review on a pull request via `gh pr review`
+/// Submit a review on a pull request via [`GhClient::review_pr`].
 pub async fn review_pr(
     repo_dir: &str,
     pr_number: u64,
     action: ReviewAction,
     body: Option<&str>,
 ) -> Result<ReviewResult, String> {
-    let mut args = vec![
-        "pr".to_string(),
-        "review".to_string(),
-        pr_number.to_string(),
-        action.as_flag().to_string(),
-    ];
-    if let Some(body_text) = body {
-        args.push("--body".to_string());
-        args.push(body_text.to_string());
-    }
-
-    let output = tokio::time::timeout(
-        GH_TIMEOUT,
-        Command::new("gh")
-            .args(&args)
-            .current_dir(repo_dir)
-            .output(),
-    )
-    .await
-    .map_err(|_| "gh pr review timed out".to_string())?
-    .map_err(|e| format!("Failed to run gh: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    if !output.status.success() {
-        return Err(format!("gh pr review failed: {}", stderr));
-    }
-
-    let message = if stdout.is_empty() { stderr } else { stdout };
-
-    let action_str = match action {
-        ReviewAction::Approve => "approve",
-        ReviewAction::RequestChanges => "request_changes",
-        ReviewAction::Comment => "comment",
-    };
-
-    Ok(ReviewResult {
-        pr_number,
-        action: action_str.to_string(),
-        message,
-    })
+    client::default_client()
+        .review_pr(repo_dir, pr_number, action, body)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Extract issue numbers from a branch name

@@ -10,14 +10,10 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-/// Pinned, boxed future returning `Option<String>` — used as the return type
-/// of `GithubApi` methods so the trait stays dyn-compatible without dragging
-/// in `async-trait` as a dependency.
-pub type GhFuture<'a> = Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>>;
-
 use crate::agents::MonitoredAgent;
 use crate::api::{CoreEvent, GuardrailKind};
 use crate::config::{EventHandling, OrchestratorNotifySettings};
+use crate::github::{CiConclusion, GhClient};
 use crate::orchestrator_notify::SharedNotifySettings;
 use crate::state::SharedState;
 use crate::task_meta::{store as meta_store, SharedGuardrailsSettings};
@@ -25,17 +21,6 @@ use crate::task_meta::{store as meta_store, SharedGuardrailsSettings};
 use super::resolver::{find_agent_by_id, is_agent_online, resolve_target_agent, AgentRole};
 use super::templates::{render, AutoActionTemplates};
 use super::tracker::AutoActionTracker;
-
-/// Abstraction over the subset of GitHub APIs AutoActionExecutor uses,
-/// injected so integration tests can stub out real `gh` invocations.
-pub trait GithubApi: Send + Sync + 'static {
-    /// Fetch the failure log text for the most recent failed CI run on `branch`.
-    /// Returns `None` if no failed run is found or the log can't be fetched.
-    fn fetch_ci_failure_log<'a>(&'a self, repo_dir: &'a str, branch: &'a str) -> GhFuture<'a>;
-
-    /// Fetch review / conversation comments on `pr_number`, joined as human-readable text.
-    fn fetch_pr_comments<'a>(&'a self, repo_dir: &'a str, pr_number: u64) -> GhFuture<'a>;
-}
 
 /// Abstraction over `dispatch_review` so AutoActionExecutor can trigger a review-agent
 /// dispatch without depending on the bin crate's HTTP handler directly.
@@ -66,52 +51,63 @@ impl ReviewDispatcher for NoopReviewDispatcher {
     }
 }
 
-/// Default `GithubApi` implementation that shells out to `gh` via `crate::github`.
-pub struct RealGithubApi;
+/// Fetch the failure log text for the most recent failed CI run on `branch`
+/// via a [`GhClient`]. Returns `None` if no failed run exists or the log can
+/// be retrieved. Errors from the underlying trait are swallowed here because
+/// a missing log should fall back to the pre-computed `failed_details`
+/// summary rather than abort the auto-action.
+async fn fetch_ci_failure_log_text(
+    gh: &dyn GhClient,
+    repo_dir: &str,
+    branch: &str,
+) -> Option<String> {
+    let summary = gh.list_checks(repo_dir, branch).await.ok().flatten()?;
+    let run_id = summary.checks.iter().find_map(|c| {
+        let failed = matches!(
+            c.conclusion,
+            Some(CiConclusion::Failure)
+                | Some(CiConclusion::TimedOut)
+                | Some(CiConclusion::Cancelled)
+        );
+        if failed {
+            c.run_id
+        } else {
+            None
+        }
+    })?;
+    let log = gh
+        .get_ci_failure_log(repo_dir, run_id)
+        .await
+        .ok()
+        .flatten()?;
+    Some(log.log_text)
+}
 
-impl GithubApi for RealGithubApi {
-    fn fetch_ci_failure_log<'a>(&'a self, repo_dir: &'a str, branch: &'a str) -> GhFuture<'a> {
-        Box::pin(async move {
-            let summary = crate::github::list_checks(repo_dir, branch).await?;
-            let run_id = summary.checks.iter().find_map(|c| {
-                let failed = matches!(
-                    c.conclusion,
-                    Some(crate::github::CiConclusion::Failure)
-                        | Some(crate::github::CiConclusion::TimedOut)
-                        | Some(crate::github::CiConclusion::Cancelled)
-                );
-                if failed {
-                    c.run_id
-                } else {
-                    None
-                }
-            })?;
-            let log = crate::github::get_ci_failure_log(repo_dir, run_id).await?;
-            Some(log.log_text)
-        })
+/// Fetch PR comments joined as human-readable text. `None` when the PR has
+/// no comments OR the underlying request fails — both cases are equivalent
+/// for auto-action gating (no feedback to relay).
+async fn fetch_pr_comments_text(
+    gh: &dyn GhClient,
+    repo_dir: &str,
+    pr_number: u64,
+) -> Option<String> {
+    let comments = gh.get_pr_comments(repo_dir, pr_number).await.ok()?;
+    if comments.is_empty() {
+        return None;
     }
-
-    fn fetch_pr_comments<'a>(&'a self, repo_dir: &'a str, pr_number: u64) -> GhFuture<'a> {
-        Box::pin(async move {
-            let comments = crate::github::get_pr_comments(repo_dir, pr_number).await?;
-            if comments.is_empty() {
-                return None;
-            }
-            let joined = comments
-                .iter()
-                .map(|c| {
-                    let path = c
-                        .path
-                        .as_deref()
-                        .map(|p| format!(" [{p}]"))
-                        .unwrap_or_default();
-                    format!("- @{}{}: {}", c.author, path, c.body.trim())
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            Some(joined)
+    let joined = comments
+        .iter()
+        .map(|c| {
+            let path = c
+                .path
+                .as_deref()
+                .map(|p| format!(" [{p}]"))
+                .unwrap_or_default();
+            format!("- @{}{}: {}", c.author, path, c.body.trim())
         })
-    }
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(joined)
 }
 
 /// Event-driven service that, when configured, instructs workers directly
@@ -132,7 +128,7 @@ impl AutoActionExecutor {
         notify_settings: SharedNotifySettings,
         guardrails: SharedGuardrailsSettings,
         templates: Arc<parking_lot::RwLock<AutoActionTemplates>>,
-        github: Arc<dyn GithubApi>,
+        github: Arc<dyn GhClient>,
         review_dispatcher: Arc<dyn ReviewDispatcher>,
     ) -> tokio::task::JoinHandle<()> {
         let tracker = Arc::new(AutoActionTracker::new());
@@ -177,7 +173,7 @@ impl AutoActionExecutor {
         guardrails: &SharedGuardrailsSettings,
         templates: &Arc<parking_lot::RwLock<AutoActionTemplates>>,
         tracker: &Arc<AutoActionTracker>,
-        github: &dyn GithubApi,
+        github: &dyn GhClient,
         review_dispatcher: &dyn ReviewDispatcher,
         event: &CoreEvent,
     ) {
@@ -268,7 +264,7 @@ impl AutoActionExecutor {
         event_tx: &broadcast::Sender<CoreEvent>,
         guardrails: &SharedGuardrailsSettings,
         tracker: &Arc<AutoActionTracker>,
-        github: &dyn GithubApi,
+        github: &dyn GhClient,
         review_dispatcher: &dyn ReviewDispatcher,
         pr_number: u64,
         title: &str,
@@ -298,8 +294,7 @@ impl AutoActionExecutor {
         }
 
         // Skip if the PR already has review comments (human or bot)
-        if github
-            .fetch_pr_comments(project_root_str(&project_root), pr_number)
+        if fetch_pr_comments_text(github, project_root_str(&project_root), pr_number)
             .await
             .is_some()
         {
@@ -352,7 +347,7 @@ impl AutoActionExecutor {
         guardrails: &SharedGuardrailsSettings,
         templates: &Arc<parking_lot::RwLock<AutoActionTemplates>>,
         tracker: &Arc<AutoActionTracker>,
-        github: &dyn GithubApi,
+        github: &dyn GhClient,
         pr_number: u64,
         title: &str,
         failed_details: &str,
@@ -428,19 +423,18 @@ impl AutoActionExecutor {
         }
 
         // Enrich failure details with the failure log when available
-        let detailed = match github
-            .fetch_ci_failure_log(project_root_str(&project_root), &branch)
-            .await
-        {
-            Some(log) => {
-                if log.trim().is_empty() {
-                    failed_details.to_string()
-                } else {
-                    format!("{failed_details}\n\n--- CI log ---\n{log}")
+        let detailed =
+            match fetch_ci_failure_log_text(github, project_root_str(&project_root), &branch).await
+            {
+                Some(log) => {
+                    if log.trim().is_empty() {
+                        failed_details.to_string()
+                    } else {
+                        format!("{failed_details}\n\n--- CI log ---\n{log}")
+                    }
                 }
-            }
-            None => failed_details.to_string(),
-        };
+                None => failed_details.to_string(),
+            };
 
         let tpl = templates.read().effective_ci_failed();
         let pr_str = pr_number.to_string();
@@ -469,7 +463,7 @@ impl AutoActionExecutor {
         guardrails: &SharedGuardrailsSettings,
         templates: &Arc<parking_lot::RwLock<AutoActionTemplates>>,
         tracker: &Arc<AutoActionTracker>,
-        github: &dyn GithubApi,
+        github: &dyn GhClient,
         pr_number: u64,
         title: &str,
         comments_summary: &str,
@@ -539,8 +533,7 @@ impl AutoActionExecutor {
         }
 
         // Fetch the full comment text (falls back to summary)
-        let full = github
-            .fetch_pr_comments(project_root_str(&project_root), pr_number)
+        let full = fetch_pr_comments_text(github, project_root_str(&project_root), pr_number)
             .await
             .unwrap_or_else(|| comments_summary.to_string());
 
@@ -677,16 +670,63 @@ mod tests {
     use super::*;
     use crate::agents::{AgentStatus, AgentType, MonitoredAgent};
     use crate::config::GuardrailsSettings;
+    use crate::github::{
+        CheckStatus, CiCheck, CiFailureLog, CiRunStatus, CiSummary, MockGhClient, PrComment,
+    };
     use crate::state::AppState;
     use crate::task_meta::store::TaskMeta;
     use std::sync::Mutex;
 
     // ── Test doubles ────────────────────────────────────────────────
 
-    #[derive(Default)]
-    struct StubGithub {
-        ci_log: Mutex<Option<String>>,
-        pr_comments: Mutex<Option<String>>,
+    /// Build a [`MockGhClient`] that returns `log_text` as the content of the
+    /// most recent failed CI run. Used to exercise `handle_ci_failed`'s log
+    /// enrichment path through the public [`GhClient`] trait.
+    fn mock_gh_with_ci_log(log_text: &str) -> Arc<MockGhClient> {
+        let mock = MockGhClient::new();
+        *mock.list_checks.lock() = Some(CiSummary {
+            branch: "feat/x".into(),
+            checks: vec![CiCheck {
+                name: "test".into(),
+                status: CiRunStatus::Completed,
+                conclusion: Some(CiConclusion::Failure),
+                url: String::new(),
+                started_at: None,
+                completed_at: None,
+                run_id: Some(99),
+            }],
+            rollup: CheckStatus::Failure,
+        });
+        *mock.get_ci_failure_log.lock() = Some(CiFailureLog {
+            run_id: 99,
+            log_text: log_text.to_string(),
+        });
+        Arc::new(mock)
+    }
+
+    /// Build a [`MockGhClient`] seeded with a single PR comment so the
+    /// service's `fetch_pr_comments_text` formats to exactly `expected`.
+    fn mock_gh_with_single_comment(author: &str, body: &str) -> Arc<MockGhClient> {
+        let mock = MockGhClient::new();
+        *mock.get_pr_comments.lock() = Some(vec![PrComment {
+            author: author.to_string(),
+            body: body.to_string(),
+            created_at: String::new(),
+            url: String::new(),
+            comment_type: "comment".into(),
+            path: None,
+            diff_hunk: None,
+        }]);
+        Arc::new(mock)
+    }
+
+    /// [`MockGhClient`] seeded so `get_pr_comments` returns an empty list.
+    /// The `fetch_pr_comments_text` helper therefore produces `None`, which
+    /// is how the service detects "no review feedback yet".
+    fn mock_gh_no_comments() -> Arc<MockGhClient> {
+        let mock = MockGhClient::new();
+        *mock.get_pr_comments.lock() = Some(Vec::new());
+        Arc::new(mock)
     }
 
     #[derive(Default)]
@@ -710,21 +750,6 @@ mod tests {
                     Ok(())
                 }
             })
-        }
-    }
-
-    impl GithubApi for StubGithub {
-        fn fetch_ci_failure_log<'a>(
-            &'a self,
-            _repo_dir: &'a str,
-            _branch: &'a str,
-        ) -> GhFuture<'a> {
-            let v = self.ci_log.lock().unwrap().clone();
-            Box::pin(async move { v })
-        }
-        fn fetch_pr_comments<'a>(&'a self, _repo_dir: &'a str, _pr_number: u64) -> GhFuture<'a> {
-            let v = self.pr_comments.lock().unwrap().clone();
-            Box::pin(async move { v })
         }
     }
 
@@ -805,9 +830,8 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/x", &meta).unwrap();
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = mock_gh_with_ci_log("=== pytest failed ===");
         let dispatcher = Arc::new(StubDispatcher::default());
-        *gh.ci_log.lock().unwrap() = Some("=== pytest failed ===".to_string());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::NotifyOrchestrator);
 
         let event = CoreEvent::PrCiFailed {
@@ -851,7 +875,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/x", &meta).unwrap();
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
@@ -891,7 +915,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/x", &meta).unwrap();
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::AutoAction);
 
@@ -934,7 +958,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         g.write().max_ci_retries = 2;
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::NotifyOrchestrator);
 
@@ -1015,9 +1039,8 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/y", &meta).unwrap();
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = mock_gh_with_single_comment("alice", "please rename foo");
         let dispatcher = Arc::new(StubDispatcher::default());
-        *gh.pr_comments.lock().unwrap() = Some("- @alice: please rename foo".to_string());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
         let event = CoreEvent::PrReviewFeedback {
@@ -1062,7 +1085,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         g.write().max_review_loops = 1;
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::NotifyOrchestrator, EventHandling::AutoAction);
 
@@ -1134,7 +1157,7 @@ mod tests {
         assert_eq!(tr.ci_count("feat/z"), 1);
         assert_eq!(tr.review_count(42), 1);
 
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with(EventHandling::AutoAction, EventHandling::AutoAction);
         let event = CoreEvent::PrClosed {
@@ -1177,7 +1200,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
 
         let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default()); // no pr_comments → None
+        let gh = Arc::new(MockGhClient::new()); // no pr_comments → None
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with_ci_passed(EventHandling::AutoAction);
 
@@ -1216,7 +1239,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
 
         let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with_ci_passed(EventHandling::AutoAction);
 
@@ -1253,8 +1276,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
 
         let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
-        *gh.pr_comments.lock().unwrap() = Some("- @bob: nit".to_string());
+        let gh = mock_gh_with_single_comment("bob", "nit");
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with_ci_passed(EventHandling::AutoAction);
 
@@ -1292,7 +1314,7 @@ mod tests {
 
         let (tx, mut rx, g, tpl, tr) = make_harness(&state, dir.path());
         g.write().max_review_loops = 1;
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with_ci_passed(EventHandling::AutoAction);
 
@@ -1353,7 +1375,7 @@ mod tests {
         meta_store::write_meta(dir.path(), "feat/a", &meta).unwrap();
 
         let (tx, mut _rx, g, tpl, tr) = make_harness(&state, dir.path());
-        let gh = Arc::new(StubGithub::default());
+        let gh = Arc::new(MockGhClient::new());
         let dispatcher = Arc::new(StubDispatcher::default());
         let ns = settings_with_ci_passed(EventHandling::NotifyOrchestrator);
 
