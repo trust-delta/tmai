@@ -992,6 +992,9 @@ pub struct WorktreeLaunchRequestBody {
     #[serde(default)]
     #[allow(dead_code)]
     pub session: Option<String>,
+    /// Per-dispatch model override. See `SpawnRequest::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// Launch an agent in a worktree.
@@ -1039,12 +1042,21 @@ pub async fn launch_agent_in_worktree(
     };
 
     // Build args — pass initial prompt as first positional argument if provided
-    let args = match req.initial_prompt {
+    let mut args: Vec<String> = match req.initial_prompt {
         Some(ref prompt) if !prompt.is_empty() => vec![prompt.clone()],
         _ => vec![],
     };
 
-    // Worktree already exists — just cd into it and launch the agent
+    // Worktree already exists — just cd into it and launch the agent.
+    // Implementer role: `/worktrees/launch` re-launches an agent in an
+    // existing worktree, which is always an implementer spawn.
+    inject_model_flag(
+        &core,
+        command,
+        tmai_core::config::SpawnRole::Implementer,
+        req.model.as_deref(),
+        &mut args,
+    );
     let spawn_req = SpawnRequest {
         command: command.to_string(),
         args,
@@ -1052,6 +1064,7 @@ pub async fn launch_agent_in_worktree(
         rows: default_rows(),
         cols: default_cols(),
         force_pty: false,
+        model: None,
     };
 
     let use_tmux = {
@@ -1255,6 +1268,23 @@ pub struct SpawnSettingsResponse {
     pub tmux_window_name: String,
     /// Permission mode injected for dispatched workers
     pub worker_permission_mode: String,
+    /// Per-agent-type model configuration (Claude Code)
+    pub claude: tmai_core::config::AgentModelSettings,
+    /// Per-agent-type model configuration (Codex CLI)
+    pub codex: tmai_core::config::AgentModelSettings,
+    /// Per-agent-type model configuration (Gemini CLI)
+    pub gemini: tmai_core::config::AgentModelSettings,
+}
+
+/// Update payload for an `AgentModelSettings` subsection.
+/// `None` leaves the existing value untouched; an empty string clears the
+/// field so resolution falls through to the CLI's default.
+#[derive(Debug, Deserialize, Default)]
+pub struct AgentModelSettingsUpdate {
+    #[serde(default)]
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub orchestrator_model: Option<String>,
 }
 
 /// Request body for updating spawn settings
@@ -1269,6 +1299,15 @@ pub struct UpdateSpawnSettingsRequest {
     /// `"acceptEdits"`, or `"dontAsk"`. Empty / missing keeps current.
     #[serde(default)]
     pub worker_permission_mode: Option<String>,
+    /// Per-agent model settings (Claude Code)
+    #[serde(default)]
+    pub claude: Option<AgentModelSettingsUpdate>,
+    /// Per-agent model settings (Codex CLI)
+    #[serde(default)]
+    pub codex: Option<AgentModelSettingsUpdate>,
+    /// Per-agent model settings (Gemini CLI)
+    #[serde(default)]
+    pub gemini: Option<AgentModelSettingsUpdate>,
 }
 
 /// GET /api/settings/spawn — get spawn settings
@@ -1279,13 +1318,16 @@ pub async fn get_spawn_settings(State(core): State<Arc<TmaiCore>>) -> Json<Spawn
         (state.spawn_in_tmux, state.spawn_tmux_window_name.clone())
     };
     let tmux_available = is_tmux_available();
-    let worker_permission_mode = core.settings().spawn.worker_permission_mode.clone();
+    let spawn = core.settings().spawn.clone();
 
     Json(SpawnSettingsResponse {
         use_tmux_window,
         tmux_available,
         tmux_window_name,
-        worker_permission_mode,
+        worker_permission_mode: spawn.worker_permission_mode,
+        claude: spawn.claude,
+        codex: spawn.codex,
+        gemini: spawn.gemini,
     })
 }
 
@@ -1333,6 +1375,14 @@ pub async fn update_spawn_settings(
         }
     }
 
+    // Persist per-agent model configuration. Each `[spawn.<type>]` subtable
+    // has two optional fields; `Some("")` clears the field, `None` leaves it
+    // untouched. Resolution falls through to the CLI default when both are
+    // unset.
+    persist_model_setting("claude", req.claude.as_ref());
+    persist_model_setting("codex", req.codex.as_ref());
+    persist_model_setting("gemini", req.gemini.as_ref());
+
     // Reload live settings from config.toml
     core.reload_settings();
 
@@ -1343,6 +1393,31 @@ pub async fn update_spawn_settings(
         req.worker_permission_mode,
     );
     Json(serde_json::json!({"ok": true}))
+}
+
+/// Persist `[spawn.<agent>]` model fields from an update payload.
+///
+/// `None` for a field means "keep current"; `Some("")` clears it (writes an
+/// empty string so reload sees `default_model = ""`, then the resolver
+/// trims-checks and falls through to the CLI default).
+fn persist_model_setting(agent: &str, update: Option<&AgentModelSettingsUpdate>) {
+    let Some(u) = update else { return };
+    if let Some(ref v) = u.default_model {
+        tmai_core::config::Settings::save_toml_nested_value(
+            "spawn",
+            agent,
+            "default_model",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
+    if let Some(ref v) = u.orchestrator_model {
+        tmai_core::config::Settings::save_toml_nested_value(
+            "spawn",
+            agent,
+            "orchestrator_model",
+            toml_edit::Value::from(v.as_str()),
+        );
+    }
 }
 
 // =========================================================
@@ -2125,6 +2200,41 @@ pub struct SpawnRequest {
     /// Force PTY spawn even when tmux mode is enabled (e.g., for worktree)
     #[serde(default)]
     pub force_pty: bool,
+    /// Per-dispatch model override (highest priority in the resolution chain).
+    /// When empty/unset, falls through to `[spawn.<type>].default_model` or the
+    /// CLI's user-global default. Only applied for recognised AI CLIs
+    /// (`claude` / `codex` / `gemini`).
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// Resolve the effective `--model` name for an AI CLI spawn and, if one
+/// resolves, prepend `--model <name>` to `args`.
+///
+/// Only the `claude` / `codex` / `gemini` commands carry a `--model` flag
+/// today, so this is a no-op for shells and unrecognised commands. Pushing
+/// to the front keeps any trailing prompt positional untouched.
+fn inject_model_flag(
+    core: &Arc<TmaiCore>,
+    command: &str,
+    role: tmai_core::config::SpawnRole,
+    override_model: Option<&str>,
+    args: &mut Vec<String>,
+) {
+    let base = command.split('/').next_back().unwrap_or(command);
+    if !matches!(base, "claude" | "codex" | "gemini") {
+        return;
+    }
+    let resolved = core
+        .settings()
+        .spawn
+        .resolve_model(base, role, override_model);
+    if let Some(name) = resolved {
+        if !name.is_empty() {
+            args.insert(0, name);
+            args.insert(0, "--model".to_string());
+        }
+    }
 }
 
 /// Default working directory for spawn
@@ -2155,7 +2265,7 @@ pub struct SpawnResponse {
 /// POST /api/spawn — spawn an agent (tmux window or PTY session)
 pub async fn spawn_agent(
     State(core): State<Arc<TmaiCore>>,
-    Json(req): Json<SpawnRequest>,
+    Json(mut req): Json<SpawnRequest>,
 ) -> Result<Json<SpawnResponse>, (StatusCode, Json<serde_json::Value>)> {
     // Validate command (whitelist to prevent arbitrary execution)
     let allowed_commands = ["claude", "codex", "gemini", "bash", "sh", "zsh"];
@@ -2177,6 +2287,16 @@ pub async fn spawn_agent(
             &format!("Directory does not exist: {}", req.cwd),
         ));
     }
+
+    // Resolve and inject --model flag. /api/spawn is treated as an
+    // implementer spawn — spawn_orchestrator uses its own dedicated endpoint.
+    inject_model_flag(
+        &core,
+        &req.command,
+        tmai_core::config::SpawnRole::Implementer,
+        req.model.as_deref(),
+        &mut req.args,
+    );
 
     // Check if we should spawn in tmux
     let use_tmux = {
@@ -2482,6 +2602,9 @@ pub struct SpawnOrchestratorRequest {
     /// Additional instructions appended to the composed prompt
     #[serde(default)]
     pub additional_instructions: Option<String>,
+    /// Per-dispatch model override. See `SpawnRequest::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// POST /api/orchestrator/spawn — spawn an orchestrator agent with composed prompt
@@ -2507,14 +2630,29 @@ pub async fn spawn_orchestrator(
         }
     }
 
-    // Spawn as a regular claude agent with the composed prompt as the initial argument
+    // Spawn as a regular claude agent with the composed prompt as the initial argument.
+    // Orchestrator role consults [spawn.claude].orchestrator_model with
+    // fallback to default_model (see SpawnSettings::resolve_model).
+    let mut args: Vec<String> = Vec::new();
+    if let Some(model) = core.settings().spawn.resolve_model(
+        "claude",
+        tmai_core::config::SpawnRole::Orchestrator,
+        req.model.as_deref(),
+    ) {
+        if !model.is_empty() {
+            args.push("--model".to_string());
+            args.push(model);
+        }
+    }
+    args.push(prompt);
     let spawn_req = SpawnRequest {
         command: "claude".to_string(),
-        args: vec![prompt],
+        args,
         cwd: cwd.clone(),
         rows: default_rows(),
         cols: default_cols(),
         force_pty: false,
+        model: None,
     };
 
     // Respect tmux mode: use tmux window when available, fall back to PTY
@@ -3107,6 +3245,9 @@ pub struct DispatchReviewRequest {
     pub rows: u16,
     #[serde(default = "default_cols")]
     pub cols: u16,
+    /// Per-dispatch model override. See `SpawnRequest::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// POST /api/review/dispatch — spawn a review agent for a pull request
@@ -3124,6 +3265,7 @@ pub async fn dispatch_review(
         req.rows,
         req.cols,
         origin,
+        req.model,
     )
     .await
     .map(Json)
@@ -3133,6 +3275,7 @@ pub async fn dispatch_review(
 /// Core dispatch_review implementation shared by the HTTP handler and the
 /// AutoActionExecutor `ReviewDispatcher` impl. Returns `(StatusCode, message)`
 /// on failure so callers can map it to their own error type.
+#[allow(clippy::too_many_arguments)]
 pub async fn perform_dispatch_review(
     core: Arc<TmaiCore>,
     pr_number: u64,
@@ -3141,6 +3284,7 @@ pub async fn perform_dispatch_review(
     rows: u16,
     cols: u16,
     origin: ActionOrigin,
+    model_override: Option<String>,
 ) -> Result<SpawnResponse, (StatusCode, String)> {
     // Validate cwd
     if !std::path::Path::new(&cwd).is_dir() {
@@ -3265,6 +3409,18 @@ pub async fn perform_dispatch_review(
     let project_cwd = cwd.clone();
     let worktree_path = wt_result.path.clone();
     let mut args: Vec<String> = Vec::new();
+    // Reviewer role resolves [spawn.claude].default_model (no dedicated
+    // reviewer_model in v1 per #435).
+    if let Some(model) = core.settings().spawn.resolve_model(
+        "claude",
+        tmai_core::config::SpawnRole::Reviewer,
+        model_override.as_deref(),
+    ) {
+        if !model.is_empty() {
+            args.push("--model".to_string());
+            args.push(model);
+        }
+    }
     let worker_mode = core.settings().spawn.worker_permission_mode.clone();
     if !worker_mode.is_empty() && worker_mode != "default" {
         args.push("--permission-mode".to_string());
@@ -3278,6 +3434,7 @@ pub async fn perform_dispatch_review(
         rows,
         cols,
         force_pty: false,
+        model: None,
     };
 
     let use_tmux = {
@@ -3377,6 +3534,9 @@ pub struct WorktreeSpawnRequest {
     pub rows: u16,
     #[serde(default = "default_cols")]
     pub cols: u16,
+    /// Per-dispatch model override. See `SpawnRequest::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// POST /api/spawn/worktree — create git worktree then spawn claude in it
@@ -3447,6 +3607,18 @@ pub async fn spawn_worktree(
     // by default; user-configurable via [spawn].worker_permission_mode). The
     // flag is omitted when set to "default" so Claude Code uses its own default.
     let mut args: Vec<String> = Vec::new();
+    // Implementer role (dispatch_issue / spawn_worktree both treat spawns as
+    // implementer workers per #435).
+    if let Some(model) = core.settings().spawn.resolve_model(
+        "claude",
+        tmai_core::config::SpawnRole::Implementer,
+        req.model.as_deref(),
+    ) {
+        if !model.is_empty() {
+            args.push("--model".to_string());
+            args.push(model);
+        }
+    }
     let worker_mode = core.settings().spawn.worker_permission_mode.clone();
     if !worker_mode.is_empty() && worker_mode != "default" {
         args.push("--permission-mode".to_string());
@@ -3465,6 +3637,7 @@ pub async fn spawn_worktree(
         rows: req.rows,
         cols: req.cols,
         force_pty: false,
+        model: None,
     };
 
     // Resolve the effective base branch for metadata
@@ -5271,6 +5444,7 @@ mod tests {
                     rows: 24,
                     cols: 80,
                     force_pty: false,
+                    model: None,
                 };
                 spawn_in_pty(&core_clone, &req).await
             }));
@@ -5319,5 +5493,119 @@ mod tests {
 
         let Json(resp) = get_auto_approve_settings(axum::extract::State(core)).await;
         assert!(!resp.rules.allow_tmai_mcp);
+    }
+
+    // ── #435 inject_model_flag ──
+
+    fn build_core_with(settings: tmai_core::config::Settings) -> Arc<TmaiCore> {
+        let state = test_app_state();
+        let runtime: Arc<dyn tmai_core::runtime::RuntimeAdapter> =
+            Arc::new(tmai_core::runtime::StandaloneAdapter::new());
+        let cmd = CommandSender::new(None, runtime, state.clone());
+        Arc::new(
+            TmaiCoreBuilder::new(settings)
+                .with_state(state)
+                .with_command_sender(Arc::new(cmd))
+                .build(),
+        )
+    }
+
+    #[test]
+    fn inject_model_flag_prepends_model_when_resolved() {
+        let mut settings = tmai_core::config::Settings::default();
+        settings.spawn.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        let core = build_core_with(settings);
+
+        let mut args = vec!["the-prompt".to_string()];
+        inject_model_flag(
+            &core,
+            "claude",
+            tmai_core::config::SpawnRole::Implementer,
+            None,
+            &mut args,
+        );
+        assert_eq!(
+            args,
+            vec![
+                "--model".to_string(),
+                "claude-sonnet-4-6".to_string(),
+                "the-prompt".to_string(),
+            ],
+            "model flag must precede the prompt positional"
+        );
+    }
+
+    #[test]
+    fn inject_model_flag_orchestrator_uses_role_specific_model() {
+        let mut settings = tmai_core::config::Settings::default();
+        settings.spawn.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        settings.spawn.claude.orchestrator_model = Some("claude-opus-4-6".to_string());
+        let core = build_core_with(settings);
+
+        let mut args: Vec<String> = Vec::new();
+        inject_model_flag(
+            &core,
+            "claude",
+            tmai_core::config::SpawnRole::Orchestrator,
+            None,
+            &mut args,
+        );
+        assert_eq!(
+            args,
+            vec!["--model".to_string(), "claude-opus-4-6".to_string()]
+        );
+    }
+
+    #[test]
+    fn inject_model_flag_per_dispatch_override_wins() {
+        let mut settings = tmai_core::config::Settings::default();
+        settings.spawn.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        let core = build_core_with(settings);
+
+        let mut args: Vec<String> = Vec::new();
+        inject_model_flag(
+            &core,
+            "claude",
+            tmai_core::config::SpawnRole::Implementer,
+            Some("claude-haiku-4-5"),
+            &mut args,
+        );
+        assert_eq!(
+            args,
+            vec!["--model".to_string(), "claude-haiku-4-5".to_string()]
+        );
+    }
+
+    #[test]
+    fn inject_model_flag_noop_for_unknown_command() {
+        // Shells and unknown commands do not accept --model; the helper must
+        // leave args untouched even when the user has set per-agent defaults.
+        let mut settings = tmai_core::config::Settings::default();
+        settings.spawn.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        let core = build_core_with(settings);
+
+        let mut args = vec!["arg".to_string()];
+        inject_model_flag(
+            &core,
+            "bash",
+            tmai_core::config::SpawnRole::Implementer,
+            None,
+            &mut args,
+        );
+        assert_eq!(args, vec!["arg".to_string()]);
+    }
+
+    #[test]
+    fn inject_model_flag_noop_when_no_resolution() {
+        let core = build_core_with(tmai_core::config::Settings::default());
+        let mut args = vec!["the-prompt".to_string()];
+        inject_model_flag(
+            &core,
+            "claude",
+            tmai_core::config::SpawnRole::Implementer,
+            None,
+            &mut args,
+        );
+        assert_eq!(args, vec!["the-prompt".to_string()]);
     }
 }

@@ -825,6 +825,94 @@ pub struct SpawnSettings {
     /// `"default"` (or any non-`claude` command) to skip injection.
     #[serde(default = "default_worker_permission_mode")]
     pub worker_permission_mode: String,
+
+    /// Per-agent-type model configuration for Claude Code workers.
+    #[serde(default)]
+    pub claude: AgentModelSettings,
+
+    /// Per-agent-type model configuration for Codex CLI workers.
+    #[serde(default)]
+    pub codex: AgentModelSettings,
+
+    /// Per-agent-type model configuration for Gemini CLI workers.
+    #[serde(default)]
+    pub gemini: AgentModelSettings,
+}
+
+/// Per-agent-type model selection settings.
+///
+/// Each field is optional. Resolution falls back through the chain:
+/// per-dispatch override → role-specific → `default_model` → no flag
+/// (CLI uses its own default).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentModelSettings {
+    /// Model used when no role-specific override applies (e.g. implementer,
+    /// reviewer, or any role without a dedicated field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+
+    /// Model used when the spawn role is `Orchestrator`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orchestrator_model: Option<String>,
+}
+
+/// Role of a spawned agent — governs which field of `AgentModelSettings` is
+/// consulted after the per-dispatch override is checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnRole {
+    /// Orchestrator role (`spawn_orchestrator`).
+    Orchestrator,
+    /// Implementer role (`dispatch_issue`, `spawn_worktree`, `spawn_agent`).
+    Implementer,
+    /// Reviewer role (`dispatch_review`).
+    Reviewer,
+}
+
+impl SpawnSettings {
+    /// Resolve the model name to inject for a spawn given the agent type,
+    /// role, and an optional per-dispatch override.
+    ///
+    /// Resolution order (highest priority wins):
+    /// 1. `override_model` (per-dispatch argument)
+    /// 2. Role-specific field (e.g. `orchestrator_model` when role is
+    ///    `Orchestrator`)
+    /// 3. `default_model` on the agent-type table
+    /// 4. `None` — caller omits the flag so the CLI uses its user-global default
+    ///
+    /// `agent_type` is matched against the CLI command name
+    /// (`"claude"`, `"codex"`, `"gemini"`); unknown values return `None`.
+    pub fn resolve_model(
+        &self,
+        agent_type: &str,
+        role: SpawnRole,
+        override_model: Option<&str>,
+    ) -> Option<String> {
+        // Empty / whitespace-only strings are treated as unset at every layer
+        // so a user can blank a config field via the WebUI to fall through to
+        // the CLI's user-global default.
+        let normalize = |opt: Option<&String>| -> Option<String> {
+            opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        };
+        if let Some(m) = override_model {
+            let trimmed = m.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        let agent_cfg = match agent_type {
+            "claude" => &self.claude,
+            "codex" => &self.codex,
+            "gemini" => &self.gemini,
+            _ => return None,
+        };
+        match role {
+            SpawnRole::Orchestrator => normalize(agent_cfg.orchestrator_model.as_ref())
+                .or_else(|| normalize(agent_cfg.default_model.as_ref())),
+            SpawnRole::Implementer | SpawnRole::Reviewer => {
+                normalize(agent_cfg.default_model.as_ref())
+            }
+        }
+    }
 }
 
 /// Default tmux window name for spawned agents
@@ -848,6 +936,9 @@ impl Default for SpawnSettings {
             use_tmux_window: false,
             tmux_window_name: default_spawn_window_name(),
             worker_permission_mode: default_worker_permission_mode(),
+            claude: AgentModelSettings::default(),
+            codex: AgentModelSettings::default(),
+            gemini: AgentModelSettings::default(),
         }
     }
 }
@@ -2345,5 +2436,155 @@ mod tests {
             // Other project entry must still be present.
             assert!(reloaded.project.iter().any(|p| p.path == "/other"));
         });
+    }
+
+    // ── Spawn model resolution (#435) ──
+
+    #[test]
+    fn resolve_model_falls_through_to_none_by_default() {
+        let s = SpawnSettings::default();
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, None),
+            None
+        );
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Orchestrator, None),
+            None
+        );
+        assert_eq!(s.resolve_model("codex", SpawnRole::Reviewer, None), None);
+    }
+
+    #[test]
+    fn resolve_model_uses_default_when_set() {
+        let mut s = SpawnSettings::default();
+        s.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Reviewer, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+        // Orchestrator falls back to default when orchestrator_model unset.
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Orchestrator, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_model_orchestrator_override_takes_precedence_over_default() {
+        let mut s = SpawnSettings::default();
+        s.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        s.claude.orchestrator_model = Some("claude-opus-4-6".to_string());
+        // Orchestrator → orchestrator_model wins over default_model.
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Orchestrator, None),
+            Some("claude-opus-4-6".to_string())
+        );
+        // Other roles still see default_model.
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Reviewer, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_model_per_dispatch_override_wins() {
+        let mut s = SpawnSettings::default();
+        s.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        s.claude.orchestrator_model = Some("claude-opus-4-6".to_string());
+        // Override beats both orchestrator_model and default_model.
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Orchestrator, Some("claude-haiku-4-5")),
+            Some("claude-haiku-4-5".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, Some("claude-haiku-4-5")),
+            Some("claude-haiku-4-5".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_model_blank_override_treated_as_unset() {
+        let mut s = SpawnSettings::default();
+        s.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        // Empty / whitespace overrides must not mask the config default.
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, Some("")),
+            Some("claude-sonnet-4-6".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, Some("   ")),
+            Some("claude-sonnet-4-6".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_model_per_agent_type_independent() {
+        let mut s = SpawnSettings::default();
+        s.claude.default_model = Some("claude-sonnet-4-6".to_string());
+        s.codex.default_model = Some("o3".to_string());
+        s.gemini.default_model = Some("gemini-2.5-flash".to_string());
+        assert_eq!(
+            s.resolve_model("claude", SpawnRole::Implementer, None),
+            Some("claude-sonnet-4-6".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("codex", SpawnRole::Implementer, None),
+            Some("o3".to_string())
+        );
+        assert_eq!(
+            s.resolve_model("gemini", SpawnRole::Implementer, None),
+            Some("gemini-2.5-flash".to_string())
+        );
+        // Unknown agent types never resolve a model (no-flag fallthrough).
+        assert_eq!(
+            s.resolve_model("opencode", SpawnRole::Implementer, None),
+            None
+        );
+        assert_eq!(s.resolve_model("bash", SpawnRole::Implementer, None), None);
+    }
+
+    #[test]
+    fn spawn_settings_round_trip_through_toml() {
+        let toml_src = r#"
+use_tmux_window = false
+tmux_window_name = "tmai-agents"
+worker_permission_mode = "acceptEdits"
+
+[claude]
+default_model = "claude-sonnet-4-6"
+orchestrator_model = "claude-opus-4-6"
+
+[codex]
+default_model = "o3"
+
+[gemini]
+"#;
+        let parsed: SpawnSettings = toml::from_str(toml_src).expect("parse");
+        assert_eq!(
+            parsed.claude.default_model.as_deref(),
+            Some("claude-sonnet-4-6")
+        );
+        assert_eq!(
+            parsed.claude.orchestrator_model.as_deref(),
+            Some("claude-opus-4-6")
+        );
+        assert_eq!(parsed.codex.default_model.as_deref(), Some("o3"));
+        assert_eq!(parsed.codex.orchestrator_model, None);
+        assert_eq!(parsed.gemini.default_model, None);
+
+        // Serialize back and re-parse — values must survive.
+        let encoded = toml::to_string(&parsed).expect("encode");
+        let reparsed: SpawnSettings = toml::from_str(&encoded).expect("reparse");
+        assert_eq!(parsed.claude, reparsed.claude);
+        assert_eq!(parsed.codex, reparsed.codex);
+        assert_eq!(parsed.gemini, reparsed.gemini);
     }
 }
