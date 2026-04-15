@@ -3,6 +3,7 @@ import { DirBrowser } from "@/components/project/DirBrowser";
 import {
   type AutoApproveSettings,
   api,
+  type EventHandling,
   type OrchestratorSettings,
   type SpawnSettings,
   type UsageSettings,
@@ -10,6 +11,7 @@ import {
   type WorkflowSettings,
   type WorktreeSettings,
 } from "@/lib/api";
+import { buildNotifyEventHelp } from "./notify-event-help";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -1301,12 +1303,16 @@ interface NotifyEventDef {
   templateKey: keyof import("@/lib/api").NotifyTemplates;
   label: string;
   description: string;
+  /** Built-in default mode for this event (mirrors `OrchestratorNotifySettings::default` in core). */
+  defaultMode: EventHandling;
   /** Available {{variable}} placeholders for the Notify-mode template */
   variables: string[];
   /** If set, an Auto Action handler exists for this event. */
   autoActionTemplateKey?: keyof import("@/lib/api").AutoActionTemplates;
   /** Available {{variable}} placeholders for the Auto Action template. */
   autoActionVariables?: string[];
+  /** One-line description of what Auto Action does for this event (undefined ⇒ unsupported). */
+  autoActionBehavior?: string;
 }
 
 const NOTIFY_EVENTS: NotifyEventDef[] = [
@@ -1315,6 +1321,7 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "agent_stopped",
     label: "Agent stopped",
     description: "Sub-agent stopped normally (task completed)",
+    defaultMode: "notify",
     variables: ["name", "branch", "summary"],
   },
   {
@@ -1322,6 +1329,7 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "agent_error",
     label: "Agent error",
     description: "Sub-agent entered error state",
+    defaultMode: "notify",
     variables: ["name", "branch"],
   },
   {
@@ -1329,23 +1337,28 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "ci_passed",
     label: "CI passed",
     description: "PR checks passed — usually no action needed",
+    defaultMode: "off",
     variables: ["pr_number", "title", "summary"],
     autoActionTemplateKey: undefined,
+    autoActionBehavior: "Dispatch a reviewer when the PR has no review yet.",
   },
   {
     key: "on_ci_failed",
     templateKey: "ci_failed",
     label: "CI failed",
     description: "PR checks failed — action required",
+    defaultMode: "notify",
     variables: ["pr_number", "title", "failed_details"],
     autoActionTemplateKey: "ci_failed_implementer",
     autoActionVariables: ["pr_number", "title", "branch", "failed_details"],
+    autoActionBehavior: "Instruct the implementer to fix the failure.",
   },
   {
     key: "on_pr_created",
     templateKey: "pr_created",
     label: "PR created",
     description: "New pull request opened",
+    defaultMode: "notify",
     variables: ["pr_number", "title", "branch"],
   },
   {
@@ -1353,15 +1366,18 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "pr_comment",
     label: "Review feedback",
     description: "PR received review comments (changes requested)",
+    defaultMode: "notify",
     variables: ["pr_number", "title", "comments_summary"],
     autoActionTemplateKey: "review_feedback_implementer",
     autoActionVariables: ["pr_number", "title", "branch", "comments_summary"],
+    autoActionBehavior: "Instruct the implementer to address the feedback.",
   },
   {
     key: "on_rebase_conflict",
     templateKey: "rebase_conflict",
     label: "Rebase conflict",
     description: "Merge/rebase conflict detected",
+    defaultMode: "notify",
     variables: ["branch", "error"],
   },
   {
@@ -1369,6 +1385,7 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "pr_closed",
     label: "PR closed",
     description: "Pull request closed or merged",
+    defaultMode: "notify",
     variables: ["pr_number", "title", "branch"],
   },
   {
@@ -1376,6 +1393,7 @@ const NOTIFY_EVENTS: NotifyEventDef[] = [
     templateKey: "guardrail_exceeded",
     label: "Guardrail exceeded",
     description: "CI retries, review loops, or failure limit exceeded",
+    defaultMode: "notify",
     variables: ["guardrail", "branch", "count", "limit"],
   },
 ];
@@ -1471,10 +1489,33 @@ function NotifySettingsSection({
       <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-1">
         Notifications
       </p>
-      <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
-        Off = silent (recorded in task-meta only). Notify = forward to orchestrator via send_prompt.
-        Auto Action = tmai directly instructs the target worker / dispatches a reviewer.
+      <p className="text-[10px] text-zinc-500 -mt-1 mb-1">
+        Decide how tmai handles background events while the orchestrator is working.
       </p>
+      <dl className="text-[10px] text-zinc-500 mb-2 space-y-1">
+        <div className="flex gap-2">
+          <dt className="w-[68px] shrink-0 text-zinc-400">Off</dt>
+          <dd className="flex-1 text-zinc-500">
+            Silent; only the task log records it. Good for events you don&apos;t want to see at all.
+          </dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="w-[68px] shrink-0 text-zinc-400">Notify</dt>
+          <dd className="flex-1 text-zinc-500">
+            The orchestrator gets a send_prompt. Good when you want to stay in the loop but decide
+            yourself. Trade-off: every event interrupts the orchestrator.
+          </dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="w-[68px] shrink-0 text-zinc-400">Auto Action</dt>
+          <dd className="flex-1 text-zinc-500">
+            tmai handles it directly without asking — e.g. CI failed → instruct the implementer;
+            Review feedback → instruct the implementer; CI passed (no review) → dispatch a reviewer.
+            Trade-off: orchestrator only surfaces on guardrail trips (bounded retries, PR-age limit,
+            etc.).
+          </dd>
+        </div>
+      </dl>
 
       <div className="space-y-0.5">
         {NOTIFY_EVENTS.map((evt) => {
@@ -1494,7 +1535,22 @@ function NotifySettingsSection({
               {/* Row: radio group + template toggle */}
               <div className="flex items-center justify-between gap-2 py-1">
                 <div className="flex-1 min-w-0">
-                  <span className="text-xs text-zinc-300">{evt.label}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-zinc-300">{evt.label}</span>
+                    <span
+                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/10 text-[9px] text-zinc-500 cursor-help select-none"
+                      title={buildNotifyEventHelp({
+                        label: evt.label,
+                        defaultMode: evt.defaultMode,
+                        autoActionBehavior: evt.autoActionBehavior,
+                        hasTemplate: !!evt.autoActionTemplateKey,
+                      })}
+                      role="img"
+                      aria-label={`Help: ${evt.label} — default mode and Auto Action support`}
+                    >
+                      ?
+                    </span>
+                  </div>
                   <p className="text-[10px] text-zinc-600 truncate">{evt.description}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1740,14 +1796,23 @@ function HandlingRadioGroup({
     label: string;
     title: string;
   }[] = [
-    { v: "off", label: "Off", title: "Silent — no orchestrator notification, no auto action" },
-    { v: "notify", label: "Notify", title: "Forward to the orchestrator via send_prompt" },
+    {
+      v: "off",
+      label: "Off",
+      title: "Silent — only the task log records it; orchestrator is not notified.",
+    },
+    {
+      v: "notify",
+      label: "Notify",
+      title: "Forward to the orchestrator via send_prompt so you can decide what to do.",
+    },
   ];
   if (supportsAutoAction) {
     options.push({
       v: "auto_action",
       label: "Auto",
-      title: "tmai instructs the target worker directly (bypasses orchestrator)",
+      title:
+        "tmai handles it directly (instructs the target worker or dispatches a reviewer). Orchestrator only surfaces on guardrail trips.",
     });
   }
   return (
