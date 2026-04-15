@@ -587,6 +587,16 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
     // Start PR/CI monitor if orchestrator.pr_monitor_enabled
     {
         let orch_settings = settings.resolve_orchestrator(None);
+        if !orch_settings.pr_monitor_enabled {
+            // Make the disabled state loud (#383). Silent default-off was
+            // the root cause of a multi-hour dogfooding session where the
+            // orchestrator never received PR/CI events.
+            tracing::info!("tmai: PR Monitor disabled (orchestrator.pr_monitor_enabled = false)");
+            tracing::info!(
+                "tmai: PR/CI events will not fire — enable via WebUI Settings → Orchestrator, \
+                 or set pr_monitor_enabled = true in ~/.config/tmai/config.toml"
+            );
+        }
         if orch_settings.pr_monitor_enabled {
             let project_paths = settings.project_paths();
             if project_paths.is_empty() {

@@ -980,8 +980,12 @@ pub struct OrchestratorSettings {
     #[serde(default)]
     pub auto_action_templates: crate::auto_action::AutoActionTemplates,
 
-    /// Enable automatic PR/CI status monitoring with notifications
-    #[serde(default)]
+    /// Enable automatic PR/CI status monitoring with notifications.
+    /// Defaults to `true` so a freshly-installed tmai with the orchestrator
+    /// turned on still receives PR/CI events without an extra opt-in step.
+    /// Existing configs with `pr_monitor_enabled = false` continue to honour
+    /// the explicit value (#383).
+    #[serde(default = "default_true")]
     pub pr_monitor_enabled: bool,
 
     /// Polling interval for PR/CI status checks (seconds)
@@ -1386,7 +1390,7 @@ impl Default for OrchestratorSettings {
             notify: OrchestratorNotifySettings::default(),
             guardrails: GuardrailsSettings::default(),
             auto_action_templates: crate::auto_action::AutoActionTemplates::default(),
-            pr_monitor_enabled: false,
+            pr_monitor_enabled: true,
             pr_monitor_interval_secs: default_pr_monitor_interval(),
             pr_monitor_exclude_authors: default_pr_monitor_exclude_authors(),
             pr_monitor_scope: PrMonitorScope::default(),
@@ -1870,6 +1874,54 @@ mod tests {
         let settings = WorktreeSettings::default();
         assert!(settings.setup_commands.is_empty());
         assert_eq!(settings.setup_timeout_secs, 300);
+    }
+
+    // ── pr_monitor_enabled default-true semantics (#383) ──────────
+    //
+    // The default flipped from `false` to `true` so a freshly-installed
+    // tmai with the orchestrator turned on receives PR/CI events without
+    // an extra opt-in step. Existing configs that explicitly set
+    // `pr_monitor_enabled = false` must still deserialize as false —
+    // the change is opt-out, never an override.
+
+    #[test]
+    fn pr_monitor_enabled_defaults_to_true_when_struct_constructed() {
+        let orch = OrchestratorSettings::default();
+        assert!(orch.pr_monitor_enabled);
+    }
+
+    #[test]
+    fn pr_monitor_enabled_missing_key_loads_as_true() {
+        // No `pr_monitor_enabled` key → serde must use the field default
+        // ("default_true"), not the bool `Default` impl (which is false).
+        let toml_str = r#"
+            enabled = true
+            role = "test"
+        "#;
+        let orch: OrchestratorSettings = toml::from_str(toml_str).unwrap();
+        assert!(orch.pr_monitor_enabled);
+    }
+
+    #[test]
+    fn pr_monitor_enabled_explicit_false_is_honoured() {
+        let toml_str = r#"
+            enabled = true
+            role = "test"
+            pr_monitor_enabled = false
+        "#;
+        let orch: OrchestratorSettings = toml::from_str(toml_str).unwrap();
+        assert!(!orch.pr_monitor_enabled);
+    }
+
+    #[test]
+    fn pr_monitor_enabled_explicit_true_is_honoured() {
+        let toml_str = r#"
+            enabled = true
+            role = "test"
+            pr_monitor_enabled = true
+        "#;
+        let orch: OrchestratorSettings = toml::from_str(toml_str).unwrap();
+        assert!(orch.pr_monitor_enabled);
     }
 
     // ── EventHandling / OrchestratorNotifySettings migration tests ──
