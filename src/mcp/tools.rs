@@ -143,6 +143,11 @@ pub struct SpawnAgentParams {
     /// Initial prompt to send after the agent starts (optional)
     #[serde(default)]
     pub prompt: Option<String>,
+    /// Per-dispatch model override (e.g. `claude-sonnet-4-6`). When omitted,
+    /// resolution falls through to `[spawn.<type>].default_model` and then to
+    /// the CLI's user-global default.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -163,6 +168,9 @@ pub struct SpawnWorktreeParams {
     /// Initial prompt to send after the agent starts (optional)
     #[serde(default)]
     pub prompt: Option<String>,
+    /// Per-dispatch model override. See `SpawnAgentParams::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -190,6 +198,9 @@ pub struct DispatchIssueParams {
     /// Extra instructions appended after the auto-generated issue prompt
     #[serde(default)]
     pub additional_instructions: Option<String>,
+    /// Per-dispatch model override. See `SpawnAgentParams::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -202,6 +213,9 @@ pub struct DispatchReviewParams {
     /// Extra review instructions (e.g., "focus on security", "check error handling")
     #[serde(default)]
     pub additional_instructions: Option<String>,
+    /// Per-dispatch model override. See `SpawnAgentParams::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -218,6 +232,9 @@ pub struct SpawnOrchestratorParams {
     /// Additional instructions appended to the composed orchestrator prompt
     #[serde(default)]
     pub additional_instructions: Option<String>,
+    /// Per-dispatch model override. See `SpawnAgentParams::model`.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -517,6 +534,9 @@ impl TmaiMcpServer {
         if let Some(prompt) = &p.prompt {
             body["initial_prompt"] = serde_json::json!(prompt);
         }
+        if let Some(model) = &p.model {
+            body["model"] = serde_json::json!(model);
+        }
         self.client.post_json_or_error("/spawn", &body)
     }
 
@@ -545,6 +565,9 @@ impl TmaiMcpServer {
         if let Some(prompt) = &p.prompt {
             body["initial_prompt"] = serde_json::json!(prompt);
         }
+        if let Some(model) = &p.model {
+            body["model"] = serde_json::json!(model);
+        }
         self.client.post_json_or_error("/spawn/worktree", &body)
     }
 
@@ -558,6 +581,9 @@ impl TmaiMcpServer {
         }
         if let Some(ref extra) = p.additional_instructions {
             body["additional_instructions"] = serde_json::json!(extra);
+        }
+        if let Some(ref model) = p.model {
+            body["model"] = serde_json::json!(model);
         }
         self.client.post_json_or_error("/orchestrator/spawn", &body)
     }
@@ -594,6 +620,9 @@ impl TmaiMcpServer {
         if let Some(extra) = &p.additional_instructions {
             body["additional_instructions"] = serde_json::json!(extra);
         }
+        if let Some(model) = &p.model {
+            body["model"] = serde_json::json!(model);
+        }
         self.client.post_json_or_error("/spawn/worktree", &body)
     }
 
@@ -614,6 +643,9 @@ impl TmaiMcpServer {
         });
         if let Some(extra) = &p.additional_instructions {
             body["additional_instructions"] = serde_json::json!(extra);
+        }
+        if let Some(model) = &p.model {
+            body["model"] = serde_json::json!(model);
         }
         self.client.post_json_or_error("/review/dispatch", &body)
     }
