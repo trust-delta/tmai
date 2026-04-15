@@ -37,6 +37,16 @@ futures-util = "0.3"
 notify = "8"
 bytes = "1"
 vt100 = "0.16"
+ts-rs = { version = "10", optional = true, features = ["chrono-impl"] }
+utoipa = { version = "5", optional = true, features = ["chrono"] }
+
+[features]
+# Generate TypeScript bindings from Rust types via ts-rs.
+# Enabled in CI and during the `scripts/generate-types.sh` pipeline.
+# Opt-in so normal builds do not compile ts-rs.
+ts-export = ["dep:ts-rs"]
+# Expose utoipa `ToSchema` impls for OpenAPI generation.
+openapi = ["dep:utoipa"]
 
 [dev-dependencies]
 pretty_assertions = "1"

@@ -87,6 +87,36 @@ jobs:
             exit 1
           fi
 
+  types-drift:
+    name: generated types drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: crates/tmai-app/web/pnpm-lock.yaml
+      - name: Install web deps (for biome format step)
+        working-directory: crates/tmai-app/web
+        run: pnpm install --frozen-lockfile
+      - name: Regenerate type-sharing outputs
+        run: bash scripts/generate-types.sh
+      - name: Fail on uncommitted drift
+        run: |
+          if ! git diff --exit-code -- crates/tmai-app/web/src/types/generated/; then
+            echo "::error::crates/tmai-app/web/src/types/generated/ is out of sync with Rust sources."
+            echo "Run scripts/generate-types.sh locally and commit the result."
+            echo "--- git diff --stat ---"
+            git diff --stat -- crates/tmai-app/web/src/types/generated/
+            exit 1
+          fi
+
   guard:
     name: gitignore guard
     runs-on: ubuntu-latest

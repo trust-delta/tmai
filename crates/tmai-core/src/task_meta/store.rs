@@ -6,7 +6,16 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
 /// A single milestone event in the task lifecycle.
+///
+/// Part of the type-sharing PoC (#446): generated TypeScript lives in
+/// `crates/tmai-app/web/src/types/generated/Milestone.ts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Milestone {
     /// When the milestone occurred
     pub at: DateTime<Utc>,
