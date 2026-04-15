@@ -562,13 +562,27 @@ impl OrchestratorNotifier {
                 action,
                 summary,
             } => {
-                // Don't notify the orchestrator about its own actions
-                if let crate::api::ActionOrigin::Agent {
-                    is_orchestrator: true,
-                    ..
-                } = origin
-                {
-                    return None;
+                // Origin-aware filtering (#440):
+                // 1. suppress_self drops actions initiated by an orchestrator
+                //    (the caller already knows; echoes are pure noise).
+                // 2. per-origin toggles let the operator mute Human / Agent /
+                //    System actions independently.
+                use crate::api::ActionOrigin;
+                match origin {
+                    ActionOrigin::Agent {
+                        is_orchestrator: true,
+                        ..
+                    } if settings.suppress_self => return None,
+                    ActionOrigin::Agent { .. } if !settings.notify_on_agent_action => {
+                        return None;
+                    }
+                    ActionOrigin::Human { .. } if !settings.notify_on_human_action => {
+                        return None;
+                    }
+                    ActionOrigin::System { .. } if !settings.notify_on_system_action => {
+                        return None;
+                    }
+                    _ => {}
                 }
                 let msg = format!("[tmai] {origin} performed {action}: {summary}");
                 // Each action invocation must stay as a distinct buffer entry,
@@ -1213,6 +1227,126 @@ mod tests {
         let (msg, _) = result.unwrap();
         assert!(msg.contains("Agent (mcp)"));
         assert!(msg.contains("merge_pr"));
+    }
+
+    // ── Origin-aware filtering tests (#440) ──────────────────────
+
+    #[test]
+    fn test_action_performed_self_delivered_when_suppress_self_off() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings {
+            suppress_self: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::agent("orch:0.0", true),
+            action: "dispatch_issue".to_string(),
+            summary: "Spawned worktree".to_string(),
+        };
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_some(),
+            "with suppress_self=false, orchestrator self-actions should notify"
+        );
+    }
+
+    #[test]
+    fn test_action_performed_human_origin_filtered() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings {
+            notify_on_human_action: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::webui(),
+            action: "kill_agent".to_string(),
+            summary: "Killed agent".to_string(),
+        };
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none(), "Human origin should be filtered out");
+    }
+
+    #[test]
+    fn test_action_performed_agent_origin_filtered() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings {
+            notify_on_agent_action: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::agent("mcp", false),
+            action: "merge_pr".to_string(),
+            summary: "Merged PR".to_string(),
+        };
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_none(),
+            "non-orchestrator agent origin should be filtered out"
+        );
+    }
+
+    #[test]
+    fn test_action_performed_system_origin_filtered() {
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings {
+            notify_on_system_action: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::system("auto_cleanup"),
+            action: "delete_worktree".to_string(),
+            summary: "Cleaned up worktree".to_string(),
+        };
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(result.is_none(), "System origin should be filtered out");
+    }
+
+    #[test]
+    fn test_action_performed_human_origin_passes_when_agent_filtered() {
+        // Filters are independent — muting Agent must not affect Human.
+        let state = AppState::shared();
+        let settings = OrchestratorNotifySettings {
+            notify_on_agent_action: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let event = CoreEvent::ActionPerformed {
+            origin: crate::api::ActionOrigin::webui(),
+            action: "kill_agent".to_string(),
+            summary: "Killed agent".to_string(),
+        };
+        let result = OrchestratorNotifier::build_notification(&event, &settings, &state);
+        assert!(
+            result.is_some(),
+            "Human origin should still notify when only Agent is filtered"
+        );
+    }
+
+    #[test]
+    fn test_notify_settings_origin_fields_round_trip() {
+        let original = OrchestratorNotifySettings {
+            suppress_self: false,
+            notify_on_human_action: false,
+            notify_on_agent_action: true,
+            notify_on_system_action: false,
+            ..OrchestratorNotifySettings::default()
+        };
+        let toml_str = toml::to_string(&original).expect("serialize");
+        let parsed: OrchestratorNotifySettings = toml::from_str(&toml_str).expect("deserialize");
+        assert!(!parsed.suppress_self);
+        assert!(!parsed.notify_on_human_action);
+        assert!(parsed.notify_on_agent_action);
+        assert!(!parsed.notify_on_system_action);
+    }
+
+    #[test]
+    fn test_notify_settings_origin_fields_default_on() {
+        // Legacy configs without the new fields default to current behaviour:
+        // all origins deliver, self-echo suppressed.
+        let parsed: OrchestratorNotifySettings = toml::from_str("").expect("deserialize");
+        assert!(parsed.suppress_self);
+        assert!(parsed.notify_on_human_action);
+        assert!(parsed.notify_on_agent_action);
+        assert!(parsed.notify_on_system_action);
     }
 
     #[test]

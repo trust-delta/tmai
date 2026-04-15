@@ -637,6 +637,14 @@ export interface NotifySettings {
   templates: NotifyTemplates;
   /** Built-in default templates (for UI placeholder display) */
   default_templates: NotifyTemplates;
+  /** Skip ActionPerformed echoes for actions initiated by an orchestrator (#440). */
+  suppress_self: boolean;
+  /** Deliver ActionPerformed notifications whose origin is a human (#440). */
+  notify_on_human_action: boolean;
+  /** Deliver ActionPerformed notifications whose origin is a non-orchestrator agent (#440). */
+  notify_on_agent_action: boolean;
+  /** Deliver ActionPerformed notifications whose origin is a system process (#440). */
+  notify_on_system_action: boolean;
 }
 
 export interface GuardrailsSettings {

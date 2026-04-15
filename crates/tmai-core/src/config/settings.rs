@@ -1190,6 +1190,28 @@ pub struct OrchestratorNotifySettings {
     /// from auto-injection (#399).
     #[serde(default = "default_typing_grace_secs")]
     pub typing_grace_secs: u64,
+
+    // ── Origin-aware filtering (#440) ───────────────────────
+    /// Skip `ActionPerformed` notifications when the action was initiated
+    /// by an orchestrator agent. Prevents self-echo for actions the caller
+    /// already knows it performed.
+    #[serde(default = "default_true")]
+    pub suppress_self: bool,
+
+    /// Deliver `ActionPerformed` notifications whose origin is a human
+    /// (WebUI / TUI / CLI). Default: on.
+    #[serde(default = "default_true")]
+    pub notify_on_human_action: bool,
+
+    /// Deliver `ActionPerformed` notifications whose origin is a
+    /// non-orchestrator agent (MCP, sub-agent, auto_action). Default: on.
+    #[serde(default = "default_true")]
+    pub notify_on_agent_action: bool,
+
+    /// Deliver `ActionPerformed` notifications whose origin is a system
+    /// process (auto_cleanup, pr_monitor, etc.). Default: on.
+    #[serde(default = "default_true")]
+    pub notify_on_system_action: bool,
 }
 
 fn default_buffer_ttl_secs() -> u64 {
@@ -1221,6 +1243,10 @@ impl Default for OrchestratorNotifySettings {
             buffer_ttl_secs: 600,
             buffer_max_messages: 20,
             typing_grace_secs: 5,
+            suppress_self: true,
+            notify_on_human_action: true,
+            notify_on_agent_action: true,
+            notify_on_system_action: true,
         }
     }
 }
