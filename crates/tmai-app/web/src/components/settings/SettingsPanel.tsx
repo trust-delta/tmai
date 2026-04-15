@@ -1895,6 +1895,16 @@ function PrMonitorSection({
           </button>
         </div>
 
+        {!orchestrator.pr_monitor_enabled && (
+          <div
+            role="alert"
+            className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-200"
+          >
+            ⚠ PR Monitor is disabled. CI-pass / PR-comment / agent-stopped events that rely on PR
+            state polling will not reach the orchestrator.
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0">
             <span className="text-xs text-zinc-300">Poll interval (seconds)</span>

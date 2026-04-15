@@ -1115,7 +1115,7 @@ mod tests {
     #[test]
     fn test_settings_defaults() {
         let settings = OrchestratorSettings::default();
-        assert!(!settings.pr_monitor_enabled);
+        assert!(settings.pr_monitor_enabled);
         assert_eq!(settings.pr_monitor_interval_secs, 60);
         assert_eq!(
             settings.pr_monitor_exclude_authors,
