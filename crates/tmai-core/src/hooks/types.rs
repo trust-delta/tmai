@@ -95,6 +95,11 @@ pub enum NotificationType {
 /// Contains name, path, branch, and the original repo directory.
 /// Added in Claude Code v2.1.69.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
 pub struct WorktreeInfo {
     /// Worktree name (e.g., "feat-auth")
     #[serde(default)]

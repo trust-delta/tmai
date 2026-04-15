@@ -17,6 +17,15 @@ use super::core::TmaiCore;
 /// The type of guardrail that was exceeded
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../tmai-app/web/src/types/generated/",
+        rename_all = "snake_case"
+    )
+)]
 pub enum GuardrailKind {
     /// CI fix attempts exceeded max_ci_retries
     CiRetries,
@@ -40,8 +49,18 @@ impl fmt::Display for GuardrailKind {
 ///
 /// Consumers call [`TmaiCore::subscribe()`] to receive these events
 /// via a `broadcast::Receiver`.
+///
+/// This enum is the single source of truth for SSE event shapes —
+/// the TypeScript discriminated union in
+/// `crates/tmai-app/web/src/types/generated/CoreEvent.ts` is generated
+/// from this definition by ts-rs (#446). Do not edit that file by hand.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
 pub enum CoreEvent {
     /// The full agent list was refreshed (after a poll cycle)
     AgentsUpdated,

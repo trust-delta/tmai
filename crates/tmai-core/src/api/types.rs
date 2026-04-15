@@ -20,6 +20,11 @@ use crate::teams::AgentDefinition;
 /// about what triggered a side-effect API call.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
 pub enum ActionOrigin {
     /// A human interacting through a UI surface
     Human {
@@ -565,7 +570,18 @@ impl WorktreeSnapshot {
 }
 
 /// A single task entry merging git worktree info with .task-meta/ metadata.
+///
+/// This type is part of the type-sharing PoC (#446): the TypeScript
+/// definition under `crates/tmai-app/web/src/types/generated/TaskMetaEntry.ts`
+/// is generated from this struct by ts-rs. Do not edit the generated file
+/// directly — update the Rust source and run `scripts/generate-types.sh`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TaskMetaEntry {
     /// Branch name (the join key)
     pub branch: String,

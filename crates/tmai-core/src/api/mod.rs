@@ -25,6 +25,8 @@ mod auto_approve;
 mod builder;
 mod core;
 pub mod events;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 mod queries;
 pub mod types;
 mod worktree_guard;
