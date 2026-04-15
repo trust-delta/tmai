@@ -10,5 +10,6 @@ pub use ops::{
     check_worktree_clean, create_worktree, delete_worktree, move_to_worktree, run_setup_commands,
 };
 pub use types::{
-    WorktreeCreateRequest, WorktreeDeleteRequest, WorktreeMoveRequest, WorktreeOpsError,
+    BaseStalenessReport, WorktreeCreateRequest, WorktreeCreateResult, WorktreeDeleteRequest,
+    WorktreeMoveRequest, WorktreeOpsError,
 };

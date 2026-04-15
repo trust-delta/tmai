@@ -1723,6 +1723,7 @@ impl App {
                                 branch_name,
                                 dir_name: None,
                                 base_branch: None,
+                                auto_fetch_base: false,
                             };
                             tokio::spawn(async move {
                                 match core.create_worktree(&req).await {
