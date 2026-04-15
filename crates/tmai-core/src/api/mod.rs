@@ -28,6 +28,7 @@ pub mod events;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 mod queries;
+mod state_snapshot;
 pub mod types;
 mod worktree_guard;
 

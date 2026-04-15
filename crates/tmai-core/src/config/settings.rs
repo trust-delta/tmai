@@ -909,6 +909,13 @@ pub struct OrchestratorSettings {
     /// events from repos the user isn't actively working on.
     #[serde(default)]
     pub pr_monitor_scope: PrMonitorScope,
+
+    /// Append a concise project state summary (open PRs, active agents,
+    /// recent merges, open issues) to the composed orchestrator prompt on
+    /// spawn (#381). Keeps a freshly-spawned orchestrator from burning
+    /// initial turns on `list_agents` / `list_prs` state reconstruction.
+    #[serde(default = "default_true")]
+    pub inject_state_snapshot: bool,
 }
 
 /// Scope filter for PR Monitor spawning.
@@ -1266,6 +1273,7 @@ impl Default for OrchestratorSettings {
             pr_monitor_interval_secs: default_pr_monitor_interval(),
             pr_monitor_exclude_authors: default_pr_monitor_exclude_authors(),
             pr_monitor_scope: PrMonitorScope::default(),
+            inject_state_snapshot: true,
         }
     }
 }
@@ -1896,6 +1904,9 @@ mod tests {
         assert!(settings.rules.merge.is_empty());
         assert!(settings.rules.review.is_empty());
         assert!(settings.rules.custom.is_empty());
+        // #381: on by default so a freshly-spawned orchestrator gets
+        // situational awareness without any opt-in.
+        assert!(settings.inject_state_snapshot);
     }
 
     #[test]
@@ -2233,6 +2244,7 @@ mod tests {
         orch.pr_monitor_interval_secs = 91;
         orch.pr_monitor_exclude_authors = vec!["someone[bot]".into(), "otherbot".into()];
         orch.pr_monitor_scope = PrMonitorScope::All;
+        orch.inject_state_snapshot = false;
         orch
     }
 
