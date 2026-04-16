@@ -44,6 +44,10 @@ async fn main() {
             // Auto-fetch usage stats if enabled in settings
             core.start_initial_usage_fetch();
 
+            // Refresh usage when new agents appear + periodic ticker.
+            // Without this the usage widget only updates after a manual refresh (#370).
+            tmai_core::usage::UsageAutoFetchService::spawn(core.clone(), core.subscribe());
+
             // Start event bridge
             let _event_bridge = events::start_event_bridge(core.clone(), app.app_handle().clone());
 

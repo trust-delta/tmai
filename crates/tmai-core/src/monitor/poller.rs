@@ -1540,6 +1540,11 @@ impl Poller {
                     source,
                     initial_status: current_status_name.clone(),
                 });
+                if let Some(ref tx) = self.event_tx {
+                    let _ = tx.send(CoreEvent::AgentAppeared {
+                        target: agent.target.clone(),
+                    });
+                }
                 self.previous_statuses.insert(
                     agent.target.clone(),
                     CommittedAgentState {
