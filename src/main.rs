@@ -188,6 +188,10 @@ async fn run_tmux_mode(settings: Settings, _cli: Config) -> Result<()> {
     // Auto-fetch usage stats if enabled in settings
     core.start_initial_usage_fetch();
 
+    // Refresh usage when new agents appear + periodic ticker.
+    // Without this the usage widget only updates after a manual refresh (#370).
+    tmai_core::usage::UsageAutoFetchService::spawn(core.clone(), core.subscribe());
+
     // Share core with App for event broadcasting
     app.set_core(core.clone());
 
@@ -411,6 +415,10 @@ async fn run_webui_mode(settings: Settings, debug: bool) -> Result<()> {
 
     // Auto-fetch usage stats if enabled in settings
     core.start_initial_usage_fetch();
+
+    // Refresh usage when new agents appear + periodic ticker.
+    // Without this the usage widget only updates after a manual refresh (#370).
+    tmai_core::usage::UsageAutoFetchService::spawn(core.clone(), core.subscribe());
 
     // Start web server (required for WebUI mode)
     if !settings.web.enabled {

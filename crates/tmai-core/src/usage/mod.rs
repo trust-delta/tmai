@@ -5,10 +5,12 @@
 
 pub mod fetcher;
 pub mod parser;
+pub mod service;
 pub mod types;
 
 pub use fetcher::{
     fetch_usage, fetch_usage_auto, fetch_usage_pty, usage_channel, UsageSnapshotReceiver,
     UsageSnapshotSender,
 };
+pub use service::UsageAutoFetchService;
 pub use types::{UsageMeter, UsageSnapshot};
