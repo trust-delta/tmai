@@ -102,20 +102,33 @@ export function BranchGraph({
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef<number | null>(null);
 
-  // Fetch branch list and graph data in parallel
-  const fetchData = useCallback(async () => {
-    try {
-      const [branchResult, graphResult, prResult, issueResult] = await Promise.all([
-        api.listBranches(projectPath),
-        api.gitGraph(projectPath, graphLimit),
-        api.listPrs(projectPath).catch(() => ({})),
-        api.listIssues(projectPath).catch(() => []),
-      ]);
-      setBranches(branchResult);
-      setGraphData(graphResult);
-      setPrMap(prResult);
-      setIssues(issueResult);
-    } catch (_e) {}
+  // Kick off all panel data fetches in parallel. Each promise writes its
+  // own slice of state independently so one slow endpoint (e.g. `gh` CLI
+  // calls under `listPrs` / `listIssues` can stall on rate limits or auth
+  // prompts) cannot wedge the others. The returned promise resolves as
+  // soon as the branch list is in — that alone decides whether "Loading
+  // branches..." can be dismissed. A prior all-or-nothing `Promise.all`
+  // caused #470: a single hanging optional fetch kept `loading=true`
+  // forever because the top-level `.finally` never ran.
+  const fetchData = useCallback(() => {
+    api
+      .gitGraph(projectPath, graphLimit)
+      .then((graphResult) => setGraphData(graphResult))
+      .catch(() => {});
+    api
+      .listPrs(projectPath)
+      .then((prResult) => setPrMap(prResult as Record<string, PrInfo>))
+      .catch(() => {});
+    api
+      .listIssues(projectPath)
+      .then((issueResult) => setIssues(issueResult as IssueInfo[]))
+      .catch(() => {});
+    return api
+      .listBranches(projectPath)
+      .then((branchResult) => {
+        setBranches(branchResult);
+      })
+      .catch(() => {});
   }, [projectPath, graphLimit]);
 
   // Refresh branches (also refetches graph)

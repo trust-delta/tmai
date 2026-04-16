@@ -1202,6 +1202,11 @@ export function subscribeSSE(handlers: {
     "pr_ci_failed",
     "pr_review_feedback",
     "pr_closed",
+    // Git monitor transition event — BranchGraph refetches branches + graph
+    // in response (#423). Without this registration, EventSource silently
+    // drops every `git_state_changed` payload and the panel never learns
+    // about backend git transitions.
+    "git_state_changed",
   ];
   for (const name of namedEvents) {
     es.addEventListener(name, (e) => {
