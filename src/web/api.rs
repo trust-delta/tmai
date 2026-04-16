@@ -95,7 +95,9 @@ fn is_path_within_allowed_scope(path: &std::path::Path, core: Option<&TmaiCore>)
 fn api_error_to_http(err: ApiError) -> (StatusCode, Json<serde_json::Value>) {
     let status = match &err {
         ApiError::AgentNotFound { .. } | ApiError::TeamNotFound { .. } => StatusCode::NOT_FOUND,
-        ApiError::NoCommandSender | ApiError::CommandError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ApiError::NoCommandSender | ApiError::CommandError(_) | ApiError::SpawnFailed { .. } => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
         ApiError::VirtualAgent { .. } | ApiError::InvalidInput { .. } | ApiError::NoSelection => {
             StatusCode::BAD_REQUEST
         }
