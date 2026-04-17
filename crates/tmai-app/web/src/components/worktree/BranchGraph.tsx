@@ -179,17 +179,22 @@ export function BranchGraph({
     });
   }, [worktrees, normPath]);
 
-  // Stable digest of the agent fields this graph actually reads. Without
-  // this, the Claude Code spinner glyphs in `title` (⠂/⠐/✳/… cycling a few
-  // times per second) invalidate every upstream `agents` snapshot, which
-  // cascades into nodes → layout → a full LaneGraph SVG repaint and locks
-  // up the tab while Branch graph is open (self-DoS when the project panel
-  // contains the orchestrator itself).
+  // Stable digest of the **topology-affecting** agent fields this graph
+  // reads (`git_branch`, `target`). Anything that changes at sub-threshold
+  // cadence — e.g. status flips (Idle↔Processing↔AwaitingApproval) and
+  // the `title` spinner — is intentionally excluded: including them made
+  // active-agent projects (the ones with a live orchestrator) re-derive
+  // `nodes` → `layout` → `LaneGraph` 1-2×/s and wedge the tab, even after
+  // the backend `compute_agents_fingerprint` title fix in #484. Status
+  // text displayed in node rows may lag until the next real topology
+  // change (agent spawn/stop, branch/target migration), which is the
+  // correct trade-off: "slightly stale status badge" beats
+  // "unresponsive tab".
   const branchAgentKey = useMemo(
     () =>
       agents
         .filter((a) => a.git_branch)
-        .map((a) => `${a.git_branch}\x01${a.target}\x01${statusName(a.status)}`)
+        .map((a) => `${a.git_branch}\x01${a.target}`)
         .sort()
         .join("\x02"),
     [agents],
