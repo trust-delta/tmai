@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PrInfo } from "@/lib/api";
 import { CopyableSha } from "../CopyableSha";
 import { laneBgColor, laneColor, laneDimColor } from "./colors";
@@ -23,7 +23,15 @@ interface CommitDetail {
   body: string;
 }
 
-export function LaneGraph({
+// Wrapped in React.memo so that upstream re-renders driven by the ~1–2 Hz
+// `agents` SSE stream (Claude Code title-glyph animation) don't repeat the
+// whole SVG VDOM generation — with 200 commits × 6 lanes × N PRs this loop
+// is the single biggest cost on the panel (measured as a self-DoS that
+// wedges Chrome tabs while Branch graph is open). All props above this
+// line are memoized upstream (`layout`, `prMap`, `onSelectBranch`,
+// `onToggleCollapse`, primitives) so shallow equality holds on quiet SSE
+// ticks.
+export const LaneGraph = memo(function LaneGraph({
   layout,
   selectedBranch,
   repoPath,
@@ -713,4 +721,4 @@ export function LaneGraph({
       )}
     </div>
   );
-}
+});
