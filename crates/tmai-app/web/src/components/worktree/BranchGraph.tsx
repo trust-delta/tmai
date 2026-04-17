@@ -174,6 +174,31 @@ export function BranchGraph({
     });
   }, [worktrees, normPath]);
 
+  // Stable digest of the agent fields this graph actually reads. Without
+  // this, the Claude Code spinner glyphs in `title` (⠂/⠐/✳/… cycling a few
+  // times per second) invalidate every upstream `agents` snapshot, which
+  // cascades into nodes → layout → a full LaneGraph SVG repaint and locks
+  // up the tab while Branch graph is open (self-DoS when the project panel
+  // contains the orchestrator itself).
+  const branchAgentKey = useMemo(
+    () =>
+      agents
+        .filter((a) => a.git_branch)
+        .map((a) => `${a.git_branch}\x01${a.target}\x01${statusName(a.status)}`)
+        .sort()
+        .join("\x02"),
+    [agents],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: branchAgentKey is a stable digest of the `agents` fields this map reads; depending on `agents` directly would re-derive on every spinner glyph tick and defeats the purpose of the key.
+  const branchAgentMap = useMemo(() => {
+    const map = new Map<string, AgentSnapshot>();
+    for (const agent of agents) {
+      if (agent.git_branch) map.set(agent.git_branch, agent);
+    }
+    return map;
+  }, [branchAgentKey]);
+
   // Build node list
   const nodes = useMemo(() => {
     const defaultBranch = branches?.default_branch ?? "main";
@@ -184,14 +209,6 @@ export function BranchGraph({
     const ctMap = branches?.last_commit_times ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
-
-    // Build a map from branch name to agent target for non-worktree branches
-    const branchAgentMap = new Map<string, AgentSnapshot>();
-    for (const agent of agents) {
-      if (agent.git_branch) {
-        branchAgentMap.set(agent.git_branch, agent);
-      }
-    }
 
     result.push({
       name: defaultBranch,
@@ -293,7 +310,7 @@ export function BranchGraph({
     }
 
     return result;
-  }, [projectWorktrees, branches, agents]);
+  }, [projectWorktrees, branches, branchAgentMap]);
 
   const branchCount = nodes.filter((n) => !n.isMain).length;
 
