@@ -62,7 +62,7 @@ fn list_recent_jsonl_files(project_dir: &PathBuf, max_count: usize) -> Vec<(Path
         .collect();
 
     // Sort by mtime descending (newest first)
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|f| std::cmp::Reverse(f.1));
     files.truncate(max_count);
     files
 }

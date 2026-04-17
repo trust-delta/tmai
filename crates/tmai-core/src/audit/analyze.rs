@@ -111,7 +111,7 @@ pub fn compute_stats(events: &[AuditEvent]) -> AuditStats {
 
     // Sort rules by count descending
     let mut rule_hits: Vec<(String, usize)> = rule_map.into_iter().collect();
-    rule_hits.sort_by(|a, b| b.1.cmp(&a.1));
+    rule_hits.sort_by_key(|x| std::cmp::Reverse(x.1));
     stats.rule_hits = rule_hits;
 
     stats
@@ -158,7 +158,7 @@ pub fn compute_misdetections(events: &[AuditEvent], limit: usize) -> Misdetectio
 
     // Sort rules by frequency descending
     let mut by_rule: Vec<(String, usize)> = rule_map.into_iter().collect();
-    by_rule.sort_by(|a, b| b.1.cmp(&a.1));
+    by_rule.sort_by_key(|x| std::cmp::Reverse(x.1));
     summary.by_rule = by_rule;
 
     // Most recent first, limited
@@ -205,11 +205,11 @@ pub fn compute_disagreements(events: &[AuditEvent], limit: usize) -> Disagreemen
 
     // Sort by frequency descending
     let mut by_capture_rule: Vec<(String, usize)> = rule_map.into_iter().collect();
-    by_capture_rule.sort_by(|a, b| b.1.cmp(&a.1));
+    by_capture_rule.sort_by_key(|x| std::cmp::Reverse(x.1));
     summary.by_capture_rule = by_capture_rule;
 
     let mut by_pane: Vec<(String, usize)> = pane_map.into_iter().collect();
-    by_pane.sort_by(|a, b| b.1.cmp(&a.1));
+    by_pane.sort_by_key(|x| std::cmp::Reverse(x.1));
     summary.by_pane = by_pane;
 
     // Most recent first, limited
@@ -295,7 +295,7 @@ pub fn compute_validation_stats(events: &[AuditEvent]) -> ValidationSummary {
 
     // Sort rules by frequency descending
     let mut by_rule: Vec<(String, usize)> = rule_map.into_iter().collect();
-    by_rule.sort_by(|a, b| b.1.cmp(&a.1));
+    by_rule.sort_by_key(|x| std::cmp::Reverse(x.1));
     summary.capture_disagreements_by_rule = by_rule;
 
     summary
