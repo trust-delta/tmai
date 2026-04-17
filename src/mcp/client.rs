@@ -368,11 +368,12 @@ fn http_request(
     }
     stream.write_all(&req)?;
     stream.flush()?;
-    // Half-close the write side so the server sees EOF on its read end
-    // and can flush the response. `Connection: close` then triggers the
-    // server to close its side after writing.
-    let _ = stream.shutdown(std::net::Shutdown::Write);
-
+    // Do NOT half-close the write side: hyper's axum UDS adapter treats a
+    // read-side EOF on an in-flight request as a connection abort and drops
+    // the response before writing it. `Connection: close` already tells the
+    // server to close its side after responding, which terminates our
+    // `read_to_end` cleanly. See fix for MCP "Malformed HTTP response: no
+    // header terminator" regression introduced with UDS migration.
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
 
@@ -523,6 +524,89 @@ mod tests {
                     "Expected 'tmai is not running' error, got: {err}"
                 );
             },
+        );
+    }
+
+    /// Regression test for the UDS half-close bug: `http_request` previously
+    /// called `shutdown(Shutdown::Write)` after sending the request, which
+    /// hyper's axum UDS adapter interpreted as a connection abort and caused
+    /// it to drop the response before writing it (producing the symptom
+    /// "Malformed HTTP response: no header terminator").
+    ///
+    /// This test stands up a minimal UDS echo-style server that writes a
+    /// fixed HTTP/1.1 response after it reads the end of the request
+    /// headers. It uses an `AtomicBool` to detect the half-close scenario:
+    /// if the client half-closed its write side, a subsequent read on the
+    /// server would return 0 (EOF) before we've written the response.
+    #[test]
+    fn http_request_succeeds_over_uds_without_half_close() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixListener;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::thread;
+
+        let _lock = API_FILE_LOCK.lock().unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let xdg = tmp.path().to_path_buf();
+        std::fs::create_dir_all(xdg.join("tmai")).unwrap();
+        let sock_path = xdg.join("tmai/api.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client_kept_write_open = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&client_kept_write_open);
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Read up to and including "\r\n\r\n" (end of headers).
+            let mut buf = Vec::with_capacity(1024);
+            let mut chunk = [0u8; 512];
+            loop {
+                let n = stream.read(&mut chunk).unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            // Non-blocking probe: if the client half-closed its write side,
+            // a further read would return 0 here; otherwise it would block
+            // or return WouldBlock. Use a short timeout to keep the test fast.
+            stream
+                .set_read_timeout(Some(Duration::from_millis(50)))
+                .unwrap();
+            let mut probe = [0u8; 1];
+            match stream.read(&mut probe) {
+                Ok(0) => {
+                    // Client half-closed write — this is the bug scenario.
+                    flag.store(false, Ordering::SeqCst);
+                }
+                _ => {
+                    // Timeout (WouldBlock) or unexpected data — write side
+                    // is still open, which is what we want.
+                    flag.store(true, Ordering::SeqCst);
+                }
+            }
+            stream.set_read_timeout(None).unwrap();
+            let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\npong";
+            stream.write_all(resp).unwrap();
+            stream.flush().unwrap();
+        });
+
+        temp_env::with_var("XDG_RUNTIME_DIR", Some(xdg.to_str().unwrap()), || {
+            let (status, body) = http_request("GET", "/ping", None, "test-origin").unwrap();
+            assert_eq!(status, 200);
+            assert_eq!(body, b"pong");
+        });
+
+        server.join().unwrap();
+        assert!(
+            client_kept_write_open.load(Ordering::SeqCst),
+            "http_request must NOT half-close the write side (hyper/axum UDS \
+             treats it as connection abort and drops the response)"
         );
     }
 
