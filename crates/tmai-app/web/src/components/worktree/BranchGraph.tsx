@@ -50,6 +50,11 @@ function commitAgeColor(unixSecs: number): string {
 
 const BRANCH_DEPTH_WARNING = 3;
 
+// Module-level stable reference; used as the fallback for `targetPrs` so
+// the default `[]` doesn't create a fresh array per render and break
+// React.memo shallow equality on ActionPanel.
+const EMPTY_PRS: PrInfo[] = [];
+
 // Toggle button for collapsing/expanding the ActionPanel
 function ActionPanelToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle?: () => void }) {
   if (!onToggle) return null;
@@ -673,7 +678,7 @@ export function BranchGraph({
                   nodeDepth={nodeDepth}
                   branchDepthWarning={BRANCH_DEPTH_WARNING}
                   prInfo={undefined}
-                  targetPrs={[]}
+                  targetPrs={EMPTY_PRS}
                   issues={issues}
                   onRefresh={refreshBranches}
                   onSelectNode={setSelectedNode}
@@ -839,14 +844,14 @@ export function BranchGraph({
                   nodeDepth={nodeDepth}
                   branchDepthWarning={BRANCH_DEPTH_WARNING}
                   prInfo={prMap[activeNode.name]}
-                  targetPrs={targetPrMap[activeNode.name] ?? []}
+                  targetPrs={targetPrMap[activeNode.name] ?? EMPTY_PRS}
                   issues={issues}
                   onRefresh={refreshBranches}
                   onSelectNode={setSelectedNode}
                   onFocusAgent={onFocusAgent}
                   onOpenDetail={setDetailView}
                   onNavigateToIssue={navigateToIssue}
-                  onNavigateToBranch={(branch) => setSelectedNode(branch)}
+                  onNavigateToBranch={setSelectedNode}
                 />
               </div>
             )}
