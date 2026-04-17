@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
   api,
@@ -41,8 +41,13 @@ interface ActionPanelProps {
   onNavigateToBranch?: (branch: string) => void;
 }
 
-// Right-side action panel for selected branch
-export function ActionPanel({
+// Right-side action panel for selected branch. Wrapped in React.memo so
+// the 1–2 Hz `agents` SSE churn (Claude Code spinner-glyph animation)
+// doesn't repeat this ~1000-line widget's render on every parent tick.
+// Parent (BranchGraph) passes memoized props (activeNode / nodeDepth /
+// targetPrs via a stable EMPTY_PRS fallback) so shallow equality holds on
+// quiet ticks.
+export const ActionPanel = memo(function ActionPanel({
   activeNode,
   branches,
   projectPath,
@@ -1120,4 +1125,4 @@ export function ActionPanel({
       </div>
     </div>
   );
-}
+});
