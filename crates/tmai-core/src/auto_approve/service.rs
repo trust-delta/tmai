@@ -223,12 +223,12 @@ impl AutoApproveService {
                         let tracker = flight_tracker.lock();
                         match tracker.get(target) {
                             Some(FlightStatus::InFlight) => continue,
-                            Some(FlightStatus::Cooldown(since)) => {
-                                if since.elapsed() < cooldown_duration {
-                                    continue;
-                                }
+                            Some(FlightStatus::Cooldown(since))
+                                if since.elapsed() < cooldown_duration =>
+                            {
+                                continue;
                             }
-                            None => {}
+                            _ => {}
                         }
                     }
 

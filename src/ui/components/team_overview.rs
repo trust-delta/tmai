@@ -127,11 +127,7 @@ impl TeamOverview {
                     .iter()
                     .filter(|t| t.status == TaskStatus::InProgress)
                     .count();
-                let percent = if total_tasks > 0 {
-                    (done * 100) / total_tasks
-                } else {
-                    0
-                };
+                let percent = (done * 100).checked_div(total_tasks).unwrap_or(0);
 
                 let bar = Self::build_progress_bar(done, in_progress, total_tasks, 20);
                 lines.push(Line::from(vec![

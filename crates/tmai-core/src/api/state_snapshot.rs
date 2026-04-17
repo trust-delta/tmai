@@ -102,7 +102,7 @@ fn prs_from_map(map: std::collections::HashMap<String, PrInfo>) -> Vec<PrRow> {
         })
         .collect();
     // Highest PR number first — proxy for "most recent work".
-    rows.sort_by(|a, b| b.number.cmp(&a.number));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.number));
     rows
 }
 
@@ -114,7 +114,7 @@ fn issues_from_vec(issues: Vec<IssueInfo>) -> Vec<IssueRow> {
             title: i.title,
         })
         .collect();
-    rows.sort_by(|a, b| b.number.cmp(&a.number));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.number));
     rows
 }
 

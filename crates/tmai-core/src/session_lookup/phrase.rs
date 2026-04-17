@@ -48,7 +48,7 @@ pub fn extract_phrases(content: &str, max_phrases: usize) -> Vec<String> {
     }
 
     // Sort by score descending (most distinctive first)
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
 
     // Deduplicate similar phrases
     let mut result = Vec::new();
