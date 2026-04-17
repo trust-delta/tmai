@@ -389,7 +389,13 @@ impl TmaiCore {
     }
 
     /// Build a fingerprint over the current agent list, excluding volatile
-    /// fields (`last_update`) that change every poll regardless of phase.
+    /// fields that change on every poll regardless of real state transitions:
+    ///   - `last_update`: a wall-clock timestamp that tracks the poll loop, not state.
+    ///   - `title`: Claude Code prefixes the session title with an animated
+    ///     braille/symbol spinner glyph (e.g. ⠂ → ⠐ → ✳) that ticks several
+    ///     times per second. Without excluding it, every spinner frame looked
+    ///     like a real state delta and produced a 1-2 Hz `AgentsUpdated` stream
+    ///     that drove the WebUI into a self-DoS re-render loop.
     ///
     /// Matches the prior SSE-side dedup in `src/web/events.rs`; moving it
     /// here means all subscribers (TUI, Tauri, MCP, SSE) share one consistent
@@ -402,6 +408,7 @@ impl TmaiCore {
                 let mut v = serde_json::to_value(a).ok()?;
                 if let Some(obj) = v.as_object_mut() {
                     obj.remove("last_update");
+                    obj.remove("title");
                 }
                 Some(v)
             })
