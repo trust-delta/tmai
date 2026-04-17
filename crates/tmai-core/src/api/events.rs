@@ -389,26 +389,49 @@ impl TmaiCore {
     }
 
     /// Build a fingerprint over the current agent list, excluding volatile
-    /// fields that change on every poll regardless of real state transitions:
-    ///   - `last_update`: a wall-clock timestamp that tracks the poll loop, not state.
+    /// fields that change on every poll regardless of real state transitions.
+    /// Keeping any of these in the fingerprint makes `AgentsUpdated` fire at
+    /// sub-threshold cadence (sometimes several Hz) and drives WebUI
+    /// consumers — BranchGraph, PreviewPanel — into a self-DoS re-render
+    /// loop that marks the Chrome tab Unresponsive within seconds.
+    ///
+    /// Excluded fields and why:
+    ///   - `last_update`: wall-clock poll timestamp, not state.
     ///   - `title`: Claude Code prefixes the session title with an animated
-    ///     braille/symbol spinner glyph (e.g. ⠂ → ⠐ → ✳) that ticks several
-    ///     times per second. Without excluding it, every spinner frame looked
-    ///     like a real state delta and produced a 1-2 Hz `AgentsUpdated` stream
-    ///     that drove the WebUI into a self-DoS re-render loop.
+    ///     spinner glyph (⠂/⠐/✳/…) that ticks several times per second.
+    ///   - `cost_usd`, `duration_ms`, `lines_added`, `lines_removed`,
+    ///     `context_used_pct`, `context_window_size`: statusline-hook
+    ///     counters that monotonically progress every tool call. They
+    ///     reflect activity but never a state transition the UI needs to
+    ///     re-layout for.
+    ///   - `cursor_x`, `cursor_y`: terminal cursor position, changes on
+    ///     every keystroke / redraw.
     ///
     /// Matches the prior SSE-side dedup in `src/web/events.rs`; moving it
     /// here means all subscribers (TUI, Tauri, MCP, SSE) share one consistent
     /// debounced signal.
     fn compute_agents_fingerprint(&self) -> String {
+        const VOLATILE_FIELDS: &[&str] = &[
+            "last_update",
+            "title",
+            "cost_usd",
+            "duration_ms",
+            "lines_added",
+            "lines_removed",
+            "context_used_pct",
+            "context_window_size",
+            "cursor_x",
+            "cursor_y",
+        ];
         let agents = self.list_agents();
         let stripped: Vec<serde_json::Value> = agents
             .iter()
             .filter_map(|a| {
                 let mut v = serde_json::to_value(a).ok()?;
                 if let Some(obj) = v.as_object_mut() {
-                    obj.remove("last_update");
-                    obj.remove("title");
+                    for f in VOLATILE_FIELDS {
+                        obj.remove(*f);
+                    }
                 }
                 Some(v)
             })
