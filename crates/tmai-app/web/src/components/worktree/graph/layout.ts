@@ -89,11 +89,18 @@ function assignCommitsToBranches(
     }
   }
 
-  // Resolve ancestry depth so parent branches are processed first
+  // Resolve ancestry depth so parent branches are processed first.
+  // `visited` guards against `parentMap` cycles (e.g. `A → B → A` introduced
+  // by a misdetected worktree/branch relationship). Without it this loop
+  // hangs the tab the instant BranchGraph mounts on a repo that happens to
+  // have such a cycle — which is the "Chrome goes Not responding when I
+  // open Branch graph" symptom users have been reporting.
   const branchDepth = (b: string): number => {
     let d = 0;
     let cur = b;
-    while (parentMap[cur]) {
+    const visited = new Set<string>();
+    while (parentMap[cur] && !visited.has(cur)) {
+      visited.add(cur);
       cur = parentMap[cur];
       d++;
     }
