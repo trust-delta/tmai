@@ -103,6 +103,80 @@ describe("tool result collapse logic", () => {
   });
 });
 
+// Cap logic for the "show last N records by default" behavior introduced to
+// stop the browser freeze when a long-running worker accumulates hundreds of
+// transcript records. Must match DEFAULT_VISIBLE_COUNT in TranscriptView.tsx.
+describe("transcript cap logic", () => {
+  const DEFAULT_VISIBLE_COUNT = 100;
+
+  function computeVisible<T>(records: T[], showAll: boolean): T[] {
+    const capped = !showAll && records.length > DEFAULT_VISIBLE_COUNT;
+    return capped ? records.slice(-DEFAULT_VISIBLE_COUNT) : records;
+  }
+
+  it("renders all records when count is below the cap", () => {
+    const records = Array.from({ length: 100 }, (_, i) => ({ uuid: `r${i}` }));
+    const visible = computeVisible(records, false);
+    expect(visible).toHaveLength(100);
+    expect(visible[0].uuid).toBe("r0");
+  });
+
+  it("caps to the last DEFAULT_VISIBLE_COUNT when above the cap", () => {
+    const total = 437;
+    const records = Array.from({ length: total }, (_, i) => ({ uuid: `r${i}` }));
+    const visible = computeVisible(records, false);
+    expect(visible).toHaveLength(DEFAULT_VISIBLE_COUNT);
+    expect(visible[0].uuid).toBe(`r${total - DEFAULT_VISIBLE_COUNT}`);
+    expect(visible[visible.length - 1].uuid).toBe(`r${total - 1}`);
+  });
+
+  it("renders everything once showAll is true, even above cap", () => {
+    const records = Array.from({ length: 500 }, (_, i) => ({ uuid: `r${i}` }));
+    expect(computeVisible(records, true)).toHaveLength(500);
+  });
+
+  it("hiddenCount is 0 when below the cap so the toggle button stays hidden", () => {
+    const records = Array.from({ length: 30 }, (_, i) => ({ uuid: `r${i}` }));
+    const visible = computeVisible(records, false);
+    expect(records.length - visible.length).toBe(0);
+  });
+
+  it("hiddenCount matches the number trimmed from the front", () => {
+    const records = Array.from({ length: 437 }, (_, i) => ({ uuid: `r${i}` }));
+    const visible = computeVisible(records, false);
+    expect(records.length - visible.length).toBe(437 - DEFAULT_VISIBLE_COUNT);
+  });
+});
+
+// "no-change bail-out" for the transcript polling state setter. Keeps the
+// TranscriptView from rebuilding every 3s when nothing new has been appended.
+describe("transcript polling bail-out", () => {
+  function shouldBailOut<T extends { uuid?: string }>(prev: T[], fetched: T[]): boolean {
+    return (
+      prev.length === fetched.length &&
+      prev[prev.length - 1]?.uuid === fetched[fetched.length - 1]?.uuid
+    );
+  }
+
+  it("bails when lengths match and the last uuid matches", () => {
+    const prev = [{ uuid: "a" }, { uuid: "b" }, { uuid: "c" }];
+    const fetched = [{ uuid: "a" }, { uuid: "b" }, { uuid: "c" }];
+    expect(shouldBailOut(prev, fetched)).toBe(true);
+  });
+
+  it("does not bail when a new record has been appended", () => {
+    const prev = [{ uuid: "a" }, { uuid: "b" }];
+    const fetched = [{ uuid: "a" }, { uuid: "b" }, { uuid: "c" }];
+    expect(shouldBailOut(prev, fetched)).toBe(false);
+  });
+
+  it("does not bail when the tail uuid changed (replay/rewrite)", () => {
+    const prev = [{ uuid: "a" }, { uuid: "b" }];
+    const fetched = [{ uuid: "a" }, { uuid: "c" }];
+    expect(shouldBailOut(prev, fetched)).toBe(false);
+  });
+});
+
 describe("record type styling expectations", () => {
   it("UserRecord uses ❯ prefix and bold white", () => {
     // Verify the design contract: user records get the Claude Code prompt style

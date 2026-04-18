@@ -1,14 +1,27 @@
 import { AnsiUp } from "ansi_up";
 import DOMPurify from "dompurify";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { PreviewSettingsResponse, TranscriptRecord } from "@/lib/api-http";
 import {
+  capHistoryLines,
   charColumns,
   shrinkContentToWidth,
   splitPreviewContent,
   trimPreviewContent,
 } from "./preview-content";
+
+// Maximum number of scrollback lines rendered in the history region.
+// Anything older is dropped at render time to keep AnsiUp → DOMPurify →
+// innerHTML bounded regardless of how long the agent has been running.
+// Operators can still see the live region + most recent scrollback; the
+// capped-off prefix is surfaced via a tiny header so they know it exists.
+//
+// Empirically 2000 lines still caused noticeable stutter on the first
+// mount for agents with heavy Markdown/ANSI output. 1000 is low enough
+// that the AnsiUp pipeline completes in ~50ms on the reporter's machine
+// while keeping enough scrollback to debug recent tool output.
+const MAX_HISTORY_LINES = 1000;
 
 interface PreviewPanelProps {
   agentId: string;
@@ -315,12 +328,26 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, [fetchPreview, getPollInterval]);
 
-  // Fetch transcript records (slower cadence — history changes less often)
+  // Fetch transcript records (slower cadence — history changes less often).
+  // Skip the state update when the incoming records array matches what we
+  // already have — the TranscriptView is heavy (per-record react-markdown)
+  // and a needless 3s setState rebuilds the subtree even though nothing
+  // changed semantically. We detect "no change" by length plus the tail
+  // record's uuid, which is sufficient for an append-only transcript.
   const fetchTranscript = useCallback(async () => {
     try {
       const data = await api.getTranscript(agentId);
       if (data.records && data.records.length > 0) {
-        setTranscriptRecords(data.records);
+        const fetched = data.records;
+        setTranscriptRecords((prev) => {
+          if (
+            prev.length === fetched.length &&
+            prev[prev.length - 1]?.uuid === fetched[fetched.length - 1]?.uuid
+          ) {
+            return prev;
+          }
+          return fetched;
+        });
       }
     } catch {
       // Transcript not available (no hook connection, etc.)
@@ -424,12 +451,31 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // grew — not on every poll tick that re-fetches identical scrollback
   // alongside fresh live output. This is the core of the #413 fix.
   //
+  // Additional guardrail: we cap to MAX_HISTORY_LINES before running the
+  // AnsiUp pipeline. Without the cap, a long-running worker's scrollback
+  // can balloon past 10k lines and the first mount (or any subsequent
+  // `history` change) freezes the tab for seconds — the dominant cause of
+  // the "Agent panel opens and freezes" reports.
+  //
   // Trailing-blank-line stripping is intentionally skipped here: blank lines
   // at the history/live boundary may be real printed blanks, not cosmetic.
+  // Defer the history-triggered renders behind React 19's concurrent
+  // prioritization. The live region state (updated every 200ms by the poll
+  // loop) stays on the synchronous path so the terminal feels responsive;
+  // history updates (which pull in the AnsiUp → DOMPurify → innerHTML
+  // pipeline) are allowed to land on the next idle frame, letting the
+  // browser service input and paint the live region first. This is what
+  // keeps the tab from locking up while a chatty worker is scrolling
+  // content off the top of the live region multiple times per second.
+  const deferredHistory = useDeferredValue(history);
+  const historyCap = useMemo(
+    () => capHistoryLines(deferredHistory, MAX_HISTORY_LINES),
+    [deferredHistory],
+  );
   const historyHtml = useMemo(() => {
-    if (!history) return "";
-    return ansi.ansi_to_html(shrinkContentToWidth(history, cols));
-  }, [ansi, history, cols]);
+    if (!historyCap.content) return "";
+    return ansi.ansi_to_html(shrinkContentToWidth(historyCap.content, cols));
+  }, [ansi, historyCap, cols]);
 
   // Cursor row within the live region. The backend returns cursor_y as an
   // absolute row within the full capture output; since the tmux cursor is
@@ -614,6 +660,13 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
               fontFamily: MONO_FONT_STACK,
             }}
           >
+            {historyCap.dropped > 0 && (
+              <div className="text-zinc-600 text-[10px] italic pb-1 select-none">
+                {`… ${historyCap.dropped.toLocaleString()} earlier line${
+                  historyCap.dropped === 1 ? "" : "s"
+                } hidden (showing last ${MAX_HISTORY_LINES.toLocaleString()})`}
+              </div>
+            )}
             <div ref={historyRef} />
             <div ref={liveRef} />
             {cursorStyle && focused && hasDomFocus && showCursor && (

@@ -1,6 +1,6 @@
 import { AnsiUp } from "ansi_up";
 import { describe, expect, it } from "vitest";
-import { splitPreviewContent, trimPreviewContent } from "../preview-content";
+import { capHistoryLines, splitPreviewContent, trimPreviewContent } from "../preview-content";
 
 // Regression coverage for #413: the preview panel used to re-render the
 // entire capture-pane blob (history + live) on every poll tick, which made
@@ -117,6 +117,60 @@ describe("preview render cost scaling with scrollback size (#413)", () => {
     // live. Assert at least 10x — in practice it's closer to 100-1000x on
     // a 1MB blob, but CI can be noisy.
     expect(fullElapsed).toBeGreaterThan(liveElapsed * 10);
+  });
+
+  it("capHistoryLines: returns content unchanged when under cap", () => {
+    const raw = "a\nb\nc";
+    const { content, dropped } = capHistoryLines(raw, 10);
+    expect(content).toBe(raw);
+    expect(dropped).toBe(0);
+  });
+
+  it("capHistoryLines: empty input returns empty", () => {
+    const { content, dropped } = capHistoryLines("", 100);
+    expect(content).toBe("");
+    expect(dropped).toBe(0);
+  });
+
+  it("capHistoryLines: keeps the last N lines exactly when over cap", () => {
+    // 5 lines, cap to 2 → keep last 2 lines, drop 3
+    const raw = "l1\nl2\nl3\nl4\nl5";
+    const { content, dropped } = capHistoryLines(raw, 2);
+    expect(content).toBe("l4\nl5");
+    expect(dropped).toBe(3);
+  });
+
+  it("capHistoryLines: boundary — exactly N lines returns unchanged", () => {
+    const raw = "l1\nl2\nl3";
+    const { content, dropped } = capHistoryLines(raw, 3);
+    expect(content).toBe(raw);
+    expect(dropped).toBe(0);
+  });
+
+  it("capHistoryLines: trailing newline counts as a terminal on the last line", () => {
+    // "l1\nl2\n" has 2 newlines → lineCount = 3 (l1, l2, empty trailer)
+    const raw = "l1\nl2\n";
+    const { content, dropped } = capHistoryLines(raw, 2);
+    // With cap=2, drop 1 from the front (l1), keep "l2\n"
+    expect(content).toBe("l2\n");
+    expect(dropped).toBe(1);
+  });
+
+  it("capHistoryLines: non-positive cap is a passthrough (defensive)", () => {
+    const raw = "l1\nl2\nl3";
+    expect(capHistoryLines(raw, 0)).toEqual({ content: raw, dropped: 0 });
+    expect(capHistoryLines(raw, -5)).toEqual({ content: raw, dropped: 0 });
+  });
+
+  it("capHistoryLines: handles a very large scrollback bounded by cap", () => {
+    const lines = [] as string[];
+    for (let i = 0; i < 25_000; i++) lines.push(`line-${i}`);
+    const raw = lines.join("\n");
+    const { content, dropped } = capHistoryLines(raw, 2000);
+    expect(dropped).toBe(23_000);
+    // First surviving line should be line-23000, last should be line-24999.
+    expect(content.startsWith("line-23000\n")).toBe(true);
+    expect(content.endsWith("line-24999")).toBe(true);
   });
 
   it("live size does not grow with history size", () => {

@@ -207,13 +207,45 @@ const TranscriptRecordItem = memo(function TranscriptRecordItem({
   );
 });
 
+// Cap the number of records rendered by default.
+//
+// Rendering every record through react-markdown + remarkGfm scales linearly:
+// at ~500 records the initial mount on agent-switch freezes the browser for
+// seconds and the 3s transcript refetch keeps it jittery. Operators almost
+// always care about the tail of the conversation, so we render the last
+// DEFAULT_VISIBLE_COUNT records by default and let the user opt into the
+// older history via the toggle button below. Follow-up: #426 (append-event
+// stream) obsoletes this cap by making the pressure O(delta) instead of
+// O(full history).
+//
+// 150 still produced noticeable freeze on the initial mount for long-running
+// agents (reporter had ~437 records and tab hung). 100 is the smallest cap
+// that still shows roughly the last two full user-turn cycles of context
+// while keeping mount under ~200ms on the reporter's machine.
+const DEFAULT_VISIBLE_COUNT = 100;
+
 // Main transcript view — renders a list of transcript records with Claude Code styling
 export function TranscriptView({ records }: TranscriptViewProps) {
+  const [showAll, setShowAll] = useState(false);
+
   if (records.length === 0) return null;
+
+  const capped = !showAll && records.length > DEFAULT_VISIBLE_COUNT;
+  const visibleRecords = capped ? records.slice(-DEFAULT_VISIBLE_COUNT) : records;
+  const hiddenCount = records.length - visibleRecords.length;
 
   return (
     <div className="flex flex-col">
-      {records.map((record, index) => (
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="self-start mx-2 my-1 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors rounded border border-white/5 hover:border-white/10"
+        >
+          ▸ Show {hiddenCount} earlier record{hiddenCount === 1 ? "" : "s"}
+        </button>
+      )}
+      {visibleRecords.map((record, index) => (
         <TranscriptRecordItem key={record.uuid ?? index} record={record} index={index} />
       ))}
     </div>
