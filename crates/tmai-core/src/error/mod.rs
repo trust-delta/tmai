@@ -196,9 +196,14 @@ pub struct TmaiError {
     pub message: String,
     /// Advisory retry guidance; absent when the caller has no way to retry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub retry_hint: Option<RetryHint>,
     /// Code-specific structured detail. Always an object in practice; defaults
     /// to `null` when the caller did not attach any.
+    ///
+    /// Wire: omitted when null (see `skip_serializing_if`). TS: rendered as
+    /// `unknown`, which already accepts `undefined` at the call site — no
+    /// `ts(optional)` because that attribute rejects non-`Option<T>` fields.
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     #[cfg_attr(feature = "ts-export", ts(type = "unknown"))]
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
@@ -206,6 +211,7 @@ pub struct TmaiError {
     /// Request/span identifier for correlating this error across MCP, WebUI,
     /// and internal tracing spans.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub trace_id: Option<String>,
 }
 

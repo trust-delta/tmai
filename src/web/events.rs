@@ -375,8 +375,16 @@ pub async fn events(State(core): State<Arc<TmaiCore>>) -> impl IntoResponse {
                         | Ok(CoreEvent::InstructionsLoaded { .. })
                         | Ok(CoreEvent::WorktreeSetupCompleted { .. })
                         | Ok(CoreEvent::WorktreeSetupFailed { .. })
-                        | Ok(CoreEvent::PromptReady { .. }) => {
+                        | Ok(CoreEvent::PromptReady { .. })
+                        | Ok(CoreEvent::DispatchRejected { .. })
+                        | Ok(CoreEvent::VendorAvailabilityChanged { .. })
+                        | Ok(CoreEvent::CapacityChanged { .. })
+                        | Ok(CoreEvent::ContractViolation { .. })
+                        | Ok(CoreEvent::DispatchBypassUsed { .. })
+                        | Ok(CoreEvent::BundleStatusChanged { .. }) => {
                             // PromptReady is handled by the background prompt delivery task.
+                            // Contract-layer events (#463) currently have no emit sites
+                            // — they will be wired as each underlying feature lands.
                             // Other events: forward to SSE subscribers in the future if needed.
                         }
                         Err(RecvError::Lagged(skipped)) => {

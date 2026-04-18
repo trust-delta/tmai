@@ -31,6 +31,11 @@ pub fn start_event_bridge(core: Arc<TmaiCore>, app: AppHandle) -> JoinHandle<()>
                 CoreEvent::WorktreeSetupCompleted { .. } => "worktree-setup-completed",
                 CoreEvent::WorktreeSetupFailed { .. } => "worktree-setup-failed",
                 CoreEvent::UsageUpdated => "usage-updated",
+                // Variants not yet bridged to the Tauri frontend (including
+                // contract-layer events from #463 that have no emit sites in
+                // v1) are forwarded under a generic type. Adding a dedicated
+                // channel name when the UI needs one is a pure additive change.
+                _ => "core-event-other",
             };
 
             let _ = app.emit(
