@@ -127,6 +127,14 @@ pub enum ApiError {
     #[error("invalid input: {message}")]
     InvalidInput { message: String },
 
+    /// Agent spawn (new tmux window / wrap command) failed.
+    ///
+    /// Surfaces as [`crate::error::ErrorCode::TmuxError`] in the structured
+    /// taxonomy (#458). The wrapped `reason` is typically the underlying
+    /// tmux/shell stderr.
+    #[error("agent spawn failed: {reason}")]
+    SpawnFailed { reason: String },
+
     /// A worktree operation failed
     #[error("worktree error: {0}")]
     WorktreeError(#[from] crate::worktree::WorktreeOpsError),
@@ -739,6 +747,14 @@ mod tests {
 
         let err = ApiError::NoCommandSender;
         assert_eq!(err.to_string(), "command sender not available");
+
+        let err = ApiError::SpawnFailed {
+            reason: "tmux: session not found".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "agent spawn failed: tmux: session not found"
+        );
     }
 
     #[test]

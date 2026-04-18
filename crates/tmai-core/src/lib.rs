@@ -8,6 +8,7 @@ pub mod codex_ws;
 pub mod command_sender;
 pub mod config;
 pub mod detectors;
+pub mod error;
 pub mod git;
 pub mod github;
 pub mod hooks;

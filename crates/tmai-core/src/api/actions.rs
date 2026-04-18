@@ -692,7 +692,11 @@ impl TmaiCore {
 
         // Create a new window in the worktree directory
         let window_name = agent_type.short_name();
-        let target = rt.new_window(&session_name, worktree_path, Some(window_name))?;
+        let target = rt
+            .new_window(&session_name, worktree_path, Some(window_name))
+            .map_err(|e| ApiError::SpawnFailed {
+                reason: format!("tmux new-window failed: {e}"),
+            })?;
 
         // Build the launch command based on agent type
         let launch_cmd = match agent_type {
@@ -713,7 +717,10 @@ impl TmaiCore {
         };
 
         // Run via tmai wrap for PTY monitoring
-        rt.run_command_wrapped(&target, &launch_cmd)?;
+        rt.run_command_wrapped(&target, &launch_cmd)
+            .map_err(|e| ApiError::SpawnFailed {
+                reason: format!("run_command_wrapped failed: {e}"),
+            })?;
 
         // Record pending agent state to prevent premature worktree deletion
         {
