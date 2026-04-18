@@ -173,13 +173,23 @@ pub fn try_restore_agent(
         return RestoreOutcome::NoAction;
     };
 
-    // Don't Tier-2-restore if the recorded session_id matches the new agent's
-    // session_id — Tier 1 would have caught it; arriving here implies either
-    // no session_id was resolvable or it differs.
-    if let Some(ref sid) = session_id {
-        if sid == &rec_session {
-            return RestoreOutcome::NoAction;
-        }
+    // Tier 2 is only safe when the candidate's session_id is NOT yet
+    // observable (e.g. freshly-spawned agent before its first hook fires).
+    //
+    // If we *can* resolve the candidate's session_id, there are two cases:
+    //   - sid == rec_session: Tier 1 should have handled it already; this
+    //     branch is unreachable in practice but we exit defensively.
+    //   - sid != rec_session: the candidate is a different Claude Code
+    //     session — NOT a resumed instance of the recorded orchestrator.
+    //     Promoting it would mis-assign the orchestrator role to an
+    //     unrelated agent (bug #475: after `kill_agent` on the real
+    //     orchestrator, tmux renumbers a sibling pane down so another
+    //     agent — e.g. an advisor conversation — appears as the sole
+    //     candidate for the project).
+    //
+    // In both cases, refuse to promote.
+    if session_id.is_some() {
+        return RestoreOutcome::NoAction;
     }
 
     // Recorded session must not be online (stale session implies /resume).
@@ -383,32 +393,74 @@ mod tests {
     }
 
     #[test]
-    fn tier2_single_candidate_resume_restores_and_rotates() {
+    fn tier2_single_candidate_resume_restores_and_touches_record() {
+        // Real /resume timing: the agent has just appeared in state but
+        // Claude Code has not emitted a hook yet, so `session_pane_map`
+        // does not yet contain an entry for the new session_id. `sid` is
+        // unresolvable, and Tier 2 is the only signal available.
         let mut ctx = setup();
-        // Record has OLD session_id
         ctx.store
             .write()
             .upsert_and_save("/proj", "old-sess")
             .unwrap();
 
-        // Agent came back with NEW session_id (post-/resume)
-        register_agent(
-            &mut ctx,
-            "main:0.0",
-            "/proj",
-            Some(false),
-            "pane-1",
-            "new-sess",
-        );
+        // Insert the agent into state + pane map, but deliberately DO
+        // NOT register any session_id in session_pane_map.
+        let agent = make_agent("main:0.0", "/proj", Some(false));
+        ctx.state.agents.insert("main:0.0".into(), agent);
+        ctx.state
+            .target_to_pane_id
+            .insert("main:0.0".into(), "pane-1".into());
 
         let out = try_restore_agent(&mut ctx.state, "main:0.0", &ctx.store, &ctx.spm);
         assert_eq!(out, RestoreOutcome::Tier2RotateSession);
         assert!(ctx.state.agents["main:0.0"].is_orchestrator);
 
-        // Record rotated to new session_id
+        // `session_id` was unresolvable, so the record keeps its existing
+        // session_id but has its `last_seen` refreshed (upsert_in_memory path).
         let r = ctx.store.read();
         assert_eq!(r.records().len(), 1);
-        assert_eq!(r.records()[0].claude_session_id, "new-sess");
+        assert_eq!(r.records()[0].claude_session_id, "old-sess");
+    }
+
+    /// Regression for #475: after the real orchestrator's pane is killed,
+    /// tmux renumbers an unrelated sibling pane (e.g. an advisor
+    /// conversation) down so it becomes the sole non-worktree candidate
+    /// in the project. Tier 2 previously promoted this unrelated agent;
+    /// now it must refuse because the candidate's session_id is known
+    /// and differs from the recorded orchestrator's session_id.
+    #[test]
+    fn tier2_rejects_unrelated_agent_after_pane_renumber() {
+        let mut ctx = setup();
+        // A recent record for the real (now-killed) orchestrator.
+        ctx.store
+            .write()
+            .upsert_and_save("/proj", "orchestrator-sess")
+            .unwrap();
+
+        // The advisor has its own session_id already known to tmai
+        // (its hooks have been firing for a while). After the
+        // orchestrator's pane was killed, tmux renumbered the advisor's
+        // pane down to `main:0.0`, so to this helper it looks like a
+        // fresh single candidate.
+        register_agent(
+            &mut ctx,
+            "main:0.0",
+            "/proj",
+            Some(false),
+            "advisor-pane",
+            "advisor-sess",
+        );
+
+        let out = try_restore_agent(&mut ctx.state, "main:0.0", &ctx.store, &ctx.spm);
+        assert_eq!(out, RestoreOutcome::NoAction);
+        assert!(!ctx.state.agents["main:0.0"].is_orchestrator);
+
+        // The recorded orchestrator's session_id must NOT have been
+        // rotated onto the advisor's session_id.
+        let r = ctx.store.read();
+        assert_eq!(r.records().len(), 1);
+        assert_eq!(r.records()[0].claude_session_id, "orchestrator-sess");
     }
 
     #[test]
