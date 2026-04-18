@@ -756,7 +756,64 @@ async fn compute_branch_parents(
         }
     }
 
+    break_parent_cycles(&mut parents, default_branch);
+
     parents
+}
+
+/// Sanitize a `branch -> parent` map so it is guaranteed to be acyclic and
+/// rooted at `default_branch`.
+///
+/// Why: the two detection strategies in `compute_branch_parents`
+/// (reflog "Created from", `for-each-ref --merged`) are independent and can
+/// disagree on a pair of branches, producing self-loops (`A -> A`) or cycles
+/// (`A -> B -> A`). Downstream consumers (WebUI `layout.ts`, TUI) walk this
+/// map and previously hung on cycles (see #489). Fix the contract at the
+/// source instead of asking every caller to keep its own visited set.
+///
+/// Strategy: drop self-loops, then for each branch walk the parent chain with
+/// a visited set; if a cycle is detected, redirect the closing edge to
+/// `default_branch` (which has no entry, so the walk terminates). Every
+/// broken edge is logged via `tracing::warn!`.
+fn break_parent_cycles(parents: &mut HashMap<String, String>, default_branch: &str) {
+    // Step 1: collapse self-loops (parent == branch) onto default_branch.
+    let self_loops: Vec<String> = parents
+        .iter()
+        .filter(|(branch, parent)| branch == parent)
+        .map(|(branch, _)| branch.clone())
+        .collect();
+    for branch in &self_loops {
+        tracing::warn!(
+            branch = %branch,
+            "parent map had self-loop; redirecting to default branch"
+        );
+        parents.insert(branch.clone(), default_branch.to_string());
+    }
+
+    // Step 2: for each branch, walk its chain; if it revisits a node, break
+    // the edge that closes the cycle by pointing it at default_branch.
+    let keys: Vec<String> = parents.keys().cloned().collect();
+    for start in keys {
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert(start.clone());
+        let mut cursor = start;
+        loop {
+            let Some(parent) = parents.get(&cursor).cloned() else {
+                break;
+            };
+            if visited.contains(&parent) {
+                tracing::warn!(
+                    branch = %cursor,
+                    original_parent = %parent,
+                    "parent map had cycle; redirecting to default branch"
+                );
+                parents.insert(cursor.clone(), default_branch.to_string());
+                break;
+            }
+            visited.insert(parent.clone());
+            cursor = parent;
+        }
+    }
 }
 
 /// Find the closest parent branch by commit distance
@@ -2029,6 +2086,88 @@ branch refs/heads/main
         assert!(
             parents.is_empty(),
             "should return empty map for >100 branches"
+        );
+    }
+
+    /// Walk every entry in the parent map; fail if any chain revisits a node
+    /// (cycle) or contains a self-loop. This is the invariant downstream
+    /// consumers rely on (see #491).
+    fn assert_parent_map_is_acyclic(parents: &HashMap<String, String>) {
+        for start in parents.keys() {
+            let mut visited: HashSet<String> = HashSet::new();
+            visited.insert(start.clone());
+            let mut cursor = start.clone();
+            while let Some(parent) = parents.get(&cursor) {
+                assert_ne!(
+                    &cursor, parent,
+                    "self-loop at branch {} in sanitized parent map",
+                    cursor
+                );
+                assert!(
+                    !visited.contains(parent),
+                    "cycle detected in sanitized parent map starting at {}: revisited {}",
+                    start,
+                    parent
+                );
+                visited.insert(parent.clone());
+                cursor = parent.clone();
+            }
+        }
+    }
+
+    #[test]
+    fn test_break_parent_cycles_drops_self_loop() {
+        let mut parents = HashMap::new();
+        parents.insert("feat-a".to_string(), "feat-a".to_string());
+        break_parent_cycles(&mut parents, "main");
+        assert_eq!(parents.get("feat-a").map(String::as_str), Some("main"));
+        assert_parent_map_is_acyclic(&parents);
+    }
+
+    #[test]
+    fn test_break_parent_cycles_breaks_two_node_cycle() {
+        let mut parents = HashMap::new();
+        parents.insert("feat-a".to_string(), "feat-b".to_string());
+        parents.insert("feat-b".to_string(), "feat-a".to_string());
+        break_parent_cycles(&mut parents, "main");
+        assert_parent_map_is_acyclic(&parents);
+        // Exactly one edge must be redirected to default to break the cycle;
+        // the other may stay pointing at its original partner.
+        let redirected = parents.values().filter(|v| v.as_str() == "main").count();
+        assert!(
+            redirected >= 1,
+            "expected at least one edge redirected to main, got {:?}",
+            parents
+        );
+    }
+
+    #[test]
+    fn test_break_parent_cycles_breaks_three_node_cycle() {
+        let mut parents = HashMap::new();
+        parents.insert("feat-a".to_string(), "feat-b".to_string());
+        parents.insert("feat-b".to_string(), "feat-c".to_string());
+        parents.insert("feat-c".to_string(), "feat-a".to_string());
+        break_parent_cycles(&mut parents, "main");
+        assert_parent_map_is_acyclic(&parents);
+        assert!(
+            parents.values().any(|v| v == "main"),
+            "expected cycle break to redirect at least one edge to main, got {:?}",
+            parents
+        );
+    }
+
+    #[test]
+    fn test_break_parent_cycles_leaves_dag_untouched() {
+        // feat-c -> feat-b -> feat-a -> main (acyclic)
+        let mut parents = HashMap::new();
+        parents.insert("feat-a".to_string(), "main".to_string());
+        parents.insert("feat-b".to_string(), "feat-a".to_string());
+        parents.insert("feat-c".to_string(), "feat-b".to_string());
+        let snapshot = parents.clone();
+        break_parent_cycles(&mut parents, "main");
+        assert_eq!(
+            parents, snapshot,
+            "acyclic map should be unchanged by cycle-breaking pass"
         );
     }
 
