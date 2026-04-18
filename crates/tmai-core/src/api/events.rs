@@ -10,9 +10,12 @@ use std::fmt;
 
 use tokio::sync::broadcast;
 
+use crate::agents::DetectionSource;
+use crate::error::{ErrorCode, TmaiError};
 use crate::hooks::WorktreeInfo;
 
 use super::core::TmaiCore;
+use super::types::ActionOrigin;
 
 /// The type of guardrail that was exceeded
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
@@ -43,6 +46,190 @@ impl fmt::Display for GuardrailKind {
             GuardrailKind::ConsecutiveFailures => write!(f, "consecutive failures"),
         }
     }
+}
+
+/// Stable identifier for a dispatch bundle (a logical grouping of
+/// sub-dispatches — e.g. "apply the same change across 4 repos").
+///
+/// Serialized transparently as a plain string so that existing log and
+/// event consumers can treat the field as an opaque identifier without
+/// needing to know the wrapper type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../tmai-app/web/src/types/generated/",
+        type = "string"
+    )
+)]
+pub struct BundleId(pub String);
+
+impl BundleId {
+    /// Construct a new bundle id.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    /// Borrow the underlying string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for BundleId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for BundleId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for BundleId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+/// Redacted summary of a dispatch intent attached to
+/// [`CoreEvent::DispatchRejected`] and other contract-layer events.
+///
+/// The full prompt and any credentials **must never** appear here — callers
+/// that need the raw intent go through an out-of-band audit channel
+/// (issue #463, open question 2). Consumers seeing `prompt_hash` can
+/// correlate back to the original dispatch request without learning its
+/// contents.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
+pub struct DispatchIntentSummary {
+    /// Absolute path to the target project / worktree root.
+    pub project_path: String,
+    /// Agent role requested (e.g. "implementer", "reviewer").
+    pub role: String,
+    /// Bundle id when this dispatch is part of a multi-project bundle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<BundleId>,
+    /// Hex digest (implementation-chosen hash, e.g. SHA-256) of the
+    /// dispatched prompt. Lets auditors correlate this event with the
+    /// recorded intent without exposing the prompt text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_hash: Option<String>,
+    /// Associated GitHub issue number, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue_number: Option<u64>,
+    /// Associated pull request number, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
+}
+
+/// Vendor availability rollup reported by
+/// [`CoreEvent::VendorAvailabilityChanged`].
+///
+/// `Available` → normal operation.
+/// `RateLimited` → vendor returned 429 / Max-plan limit; `resume_at` is the
+/// advertised reset time when known.
+/// `Unavailable` → outage or auth failure; retry left to policy.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../tmai-app/web/src/types/generated/",
+        rename_all = "snake_case"
+    )
+)]
+pub enum VendorAvailabilityState {
+    /// Vendor is accepting dispatches.
+    Available,
+    /// Rate-limited; retry after `resume_at` if present.
+    RateLimited {
+        /// Wall-clock time when dispatches may resume (if known).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resume_at: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// Vendor is fully unavailable (outage, auth failure).
+    Unavailable {
+        /// Free-text reason for the outage (no secrets).
+        reason: String,
+    },
+}
+
+/// What caused a [`CoreEvent::CapacityChanged`] emission.
+///
+/// Subscribers use this to attribute the capacity delta without needing
+/// a separate query. `delta == 0` is valid (e.g. `LimitChanged` when a
+/// config reload moved the ceiling but no slots moved).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../tmai-app/web/src/types/generated/",
+        rename_all = "snake_case"
+    )
+)]
+pub enum CapacityCauseSummary {
+    /// An agent was spawned; consumed a slot.
+    AgentSpawned {
+        /// Target of the newly spawned agent.
+        target: String,
+    },
+    /// An agent reached a terminal state (exit/kill); freed a slot.
+    AgentTerminal {
+        /// Target of the agent that ended.
+        target: String,
+    },
+    /// The configured capacity limit changed (reload / admin action).
+    LimitChanged,
+    /// Capacity snapshot was reconciled against live state (drift fix).
+    Reconciled,
+}
+
+/// Rollup status of a dispatch bundle, emitted by
+/// [`CoreEvent::BundleStatusChanged`].
+///
+/// Derived from its sub-dispatches; transitions here are coarser-grained
+/// than the per-agent `AgentStatusChanged` stream (issue #463, open
+/// question 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../tmai-app/web/src/types/generated/",
+        rename_all = "snake_case"
+    )
+)]
+pub enum BundleStatus {
+    /// Bundle registered; no sub-dispatch has started.
+    Pending,
+    /// At least one sub-dispatch is running.
+    Running,
+    /// Some sub-dispatches succeeded, others failed; bundle is not
+    /// fully recoverable without a re-dispatch.
+    PartiallyCompleted,
+    /// All sub-dispatches completed successfully.
+    Completed,
+    /// All sub-dispatches that ran failed terminally.
+    Failed,
+    /// Bundle was cancelled before completion.
+    Cancelled,
 }
 
 /// Events emitted by the core when state changes occur.
@@ -341,6 +528,93 @@ pub enum CoreEvent {
         /// Human-readable summary of the action
         summary: String,
     },
+
+    /// A dispatch request was rejected by the contract-layer gatekeeper
+    /// before an agent was spawned. Subscribers never saw this intent as an
+    /// `AgentAppeared` / `AgentStatusChanged` — they learn about it only via
+    /// this event. Payload is redacted: see [`DispatchIntentSummary`].
+    DispatchRejected {
+        /// Redacted description of what was dispatched.
+        intent_summary: DispatchIntentSummary,
+        /// Who issued the rejected dispatch.
+        origin: ActionOrigin,
+        /// Structured reason for the rejection.
+        error: TmaiError,
+    },
+
+    /// Vendor availability transitioned (rate-limit hit or cleared, outage
+    /// started or resolved). Subscribers can refresh capacity badges or
+    /// resume queued dispatches without polling the vendor directly.
+    VendorAvailabilityChanged {
+        /// Vendor identifier (e.g. "anthropic", "openai", "google").
+        vendor: String,
+        /// Account label, if the deployment distinguishes accounts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        /// Previous availability state.
+        old: VendorAvailabilityState,
+        /// New availability state.
+        new: VendorAvailabilityState,
+        /// How the transition was detected (hook, polling, explicit signal).
+        detected_via: DetectionSource,
+    },
+
+    /// The global capacity counter moved (a slot was consumed or freed)
+    /// or the configured limit was adjusted. `delta` is the change applied
+    /// to `current`; `cause` attributes the change without requiring a
+    /// follow-up query.
+    CapacityChanged {
+        /// New value of the in-use slot counter.
+        current: usize,
+        /// Configured ceiling at the time of emission.
+        limit: usize,
+        /// Signed change applied to `current` by this event
+        /// (+1 on spawn, -1 on terminal, 0 on `LimitChanged`/`Reconciled`).
+        delta: i32,
+        /// What triggered the change.
+        cause: CapacityCauseSummary,
+    },
+
+    /// A contract-layer invariant was violated (auth failure, schema
+    /// mismatch, unauthorized operation, etc.). Distinct from
+    /// `DispatchRejected` which is gatekeeper-specific (#463, open q. 4).
+    ContractViolation {
+        /// Origin of the violating call.
+        origin: ActionOrigin,
+        /// Machine-readable classification of the violation.
+        code: ErrorCode,
+        /// Code-specific structured context (never includes secrets or
+        /// raw prompts). Defaults to `null` when the emitter has nothing
+        /// to attach.
+        #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+        #[cfg_attr(feature = "ts-export", ts(type = "unknown"))]
+        context: serde_json::Value,
+    },
+
+    /// A bypass flag was used for a dispatch (skipped one or more
+    /// contract-layer checks). Always audit-logged; subscribers can
+    /// use this to surface a banner or alert.
+    DispatchBypassUsed {
+        /// Origin of the bypassing call.
+        origin: ActionOrigin,
+        /// Names of the bypassed checks / stages (e.g.
+        /// "capacity_check", "vendor_availability").
+        bypassed: Vec<String>,
+        /// Free-text justification supplied by the caller.
+        reason: String,
+    },
+
+    /// Bundle rollup status transitioned. Emits only on bundle-level
+    /// changes — sub-dispatch transitions still surface as
+    /// `AgentStatusChanged` (#463, open q. 3).
+    BundleStatusChanged {
+        /// Identifier of the bundle whose status changed.
+        bundle_id: BundleId,
+        /// Previous rollup status.
+        old: BundleStatus,
+        /// New rollup status.
+        new: BundleStatus,
+    },
 }
 
 impl TmaiCore {
@@ -546,5 +820,268 @@ mod tests {
         // Should not panic even with no subscribers
         core.notify_agents_updated();
         core.notify_teams_updated();
+    }
+
+    // ---------------------------------------------------------------------
+    // Contract-layer event variants (#463)
+    //
+    // These tests pin the on-the-wire JSON shape so that SSE / TS consumers
+    // do not silently break when the enum is touched. They also double as
+    // executable documentation for subscriber implementers (the shape is
+    // the contract).
+    // ---------------------------------------------------------------------
+
+    fn parse(e: &CoreEvent) -> serde_json::Value {
+        serde_json::to_value(e).expect("CoreEvent must always serialize")
+    }
+
+    #[test]
+    fn dispatch_rejected_json_shape() {
+        let event = CoreEvent::DispatchRejected {
+            intent_summary: DispatchIntentSummary {
+                project_path: "/repos/foo".to_string(),
+                role: "implementer".to_string(),
+                bundle_id: Some(BundleId::new("bundle-42")),
+                prompt_hash: Some("abc123".to_string()),
+                issue_number: Some(463),
+                pr_number: None,
+            },
+            origin: ActionOrigin::webui(),
+            error: TmaiError::new(ErrorCode::CapacityExceeded, "too many agents"),
+        };
+
+        let v = parse(&event);
+        assert_eq!(v["type"], "DispatchRejected");
+        assert_eq!(v["intent_summary"]["project_path"], "/repos/foo");
+        assert_eq!(v["intent_summary"]["role"], "implementer");
+        assert_eq!(v["intent_summary"]["bundle_id"], "bundle-42");
+        assert_eq!(v["intent_summary"]["prompt_hash"], "abc123");
+        assert_eq!(v["intent_summary"]["issue_number"], 463);
+        assert!(v["intent_summary"].get("pr_number").is_none());
+        assert_eq!(v["origin"]["kind"], "Human");
+        assert_eq!(v["error"]["code"], "CapacityExceeded");
+    }
+
+    #[test]
+    fn vendor_availability_changed_json_shape() {
+        let event = CoreEvent::VendorAvailabilityChanged {
+            vendor: "anthropic".to_string(),
+            account: Some("team-main".to_string()),
+            old: VendorAvailabilityState::Available,
+            new: VendorAvailabilityState::RateLimited {
+                resume_at: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-04-18T12:34:56Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
+            },
+            detected_via: DetectionSource::HttpHook,
+        };
+
+        let v = parse(&event);
+        assert_eq!(v["type"], "VendorAvailabilityChanged");
+        assert_eq!(v["vendor"], "anthropic");
+        assert_eq!(v["account"], "team-main");
+        assert_eq!(v["old"]["state"], "available");
+        assert_eq!(v["new"]["state"], "rate_limited");
+        assert_eq!(v["new"]["resume_at"], "2026-04-18T12:34:56Z");
+        assert_eq!(v["detected_via"], "HttpHook");
+
+        // Account is omitted when absent.
+        let event = CoreEvent::VendorAvailabilityChanged {
+            vendor: "openai".to_string(),
+            account: None,
+            old: VendorAvailabilityState::Unavailable {
+                reason: "auth failed".to_string(),
+            },
+            new: VendorAvailabilityState::Available,
+            detected_via: DetectionSource::CapturePane,
+        };
+        let v = parse(&event);
+        assert!(v.get("account").is_none() || v["account"].is_null());
+        assert_eq!(v["old"]["state"], "unavailable");
+        assert_eq!(v["old"]["reason"], "auth failed");
+    }
+
+    #[test]
+    fn capacity_changed_json_shape() {
+        let event = CoreEvent::CapacityChanged {
+            current: 4,
+            limit: 8,
+            delta: 1,
+            cause: CapacityCauseSummary::AgentSpawned {
+                target: "main:0.3".to_string(),
+            },
+        };
+        let v = parse(&event);
+        assert_eq!(v["type"], "CapacityChanged");
+        assert_eq!(v["current"], 4);
+        assert_eq!(v["limit"], 8);
+        assert_eq!(v["delta"], 1);
+        assert_eq!(v["cause"]["kind"], "agent_spawned");
+        assert_eq!(v["cause"]["target"], "main:0.3");
+
+        // A unit cause carries only the discriminator.
+        let event = CoreEvent::CapacityChanged {
+            current: 8,
+            limit: 8,
+            delta: 0,
+            cause: CapacityCauseSummary::LimitChanged,
+        };
+        let v = parse(&event);
+        assert_eq!(v["cause"]["kind"], "limit_changed");
+    }
+
+    #[test]
+    fn contract_violation_json_shape_with_and_without_context() {
+        // With structured context.
+        let event = CoreEvent::ContractViolation {
+            origin: ActionOrigin::agent("main:0.0", true),
+            code: ErrorCode::SchemaMismatch,
+            context: serde_json::json!({ "field": "role", "expected": "implementer" }),
+        };
+        let v = parse(&event);
+        assert_eq!(v["type"], "ContractViolation");
+        assert_eq!(v["origin"]["kind"], "Agent");
+        assert_eq!(v["code"], "SchemaMismatch");
+        assert_eq!(v["context"]["field"], "role");
+
+        // With null context, the field is omitted entirely.
+        let event = CoreEvent::ContractViolation {
+            origin: ActionOrigin::system("gatekeeper"),
+            code: ErrorCode::PermissionDenied,
+            context: serde_json::Value::Null,
+        };
+        let v = parse(&event);
+        assert!(v.get("context").is_none());
+    }
+
+    #[test]
+    fn dispatch_bypass_used_json_shape() {
+        let event = CoreEvent::DispatchBypassUsed {
+            origin: ActionOrigin::webui(),
+            bypassed: vec![
+                "capacity_check".to_string(),
+                "vendor_availability".to_string(),
+            ],
+            reason: "manual override during incident".to_string(),
+        };
+        let v = parse(&event);
+        assert_eq!(v["type"], "DispatchBypassUsed");
+        assert_eq!(v["origin"]["kind"], "Human");
+        assert_eq!(v["bypassed"][0], "capacity_check");
+        assert_eq!(v["bypassed"][1], "vendor_availability");
+        assert_eq!(v["reason"], "manual override during incident");
+    }
+
+    #[test]
+    fn bundle_status_changed_json_shape() {
+        let event = CoreEvent::BundleStatusChanged {
+            bundle_id: BundleId::new("bundle-multirepo-7"),
+            old: BundleStatus::Running,
+            new: BundleStatus::PartiallyCompleted,
+        };
+        let v = parse(&event);
+        assert_eq!(v["type"], "BundleStatusChanged");
+        assert_eq!(v["bundle_id"], "bundle-multirepo-7");
+        assert_eq!(v["old"], "running");
+        assert_eq!(v["new"], "partially_completed");
+    }
+
+    #[test]
+    fn dispatch_intent_summary_roundtrip_with_defaults() {
+        // Forward compatibility: a payload with only the required fields
+        // must deserialize, with optional fields defaulting to None.
+        let json = serde_json::json!({
+            "project_path": "/repos/bar",
+            "role": "reviewer",
+        });
+        let summary: DispatchIntentSummary = serde_json::from_value(json).unwrap();
+        assert_eq!(summary.project_path, "/repos/bar");
+        assert_eq!(summary.role, "reviewer");
+        assert_eq!(summary.bundle_id, None);
+        assert_eq!(summary.prompt_hash, None);
+        assert_eq!(summary.issue_number, None);
+        assert_eq!(summary.pr_number, None);
+
+        // Round-trip with every field populated.
+        let full = DispatchIntentSummary {
+            project_path: "/repos/bar".to_string(),
+            role: "reviewer".to_string(),
+            bundle_id: Some(BundleId::from("b-1")),
+            prompt_hash: Some("deadbeef".to_string()),
+            issue_number: Some(1),
+            pr_number: Some(2),
+        };
+        let json = serde_json::to_value(&full).unwrap();
+        let back: DispatchIntentSummary = serde_json::from_value(json).unwrap();
+        assert_eq!(full, back);
+    }
+
+    #[test]
+    fn bundle_id_serializes_transparently() {
+        let id = BundleId::new("abc");
+        assert_eq!(serde_json::to_value(&id).unwrap(), serde_json::json!("abc"));
+        let back: BundleId = serde_json::from_str("\"abc\"").unwrap();
+        assert_eq!(back.as_str(), "abc");
+        assert_eq!(format!("{id}"), "abc");
+    }
+
+    #[test]
+    fn bundle_status_snake_case() {
+        // The wire format is snake_case across every variant; this test
+        // keeps JS consumers from silently losing events on rename.
+        let cases = [
+            (BundleStatus::Pending, "pending"),
+            (BundleStatus::Running, "running"),
+            (BundleStatus::PartiallyCompleted, "partially_completed"),
+            (BundleStatus::Completed, "completed"),
+            (BundleStatus::Failed, "failed"),
+            (BundleStatus::Cancelled, "cancelled"),
+        ];
+        for (status, expected) in cases {
+            assert_eq!(serde_json::to_value(status).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn vendor_availability_state_adjacently_tagged() {
+        // Ensures the discriminator key is `state` and values are
+        // snake_case — the contract surface external consumers depend on.
+        let s = VendorAvailabilityState::RateLimited { resume_at: None };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["state"], "rate_limited");
+        assert!(v.get("resume_at").is_none());
+
+        let s = VendorAvailabilityState::Available;
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["state"], "available");
+    }
+
+    #[tokio::test]
+    async fn contract_events_broadcast_roundtrip() {
+        // Sanity check that the new variants survive the broadcast channel.
+        let core = TmaiCoreBuilder::new(Settings::default()).build();
+        let mut rx = core.subscribe();
+
+        let tx = core.event_sender();
+        tx.send(CoreEvent::CapacityChanged {
+            current: 1,
+            limit: 4,
+            delta: 1,
+            cause: CapacityCauseSummary::AgentSpawned {
+                target: "main:0.0".to_string(),
+            },
+        })
+        .unwrap();
+
+        let received = rx.recv().await.unwrap();
+        match received {
+            CoreEvent::CapacityChanged { current, delta, .. } => {
+                assert_eq!(current, 1);
+                assert_eq!(delta, 1);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 }

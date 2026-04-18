@@ -77,6 +77,11 @@ pub struct ConnectionChannels {
 
 /// Source of agent state detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../tmai-app/web/src/types/generated/")
+)]
 pub enum DetectionSource {
     /// State detected via Claude Code HTTP hook (highest fidelity)
     HttpHook,
