@@ -16,7 +16,7 @@ export type CapacityCauseSummary =
       target: string;
     }
   | {
-      kind: "agent_terminal";
+      kind: "agent_terminated";
       /**
        * Target of the agent that ended.
        */

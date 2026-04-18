@@ -118,17 +118,21 @@ pub struct DispatchIntentSummary {
     pub role: String,
     /// Bundle id when this dispatch is part of a multi-project bundle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub bundle_id: Option<BundleId>,
     /// Hex digest (implementation-chosen hash, e.g. SHA-256) of the
     /// dispatched prompt. Lets auditors correlate this event with the
     /// recorded intent without exposing the prompt text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub prompt_hash: Option<String>,
     /// Associated GitHub issue number, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub issue_number: Option<u64>,
     /// Associated pull request number, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub pr_number: Option<u64>,
 }
 
@@ -157,6 +161,7 @@ pub enum VendorAvailabilityState {
     RateLimited {
         /// Wall-clock time when dispatches may resume (if known).
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
         resume_at: Option<chrono::DateTime<chrono::Utc>>,
     },
     /// Vendor is fully unavailable (outage, auth failure).
@@ -189,7 +194,7 @@ pub enum CapacityCauseSummary {
         target: String,
     },
     /// An agent reached a terminal state (exit/kill); freed a slot.
-    AgentTerminal {
+    AgentTerminated {
         /// Target of the agent that ended.
         target: String,
     },
@@ -550,6 +555,7 @@ pub enum CoreEvent {
         vendor: String,
         /// Account label, if the deployment distinguishes accounts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
         account: Option<String>,
         /// Previous availability state.
         old: VendorAvailabilityState,
@@ -586,6 +592,9 @@ pub enum CoreEvent {
         /// Code-specific structured context (never includes secrets or
         /// raw prompts). Defaults to `null` when the emitter has nothing
         /// to attach.
+        // Wire: omitted when null. TS: `unknown` (accepts any runtime
+        // value including `undefined`); `ts(optional)` is not usable here
+        // because it requires `Option<T>`.
         #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
         #[cfg_attr(feature = "ts-export", ts(type = "unknown"))]
         context: serde_json::Value,

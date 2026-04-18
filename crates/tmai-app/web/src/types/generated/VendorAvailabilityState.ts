@@ -16,7 +16,7 @@ export type VendorAvailabilityState =
       /**
        * Wall-clock time when dispatches may resume (if known).
        */
-      resume_at: string | null;
+      resume_at?: string;
     }
   | {
       state: "unavailable";

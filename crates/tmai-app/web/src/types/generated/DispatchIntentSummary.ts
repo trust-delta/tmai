@@ -23,19 +23,19 @@ export type DispatchIntentSummary = {
   /**
    * Bundle id when this dispatch is part of a multi-project bundle.
    */
-  bundle_id: BundleId | null;
+  bundle_id?: BundleId;
   /**
    * Hex digest (implementation-chosen hash, e.g. SHA-256) of the
    * dispatched prompt. Lets auditors correlate this event with the
    * recorded intent without exposing the prompt text.
    */
-  prompt_hash: string | null;
+  prompt_hash?: string;
   /**
    * Associated GitHub issue number, if any.
    */
-  issue_number: bigint | null;
+  issue_number?: bigint;
   /**
    * Associated pull request number, if any.
    */
-  pr_number: bigint | null;
+  pr_number?: bigint;
 };

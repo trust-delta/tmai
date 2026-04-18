@@ -433,7 +433,7 @@ export type CoreEvent =
       /**
        * Account label, if the deployment distinguishes accounts.
        */
-      account: string | null;
+      account?: string;
       /**
        * Previous availability state.
        */
