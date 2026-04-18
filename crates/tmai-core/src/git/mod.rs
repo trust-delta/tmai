@@ -797,10 +797,7 @@ fn break_parent_cycles(parents: &mut HashMap<String, String>, default_branch: &s
         let mut visited: HashSet<String> = HashSet::new();
         visited.insert(start.clone());
         let mut cursor = start;
-        loop {
-            let Some(parent) = parents.get(&cursor).cloned() else {
-                break;
-            };
+        while let Some(parent) = parents.get(&cursor).cloned() {
             if visited.contains(&parent) {
                 tracing::warn!(
                     branch = %cursor,
