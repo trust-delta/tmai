@@ -100,14 +100,7 @@ export function BranchGraph({
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
   const [issues, setIssues] = useState<IssueInfo[]>([]);
-  // Initial commit window. Kept intentionally small — LaneGraph renders
-  // ~40 DOM nodes per row on both the SVG and HTML sides, so a 200-commit
-  // initial load on a repo with 6 lanes means ~8k DOM elements produced
-  // synchronously on first paint, which is the measured cause of the
-  // "tab goes Not responding when I open Branch graph on a big repo"
-  // hang. Users can expand on demand via the "Load more commits" button,
-  // which grows `graphLimit` by 200.
-  const [graphLimit, setGraphLimit] = useState(50);
+  const [graphLimit, setGraphLimit] = useState(200);
   const [detailView, setDetailView] = useState<DetailView | null>(null);
   const [showIssues, setShowIssues] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<IssueInfo | null>(null);
@@ -186,36 +179,6 @@ export function BranchGraph({
     });
   }, [worktrees, normPath]);
 
-  // Stable digest of the **topology-affecting** agent fields this graph
-  // reads (`git_branch`, `target`). Anything that changes at sub-threshold
-  // cadence — e.g. status flips (Idle↔Processing↔AwaitingApproval) and
-  // the `title` spinner — is intentionally excluded: including them made
-  // active-agent projects (the ones with a live orchestrator) re-derive
-  // `nodes` → `layout` → `LaneGraph` 1-2×/s and wedge the tab, even after
-  // the backend `compute_agents_fingerprint` title fix in #484. Status
-  // text displayed in node rows may lag until the next real topology
-  // change (agent spawn/stop, branch/target migration), which is the
-  // correct trade-off: "slightly stale status badge" beats
-  // "unresponsive tab".
-  const branchAgentKey = useMemo(
-    () =>
-      agents
-        .filter((a) => a.git_branch)
-        .map((a) => `${a.git_branch}\x01${a.target}`)
-        .sort()
-        .join("\x02"),
-    [agents],
-  );
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: branchAgentKey is a stable digest of the `agents` fields this map reads; depending on `agents` directly would re-derive on every spinner glyph tick and defeats the purpose of the key.
-  const branchAgentMap = useMemo(() => {
-    const map = new Map<string, AgentSnapshot>();
-    for (const agent of agents) {
-      if (agent.git_branch) map.set(agent.git_branch, agent);
-    }
-    return map;
-  }, [branchAgentKey]);
-
   // Build node list
   const nodes = useMemo(() => {
     const defaultBranch = branches?.default_branch ?? "main";
@@ -226,6 +189,14 @@ export function BranchGraph({
     const ctMap = branches?.last_commit_times ?? {};
     const mainWt = projectWorktrees.find((wt) => wt.is_main);
     const result: BranchNode[] = [];
+
+    // Build a map from branch name to agent target for non-worktree branches
+    const branchAgentMap = new Map<string, AgentSnapshot>();
+    for (const agent of agents) {
+      if (agent.git_branch) {
+        branchAgentMap.set(agent.git_branch, agent);
+      }
+    }
 
     result.push({
       name: defaultBranch,
@@ -327,7 +298,7 @@ export function BranchGraph({
     }
 
     return result;
-  }, [projectWorktrees, branches, branchAgentMap]);
+  }, [projectWorktrees, branches, agents]);
 
   const branchCount = nodes.filter((n) => !n.isMain).length;
 
