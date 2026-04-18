@@ -94,6 +94,46 @@ export function trimPreviewContent(raw: string, cols: number): string {
   return shrinkContentToWidth(trimmed, cols);
 }
 
+// Cap `raw` to its last `maxLines` lines. Returns the capped content and
+// the number of lines that were dropped from the front.
+//
+// Long-running agents can accumulate tens of thousands of scrollback lines.
+// Feeding all of that through AnsiUp → DOMPurify → innerHTML on the first
+// mount (or on any re-render that changes the `history` string) freezes
+// the browser for multiple seconds. The cap bounds the per-render cost
+// while preserving the part of scrollback operators actually look at —
+// the tail, closest to the live region.
+export function capHistoryLines(
+  raw: string,
+  maxLines: number,
+): { content: string; dropped: number } {
+  if (!raw || maxLines <= 0) return { content: raw, dropped: 0 };
+  // Fast path: count newlines before doing the split to avoid an O(N)
+  // array allocation when the cap wouldn't apply anyway.
+  let newlines = 0;
+  for (let i = 0; i < raw.length; i++) {
+    if (raw.charCodeAt(i) === 10 /* \n */) newlines++;
+  }
+  const lineCount = newlines + 1; // N newlines → up to N+1 lines
+  if (lineCount <= maxLines) return { content: raw, dropped: 0 };
+
+  // Slow path: slice to the tail by finding the (lineCount - maxLines)-th
+  // newline and keeping everything after it.
+  const toDrop = lineCount - maxLines;
+  let seen = 0;
+  let cutAt = 0;
+  for (let i = 0; i < raw.length; i++) {
+    if (raw.charCodeAt(i) === 10) {
+      seen++;
+      if (seen === toDrop) {
+        cutAt = i + 1;
+        break;
+      }
+    }
+  }
+  return { content: raw.slice(cutAt), dropped: toDrop };
+}
+
 // Split content into (history, live) at the given line boundary.
 // `liveStartLine` is a 0-based line index; lines [0, liveStartLine) become
 // history and lines [liveStartLine, ...) become live. A trailing newline
