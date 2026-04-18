@@ -100,7 +100,14 @@ export function BranchGraph({
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
   const [prMap, setPrMap] = useState<Record<string, PrInfo>>({});
   const [issues, setIssues] = useState<IssueInfo[]>([]);
-  const [graphLimit, setGraphLimit] = useState(200);
+  // Initial commit window. Kept intentionally small — LaneGraph renders
+  // ~40 DOM nodes per row on both the SVG and HTML sides, so a 200-commit
+  // initial load on a repo with 6 lanes means ~8k DOM elements produced
+  // synchronously on first paint, which is the measured cause of the
+  // "tab goes Not responding when I open Branch graph on a big repo"
+  // hang. Users can expand on demand via the "Load more commits" button,
+  // which grows `graphLimit` by 200.
+  const [graphLimit, setGraphLimit] = useState(50);
   const [detailView, setDetailView] = useState<DetailView | null>(null);
   const [showIssues, setShowIssues] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<IssueInfo | null>(null);
