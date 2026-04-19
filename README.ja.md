@@ -1,123 +1,110 @@
 # tmai
 
-**Tactful Multi Agent Interface** — 複数のAIコーディングエージェントを統合WebUIで監視・操作
+**Tactful Multi Agent Interface** — 複数の AI コーディングエージェント (Claude Code、Codex CLI、OpenCode、Gemini CLI) を統合エンジンと差し替え可能な UI でオーケストレーションする。
 
-![Rust](https://img.shields.io/badge/rust-1.91%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-![tmai WebUI Dashboard](doc/images/webui-dashboard.png)
+> **English version**: [README.md](./README.md)
 
-## 機能
+<p align="center">
+  <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
+</p>
 
-### WebUIダッシュボード（デフォルト）
+> **このリポジトリは project hub です。** 実装は下記の sub-repo に分離されています。目的の repo を選んでください。
 
-- **マルチエージェント監視** — Claude Code、OpenCode、Codex CLI、Gemini CLIをリアルタイムで追跡
-- **インタラクティブターミナル** — WebGL描画対応のxterm.jsフルターミナル（WebSocket I/O）
-- **ブランチグラフ** — GitKraken風のレーンベースコミットグラフ（ブランチ階層表示）
-- **GitHub連携** — PRステータス、CIチェック、Issueとブランチの自動紐付け
-- **Worktree管理** — Git worktreeの作成・削除・diff・エージェント起動
-- **Markdownビューア** — プロジェクトドキュメントをアプリ内で閲覧・編集
-- **セキュリティパネル** — Claude Code設定・MCP設定の脆弱性スキャン
-- **使用量トラッキング** — Claude Max/Proサブスクリプションのトークン消費量を監視
-- **エージェント起動** — UIから直接新規エージェントを起動（PTYまたはtmuxウィンドウ）
-- **Auto-approve** — 4モードの自動承認: Rules / AI / Hybrid / Off
-- **MCPサーバー** — tmaiをMCPサーバーとして公開、AIエージェントが他のエージェントをオーケストレーション
-- **Agent Teams** — Claude Code Agent Teamsのチーム構造・タスク進捗を可視化
-- **エージェント間メッセージ** — エージェント間でテキストを送信
+## リポジトリ構成
 
-### 3段構え状態検出
-
-- **HTTP Hooks**（推奨）— イベント駆動、最高精度、ゼロレイテンシ
-- **IPC**（PTYラップ）— Unix domain socket経由のダイレクトI/O監視
-- **capture-pane**（フォールバック）— tmux画面テキスト解析、セットアップ不要
-
-### その他のモード
-
-- **TUIモード**（`--tmux`）— tmuxパワーユーザー向けratauiターミナルUI
-- **モバイルリモート** — QRコード経由でスマホから承認操作
-- **デモモード**（`demo`）— tmuxやエージェント不要で試せる
+| Repo | 可視性 | 役割 |
+|------|--------|------|
+| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | コアエンジン — オーケストレーション、エージェント検出、ポリシー、MCP ホスト、HTTP/SSE サーバー |
+| [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) | public | OpenAPI 3.1 + JSON Schema。core と任意の UI クライアント間のワイヤー契約 |
+| [`tmai-react`](https://github.com/trust-delta/tmai-react) | public | リファレンス React WebUI。fork 可、契約を話す任意のクライアントで置換可能 |
+| [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui) | public | リファレンス ratatui ターミナル UI。`tmai-react` の対等物 |
 
 ## インストール
 
-```bash
-cargo install tmai
-```
-
-ソースからビルドする場合:
+対応プラットフォームのバイナリリリースは本 repo の [Releases ページ](https://github.com/trust-delta/tmai/releases) に添付されます (linux x86_64 / linux aarch64 / macOS aarch64 — 配布時期は [`tmai-core#17`](https://github.com/trust-delta/tmai-core/issues/17) の後継タスクで管理)。
 
 ```bash
-git clone https://github.com/trust-delta/tmai
-cd tmai
-cargo build --release
+# クイックインストール (Releases 公開後):
+curl -L https://github.com/trust-delta/tmai/releases/latest/download/tmai-$(uname -s | tr A-Z a-z)-$(uname -m).tar.gz | tar xz -C ~/.local/bin
 ```
+
+それまではソースビルドを利用してください — [`tmai-core` の getting-started](https://github.com/trust-delta/tmai-core/blob/main/doc/getting-started.md) 参照 (リポジトリ権限が必要)。
 
 ## クイックスタート
 
 ```bash
-# hooksセットアップ（初回のみ・推奨）
+# 初回セットアップ: ~/.claude/settings.json に HTTP hook receiver を登録
 tmai init
 
-# WebUIを起動（Chrome App Modeで自動オープン）
+# 運用ダッシュボード TUI + API サーバーを起動
 tmai
 ```
 
-WebUIが `http://localhost:9876` でトークン認証付きで起動します。
+ダッシュボードはエンジンの稼働状況を表示し、`~/.config/tmai/config.toml` に登録した UI クライアントを起動します:
 
-### TUIモード（オプション）
-
-tmux環境で従来のターミナルUIを使用したい場合:
-
-```bash
-# tmuxペイン内でTUIモードを起動
-tmai --tmux
+```toml
+[[ui]]
+name = "tmai-react"
+path = "~/src/tmai-react"
+launch = "pnpm dev"
+port = 1420
+default = true
 ```
 
-> **Note**: v0.20でデフォルトモードがWebUIに変更されました。従来のTUIは `--tmux` フラグで引き続き利用可能です。
+## 機能
 
-## ドキュメント
+- **マルチエージェント監視** — Claude Code、Codex CLI、OpenCode、Gemini CLI
+- **3 段構え状態検出** — HTTP Hooks (イベント駆動) → IPC/PTY wrap → tmux `capture-pane` フォールバック
+- **Auto-approve エンジン** — rules / AI / hybrid / off
+- **Orchestrator agent** — ロールベース dispatch と workflow-rule 合成
+- **MCP サーバー** — 22+ ツールで他エージェントを stdio JSON-RPC 2.0 経由でオーケストレーション
+- **ダッシュボード TUI** — エンジン健全性、アクティビティ、検出状態、UI registry、ログを `tmai` デフォルトモードで表示
+- **差し替え可能な UI** — `tmai-react` (WebUI)、`tmai-ratatui` (TUI)、または [ワイヤー契約](https://github.com/trust-delta/tmai-api-spec) を話す任意のサードパーティクライアント
+- **Agent Teams** — Claude Code のチーム検出とタスク進捗トラッキング
+- **Git 面** — ブランチグラフ、worktree CRUD、`gh` 経由の PR/CI/issue 連携
 
-詳しいガイド、設定リファレンス、ワークフローは [doc/](./doc/ja/README.md) を参照:
+## 契約
 
-| カテゴリ | リンク |
-|----------|--------|
-| **はじめに** | [インストールと初期設定](./doc/ja/getting-started.md) |
-| **WebUI機能** | [概要](./doc/ja/features/webui-overview.md) - [ブランチグラフ](./doc/ja/features/branch-graph.md) - [GitHub連携](./doc/ja/features/github-integration.md) - [Worktree UI](./doc/ja/features/worktree-ui.md) - [ターミナル](./doc/ja/features/terminal-panel.md) - [エージェント起動](./doc/ja/features/agent-spawn.md) |
-| **その他の機能** | [Markdownビューア](./doc/ja/features/markdown-viewer.md) - [セキュリティパネル](./doc/ja/features/security-panel.md) - [使用量トラッキング](./doc/ja/features/usage-tracking.md) - [ファイルブラウザ](./doc/ja/features/file-browser.md) |
-| **コア機能** | [Hooks](./doc/ja/features/hooks.md) - [MCPサーバー](./doc/ja/features/mcp-server.md) - [Auto-Approve](./doc/ja/features/auto-approve.md) - [Agent Teams](./doc/ja/features/agent-teams.md) - [モバイルリモート](./doc/ja/features/web-remote.md) - [PTYラッピング](./doc/ja/features/pty-wrapping.md) - [Fresh Session Review](./doc/ja/features/fresh-session-review.md) - [TUIモード](./doc/ja/features/tui-mode.md) |
-| **ワークフロー** | [マルチエージェント](./doc/ja/workflows/multi-agent.md) - [Worktree並列開発](./doc/ja/workflows/worktree-parallel.md) - [リモート承認](./doc/ja/workflows/remote-approval.md) |
-| **リファレンス** | [設定](./doc/ja/reference/config.md) - [キーバインド](./doc/ja/reference/keybindings.md) - [Web API](./doc/ja/reference/web-api.md) |
+UI は [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) で規定された 3 つの標準サーフェスで統合されます:
 
-## 対応エージェント
+1. **HTTP REST** — `/api/*`
+2. **SSE イベントストリーム** — `/api/events`
+3. **MCP** (stdio JSON-RPC 2.0) — `tmai mcp`
 
-| エージェント | 検出 | Extra | PTYラップ |
-|--------------|------|-------|-----------|
-| Claude Code | ✅ | HTTP Hooks | ✅ |
-| Codex CLI | ✅ | WebSocket (app-server) | ✅ |
-| OpenCode | ✅ | — | ✅ |
-| Gemini CLI | ✅ | — | ✅ |
+spec は `tmai-core` とは独立した SemVer に従います。forward-compatible: UI は未知のイベント variant と optional フィールドを許容する必要があります。
 
 ## スクリーンショット
 
-### WebUIダッシュボード
-
-<!-- screenshot: webui-main.png -->
-
-### ブランチグラフ
-
-<!-- screenshot: branch-graph.png -->
-
-### モバイルリモート
+<p align="center">
+  <img src="assets/usage-view.png" alt="Usage tracking" width="720">
+</p>
 
 <p align="center">
-  <img src="assets/mobile-screenshot.jpg" alt="モバイルリモート - エージェント一覧" width="280">
+  <img src="assets/mobile-screenshot.jpg" alt="モバイルリモート — エージェント一覧" width="280">
   &nbsp;&nbsp;
-  <img src="assets/mobile-ask-user-question.jpg" alt="モバイルリモート - AskUserQuestion" width="280">
+  <img src="assets/mobile-ask-user-question.jpg" alt="モバイルリモート — AskUserQuestion" width="280">
 </p>
 
 ## コントリビューション
 
-[CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md) をご覧ください。
+変更内容に応じた sub-repo に issue / PR を提出してください:
+
+- **サーバーロジック、オーケストレーション、MCP、HTTP/SSE 実装** → [`tmai-core`](https://github.com/trust-delta/tmai-core/issues) (collaborator 権限必要)
+- **React WebUI** → [`tmai-react`](https://github.com/trust-delta/tmai-react/issues)
+- **Ratatui クライアント** → [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui/issues)
+- **ワイヤー契約 (REST エンドポイント、CoreEvent variants、error taxonomy)** → [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec/issues)
+
+この hub に提出された issue は triage 後に適切な sub-repo へ transfer されます。
+
+## 履歴
+
+本リポジトリは 2026-04-18 に 4 つの sub-repo に分割された時点までの tmai 全履歴を保持しています。split 直前の最終コミットは [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d)。以降は hub / release / landing-page の保守のみです。
+
+旧 `tmai` の crates.io リリース (`1.7.0` まで) は後方互換のために公開継続されますが、このパスでは更新されません — 新規バイナリは本 repo の [Releases](https://github.com/trust-delta/tmai/releases) から配布されます。
 
 ## ライセンス
 
-MIT
+MIT — [LICENSE](LICENSE) 参照。
