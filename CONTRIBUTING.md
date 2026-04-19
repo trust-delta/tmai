@@ -1,72 +1,33 @@
 # Contributing to tmai
 
-Thank you for your interest in contributing to tmai! Contributions of all kinds are welcome.
+Thanks for your interest in contributing! This repository is the **project hub** — it no longer contains source code. File issues and pull requests against the sub-repo that fits your change.
 
 > **日本語版**: [CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md)
 
-## Development Setup
+## Where to contribute
 
-```bash
-git clone https://github.com/trust-delta/tmai
-cd tmai
-cargo test                    # Run all tests
-cargo clippy -- -D warnings   # Lint (CI-equivalent, warnings are errors)
-cargo fmt --check             # Format check (CI-equivalent)
-```
+| Change area | Sub-repo |
+|-------------|----------|
+| Server logic, orchestration, MCP, HTTP/SSE implementation | [`tmai-core`](https://github.com/trust-delta/tmai-core) (private; collaborator access required) |
+| React WebUI behaviour | [`tmai-react`](https://github.com/trust-delta/tmai-react) |
+| Ratatui client behaviour | [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui) |
+| Wire contract — REST endpoints, CoreEvent variants, error taxonomy | [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) |
 
-## Project Structure
+Each sub-repo has its own `CONTRIBUTING.md` with setup, build, and PR conventions.
 
-```
-crates/
-├── tmai-core/    # Core library (agents, API, detection, config, git, hooks, etc.)
-└── tmai-app/     # Desktop app (in development)
-    └── web/      # React frontend (React 19 + TypeScript + Vite + Tailwind v4 + Biome)
-src/              # CLI binary (WebUI server + TUI)
-web/              # Web Remote frontend (React 19 + TypeScript + Tailwind)
-doc/              # Documentation (English + Japanese)
-```
+## What belongs here
 
-## Frontend Development
+This hub repo only accepts changes to:
 
-The main WebUI frontend is in `crates/tmai-app/web/`:
+- `README.md` / `README.ja.md` — landing page, sub-repo index
+- `assets/` — screenshots and demo media
+- `LICENSE`, `CHANGELOG.md` (frozen through pre-split history)
+- Release distribution workflows (once published)
 
-```bash
-cd crates/tmai-app/web
-pnpm install
-pnpm dev          # Vite dev server
-pnpm build        # Production build (tsc + vite)
-pnpm lint         # Biome lint & format check
-pnpm lint:fix     # Auto-fix lint issues
-```
+## Issues
 
-CI runs these checks on every PR:
+Issues filed here will be triaged and transferred to the appropriate sub-repo. For faster handling, file directly on the sub-repo.
 
-- `biome check src/` — lint & format
-- `tsc --noEmit` — type check
-- `pnpm build` — build verification
+## Language
 
-The Web Remote frontend (mobile approval UI) is in `web/`:
-
-```bash
-cd web
-npm install
-npm run build     # Production build
-```
-
-## Making Changes
-
-- Create a branch from `main`: `feat/xxx` for features, `fix/xxx` for bug fixes
-- Keep commits focused and atomic
-- Run the following before pushing:
-  - `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`
-  - `cd crates/tmai-app/web && pnpm lint` (if frontend files changed)
-
-## Pull Requests
-
-- PRs are squash-merged into `main`
-- All CI checks must pass (Rust: test, clippy, fmt; Frontend: biome, tsc, build)
-- Use a descriptive PR title with a conventional prefix (e.g., `feat:`, `fix:`, `chore:`)
-
-## Communication
-
-Issues and Discussions are open in both English and Japanese.
+Issues and Discussions may be filed in English or Japanese.
