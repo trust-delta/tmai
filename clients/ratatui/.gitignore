@@ -1,0 +1,6 @@
+/target
+Cargo.lock
+
+# Claude Code local state (per-collaborator notes, skill logs, etc.)
+CLAUDE.md
+.claude/
