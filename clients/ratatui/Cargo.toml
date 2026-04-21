@@ -1,0 +1,44 @@
+# Staged-as-standalone: the outer tmai-core workspace must not absorb
+# this crate (see issue #30 — this directory will be extracted into a
+# separate repo). Leaving `[workspace]` empty makes Cargo treat this
+# directory as its own root.
+[workspace]
+
+[package]
+name = "tmai-ratatui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+authors = ["TrustDelta"]
+description = "ratatui TUI client for tmai-core — speaks the tmai-api-spec HTTP + SSE contract"
+repository = "https://github.com/trust-delta/tmai-ratatui"
+license = "MIT"
+publish = false
+readme = "README.md"
+keywords = ["tui", "ratatui", "tmai", "ai", "claude"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "tmai-ratatui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest-eventsource = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+pretty_assertions = "1"

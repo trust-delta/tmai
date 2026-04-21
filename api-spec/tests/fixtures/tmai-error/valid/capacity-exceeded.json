@@ -1,0 +1,7 @@
+{
+  "code": "CapacityExceeded",
+  "message": "max dispatchable agents reached (8/8)",
+  "retry_hint": { "kind": "backoff_ms", "ms": 2000 },
+  "context": { "current": 8, "limit": 8 },
+  "trace_id": "req-2f9a"
+}

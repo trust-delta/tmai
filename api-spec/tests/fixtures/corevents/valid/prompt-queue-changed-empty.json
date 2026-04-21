@@ -1,0 +1,5 @@
+{
+  "type": "PromptQueueChanged",
+  "target": "worker:1.0",
+  "queue": []
+}

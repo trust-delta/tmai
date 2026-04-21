@@ -1,0 +1,6 @@
+{
+  "code": "AgentNotFound",
+  "message": "agent not found: main:0.0",
+  "retry_hint": { "kind": "not_retryable" },
+  "context": { "target": "main:0.0" }
+}

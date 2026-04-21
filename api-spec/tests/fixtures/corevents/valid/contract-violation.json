@@ -1,0 +1,6 @@
+{
+  "type": "ContractViolation",
+  "origin": { "kind": "Agent", "id": "main:0.0", "is_orchestrator": true },
+  "code": "SchemaMismatch",
+  "context": { "field": "role", "expected": "implementer" }
+}

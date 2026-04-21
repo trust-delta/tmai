@@ -1,0 +1,7 @@
+{
+  "type": "PrReviewFeedback",
+  "pr_number": 123,
+  "title": "feat: add contract layer",
+  "comments_summary": "please add tests",
+  "review_count": 2
+}

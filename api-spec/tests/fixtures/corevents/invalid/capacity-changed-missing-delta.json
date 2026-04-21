@@ -1,0 +1,6 @@
+{
+  "type": "CapacityChanged",
+  "current": 4,
+  "limit": 8,
+  "cause": { "kind": "agent_spawned", "target": "main:0.3" }
+}

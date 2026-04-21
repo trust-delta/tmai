@@ -1,0 +1,58 @@
+{
+  "name": "tmai-react",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "format": "biome format --write src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "changelog": "git-cliff --output CHANGELOG.md",
+    "version": "npm run changelog && git add CHANGELOG.md"
+  },
+  "dependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@tauri-apps/api": "^2.10.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "^12.10.2",
+    "ansi_up": "^6.0.6",
+    "clsx": "^2",
+    "dompurify": "^3.3.3",
+    "lucide-react": "^1.7",
+    "mermaid": "^11.14.0",
+    "react": "^19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.11",
+    "@tailwindcss/vite": "^4",
+    "@testing-library/react": "^16.3.2",
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "jsdom": "^29.0.2",
+    "tailwindcss": "^4",
+    "typescript": "~5.8",
+    "vite": "^8",
+    "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "picomatch": ">=4.0.4"
+    }
+  }
+}

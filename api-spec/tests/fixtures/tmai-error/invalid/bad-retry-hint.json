@@ -1,0 +1,5 @@
+{
+  "code": "CapacityExceeded",
+  "message": "oops",
+  "retry_hint": { "kind": "bogus_kind" }
+}
