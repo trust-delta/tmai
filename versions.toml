@@ -10,4 +10,4 @@
 core = "0.0.0"      # tmai-core private Release (core-v* tag) — Phase 1b
 react = "1.0.0"     # clients/react/package.json version
 ratatui = "0.1.0"   # clients/ratatui/Cargo.toml version
-api_spec = "1.8.0"  # api-spec/openapi.json info.version
+api_spec = "1.9.0"  # api-spec/openapi.json info.version
