@@ -1,0 +1,39 @@
+name: Types Drift Check
+
+# Ensures that generated TypeScript types under clients/react/src/types/generated/
+# and the hand-written WebUI code stay in sync. Any PR touching either the
+# generated types or the api-spec is gated on a successful type check.
+
+on:
+  pull_request:
+    paths:
+      - "api-spec/**"
+      - "clients/react/src/types/generated/**"
+      - ".github/workflows/types-drift.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: clients/react/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: clients/react
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check (fails if generated types break the build)
+        working-directory: clients/react
+        run: pnpm tsc --noEmit

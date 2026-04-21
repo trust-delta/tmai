@@ -1,0 +1,39 @@
+name: Validate API Spec
+
+on:
+  pull_request:
+    paths:
+      - "api-spec/**"
+      - ".github/workflows/validate-spec.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api-spec/**"
+      - ".github/workflows/validate-spec.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: api-spec/package-lock.json
+
+      - name: Install dependencies
+        working-directory: api-spec
+        run: npm ci
+
+      - name: Redocly lint
+        working-directory: api-spec
+        run: npx @redocly/cli lint openapi.json
+
+      - name: AJV validate fixtures
+        working-directory: api-spec
+        run: node tests/validate.mjs

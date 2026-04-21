@@ -1,0 +1,52 @@
+name: Build React WebUI
+
+on:
+  pull_request:
+    paths:
+      - "clients/react/**"
+      - "api-spec/**"
+      - ".github/workflows/build-react.yml"
+  push:
+    branches: [main]
+    paths:
+      - "clients/react/**"
+      - ".github/workflows/build-react.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: clients/react/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: clients/react
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        working-directory: clients/react
+        run: pnpm tsc --noEmit
+
+      - name: Lint
+        working-directory: clients/react
+        run: pnpm lint
+
+      - name: Test
+        working-directory: clients/react
+        run: pnpm test
+
+      - name: Build
+        working-directory: clients/react
+        run: pnpm build

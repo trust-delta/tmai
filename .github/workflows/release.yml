@@ -1,0 +1,286 @@
+name: Release
+
+# tmai bundle release. Triggered by v* tag push on this (hub) repo.
+#
+# Flow:
+#   1. fetch-core   — download tmai-core binary for each target from tmai-core private Release
+#                     (tag: core-v<versions.toml:core>)
+#   2. build-webui  — pnpm build clients/react/ → dist/
+#   3. build-ratatui — cargo build clients/ratatui/ per matrix target
+#   4. bundle        — assemble 1 tarball per target (bin/tmai + bin/tmai-ratatui +
+#                      share/tmai/webui/ + share/tmai/api-spec/ + LICENSE + README)
+#   5. publish       — create/update GitHub Release on this repo, upload assets
+#
+# Secrets required:
+#   - TMAI_CORE_ARTIFACT_TOKEN — fine-grained PAT with `contents:read` on trust-delta/tmai-core
+#
+# NOTE: Phase 1 skeleton. Until Phase 2 lands clients/ and api-spec/ into this repo,
+# tag pushes will fail the build stages. Do not cut v* tags before Phase 2 completes.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Manual version (without v prefix) for dry-run"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-core:
+    name: Fetch tmai-core binary (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read core version from versions.toml
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=$(grep -E '^core[[:space:]]*=' versions.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [[ -z "${core}" || "${core}" == "0.0.0" ]]; then
+            echo "::error::versions.toml:core is unset or placeholder (0.0.0)"
+            exit 1
+          fi
+          echo "core=${core}" >> "$GITHUB_OUTPUT"
+
+      - name: Download tmai-core binary from private Release
+        env:
+          GH_TOKEN: ${{ secrets.TMAI_CORE_ARTIFACT_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_version="${{ steps.versions.outputs.core }}"
+          tag="core-v${core_version}"
+          asset="tmai-${core_version}-${{ matrix.target }}.tar.gz"
+          mkdir -p core-artifacts
+          gh release download "${tag}" \
+            --repo trust-delta/tmai-core \
+            --pattern "${asset}" \
+            --dir core-artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.target }}
+          path: core-artifacts/
+
+  build-webui:
+    name: Build WebUI dist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: clients/react/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: clients/react
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: clients/react
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: clients/react/dist/
+
+  build-ratatui:
+    name: Build ratatui (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-apple-darwin
+            os: macos-14
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clients/ratatui
+          key: release-ratatui-${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
+        working-directory: clients/ratatui
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        working-directory: clients/ratatui
+        run: cross build --release --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ratatui-${{ matrix.target }}
+          path: clients/ratatui/target/${{ matrix.target }}/release/tmai-ratatui
+
+  bundle:
+    name: Bundle (${{ matrix.target }})
+    needs: [fetch-core, build-webui, build-ratatui]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - aarch64-apple-darwin
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-${{ matrix.target }}
+          path: downloads/core/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: downloads/webui/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ratatui-${{ matrix.target }}
+          path: downloads/ratatui/
+
+      - name: Assemble tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          target="${{ matrix.target }}"
+          staging="tmai-v${version}"
+
+          mkdir -p \
+            "${staging}/bin" \
+            "${staging}/share/tmai/webui" \
+            "${staging}/share/tmai/api-spec"
+
+          # Extract core binary from tmai-core tarball.
+          # tmai-core's current tarball layout places `tmai` under staging/tmai/tmai
+          # (see tmai-core/.github/workflows/release.yml — `tar czf "${staging}.tar.gz" "${staging}"`).
+          # Flatten it here.
+          core_tarball=$(ls downloads/core/*.tar.gz | head -1)
+          tar xzf "${core_tarball}" -C downloads/core/
+          core_bin=$(find downloads/core/ -type f -name tmai -perm -u+x | head -1)
+          cp "${core_bin}" "${staging}/bin/tmai"
+          chmod +x "${staging}/bin/tmai"
+
+          # Copy ratatui binary (single file artifact).
+          cp downloads/ratatui/tmai-ratatui "${staging}/bin/"
+          chmod +x "${staging}/bin/tmai-ratatui"
+
+          # Copy WebUI dist (recursive).
+          cp -R downloads/webui/. "${staging}/share/tmai/webui/"
+
+          # Copy api-spec reference snapshots.
+          cp api-spec/openapi.json "${staging}/share/tmai/api-spec/"
+          cp api-spec/corevents.schema.json "${staging}/share/tmai/api-spec/"
+
+          # Top-level docs.
+          cp LICENSE "${staging}/"
+          cp README.md "${staging}/"
+
+          # Archive + checksum.
+          archive="tmai-v${version}-${target}.tar.gz"
+          tar czf "${archive}" "${staging}"
+          shasum -a 256 "${archive}" > "${archive}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: |
+            tmai-v${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz
+            tmai-v${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz.sha256
+
+  publish:
+    name: Publish GitHub Release
+    needs: bundle
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: bundle-*
+          merge-multiple: true
+
+      - name: Create or update Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+          notes="Automated tmai bundle release for ${tag}."
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --title "tmai ${tag}" \
+              --notes "${notes}" \
+              --draft=false \
+              --prerelease=false
+          fi
+
+          gh release upload "${tag}" \
+            --clobber \
+            artifacts/*.tar.gz \
+            artifacts/*.tar.gz.sha256

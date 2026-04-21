@@ -1,0 +1,12 @@
+# Bundle version pin for tmai release tarball assembly.
+# Read by .github/workflows/release.yml during `v*` tag builds.
+# Each key points to the exact upstream version that ships bundled in a given
+# tmai release.
+#
+# Phase 1 placeholder values — real versions land with Phase 2 (monorepo
+# integration) and Phase 4 (first dry-run release).
+
+core = "0.0.0"      # tmai-core private Release (core-v* tag)
+react = "0.0.0"     # clients/react package version
+ratatui = "0.0.0"   # clients/ratatui crate version
+api_spec = "0.0.0"  # api-spec/openapi.json info.version
