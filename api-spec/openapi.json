@@ -188,7 +188,7 @@
         }
       }
     },
-    "/version": {
+    "/api/version": {
       "get": {
         "tags": ["meta"],
         "summary": "Runtime version info",
