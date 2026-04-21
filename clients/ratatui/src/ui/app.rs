@@ -81,6 +81,7 @@ pub async fn run(client: ApiClient) -> Result<()> {
     result
 }
 
+#[allow(clippy::collapsible_match)]
 async fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     client: &ApiClient,
@@ -153,6 +154,7 @@ async fn handle_key(
     }
 }
 
+#[allow(clippy::collapsible_match)]
 async fn handle_normal(
     state: &mut AppState,
     client: &ApiClient,
