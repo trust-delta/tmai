@@ -10,7 +10,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.8.0"
+    "version": "1.9.0"
   },
   "servers": [
     {
@@ -179,6 +179,40 @@
           },
           "5XX": {
             "description": "Unexpected internal failure. Body is a `TmaiError` with `code: \"Internal\"` unless a more specific downstream code applies.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Runtime version info",
+        "description": "Returns the versions of the four independently-versioned bundle components so clients can detect drift between what they were compiled against and what they are actually talking to. `tmai_version` and `api_spec_version` are populated only when the server runs from a hub-assembled bundle (env-var injection at launch); a standalone `cargo run` returns them as `null`, which is expected, not an error.",
+        "operationId": "get_version",
+        "responses": {
+          "200": {
+            "description": "Version metadata for the bundle.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VersionResponse" }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Request failed at a tmai contract boundary (e.g. invalid auth token).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Unexpected internal failure.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/TmaiError" }
@@ -450,6 +484,29 @@
             "description": "Worktree path (from git)"
           }
         }
+      },
+      "VersionResponse": {
+        "type": "object",
+        "description": "Versions of the four independently-versioned bundle components. `core_version` and `error_taxonomy_version` are always present (owned by tmai-core itself); `tmai_version` and `api_spec_version` are nullable because they're injected by the hub release pipeline via env vars and absent in a standalone `cargo run`.",
+        "required": ["core_version", "error_taxonomy_version"],
+        "properties": {
+          "tmai_version": {
+            "type": ["string", "null"],
+            "description": "Version of the outer tmai bundle (hub release tag, e.g. `\"2.0.0\"`). Null when tmai-core runs standalone."
+          },
+          "core_version": {
+            "type": "string",
+            "description": "Version of the tmai-core engine (`env!(\"CARGO_PKG_VERSION\")`)."
+          },
+          "api_spec_version": {
+            "type": ["string", "null"],
+            "description": "Version of the api-spec contract (`api-spec/openapi.json:info.version`) the hub pinned for this bundle. Null when tmai-core runs standalone."
+          },
+          "error_taxonomy_version": {
+            "type": "string",
+            "description": "Version of the `ErrorCode` / `TmaiError` taxonomy. Bumped when variants or semantics change."
+          }
+        }
       }
     }
   },
@@ -461,6 +518,10 @@
     {
       "name": "prompt-queue",
       "description": "Per-agent send-prompt queue — enumerate and cancel queued prompts before delivery"
+    },
+    {
+      "name": "meta",
+      "description": "Runtime introspection — bundle versions, capability probes"
     }
   ]
 }
