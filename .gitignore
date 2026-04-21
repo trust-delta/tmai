@@ -5,6 +5,10 @@ web/tsconfig.tsbuildinfo
 crates/tmai-app/web/node_modules/
 crates/tmai-app/web/tsconfig.tsbuildinfo
 
+# dev/tmai-app branch source tree — lives only on dev/tmai-app, should not
+# surface as untracked when hub branches are checked out in the same worktree.
+/crates/tmai-app/
+
 # AI assistants
 CLAUDE.md
 .claude/
