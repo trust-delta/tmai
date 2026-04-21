@@ -1,0 +1,144 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tmai Web API",
+    "description": "Proof-of-concept OpenAPI document — see issue #446. The full API surface (~80 endpoints) is migrating incrementally.",
+    "contact": {
+      "name": "TrustDelta"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "1.7.0"
+  },
+  "paths": {
+    "/api/task-meta": {
+      "get": {
+        "tags": [
+          "task-meta"
+        ],
+        "summary": "Documentation stub for `GET /api/task-meta`.",
+        "description": "utoipa's path macro only needs a function *signature* to attach metadata;\nthe real handler is `crate::web::api::get_task_meta` in the binary crate.\nA follow-up will adopt `utoipa-axum` so handler and doc share one source.",
+        "operationId": "get_task_meta_doc",
+        "responses": {
+          "200": {
+            "description": "Task metadata entries for the active project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskMetaEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Milestone": {
+        "type": "object",
+        "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
+        "required": [
+          "at",
+          "event"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the milestone occurred"
+          },
+          "event": {
+            "type": "string",
+            "description": "Human-readable event description"
+          }
+        }
+      },
+      "TaskMetaEntry": {
+        "type": "object",
+        "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nThis type is part of the type-sharing PoC (#446): the TypeScript\ndefinition under `crates/tmai-app/web/src/types/generated/TaskMetaEntry.ts`\nis generated from this struct by ts-rs. Do not edit the generated file\ndirectly — update the Rust source and run `scripts/generate-types.sh`.",
+        "required": [
+          "branch"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent ID working on this task"
+          },
+          "agent_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Status of the linked agent"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name (the join key)"
+          },
+          "is_dirty": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the worktree has uncommitted changes"
+          },
+          "issue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Associated GitHub issue number",
+            "minimum": 0
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Milestone"
+            },
+            "description": "Milestone history"
+          },
+          "pr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Associated pull request number",
+            "minimum": 0
+          },
+          "review_agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Review agent ID"
+          },
+          "worktree_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Worktree path (from git)"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "task-meta",
+      "description": "Project task metadata — merges git worktree info with `.task-meta/` JSON"
+    }
+  ]
+}

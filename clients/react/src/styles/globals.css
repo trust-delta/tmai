@@ -1,0 +1,300 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Nerd Font Symbols — provides Powerline glyphs and icons for terminal preview */
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('/fonts/SymbolsNerdFontMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.145 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-popover: oklch(0.145 0 0);
+  --color-popover-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.985 0 0);
+  --color-primary-foreground: oklch(0.205 0 0);
+  --color-secondary: oklch(0.269 0 0);
+  --color-secondary-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.269 0 0);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-accent: oklch(0.269 0 0);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-destructive: oklch(0.396 0.141 25.723);
+  --color-destructive-foreground: oklch(0.637 0.237 25.331);
+  --color-border: oklch(0.269 0 0);
+  --color-input: oklch(0.269 0 0);
+  --color-ring: oklch(0.556 0 0);
+  --color-sidebar-background: oklch(0.145 0 0);
+  --color-sidebar-foreground: oklch(0.708 0 0);
+  --color-sidebar-primary: oklch(0.985 0 0);
+  --color-sidebar-primary-foreground: oklch(0.205 0 0);
+  --color-sidebar-accent: oklch(0.269 0 0);
+  --color-sidebar-accent-foreground: oklch(0.985 0 0);
+  --color-sidebar-border: oklch(0.269 0 0);
+  --color-sidebar-ring: oklch(0.556 0 0);
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+body {
+  background: linear-gradient(135deg, #0a0a12 0%, #0d1117 40%, #0a0f1a 70%, #0f0a18 100%);
+  color: var(--color-foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Glassmorphism utility classes */
+.glass {
+  background: rgba(15, 15, 25, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-light {
+  background: rgba(25, 25, 40, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(20, 20, 35, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.glass-card:hover {
+  background: rgba(30, 30, 50, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Enhanced glassmorphism with stronger blur for main panels */
+.glass-deep {
+  background: rgba(10, 10, 15, 0.7);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Glow effects for status indicators */
+.glow-cyan {
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.15), inset 0 0 12px rgba(34, 211, 238, 0.05);
+}
+
+.glow-amber {
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.15), inset 0 0 12px rgba(245, 158, 11, 0.05);
+}
+
+.glow-red {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15), inset 0 0 12px rgba(239, 68, 68, 0.05);
+}
+
+/* Smooth transitions for interactive elements */
+.transition-glass {
+  transition: all 0.3s ease-out;
+}
+
+.transition-subtle {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Smooth fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Slide-in animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s ease-out;
+}
+
+/* Scale animations for interactive elements */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Glow pulse for attention-grabbing elements */
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.15), inset 0 0 12px rgba(245, 158, 11, 0.05);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.25), inset 0 0 12px rgba(245, 158, 11, 0.1);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Slide-in from right animation for action panel */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* ── Mobile / touch utilities ─────────────────────────────────────────── */
+
+/* Minimum 44×44 px tap target (WCAG 2.5.5) */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Smaller variant — 36 px — for dense toolbars that still need decent touch area */
+.touch-target-sm {
+  min-height: 36px;
+}
+
+/* iOS safe-area insets so content is not hidden under the notch/home indicator */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent rubber-band scroll on the root shell; individual panels use overflow-y-auto */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* Prevent text size adjustment on orientation change (iOS Safari) */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ── End mobile utilities ──────────────────────────────────────────────── */
+
+/* Thin overlay scrollbar — applied globally to all scrollable areas */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+/* ANSI color classes for capture-pane preview (ansi_up use_classes mode) */
+.ansi-preview {
+  color: #d4d4d8;
+  font-family:
+    'JetBrainsMono Nerd Font', 'JetBrainsMono NF',
+    'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF',
+    'FiraCode Nerd Font', 'FiraCode NF',
+    'MesloLGS NF', 'MesloLGS Nerd Font',
+    'Hack Nerd Font', 'Hack NF',
+    'JetBrains Mono', 'Cascadia Code', 'Fira Code',
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+}
+.ansi-bright-fg-0, .ansi-fg-0  { color: #3f3f46; }
+.ansi-bright-fg-1, .ansi-fg-1  { color: #f87171; }
+.ansi-bright-fg-2, .ansi-fg-2  { color: #4ade80; }
+.ansi-bright-fg-3, .ansi-fg-3  { color: #facc15; }
+.ansi-bright-fg-4, .ansi-fg-4  { color: #60a5fa; }
+.ansi-bright-fg-5, .ansi-fg-5  { color: #c084fc; }
+.ansi-bright-fg-6, .ansi-fg-6  { color: #22d3ee; }
+.ansi-bright-fg-7, .ansi-fg-7  { color: #e4e4e7; }
+.ansi-fg-8  { color: #71717a; }
+.ansi-fg-9  { color: #fca5a5; }
+.ansi-fg-10 { color: #86efac; }
+.ansi-fg-11 { color: #fde68a; }
+.ansi-fg-12 { color: #93c5fd; }
+.ansi-fg-13 { color: #d8b4fe; }
+.ansi-fg-14 { color: #67e8f9; }
+.ansi-fg-15 { color: #fafafa; }
+.ansi-bg-0  { background-color: #18181b; }
+.ansi-bg-1  { background-color: #991b1b; }
+.ansi-bg-2  { background-color: #166534; }
+.ansi-bg-3  { background-color: #854d0e; }
+.ansi-bg-4  { background-color: #1e3a5f; }
+.ansi-bg-5  { background-color: #581c87; }
+.ansi-bg-6  { background-color: #155e75; }
+.ansi-bg-7  { background-color: #d4d4d8; }
+.ansi-bold  { font-weight: bold; }
+.ansi-dim   { opacity: 0.6; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
