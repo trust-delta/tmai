@@ -1,0 +1,720 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trust-delta.github.io/tmai-api-spec/corevents.schema.json",
+  "title": "CoreEvent",
+  "description": "Push-based state-change events emitted by tmai-core and streamed to UI clients over SSE at `/api/events` (and fanned out to MCP and audit consumers). Every variant is discriminated by the `type` field (internally tagged) and carries event-specific fields at the top level.\n\n## Forward-compatibility rules\n\nUI clients MUST ignore unknown `type` values — new variants will be added as non-breaking changes. New optional fields SHOULD be tolerated silently. Required field changes, field-type changes, or variant removals trigger a major version bump of this spec.\n\n## Taxonomy cross-reference\n\nContract-layer events (`DispatchRejected`, `ContractViolation`) embed a `TmaiError` / `ErrorCode` whose shape is defined in `openapi.json` → `components.schemas.TmaiError`. The shapes are kept in sync — see `docs/errors.md` for authoritative documentation.",
+  "oneOf": [
+    { "$ref": "#/$defs/AgentsUpdated" },
+    { "$ref": "#/$defs/AgentStatusChanged" },
+    { "$ref": "#/$defs/AgentAppeared" },
+    { "$ref": "#/$defs/AgentDisappeared" },
+    { "$ref": "#/$defs/TeamsUpdated" },
+    { "$ref": "#/$defs/TeammateIdle" },
+    { "$ref": "#/$defs/TaskCreated" },
+    { "$ref": "#/$defs/TaskCompleted" },
+    { "$ref": "#/$defs/ConfigChanged" },
+    { "$ref": "#/$defs/WorktreeCreated" },
+    { "$ref": "#/$defs/WorktreeRemoved" },
+    { "$ref": "#/$defs/InstructionsLoaded" },
+    { "$ref": "#/$defs/AgentStopped" },
+    { "$ref": "#/$defs/ContextCompacting" },
+    { "$ref": "#/$defs/WorktreeSetupCompleted" },
+    { "$ref": "#/$defs/WorktreeSetupFailed" },
+    { "$ref": "#/$defs/PromptReady" },
+    { "$ref": "#/$defs/UsageUpdated" },
+    { "$ref": "#/$defs/ToolCallDeferred" },
+    { "$ref": "#/$defs/RebaseSucceeded" },
+    { "$ref": "#/$defs/RebaseConflict" },
+    { "$ref": "#/$defs/ToolCallResolved" },
+    { "$ref": "#/$defs/PrCreated" },
+    { "$ref": "#/$defs/PrCiPassed" },
+    { "$ref": "#/$defs/PrCiFailed" },
+    { "$ref": "#/$defs/PrReviewFeedback" },
+    { "$ref": "#/$defs/PrClosed" },
+    { "$ref": "#/$defs/GitStateChanged" },
+    { "$ref": "#/$defs/GuardrailExceeded" },
+    { "$ref": "#/$defs/AgentTargetChanged" },
+    { "$ref": "#/$defs/ActionPerformed" },
+    { "$ref": "#/$defs/DispatchRejected" },
+    { "$ref": "#/$defs/VendorAvailabilityChanged" },
+    { "$ref": "#/$defs/CapacityChanged" },
+    { "$ref": "#/$defs/ContractViolation" },
+    { "$ref": "#/$defs/DispatchBypassUsed" },
+    { "$ref": "#/$defs/BundleStatusChanged" },
+    { "$ref": "#/$defs/PromptQueueChanged" }
+  ],
+  "$defs": {
+    "ActionOrigin": {
+      "description": "Who initiated an action — attached to events that audit-matter or need per-origin handling.",
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "Human",
+          "required": ["kind", "interface"],
+          "properties": {
+            "kind": { "const": "Human" },
+            "interface": {
+              "type": "string",
+              "description": "Which UI: \"webui\", \"tui\", \"mobile\", \"cli\", etc."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "Agent",
+          "required": ["kind", "id", "is_orchestrator"],
+          "properties": {
+            "kind": { "const": "Agent" },
+            "id": { "type": "string", "description": "Agent target id (e.g. \"main:0.0\")." },
+            "is_orchestrator": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "title": "System",
+          "required": ["kind", "subsystem"],
+          "properties": {
+            "kind": { "const": "System" },
+            "subsystem": {
+              "type": "string",
+              "description": "Subsystem name (e.g. \"auto_cleanup\", \"pr_monitor\")."
+            }
+          }
+        }
+      ]
+    },
+    "DetectionSource": {
+      "description": "How a state transition was detected.",
+      "type": "string",
+      "enum": ["HttpHook", "IpcSocket", "WebSocket", "CapturePane"]
+    },
+    "GuardrailKind": {
+      "description": "Type of guardrail that was exceeded.",
+      "type": "string",
+      "enum": ["ci_retries", "review_loops", "consecutive_failures"]
+    },
+    "WorktreeInfo": {
+      "type": "object",
+      "description": "Details of a git worktree. All fields optional — some code paths only know a subset.",
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "original_repo": { "type": ["string", "null"] }
+      }
+    },
+    "BundleId": {
+      "type": "string",
+      "description": "Opaque identifier for a dispatch bundle (a logical grouping of sub-dispatches). Serialized transparently."
+    },
+    "BundleStatus": {
+      "type": "string",
+      "description": "Rollup status of a dispatch bundle.",
+      "enum": ["pending", "running", "partially_completed", "completed", "failed", "cancelled"]
+    },
+    "DispatchIntentSummary": {
+      "type": "object",
+      "description": "Redacted summary of a dispatch intent. Full prompts and credentials MUST NEVER appear here; auditors correlate via `prompt_hash`.",
+      "required": ["project_path", "role"],
+      "properties": {
+        "project_path": { "type": "string" },
+        "role": { "type": "string" },
+        "bundle_id": { "$ref": "#/$defs/BundleId" },
+        "prompt_hash": {
+          "type": "string",
+          "description": "Hex digest (implementation-chosen hash) of the dispatched prompt."
+        },
+        "issue_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 }
+      }
+    },
+    "VendorAvailabilityState": {
+      "description": "Rollup availability state for a vendor.",
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "Available",
+          "required": ["state"],
+          "properties": { "state": { "const": "available" } }
+        },
+        {
+          "type": "object",
+          "title": "RateLimited",
+          "required": ["state"],
+          "properties": {
+            "state": { "const": "rate_limited" },
+            "resume_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Wall-clock time when dispatches may resume. Omitted when the vendor did not advertise a reset."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "Unavailable",
+          "required": ["state", "reason"],
+          "properties": {
+            "state": { "const": "unavailable" },
+            "reason": { "type": "string", "description": "Free-text reason (never includes secrets)." }
+          }
+        }
+      ]
+    },
+    "CapacityCauseSummary": {
+      "description": "What triggered a capacity change.",
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "AgentSpawned",
+          "required": ["kind", "target"],
+          "properties": {
+            "kind": { "const": "agent_spawned" },
+            "target": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "title": "AgentTerminated",
+          "required": ["kind", "target"],
+          "properties": {
+            "kind": { "const": "agent_terminated" },
+            "target": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "title": "LimitChanged",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "limit_changed" } }
+        },
+        {
+          "type": "object",
+          "title": "Reconciled",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "reconciled" } }
+        }
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "description": "Mirror of `openapi.json` → `components.schemas.ErrorCode`. Kept in sync with the taxonomy documented in `docs/errors.md`.",
+      "enum": [
+        "CapacityExceeded",
+        "VendorUnavailable",
+        "QueueFull",
+        "AgentNotFound",
+        "AgentInTerminalState",
+        "WorktreeConflict",
+        "PermissionDenied",
+        "TokenInvalid",
+        "InvalidArgument",
+        "SchemaMismatch",
+        "VendorError",
+        "TmuxError",
+        "IpcError",
+        "Internal"
+      ]
+    },
+    "RetryHint": {
+      "description": "Mirror of `openapi.json` → `components.schemas.RetryHint`.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "resume_at"],
+          "properties": {
+            "kind": { "const": "retry_after" },
+            "resume_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "ms"],
+          "properties": {
+            "kind": { "const": "backoff_ms" },
+            "ms": { "type": "integer", "format": "int64", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "not_retryable" } }
+        }
+      ]
+    },
+    "TmaiError": {
+      "type": "object",
+      "description": "Mirror of `openapi.json` → `components.schemas.TmaiError`.",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": { "type": "string" },
+        "retry_hint": { "$ref": "#/$defs/RetryHint" },
+        "context": { "type": "object", "additionalProperties": true },
+        "trace_id": { "type": "string" }
+      }
+    },
+    "AgentsUpdated": {
+      "type": "object",
+      "description": "The full agent list was refreshed after a poll cycle.",
+      "required": ["type"],
+      "properties": { "type": { "const": "AgentsUpdated" } }
+    },
+    "AgentStatusChanged": {
+      "type": "object",
+      "description": "A single agent transitioned to a new status.",
+      "required": ["type", "target", "old_status", "new_status"],
+      "properties": {
+        "type": { "const": "AgentStatusChanged" },
+        "target": { "type": "string" },
+        "old_status": { "type": "string" },
+        "new_status": { "type": "string" }
+      }
+    },
+    "AgentAppeared": {
+      "type": "object",
+      "description": "A new agent was detected.",
+      "required": ["type", "target"],
+      "properties": {
+        "type": { "const": "AgentAppeared" },
+        "target": { "type": "string" }
+      }
+    },
+    "AgentDisappeared": {
+      "type": "object",
+      "description": "An agent is no longer visible.",
+      "required": ["type", "target"],
+      "properties": {
+        "type": { "const": "AgentDisappeared" },
+        "target": { "type": "string" }
+      }
+    },
+    "TeamsUpdated": {
+      "type": "object",
+      "description": "Team data was refreshed.",
+      "required": ["type"],
+      "properties": { "type": { "const": "TeamsUpdated" } }
+    },
+    "TeammateIdle": {
+      "type": "object",
+      "description": "A team member became idle (waiting for next task).",
+      "required": ["type", "target", "team_name", "member_name"],
+      "properties": {
+        "type": { "const": "TeammateIdle" },
+        "target": { "type": "string" },
+        "team_name": { "type": "string" },
+        "member_name": { "type": "string" }
+      }
+    },
+    "TaskCreated": {
+      "type": "object",
+      "description": "A new task was created.",
+      "required": ["type", "team_name", "task_id", "task_subject"],
+      "properties": {
+        "type": { "const": "TaskCreated" },
+        "team_name": { "type": "string" },
+        "task_id": { "type": "string" },
+        "task_subject": { "type": "string" }
+      }
+    },
+    "TaskCompleted": {
+      "type": "object",
+      "description": "A task was completed.",
+      "required": ["type", "team_name", "task_id", "task_subject"],
+      "properties": {
+        "type": { "const": "TaskCompleted" },
+        "team_name": { "type": "string" },
+        "task_id": { "type": "string" },
+        "task_subject": { "type": "string" }
+      }
+    },
+    "ConfigChanged": {
+      "type": "object",
+      "description": "A Claude Code configuration file was changed.",
+      "required": ["type", "target", "source", "file_path"],
+      "properties": {
+        "type": { "const": "ConfigChanged" },
+        "target": { "type": "string" },
+        "source": {
+          "type": "string",
+          "description": "Config source (e.g. \"user_settings\", \"project_settings\")."
+        },
+        "file_path": { "type": "string" }
+      }
+    },
+    "WorktreeCreated": {
+      "type": "object",
+      "description": "A git worktree was created.",
+      "required": ["type", "target", "worktree"],
+      "properties": {
+        "type": { "const": "WorktreeCreated" },
+        "target": { "type": "string" },
+        "worktree": {
+          "anyOf": [{ "$ref": "#/$defs/WorktreeInfo" }, { "type": "null" }]
+        }
+      }
+    },
+    "WorktreeRemoved": {
+      "type": "object",
+      "description": "A git worktree was removed.",
+      "required": ["type", "target", "worktree"],
+      "properties": {
+        "type": { "const": "WorktreeRemoved" },
+        "target": { "type": "string" },
+        "worktree": {
+          "anyOf": [{ "$ref": "#/$defs/WorktreeInfo" }, { "type": "null" }]
+        }
+      }
+    },
+    "InstructionsLoaded": {
+      "type": "object",
+      "description": "`CLAUDE.md` or `.claude/rules/*.md` files were loaded into context (Claude Code v2.1.69+).",
+      "required": ["type", "target"],
+      "properties": {
+        "type": { "const": "InstructionsLoaded" },
+        "target": { "type": "string" }
+      }
+    },
+    "AgentStopped": {
+      "type": "object",
+      "description": "An agent stopped (completed or paused), emitted by the hook handler.",
+      "required": ["type", "target", "cwd", "last_assistant_message"],
+      "properties": {
+        "type": { "const": "AgentStopped" },
+        "target": { "type": "string" },
+        "cwd": { "type": "string" },
+        "last_assistant_message": { "type": ["string", "null"] }
+      }
+    },
+    "ContextCompacting": {
+      "type": "object",
+      "description": "Context compaction started (PreCompact hook event).",
+      "required": ["type", "target", "compaction_count"],
+      "properties": {
+        "type": { "const": "ContextCompacting" },
+        "target": { "type": "string" },
+        "compaction_count": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0
+        }
+      }
+    },
+    "WorktreeSetupCompleted": {
+      "type": "object",
+      "description": "Worktree setup commands completed successfully.",
+      "required": ["type", "worktree_path", "branch"],
+      "properties": {
+        "type": { "const": "WorktreeSetupCompleted" },
+        "worktree_path": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "WorktreeSetupFailed": {
+      "type": "object",
+      "description": "Worktree setup commands failed.",
+      "required": ["type", "worktree_path", "branch", "error"],
+      "properties": {
+        "type": { "const": "WorktreeSetupFailed" },
+        "worktree_path": { "type": "string" },
+        "branch": { "type": "string" },
+        "error": { "type": "string" }
+      }
+    },
+    "PromptReady": {
+      "type": "object",
+      "description": "A queued prompt is ready to be delivered (agent transitioned to Idle).",
+      "required": ["type", "target", "prompt"],
+      "properties": {
+        "type": { "const": "PromptReady" },
+        "target": { "type": "string" },
+        "prompt": { "type": "string" }
+      }
+    },
+    "UsageUpdated": {
+      "type": "object",
+      "description": "Usage data was updated after a fetch cycle.",
+      "required": ["type"],
+      "properties": { "type": { "const": "UsageUpdated" } }
+    },
+    "ToolCallDeferred": {
+      "type": "object",
+      "description": "A tool call was deferred for external resolution.",
+      "required": ["type", "defer_id", "target", "tool_name"],
+      "properties": {
+        "type": { "const": "ToolCallDeferred" },
+        "defer_id": { "type": "integer", "format": "int64", "minimum": 0 },
+        "target": { "type": "string" },
+        "tool_name": { "type": "string" }
+      }
+    },
+    "RebaseSucceeded": {
+      "type": "object",
+      "description": "A worktree branch was successfully rebased onto the default branch.",
+      "required": ["type", "branch", "worktree_path"],
+      "properties": {
+        "type": { "const": "RebaseSucceeded" },
+        "branch": { "type": "string" },
+        "worktree_path": { "type": "string" }
+      }
+    },
+    "RebaseConflict": {
+      "type": "object",
+      "description": "A worktree branch rebase failed due to conflicts.",
+      "required": ["type", "branch", "worktree_path", "error"],
+      "properties": {
+        "type": { "const": "RebaseConflict" },
+        "branch": { "type": "string" },
+        "worktree_path": { "type": "string" },
+        "error": { "type": "string" }
+      }
+    },
+    "ToolCallResolved": {
+      "type": "object",
+      "description": "A deferred tool call was resolved (approved/denied).",
+      "required": ["type", "defer_id", "target", "decision", "resolved_by"],
+      "properties": {
+        "type": { "const": "ToolCallResolved" },
+        "defer_id": { "type": "integer", "format": "int64", "minimum": 0 },
+        "target": { "type": "string" },
+        "decision": {
+          "type": "string",
+          "description": "Resolution: \"allow\" or \"deny\".",
+          "enum": ["allow", "deny"]
+        },
+        "resolved_by": {
+          "type": "string",
+          "description": "Who resolved it (e.g. \"human\", \"ai:haiku\", \"timeout\")."
+        }
+      }
+    },
+    "PrCreated": {
+      "type": "object",
+      "description": "A new PR was detected by the PR monitor.",
+      "required": ["type", "pr_number", "title", "branch"],
+      "properties": {
+        "type": { "const": "PrCreated" },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "title": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "PrCiPassed": {
+      "type": "object",
+      "description": "CI checks passed for a PR.",
+      "required": ["type", "pr_number", "title", "checks_summary"],
+      "properties": {
+        "type": { "const": "PrCiPassed" },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "title": { "type": "string" },
+        "checks_summary": { "type": "string" }
+      }
+    },
+    "PrCiFailed": {
+      "type": "object",
+      "description": "CI checks failed for a PR.",
+      "required": ["type", "pr_number", "title", "failed_details"],
+      "properties": {
+        "type": { "const": "PrCiFailed" },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "title": { "type": "string" },
+        "failed_details": { "type": "string" }
+      }
+    },
+    "PrReviewFeedback": {
+      "type": "object",
+      "description": "A PR received review feedback (changes requested). `review_count` is a monotonic counter — use `(pr_number, review_count)` as the dedup key.",
+      "required": ["type", "pr_number", "title", "comments_summary", "review_count"],
+      "properties": {
+        "type": { "const": "PrReviewFeedback" },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "title": { "type": "string" },
+        "comments_summary": { "type": "string" },
+        "review_count": { "type": "integer", "format": "int64", "minimum": 0 }
+      }
+    },
+    "PrClosed": {
+      "type": "object",
+      "description": "A PR was closed (merged or closed without merging).",
+      "required": ["type", "pr_number", "title", "branch"],
+      "properties": {
+        "type": { "const": "PrClosed" },
+        "pr_number": { "type": "integer", "format": "int64", "minimum": 0 },
+        "title": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "GitStateChanged": {
+      "type": "object",
+      "description": "Git state (branches, HEAD, commit graph) changed for a repository. Subscribers refetch `/api/git/*` to stay in sync.",
+      "required": ["type", "repo"],
+      "properties": {
+        "type": { "const": "GitStateChanged" },
+        "repo": { "type": "string" }
+      }
+    },
+    "GuardrailExceeded": {
+      "type": "object",
+      "description": "A guardrail limit was exceeded (CI retries, review loops, or consecutive failures).",
+      "required": ["type", "guardrail", "branch", "pr_number", "count", "limit"],
+      "properties": {
+        "type": { "const": "GuardrailExceeded" },
+        "guardrail": { "$ref": "#/$defs/GuardrailKind" },
+        "branch": { "type": "string" },
+        "pr_number": {
+          "type": ["integer", "null"],
+          "format": "int64",
+          "minimum": 0
+        },
+        "count": { "type": "integer", "format": "int64", "minimum": 0 },
+        "limit": { "type": "integer", "format": "int64", "minimum": 0 }
+      }
+    },
+    "AgentTargetChanged": {
+      "type": "object",
+      "description": "An agent's tmux target changed due to pane renumbering (PID-based reconciliation).",
+      "required": ["type", "old_target", "new_target", "pid"],
+      "properties": {
+        "type": { "const": "AgentTargetChanged" },
+        "old_target": { "type": "string" },
+        "new_target": { "type": "string" },
+        "pid": { "type": "integer", "format": "int32", "minimum": 0 }
+      }
+    },
+    "ActionPerformed": {
+      "type": "object",
+      "description": "A side-effect API action was performed. Consumed by the orchestrator notifier.",
+      "required": ["type", "origin", "action", "summary"],
+      "properties": {
+        "type": { "const": "ActionPerformed" },
+        "origin": { "$ref": "#/$defs/ActionOrigin" },
+        "action": {
+          "type": "string",
+          "description": "API action name (e.g. \"dispatch_issue\", \"kill_agent\", \"merge_pr\")."
+        },
+        "summary": { "type": "string" }
+      }
+    },
+    "DispatchRejected": {
+      "type": "object",
+      "description": "A dispatch request was rejected by the contract-layer gatekeeper before an agent was spawned. This event is the **only** signal subscribers receive for rejected intents — no `AgentAppeared` / `AgentStatusChanged` fires for them.",
+      "required": ["type", "intent_summary", "origin", "error"],
+      "properties": {
+        "type": { "const": "DispatchRejected" },
+        "intent_summary": { "$ref": "#/$defs/DispatchIntentSummary" },
+        "origin": { "$ref": "#/$defs/ActionOrigin" },
+        "error": { "$ref": "#/$defs/TmaiError" }
+      }
+    },
+    "VendorAvailabilityChanged": {
+      "type": "object",
+      "description": "Vendor availability transitioned (rate-limit hit or cleared, outage started or resolved).",
+      "required": ["type", "vendor", "old", "new", "detected_via"],
+      "properties": {
+        "type": { "const": "VendorAvailabilityChanged" },
+        "vendor": { "type": "string", "description": "Vendor identifier (e.g. \"anthropic\", \"openai\", \"google\")." },
+        "account": {
+          "type": "string",
+          "description": "Account label, when the deployment distinguishes accounts."
+        },
+        "old": { "$ref": "#/$defs/VendorAvailabilityState" },
+        "new": { "$ref": "#/$defs/VendorAvailabilityState" },
+        "detected_via": { "$ref": "#/$defs/DetectionSource" }
+      }
+    },
+    "CapacityChanged": {
+      "type": "object",
+      "description": "The global capacity counter moved (slot consumed or freed) or the configured limit was adjusted. `delta` is the signed change applied by this event (+1 spawn, -1 terminal, 0 on `limit_changed` / `reconciled`).",
+      "required": ["type", "current", "limit", "delta", "cause"],
+      "properties": {
+        "type": { "const": "CapacityChanged" },
+        "current": { "type": "integer", "format": "int64", "minimum": 0 },
+        "limit": { "type": "integer", "format": "int64", "minimum": 0 },
+        "delta": { "type": "integer", "format": "int32" },
+        "cause": { "$ref": "#/$defs/CapacityCauseSummary" }
+      }
+    },
+    "ContractViolation": {
+      "type": "object",
+      "description": "A contract-layer invariant was violated (auth failure, schema mismatch, unauthorized operation). Distinct from `DispatchRejected`, which is gatekeeper-specific.",
+      "required": ["type", "origin", "code"],
+      "properties": {
+        "type": { "const": "ContractViolation" },
+        "origin": { "$ref": "#/$defs/ActionOrigin" },
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "context": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Code-specific structured context. Omitted from the wire when the emitter attached nothing."
+        }
+      }
+    },
+    "DispatchBypassUsed": {
+      "type": "object",
+      "description": "A bypass flag was used for a dispatch, skipping one or more contract-layer checks. Always audit-logged.",
+      "required": ["type", "origin", "bypassed", "reason"],
+      "properties": {
+        "type": { "const": "DispatchBypassUsed" },
+        "origin": { "$ref": "#/$defs/ActionOrigin" },
+        "bypassed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of the bypassed checks / stages (e.g. \"capacity_check\", \"vendor_availability\")."
+        },
+        "reason": { "type": "string" }
+      }
+    },
+    "BundleStatusChanged": {
+      "type": "object",
+      "description": "Bundle rollup status transitioned. Emits only on bundle-level changes — sub-dispatch transitions still surface as `AgentStatusChanged`.",
+      "required": ["type", "bundle_id", "old", "new"],
+      "properties": {
+        "type": { "const": "BundleStatusChanged" },
+        "bundle_id": { "$ref": "#/$defs/BundleId" },
+        "old": { "$ref": "#/$defs/BundleStatus" },
+        "new": { "$ref": "#/$defs/BundleStatus" }
+      }
+    },
+    "QueuedPrompt": {
+      "type": "object",
+      "description": "A single prompt waiting in an agent's send-queue. Prompts are delivered in FIFO order when the target agent transitions to Idle.",
+      "required": ["id", "prompt", "queued_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Server-assigned stable identifier (uuid v7 recommended for monotonic ordering)."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Prompt text that will be delivered when the target agent becomes Idle."
+        },
+        "queued_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 timestamp when the prompt was enqueued."
+        },
+        "origin": {
+          "$ref": "#/$defs/ActionOrigin",
+          "description": "Optional caller origin (human/agent/system) captured at enqueue time."
+        }
+      }
+    },
+    "PromptQueueChanged": {
+      "type": "object",
+      "description": "The prompt queue for an agent changed (prompt enqueued, drained on delivery, or cancelled via DELETE). Carries the full updated queue so consumers can replace their local snapshot without diffing.\n\nThis variant MUST be ignored by clients that do not yet consume it — it follows the forward-compatibility rules for unknown variants. tmai-react v1 uses 3 s polling; SSE adoption is a planned follow-up.",
+      "required": ["type", "target", "queue"],
+      "properties": {
+        "type": { "const": "PromptQueueChanged" },
+        "target": {
+          "type": "string",
+          "description": "Agent target ID whose queue changed (e.g. \"main:0.0\")."
+        },
+        "queue": {
+          "type": "array",
+          "description": "Full updated queue, ordered oldest-first (delivery order). Empty array means the queue is now empty.",
+          "items": { "$ref": "#/$defs/QueuedPrompt" }
+        }
+      }
+    }
+  }
+}

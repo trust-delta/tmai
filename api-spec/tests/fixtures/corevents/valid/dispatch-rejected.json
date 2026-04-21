@@ -1,0 +1,17 @@
+{
+  "type": "DispatchRejected",
+  "intent_summary": {
+    "project_path": "/repos/foo",
+    "role": "implementer",
+    "bundle_id": "bundle-42",
+    "prompt_hash": "abc123",
+    "issue_number": 463
+  },
+  "origin": { "kind": "Human", "interface": "webui" },
+  "error": {
+    "code": "CapacityExceeded",
+    "message": "max dispatchable agents reached (8/8)",
+    "retry_hint": { "kind": "backoff_ms", "ms": 2000 },
+    "context": { "current": 8, "limit": 8 }
+  }
+}

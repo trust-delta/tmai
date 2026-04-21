@@ -1,0 +1,466 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tmai Web API",
+    "description": "Proof-of-concept OpenAPI document — see issue #446. The full API surface (~80 endpoints) is migrating incrementally.",
+    "contact": {
+      "name": "TrustDelta"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "1.8.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:{port}",
+      "description": "Local tmai-core server. Each user runs their own instance; there is no hosted deployment.",
+      "variables": {
+        "port": {
+          "default": "8080",
+          "description": "Port the user's tmai-core instance is listening on (configured via tmai-core settings)."
+        }
+      }
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/agents/{id}/prompt-queue": {
+      "get": {
+        "tags": ["prompt-queue"],
+        "summary": "List queued prompts for an agent",
+        "description": "Returns all prompts currently waiting for the target agent, ordered oldest-first (delivery order). Returns an empty array when the queue is empty.",
+        "operationId": "list_prompt_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Agent target ID (e.g. `main:0.0`).",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queued prompts, ordered oldest-first (delivery order).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/QueuedPrompt" }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agent itself is unknown. Callers MUST re-sync their agent list on this response.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Request failed at a tmai contract boundary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Unexpected internal failure.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/prompt-queue/{prompt_id}": {
+      "delete": {
+        "tags": ["prompt-queue"],
+        "summary": "Cancel a queued prompt",
+        "description": "Cancels a single queued prompt by ID.\n\n**Idempotency contract**: deleting an unknown `prompt_id` under a *known* agent returns `200 { status: \"already_drained\" }`, not 404. Clients MUST treat `already_drained` as success — the optimistic cancel already matches reality, and the prompt may have been drained between the GET and this DELETE. Servers MUST NOT return 500 for unknown prompt IDs.\n\nThe 404 response is reserved exclusively for cases where the agent itself is unknown.",
+        "operationId": "cancel_queued_prompt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Agent target ID (e.g. `main:0.0`).",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "prompt_id",
+            "in": "path",
+            "required": true,
+            "description": "Stable identifier of the queued prompt to cancel.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`cancelled` when the prompt was removed from the queue; `already_drained` when the prompt ID was not found under a known agent (idempotent — treat as success).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["cancelled", "already_drained"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agent itself is unknown. Callers MUST re-sync their agent list on this response.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Request failed at a tmai contract boundary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Unexpected internal failure.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/task-meta": {
+      "get": {
+        "tags": [
+          "task-meta"
+        ],
+        "summary": "Documentation stub for `GET /api/task-meta`.",
+        "description": "utoipa's path macro only needs a function *signature* to attach metadata;\nthe real handler is `crate::web::api::get_task_meta` in the binary crate.\nA follow-up will adopt `utoipa-axum` so handler and doc share one source.",
+        "operationId": "get_task_meta_doc",
+        "responses": {
+          "200": {
+            "description": "Task metadata entries for the active project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskMetaEntry"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Request failed at a tmai contract boundary. The body is a structured `TmaiError` — callers switch on `code` rather than parsing `message`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Unexpected internal failure. Body is a `TmaiError` with `code: \"Internal\"` unless a more specific downstream code applies.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TmaiError" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActionOrigin": {
+        "description": "Who initiated an action — attached to events and queue entries that audit-matter or need per-origin handling.",
+        "oneOf": [
+          {
+            "type": "object",
+            "title": "Human",
+            "required": ["kind", "interface"],
+            "properties": {
+              "kind": { "type": "string", "const": "Human" },
+              "interface": {
+                "type": "string",
+                "description": "Which UI: \"webui\", \"tui\", \"mobile\", \"cli\", etc."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "Agent",
+            "required": ["kind", "id", "is_orchestrator"],
+            "properties": {
+              "kind": { "type": "string", "const": "Agent" },
+              "id": { "type": "string", "description": "Agent target id (e.g. \"main:0.0\")." },
+              "is_orchestrator": { "type": "boolean" }
+            }
+          },
+          {
+            "type": "object",
+            "title": "System",
+            "required": ["kind", "subsystem"],
+            "properties": {
+              "kind": { "type": "string", "const": "System" },
+              "subsystem": {
+                "type": "string",
+                "description": "Subsystem name (e.g. \"auto_cleanup\", \"pr_monitor\")."
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "Human": "#/components/schemas/ActionOrigin",
+            "Agent": "#/components/schemas/ActionOrigin",
+            "System": "#/components/schemas/ActionOrigin"
+          }
+        }
+      },
+      "QueuedPrompt": {
+        "type": "object",
+        "description": "A single prompt waiting in an agent's send-queue. Prompts are delivered in FIFO order when the target agent transitions to Idle.",
+        "required": ["id", "prompt", "queued_at"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Server-assigned stable identifier (uuid v7 recommended for monotonic ordering)."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Prompt text that will be delivered when the target agent becomes Idle."
+          },
+          "queued_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 timestamp when the prompt was enqueued."
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ActionOrigin",
+            "description": "Optional caller origin (human/agent/system) captured at enqueue time."
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "Machine-readable, stable error classification.\n\nValues are **stable forever once added** — deprecations are handled by aliasing, not removal. Adding a new code is a minor-version bump of the taxonomy. See `docs/errors.md` for each code's meaning and usage.",
+        "enum": [
+          "CapacityExceeded",
+          "VendorUnavailable",
+          "QueueFull",
+          "AgentNotFound",
+          "AgentInTerminalState",
+          "WorktreeConflict",
+          "PermissionDenied",
+          "TokenInvalid",
+          "InvalidArgument",
+          "SchemaMismatch",
+          "VendorError",
+          "TmuxError",
+          "IpcError",
+          "Internal"
+        ],
+        "x-taxonomy-version": "1"
+      },
+      "RetryHint": {
+        "description": "Advisory retry guidance. Informational only — the caller decides whether to act on it.",
+        "oneOf": [
+          {
+            "type": "object",
+            "title": "RetryAfter",
+            "description": "Retry after a specific wall-clock instant (RFC3339).",
+            "required": ["kind", "resume_at"],
+            "properties": {
+              "kind": { "type": "string", "const": "retry_after" },
+              "resume_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO-8601 / RFC3339 timestamp at which the caller may retry."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "BackoffMs",
+            "description": "Retry after a millisecond backoff (caller-driven clock).",
+            "required": ["kind", "ms"],
+            "properties": {
+              "kind": { "type": "string", "const": "backoff_ms" },
+              "ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Milliseconds to wait before retrying."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "NotRetryable",
+            "description": "The failure is not retryable; the caller should surface it instead.",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "type": "string", "const": "not_retryable" }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "retry_after": "#/components/schemas/RetryHint",
+            "backoff_ms": "#/components/schemas/RetryHint",
+            "not_retryable": "#/components/schemas/RetryHint"
+          }
+        }
+      },
+      "TmaiError": {
+        "type": "object",
+        "description": "Structured error carried across every tmai contract boundary (MCP, WebUI, CLI, internal facade API). `code` is the primary dispatch key; `message` is human-readable; `retry_hint` is advisory; `context` is per-code structured detail; `trace_id` ties the error to a tracing span for cross-surface correlation.\n\nSee `docs/errors.md` for code-by-code documentation.",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "$ref": "#/components/schemas/ErrorCode" },
+          "message": {
+            "type": "string",
+            "description": "Human-readable summary. English-only in v1 (shape supports future i18n)."
+          },
+          "retry_hint": {
+            "$ref": "#/components/schemas/RetryHint",
+            "description": "Advisory retry guidance; absent when the caller has no way to retry."
+          },
+          "context": {
+            "description": "Code-specific structured detail. Always an object in practice; the field is omitted from the wire when the emitter attached nothing.",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "trace_id": {
+            "type": "string",
+            "description": "Request/span identifier for correlating this error across MCP, WebUI, and internal tracing spans."
+          }
+        }
+      },
+      "Milestone": {
+        "type": "object",
+        "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
+        "required": [
+          "at",
+          "event"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the milestone occurred"
+          },
+          "event": {
+            "type": "string",
+            "description": "Human-readable event description"
+          }
+        }
+      },
+      "TaskMetaEntry": {
+        "type": "object",
+        "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nThis type is part of the type-sharing PoC (#446): the TypeScript\ndefinition under `crates/tmai-app/web/src/types/generated/TaskMetaEntry.ts`\nis generated from this struct by ts-rs. Do not edit the generated file\ndirectly — update the Rust source and run `scripts/generate-types.sh`.",
+        "required": [
+          "branch"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent ID working on this task"
+          },
+          "agent_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Status of the linked agent"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name (the join key)"
+          },
+          "is_dirty": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the worktree has uncommitted changes"
+          },
+          "issue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Associated GitHub issue number",
+            "minimum": 0
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Milestone"
+            },
+            "description": "Milestone history"
+          },
+          "pr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Associated pull request number",
+            "minimum": 0
+          },
+          "review_agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Review agent ID"
+          },
+          "worktree_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Worktree path (from git)"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "task-meta",
+      "description": "Project task metadata — merges git worktree info with `.task-meta/` JSON"
+    },
+    {
+      "name": "prompt-queue",
+      "description": "Per-agent send-prompt queue — enumerate and cancel queued prompts before delivery"
+    }
+  ]
+}

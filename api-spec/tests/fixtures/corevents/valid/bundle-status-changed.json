@@ -1,0 +1,6 @@
+{
+  "type": "BundleStatusChanged",
+  "bundle_id": "bundle-multirepo-7",
+  "old": "running",
+  "new": "partially_completed"
+}

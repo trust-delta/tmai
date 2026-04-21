@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>tmai API Spec</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Public API contracts for tmai-core">
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    nav.spec-bar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 0.55rem 1rem;
+      background: #0b1020;
+      color: #e6ecff;
+      border-bottom: 1px solid #1b2340;
+      font-size: 13px;
+    }
+    nav.spec-bar .brand { font-weight: 600; letter-spacing: 0.02em; }
+    nav.spec-bar a { color: #8ab4ff; text-decoration: none; }
+    nav.spec-bar a:hover { text-decoration: underline; }
+    nav.spec-bar .sep { color: #445; }
+    main.spec-body { flex: 1 1 auto; min-height: 0; }
+    redoc { display: block; height: 100%; }
+  </style>
+</head>
+<body>
+  <nav class="spec-bar" aria-label="tmai spec navigation">
+    <span class="brand">tmai-api-spec</span>
+    <span class="sep">·</span>
+    <a href="./index.html">REST API (Redoc)</a>
+    <a href="./openapi.json">openapi.json</a>
+    <a href="./corevents.schema.json">corevents.schema.json</a>
+    <a href="./errors.md">errors.md</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/trust-delta/tmai-api-spec" rel="noopener">GitHub</a>
+  </nav>
+  <main class="spec-body">
+    <redoc spec-url="openapi.json"></redoc>
+  </main>
+  <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+</body>
+</html>

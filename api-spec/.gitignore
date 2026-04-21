@@ -1,0 +1,7 @@
+node_modules/
+package-lock.json
+_site/
+
+# Claude Code local state (per-collaborator notes, skill logs, etc.)
+CLAUDE.md
+.claude/

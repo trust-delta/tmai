@@ -1,0 +1,6 @@
+{
+  "type": "DispatchBypassUsed",
+  "origin": { "kind": "Human", "interface": "cli" },
+  "bypassed": ["capacity_check", "vendor_availability"],
+  "reason": "manual override during incident"
+}

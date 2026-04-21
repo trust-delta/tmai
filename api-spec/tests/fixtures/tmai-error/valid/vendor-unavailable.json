@@ -1,0 +1,6 @@
+{
+  "code": "VendorUnavailable",
+  "message": "anthropic rate-limited; retry after reset",
+  "retry_hint": { "kind": "retry_after", "resume_at": "2026-04-18T12:34:56Z" },
+  "context": { "vendor": "anthropic", "reason": "429" }
+}

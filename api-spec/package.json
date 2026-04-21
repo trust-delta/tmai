@@ -1,0 +1,18 @@
+{
+  "name": "tmai-api-spec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public API contracts for tmai (openapi.json, corevents.schema.json, error taxonomy).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "lint:openapi": "redocly lint openapi.json",
+    "test:schemas": "node tests/validate.mjs",
+    "test": "npm run lint:openapi && npm run test:schemas"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.27.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

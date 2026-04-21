@@ -1,0 +1,6 @@
+{
+  "type": "AgentStopped",
+  "target": "main:0.1",
+  "cwd": "/home/user/project",
+  "last_assistant_message": null
+}

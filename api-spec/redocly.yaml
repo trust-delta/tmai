@@ -1,0 +1,7 @@
+extends:
+  - recommended
+
+rules:
+  # tmai-core is a user-local service (no hosted deployment). `localhost` is
+  # the canonical server URL, not a placeholder.
+  no-server-example.com: off
