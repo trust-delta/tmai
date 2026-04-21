@@ -1,0 +1,55 @@
+name: GitHub Pages (API spec docs)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api-spec/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: api-spec/package-lock.json
+
+      - name: Install API spec dependencies
+        working-directory: api-spec
+        run: npm ci
+
+      - name: Build static docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          ./api-spec/node_modules/.bin/redocly build-docs api-spec/openapi.json --output _site/index.html
+          if [[ -d api-spec/docs ]]; then
+            cp -R api-spec/docs/. _site/
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
