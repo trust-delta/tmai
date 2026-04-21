@@ -28,7 +28,7 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   fetch-core:
@@ -44,17 +44,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read core version from versions.toml
+      - name: Read versions from versions.toml
         id: versions
         shell: bash
         run: |
           set -euo pipefail
-          core=$(grep -E '^core[[:space:]]*=' versions.toml | sed -E 's/.*"([^"]+)".*/\1/')
-          if [[ -z "${core}" || "${core}" == "0.0.0" ]]; then
-            echo "::error::versions.toml:core is unset or placeholder (0.0.0)"
-            exit 1
-          fi
-          echo "core=${core}" >> "$GITHUB_OUTPUT"
+          read_version() {
+            local key="$1"
+            local val
+            val=$(grep -E "^${key}[[:space:]]*=" versions.toml | sed -E 's/.*"([^"]+)".*/\1/')
+            if [[ -z "${val}" || "${val}" == "0.0.0" ]]; then
+              echo "::error::versions.toml:${key} is unset or placeholder (0.0.0)" >&2
+              return 1
+            fi
+            printf '%s' "${val}"
+          }
+          core=$(read_version core)
+          react=$(read_version react)
+          ratatui=$(read_version ratatui)
+          api_spec=$(read_version api_spec)
+          {
+            echo "core=${core}"
+            echo "react=${react}"
+            echo "ratatui=${ratatui}"
+            echo "api_spec=${api_spec}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download tmai-core binary from private Release
         env:
@@ -172,11 +186,17 @@ jobs:
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            version="${{ github.event.inputs.version }}"
           else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+            version="${GITHUB_REF#refs/tags/v}"
           fi
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version: ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
         with:
@@ -255,7 +275,15 @@ jobs:
 
       - name: Extract version
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version: ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
         with:

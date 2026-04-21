@@ -28,16 +28,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: api-spec/package-lock.json
 
-      - name: Install Redocly CLI
-        run: npm install -g @redocly/cli
+      - name: Install API spec dependencies
+        working-directory: api-spec
+        run: npm ci
 
       - name: Build static docs
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p _site
-          npx @redocly/cli build-docs api-spec/openapi.json --output _site/index.html
+          ./api-spec/node_modules/.bin/redocly build-docs api-spec/openapi.json --output _site/index.html
           if [[ -d api-spec/docs ]]; then
             cp -R api-spec/docs/. _site/
           fi
