@@ -9,7 +9,6 @@ on:
     paths:
       - "api-spec/**"
       - "clients/react/src/types/generated/**"
-      - ".github/workflows/types-drift.yml"
 
 permissions:
   contents: read

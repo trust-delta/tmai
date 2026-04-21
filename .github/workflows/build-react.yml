@@ -5,12 +5,10 @@ on:
     paths:
       - "clients/react/**"
       - "api-spec/**"
-      - ".github/workflows/build-react.yml"
   push:
     branches: [main]
     paths:
       - "clients/react/**"
-      - ".github/workflows/build-react.yml"
 
 permissions:
   contents: read

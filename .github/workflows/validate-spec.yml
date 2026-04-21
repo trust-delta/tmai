@@ -4,12 +4,10 @@ on:
   pull_request:
     paths:
       - "api-spec/**"
-      - ".github/workflows/validate-spec.yml"
   push:
     branches: [main]
     paths:
       - "api-spec/**"
-      - ".github/workflows/validate-spec.yml"
 
 permissions:
   contents: read

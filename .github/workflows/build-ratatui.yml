@@ -5,12 +5,10 @@ on:
     paths:
       - "clients/ratatui/**"
       - "api-spec/**"
-      - ".github/workflows/build-ratatui.yml"
   push:
     branches: [main]
     paths:
       - "clients/ratatui/**"
-      - ".github/workflows/build-ratatui.yml"
 
 permissions:
   contents: read
