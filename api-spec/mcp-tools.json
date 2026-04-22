@@ -1,0 +1,864 @@
+[
+  {
+    "description": "Approve a pending permission request for an agent",
+    "name": "approve",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID (e.g., \"a1b2c3d4\"), pane target (e.g., \"main:0.0\"), PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Delete a git worktree",
+    "name": "delete_worktree",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "force": {
+          "default": false,
+          "description": "Force delete even if worktree has uncommitted changes",
+          "type": "boolean"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to cwd or first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worktree_name": {
+          "description": "Worktree name (e.g., \"174-feat-integrate-permissiondenied-hook\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worktree_name"
+      ],
+      "title": "WorktreeDeleteParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Dispatch a GitHub issue: fetch issue, create worktree, spawn agent with issue context",
+    "name": "dispatch_issue",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "additional_instructions": {
+          "default": null,
+          "description": "Extra instructions appended after the auto-generated issue prompt",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_branch": {
+          "default": null,
+          "description": "Base branch to fork from (defaults to main)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "default": null,
+          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue_number": {
+          "description": "GitHub issue number to dispatch",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model": {
+          "default": null,
+          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to cwd or first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "issue_number"
+      ],
+      "title": "DispatchIssueParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Dispatch a PR review: spawn agent to review a pull request and post comments",
+    "name": "dispatch_review",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "additional_instructions": {
+          "default": null,
+          "description": "Extra review instructions (e.g., \"focus on security\", \"check error handling\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "default": null,
+          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr_number": {
+          "description": "Pull request number to review",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to cwd or first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "DispatchReviewParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get detailed info about a specific agent",
+    "name": "get_agent",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID (e.g., \"a1b2c3d4\"), pane target (e.g., \"main:0.0\"), PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the terminal output of an agent",
+    "name": "get_agent_output",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID (e.g., \"a1b2c3d4\"), pane target (e.g., \"main:0.0\"), PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get CI failure log for a branch",
+    "name": "get_ci_failure_log",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "branch": {
+          "description": "Branch name",
+          "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "title": "BranchParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get CI check results for a branch",
+    "name": "get_ci_status",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "branch": {
+          "description": "Branch name",
+          "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "title": "BranchParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get PR comments and reviews",
+    "name": "get_pr_comments",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "PrNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get PR merge status",
+    "name": "get_pr_merge_status",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "PrNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get task metadata (issue/PR associations, milestones) for all active branches",
+    "name": "get_task_meta",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "EmptyParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the conversation transcript of an agent",
+    "name": "get_transcript",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID (e.g., \"a1b2c3d4\"), pane target (e.g., \"main:0.0\"), PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get diff stats for a branch",
+    "name": "git_diff_stat",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "branch": {
+          "description": "Branch name",
+          "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "title": "BranchParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Kill (terminate) an agent by ID",
+    "name": "kill_agent",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID (e.g., \"a1b2c3d4\"), pane target (e.g., \"main:0.0\"), PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List monitored AI agents (scoped to current project by default). Filter by phase: working, blocked, idle, offline.",
+    "name": "list_agents",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "phase": {
+          "default": null,
+          "description": "Filter by phase: \"working\", \"blocked\", \"idle\", \"offline\" (optional, returns all if omitted)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "description": "Filter by project path (git_common_dir). Defaults to the MCP client's own project context.\nSet to \"*\" to list agents from all projects.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "ListAgentsParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List git branches",
+    "name": "list_branches",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "RepoParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List open issues",
+    "name": "list_issues",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "RepoParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List open pull requests",
+    "name": "list_prs",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "RepoParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List all agent teams",
+    "name": "list_teams",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "EmptyParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List all git worktrees",
+    "name": "list_worktrees",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "EmptyParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Merge a pull request (checks CI first, then squash/merge/rebase with optional branch and worktree cleanup)",
+    "name": "merge_pr",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "delete_branch": {
+          "default": true,
+          "description": "Delete remote branch after merge (default: true)",
+          "type": "boolean"
+        },
+        "delete_worktree": {
+          "default": false,
+          "description": "Clean up associated worktree after merge (default: false)",
+          "type": "boolean"
+        },
+        "method": {
+          "default": "squash",
+          "description": "Merge method: \"squash\" (default), \"merge\", or \"rebase\"",
+          "type": "string"
+        },
+        "pr_number": {
+          "description": "Pull request number to merge",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worktree_name": {
+          "default": null,
+          "description": "Worktree name to clean up (auto-detected from branch if omitted)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "MergePrParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Rerun failed CI checks",
+    "name": "rerun_ci",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "branch": {
+          "description": "Branch name",
+          "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "title": "BranchParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Review a pull request — approve, request changes, or post a comment",
+    "name": "review_pr",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "description": "Review action: \"approve\", \"request_changes\", or \"comment\"",
+          "type": "string"
+        },
+        "body": {
+          "default": null,
+          "description": "Review body text / summary (optional)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr_number": {
+          "description": "Pull request number to review",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number",
+        "action"
+      ],
+      "title": "ReviewPrParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Select a choice for an agent's question",
+    "name": "select_choice",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        },
+        "index": {
+          "description": "Choice index (1-based)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "index"
+      ],
+      "title": "SelectChoiceParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Send a special key to an agent",
+    "name": "send_key",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        },
+        "key": {
+          "description": "Key name (Enter, Escape, Space, Up, Down, Left, Right, Tab, BTab, BSpace)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key"
+      ],
+      "title": "SendKeyParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Send and submit a prompt to an agent (queues if busy, delivers when idle; Enter is appended)",
+    "name": "send_prompt",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Prompt text to send to the agent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "prompt"
+      ],
+      "title": "SendPromptParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Send text input to an agent",
+    "name": "send_text",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        },
+        "text": {
+          "description": "Text to send to the agent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "SendTextParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Mark an existing agent as orchestrator (e.g. after /resume recovery)",
+    "name": "set_orchestrator",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "SetOrchestratorParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Spawn a new AI agent in a directory",
+    "name": "spawn_agent",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "directory": {
+          "description": "Working directory for the agent",
+          "type": "string"
+        },
+        "effort": {
+          "default": null,
+          "description": "Per-dispatch effort override (`low`/`medium`/`high`/`xhigh`/`max`).\nWhen omitted, falls through to `[spawn.claude].implementer_effort` /\n`default_effort` or the CLI's built-in default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "Per-dispatch model override (e.g. `claude-sonnet-4-6`). When omitted,\nresolution falls through to `[spawn.<type>].default_model` and then to\nthe CLI's user-global default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "default": null,
+          "description": "Initial prompt to send after the agent starts (optional)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "directory"
+      ],
+      "title": "SpawnAgentParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Spawn an orchestrator agent with workflow settings from config",
+    "name": "spawn_orchestrator",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "additional_instructions": {
+          "default": null,
+          "description": "Additional instructions appended to the composed orchestrator prompt",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cwd": {
+          "default": null,
+          "description": "Working directory (optional, defaults to first registered project or cwd)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "default": null,
+          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "SpawnOrchestratorParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create a worktree and spawn an agent in it",
+    "name": "spawn_worktree",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "base_branch": {
+          "default": null,
+          "description": "Base branch to fork from (defaults to main)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "default": null,
+          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue_number": {
+          "default": null,
+          "description": "GitHub issue number. When provided: auto-generates worktree name from issue title\n(if name is omitted) and composes a resolve prompt with the issue context.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "description": "Worktree name (optional if issue_number is provided — auto-generated from issue title)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "default": null,
+          "description": "Initial prompt to send after the agent starts (optional)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to cwd or first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "SpawnWorktreeParams",
+      "type": "object"
+    }
+  }
+]

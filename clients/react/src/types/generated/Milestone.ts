@@ -6,13 +6,12 @@
  * Part of the type-sharing PoC (#446): generated TypeScript lives in
  * `crates/tmai-app/web/src/types/generated/Milestone.ts`.
  */
-export type Milestone = {
-  /**
-   * When the milestone occurred
-   */
-  at: string;
-  /**
-   * Human-readable event description
-   */
-  event: string;
-};
+export type Milestone = { 
+/**
+ * When the milestone occurred
+ */
+at: string, 
+/**
+ * Human-readable event description
+ */
+event: string, };

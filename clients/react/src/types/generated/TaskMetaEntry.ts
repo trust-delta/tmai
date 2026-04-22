@@ -9,41 +9,40 @@ import type { Milestone } from "./Milestone";
  * is generated from this struct by ts-rs. Do not edit the generated file
  * directly — update the Rust source and run `scripts/generate-types.sh`.
  */
-export type TaskMetaEntry = {
-  /**
-   * Branch name (the join key)
-   */
-  branch: string;
-  /**
-   * Associated GitHub issue number
-   */
-  issue: bigint | null;
-  /**
-   * Agent ID working on this task
-   */
-  agent_id: string | null;
-  /**
-   * Associated pull request number
-   */
-  pr: bigint | null;
-  /**
-   * Review agent ID
-   */
-  review_agent_id: string | null;
-  /**
-   * Worktree path (from git)
-   */
-  worktree_path: string | null;
-  /**
-   * Status of the linked agent
-   */
-  agent_status: string | null;
-  /**
-   * Whether the worktree has uncommitted changes
-   */
-  is_dirty: boolean | null;
-  /**
-   * Milestone history
-   */
-  milestones: Array<Milestone>;
-};
+export type TaskMetaEntry = { 
+/**
+ * Branch name (the join key)
+ */
+branch: string, 
+/**
+ * Associated GitHub issue number
+ */
+issue: bigint | null, 
+/**
+ * Agent ID working on this task
+ */
+agent_id: string | null, 
+/**
+ * Associated pull request number
+ */
+pr: bigint | null, 
+/**
+ * Review agent ID
+ */
+review_agent_id: string | null, 
+/**
+ * Worktree path (from git)
+ */
+worktree_path: string | null, 
+/**
+ * Status of the linked agent
+ */
+agent_status: string | null, 
+/**
+ * Whether the worktree has uncommitted changes
+ */
+is_dirty: boolean | null, 
+/**
+ * Milestone history
+ */
+milestones: Array<Milestone>, };

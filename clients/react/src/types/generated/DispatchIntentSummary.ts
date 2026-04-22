@@ -11,31 +11,30 @@ import type { BundleId } from "./BundleId";
  * correlate back to the original dispatch request without learning its
  * contents.
  */
-export type DispatchIntentSummary = {
-  /**
-   * Absolute path to the target project / worktree root.
-   */
-  project_path: string;
-  /**
-   * Agent role requested (e.g. "implementer", "reviewer").
-   */
-  role: string;
-  /**
-   * Bundle id when this dispatch is part of a multi-project bundle.
-   */
-  bundle_id?: BundleId;
-  /**
-   * Hex digest (implementation-chosen hash, e.g. SHA-256) of the
-   * dispatched prompt. Lets auditors correlate this event with the
-   * recorded intent without exposing the prompt text.
-   */
-  prompt_hash?: string;
-  /**
-   * Associated GitHub issue number, if any.
-   */
-  issue_number?: bigint;
-  /**
-   * Associated pull request number, if any.
-   */
-  pr_number?: bigint;
-};
+export type DispatchIntentSummary = { 
+/**
+ * Absolute path to the target project / worktree root.
+ */
+project_path: string, 
+/**
+ * Agent role requested (e.g. "implementer", "reviewer").
+ */
+role: string, 
+/**
+ * Bundle id when this dispatch is part of a multi-project bundle.
+ */
+bundle_id?: BundleId, 
+/**
+ * Hex digest (implementation-chosen hash, e.g. SHA-256) of the
+ * dispatched prompt. Lets auditors correlate this event with the
+ * recorded intent without exposing the prompt text.
+ */
+prompt_hash?: string, 
+/**
+ * Associated GitHub issue number, if any.
+ */
+issue_number?: bigint, 
+/**
+ * Associated pull request number, if any.
+ */
+pr_number?: bigint, };

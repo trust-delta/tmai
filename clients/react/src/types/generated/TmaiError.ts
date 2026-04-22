@@ -10,31 +10,30 @@ import type { RetryHint } from "./RetryHint";
  * structured detail; `trace_id` ties the error to a `tracing` span for
  * cross-surface correlation.
  */
-export type TmaiError = {
-  /**
-   * Machine-readable, stable error classification.
-   */
-  code: ErrorCode;
-  /**
-   * Human-readable summary. English-only in v1 (shape supports future i18n).
-   */
-  message: string;
-  /**
-   * Advisory retry guidance; absent when the caller has no way to retry.
-   */
-  retry_hint?: RetryHint;
-  /**
-   * Code-specific structured detail. Always an object in practice; defaults
-   * to `null` when the caller did not attach any.
-   *
-   * Wire: omitted when null (see `skip_serializing_if`). TS: rendered as
-   * `unknown`, which already accepts `undefined` at the call site — no
-   * `ts(optional)` because that attribute rejects non-`Option<T>` fields.
-   */
-  context: unknown;
-  /**
-   * Request/span identifier for correlating this error across MCP, WebUI,
-   * and internal tracing spans.
-   */
-  trace_id?: string;
-};
+export type TmaiError = { 
+/**
+ * Machine-readable, stable error classification.
+ */
+code: ErrorCode, 
+/**
+ * Human-readable summary. English-only in v1 (shape supports future i18n).
+ */
+message: string, 
+/**
+ * Advisory retry guidance; absent when the caller has no way to retry.
+ */
+retry_hint?: RetryHint, 
+/**
+ * Code-specific structured detail. Always an object in practice; defaults
+ * to `null` when the caller did not attach any.
+ *
+ * Wire: omitted when null (see `skip_serializing_if`). TS: rendered as
+ * `unknown`, which already accepts `undefined` at the call site — no
+ * `ts(optional)` because that attribute rejects non-`Option<T>` fields.
+ */
+context: unknown, 
+/**
+ * Request/span identifier for correlating this error across MCP, WebUI,
+ * and internal tracing spans.
+ */
+trace_id?: string, };

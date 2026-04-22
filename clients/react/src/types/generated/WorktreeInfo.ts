@@ -6,21 +6,20 @@
  * Contains name, path, branch, and the original repo directory.
  * Added in Claude Code v2.1.69.
  */
-export type WorktreeInfo = {
-  /**
-   * Worktree name (e.g., "feat-auth")
-   */
-  name: string | null;
-  /**
-   * Worktree filesystem path
-   */
-  path: string | null;
-  /**
-   * Branch checked out in the worktree
-   */
-  branch: string | null;
-  /**
-   * Original (main) repository directory
-   */
-  original_repo: string | null;
-};
+export type WorktreeInfo = { 
+/**
+ * Worktree name (e.g., "feat-auth")
+ */
+name: string | null, 
+/**
+ * Worktree filesystem path
+ */
+path: string | null, 
+/**
+ * Branch checked out in the worktree
+ */
+branch: string | null, 
+/**
+ * Original (main) repository directory
+ */
+original_repo: string | null, };

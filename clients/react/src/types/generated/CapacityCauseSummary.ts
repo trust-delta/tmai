@@ -7,20 +7,12 @@
  * a separate query. `delta == 0` is valid (e.g. `LimitChanged` when a
  * config reload moved the ceiling but no slots moved).
  */
-export type CapacityCauseSummary =
-  | {
-      kind: "agent_spawned";
-      /**
-       * Target of the newly spawned agent.
-       */
-      target: string;
-    }
-  | {
-      kind: "agent_terminated";
-      /**
-       * Target of the agent that ended.
-       */
-      target: string;
-    }
-  | { kind: "limit_changed" }
-  | { kind: "reconciled" };
+export type CapacityCauseSummary = { "kind": "agent_spawned", 
+/**
+ * Target of the newly spawned agent.
+ */
+target: string, } | { "kind": "agent_terminated", 
+/**
+ * Target of the agent that ended.
+ */
+target: string, } | { "kind": "limit_changed" } | { "kind": "reconciled" };
