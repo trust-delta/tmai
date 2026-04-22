@@ -4,5 +4,5 @@
   "account": "team-main",
   "old": { "state": "available" },
   "new": { "state": "rate_limited", "resume_at": "2026-04-18T12:34:56Z" },
-  "detected_via": "HttpHook"
+  "detected_via": "http_hook"
 }
