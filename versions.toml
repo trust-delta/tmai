@@ -3,11 +3,10 @@
 # Each key points to the exact upstream version that ships bundled in a given
 # tmai release.
 #
-# core stays 0.0.0 until Phase 1b (tmai-core release.yml ships core-v* tags);
-# release.yml refuses to bundle while any key is 0.0.0, so the placeholder is
-# an active safety net, not a pending TODO.
+# release.yml refuses to bundle while any key is 0.0.0, so placeholders are
+# an active safety net rather than a pending TODO.
 
-core = "0.0.0"      # tmai-core private Release (core-v* tag) — Phase 1b
+core = "2.0.0"      # tmai-core private Release (core-v2.0.0 pushed 2026-04-22)
 react = "1.0.0"     # clients/react/package.json version
 ratatui = "0.1.0"   # clients/ratatui/Cargo.toml version
-api_spec = "1.9.0"  # api-spec/openapi.json info.version
+api_spec = "2.0.0"  # api-spec/openapi.json info.version
