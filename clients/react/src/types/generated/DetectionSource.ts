@@ -2,5 +2,12 @@
 
 /**
  * Source of agent state detection
+ *
+ * Wire format is `snake_case` to match the contract-layer enums
+ * (`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The
+ * PascalCase names (e.g. `"HttpHook"`) shipped prior to #7 are still
+ * accepted on deserialization via `#[serde(alias = ...)]` so that
+ * previously-persisted `MonitoredAgent.detection_source` payloads continue
+ * to round-trip.
  */
-export type DetectionSource = "HttpHook" | "IpcSocket" | "WebSocket" | "CapturePane";
+export type DetectionSource = "http_hook" | "ipc_socket" | "web_socket" | "capture_pane";

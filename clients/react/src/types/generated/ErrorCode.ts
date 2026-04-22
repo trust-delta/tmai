@@ -7,18 +7,4 @@
  * aliases so old payloads still deserialize. Callers switch on this value
  * instead of `message` text.
  */
-export type ErrorCode =
-  | "CapacityExceeded"
-  | "VendorUnavailable"
-  | "QueueFull"
-  | "AgentNotFound"
-  | "AgentInTerminalState"
-  | "WorktreeConflict"
-  | "PermissionDenied"
-  | "TokenInvalid"
-  | "InvalidArgument"
-  | "SchemaMismatch"
-  | "VendorError"
-  | "TmuxError"
-  | "IpcError"
-  | "Internal";
+export type ErrorCode = "CapacityExceeded" | "VendorUnavailable" | "QueueFull" | "AgentNotFound" | "AgentInTerminalState" | "WorktreeConflict" | "AlreadyRunning" | "PermissionDenied" | "TokenInvalid" | "InvalidArgument" | "SchemaMismatch" | "VendorError" | "TmuxError" | "IpcError" | "Internal";

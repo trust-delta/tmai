@@ -9,19 +9,12 @@
  * advertised reset time when known.
  * `Unavailable` → outage or auth failure; retry left to policy.
  */
-export type VendorAvailabilityState =
-  | { state: "available" }
-  | {
-      state: "rate_limited";
-      /**
-       * Wall-clock time when dispatches may resume (if known).
-       */
-      resume_at?: string;
-    }
-  | {
-      state: "unavailable";
-      /**
-       * Free-text reason for the outage (no secrets).
-       */
-      reason: string;
-    };
+export type VendorAvailabilityState = { "state": "available" } | { "state": "rate_limited", 
+/**
+ * Wall-clock time when dispatches may resume (if known).
+ */
+resume_at?: string, } | { "state": "unavailable", 
+/**
+ * Free-text reason for the outage (no secrets).
+ */
+reason: string, };

@@ -8,10 +8,4 @@
  * than the per-agent `AgentStatusChanged` stream (issue #463, open
  * question 3).
  */
-export type BundleStatus =
-  | "pending"
-  | "running"
-  | "partially_completed"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type BundleStatus = "pending" | "running" | "partially_completed" | "completed" | "failed" | "cancelled";
