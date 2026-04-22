@@ -84,9 +84,9 @@
       ]
     },
     "DetectionSource": {
-      "description": "How a state transition was detected.",
+      "description": "How a state transition was detected. Wire format is snake_case to match the contract-layer enums; PascalCase names are kept only as serde aliases on deserialize (see the Rust type's docstring).",
       "type": "string",
-      "enum": ["HttpHook", "IpcSocket", "WebSocket", "CapturePane"]
+      "enum": ["http_hook", "ipc_socket", "web_socket", "capture_pane"]
     },
     "GuardrailKind": {
       "description": "Type of guardrail that was exceeded.",

@@ -3,5 +3,5 @@
   "vendor": "anthropic",
   "old": { "state": "typo_state" },
   "new": { "state": "available" },
-  "detected_via": "HttpHook"
+  "detected_via": "http_hook"
 }

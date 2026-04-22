@@ -6,34 +6,41 @@
  * Used by the orchestrator notification middleware to provide context
  * about what triggered a side-effect API call.
  */
-export type ActionOrigin =
-  | {
-      kind: "Human";
-      /**
-       * Which interface: "webui", "tui", "mobile", "cli", etc.
-       */
-      interface: string;
-      /**
-       * Caller working directory — the currently-selected project root.
-       * Omitted when no project is selected (server accepts missing field via serde default).
-       */
-      cwd?: string;
-    }
-  | {
-      kind: "Agent";
-      /**
-       * Agent target ID (e.g., "main:0.0")
-       */
-      id: string;
-      /**
-       * Whether this agent is the orchestrator
-       */
-      is_orchestrator: boolean;
-    }
-  | {
-      kind: "System";
-      /**
-       * Subsystem name (e.g., "auto_cleanup", "pr_monitor")
-       */
-      subsystem: string;
-    };
+export type ActionOrigin = { "kind": "Human", 
+/**
+ * Which interface: "webui", "tui", "mobile", "cli", etc.
+ */
+interface: string, 
+/**
+ * Working directory of the UI request, used for project-scope routing (#89).
+ *
+ * The WebUI/TUI passes the cwd from the request body so
+ * `OrchestratorNotifier::source_project_scope` can scope notifications
+ * without needing the caller to be tracked in `state.agents`.
+ */
+cwd: string | null, } | { "kind": "Agent", 
+/**
+ * Agent target ID (e.g., "main:0.0")
+ */
+id: string, 
+/**
+ * Whether this agent is the orchestrator
+ */
+is_orchestrator: boolean, 
+/**
+ * Caller working directory at origin creation time (MCP loopback only).
+ *
+ * Set by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so
+ * `OrchestratorNotifier::source_project_scope` can resolve the project
+ * root when the MCP agent ID is not tracked in `state.agents` (#75).
+ */
+cwd: string | null, } | { "kind": "System", 
+/**
+ * Subsystem name (e.g., "auto_cleanup", "pr_monitor")
+ */
+subsystem: string, 
+/**
+ * Working directory of the originating subsystem process, used for
+ * project-scope routing (#89).
+ */
+cwd: string | null, };
