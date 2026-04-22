@@ -5,3 +5,27 @@ rules:
   # tmai-core is a user-local service (no hosted deployment). `localhost` is
   # the canonical server URL, not a placeholder.
   no-server-example.com: off
+
+  # `openapi.json` is emitted by `tmai-xtask openapi` from utoipa `#[path]`
+  # macros, which have no knowledge of the runtime base URL — tmai picks
+  # its own port and token per session. Adding a `servers` block at
+  # generation time would lie about the deployment shape.
+  no-empty-servers: off
+
+  # Auth is applied by an axum layer at runtime (bearer token over TCP,
+  # X-Tmai-Origin header over the Unix loopback). utoipa-path macros in
+  # the current PoC rollout do not annotate per-operation security; the
+  # openapi spec is a wire-shape contract, not an auth reference.
+  security-defined: off
+
+  # utoipa-path coverage is intentionally PoC-scope today (#446 tracks the
+  # ~80-endpoint rollout). Demanding a documented 4xx response on every
+  # operation would block incremental coverage.
+  operation-4xx-response: off
+
+  # `CoreEvent`, `DispatchKind`, and other contract-layer schemas are
+  # exposed in `components.schemas` for JSON Schema 2020-12 (`corevents.schema.json`)
+  # and off-repo TS clients to reference — they are not the response type
+  # of any REST path and never will be. Redocly's "unused component" rule
+  # is a false positive for this dual-consumer contract surface.
+  no-unused-components: off
