@@ -22,14 +22,27 @@
 
 ## Install
 
-Binary releases for supported platforms are attached to this repo's [Releases page](https://github.com/trust-delta/tmai/releases) (linux x86_64 / linux aarch64 / macOS aarch64 — ETA tracked in [`tmai-core#17`](https://github.com/trust-delta/tmai-core/issues/17) successor tasks).
+Prebuilt bundle tarballs are attached to this repo's [Releases](https://github.com/trust-delta/tmai/releases). The install script picks the right artefact for your platform, verifies the SHA-256, and lays the tree out under a prefix:
 
 ```bash
-# Quick install (planned — once Releases land):
-curl -L https://github.com/trust-delta/tmai/releases/latest/download/tmai-$(uname -s | tr A-Z a-z)-$(uname -m).tar.gz | tar xz -C ~/.local/bin
+# Latest release into $HOME/.local (default prefix):
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
+
+# Pinned version + custom prefix:
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
+  | bash -s -- --version 2.0.0 --prefix /usr/local
 ```
 
-Until then, build from source — see [`tmai-core`'s getting started guide](https://github.com/trust-delta/tmai-core/blob/main/doc/getting-started.md) (requires repository access).
+This installs:
+
+```
+$PREFIX/bin/tmai
+$PREFIX/bin/tmai-ratatui
+$PREFIX/share/tmai/webui/       # served automatically by tmai (binary-relative fallback)
+$PREFIX/share/tmai/api-spec/    # OpenAPI + CoreEvent JSON Schema reference
+```
+
+Supported platforms: Linux x86_64, Linux aarch64, macOS arm64. For other platforms, build from source in [`tmai-core`](https://github.com/trust-delta/tmai-core) (requires repository access).
 
 ## Quick start
 
