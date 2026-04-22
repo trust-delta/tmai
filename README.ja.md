@@ -24,14 +24,27 @@
 
 ## インストール
 
-対応プラットフォームのバイナリリリースは本 repo の [Releases ページ](https://github.com/trust-delta/tmai/releases) に添付されます (linux x86_64 / linux aarch64 / macOS aarch64 — 配布時期は [`tmai-core#17`](https://github.com/trust-delta/tmai-core/issues/17) の後継タスクで管理)。
+対応プラットフォームのバンドル tarball は本 repo の [Releases](https://github.com/trust-delta/tmai/releases) に添付されます。install スクリプトがプラットフォームを自動判定し、SHA-256 を検証してから prefix 以下に展開します:
 
 ```bash
-# クイックインストール (Releases 公開後):
-curl -L https://github.com/trust-delta/tmai/releases/latest/download/tmai-$(uname -s | tr A-Z a-z)-$(uname -m).tar.gz | tar xz -C ~/.local/bin
+# 最新リリースを $HOME/.local (デフォルト prefix) に:
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
+
+# バージョンと prefix を指定:
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
+  | bash -s -- --version 2.0.0 --prefix /usr/local
 ```
 
-それまではソースビルドを利用してください — [`tmai-core` の getting-started](https://github.com/trust-delta/tmai-core/blob/main/doc/getting-started.md) 参照 (リポジトリ権限が必要)。
+展開先:
+
+```
+$PREFIX/bin/tmai
+$PREFIX/bin/tmai-ratatui
+$PREFIX/share/tmai/webui/       # tmai が binary 相対 fallback で自動配信
+$PREFIX/share/tmai/api-spec/    # OpenAPI + CoreEvent JSON Schema リファレンス
+```
+
+対応プラットフォーム: Linux x86_64、Linux aarch64、macOS arm64。他のプラットフォームは [`tmai-core`](https://github.com/trust-delta/tmai-core) でのソースビルド (リポジトリ権限が必要)。
 
 ## クイックスタート
 
