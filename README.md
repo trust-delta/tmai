@@ -1,120 +1,37 @@
-# tmai
+# tmai (deprecated crate)
 
-**Tactful Multi Agent Interface** — monitor, control, and orchestrate multiple AI coding agents (Claude Code, Codex CLI, OpenCode, Gemini CLI) through a unified engine and pluggable UIs.
+> ⚠️ **This crates.io entry is deprecated.** See <https://github.com/trust-delta/tmai/releases> for installers.
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
-
-<p align="center">
-  <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
-</p>
-
-> **This is the project hub.** Implementation lives in a set of focused repositories, linked below. Start here to pick the right one for your question or contribution.
-
-## Repositories
-
-| Repo | Visibility | Role |
-|------|-----------|------|
-| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | Core engine — orchestration, agent detection, policy, MCP host, HTTP/SSE server |
-| [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) | public | OpenAPI 3.1 + JSON Schema. Wire contract between core and any UI client |
-| [`tmai-react`](https://github.com/trust-delta/tmai-react) | public | Reference React WebUI. Forkable, swappable with any client speaking the contract |
-| [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui) | public | Reference ratatui terminal UI. Peer to `tmai-react` |
+tmai moved from `cargo install tmai` to binary releases at **v2.0.0** (2026-04-22, monorepo re-consolidation).
 
 ## Install
 
-Prebuilt bundle tarballs are attached to this repo's [Releases](https://github.com/trust-delta/tmai/releases). The install script picks the right artefact for your platform, verifies the SHA-256, and lays the tree out under a prefix:
+```bash
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
+```
+
+Pinned version or custom prefix:
 
 ```bash
-# Latest release into $HOME/.local (default prefix):
-curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
-
-# Pinned version + custom prefix:
 curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
   | bash -s -- --version 2.0.0 --prefix /usr/local
 ```
 
-This installs:
+Or grab the tarball directly from <https://github.com/trust-delta/tmai/releases>.
 
-```
-$PREFIX/bin/tmai
-$PREFIX/bin/tmai-ratatui
-$PREFIX/share/tmai/webui/       # served automatically by tmai (binary-relative fallback)
-$PREFIX/share/tmai/api-spec/    # OpenAPI + CoreEvent JSON Schema reference
-```
+Supported platforms: Linux x86_64, Linux aarch64, macOS arm64.
 
-Supported platforms: Linux x86_64, Linux aarch64, macOS arm64. For other platforms, build from source in [`tmai-core`](https://github.com/trust-delta/tmai-core) (requires repository access).
+## Why this change
 
-## Quick start
+The 2026-04-21 re-consolidation moved the engine source behind a private repo and made the public surface a bundled tarball (`bin/tmai` + `bin/tmai-ratatui` + `share/tmai/webui/` + `share/tmai/api-spec/`) that a single-file curl installer can unpack. The `cargo install tmai` path cannot ship a multi-artifact bundle, so further updates go through GitHub Releases only.
 
-```bash
-# One-time setup: register HTTP hook receivers in ~/.claude/settings.json
-tmai init
+## About the previous 1.7.0 crate
 
-# Launch the operational dashboard TUI + API server
-tmai
-```
+`tmai 1.7.0` is **not yanked** and remains installable for tooling that pinned that version. It will not receive further updates. Use `1.7.1` or newer via the installer above.
 
-The dashboard shows engine health and launches UI clients registered in `~/.config/tmai/config.toml`:
+## Repository
 
-```toml
-[[ui]]
-name = "tmai-react"
-path = "~/src/tmai-react"
-launch = "pnpm dev"
-port = 1420
-default = true
-```
-
-## Features
-
-- **Multi-agent monitoring** — Claude Code, Codex CLI, OpenCode, Gemini CLI
-- **3-tier state detection** — HTTP Hooks (event-driven) → IPC/PTY wrap → tmux `capture-pane` fallback
-- **Auto-approve engine** — rules / AI / hybrid / off
-- **Orchestrator agent** — role-based dispatch with workflow-rule composition
-- **MCP server** — 22+ tools for agents to orchestrate other agents over stdio JSON-RPC 2.0
-- **Dashboard TUI** — engine health, activity, detections, UI registry, logs — all in `tmai` default mode
-- **Pluggable UIs** — `tmai-react` (WebUI), `tmai-ratatui` (TUI), or any third-party client speaking the [wire contract](https://github.com/trust-delta/tmai-api-spec)
-- **Agent Teams** — Claude Code team discovery and task-progress tracking
-- **Git surface** — branch graph, worktree CRUD, PR/CI/issue integration via `gh`
-
-## Contract
-
-UIs integrate via three standard surfaces, all specified in [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec):
-
-1. **HTTP REST** at `/api/*`
-2. **SSE event stream** at `/api/events`
-3. **MCP** (stdio JSON-RPC 2.0) via `tmai mcp`
-
-The spec follows SemVer independently of `tmai-core`. Forward-compatible: unknown event variants and optional fields must be tolerated by UIs.
-
-## Screenshots
-
-<p align="center">
-  <img src="assets/usage-view.png" alt="Usage tracking" width="720">
-</p>
-
-<p align="center">
-  <img src="assets/mobile-screenshot.jpg" alt="Mobile remote — agent list" width="280">
-  &nbsp;&nbsp;
-  <img src="assets/mobile-ask-user-question.jpg" alt="Mobile remote — AskUserQuestion" width="280">
-</p>
-
-## Contributing
-
-Open issues and pull requests on the sub-repo that fits your change:
-
-- **Server logic, orchestration, MCP, HTTP/SSE implementation** → [`tmai-core`](https://github.com/trust-delta/tmai-core/issues) (collaborator access required)
-- **React WebUI behaviour** → [`tmai-react`](https://github.com/trust-delta/tmai-react/issues)
-- **Ratatui client behaviour** → [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui/issues)
-- **Wire contract (REST endpoints, CoreEvent variants, error taxonomy)** → [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec/issues)
-
-Issues filed here will be triaged and transferred to the appropriate sub-repo.
-
-## History
-
-This repository contains the full git history of tmai from inception through 2026-04-18, when it was split into the four sub-repos above. The last commit before the split is [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d); everything after is hub / release / landing-page maintenance.
-
-Previous `tmai` crates.io releases (up to `1.7.0`) remain published for backwards compatibility but receive no further updates at that path — new binaries ship via this repo's [Releases](https://github.com/trust-delta/tmai/releases).
+<https://github.com/trust-delta/tmai>
 
 ## License
 

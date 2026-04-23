@@ -1,0 +1,24 @@
+[package]
+name = "tmai"
+version = "1.7.1"
+edition = "2021"
+rust-version = "1.91"
+authors = ["TrustDelta"]
+description = "Deprecated placeholder — install tmai from GitHub Releases instead: https://github.com/trust-delta/tmai/releases"
+repository = "https://github.com/trust-delta/tmai"
+license = "MIT"
+readme = "README.md"
+documentation = "https://github.com/trust-delta/tmai"
+keywords = ["deprecated"]
+categories = ["command-line-utilities"]
+
+# Ship only the deprecation stub. No engine source, no UI clients, no api-spec —
+# all of that now lives in the monorepo at trust-delta/tmai and the binary
+# release tarball. Whatever else sits in this branch is there because this
+# branch was cut from hub `main`; the include list keeps it out of the crate.
+include = [
+    "/Cargo.toml",
+    "/src/lib.rs",
+    "/README.md",
+    "/LICENSE",
+]
