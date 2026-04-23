@@ -5,8 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> **Note**: Version numbers were reset at v0.1.0 with the WebUI-first rewrite.
+> **Note**: Version numbers reset at v0.1.0 with the WebUI-first rewrite and
+> jumped again to v2.0.0 at the 2026-04-21 monorepo re-consolidation.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
+
+## [2.0.0] - 2026-04-22 — monorepo re-consolidation
+
+First release under the two-repo structure adopted on 2026-04-21: a public
+`trust-delta/tmai` monorepo that holds the UI layer, the wire contract, and the
+release hub; and a private `trust-delta/tmai-core` that ships the engine
+binary through artifact PRs and `core-v*` Releases.
+
+### Bundled
+
+- tmai-core 2.0.0
+- clients/react 1.0.0
+- clients/ratatui 0.1.0
+- api-spec 2.0.0
+
+### Added
+
+- `api-spec/`, `clients/react/`, `clients/ratatui/` brought into this monorepo
+  (subtree imports + fresh copy of the api-spec) from the now-archived
+  `tmai-api-spec` / `tmai-react` / `tmai-ratatui`.
+- `install.sh` curl-pipeable installer with platform detection and SHA-256
+  verification; installs under `$PREFIX/bin` + `$PREFIX/share/tmai/{webui,api-spec}/`.
+- Engine serves the WebUI from a filesystem path (`$TMAI_SHARE/webui/` →
+  config `web.webui_path` → `<exe>/../share/tmai/webui/`) with SPA fallback.
+- `/api/version` endpoint exposing `tmai_version` / `core_version` /
+  `api_spec_version` / `error_taxonomy_version`.
+- Generated spec / types pipeline: tmai-core publishes `openapi.json`,
+  `corevents.schema.json`, `mcp-tools.json`, and TypeScript types to this repo
+  via bot PRs (`bot/gen-spec-<sha>`).
+
+### Changed
+
+- Distribution: binaries ship as platform-specific bundle tarballs from this
+  repo's Releases (`bin/tmai` + `bin/tmai-ratatui` + `share/tmai/webui/` +
+  `share/tmai/api-spec/`). The previous crates.io path is frozen at 1.7.0.
+- Wire contract refreshed to 2.0.0 (DispatchId / DispatchRefs / expanded
+  CoreEvent payloads; see `api-spec/openapi.json`).
+
+### Archived
+
+- `trust-delta/tmai-api-spec` → content now under `api-spec/`
+- `trust-delta/tmai-react` → content now under `clients/react/`
+- `trust-delta/tmai-ratatui` → content now under `clients/ratatui/`
+
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
+```
+
+See [`README.md`](README.md) for pinned-version / custom-prefix variants and supported platforms.
+
+## Pre-split history (2025 – 2026-04-18)
+
+> The entries below are from the pre-split / single-repo / 4-repo eras. Kept
+> for reference; future changes will be tracked under 2.x above.
 
 ## [1.6.0] - 2026-04-05
 
