@@ -11,16 +11,15 @@
   <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
 </p>
 
-> **このリポジトリは project hub です。** 実装は下記の sub-repo に分離されています。目的の repo を選んでください。
+> **このリポジトリは tmai の monorepo + release hub です。** UI (`clients/react/`、`clients/ratatui/`)、ワイヤー契約 (`api-spec/`)、installer、リリースパイプラインはここに、エンジン実装のみが private の [`tmai-core`](https://github.com/trust-delta/tmai-core) にあります。
 
-## リポジトリ構成
+## 構成
 
 | Repo | 可視性 | 役割 |
 |------|--------|------|
-| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | コアエンジン — オーケストレーション、エージェント検出、ポリシー、MCP ホスト、HTTP/SSE サーバー |
-| [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) | public | OpenAPI 3.1 + JSON Schema。core と任意の UI クライアント間のワイヤー契約 |
-| [`tmai-react`](https://github.com/trust-delta/tmai-react) | public | リファレンス React WebUI。fork 可、契約を話す任意のクライアントで置換可能 |
-| [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui) | public | リファレンス ratatui ターミナル UI。`tmai-react` の対等物 |
+| `trust-delta/tmai` (本リポジトリ) | public | release hub + monorepo。React WebUI (`clients/react/`)、ratatui TUI (`clients/ratatui/`)、ワイヤー契約 (`api-spec/`)、installer、ドキュメントを保持。bundle tarball を配布。 |
+| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | コアエンジン — オーケストレーション / エージェント検出 / policy / MCP ホスト / HTTP/SSE サーバー。`core-v*` Release で target 毎のバイナリを供給し、生成物の spec / types は bot PR 経由で本リポジトリへ流入。 |
+| `tmai-api-spec` / `tmai-react` / `tmai-ratatui` | archive | 履歴保全のみ。内容は 2026-04-23 に本リポジトリへ統合済。 |
 
 ## インストール
 
@@ -81,13 +80,13 @@ default = true
 
 ## 契約
 
-UI は [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) で規定された 3 つの標準サーフェスで統合されます:
+UI は [`api-spec/`](./api-spec/) で規定された 3 つの標準サーフェスで統合されます:
 
 1. **HTTP REST** — `/api/*`
 2. **SSE イベントストリーム** — `/api/events`
 3. **MCP** (stdio JSON-RPC 2.0) — `tmai mcp`
 
-spec は `tmai-core` とは独立した SemVer に従います。forward-compatible: UI は未知のイベント variant と optional フィールドを許容する必要があります。
+spec はエンジン (`core`) バージョンとは独立した SemVer に従います。forward-compatible: UI は未知のイベント variant と optional フィールドを許容する必要があります。
 
 ## スクリーンショット
 
@@ -103,20 +102,24 @@ spec は `tmai-core` とは独立した SemVer に従います。forward-compati
 
 ## コントリビューション
 
-変更内容に応じた sub-repo に issue / PR を提出してください:
+UI / 契約 / ドキュメント / パッケージング変更は本リポジトリに直接 issue / PR を提出してください:
 
-- **サーバーロジック、オーケストレーション、MCP、HTTP/SSE 実装** → [`tmai-core`](https://github.com/trust-delta/tmai-core/issues) (collaborator 権限必要)
-- **React WebUI** → [`tmai-react`](https://github.com/trust-delta/tmai-react/issues)
-- **Ratatui クライアント** → [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui/issues)
-- **ワイヤー契約 (REST エンドポイント、CoreEvent variants、error taxonomy)** → [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec/issues)
+- **React WebUI** → `clients/react/`
+- **Ratatui クライアント** → `clients/ratatui/`
+- **ワイヤー契約** (REST エンドポイント、CoreEvent variants、error taxonomy) → `api-spec/` (生成物 — 編集は [`tmai-core`](https://github.com/trust-delta/tmai-core) 側から bot PR 経由で反映)
+- **Installer / release workflow / docs** → ルート
 
-この hub に提出された issue は triage 後に適切な sub-repo へ transfer されます。
+エンジン関連の変更 (オーケストレーション、MCP ホスト、HTTP/SSE 実装) は private の [`tmai-core`](https://github.com/trust-delta/tmai-core) で行います。エンジン側で変更が必要な場合は本リポジトリに issue を立てていただければ triage します。
+
+旧 sub-repo (`tmai-api-spec`、`tmai-react`、`tmai-ratatui`) は 2026-04-23 に archive 済です — そちらへの issue / PR 提出は控えてください。
+
+setup と PR 規約は [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照してください。
 
 ## 履歴
 
-本リポジトリは 2026-04-18 に 4 つの sub-repo に分割された時点までの tmai 全履歴を保持しています。split 直前の最終コミットは [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d)。以降は hub / release / landing-page の保守のみです。
+tmai は当初単一の monorepo として始まり (2026-04-18 まで)、一時的に 4 つのリポジトリ ([`tmai-core`](https://github.com/trust-delta/tmai-core) + `tmai-api-spec` / `tmai-react` / `tmai-ratatui`) に分割されました。2026-04-21 に UI 層と契約を本リポジトリの `clients/` / `api-spec/` 配下へ再統合、旧 3 sub-repo は 2026-04-23 に archive されました。split 直前の最終コミットは [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d)、再統合は [`v2.0.0`](https://github.com/trust-delta/tmai/releases/tag/v2.0.0) で配布されました。
 
-旧 `tmai` の crates.io リリース (`1.7.0` まで) は後方互換のために公開継続されますが、このパスでは更新されません — 新規バイナリは本 repo の [Releases](https://github.com/trust-delta/tmai/releases) から配布されます。
+crates.io の `tmai` クレートは `1.7.1` で deprecation (installer へ誘導するスタブ)。`1.7.0` は yank されず pin 済ユーザー向けに残りますが、`cargo install tmai` ではこれ以上新バイナリが配布されません — 上の `curl | bash` installer を使用してください。
 
 ## ライセンス
 

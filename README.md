@@ -9,16 +9,15 @@
   <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
 </p>
 
-> **This is the project hub.** Implementation lives in a set of focused repositories, linked below. Start here to pick the right one for your question or contribution.
+> **This is the tmai monorepo and release hub.** UI layer (`clients/react/`, `clients/ratatui/`), wire contract (`api-spec/`), installer, and release pipeline live here; only the engine source stays private in [`tmai-core`](https://github.com/trust-delta/tmai-core).
 
-## Repositories
+## Structure
 
 | Repo | Visibility | Role |
 |------|-----------|------|
-| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | Core engine — orchestration, agent detection, policy, MCP host, HTTP/SSE server |
-| [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec) | public | OpenAPI 3.1 + JSON Schema. Wire contract between core and any UI client |
-| [`tmai-react`](https://github.com/trust-delta/tmai-react) | public | Reference React WebUI. Forkable, swappable with any client speaking the contract |
-| [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui) | public | Reference ratatui terminal UI. Peer to `tmai-react` |
+| `trust-delta/tmai` (this repo) | public | Release hub + monorepo. Holds the React WebUI (`clients/react/`), ratatui TUI (`clients/ratatui/`), wire contract (`api-spec/`), installer, and docs. Publishes the bundled tarball. |
+| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | Core engine — orchestration, agent detection, policy, MCP host, HTTP/SSE server. Ships per-target binaries via `core-v*` Releases; generated spec + types flow here via bot PRs. |
+| `tmai-api-spec` / `tmai-react` / `tmai-ratatui` | archive | History-only. Content merged into this repo on 2026-04-23. |
 
 ## Install
 
@@ -79,13 +78,13 @@ default = true
 
 ## Contract
 
-UIs integrate via three standard surfaces, all specified in [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec):
+UIs integrate via three standard surfaces, all specified in [`api-spec/`](./api-spec/):
 
 1. **HTTP REST** at `/api/*`
 2. **SSE event stream** at `/api/events`
 3. **MCP** (stdio JSON-RPC 2.0) via `tmai mcp`
 
-The spec follows SemVer independently of `tmai-core`. Forward-compatible: unknown event variants and optional fields must be tolerated by UIs.
+The spec follows SemVer independently of the engine (`core`) version. Forward-compatible: unknown event variants and optional fields must be tolerated by UIs.
 
 ## Screenshots
 
@@ -101,20 +100,24 @@ The spec follows SemVer independently of `tmai-core`. Forward-compatible: unknow
 
 ## Contributing
 
-Open issues and pull requests on the sub-repo that fits your change:
+UI / contract / docs / packaging changes happen right here — file issues and PRs against this repo:
 
-- **Server logic, orchestration, MCP, HTTP/SSE implementation** → [`tmai-core`](https://github.com/trust-delta/tmai-core/issues) (collaborator access required)
-- **React WebUI behaviour** → [`tmai-react`](https://github.com/trust-delta/tmai-react/issues)
-- **Ratatui client behaviour** → [`tmai-ratatui`](https://github.com/trust-delta/tmai-ratatui/issues)
-- **Wire contract (REST endpoints, CoreEvent variants, error taxonomy)** → [`tmai-api-spec`](https://github.com/trust-delta/tmai-api-spec/issues)
+- **React WebUI behaviour** → `clients/react/`
+- **Ratatui client behaviour** → `clients/ratatui/`
+- **Wire contract** (REST endpoints, CoreEvent variants, error taxonomy) → `api-spec/` (generated — edits flow from [`tmai-core`](https://github.com/trust-delta/tmai-core) via bot PRs)
+- **Installer / release workflow / docs** → root
 
-Issues filed here will be triaged and transferred to the appropriate sub-repo.
+Engine-only changes (orchestration, MCP host, HTTP/SSE implementation) happen in the private [`tmai-core`](https://github.com/trust-delta/tmai-core). If you need an engine change, open an issue here and we'll triage it through.
+
+The previous sub-repos — `tmai-api-spec`, `tmai-react`, `tmai-ratatui` — are archived as of 2026-04-23. Please don't file issues or PRs there.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and PR conventions.
 
 ## History
 
-This repository contains the full git history of tmai from inception through 2026-04-18, when it was split into the four sub-repos above. The last commit before the split is [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d); everything after is hub / release / landing-page maintenance.
+tmai started as a single monorepo (through 2026-04-18), then briefly split into four repositories ([`tmai-core`](https://github.com/trust-delta/tmai-core) + `tmai-api-spec` / `tmai-react` / `tmai-ratatui`). On 2026-04-21 the UI layer and wire contract were consolidated back here under `clients/` and `api-spec/`; the three sub-repos were archived on 2026-04-23. The last pre-split commit is [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d); the re-consolidation shipped as [`v2.0.0`](https://github.com/trust-delta/tmai/releases/tag/v2.0.0).
 
-Previous `tmai` crates.io releases (up to `1.7.0`) remain published for backwards compatibility but receive no further updates at that path — new binaries ship via this repo's [Releases](https://github.com/trust-delta/tmai/releases).
+The `tmai` crate on crates.io is deprecated as of `1.7.1` (a stub pointing at the installer). `1.7.0` is not yanked and stays available for any tooling that pinned it, but no further updates will ship via `cargo install tmai` — use the `curl | bash` installer above instead.
 
 ## License
 
