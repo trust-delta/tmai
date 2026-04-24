@@ -132,6 +132,37 @@
         ],
         "description": "Origin of an API action — tracks who initiated the operation.\n\nUsed by the orchestrator notification middleware to provide context\nabout what triggered a side-effect API call."
       },
+      "AutoActionEntry": {
+        "type": "object",
+        "description": "Record of the most recently fired auto-action rule.",
+        "required": [
+          "fired_at",
+          "trigger",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Human-readable description of the action taken."
+          },
+          "fired_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the auto-action was triggered."
+          },
+          "target_agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent that was the target of the action, if applicable."
+          },
+          "trigger": {
+            "type": "string",
+            "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`)."
+          }
+        }
+      },
       "BundleId": {
         "type": "string",
         "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type."
@@ -222,6 +253,35 @@
           }
         ],
         "description": "What caused a [`CoreEvent::CapacityChanged`] emission.\n\nSubscribers use this to attribute the capacity delta without needing\na separate query. `delta == 0` is valid (e.g. `LimitChanged` when a\nconfig reload moved the ceiling but no slots moved)."
+      },
+      "CapacityInfo": {
+        "type": "object",
+        "description": "Current agent capacity counters.",
+        "required": [
+          "current",
+          "limit",
+          "remaining"
+        ],
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of agent slots currently in use.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Configured maximum concurrent agents.",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Remaining available slots (`limit - current`, saturating).",
+            "minimum": 0
+          }
+        }
       },
       "CoreEvent": {
         "oneOf": [
@@ -1414,6 +1474,35 @@
         ],
         "description": "Events emitted by the core when state changes occur.\n\nConsumers call [`TmaiCore::subscribe()`] to receive these events\nvia a `broadcast::Receiver`.\n\nThis enum is the single source of truth for SSE event shapes —\nthe TypeScript discriminated union in\n`crates/tmai-app/web/src/types/generated/CoreEvent.ts` is generated\nfrom this definition by ts-rs (#446). Do not edit that file by hand."
       },
+      "DeferredToolInfo": {
+        "type": "object",
+        "description": "A tool call pending resolution in the deferred-approve queue.",
+        "required": [
+          "defer_id",
+          "agent_target",
+          "tool_name",
+          "deferred_at"
+        ],
+        "properties": {
+          "agent_target": {
+            "type": "string",
+            "description": "Agent tmux target that issued the deferred tool call."
+          },
+          "defer_id": {
+            "type": "string",
+            "description": "Unique id of the pending deferred call (stringified u64 for JSON safety)."
+          },
+          "deferred_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the tool call was deferred."
+          },
+          "tool_name": {
+            "type": "string",
+            "description": "Tool name (e.g. `\"Bash\"`, `\"Edit\"`)."
+          }
+        }
+      },
       "DetectionSource": {
         "type": "string",
         "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
@@ -1640,6 +1729,114 @@
           }
         }
       },
+      "DispatchSnapshot": {
+        "type": "object",
+        "description": "UI-facing snapshot of a dispatched unit of work.",
+        "required": [
+          "id",
+          "kind",
+          "refs",
+          "state",
+          "role",
+          "spawner",
+          "spawned_at",
+          "title",
+          "display_subtitle",
+          "is_terminal"
+        ],
+        "properties": {
+          "agent_stable_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable agent id (8-char hex), if the agent has been attached."
+          },
+          "agent_target": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Live agent tmux target (e.g. \"main:0.1\"), if the agent has been attached."
+          },
+          "bundle_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleId",
+                "description": "Bundle id when this dispatch is part of a multi-repo bundle."
+              }
+            ]
+          },
+          "display_subtitle": {
+            "type": "string",
+            "description": "Short subtitle derived from dispatch kind (e.g. \"Issue #42\")."
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Elapsed milliseconds from spawn to terminal state, if finished.",
+            "minimum": 0
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Wall-clock time when the dispatch reached a terminal state, if any."
+          },
+          "id": {
+            "$ref": "#/components/schemas/DispatchId",
+            "description": "Durable dispatch id (UUID v7)."
+          },
+          "is_terminal": {
+            "type": "boolean",
+            "description": "Whether the dispatch has reached a terminal state (Stopped / Failed)."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DispatchKind",
+            "description": "What kind of work was dispatched."
+          },
+          "pty_session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "PTY session id, if the agent was spawned via the PTY layer."
+          },
+          "refs": {
+            "$ref": "#/components/schemas/DispatchRefs",
+            "description": "Stable references captured at request time."
+          },
+          "role": {
+            "$ref": "#/components/schemas/SpawnRole",
+            "description": "Agent role this dispatch was filled with."
+          },
+          "spawned_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Wall-clock creation time."
+          },
+          "spawner": {
+            "$ref": "#/components/schemas/SpawnerHandle",
+            "description": "Who or what originated this dispatch."
+          },
+          "state": {
+            "$ref": "#/components/schemas/DispatchState",
+            "description": "Current lifecycle state."
+          },
+          "title": {
+            "type": "string",
+            "description": "Human-readable title chosen at dispatch time."
+          }
+        }
+      },
       "DispatchState": {
         "oneOf": [
           {
@@ -1786,6 +1983,49 @@
           "Internal"
         ]
       },
+      "GuardrailBreach": {
+        "type": "object",
+        "description": "An active guardrail limit breach.",
+        "required": [
+          "kind",
+          "count",
+          "limit"
+        ],
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Branch associated with the breach, if known."
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current count that exceeded the limit.",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuardrailKind",
+            "description": "Which guardrail was exceeded."
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Configured limit that was exceeded.",
+            "minimum": 0
+          },
+          "pr_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "PR number associated with the breach, if known.",
+            "minimum": 0
+          }
+        }
+      },
       "GuardrailKind": {
         "type": "string",
         "description": "The type of guardrail that was exceeded",
@@ -1794,6 +2034,36 @@
           "review_loops",
           "consecutive_failures"
         ]
+      },
+      "GuardrailStatus": {
+        "type": "object",
+        "description": "Configured guardrail limits and currently active breaches.",
+        "required": [
+          "max_ci_retries",
+          "max_review_loops",
+          "active_breaches"
+        ],
+        "properties": {
+          "active_breaches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuardrailBreach"
+            },
+            "description": "Currently active guardrail breaches (empty when all limits are clear)."
+          },
+          "max_ci_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Configured max CI fix attempts per PR.",
+            "minimum": 0
+          },
+          "max_review_loops": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Configured max review→fix cycles per PR.",
+            "minimum": 0
+          }
+        }
       },
       "Milestone": {
         "type": "object",
@@ -1811,6 +2081,44 @@
           "event": {
             "type": "string",
             "description": "Human-readable event description"
+          }
+        }
+      },
+      "NotifyModeSummary": {
+        "type": "object",
+        "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+        "required": [
+          "on_agent_stopped",
+          "on_pr_created",
+          "on_pr_ci_failed",
+          "on_pr_ci_passed",
+          "on_pr_review_feedback",
+          "on_pr_closed"
+        ],
+        "properties": {
+          "on_agent_stopped": {
+            "type": "string",
+            "description": "Handling mode for `AgentStopped` events."
+          },
+          "on_pr_ci_failed": {
+            "type": "string",
+            "description": "Handling mode for `PrCiFailed` events."
+          },
+          "on_pr_ci_passed": {
+            "type": "string",
+            "description": "Handling mode for `PrCiPassed` events."
+          },
+          "on_pr_closed": {
+            "type": "string",
+            "description": "Handling mode for `PrClosed` events."
+          },
+          "on_pr_created": {
+            "type": "string",
+            "description": "Handling mode for `PrCreated` events."
+          },
+          "on_pr_review_feedback": {
+            "type": "string",
+            "description": "Handling mode for `PrReviewFeedback` events."
           }
         }
       },
@@ -1911,6 +2219,89 @@
           }
         ],
         "description": "Advisory retry guidance attached to a [`TmaiError`].\n\nThe hint is informational only — the caller decides whether to act on it.\nRetry orchestration is explicitly out of scope for v1 of the taxonomy."
+      },
+      "RuntimeSnapshot": {
+        "type": "object",
+        "description": "UI-facing snapshot of runtime infrastructure state.",
+        "required": [
+          "capacity",
+          "vendors",
+          "deferred_tools"
+        ],
+        "properties": {
+          "capacity": {
+            "$ref": "#/components/schemas/CapacityInfo",
+            "description": "Current and configured agent capacity."
+          },
+          "deferred_tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeferredToolInfo"
+            },
+            "description": "Tool calls currently pending in the deferred-approve queue."
+          },
+          "vendors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VendorInfo"
+            },
+            "description": "Availability state of each tracked AI vendor."
+          }
+        }
+      },
+      "SpawnRole": {
+        "type": "string",
+        "description": "Role of a spawned agent — governs which field of `AgentModelSettings` is\nconsulted after the per-dispatch override is checked.",
+        "enum": [
+          "orchestrator",
+          "implementer",
+          "reviewer"
+        ]
+      },
+      "SpawnerHandle": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Spawned by another dispatch (e.g. an orchestrator delegating).",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/DispatchId",
+                "description": "The parent dispatch's id."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dispatch"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Spawned directly by a human via a UI surface.",
+            "required": [
+              "interface",
+              "kind"
+            ],
+            "properties": {
+              "interface": {
+                "type": "string",
+                "description": "Which interface: \"webui\", \"tui\", \"mcp\", \"cli\", …"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "human"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who or what spawned a dispatch. For orchestrator hierarchies (#9) this\nchain is what lets a downstream observer attribute work back to its\noriginating human or parent dispatch."
       },
       "TaskMetaEntry": {
         "type": "object",
@@ -2087,6 +2478,87 @@
           }
         ],
         "description": "Vendor availability rollup reported by\n[`CoreEvent::VendorAvailabilityChanged`].\n\n`Available` → normal operation.\n`RateLimited` → vendor returned 429 / Max-plan limit; `resume_at` is the\nadvertised reset time when known.\n`Unavailable` → outage or auth failure; retry left to policy."
+      },
+      "VendorInfo": {
+        "type": "object",
+        "description": "Availability information for a single AI vendor.",
+        "required": [
+          "vendor",
+          "state",
+          "last_changed_at"
+        ],
+        "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Account label when the deployment distinguishes multiple accounts."
+          },
+          "last_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the availability state last changed."
+          },
+          "state": {
+            "$ref": "#/components/schemas/VendorAvailabilityState",
+            "description": "Current availability state."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Vendor identifier (e.g. `\"anthropic\"`, `\"openai\"`)."
+          }
+        }
+      },
+      "WorkflowSnapshot": {
+        "type": "object",
+        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+        "required": [
+          "notify_mode_summary",
+          "orchestrator_notify_backlog",
+          "auto_action_fired_last_hour",
+          "guardrail_status"
+        ],
+        "properties": {
+          "auto_action_fired_last_hour": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of auto-actions that fired in the last hour.",
+            "minimum": 0
+          },
+          "auto_action_last_fired": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AutoActionEntry",
+                "description": "Most recent auto-action that fired, if any."
+              }
+            ]
+          },
+          "guardrail_status": {
+            "$ref": "#/components/schemas/GuardrailStatus",
+            "description": "Configured guardrail limits and active breaches."
+          },
+          "notify_mode_summary": {
+            "$ref": "#/components/schemas/NotifyModeSummary",
+            "description": "Per-event notification handling modes."
+          },
+          "orchestrator_agent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable agent id of the active orchestrator, if one is running."
+          },
+          "orchestrator_notify_backlog": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of notifications buffered for the orchestrator but not yet delivered.",
+            "minimum": 0
+          }
+        }
       },
       "WorktreeInfo": {
         "type": "object",

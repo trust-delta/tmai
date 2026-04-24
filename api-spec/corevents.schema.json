@@ -91,6 +91,37 @@
         }
       ]
     },
+    "AutoActionEntry": {
+      "description": "Record of the most recently fired auto-action rule.",
+      "properties": {
+        "action": {
+          "description": "Human-readable description of the action taken.",
+          "type": "string"
+        },
+        "fired_at": {
+          "description": "When the auto-action was triggered.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "target_agent_id": {
+          "description": "Agent that was the target of the action, if applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fired_at",
+        "trigger",
+        "action"
+      ],
+      "type": "object"
+    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -181,6 +212,64 @@
           "type": "object"
         }
       ]
+    },
+    "CapacityInfo": {
+      "description": "Current agent capacity counters.",
+      "properties": {
+        "current": {
+          "description": "Number of agent slots currently in use.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "Configured maximum concurrent agents.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "remaining": {
+          "description": "Remaining available slots (`limit - current`, saturating).",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current",
+        "limit",
+        "remaining"
+      ],
+      "type": "object"
+    },
+    "DeferredToolInfo": {
+      "description": "A tool call pending resolution in the deferred-approve queue.",
+      "properties": {
+        "agent_target": {
+          "description": "Agent tmux target that issued the deferred tool call.",
+          "type": "string"
+        },
+        "defer_id": {
+          "description": "Unique id of the pending deferred call (stringified u64 for JSON safety).",
+          "type": "string"
+        },
+        "deferred_at": {
+          "description": "When the tool call was deferred.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name (e.g. `\"Bash\"`, `\"Edit\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defer_id",
+        "agent_target",
+        "tool_name",
+        "deferred_at"
+      ],
+      "type": "object"
     },
     "DetectionSource": {
       "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
@@ -408,6 +497,114 @@
       ],
       "type": "object"
     },
+    "DispatchSnapshot": {
+      "description": "UI-facing snapshot of a dispatched unit of work.",
+      "properties": {
+        "agent_stable_id": {
+          "description": "Stable agent id (8-char hex), if the agent has been attached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent_target": {
+          "description": "Live agent tmux target (e.g. \"main:0.1\"), if the agent has been attached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bundle_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/BundleId",
+              "description": "Bundle id when this dispatch is part of a multi-repo bundle."
+            }
+          ]
+        },
+        "display_subtitle": {
+          "description": "Short subtitle derived from dispatch kind (e.g. \"Issue #42\").",
+          "type": "string"
+        },
+        "duration_ms": {
+          "description": "Elapsed milliseconds from spawn to terminal state, if finished.",
+          "format": "int64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "description": "Wall-clock time when the dispatch reached a terminal state, if any.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/DispatchId",
+          "description": "Durable dispatch id (UUID v7)."
+        },
+        "is_terminal": {
+          "description": "Whether the dispatch has reached a terminal state (Stopped / Failed).",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/DispatchKind",
+          "description": "What kind of work was dispatched."
+        },
+        "pty_session_id": {
+          "description": "PTY session id, if the agent was spawned via the PTY layer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refs": {
+          "$ref": "#/$defs/DispatchRefs",
+          "description": "Stable references captured at request time."
+        },
+        "role": {
+          "$ref": "#/$defs/SpawnRole",
+          "description": "Agent role this dispatch was filled with."
+        },
+        "spawned_at": {
+          "description": "Wall-clock creation time.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "spawner": {
+          "$ref": "#/$defs/SpawnerHandle",
+          "description": "Who or what originated this dispatch."
+        },
+        "state": {
+          "$ref": "#/$defs/DispatchState",
+          "description": "Current lifecycle state."
+        },
+        "title": {
+          "description": "Human-readable title chosen at dispatch time.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "refs",
+        "state",
+        "role",
+        "spawner",
+        "spawned_at",
+        "title",
+        "display_subtitle",
+        "is_terminal"
+      ],
+      "type": "object"
+    },
     "DispatchState": {
       "description": "Lifecycle position of a dispatch.\n\nPersisted alongside the dispatch record so a tmai restart can restore\nthe ledger without consulting any live process state.",
       "oneOf": [
@@ -554,6 +751,49 @@
       ],
       "type": "string"
     },
+    "GuardrailBreach": {
+      "description": "An active guardrail limit breach.",
+      "properties": {
+        "branch": {
+          "description": "Branch associated with the breach, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "description": "Current count that exceeded the limit.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/GuardrailKind",
+          "description": "Which guardrail was exceeded."
+        },
+        "limit": {
+          "description": "Configured limit that was exceeded.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pr_number": {
+          "description": "PR number associated with the breach, if known.",
+          "format": "int64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "limit"
+      ],
+      "type": "object"
+    },
     "GuardrailKind": {
       "description": "The type of guardrail that was exceeded",
       "enum": [
@@ -562,6 +802,36 @@
         "consecutive_failures"
       ],
       "type": "string"
+    },
+    "GuardrailStatus": {
+      "description": "Configured guardrail limits and currently active breaches.",
+      "properties": {
+        "active_breaches": {
+          "description": "Currently active guardrail breaches (empty when all limits are clear).",
+          "items": {
+            "$ref": "#/$defs/GuardrailBreach"
+          },
+          "type": "array"
+        },
+        "max_ci_retries": {
+          "description": "Configured max CI fix attempts per PR.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_review_loops": {
+          "description": "Configured max review→fix cycles per PR.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_ci_retries",
+        "max_review_loops",
+        "active_breaches"
+      ],
+      "type": "object"
     },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
@@ -579,6 +849,44 @@
       "required": [
         "at",
         "event"
+      ],
+      "type": "object"
+    },
+    "NotifyModeSummary": {
+      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+      "properties": {
+        "on_agent_stopped": {
+          "description": "Handling mode for `AgentStopped` events.",
+          "type": "string"
+        },
+        "on_pr_ci_failed": {
+          "description": "Handling mode for `PrCiFailed` events.",
+          "type": "string"
+        },
+        "on_pr_ci_passed": {
+          "description": "Handling mode for `PrCiPassed` events.",
+          "type": "string"
+        },
+        "on_pr_closed": {
+          "description": "Handling mode for `PrClosed` events.",
+          "type": "string"
+        },
+        "on_pr_created": {
+          "description": "Handling mode for `PrCreated` events.",
+          "type": "string"
+        },
+        "on_pr_review_feedback": {
+          "description": "Handling mode for `PrReviewFeedback` events.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "on_agent_stopped",
+        "on_pr_created",
+        "on_pr_ci_failed",
+        "on_pr_ci_passed",
+        "on_pr_review_feedback",
+        "on_pr_closed"
       ],
       "type": "object"
     },
@@ -674,6 +982,89 @@
             }
           },
           "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RuntimeSnapshot": {
+      "description": "UI-facing snapshot of runtime infrastructure state.",
+      "properties": {
+        "capacity": {
+          "$ref": "#/$defs/CapacityInfo",
+          "description": "Current and configured agent capacity."
+        },
+        "deferred_tools": {
+          "description": "Tool calls currently pending in the deferred-approve queue.",
+          "items": {
+            "$ref": "#/$defs/DeferredToolInfo"
+          },
+          "type": "array"
+        },
+        "vendors": {
+          "description": "Availability state of each tracked AI vendor.",
+          "items": {
+            "$ref": "#/$defs/VendorInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capacity",
+        "vendors",
+        "deferred_tools"
+      ],
+      "type": "object"
+    },
+    "SpawnRole": {
+      "description": "Role of a spawned agent — governs which field of `AgentModelSettings` is\nconsulted after the per-dispatch override is checked.",
+      "enum": [
+        "orchestrator",
+        "implementer",
+        "reviewer"
+      ],
+      "type": "string"
+    },
+    "SpawnerHandle": {
+      "description": "Who or what spawned a dispatch. For orchestrator hierarchies (#9) this\nchain is what lets a downstream observer attribute work back to its\noriginating human or parent dispatch.",
+      "oneOf": [
+        {
+          "description": "Spawned by another dispatch (e.g. an orchestrator delegating).",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/DispatchId",
+              "description": "The parent dispatch's id."
+            },
+            "kind": {
+              "enum": [
+                "dispatch"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Spawned directly by a human via a UI surface.",
+          "properties": {
+            "interface": {
+              "description": "Which interface: \"webui\", \"tui\", \"mcp\", \"cli\", …",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "human"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "interface",
             "kind"
           ],
           "type": "object"
@@ -855,6 +1246,87 @@
           "type": "object"
         }
       ]
+    },
+    "VendorInfo": {
+      "description": "Availability information for a single AI vendor.",
+      "properties": {
+        "account": {
+          "description": "Account label when the deployment distinguishes multiple accounts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_changed_at": {
+          "description": "When the availability state last changed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/VendorAvailabilityState",
+          "description": "Current availability state."
+        },
+        "vendor": {
+          "description": "Vendor identifier (e.g. `\"anthropic\"`, `\"openai\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vendor",
+        "state",
+        "last_changed_at"
+      ],
+      "type": "object"
+    },
+    "WorkflowSnapshot": {
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+      "properties": {
+        "auto_action_fired_last_hour": {
+          "description": "Number of auto-actions that fired in the last hour.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "auto_action_last_fired": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/AutoActionEntry",
+              "description": "Most recent auto-action that fired, if any."
+            }
+          ]
+        },
+        "guardrail_status": {
+          "$ref": "#/$defs/GuardrailStatus",
+          "description": "Configured guardrail limits and active breaches."
+        },
+        "notify_mode_summary": {
+          "$ref": "#/$defs/NotifyModeSummary",
+          "description": "Per-event notification handling modes."
+        },
+        "orchestrator_agent_id": {
+          "description": "Stable agent id of the active orchestrator, if one is running.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orchestrator_notify_backlog": {
+          "description": "Number of notifications buffered for the orchestrator but not yet delivered.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "notify_mode_summary",
+        "orchestrator_notify_backlog",
+        "auto_action_fired_last_hour",
+        "guardrail_status"
+      ],
+      "type": "object"
     },
     "WorktreeInfo": {
       "description": "Worktree information attached to hook events in `--worktree` sessions\n\nContains name, path, branch, and the original repo directory.\nAdded in Claude Code v2.1.69.",
