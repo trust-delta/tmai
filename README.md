@@ -1,37 +1,48 @@
-# tmai (deprecated crate)
+# tmai
 
-> ⚠️ **This crates.io entry is deprecated.** See <https://github.com/trust-delta/tmai/releases> for installers.
-
-tmai moved from `cargo install tmai` to binary releases at **v2.0.0** (2026-04-22, monorepo re-consolidation).
+> ℹ️ This `tmai` crate is a thin installer-metadata stub. The real binary is distributed from [GitHub Releases](https://github.com/trust-delta/tmai/releases).
 
 ## Install
+
+### `cargo binstall` (recommended for Rust users)
+
+```bash
+cargo binstall tmai
+```
+
+Reads this crate's `[package.metadata.binstall]` and downloads the bundled tarball matching your platform (Linux x86_64 / Linux aarch64 / macOS arm64) from GitHub Releases.
+
+### Curl installer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
 ```
 
-Pinned version or custom prefix:
+### Direct tarball
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
-  | bash -s -- --version 2.0.0 --prefix /usr/local
-```
+Download from <https://github.com/trust-delta/tmai/releases> and unpack manually.
 
-Or grab the tarball directly from <https://github.com/trust-delta/tmai/releases>.
+### `cargo install tmai` (not recommended)
 
-Supported platforms: Linux x86_64, Linux aarch64, macOS arm64.
+`cargo install tmai` compiles this stub crate; the resulting `tmai` and `tmai-ratatui` binaries just print a pointer at the real installer. Use one of the methods above instead.
 
-## Why this change
+## What's in the bundle
 
-The 2026-04-21 re-consolidation moved the engine source behind a private repo and made the public surface a bundled tarball (`bin/tmai` + `bin/tmai-ratatui` + `share/tmai/webui/` + `share/tmai/api-spec/`) that a single-file curl installer can unpack. The `cargo install tmai` path cannot ship a multi-artifact bundle, so further updates go through GitHub Releases only.
+- `bin/tmai` — core engine + orchestration + MCP host
+- `bin/tmai-ratatui` — reference TUI client
+- `share/tmai/webui/` — reference React WebUI (served automatically)
+- `share/tmai/api-spec/` — OpenAPI + CoreEvent JSON Schema reference
 
-## About the previous 1.7.0 crate
+## Version history
 
-`tmai 1.7.0` is **not yanked** and remains installable for tooling that pinned that version. It will not receive further updates. Use `1.7.1` or newer via the installer above.
+- `1.7.0` — last crate-packaged release before the 2026-04-21 monorepo re-consolidation. Not yanked.
+- `1.7.1` — deprecation stub published on 2026-04-24.
+- `2.0.0` (this release) — installer metadata for `cargo binstall` + backwards-compatible stub binaries.
 
-## Repository
+## Links
 
-<https://github.com/trust-delta/tmai>
+- Source, docs, installer: <https://github.com/trust-delta/tmai>
+- Changelog: <https://github.com/trust-delta/tmai/blob/main/CHANGELOG.md>
 
 ## License
 

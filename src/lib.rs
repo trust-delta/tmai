@@ -1,25 +1,37 @@
-//! # tmai (deprecated)
+//! # tmai
 //!
-//! This crate is deprecated as of `1.7.1`. tmai moved to binary-only distribution
-//! at `v2.0.0` (2026-04-22, monorepo re-consolidation).
+//! Thin crates.io entry for [trust-delta/tmai](https://github.com/trust-delta/tmai).
+//! The full binary bundle (engine + WebUI + ratatui TUI + api-spec) lives on
+//! GitHub Releases; this crate exists so that `cargo binstall tmai`
+//! (and, as a fallback, `cargo install tmai` for the stub binaries) keep
+//! working.
 //!
-//! Install tmai from GitHub Releases instead:
-//! <https://github.com/trust-delta/tmai/releases>
+//! ## Install
 //!
 //! ```sh
+//! cargo binstall tmai
+//! # or
 //! curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
 //! ```
 //!
-//! The previous `tmai 1.7.0` crate is not yanked and remains available for
-//! tooling pinned to that version; no further updates ship via crates.io.
+//! ## Version history
+//!
+//! - `1.7.0`: last crate-packaged release before the 2026-04-21 monorepo
+//!   re-consolidation. Not yanked.
+//! - `1.7.1`: deprecation stub published on 2026-04-24 pointing at the new
+//!   installer path.
+//! - `2.0.0` (this release): installer metadata for `cargo binstall` + stub
+//!   binaries that print a pointer for anyone who still runs `cargo install`.
 
 #![deny(missing_docs)]
 
-/// Pointer at the new distribution channel. Present so `cargo install tmai` or
-/// `cargo add tmai` users who look inside the crate see where the project lives.
+/// Canonical distribution URL. Kept as a `pub const` so any crate that
+/// referenced `tmai::DEPRECATED_NOTICE` from 1.7.1 still compiles.
+pub const DISTRIBUTION_URL: &str = "https://github.com/trust-delta/tmai/releases";
+
+/// Back-compat alias for the 1.7.1 stub constant.
 #[deprecated(
-    since = "1.7.1",
-    note = "Install tmai from https://github.com/trust-delta/tmai/releases — this crates.io entry is frozen."
+    since = "2.0.0",
+    note = "Use `tmai::DISTRIBUTION_URL` or install via `cargo binstall tmai`."
 )]
-pub const DEPRECATED_NOTICE: &str =
-    "tmai is now distributed as a binary release. See https://github.com/trust-delta/tmai/releases";
+pub const DEPRECATED_NOTICE: &str = DISTRIBUTION_URL;
