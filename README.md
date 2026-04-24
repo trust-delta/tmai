@@ -21,7 +21,9 @@
 
 ## Install
 
-Prebuilt bundle tarballs are attached to this repo's [Releases](https://github.com/trust-delta/tmai/releases). The install script picks the right artefact for your platform, verifies the SHA-256, and lays the tree out under a prefix:
+Prebuilt bundle tarballs are attached to this repo's [Releases](https://github.com/trust-delta/tmai/releases). Pick the installer that fits your workflow — all three land the same bundle:
+
+### Curl (portable)
 
 ```bash
 # Latest release into $HOME/.local (default prefix):
@@ -32,7 +34,22 @@ curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
   | bash -s -- --version 2.0.0 --prefix /usr/local
 ```
 
-This installs:
+### Homebrew (macOS + Linux)
+
+```bash
+brew tap trust-delta/tmai
+brew install tmai
+```
+
+### `cargo binstall` (Rust users)
+
+```bash
+cargo binstall tmai
+```
+
+Reads the `[package.metadata.binstall]` stanza on the [`tmai`](https://crates.io/crates/tmai) crate and pulls the matching platform tarball from Releases.
+
+### What lands on disk
 
 ```
 $PREFIX/bin/tmai
@@ -117,7 +134,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and PR conventions.
 
 tmai started as a single monorepo (through 2026-04-18), then briefly split into four repositories ([`tmai-core`](https://github.com/trust-delta/tmai-core) + `tmai-api-spec` / `tmai-react` / `tmai-ratatui`). On 2026-04-21 the UI layer and wire contract were consolidated back here under `clients/` and `api-spec/`; the three sub-repos were archived on 2026-04-23. The last pre-split commit is [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d); the re-consolidation shipped as [`v2.0.0`](https://github.com/trust-delta/tmai/releases/tag/v2.0.0).
 
-The `tmai` crate on crates.io is deprecated as of `1.7.1` (a stub pointing at the installer). `1.7.0` is not yanked and stays available for any tooling that pinned it, but no further updates will ship via `cargo install tmai` — use the `curl | bash` installer above instead.
+The `tmai` crate on crates.io now exists as a thin installer-metadata stub: `1.7.0` is the last "real" crate-packaged release (not yanked), `1.7.1` was a deprecation marker, and `2.0.0` carries the `cargo binstall` metadata + stub binaries that print a pointer at the real installer if invoked via `cargo install tmai`. Use any of the install paths above instead.
 
 ## License
 
