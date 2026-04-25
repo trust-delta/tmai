@@ -195,8 +195,15 @@ export function SSEProvider({ children }: { children: ReactNode }) {
 
   const cache: EntityCache = { agents, worktrees, queueEntries, loading };
 
+  // Expose as () => Promise<void> to match SSEContextValue; callers don't need the boolean.
+  const refreshCacheVoid = useCallback(async (): Promise<void> => {
+    await refreshCache();
+  }, [refreshCache]);
+
   return (
-    <SSEContext.Provider value={{ subscribe, cache, refreshCache }}>{children}</SSEContext.Provider>
+    <SSEContext.Provider value={{ subscribe, cache, refreshCache: refreshCacheVoid }}>
+      {children}
+    </SSEContext.Provider>
   );
 }
 
