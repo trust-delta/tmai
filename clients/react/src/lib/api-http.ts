@@ -79,10 +79,6 @@ export function statusName(status: AgentStatus): string {
   return "Unknown";
 }
 
-export function needsAttention(status: AgentStatus): boolean {
-  const name = statusName(status);
-  return name === "AwaitingApproval" || name === "Error";
-}
 
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
@@ -168,6 +164,14 @@ export interface AgentSnapshot {
   model_id?: string | null;
   model_display_name?: string | null;
   is_orchestrator?: boolean;
+  // Derived fields computed by tmai-core (tmai-core@c40e8b8aa5, Phase 1)
+  needs_attention?: boolean;
+  display_label?: string;
+  has_queued_prompt?: boolean;
+  queued_prompt_count?: number;
+  has_pending_approval?: boolean;
+  primary_worktree_path?: string | null;
+  current_dispatch_id?: string | null;
 }
 
 // ── Prompt Queue ──
@@ -348,7 +352,7 @@ export function groupByProject(
       });
     }
 
-    const attentionCount = groupAgents.filter((a) => needsAttention(a.status)).length;
+    const attentionCount = groupAgents.filter((a) => a.needs_attention ?? false).length;
 
     const normRegistered = new Set(registeredProjects.map((p) => normalizeGitDir(p)));
 
@@ -846,7 +850,7 @@ export const api = {
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
   attentionCount: async () => {
     const agents = await apiFetch<AgentSnapshot[]>("/agents");
-    return agents.filter((a) => needsAttention(a.status)).length;
+    return agents.filter((a) => a.needs_attention ?? false).length;
   },
 
   // Agent actions
