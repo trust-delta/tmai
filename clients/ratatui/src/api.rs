@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::types::{Agent, KeyRequest, TextInputRequest};
+use crate::types::{AgentSnapshot, KeyRequest, TextInputRequest};
 
 /// Port + bearer token, as written by tmai-core.
 #[derive(Debug, Clone, Deserialize)]
@@ -73,7 +73,7 @@ impl ApiClient {
     }
 
     /// `GET /api/agents`
-    pub async fn list_agents(&self) -> Result<Vec<Agent>> {
+    pub async fn list_agents(&self) -> Result<Vec<AgentSnapshot>> {
         let resp = self
             .http
             .get(self.url("/agents"))
@@ -82,7 +82,7 @@ impl ApiClient {
             .await
             .context("GET /agents")?;
         let resp = ensure_ok(resp).await?;
-        resp.json::<Vec<Agent>>()
+        resp.json::<Vec<AgentSnapshot>>()
             .await
             .context("decode /agents body")
     }

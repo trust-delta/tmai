@@ -11,13 +11,13 @@ use reqwest_eventsource::{Event as SseEvent, EventSource};
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::types::Agent;
+use crate::types::AgentSnapshot;
 
 /// A decoded SSE event that matters to the UI layer.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     /// New full snapshot of the agent list.
-    Agents(Vec<Agent>),
+    Agents(Vec<AgentSnapshot>),
     /// Transport-level reconnect — UI should refetch state on its own
     /// cadence (e.g. trigger a `GET /agents` to recover missed deltas).
     Reconnected,
@@ -50,7 +50,7 @@ pub fn spawn(client: ApiClient, tx: mpsc::UnboundedSender<AppEvent>) {
                 }
                 Ok(SseEvent::Message(msg)) => {
                     if msg.event == "agents" {
-                        match serde_json::from_str::<Vec<Agent>>(&msg.data) {
+                        match serde_json::from_str::<Vec<AgentSnapshot>>(&msg.data) {
                             Ok(agents) => {
                                 if tx.send(AppEvent::Agents(agents)).is_err() {
                                     break;
@@ -78,7 +78,7 @@ pub fn spawn(client: ApiClient, tx: mpsc::UnboundedSender<AppEvent>) {
 
 /// Backfill: fetch `/api/agents` once on startup so the UI has a
 /// snapshot before the first SSE `agents` event lands.
-pub async fn backfill(client: &ApiClient) -> Result<Vec<Agent>> {
+pub async fn backfill(client: &ApiClient) -> Result<Vec<AgentSnapshot>> {
     client.list_agents().await
 }
 

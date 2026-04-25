@@ -14,10 +14,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::types::{Agent, AgentStatus, Phase};
+use crate::types::{AgentSnapshot, Phase};
 
 pub struct SessionListView<'a> {
-    pub agents: &'a [Agent],
+    pub agents: &'a [AgentSnapshot],
     pub selected: usize,
     pub input_mode: InputModeView<'a>,
     pub status_line: &'a str,
@@ -53,12 +53,12 @@ fn render_header(frame: &mut Frame, area: Rect, count: usize) {
     frame.render_widget(para, area);
 }
 
-fn render_list(frame: &mut Frame, area: Rect, agents: &[Agent], selected: usize) {
+fn render_list(frame: &mut Frame, area: Rect, agents: &[AgentSnapshot], selected: usize) {
     let items: Vec<ListItem> = agents
         .iter()
         .map(|agent| {
             let phase_style = phase_color(agent);
-            let phase_tag = format!("[{:^8}]", agent.status_label());
+            let phase_tag = format!("[{:^8}]", phase_label(agent));
             let virtual_marker = if agent.is_virtual { "·" } else { " " };
             let orch_marker = if agent.is_orchestrator { "★" } else { " " };
             let content = Line::from(vec![
@@ -67,7 +67,7 @@ fn render_list(frame: &mut Frame, area: Rect, agents: &[Agent], selected: usize)
                 Span::raw(orch_marker.to_string()),
                 Span::raw(virtual_marker.to_string()),
                 Span::raw(" "),
-                Span::raw(agent.friendly_name().to_string()),
+                Span::raw(agent.display_label.clone()),
                 Span::raw("  "),
                 Span::styled(agent.target.clone(), Style::default().fg(Color::DarkGray)),
             ]);
@@ -137,15 +137,26 @@ fn render_status(frame: &mut Frame, area: Rect, text: &str) {
     frame.render_widget(para, area);
 }
 
-fn phase_color(agent: &Agent) -> Style {
+/// Phase tag label read directly from the core-provided `phase` field.
+fn phase_label(agent: &AgentSnapshot) -> &'static str {
+    match &agent.phase {
+        Some(Phase::Working) => "working",
+        Some(Phase::Blocked) => "blocked",
+        Some(Phase::Idle) => "idle",
+        Some(Phase::Offline) => "offline",
+        None => "?",
+    }
+}
+
+/// UI color for the phase tag, reading from the core-provided `phase` field.
+fn phase_color(agent: &AgentSnapshot) -> Style {
     let base = Style::default();
-    match (&agent.status, agent.phase) {
-        (AgentStatus::AwaitingApproval { .. }, _) => base.fg(Color::Yellow),
-        (AgentStatus::Error { .. }, _) => base.fg(Color::Red),
-        (AgentStatus::Processing { .. }, _) | (_, Some(Phase::Working)) => base.fg(Color::Cyan),
-        (AgentStatus::Idle, _) | (_, Some(Phase::Idle)) => base.fg(Color::Green),
-        (AgentStatus::Offline, _) | (_, Some(Phase::Offline)) => base.fg(Color::DarkGray),
-        _ => base,
+    match &agent.phase {
+        Some(Phase::Working) => base.fg(Color::Cyan),
+        Some(Phase::Blocked) => base.fg(Color::Yellow),
+        Some(Phase::Idle) => base.fg(Color::Green),
+        Some(Phase::Offline) => base.fg(Color::DarkGray),
+        None => base,
     }
 }
 
