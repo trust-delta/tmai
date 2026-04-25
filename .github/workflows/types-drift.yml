@@ -51,6 +51,10 @@ jobs:
           fi
 
   ts-drift:
+    needs: no-hand-edits
+    # always() lets this run even when no-hand-edits was skipped (bot PRs);
+    # != 'failure' short-circuits when the hand-edit gate already failed.
+    if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +78,8 @@ jobs:
         run: pnpm tsc --noEmit
 
   rust-drift:
+    needs: no-hand-edits
+    if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
