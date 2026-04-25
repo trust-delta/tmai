@@ -2,8 +2,12 @@
 
 **Tactful Multi Agent Interface** — monitor, control, and orchestrate multiple AI coding agents (Claude Code, Codex CLI, OpenCode, Gemini CLI) through a unified engine and pluggable UIs.
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
+[![License](https://img.shields.io/github/license/trust-delta/tmai)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/trust-delta/tmai?display_name=tag)](https://github.com/trust-delta/tmai/releases)
+[![crates.io](https://img.shields.io/crates/v/tmai)](https://crates.io/crates/tmai)
+[![React](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/build-react.yml?branch=main&label=React)](https://github.com/trust-delta/tmai/actions/workflows/build-react.yml)
+[![Ratatui](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/build-ratatui.yml?branch=main&label=Ratatui)](https://github.com/trust-delta/tmai/actions/workflows/build-ratatui.yml)
+[![API spec](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/validate-spec.yml?branch=main&label=API%20spec)](https://github.com/trust-delta/tmai/actions/workflows/validate-spec.yml)
 
 <p align="center">
   <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
@@ -128,7 +132,7 @@ Engine-only changes (orchestration, MCP host, HTTP/SSE implementation) happen in
 
 The previous sub-repos — `tmai-api-spec`, `tmai-react`, `tmai-ratatui` — are archived as of 2026-04-23. Please don't file issues or PRs there.
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and PR conventions.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the [local development setup](CONTRIBUTING.md#local-development) (Vite HMR + `tmai` backend), the bot PR recovery flow, and PR conventions. Security reports go through [`SECURITY.md`](SECURITY.md) (GitHub Private Vulnerability Reporting).
 
 ## History
 

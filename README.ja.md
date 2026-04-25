@@ -2,8 +2,12 @@
 
 **Tactful Multi Agent Interface** — 複数の AI コーディングエージェント (Claude Code、Codex CLI、OpenCode、Gemini CLI) を統合エンジンと差し替え可能な UI でオーケストレーションする。
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
+[![License](https://img.shields.io/github/license/trust-delta/tmai)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/trust-delta/tmai?display_name=tag)](https://github.com/trust-delta/tmai/releases)
+[![crates.io](https://img.shields.io/crates/v/tmai)](https://crates.io/crates/tmai)
+[![React](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/build-react.yml?branch=main&label=React)](https://github.com/trust-delta/tmai/actions/workflows/build-react.yml)
+[![Ratatui](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/build-ratatui.yml?branch=main&label=Ratatui)](https://github.com/trust-delta/tmai/actions/workflows/build-ratatui.yml)
+[![API spec](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/validate-spec.yml?branch=main&label=API%20spec)](https://github.com/trust-delta/tmai/actions/workflows/validate-spec.yml)
 
 > **English version**: [README.md](./README.md)
 
@@ -130,7 +134,7 @@ UI / 契約 / ドキュメント / パッケージング変更は本リポジト
 
 旧 sub-repo (`tmai-api-spec`、`tmai-react`、`tmai-ratatui`) は 2026-04-23 に archive 済です — そちらへの issue / PR 提出は控えてください。
 
-setup と PR 規約は [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照してください。
+ローカル開発手順 (Vite HMR + `tmai` backend)、bot PR recovery フロー、PR 規約は [`CONTRIBUTING.ja.md`](CONTRIBUTING.ja.md) を参照してください。セキュリティ報告は [`SECURITY.ja.md`](SECURITY.ja.md) (GitHub Private Vulnerability Reporting)。
 
 ## 履歴
 
