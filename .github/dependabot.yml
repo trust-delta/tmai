@@ -1,0 +1,66 @@
+version: 2
+
+updates:
+  # React WebUI (pnpm)
+  - package-ecosystem: npm
+    directory: /clients/react
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - clients/react
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # API spec dev tools (redocly / ajv) — used by validate-spec.yml + pages.yml
+  - package-ecosystem: npm
+    directory: /api-spec
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - api-spec
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Ratatui TUI (standalone cargo workspace)
+  - package-ecosystem: cargo
+    directory: /clients/ratatui
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - clients/ratatui
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
