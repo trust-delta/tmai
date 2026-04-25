@@ -16,12 +16,17 @@ permissions:
 
 jobs:
   # Fail any human-authored PR that touches bot-managed generated paths.
-  # Bot-created PRs (user.login ends in "[bot]") are exempted so that the
-  # recovery flow — humans pushing consuming-code fixes onto a bot branch —
-  # can proceed without triggering this gate.
+  # Bot-created PRs are exempted so that the recovery flow — humans
+  # pushing consuming-code fixes onto a bot branch — can proceed without
+  # triggering this gate. Two forms of bot identity are recognized:
+  #
+  # - `user.login` ending in `[bot]` — GitHub Apps (e.g. dependabot)
+  # - branch name starting with `bot/` — fine-grained PAT bots (the
+  #   `gen-spec-pr` workflow opens PRs as `trust-delta` using
+  #   `TMAI_HUB_PR_TOKEN`, so the user.login check alone misses it).
   no-hand-edits:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.pull_request.user.login, '[bot]')"
+    if: "!contains(github.event.pull_request.user.login, '[bot]') && !startsWith(github.event.pull_request.head.ref, 'bot/')"
     steps:
       - uses: actions/checkout@v4
         with:

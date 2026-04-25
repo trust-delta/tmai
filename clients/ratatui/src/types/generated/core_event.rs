@@ -11,19 +11,6 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum CoreEvent {
-    AgentsUpdated,
-    AgentStatusChanged {
-        new_status: String,
-        old_status: String,
-        target: String,
-    },
-    AgentAppeared {
-        target: String,
-    },
-    AgentDisappeared {
-        target: String,
-    },
-    TeamsUpdated,
     TeammateIdle {
         member_name: String,
         target: String,
@@ -43,16 +30,6 @@ pub enum CoreEvent {
         file_path: String,
         source: String,
         target: String,
-    },
-    WorktreeCreated {
-        target: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        worktree: Option<WorktreeInfo>,
-    },
-    WorktreeRemoved {
-        target: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        worktree: Option<WorktreeInfo>,
     },
     InstructionsLoaded {
         target: String,
@@ -78,10 +55,6 @@ pub enum CoreEvent {
     },
     PromptReady {
         prompt: String,
-        target: String,
-    },
-    PromptQueueChanged {
-        queue: Vec<QueuedPrompt>,
         target: String,
     },
     UsageUpdated,
@@ -181,24 +154,6 @@ pub enum CoreEvent {
     DispatchBypassUsed {
         bypassed: Vec<String>,
         origin: ActionOrigin,
-        reason: String,
-    },
-    BundleStatusChanged {
-        bundle_id: BundleId,
-        new: BundleStatus,
-        old: BundleStatus,
-    },
-    DispatchSpawned {
-        dispatch_id: DispatchId,
-        refs: DispatchRefs,
-    },
-    DispatchStateChanged {
-        dispatch_id: DispatchId,
-        new: DispatchState,
-        old: DispatchState,
-    },
-    DispatchStopped {
-        dispatch_id: DispatchId,
         reason: String,
     },
     AgentUpdate {
