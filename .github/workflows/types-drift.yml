@@ -1,20 +1,60 @@
 name: Types Drift Check
 
-# Ensures that generated TypeScript types under clients/react/src/types/generated/
-# and the hand-written WebUI code stay in sync. Any PR touching either the
-# generated types or the api-spec is gated on a successful type check.
+# Ensures generated files under clients/*/src/types/generated/ and api-spec/
+# are never hand-edited, and that consuming code still compiles after any
+# generated update pushed by the sync bot.
 
 on:
   pull_request:
     paths:
       - "api-spec/**"
       - "clients/react/src/types/generated/**"
+      - "clients/ratatui/src/types/generated/**"
 
 permissions:
   contents: read
 
 jobs:
-  drift:
+  # Fail any human-authored PR that touches bot-managed generated paths.
+  # Bot-created PRs (user.login ends in "[bot]") are exempted so that the
+  # recovery flow — humans pushing consuming-code fixes onto a bot branch —
+  # can proceed without triggering this gate.
+  no-hand-edits:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.user.login, '[bot]')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect hand edits in bot-managed paths
+        run: |
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          VIOLATIONS=""
+          while IFS= read -r file; do
+            case "$file" in
+              clients/react/src/types/generated/*|\
+              clients/ratatui/src/types/generated/*|\
+              api-spec/*)
+                VIOLATIONS="${VIOLATIONS}  ${file}"$'\n'
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Hand edits detected in bot-managed paths."
+            echo "Affected files:"
+            echo "$VIOLATIONS"
+            echo "These paths are owned by the tmai-core sync bot."
+            echo "See CONTRIBUTING.md 'Bot-managed generated files' for the recovery flow."
+            exit 1
+          fi
+
+  ts-drift:
+    needs: no-hand-edits
+    # always() lets this run even when no-hand-edits was skipped (bot PRs);
+    # != 'failure' short-circuits when the hand-edit gate already failed.
+    if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,3 +76,20 @@ jobs:
       - name: Type check (fails if generated types break the build)
         working-directory: clients/react
         run: pnpm tsc --noEmit
+
+  rust-drift:
+    needs: no-hand-edits
+    if: always() && needs.no-hand-edits.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clients/ratatui
+
+      - name: Cargo check (fails if generated Rust types break the build)
+        working-directory: clients/ratatui
+        run: cargo check --all-targets
