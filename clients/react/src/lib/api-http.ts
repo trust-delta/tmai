@@ -1,6 +1,18 @@
 // HTTP/SSE/WebSocket API layer for tmai axum backend.
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
+import type { ApprovalSnapshot } from "@/types/generated/ApprovalSnapshot";
+import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
+import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
+import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
+import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
+import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
+import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
+import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
+import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
+
+export type { BootstrapRequiredEvent, EntityUpdateEnvelope, QueueAgentEntry, QueueSnapshot };
+
 // ── Connection config ──
 
 // Extract token from URL query params. Base URL is same origin (served by axum).
@@ -171,6 +183,19 @@ export interface AgentSnapshot {
   has_pending_approval?: boolean;
   primary_worktree_path?: string | null;
   current_dispatch_id?: string | null;
+}
+
+// ── Bootstrap payload (all 9 domain snapshots in one shot) ──
+
+export interface BootstrapPayload {
+  agents: AgentSnapshot[];
+  worktrees: WorktreeSnapshot[];
+  teams: TeamSnapshot[];
+  queue: QueueSnapshot;
+  dispatches: DispatchSnapshot[];
+  workflow: WorkflowSnapshot;
+  runtime: RuntimeSnapshot;
+  approvals: ApprovalSnapshot[];
 }
 
 // ── Prompt Queue ──
@@ -845,6 +870,9 @@ export interface DirEntry {
 // ── API wrappers ──
 
 export const api = {
+  // Bootstrap — all 9 domain snapshots in one request (Phase 2)
+  bootstrap: () => apiFetch<BootstrapPayload>("/bootstrap"),
+
   // Agent queries
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
   attentionCount: async () => {
@@ -1249,87 +1277,154 @@ export const api = {
 
 // ── SSE event subscription ──
 
+// SSE event names that carry EntityUpdateEnvelope payloads (Phase 2).
+const ENTITY_UPDATE_EVENTS = [
+  "AgentUpdate",
+  "WorktreeUpdate",
+  "QueueUpdate",
+  "TeamUpdate",
+  "DispatchUpdate",
+  "WorkflowUpdate",
+  "RuntimeUpdate",
+  "ApprovalUpdate",
+] as const;
+
 /// Subscribe to SSE named events from /api/events.
 ///
-/// The axum backend sends named SSE events:
-///   - "agents" — full AgentSnapshot[] payload
-///   - "teams"  — full team info payload
-///   - other named events (teammate_idle, task_completed, etc.)
+/// Phase 2 additions:
+///   - `since` — reconnect with `?since=<seq>` to replay missed entity updates
+///   - `onEntityUpdate` — called for each EntityUpdateEnvelope (AgentUpdate, etc.)
+///   - `onBootstrapRequired` — called when the server's event buffer overflowed;
+///     consumer should re-bootstrap and reconnect
 ///
-/// EventSource.onmessage only fires for unnamed events, so we use
-/// addEventListener for each named event type.
-export function subscribeSSE(handlers: {
-  onAgents?: (agents: AgentSnapshot[]) => void;
-  onEvent?: (eventName: string, data: unknown) => void;
-  /// Fires on every SSE connection *after* the first successful open.
-  /// Subscribers use this to refetch domain data they missed while the
-  /// socket was disconnected (EventSource doesn't replay named events
-  /// across auto-reconnect).
-  onReconnect?: () => void;
-}): { unlisten: () => void } {
-  const url = `${config.baseUrl}/api/events?token=${config.token}`;
-  const es = new EventSource(url);
+/// Legacy events (agents, teams, git_state_changed, …) are still forwarded via
+/// `onAgents` / `onEvent` for parallel Phase 1 compatibility; Phase 3 removes them.
+///
+/// Implements controlled reconnect: on SSE error the connection is closed and
+/// reopened after a 3 s backoff with the current `?since=<seq>`, so the server
+/// replays any events missed during the gap.
+export function subscribeSSE(
+  handlers: {
+    onAgents?: (agents: AgentSnapshot[]) => void;
+    onEvent?: (eventName: string, data: unknown) => void;
+    onEntityUpdate?: (envelope: EntityUpdateEnvelope) => void;
+    onBootstrapRequired?: (event: BootstrapRequiredEvent) => void;
+    /// Fires on every SSE connection *after* the first successful open.
+    onReconnect?: () => void;
+  },
+  since?: bigint,
+): { unlisten: () => void } {
+  let stopped = false;
+  let lastSeq: bigint | undefined = since;
+  const esHolder: { current: EventSource | null } = { current: null };
 
-  // Track first-vs-subsequent opens so onReconnect only fires on reopen.
-  // Without this, initial mount would trigger a redundant refetch on top
-  // of the component's own first-fetch.
-  let firstOpen = true;
-  es.addEventListener("open", () => {
-    if (firstOpen) {
-      firstOpen = false;
-      return;
+  function connect(): void {
+    if (stopped) return;
+    const sinceParam = lastSeq != null ? `&since=${lastSeq}` : "";
+    const url = `${config.baseUrl}/api/events?token=${config.token}${sinceParam}`;
+    const es = new EventSource(url);
+    esHolder.current = es;
+
+    // Track first-vs-subsequent opens so onReconnect only fires on reopen.
+    let firstOpen = true;
+    es.addEventListener("open", () => {
+      if (firstOpen) {
+        firstOpen = false;
+        return;
+      }
+      handlers.onReconnect?.();
+    });
+
+    // Entity-Update envelopes (Phase 2) — track lastSeq for reconnect
+    for (const name of ENTITY_UPDATE_EVENTS) {
+      es.addEventListener(name, (e) => {
+        try {
+          const envelope = JSON.parse(e.data) as EntityUpdateEnvelope;
+          if (lastSeq === undefined || envelope.seq > lastSeq) {
+            lastSeq = envelope.seq;
+          }
+          handlers.onEntityUpdate?.(envelope);
+        } catch {
+          // Ignore parse errors
+        }
+      });
     }
-    handlers.onReconnect?.();
-  });
 
-  // "agents" named event — full agent list
-  es.addEventListener("agents", (e) => {
-    try {
-      const agents = JSON.parse(e.data) as AgentSnapshot[];
-      handlers.onAgents?.(agents);
-    } catch {
-      // Ignore parse errors
-    }
-  });
-
-  // Other named events — forward to generic handler
-  const namedEvents = [
-    "teams",
-    "teammate_idle",
-    "task_completed",
-    "context_compacting",
-    "usage",
-    "worktree_created",
-    "worktree_removed",
-    "agent_stopped",
-    // PR monitor events — drive WebUI lockstep with PR Monitor's poll tick (#422)
-    "pr_created",
-    "pr_ci_passed",
-    "pr_ci_failed",
-    "pr_review_feedback",
-    "pr_closed",
-    // Git monitor transition event — BranchGraph refetches branches + graph
-    // in response (#423). Without this registration, EventSource silently
-    // drops every `git_state_changed` payload and the panel never learns
-    // about backend git transitions.
-    "git_state_changed",
-  ];
-  for (const name of namedEvents) {
-    es.addEventListener(name, (e) => {
+    // BootstrapRequired — server buffer overflowed; consumer must re-bootstrap
+    es.addEventListener("BootstrapRequired", (e) => {
       try {
-        const data = JSON.parse(e.data);
-        handlers.onEvent?.(name, data);
+        const event = JSON.parse(e.data) as BootstrapRequiredEvent;
+        handlers.onBootstrapRequired?.(event);
       } catch {
-        // Ignore
+        // Ignore parse errors
       }
     });
+
+    // "agents" named event — full agent list (legacy, still emitted in Phase 1/2)
+    es.addEventListener("agents", (e) => {
+      try {
+        const agents = JSON.parse(e.data) as AgentSnapshot[];
+        handlers.onAgents?.(agents);
+      } catch {
+        // Ignore parse errors
+      }
+    });
+
+    // Other named events — forward to generic handler
+    const namedEvents = [
+      "teams",
+      "teammate_idle",
+      "task_completed",
+      "context_compacting",
+      "usage",
+      "worktree_created",
+      "worktree_removed",
+      "agent_stopped",
+      // PR monitor events — drive WebUI lockstep with PR Monitor's poll tick (#422)
+      "pr_created",
+      "pr_ci_passed",
+      "pr_ci_failed",
+      "pr_review_feedback",
+      "pr_closed",
+      // Git monitor transition event — BranchGraph refetches branches + graph
+      // in response (#423). Without this registration, EventSource silently
+      // drops every `git_state_changed` payload and the panel never learns
+      // about backend git transitions.
+      "git_state_changed",
+    ];
+    for (const name of namedEvents) {
+      es.addEventListener(name, (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          handlers.onEvent?.(name, data);
+        } catch {
+          // Ignore
+        }
+      });
+    }
+
+    // Controlled reconnect: close and reopen with ?since=lastSeq after backoff
+    // so the server replays events missed during the disconnect window.
+    es.onerror = () => {
+      if (esHolder.current === es) {
+        es.close();
+        esHolder.current = null;
+        if (!stopped) {
+          setTimeout(() => connect(), 3000);
+        }
+      }
+    };
   }
 
-  es.onerror = () => {
-    // EventSource auto-reconnects
-  };
+  connect();
 
-  return { unlisten: () => es.close() };
+  return {
+    unlisten: () => {
+      stopped = true;
+      esHolder.current?.close();
+      esHolder.current = null;
+    },
+  };
 }
 
 // ── WebSocket terminal ──

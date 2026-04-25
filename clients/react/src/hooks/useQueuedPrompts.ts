@@ -1,37 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QueuedPrompt } from "@/lib/api";
 import { api } from "@/lib/api";
+import { useSSE } from "@/lib/sse-provider";
+import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 
-// Polls the pending send_prompt queue for an agent every 3 s.
+// Subscribes to the pending send_prompt queue for an agent via QueueUpdate
+// SSE entity events (Phase 2 — no polling).
+//
 // Optimistically removes cancelled items; re-syncs on cancel failure
 // (race: agent became idle and flushed the queue simultaneously).
 //
 // onNewItem fires for each queue item that was not present in the previous
-// poll. Callers use this to surface incoming notifications in a UI surface
+// snapshot. Callers use this to surface incoming notifications in a UI surface
 // that is isolated from the conversation input (fixes #9).
 export function useQueuedPrompts(agentId: string, onNewItem?: (item: QueuedPrompt) => void) {
   const [items, setItems] = useState<QueuedPrompt[]>([]);
-  // Track known IDs so we can fire onNewItem only for genuinely new arrivals.
   const knownIdsRef = useRef(new Set<string>());
-  // Keep callback in a ref so refresh() doesn't need to re-register on every render.
   const onNewItemRef = useRef(onNewItem);
   onNewItemRef.current = onNewItem;
+
+  const applyQueue = useCallback((newQueue: QueuedPrompt[]) => {
+    for (const item of newQueue) {
+      if (!knownIdsRef.current.has(item.id)) {
+        onNewItemRef.current?.(item);
+      }
+    }
+    knownIdsRef.current = new Set(newQueue.map((q) => q.id));
+    setItems(newQueue);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const queue = await api.getPromptQueue(agentId);
-      // Notify caller about items that arrived since the last poll.
-      for (const item of queue) {
-        if (!knownIdsRef.current.has(item.id)) {
-          onNewItemRef.current?.(item);
-        }
-      }
-      knownIdsRef.current = new Set(queue.map((q) => q.id));
-      setItems(queue);
+      applyQueue(queue);
     } catch {
       // Endpoint not yet reachable (backend may be starting up); treat as empty.
     }
-  }, [agentId]);
+  }, [agentId, applyQueue]);
 
   const cancel = useCallback(
     async (promptId: string) => {
@@ -42,7 +47,7 @@ export function useQueuedPrompts(agentId: string, onNewItem?: (item: QueuedPromp
         // the optimistic remove already matches reality; no re-sync needed.
       } catch {
         // Actual failure (network, 404 on unknown agent, etc.) — re-sync.
-        refresh();
+        void refresh();
       }
     },
     [agentId, refresh],
@@ -55,11 +60,26 @@ export function useQueuedPrompts(agentId: string, onNewItem?: (item: QueuedPromp
     knownIdsRef.current = new Set();
   }, [agentId]);
 
+  // Initial fetch (once, no polling) — provides data before the first QueueUpdate event.
   useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 3000);
-    return () => clearInterval(interval);
+    void refresh();
   }, [refresh]);
+
+  // Live updates via QueueUpdate entity events — replaces the 3 s polling interval.
+  useSSE({
+    onEntityUpdate: (envelope) => {
+      if (envelope.entity !== "Queue" || envelope.id !== agentId) return;
+      if (envelope.change === "Removed") {
+        knownIdsRef.current = new Set();
+        setItems([]);
+      } else if (envelope.snapshot != null) {
+        const entry = envelope.snapshot as QueueAgentEntry;
+        // Generated QueuedPrompt uses `origin: ActionOrigin | null`; api-http uses `origin?: ActionOrigin`.
+        // Both shapes are structurally identical at runtime; cast to satisfy the api-http type.
+        applyQueue(entry.queue as QueuedPrompt[]);
+      }
+    },
+  });
 
   return { items, cancel, refresh };
 }

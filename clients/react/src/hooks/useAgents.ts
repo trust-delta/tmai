@@ -1,57 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
-import { type AgentSnapshot, api } from "@/lib/api";
-import { useSSE } from "@/lib/sse-provider";
+import { useCallback } from "react";
+import type { AgentSnapshot } from "@/lib/api";
+import { useSSEContext } from "@/lib/sse-provider";
 import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
-// Hook to fetch and reactively update agent list via Tauri events + HTTP fallback
+// Hook to access the reactive agent list from the shared SSE entity cache.
+//
+// Phase 2: removed per-hook api.listAgents() initial fetch + retry loop.
+// Agents are seeded via api.bootstrap() in SSEProvider on mount and kept live
+// by AgentUpdate entity events. useAgents now just reads from the shared cache.
 export function useAgents() {
-  const [agents, setAgents] = useState<AgentSnapshot[]>([]);
-  const [attentionCount, setAttentionCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const { cache, refreshCache } = useSSEContext();
+  const { agents, loading } = cache;
+  // needs_attention is a derived field computed by tmai-core (#521)
+  const attentionCount = agents.filter((a) => a.needs_attention ?? false).length;
 
-  // Fallback: fetch via HTTP API (used for initial load)
-  const refresh = useCallback(async () => {
-    try {
-      const agentList = await api.listAgents();
-      setAgents(agentList);
-      setAttentionCount(agentList.filter((a) => a.needs_attention ?? false).length);
-    } catch (_e) {
-      // Server may not be ready yet during startup
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // refreshCache triggers a full re-bootstrap; used by the Tauri event path
+  // to pull a fresh snapshot when the desktop app signals an agent change.
+  const refresh = useCallback(() => {
+    void refreshCache();
+  }, [refreshCache]);
 
-  // Handle Tauri core-event emissions
   const handleTauriEvent = useCallback(
     (event: CoreEvent) => {
       if (event.type === "agents-updated") {
-        // Refresh agent list when AgentsUpdated event is received
         refresh();
       }
     },
     [refresh],
   );
 
-  // Subscribe to Tauri events
   useTauriEvents(handleTauriEvent);
-
-  useEffect(() => {
-    // Initial fetch (retry until server/API is ready)
-    const retryInterval = setInterval(() => {
-      refresh().then(() => clearInterval(retryInterval));
-    }, 500);
-    return () => clearInterval(retryInterval);
-  }, [refresh]);
-
-  // Shared SSE subscription (previously opened its own EventSource)
-  useSSE({
-    onAgents: (agentList) => {
-      setAgents(agentList);
-      setAttentionCount(agentList.filter((a) => a.needs_attention ?? false).length);
-      setLoading(false);
-    },
-  });
 
   return { agents, attentionCount, loading, refresh };
 }
+
+export type { AgentSnapshot };

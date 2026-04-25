@@ -11,6 +11,11 @@ global.ResizeObserver = class ResizeObserver {
 };
 Element.prototype.scrollIntoView = vi.fn();
 
+// ── mock @/lib/sse-provider — useSSE is a no-op in these unit tests ──
+vi.mock("@/lib/sse-provider", () => ({
+  useSSE: vi.fn(),
+}));
+
 // ── mock @/lib/api ──
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();

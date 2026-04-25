@@ -49,6 +49,11 @@ describe("subscribeSSE named-event registration (#470)", () => {
       // pass vacuously from a rewrite that dropped every listener.
       expect(events).toContain("pr_created");
       expect(events).toContain("agents");
+      // Phase 2: entity-update envelope events must be registered (#522)
+      expect(events).toContain("AgentUpdate");
+      expect(events).toContain("WorktreeUpdate");
+      expect(events).toContain("QueueUpdate");
+      expect(events).toContain("BootstrapRequired");
       sub.unlisten();
     } finally {
       vi.stubGlobal("EventSource", originalEventSource);
