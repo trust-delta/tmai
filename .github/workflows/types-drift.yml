@@ -10,6 +10,7 @@ on:
       - "api-spec/**"
       - "clients/react/src/types/generated/**"
       - "clients/ratatui/src/types/generated/**"
+      - ".github/workflows/types-drift.yml"
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.pull_request.user.login, '[bot]') && !startsWith(github.event.pull_request.head.ref, 'bot/')"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -62,13 +63,13 @@ jobs:
     if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: pnpm
@@ -87,7 +88,7 @@ jobs:
     if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 

@@ -42,7 +42,7 @@ jobs:
           - aarch64-unknown-linux-gnu
           - aarch64-apple-darwin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Read versions from versions.toml
         id: versions
@@ -85,7 +85,7 @@ jobs:
             --pattern "${asset}" \
             --dir core-artifacts/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: core-${{ matrix.target }}
           path: core-artifacts/
@@ -94,13 +94,13 @@ jobs:
     name: Build WebUI dist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: pnpm
@@ -114,7 +114,7 @@ jobs:
         working-directory: clients/react
         run: pnpm build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: webui-dist
           path: clients/react/dist/
@@ -136,7 +136,7 @@ jobs:
             os: macos-14
             cross: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -161,7 +161,7 @@ jobs:
         working-directory: clients/ratatui
         run: cross build --release --target ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ratatui-${{ matrix.target }}
           path: clients/ratatui/target/${{ matrix.target }}/release/tmai-ratatui
@@ -180,7 +180,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract version
         id: version
@@ -198,17 +198,17 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: core-${{ matrix.target }}
           path: downloads/core/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: webui-dist
           path: downloads/webui/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ratatui-${{ matrix.target }}
           path: downloads/ratatui/
@@ -256,7 +256,7 @@ jobs:
           tar czf "${archive}" "${staging}"
           shasum -a 256 "${archive}" > "${archive}.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundle-${{ matrix.target }}
           path: |
@@ -271,7 +271,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract version
         id: version
@@ -285,7 +285,7 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: bundle-*
