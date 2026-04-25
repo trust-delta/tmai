@@ -133,9 +133,7 @@ describe("useQueuedPrompts", () => {
 
     it("does NOT fire again for items already seen on a subsequent refresh", async () => {
       const onNewItem = vi.fn();
-      vi.mocked(api.getPromptQueue)
-        .mockResolvedValueOnce([ITEMS[0]])
-        .mockResolvedValue([ITEMS[0]]);
+      vi.mocked(api.getPromptQueue).mockResolvedValueOnce([ITEMS[0]]).mockResolvedValue([ITEMS[0]]);
 
       const { result } = renderHook(() => useQueuedPrompts("agent-1", onNewItem));
       await waitFor(() => expect(result.current.items).toHaveLength(1));
@@ -150,9 +148,7 @@ describe("useQueuedPrompts", () => {
 
     it("fires for each genuinely new item when the queue grows", async () => {
       const onNewItem = vi.fn();
-      vi.mocked(api.getPromptQueue)
-        .mockResolvedValueOnce([])
-        .mockResolvedValue(ITEMS);
+      vi.mocked(api.getPromptQueue).mockResolvedValueOnce([]).mockResolvedValue(ITEMS);
 
       const { result } = renderHook(() => useQueuedPrompts("agent-1", onNewItem));
       await waitFor(() => expect(result.current.items).toHaveLength(0));
@@ -201,7 +197,14 @@ describe("useQueuedPrompts", () => {
           change: "Upserted",
           entity: "Queue",
           id: "agent-1",
-          snapshot: { agent_id: "agent-1", agent_stable_id: "a1", agent_display_label: "A1", queue: ITEMS, total_count: 2, oldest_queued_at: ITEMS[0].queued_at },
+          snapshot: {
+            agent_id: "agent-1",
+            agent_stable_id: "a1",
+            agent_display_label: "A1",
+            queue: ITEMS,
+            total_count: 2,
+            oldest_queued_at: ITEMS[0].queued_at,
+          },
           seq: 1 as unknown as bigint,
           ts: new Date().toISOString(),
         });
@@ -263,7 +266,14 @@ describe("useQueuedPrompts", () => {
           change: "Upserted",
           entity: "Queue",
           id: "agent-1",
-          snapshot: { agent_id: "agent-1", agent_stable_id: "a1", agent_display_label: "A1", queue: [ITEMS[0]], total_count: 1, oldest_queued_at: ITEMS[0].queued_at },
+          snapshot: {
+            agent_id: "agent-1",
+            agent_stable_id: "a1",
+            agent_display_label: "A1",
+            queue: [ITEMS[0]],
+            total_count: 1,
+            oldest_queued_at: ITEMS[0].queued_at,
+          },
           seq: 4 as unknown as bigint,
           ts: new Date().toISOString(),
         });

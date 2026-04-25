@@ -7,11 +7,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AgentSnapshot, BootstrapPayload, WorktreeSnapshot } from "./api";
-import { api, subscribeSSE } from "./api";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
+import type { AgentSnapshot, BootstrapPayload, WorktreeSnapshot } from "./api";
+import { api, subscribeSSE } from "./api";
 
 // Handlers a subscriber can register with the shared SSE connection.
 export interface SSEHandlers {
@@ -95,6 +95,7 @@ export function SSEProvider({ children }: { children: ReactNode }) {
     void refreshCache();
   }, [refreshCache]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectKey is intentional — incrementing it forces a new SSE connection after BootstrapRequired recovery
   useEffect(() => {
     const { unlisten } = subscribeSSE(
       {
@@ -162,7 +163,6 @@ export function SSEProvider({ children }: { children: ReactNode }) {
       lastSeqRef.current,
     );
     return unlisten;
-    // reconnectKey triggers effect re-run → new SSE connection with updated ?since=
   }, [refreshCache, reconnectKey]);
 
   const subscribe = useCallback((handlers: SSEHandlers) => {
@@ -175,9 +175,7 @@ export function SSEProvider({ children }: { children: ReactNode }) {
   const cache: EntityCache = { agents, worktrees, queueEntries, loading };
 
   return (
-    <SSEContext.Provider value={{ subscribe, cache, refreshCache }}>
-      {children}
-    </SSEContext.Provider>
+    <SSEContext.Provider value={{ subscribe, cache, refreshCache }}>{children}</SSEContext.Provider>
   );
 }
 
