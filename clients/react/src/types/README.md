@@ -12,7 +12,7 @@ Do **not** hand-edit anything in `./generated/`.
 ## What lives where
 
 - `generated/*.ts` — TypeScript types for every public payload (`CoreEvent`,
-  `TaskMetaEntry`, `WorktreeInfo`, …).
+  `TaskMetaSnapshot`, `WorktreeInfo`, …).
 - `generated/openapi.json` — OpenAPI 3 document for the REST surface.
 - `index.ts` — barrel re-exports for consumers.
 - `sse-event.ts` — typed narrower that turns the untyped `SSEHandlers.onEvent`

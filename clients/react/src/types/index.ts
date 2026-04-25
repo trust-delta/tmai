@@ -8,5 +8,5 @@ export type { ActionOrigin } from "./generated/ActionOrigin";
 export type { CoreEvent } from "./generated/CoreEvent";
 export type { GuardrailKind } from "./generated/GuardrailKind";
 export type { Milestone } from "./generated/Milestone";
-export type { TaskMetaEntry } from "./generated/TaskMetaEntry";
+export type { TaskMetaSnapshot } from "./generated/TaskMetaSnapshot";
 export type { WorktreeInfo } from "./generated/WorktreeInfo";
