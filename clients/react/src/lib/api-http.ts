@@ -79,7 +79,6 @@ export function statusName(status: AgentStatus): string {
   return "Unknown";
 }
 
-
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 
