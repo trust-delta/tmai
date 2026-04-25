@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::events::{self, AppEvent};
-use crate::types::Agent;
+use crate::types::AgentSnapshot;
 use crate::ui::session_list::{render, InputModeView, SessionListView};
 
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub enum InputMode {
 }
 
 struct AppState {
-    agents: Vec<Agent>,
+    agents: Vec<AgentSnapshot>,
     selected: usize,
     input_mode: InputMode,
     status_line: String,
@@ -51,7 +51,7 @@ impl AppState {
         }
     }
 
-    fn current(&self) -> Option<&Agent> {
+    fn current(&self) -> Option<&AgentSnapshot> {
         self.agents.get(self.selected)
     }
 }
