@@ -11,8 +11,11 @@
     "test": "npm run lint:openapi && npm run test:schemas"
   },
   "devDependencies": {
-    "@redocly/cli": "^1.27.0",
+    "@redocly/cli": "^2.30.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
+  },
+  "overrides": {
+    "postcss": ">=8.5.10"
   }
 }
