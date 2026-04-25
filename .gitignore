@@ -11,11 +11,15 @@ crates/tmai-app/web/tsconfig.tsbuildinfo
 
 # AI assistants
 CLAUDE.md
+AGENTS.md
+GEMINI.md
 .claude/
 knowledge/
-.codex/
+.codex*
 .gemini/
 .cursor/
+.cursorrules
+.windsurfrules
 .aider*
 
 # tmai dispatch state (per-local-environment)
