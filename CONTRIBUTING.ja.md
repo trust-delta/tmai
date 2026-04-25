@@ -77,12 +77,60 @@ sync bot PR は生成ファイルを正しく更新しましたが、`src/types/
 
 変更したのは `src/types/index.ts`（消費コード）のみで、生成ファイルには一切手を加えていません。
 
-### Phase 1 移行中の注意
+## ローカル開発
 
-スナップショット契約移行の Phase 1 期間中は、React クライアントは
-**従来の `diff` スタイル CoreEvent** と **新しい `EntityUpdateEnvelope` ラッパー**
-の両方を受け取れるようにしておく必要があります。
-Phase 3 でレガシーパスを廃止する予定です。それまでは SSE イベントハンドラーで両方の分岐を維持してください。
+ローカル実行時のランタイム構成:
+
+- **tmai-core** が port **9876** (`~/.config/tmai/config.toml` の `web.port` デフォルト) で HTTP/SSE サーバーを持ちます。`share/tmai/webui/` 相当のディレクトリが見つかれば、同梱 WebUI もここから配信します。
+- **clients/react** は port **1420** の Vite アプリで、`/api` を `http://localhost:9876` に proxy します (`clients/react/vite.config.ts` 参照)。
+
+変更内容に応じて以下のいずれかを選んでください。
+
+### (A) UI 反復開発 — インストール済 `tmai` を背後に Vite HMR
+
+React のみを触るときの最速ループ。PATH 上の `tmai` (release tarball / `cargo install` 等) をそのまま backend として使います。
+
+```sh
+# Terminal 1 — backend
+tmai
+
+# Terminal 2 — frontend (Vite dev, HMR)
+cd clients/react
+pnpm install   # 初回のみ
+pnpm dev       # http://localhost:1420
+```
+
+`http://localhost:1420` を開いてください。Vite が `/api`、`/api/events` (SSE)、`/api/agents/{id}/terminal` (WS) を起動中の `tmai` に proxy します。
+
+### (B) UI + engine HEAD (collaborator 限定)
+
+(A) と同じですが、backend を private `tmai-core` repo の `cargo run` ビルドに差し替えます。`trust-delta/tmai-core` の collaborator 権限が必要です。
+
+```sh
+# Terminal 1 — engine HEAD
+cd path/to/tmai-core
+cargo run --release
+
+# Terminal 2 — (A) と同じ
+cd clients/react && pnpm dev
+```
+
+### (C) 本番に近い形 — ビルド済 UI を `tmai` から配信
+
+リリースパイプラインが配布する形を確認します。
+
+```sh
+cd clients/react && pnpm build   # → clients/react/dist
+```
+
+次のいずれかで `tmai` にビルド成果物を読ませます:
+
+- **`~/.config/tmai/config.toml` の `web.webui_path`** — `clients/react/dist` の絶対パスを設定。`tmai-core` はこの直下の `index.html` を探します。
+- **`TMAI_SHARE` env** — release tarball 形式 (`$TMAI_SHARE/webui/index.html`) のときのみ有用。その場限りの `dist/` には `web.webui_path` を使ってください。
+
+解決順序 (`tmai-core/src/web/server.rs::resolve_webui_dir`): `TMAI_SHARE` → `web.webui_path` → binary 相対 `<exe>/../share/tmai/webui/`。
+
+`http://localhost:9876` を開いてください。
 
 ## Issue
 

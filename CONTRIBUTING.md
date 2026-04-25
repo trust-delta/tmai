@@ -80,12 +80,60 @@ Fix applied in commit `0a1443f`:
 Only `src/types/index.ts` (consuming code) was touched; the generated files
 were left untouched.
 
-### Phase 1 transition note
+## Local development
 
-During Phase 1 of the snapshot-contract migration the React client must accept
-**both** legacy `diff`-style CoreEvents **and** the new `EntityUpdateEnvelope`
-wrapper emitted by tmai-core ≥ the contract boundary.  Phase 3 will retire the
-legacy path; until then, keep both branches in SSE event handlers.
+Layout of the runtime when running locally:
+
+- **tmai-core** owns an HTTP/SSE server on port **9876** (default, from `web.port` in `~/.config/tmai/config.toml`). It also serves the bundled WebUI from a `share/tmai/webui/` directory when one is found.
+- **clients/react** is a Vite app on port **1420** with `/api` proxied to `http://localhost:9876` (see `clients/react/vite.config.ts`).
+
+Pick the workflow that matches what you're changing.
+
+### (A) UI iteration — Vite HMR against an installed `tmai`
+
+Fastest loop for React-only work. Uses whatever `tmai` is on your PATH (release tarball, `cargo install`, etc.) as the backend.
+
+```sh
+# Terminal 1 — backend
+tmai
+
+# Terminal 2 — frontend (Vite dev, HMR)
+cd clients/react
+pnpm install   # first time only
+pnpm dev       # http://localhost:1420
+```
+
+Open `http://localhost:1420`. Vite proxies `/api`, `/api/events` (SSE), and `/api/agents/{id}/terminal` (WS) to the running `tmai`.
+
+### (B) UI + engine HEAD (collaborator-only)
+
+Same as (A) but swap the backend for a `cargo run` build of the private `tmai-core` repo. Requires collaborator access to `trust-delta/tmai-core`.
+
+```sh
+# Terminal 1 — engine HEAD
+cd path/to/tmai-core
+cargo run --release
+
+# Terminal 2 — same as (A)
+cd clients/react && pnpm dev
+```
+
+### (C) Production-shape check — built UI served by `tmai`
+
+Verify the bundle the release pipeline will ship.
+
+```sh
+cd clients/react && pnpm build   # → clients/react/dist
+```
+
+Then point `tmai` at the build with one of:
+
+- **`web.webui_path` in `~/.config/tmai/config.toml`** — set it to the absolute path of `clients/react/dist`. `tmai-core` looks for `index.html` directly under that path.
+- **`TMAI_SHARE` env** — only useful when the directory layout matches the release tarball (`$TMAI_SHARE/webui/index.html`); for an ad-hoc `dist/` use `web.webui_path` instead.
+
+Resolution order (`tmai-core/src/web/server.rs::resolve_webui_dir`): `TMAI_SHARE` → `web.webui_path` → binary-relative `<exe>/../share/tmai/webui/`.
+
+Open `http://localhost:9876`.
 
 ## Issues
 
