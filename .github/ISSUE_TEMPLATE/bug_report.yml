@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a defect in the React WebUI, ratatui TUI, wire contract, installer, or release artifacts.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report!
+
+        - **Engine-only bugs** (orchestration, MCP, HTTP/SSE server internals) live in the private `tmai-core` repo, but you can still file here — we'll reproduce, triage, and hand it over if needed.
+        - For **security vulnerabilities**, do not file here. See [SECURITY.md](../blob/main/SECURITY.md) and use Private Vulnerability Reporting.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Where does the bug surface?
+      options:
+        - React WebUI (clients/react/)
+        - Ratatui TUI (clients/ratatui/)
+        - Wire contract (api-spec/)
+        - Installer (install.sh)
+        - Released binary / bundle tarball
+        - Engine-side (will be triaged here, may be transferred to tmai-core)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: tmai version
+      description: "Output of `tmai --version`, or release tag, or commit SHA."
+      placeholder: "e.g. tmai-core 2.0.0 / v2.0.0 / 4457bf1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `tmai`
+        2. Open http://localhost:9876
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser (for WebUI bugs), terminal (for TUI bugs), Node / pnpm / Rust versions where relevant.
+      placeholder: |
+        - OS: macOS 14.5 / Ubuntu 24.04 / Windows 11 + WSL2
+        - Browser: Chrome 130
+        - Terminal: WezTerm 20240203
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Console output, screenshots, or `tmai -d` (debug) excerpts. Redact anything sensitive.
+      render: shell
+    validations:
+      required: false

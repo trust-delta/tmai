@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose a change to the React WebUI, ratatui TUI, wire contract, installer, or release flow.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Engine-only feature ideas can be filed here too — we'll triage and route as needed.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - React WebUI (clients/react/)
+        - Ratatui TUI (clients/ratatui/)
+        - Wire contract (api-spec/)
+        - Installer / release / packaging
+        - Docs
+        - Engine-side capability (may be transferred to tmai-core)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the user / developer pain, not the proposed solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (optional)
+      description: A sketch is fine. We may iterate on this during triage.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, related issues, prior art, etc.
+    validations:
+      required: false
