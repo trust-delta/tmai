@@ -5,7 +5,6 @@ import {
   type ConnectionChannels,
   type DetectionSource,
   isAiAgent,
-  needsAttention,
   type SendCapability,
   statusName,
 } from "@/lib/api";
@@ -120,7 +119,7 @@ interface AgentCardProps {
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const name = statusName(agent.status);
-  const attention = needsAttention(agent.status);
+  const attention = agent.needs_attention ?? false;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   // Auto-approve state

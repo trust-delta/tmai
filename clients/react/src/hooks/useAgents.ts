@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { type AgentSnapshot, api, needsAttention } from "@/lib/api";
+import { type AgentSnapshot, api } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
@@ -14,7 +14,7 @@ export function useAgents() {
     try {
       const agentList = await api.listAgents();
       setAgents(agentList);
-      setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
+      setAttentionCount(agentList.filter((a) => a.needs_attention ?? false).length);
     } catch (_e) {
       // Server may not be ready yet during startup
     } finally {
@@ -48,7 +48,7 @@ export function useAgents() {
   useSSE({
     onAgents: (agentList) => {
       setAgents(agentList);
-      setAttentionCount(agentList.filter((a) => needsAttention(a.status)).length);
+      setAttentionCount(agentList.filter((a) => a.needs_attention ?? false).length);
       setLoading(false);
     },
   });
