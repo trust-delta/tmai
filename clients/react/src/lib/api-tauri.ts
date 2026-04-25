@@ -48,6 +48,9 @@ async function isInTauri(): Promise<boolean> {
 
 // Create Tauri-aware API wrapper that overrides agent methods
 export const api = {
+  // Bootstrap — delegates to HTTP (no Tauri IPC equivalent)
+  bootstrap: () => httpApi.bootstrap(),
+
   // Agent queries - use Tauri IPC if available
   listAgents: async (): Promise<AgentSnapshot[]> => {
     try {
