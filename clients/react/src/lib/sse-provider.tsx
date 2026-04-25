@@ -69,12 +69,14 @@ export function SSEProvider({ children }: { children: ReactNode }) {
   // Increment to force SSE effect re-run (e.g., after BootstrapRequired recovery)
   const [reconnectKey, setReconnectKey] = useState(0);
 
-  const refreshCache = useCallback(async (): Promise<void> => {
+  const refreshCache = useCallback(async (): Promise<boolean> => {
     try {
       const payload: BootstrapPayload = await api.bootstrap();
 
       agentMapRef.current = new Map(payload.agents.map((a) => [a.id, a]));
-      worktreeMapRef.current = new Map(payload.worktrees.map((w) => [w.name, w]));
+      // WorktreeUpdate envelope.id = WorktreeSnapshot.path (per corevents.schema.json
+      // "Worktree path (unique per repo)"), so key by path to match EntityUpdate upsert/remove.
+      worktreeMapRef.current = new Map(payload.worktrees.map((w) => [w.path, w]));
       const qMap = new Map<string, QueueAgentEntry>();
       for (const entry of payload.queue.entries) {
         qMap.set(entry.agent_id, entry);
@@ -85,14 +87,31 @@ export function SSEProvider({ children }: { children: ReactNode }) {
       setWorktrees([...worktreeMapRef.current.values()]);
       setQueueEntries([...queueMapRef.current.values()]);
       setLoading(false);
+      return true;
     } catch {
-      // Server may not be ready yet during startup; loading stays true
+      return false;
     }
   }, []);
 
-  // Seed cache on mount
+  // Seed cache on mount with exponential backoff retry (server may be starting up).
   useEffect(() => {
-    void refreshCache();
+    let cancelled = false;
+    let retryHandle: ReturnType<typeof setTimeout> | null = null;
+    let delay = 1_000;
+
+    async function attempt() {
+      const ok = await refreshCache();
+      if (!ok && !cancelled) {
+        delay = Math.min(delay * 2, 30_000);
+        retryHandle = setTimeout(() => void attempt(), delay);
+      }
+    }
+
+    void attempt();
+    return () => {
+      cancelled = true;
+      if (retryHandle !== null) clearTimeout(retryHandle);
+    };
   }, [refreshCache]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectKey is intentional — incrementing it forces a new SSE connection after BootstrapRequired recovery
@@ -152,7 +171,9 @@ export function SSEProvider({ children }: { children: ReactNode }) {
           // Buffer overflowed: re-seed from REST then reconnect SSE without ?since=
           // so the server sends a fresh stream from the current position.
           lastSeqRef.current = undefined;
-          void refreshCache().then(() => setReconnectKey((k) => k + 1));
+          void refreshCache().then((ok) => {
+            if (ok) setReconnectKey((k) => k + 1);
+          });
         },
         onReconnect: () => {
           for (const sub of subscribersRef.current) {
