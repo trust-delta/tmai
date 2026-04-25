@@ -91,6 +91,153 @@
         }
       ]
     },
+    "ApprovalSnapshot": {
+      "description": "Snapshot of the auto-approve state for a single agent.",
+      "properties": {
+        "agent_id": {
+          "description": "Stable agent identifier (UUID short hash)",
+          "type": "string"
+        },
+        "agent_stable_id": {
+          "description": "tmux pane target (e.g. \"main:0.1\")",
+          "type": "string"
+        },
+        "current_phase": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/AutoApprovePhase",
+              "description": "Current phase of the auto-approve judgment lifecycle"
+            }
+          ]
+        },
+        "effective_mode": {
+          "$ref": "#/$defs/AutoApproveMode",
+          "description": "Resolved auto-approve mode (from global settings + per-agent override)"
+        },
+        "effective_rules_count": {
+          "description": "Count of enabled rules (bool rules + custom patterns)",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "override_enabled": {
+          "description": "Per-agent override; `None` means \"follow global setting\"",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "pending_approval": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/PendingApprovalInfo",
+              "description": "Pending approval request (set when agent is in `AwaitingApproval`)"
+            }
+          ]
+        },
+        "recent_decisions": {
+          "description": "Recent auto-approve decisions (most recent first, capped at 20)",
+          "items": {
+            "$ref": "#/$defs/RecentDecision"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agent_id",
+        "agent_stable_id",
+        "effective_mode",
+        "effective_rules_count",
+        "recent_decisions"
+      ],
+      "type": "object"
+    },
+    "AutoActionEntry": {
+      "description": "Record of the most recently fired auto-action rule.",
+      "properties": {
+        "action": {
+          "description": "Human-readable description of the action taken.",
+          "type": "string"
+        },
+        "fired_at": {
+          "description": "When the auto-action was triggered.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "target_agent_id": {
+          "description": "Agent that was the target of the action, if applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fired_at",
+        "trigger",
+        "action"
+      ],
+      "type": "object"
+    },
+    "AutoApproveMode": {
+      "description": "Auto-approve operating mode",
+      "enum": [
+        "off",
+        "rules",
+        "ai",
+        "hybrid"
+      ],
+      "type": "string"
+    },
+    "AutoApprovePhase": {
+      "description": "Phase of the auto-approve judgment lifecycle.\n\nWritten by `AutoApproveService` into `MonitoredAgent.auto_approve_phase`\nso the UI can distinguish \"wait for auto-approve\" from \"needs manual action\".",
+      "oneOf": [
+        {
+          "description": "Judgment is in progress (wait and it will resolve automatically)",
+          "enum": [
+            "Judging"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Approved by rule engine (keys sent, agent will transition soon)",
+          "enum": [
+            "ApprovedByRule"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Approved by AI judgment (keys sent, agent will transition soon)",
+          "enum": [
+            "ApprovedByAi"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Manual user action required (reason provided)",
+          "properties": {
+            "ManualRequired": {
+              "description": "Manual user action required (reason provided)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ManualRequired"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -182,6 +329,64 @@
         }
       ]
     },
+    "CapacityInfo": {
+      "description": "Current agent capacity counters.",
+      "properties": {
+        "current": {
+          "description": "Number of agent slots currently in use.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "Configured maximum concurrent agents.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "remaining": {
+          "description": "Remaining available slots (`limit - current`, saturating).",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current",
+        "limit",
+        "remaining"
+      ],
+      "type": "object"
+    },
+    "DeferredToolInfo": {
+      "description": "A tool call pending resolution in the deferred-approve queue.",
+      "properties": {
+        "agent_target": {
+          "description": "Agent tmux target that issued the deferred tool call.",
+          "type": "string"
+        },
+        "defer_id": {
+          "description": "Unique id of the pending deferred call (stringified u64 for JSON safety).",
+          "type": "string"
+        },
+        "deferred_at": {
+          "description": "When the tool call was deferred.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name (e.g. `\"Bash\"`, `\"Edit\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defer_id",
+        "agent_target",
+        "tool_name",
+        "deferred_at"
+      ],
+      "type": "object"
+    },
     "DetectionSource": {
       "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
       "enum": [
@@ -191,6 +396,32 @@
         "capture_pane"
       ],
       "type": "string"
+    },
+    "DiffSummarySnapshot": {
+      "description": "Diff statistics snapshot for API consumers",
+      "properties": {
+        "deletions": {
+          "description": "Number of lines deleted",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files_changed": {
+          "description": "Number of files changed",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "insertions": {
+          "description": "Number of lines inserted",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files_changed",
+        "insertions",
+        "deletions"
+      ],
+      "type": "object"
     },
     "DispatchId": {
       "description": "Globally unique identifier for a dispatched unit of work.\n\nBacked by UUID v7 so that records sort lexicographically by creation\ntime without needing a separate timestamp index. Serialized as a plain\nstring (`#[serde(transparent)]`) so external consumers can treat the\nfield as an opaque token without learning the wrapper type.",
@@ -408,6 +639,114 @@
       ],
       "type": "object"
     },
+    "DispatchSnapshot": {
+      "description": "UI-facing snapshot of a dispatched unit of work.",
+      "properties": {
+        "agent_stable_id": {
+          "description": "Stable agent id (8-char hex), if the agent has been attached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent_target": {
+          "description": "Live agent tmux target (e.g. \"main:0.1\"), if the agent has been attached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bundle_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/BundleId",
+              "description": "Bundle id when this dispatch is part of a multi-repo bundle."
+            }
+          ]
+        },
+        "display_subtitle": {
+          "description": "Short subtitle derived from dispatch kind (e.g. \"Issue #42\").",
+          "type": "string"
+        },
+        "duration_ms": {
+          "description": "Elapsed milliseconds from spawn to terminal state, if finished.",
+          "format": "int64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "description": "Wall-clock time when the dispatch reached a terminal state, if any.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/DispatchId",
+          "description": "Durable dispatch id (UUID v7)."
+        },
+        "is_terminal": {
+          "description": "Whether the dispatch has reached a terminal state (Stopped / Failed).",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/DispatchKind",
+          "description": "What kind of work was dispatched."
+        },
+        "pty_session_id": {
+          "description": "PTY session id, if the agent was spawned via the PTY layer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refs": {
+          "$ref": "#/$defs/DispatchRefs",
+          "description": "Stable references captured at request time."
+        },
+        "role": {
+          "$ref": "#/$defs/SpawnRole",
+          "description": "Agent role this dispatch was filled with."
+        },
+        "spawned_at": {
+          "description": "Wall-clock creation time.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "spawner": {
+          "$ref": "#/$defs/SpawnerHandle",
+          "description": "Who or what originated this dispatch."
+        },
+        "state": {
+          "$ref": "#/$defs/DispatchState",
+          "description": "Current lifecycle state."
+        },
+        "title": {
+          "description": "Human-readable title chosen at dispatch time.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "refs",
+        "state",
+        "role",
+        "spawner",
+        "spawned_at",
+        "title",
+        "display_subtitle",
+        "is_terminal"
+      ],
+      "type": "object"
+    },
     "DispatchState": {
       "description": "Lifecycle position of a dispatch.\n\nPersisted alongside the dispatch record so a tmai restart can restore\nthe ledger without consulting any live process state.",
       "oneOf": [
@@ -533,6 +872,14 @@
         }
       ]
     },
+    "EntityChange": {
+      "description": "Whether an entity was upserted (created or updated) or removed.\n\nUsed in Entity-Update [`CoreEvent`] variants and [`crate::api::envelope::EntityUpdateEnvelope`].",
+      "enum": [
+        "Upserted",
+        "Removed"
+      ],
+      "type": "string"
+    },
     "ErrorCode": {
       "description": "Machine-readable error code — stable across releases.\n\nAdded codes **never** get removed: deprecations are handled with serde\naliases so old payloads still deserialize. Callers switch on this value\ninstead of `message` text.",
       "enum": [
@@ -554,6 +901,49 @@
       ],
       "type": "string"
     },
+    "GuardrailBreach": {
+      "description": "An active guardrail limit breach.",
+      "properties": {
+        "branch": {
+          "description": "Branch associated with the breach, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "description": "Current count that exceeded the limit.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/GuardrailKind",
+          "description": "Which guardrail was exceeded."
+        },
+        "limit": {
+          "description": "Configured limit that was exceeded.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pr_number": {
+          "description": "PR number associated with the breach, if known.",
+          "format": "int64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "limit"
+      ],
+      "type": "object"
+    },
     "GuardrailKind": {
       "description": "The type of guardrail that was exceeded",
       "enum": [
@@ -562,6 +952,36 @@
         "consecutive_failures"
       ],
       "type": "string"
+    },
+    "GuardrailStatus": {
+      "description": "Configured guardrail limits and currently active breaches.",
+      "properties": {
+        "active_breaches": {
+          "description": "Currently active guardrail breaches (empty when all limits are clear).",
+          "items": {
+            "$ref": "#/$defs/GuardrailBreach"
+          },
+          "type": "array"
+        },
+        "max_ci_retries": {
+          "description": "Configured max CI fix attempts per PR.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_review_loops": {
+          "description": "Configured max review→fix cycles per PR.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_ci_retries",
+        "max_review_loops",
+        "active_breaches"
+      ],
+      "type": "object"
     },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
@@ -579,6 +999,154 @@
       "required": [
         "at",
         "event"
+      ],
+      "type": "object"
+    },
+    "NotifyModeSummary": {
+      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+      "properties": {
+        "on_agent_stopped": {
+          "description": "Handling mode for `AgentStopped` events.",
+          "type": "string"
+        },
+        "on_pr_ci_failed": {
+          "description": "Handling mode for `PrCiFailed` events.",
+          "type": "string"
+        },
+        "on_pr_ci_passed": {
+          "description": "Handling mode for `PrCiPassed` events.",
+          "type": "string"
+        },
+        "on_pr_closed": {
+          "description": "Handling mode for `PrClosed` events.",
+          "type": "string"
+        },
+        "on_pr_created": {
+          "description": "Handling mode for `PrCreated` events.",
+          "type": "string"
+        },
+        "on_pr_review_feedback": {
+          "description": "Handling mode for `PrReviewFeedback` events.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "on_agent_stopped",
+        "on_pr_created",
+        "on_pr_ci_failed",
+        "on_pr_ci_passed",
+        "on_pr_review_feedback",
+        "on_pr_closed"
+      ],
+      "type": "object"
+    },
+    "PendingApprovalInfo": {
+      "description": "Details of a pending approval request.",
+      "properties": {
+        "approval_type": {
+          "description": "Category of the approval (e.g. \"Shell Command\", \"File Edit\")",
+          "type": "string"
+        },
+        "awaited_since": {
+          "description": "When the agent entered `AwaitingApproval` (approximated by `last_update`)",
+          "format": "date-time",
+          "type": "string"
+        },
+        "details": {
+          "description": "Human-readable details of what is being approved",
+          "type": "string"
+        },
+        "interaction": {
+          "description": "Interaction hint (e.g. choice labels) when applicable",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_name": {
+          "description": "Tool name from the PreToolUse hook event (structured path)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "approval_type",
+        "details",
+        "awaited_since"
+      ],
+      "type": "object"
+    },
+    "Phase": {
+      "description": "Coarse-grained phase for orchestrator consumption.\n\nDerived from `AgentStatus` — orchestrator tools operate on phase for simple,\nstable categories suitable for decision-making.",
+      "enum": [
+        "Working",
+        "Blocked",
+        "Idle",
+        "Offline"
+      ],
+      "type": "string"
+    },
+    "QueueAgentEntry": {
+      "description": "Per-agent view of the prompt queue.",
+      "properties": {
+        "agent_display_label": {
+          "description": "Best display label for the agent at snapshot time",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Stable agent identifier (UUID short hash, matches `AgentSnapshot.id`)",
+          "type": "string"
+        },
+        "agent_stable_id": {
+          "description": "tmux pane target (e.g. \"main:0.1\") — the key used in `AppState.prompt_queue`",
+          "type": "string"
+        },
+        "oldest_queued_at": {
+          "description": "When the oldest prompt was enqueued",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "queue": {
+          "description": "Ordered list of queued prompts (oldest first)",
+          "items": {
+            "$ref": "#/$defs/QueuedPrompt"
+          },
+          "type": "array"
+        },
+        "total_count": {
+          "description": "Total number of queued prompts (== queue.len())",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_id",
+        "agent_stable_id",
+        "agent_display_label",
+        "queue",
+        "total_count"
+      ],
+      "type": "object"
+    },
+    "QueueSnapshot": {
+      "description": "Snapshot of the global prompt queue, one entry per agent that has\nat least one queued prompt.",
+      "properties": {
+        "entries": {
+          "description": "One entry per agent that currently has queued prompts (oldest-first within each agent)",
+          "items": {
+            "$ref": "#/$defs/QueueAgentEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
       ],
       "type": "object"
     },
@@ -614,6 +1182,42 @@
         "id",
         "prompt",
         "queued_at"
+      ],
+      "type": "object"
+    },
+    "RecentDecision": {
+      "description": "A single recorded auto-approve decision.",
+      "properties": {
+        "at": {
+          "description": "When the decision was made",
+          "format": "date-time",
+          "type": "string"
+        },
+        "decision": {
+          "description": "Decision outcome: \"approve\", \"reject\", \"uncertain\"",
+          "type": "string"
+        },
+        "elapsed_ms": {
+          "description": "Time taken to reach the decision in milliseconds",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Human-readable reason or rule name",
+          "type": "string"
+        },
+        "source": {
+          "description": "Decision source: \"rule\", \"ai\", \"human\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "decision",
+        "source",
+        "reason",
+        "elapsed_ms"
       ],
       "type": "object"
     },
@@ -680,8 +1284,91 @@
         }
       ]
     },
-    "TaskMetaEntry": {
-      "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nThis type is part of the type-sharing PoC (#446): the TypeScript\ndefinition under `crates/tmai-app/web/src/types/generated/TaskMetaEntry.ts`\nis generated from this struct by ts-rs. Do not edit the generated file\ndirectly — update the Rust source and run `scripts/generate-types.sh`.",
+    "RuntimeSnapshot": {
+      "description": "UI-facing snapshot of runtime infrastructure state.",
+      "properties": {
+        "capacity": {
+          "$ref": "#/$defs/CapacityInfo",
+          "description": "Current and configured agent capacity."
+        },
+        "deferred_tools": {
+          "description": "Tool calls currently pending in the deferred-approve queue.",
+          "items": {
+            "$ref": "#/$defs/DeferredToolInfo"
+          },
+          "type": "array"
+        },
+        "vendors": {
+          "description": "Availability state of each tracked AI vendor.",
+          "items": {
+            "$ref": "#/$defs/VendorInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capacity",
+        "vendors",
+        "deferred_tools"
+      ],
+      "type": "object"
+    },
+    "SpawnRole": {
+      "description": "Role of a spawned agent — governs which field of `AgentModelSettings` is\nconsulted after the per-dispatch override is checked.",
+      "enum": [
+        "orchestrator",
+        "implementer",
+        "reviewer"
+      ],
+      "type": "string"
+    },
+    "SpawnerHandle": {
+      "description": "Who or what spawned a dispatch. For orchestrator hierarchies (#9) this\nchain is what lets a downstream observer attribute work back to its\noriginating human or parent dispatch.",
+      "oneOf": [
+        {
+          "description": "Spawned by another dispatch (e.g. an orchestrator delegating).",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/DispatchId",
+              "description": "The parent dispatch's id."
+            },
+            "kind": {
+              "enum": [
+                "dispatch"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Spawned directly by a human via a UI surface.",
+          "properties": {
+            "interface": {
+              "description": "Which interface: \"webui\", \"tui\", \"mcp\", \"cli\", …",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "human"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "interface",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TaskMetaSnapshot": {
+      "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nPreviously named `TaskMetaEntry`. The TypeScript definition is generated\nby ts-rs — do not edit the generated file directly.",
       "properties": {
         "agent_id": {
           "description": "Agent ID working on this task",
@@ -699,6 +1386,10 @@
         },
         "branch": {
           "description": "Branch name (the join key)",
+          "type": "string"
+        },
+        "display_label": {
+          "description": "Human-readable label: \"issue:42 (branch) [role]\" or \"branch [role]\"",
           "type": "string"
         },
         "is_dirty": {
@@ -733,6 +1424,17 @@
             "null"
           ]
         },
+        "primary_phase": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Phase",
+              "description": "Coarse phase of the linked implementer agent, if resolvable"
+            }
+          ]
+        },
         "review_agent_id": {
           "description": "Review agent ID",
           "type": [
@@ -749,7 +1451,181 @@
         }
       },
       "required": [
-        "branch"
+        "branch",
+        "display_label"
+      ],
+      "type": "object"
+    },
+    "TaskStatus": {
+      "description": "Status of a team task",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "TeamMemberInfo": {
+      "description": "Individual member within a team snapshot",
+      "properties": {
+        "agent_id": {
+          "description": "Unique agent identifier (UUID)",
+          "type": "string"
+        },
+        "agent_target": {
+          "description": "Current tmux pane target for this member",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cwd": {
+          "description": "Working directory of the member",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_lead": {
+          "description": "Whether this member is the team lead (first member in config)",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Human-readable member name",
+          "type": "string"
+        },
+        "role": {
+          "description": "Role/type of the agent (from agentType in config)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "agent_id",
+        "is_lead"
+      ],
+      "type": "object"
+    },
+    "TeamSnapshot": {
+      "description": "Unified public snapshot of a team's state\n\nMerges the former `TeamSummary` (counts + names) with full member info\nand task list. Use this type for all new consumers.",
+      "properties": {
+        "description": {
+          "description": "Team description",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_scan": {
+          "description": "When this snapshot was last scanned",
+          "format": "date-time",
+          "type": "string"
+        },
+        "members": {
+          "description": "Full member list with agent targets and roles",
+          "items": {
+            "$ref": "#/$defs/TeamMemberInfo"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Team name",
+          "type": "string"
+        },
+        "task_done": {
+          "description": "Completed task count",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "task_in_progress": {
+          "description": "In-progress task count",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "task_pending": {
+          "description": "Pending task count",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "task_total": {
+          "description": "Total task count",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tasks": {
+          "description": "Current task list",
+          "items": {
+            "$ref": "#/$defs/TeamTaskInfo"
+          },
+          "type": "array"
+        },
+        "worktree_names": {
+          "description": "Worktree names used by this team's members",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "members",
+        "tasks",
+        "last_scan",
+        "task_done",
+        "task_total",
+        "task_in_progress",
+        "task_pending",
+        "worktree_names"
+      ],
+      "type": "object"
+    },
+    "TeamTaskInfo": {
+      "description": "Summary of team tasks (includes full task data)",
+      "properties": {
+        "active_form": {
+          "description": "Active form (present continuous verb)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Task description",
+          "type": "string"
+        },
+        "id": {
+          "description": "Task ID",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Task owner",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/TaskStatus",
+          "description": "Task status"
+        },
+        "subject": {
+          "description": "Task subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "status",
+        "description"
       ],
       "type": "object"
     },
@@ -856,6 +1732,87 @@
         }
       ]
     },
+    "VendorInfo": {
+      "description": "Availability information for a single AI vendor.",
+      "properties": {
+        "account": {
+          "description": "Account label when the deployment distinguishes multiple accounts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_changed_at": {
+          "description": "When the availability state last changed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/VendorAvailabilityState",
+          "description": "Current availability state."
+        },
+        "vendor": {
+          "description": "Vendor identifier (e.g. `\"anthropic\"`, `\"openai\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vendor",
+        "state",
+        "last_changed_at"
+      ],
+      "type": "object"
+    },
+    "WorkflowSnapshot": {
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+      "properties": {
+        "auto_action_fired_last_hour": {
+          "description": "Number of auto-actions that fired in the last hour.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "auto_action_last_fired": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/AutoActionEntry",
+              "description": "Most recent auto-action that fired, if any."
+            }
+          ]
+        },
+        "guardrail_status": {
+          "$ref": "#/$defs/GuardrailStatus",
+          "description": "Configured guardrail limits and active breaches."
+        },
+        "notify_mode_summary": {
+          "$ref": "#/$defs/NotifyModeSummary",
+          "description": "Per-event notification handling modes."
+        },
+        "orchestrator_agent_id": {
+          "description": "Stable agent id of the active orchestrator, if one is running.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orchestrator_notify_backlog": {
+          "description": "Number of notifications buffered for the orchestrator but not yet delivered.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "notify_mode_summary",
+        "orchestrator_notify_backlog",
+        "auto_action_fired_last_hour",
+        "guardrail_status"
+      ],
+      "type": "object"
+    },
     "WorktreeInfo": {
       "description": "Worktree information attached to hook events in `--worktree` sessions\n\nContains name, path, branch, and the original repo directory.\nAdded in Claude Code v2.1.69.",
       "properties": {
@@ -888,6 +1845,100 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "WorktreeSnapshot": {
+      "description": "Owned snapshot of a worktree for API consumers",
+      "properties": {
+        "agent_pending": {
+          "description": "Whether an agent is pending detection (recently spawned, not yet linked)",
+          "type": "boolean"
+        },
+        "agent_status": {
+          "description": "Status of the linked agent",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent_target": {
+          "description": "Linked agent target",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "description": "Branch name",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diff_summary": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/DiffSummarySnapshot",
+              "description": "Diff statistics vs base branch"
+            }
+          ]
+        },
+        "is_dirty": {
+          "description": "Whether this worktree has uncommitted changes",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "is_main": {
+          "description": "Whether this is the main working tree",
+          "type": "boolean"
+        },
+        "linked_dispatch_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/DispatchId",
+              "description": "Active non-terminal dispatch working in this worktree"
+            }
+          ]
+        },
+        "linked_task_meta_branch": {
+          "description": "Branch of the TaskMeta entry tied to this worktree (None for main worktrees)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Worktree name",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path to the worktree",
+          "type": "string"
+        },
+        "repo_name": {
+          "description": "Repository name",
+          "type": "string"
+        },
+        "repo_path": {
+          "description": "Absolute path to the git common directory",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo_name",
+        "repo_path",
+        "name",
+        "path",
+        "is_main"
+      ],
       "type": "object"
     }
   },
@@ -2077,6 +3128,228 @@
       "required": [
         "dispatch_id",
         "reason",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A single agent was upserted (appeared / changed state) or removed.\n\nEmitted alongside the legacy `AgentsUpdated` / `AgentStatusChanged` /\n`AgentAppeared` / `AgentDisappeared` variants during Phase 1.",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/EntityChange",
+          "description": "Whether the agent was upserted or removed."
+        },
+        "id": {
+          "description": "Stable agent identifier (UUID short hash).",
+          "type": "string"
+        },
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized [`super::types::AgentSnapshot`]; `None` when removed.",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "AgentUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "id",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A dispatch ledger entry was upserted or removed.\n\nEmitted alongside `DispatchSpawned` / `DispatchStateChanged` /\n`DispatchStopped` during Phase 1.",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/EntityChange",
+          "description": "Whether the dispatch was upserted or removed."
+        },
+        "id": {
+          "description": "Hyphenated dispatch id string.",
+          "type": "string"
+        },
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized [`super::snapshot::DispatchSnapshot`]; `None` when removed.",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "DispatchUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "id",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A team snapshot was upserted or removed.\n\nEmitted alongside `TeamsUpdated` during Phase 1.",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/EntityChange",
+          "description": "Whether the team was upserted or removed."
+        },
+        "name": {
+          "description": "Team name (primary key).",
+          "type": "string"
+        },
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized [`super::types::TeamSnapshot`]; `None` when removed.",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "TeamUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A worktree snapshot was upserted or removed.\n\nEmitted alongside `WorktreeCreated` / `WorktreeRemoved` during Phase 1.",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/EntityChange",
+          "description": "Whether the worktree was upserted or removed."
+        },
+        "id": {
+          "description": "Worktree path (unique per repo).",
+          "type": "string"
+        },
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized [`super::types::WorktreeSnapshot`]; `None` when removed.",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "WorktreeUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "id",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "The global prompt queue changed (enqueue / drain / cancel).\n\nEmitted alongside `PromptQueueChanged` during Phase 1.\nCarries the full [`super::types::QueueSnapshot`] so consumers can\nreplace their local snapshot directly.",
+      "properties": {
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized full [`super::types::QueueSnapshot`] after the mutation.",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "QueueUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\n`GuardrailExceeded`, or `ContextCompacting` mutate the runtime view.",
+      "properties": {
+        "origin": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ActionOrigin",
+              "description": "Who or what triggered this update."
+            }
+          ]
+        },
+        "snapshot": {
+          "description": "Serialized full [`super::snapshot::RuntimeSnapshot`].",
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "RuntimeUpdate"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot",
         "type"
       ],
       "type": "object"

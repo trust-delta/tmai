@@ -8,6 +8,7 @@ import type { DispatchId } from "./DispatchId";
 import type { DispatchIntentSummary } from "./DispatchIntentSummary";
 import type { DispatchRefs } from "./DispatchRefs";
 import type { DispatchState } from "./DispatchState";
+import type { EntityChange } from "./EntityChange";
 import type { ErrorCode } from "./ErrorCode";
 import type { GuardrailKind } from "./GuardrailKind";
 import type { QueuedPrompt } from "./QueuedPrompt";
@@ -450,4 +451,84 @@ dispatch_id: DispatchId,
  * Free-text reason (e.g. "agent_exited", "killed_by_user",
  * "spawn_failed: tmux error").
  */
-reason: string, };
+reason: string, } | { "type": "AgentUpdate", 
+/**
+ * Whether the agent was upserted or removed.
+ */
+change: EntityChange, 
+/**
+ * Stable agent identifier (UUID short hash).
+ */
+id: string, 
+/**
+ * Serialized [`super::types::AgentSnapshot`]; `None` when removed.
+ */
+snapshot?: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, } | { "type": "DispatchUpdate", 
+/**
+ * Whether the dispatch was upserted or removed.
+ */
+change: EntityChange, 
+/**
+ * Hyphenated dispatch id string.
+ */
+id: string, 
+/**
+ * Serialized [`super::snapshot::DispatchSnapshot`]; `None` when removed.
+ */
+snapshot?: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, } | { "type": "TeamUpdate", 
+/**
+ * Whether the team was upserted or removed.
+ */
+change: EntityChange, 
+/**
+ * Team name (primary key).
+ */
+name: string, 
+/**
+ * Serialized [`super::types::TeamSnapshot`]; `None` when removed.
+ */
+snapshot?: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, } | { "type": "WorktreeUpdate", 
+/**
+ * Whether the worktree was upserted or removed.
+ */
+change: EntityChange, 
+/**
+ * Worktree path (unique per repo).
+ */
+id: string, 
+/**
+ * Serialized [`super::types::WorktreeSnapshot`]; `None` when removed.
+ */
+snapshot?: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, } | { "type": "QueueUpdate", 
+/**
+ * Serialized full [`super::types::QueueSnapshot`] after the mutation.
+ */
+snapshot: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, } | { "type": "RuntimeUpdate", 
+/**
+ * Serialized full [`super::snapshot::RuntimeSnapshot`].
+ */
+snapshot: unknown, 
+/**
+ * Who or what triggered this update.
+ */
+origin: ActionOrigin | null, };
