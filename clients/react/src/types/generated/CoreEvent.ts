@@ -346,7 +346,7 @@ code: ErrorCode,
  * raw prompts). Defaults to `null` when the emitter has nothing
  * to attach.
  */
-context: unknown, } | { "type": "DispatchBypassUsed", 
+context?: unknown, } | { "type": "DispatchBypassUsed", 
 /**
  * Origin of the bypassing call.
  */
