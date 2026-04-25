@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - "api-spec/**"
+      - ".github/workflows/validate-spec.yml"
   push:
     branches: [main]
     paths:
       - "api-spec/**"
+      - ".github/workflows/validate-spec.yml"
 
 permissions:
   contents: read
@@ -35,3 +37,9 @@ jobs:
       - name: AJV validate fixtures
         working-directory: api-spec
         run: node tests/validate.mjs
+
+      - name: Audit (production deps, high+)
+        working-directory: api-spec
+        # api-spec only ships dev tooling (redocly / ajv); --omit=dev keeps
+        # the gate aligned with what end users would actually install.
+        run: npm audit --omit=dev --audit-level=high

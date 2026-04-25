@@ -5,10 +5,12 @@ on:
     paths:
       - "clients/react/**"
       - "api-spec/**"
+      - ".github/workflows/build-react.yml"
   push:
     branches: [main]
     paths:
       - "clients/react/**"
+      - ".github/workflows/build-react.yml"
 
 permissions:
   contents: read
@@ -48,3 +50,7 @@ jobs:
       - name: Build
         working-directory: clients/react
         run: pnpm build
+
+      - name: Audit (production deps, high+)
+        working-directory: clients/react
+        run: pnpm audit --prod --audit-level high

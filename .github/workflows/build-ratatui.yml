@@ -5,10 +5,12 @@ on:
     paths:
       - "clients/ratatui/**"
       - "api-spec/**"
+      - ".github/workflows/build-ratatui.yml"
   push:
     branches: [main]
     paths:
       - "clients/ratatui/**"
+      - ".github/workflows/build-ratatui.yml"
 
 permissions:
   contents: read
@@ -42,3 +44,10 @@ jobs:
       - name: Build
         working-directory: clients/ratatui
         run: cargo build --release
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: Audit (RustSec advisory DB)
+        working-directory: clients/ratatui
+        run: cargo audit --deny warnings
