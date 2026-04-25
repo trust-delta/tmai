@@ -27,6 +27,66 @@ The previous sub-repos (`tmai-api-spec`, `tmai-react`, `tmai-ratatui`) were arch
 - `versions.toml` — bundle version pin read by `release.yml`
 - `README.md` / `README.ja.md` / `CHANGELOG.md` / `LICENSE` / `assets/` — landing / docs / media
 
+## Bot-managed generated files
+
+The following paths are written exclusively by the `tmai-core` sync bot and **must not be hand-edited**:
+
+| Path | Contents |
+|------|----------|
+| `clients/react/src/types/generated/` | TypeScript types generated from the Rust source in `tmai-core` |
+| `clients/ratatui/src/types/generated/` | Rust types mirrored from `tmai-core` |
+| `api-spec/` | OpenAPI spec, JSON Schema, MCP snapshot — all generated |
+
+CI rejects any PR where a human author touches these paths.  If you see a
+`Hand edits detected in bot-managed paths` failure on your PR, remove those
+file changes and open the issue in `tmai-core` instead.
+
+### Bot PR recovery flow
+
+When a sync bot PR fails because consuming code references a renamed or removed
+generated symbol, apply a **minimal fix to the consuming code** — never edit the
+generated files themselves.
+
+**Steps**
+
+1. Check out the bot branch locally:
+   ```sh
+   git fetch origin
+   git checkout <bot-branch-name>
+   ```
+2. Open only the consuming files that reference the broken symbol and update
+   the references.  Do **not** touch anything under `generated/` or `api-spec/`.
+3. Commit and push back to the same bot branch:
+   ```sh
+   git add <changed files>
+   git commit -m "fix: update consuming code for <symbol rename>"
+   git push origin <bot-branch-name>
+   ```
+4. CI re-runs automatically.  Merge once all jobs are green.
+
+**Worked example — PR #520 (`TaskMetaSnapshot` rename)**
+
+`tmai-core` renamed `TaskMetaEntry` → `TaskMetaSnapshot`.  The sync bot PR
+updated all generated files correctly, but `src/types/index.ts` still
+re-exported the old name and broke the TypeScript build.
+
+Fix applied in commit `0a1443f`:
+```diff
+// clients/react/src/types/index.ts
+-export type { TaskMetaEntry } from "./generated/TaskMetaSnapshot";
++export type { TaskMetaSnapshot } from "./generated/TaskMetaSnapshot";
+```
+
+Only `src/types/index.ts` (consuming code) was touched; the generated files
+were left untouched.
+
+### Phase 1 transition note
+
+During Phase 1 of the snapshot-contract migration the React client must accept
+**both** legacy `diff`-style CoreEvents **and** the new `EntityUpdateEnvelope`
+wrapper emitted by tmai-core ≥ the contract boundary.  Phase 3 will retire the
+legacy path; until then, keep both branches in SSE event handlers.
+
 ## Issues
 
 File issues here for anything in the list above. For engine-side bugs, still open the issue here — we'll reproduce / triage and hand it over to the engine side if needed.

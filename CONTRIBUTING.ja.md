@@ -27,6 +27,63 @@
 - `versions.toml` — `release.yml` が読む bundle バージョン pin
 - `README.md` / `README.ja.md` / `CHANGELOG.md` / `LICENSE` / `assets/` — ランディング / ドキュメント / メディア
 
+## Bot 管理の生成ファイル
+
+以下のパスは `tmai-core` 同期 bot が書き込む専用領域です。**手編集は禁止**です：
+
+| パス | 内容 |
+|------|------|
+| `clients/react/src/types/generated/` | `tmai-core` の Rust ソースから生成した TypeScript 型 |
+| `clients/ratatui/src/types/generated/` | `tmai-core` からミラーされた Rust 型 |
+| `api-spec/` | OpenAPI spec / JSON Schema / MCP snapshot — すべて生成物 |
+
+CI はこれらのパスを人間の著者が変更した PR を reject します。
+PR で `Hand edits detected in bot-managed paths` エラーが出た場合は、
+該当ファイルの変更を取り除き、代わりに `tmai-core` 側に issue を立ててください。
+
+### Bot PR リカバリーフロー
+
+同期 bot PR が、生成物でリネーム・削除されたシンボルを参照している消費コードのせいで失敗した場合は、**消費コードだけを最小限修正**してください。生成ファイル自体は絶対に編集しないでください。
+
+**手順**
+
+1. bot ブランチをローカルに checkout する：
+   ```sh
+   git fetch origin
+   git checkout <bot-branch-name>
+   ```
+2. 壊れたシンボルを参照している消費ファイルだけを開いて参照を更新する。
+   `generated/` や `api-spec/` 以下は **一切触らない**。
+3. 同じ bot ブランチにコミット・プッシュする：
+   ```sh
+   git add <変更ファイル>
+   git commit -m "fix: update consuming code for <symbol rename>"
+   git push origin <bot-branch-name>
+   ```
+4. CI が自動で再実行されます。全ジョブが green になったらマージしてください。
+
+**実例 — PR #520 (`TaskMetaSnapshot` リネーム)**
+
+`tmai-core` が `TaskMetaEntry` → `TaskMetaSnapshot` にリネームしました。
+sync bot PR は生成ファイルを正しく更新しましたが、`src/types/index.ts` が
+旧名のまま再エクスポートしていたため TypeScript ビルドが壊れました。
+
+コミット `0a1443f` で適用した修正：
+```diff
+// clients/react/src/types/index.ts
+-export type { TaskMetaEntry } from "./generated/TaskMetaSnapshot";
++export type { TaskMetaSnapshot } from "./generated/TaskMetaSnapshot";
+```
+
+変更したのは `src/types/index.ts`（消費コード）のみで、生成ファイルには一切手を加えていません。
+
+### Phase 1 移行中の注意
+
+スナップショット契約移行の Phase 1 期間中は、React クライアントは
+**従来の `diff` スタイル CoreEvent** と **新しい `EntityUpdateEnvelope` ラッパー**
+の両方を受け取れるようにしておく必要があります。
+Phase 3 でレガシーパスを廃止する予定です。それまでは SSE イベントハンドラーで両方の分岐を維持してください。
+
 ## Issue
 
 上記リストの領域は本リポジトリに issue を提出してください。エンジン側のバグでも、まず本リポジトリに issue を立てていただければ再現・triage し、必要に応じてエンジン側へ引き継ぎます。
