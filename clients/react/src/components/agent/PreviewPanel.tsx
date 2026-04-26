@@ -448,6 +448,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     // Drop any in-flight guard from the previous agent so the first
     // fetch for the new agent isn't itself skipped.
     fetchInFlightRef.current = false;
+    // Suppress the synthetic onScroll the browser fires when the
+    // history block re-rendering after the switch changes scrollHeight
+    // — without this, autoScroll would flip off without any user
+    // gesture, exactly like the tab-switch case.
+    skipNextScrollEventRef.current = true;
     void fetchPreview();
   }, [agentId, fetchPreview]);
 
@@ -768,6 +773,20 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       height: `${lineH}px`,
     });
   }, [liveHtml, autoScroll, liveCursor]);
+
+  // Pin to bottom when the History HTML lands too — for an idle agent
+  // the Live region barely changes, so the liveHtml-keyed scroll above
+  // would never fire and the panel would open scrolled to the top of a
+  // long scrollback. requestAnimationFrame defers until after the
+  // history innerHTML has been written and the layout is settled.
+  useEffect(() => {
+    if (!autoScroll) return;
+    if (window.getSelection()?.toString().length) return;
+    const id = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [historyHtml, autoScroll]);
 
   return (
     <div
