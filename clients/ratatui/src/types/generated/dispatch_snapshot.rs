@@ -11,8 +11,6 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DispatchSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_stable_id: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_target: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bundle_id: Option<BundleId>,

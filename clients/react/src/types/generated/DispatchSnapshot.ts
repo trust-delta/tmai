@@ -48,10 +48,6 @@ finished_at?: string,
  */
 agent_target?: string, 
 /**
- * Stable agent id (8-char hex), if the agent has been attached.
- */
-agent_stable_id?: string, 
-/**
  * PTY session id, if the agent was spawned via the PTY layer.
  */
 pty_session_id?: string, 
