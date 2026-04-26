@@ -84,7 +84,19 @@ cwd: string,
 /**
  * Last assistant message (if available)
  */
-last_assistant_message: string | null, } | { "type": "ContextCompacting", 
+last_assistant_message: string | null, } | { "type": "AgentIdPromoted", 
+/**
+ * Agent target ID (tmux pane string)
+ */
+target: string, 
+/**
+ * Previous id, always a `provisional:<uuid>` in Phase 1
+ */
+from: string, 
+/**
+ * New native id (`claude:<uuid>` / `codex:<uuid>` / etc.)
+ */
+to: string, } | { "type": "ContextCompacting", 
 /**
  * Agent target ID
  */
@@ -346,7 +358,7 @@ code: ErrorCode,
  * raw prompts). Defaults to `null` when the emitter has nothing
  * to attach.
  */
-context: unknown, } | { "type": "DispatchBypassUsed", 
+context?: unknown, } | { "type": "DispatchBypassUsed", 
 /**
  * Origin of the bypassing call.
  */

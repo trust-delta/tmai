@@ -575,6 +575,36 @@
           },
           {
             "type": "object",
+            "description": "An agent's `AgentId` was promoted from `Provisional` to a native\nsession id once the underlying CLI reported one (Phase 1 of #96).\n\nSubscribers that hold references to the previous id should rewrite\nthem to `to`. The wire form of `from` and `to` is `<scheme>:<id>`\n(e.g. `\"claude:ea760770-...\"`). `target` is the tmux pane id and\nremains the legacy lookup key during Phase 1.",
+            "required": [
+              "target",
+              "from",
+              "to",
+              "type"
+            ],
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Previous id, always a `provisional:<uuid>` in Phase 1"
+              },
+              "target": {
+                "type": "string",
+                "description": "Agent target ID (tmux pane string)"
+              },
+              "to": {
+                "type": "string",
+                "description": "New native id (`claude:<uuid>` / `codex:<uuid>` / etc.)"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AgentIdPromoted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "Context compaction started (PreCompact hook event)",
             "required": [
               "target",
