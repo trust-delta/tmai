@@ -302,14 +302,25 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Polling interval: short (active_input_ms) for a window after every
   // keystroke, then focused (default 500ms), otherwise unfocused (2s).
   // The keystroke-triggered 50ms/200ms fetches alone don't cover the
-  // visible lag that shows up when the backend rewrites the preview a
-  // bit later (tmux repaint after send-keys); the active-input window
-  // keeps the preview caught up while the user is actively typing.
-  // Preview polling cadence: focused vs unfocused only. Keystroke-driven
-  // post-passthrough fetches (50ms + 200ms) complement the steady poll.
+  // Preview polling cadence:
+  //   - unfocused: slow (preview_poll_unfocused_ms, default 2000ms).
+  //   - focused, no recent input: medium (preview_poll_focused_ms, 200ms).
+  //   - focused, key pressed within the active-input window:
+  //     fast (preview_poll_active_input_ms, 50ms) so backend repaint after
+  //     send-keys feels near-realtime instead of lagging by a tick.
+  // The post-passthrough setTimeout(fetchPreview, 50/200) burst already
+  // catches one repaint per keystroke, but it does not cover the steady
+  // tmux/agent state changes that happen between keys (cursor blink,
+  // multi-character paste, IME confirms, etc.). lastInputTime is updated
+  // on every passthrough so this window slides forward with each key.
+  const ACTIVE_INPUT_WINDOW_MS = 500;
   const getPollInterval = useCallback(() => {
     const s = pollSettings.current;
-    return focused ? s.preview_poll_focused_ms : s.preview_poll_unfocused_ms;
+    if (!focused) return s.preview_poll_unfocused_ms;
+    if (Date.now() - lastInputTime.current < ACTIVE_INPUT_WINDOW_MS) {
+      return s.preview_poll_active_input_ms;
+    }
+    return s.preview_poll_focused_ms;
   }, [focused]);
 
   // Fetch preview content, shared between polling and post-keystroke refresh.
