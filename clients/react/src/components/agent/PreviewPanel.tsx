@@ -84,6 +84,21 @@ function originLabel(o: ActionOrigin): string {
 // Per-agent auto-scroll preference (persists across agent switches)
 const agentAutoScrollMap = new Map<string, boolean>();
 
+// Per-agent preview state cache. Lets us re-show the last-seen
+// capture-pane / transcript instantly on agent switch instead of
+// blanking out for the 200-500ms it takes the next fetchPreview to
+// return for the new agent. Polling continues to refresh these the
+// moment the new fetch lands.
+interface PreviewCache {
+  history: string;
+  live: string;
+  liveStartLine: number;
+  transcriptRecords: TranscriptRecord[];
+  cursorPos: CursorPos | null;
+  lastContent: string | null;
+}
+const previewCacheMap = new Map<string, PreviewCache>();
+
 const MONO_FONT_STACK =
   "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
   "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', " +
@@ -415,19 +430,54 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, [agentId]);
 
-  // Reset preview state on agent switch so the previous agent's
-  // capture-pane / transcript don't flash on screen until the first
-  // fetchPreview / fetchTranscript for the new agent comes back. The
-  // poll loop fires at timeout 0 on agent change, but the network
-  // round-trip still leaves a 200–500ms window of stale content
-  // otherwise.
+  // Mirror the live preview state into a ref so the agent-switch
+  // cleanup below can capture the *most recent* values when it runs,
+  // not the closure values from when the effect last set itself up.
+  const stateForCacheRef = useRef<Omit<PreviewCache, "lastContent">>({
+    history,
+    live,
+    liveStartLine,
+    transcriptRecords,
+    cursorPos,
+  });
   useEffect(() => {
-    setHistory("");
-    setLive("");
-    setLiveStartLine(0);
-    setTranscriptRecords([]);
-    setCursorPos(null);
-    lastContentRef.current = null;
+    stateForCacheRef.current = {
+      history,
+      live,
+      liveStartLine,
+      transcriptRecords,
+      cursorPos,
+    };
+  }, [history, live, liveStartLine, transcriptRecords, cursorPos]);
+
+  // On agent switch: hydrate from previewCacheMap (if we've seen this
+  // agent before) so the panel updates instantly, then let the next
+  // fetchPreview/fetchTranscript tick refresh whatever changed. On
+  // cleanup (= the previous agentId's effect tearing down) save the
+  // most recent state so the next switch back can re-hydrate.
+  useEffect(() => {
+    const cached = previewCacheMap.get(agentId);
+    if (cached) {
+      setHistory(cached.history);
+      setLive(cached.live);
+      setLiveStartLine(cached.liveStartLine);
+      setTranscriptRecords(cached.transcriptRecords);
+      setCursorPos(cached.cursorPos);
+      lastContentRef.current = cached.lastContent;
+    } else {
+      setHistory("");
+      setLive("");
+      setLiveStartLine(0);
+      setTranscriptRecords([]);
+      setCursorPos(null);
+      lastContentRef.current = null;
+    }
+    return () => {
+      previewCacheMap.set(agentId, {
+        ...stateForCacheRef.current,
+        lastContent: lastContentRef.current,
+      });
+    };
   }, [agentId]);
 
   // Clear incoming-prompt indicator on agent switch and on unmount
@@ -570,10 +620,54 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     () => capHistoryLines(deferredHistory, MAX_HISTORY_LINES),
     [deferredHistory],
   );
-  const historyHtml = useMemo(() => {
-    if (!historyCap.content) return "";
-    return ansi.ansi_to_html(shrinkContentToWidth(historyCap.content, cols));
-  }, [ansi, historyCap, cols]);
+
+  // History HTML conversion happens off the main thread via a Web Worker
+  // (lib/ansi-worker.ts). For a long-running agent the scrollback can
+  // reach hundreds of KB and the synchronous AnsiUp pass would block the
+  // tab for several seconds on every poll tick. The worker lets the Live
+  // region keep painting and input keep responding while the History
+  // pipeline catches up. Each request carries an incrementing id; a
+  // response whose id no longer matches the latest request is discarded
+  // so an in-flight conversion of stale content can't overwrite a newer
+  // one (e.g. on agent switch).
+  const [historyHtml, setHistoryHtml] = useState<string>("");
+  const ansiWorkerRef = useRef<Worker | null>(null);
+  const ansiRequestSeqRef = useRef(0);
+  const ansiLatestRequestIdRef = useRef(0);
+  useEffect(() => {
+    if (typeof Worker === "undefined") return; // jsdom / SSR fallback
+    const worker = new Worker(new URL("@/lib/ansi-worker.ts", import.meta.url), {
+      type: "module",
+    });
+    ansiWorkerRef.current = worker;
+    worker.onmessage = (e: MessageEvent<{ id: number; html: string }>) => {
+      if (e.data.id !== ansiLatestRequestIdRef.current) return;
+      setHistoryHtml(e.data.html);
+    };
+    return () => {
+      worker.terminate();
+      ansiWorkerRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (!historyCap.content) {
+      ansiLatestRequestIdRef.current = ++ansiRequestSeqRef.current;
+      setHistoryHtml("");
+      return;
+    }
+    const content = shrinkContentToWidth(historyCap.content, cols);
+    const worker = ansiWorkerRef.current;
+    if (worker) {
+      const id = ++ansiRequestSeqRef.current;
+      ansiLatestRequestIdRef.current = id;
+      worker.postMessage({ id, content });
+    } else {
+      // Fallback when Web Worker is unavailable (jsdom in tests). Runs
+      // synchronously on the main thread; for production this branch
+      // should not be hit.
+      setHistoryHtml(ansi.ansi_to_html(content));
+    }
+  }, [historyCap, cols, ansi]);
 
   // Cursor row within the live region. The backend returns cursor_y as an
   // absolute row within the full capture output; since the tmux cursor is
