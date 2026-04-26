@@ -9,7 +9,7 @@ import type { RecentDecision } from "./RecentDecision";
  */
 export type ApprovalSnapshot = { 
 /**
- * Stable agent identifier (UUID short hash)
+ * Canonical agent identifier (`<scheme>:<id>`)
  */
 agent_id: string, 
 /**

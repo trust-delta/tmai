@@ -95,7 +95,7 @@
       "description": "Snapshot of the auto-approve state for a single agent.",
       "properties": {
         "agent_id": {
-          "description": "Stable agent identifier (UUID short hash)",
+          "description": "Canonical agent identifier (`<scheme>:<id>`)",
           "type": "string"
         },
         "agent_stable_id": {
@@ -642,13 +642,6 @@
     "DispatchSnapshot": {
       "description": "UI-facing snapshot of a dispatched unit of work.",
       "properties": {
-        "agent_stable_id": {
-          "description": "Stable agent id (8-char hex), if the agent has been attached.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "agent_target": {
           "description": "Live agent tmux target (e.g. \"main:0.1\"), if the agent has been attached.",
           "type": [
@@ -1096,7 +1089,7 @@
           "type": "string"
         },
         "agent_id": {
-          "description": "Stable agent identifier (UUID short hash, matches `AgentSnapshot.id`)",
+          "description": "Canonical agent identifier (`<scheme>:<id>`, matches `AgentSnapshot.id`)",
           "type": "string"
         },
         "agent_stable_id": {

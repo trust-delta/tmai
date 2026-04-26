@@ -145,7 +145,7 @@
         "properties": {
           "agent_id": {
             "type": "string",
-            "description": "Stable agent identifier (UUID short hash)"
+            "description": "Canonical agent identifier (`<scheme>:<id>`)"
           },
           "agent_stable_id": {
             "type": "string",
@@ -1839,13 +1839,6 @@
           "is_terminal"
         ],
         "properties": {
-          "agent_stable_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Stable agent id (8-char hex), if the agent has been attached."
-          },
           "agent_target": {
             "type": [
               "string",
@@ -2289,7 +2282,7 @@
           },
           "agent_id": {
             "type": "string",
-            "description": "Stable agent identifier (UUID short hash, matches `AgentSnapshot.id`)"
+            "description": "Canonical agent identifier (`<scheme>:<id>`, matches `AgentSnapshot.id`)"
           },
           "agent_stable_id": {
             "type": "string",

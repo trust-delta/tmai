@@ -6,7 +6,7 @@ import type { QueuedPrompt } from "./QueuedPrompt";
  */
 export type QueueAgentEntry = { 
 /**
- * Stable agent identifier (UUID short hash, matches `AgentSnapshot.id`)
+ * Canonical agent identifier (`<scheme>:<id>`, matches `AgentSnapshot.id`)
  */
 agent_id: string, 
 /**
