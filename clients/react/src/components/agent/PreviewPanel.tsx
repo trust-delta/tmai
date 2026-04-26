@@ -317,8 +317,17 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // IME composition is in progress — re-rendering the preview during
   // composition disrupts the IME candidate window and causes visible
   // typing lag in CJK input methods.
+  // Guard against overlapping fetches. For agents with hundreds of KB of
+  // capture-pane scrollback, getPreview can take several seconds to
+  // arrive over a slow link; without this guard the 200ms poll cadence
+  // stacks up an arbitrary number of in-flight requests and the latest
+  // setHistory call ends up "behind" all the queued ones, which is what
+  // surfaces as "Waiting…" not progressing.
+  const fetchInFlightRef = useRef(false);
   const fetchPreview = useCallback(async () => {
     if (composingRef.current) return;
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       const data = await api.getPreview(agentId);
       // Treat only null/undefined as "no payload" — an empty string is
@@ -352,6 +361,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       }
     } catch {
       // Agent may not have content yet
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, [agentId]);
 
@@ -434,6 +445,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setTranscriptRecords([]);
     setCursorPos(null);
     lastContentRef.current = null;
+    // Drop any in-flight guard from the previous agent so the first
+    // fetch for the new agent isn't itself skipped.
+    fetchInFlightRef.current = false;
     void fetchPreview();
   }, [agentId, fetchPreview]);
 
