@@ -18,7 +18,7 @@ interface: string,
  * `OrchestratorNotifier::source_project_scope` can scope notifications
  * without needing the caller to be tracked in `state.agents`.
  */
-cwd: string | null, } | { "kind": "Agent", 
+cwd?: string | null, } | { "kind": "Agent", 
 /**
  * Agent target ID (e.g., "main:0.0")
  */
@@ -34,7 +34,7 @@ is_orchestrator: boolean,
  * `OrchestratorNotifier::source_project_scope` can resolve the project
  * root when the MCP agent ID is not tracked in `state.agents` (#75).
  */
-cwd: string | null, } | { "kind": "System", 
+cwd?: string | null, } | { "kind": "System", 
 /**
  * Subsystem name (e.g., "auto_cleanup", "pr_monitor")
  */
@@ -43,4 +43,4 @@ subsystem: string,
  * Working directory of the originating subsystem process, used for
  * project-scope routing (#89).
  */
-cwd: string | null, };
+cwd?: string | null, };
