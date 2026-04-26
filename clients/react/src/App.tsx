@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
+import { AgentNotFound } from "@/components/agent/AgentNotFound";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
@@ -15,6 +16,7 @@ import { UsagePanel } from "@/components/usage/UsagePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgents } from "@/hooks/useAgents";
+import { useDeepLink } from "@/hooks/useDeepLink";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -26,6 +28,7 @@ import { useSSE } from "@/lib/sse-provider";
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
+  const deepLink = useDeepLink();
   const toast = useToast();
   const { success: toastSuccess, error: toastError, info: toastInfo } = toast;
   const [notifyConfig, setNotifyConfig] = useState({ enabled: true, thresholdSecs: 10 });
@@ -61,6 +64,16 @@ export function App() {
     },
   });
   const [selection, setSelection] = useState<Selection | null>(null);
+  // null: not a deep-link URL
+  // "pending": deep-link detected, waiting for agent list to load
+  // "resolved": agent found and selected
+  // "not_found": agent not in the list → show 404
+  const [deepLinkStatus, setDeepLinkStatus] = useState<"pending" | "resolved" | "not_found" | null>(
+    () => {
+      if (deepLink === null) return null;
+      return deepLink.knownScheme ? "pending" : "not_found";
+    },
+  );
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
@@ -155,6 +168,20 @@ export function App() {
     },
     [closeMobileDrawer],
   );
+
+  // Resolve deep-link once the agent list has loaded.
+  // Runs whenever agents or loading changes; guards on deepLinkStatus so it
+  // fires exactly once (subsequent state changes flip status off "pending").
+  useEffect(() => {
+    if (deepLinkStatus !== "pending" || loading) return;
+    const agent = agents.find((a) => a.id === deepLink?.canonicalId);
+    if (agent) {
+      setSelection({ type: "agent", id: agent.target });
+      setDeepLinkStatus("resolved");
+    } else {
+      setDeepLinkStatus("not_found");
+    }
+  }, [deepLinkStatus, loading, agents, deepLink]);
 
   // Derive selectedTarget string for components that need it
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
@@ -582,6 +609,8 @@ export function App() {
               >
                 <PreviewPanel agentId={selectedAgent.id} />
               </div>
+            ) : deepLinkStatus === "not_found" && deepLink ? (
+              <AgentNotFound scheme={deepLink.scheme} id={deepLink.id} />
             ) : (
               <div className="flex flex-1 items-center justify-center animate-fade-in">
                 <div className="glass-light rounded-2xl px-8 py-8 text-center transition-subtle hover:glass mx-4">
