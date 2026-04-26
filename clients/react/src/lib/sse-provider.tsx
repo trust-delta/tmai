@@ -144,24 +144,10 @@ export function SSEProvider({ children }: { children: ReactNode }) {
           }
 
           if (entity === "Agent") {
-            // tmai-core #96: AgentUpdate envelope.id is the pane target
-            // (e.g. "session-1:2.1") while bootstrap seeds the cache with
-            // snapshot.id (e.g. "add98d12"). Without normalization we end
-            // up with two entries per agent — one per identifier scheme —
-            // which surfaces as duplicate cards whose status drifts apart.
-            // Always pin the cache key to the snapshot.id and drop any
-            // stray entry that the envelope id may have created.
             if (change === "Removed") {
               agentMapRef.current.delete(id);
-              if (snapshot != null) {
-                agentMapRef.current.delete((snapshot as AgentSnapshot).id);
-              }
             } else if (snapshot != null) {
-              const snap = snapshot as AgentSnapshot;
-              if (snap.id !== id) {
-                agentMapRef.current.delete(id);
-              }
-              agentMapRef.current.set(snap.id, snap);
+              agentMapRef.current.set(id, snapshot as AgentSnapshot);
             }
             setAgents([...agentMapRef.current.values()]);
           } else if (entity === "Worktree") {
