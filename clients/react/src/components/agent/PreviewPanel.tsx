@@ -415,6 +415,21 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, [agentId]);
 
+  // Reset preview state on agent switch so the previous agent's
+  // capture-pane / transcript don't flash on screen until the first
+  // fetchPreview / fetchTranscript for the new agent comes back. The
+  // poll loop fires at timeout 0 on agent change, but the network
+  // round-trip still leaves a 200–500ms window of stale content
+  // otherwise.
+  useEffect(() => {
+    setHistory("");
+    setLive("");
+    setLiveStartLine(0);
+    setTranscriptRecords([]);
+    setCursorPos(null);
+    lastContentRef.current = null;
+  }, [agentId]);
+
   // Clear incoming-prompt indicator on agent switch and on unmount
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear on agent switch
   useEffect(() => {
