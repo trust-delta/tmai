@@ -186,8 +186,15 @@ export interface AgentSnapshot {
 }
 
 // ── Bootstrap payload (all 9 domain snapshots in one shot) ──
+//
+// tmai-core PR #150 (`fix(sse): centralize wire-event production`) wraps the
+// snapshot bundle in a `{ event, seq, snapshots }` envelope so the same shape
+// can flow over both the REST `/api/bootstrap` response and the SSE
+// "Bootstrap" frame. The flat `{ agents, worktrees, ... }` interface that
+// existed before that PR has been replaced; consumers read from
+// `payload.snapshots.<domain>`.
 
-export interface BootstrapPayload {
+export interface BootstrapSnapshots {
   agents: AgentSnapshot[];
   worktrees: WorktreeSnapshot[];
   teams: TeamSnapshot[];
@@ -196,6 +203,12 @@ export interface BootstrapPayload {
   workflow: WorkflowSnapshot;
   runtime: RuntimeSnapshot;
   approvals: ApprovalSnapshot[];
+}
+
+export interface BootstrapPayload {
+  event: "Bootstrap";
+  seq: number;
+  snapshots: BootstrapSnapshots;
 }
 
 // ── Prompt Queue ──

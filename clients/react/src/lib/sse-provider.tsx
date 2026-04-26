@@ -72,13 +72,16 @@ export function SSEProvider({ children }: { children: ReactNode }) {
   const refreshCache = useCallback(async (): Promise<boolean> => {
     try {
       const payload: BootstrapPayload = await api.bootstrap();
+      // tmai-core PR #150 wraps the snapshot bundle in a `{ event, seq,
+      // snapshots }` envelope; read the per-domain arrays from `.snapshots`.
+      const { snapshots } = payload;
 
-      agentMapRef.current = new Map(payload.agents.map((a) => [a.id, a]));
+      agentMapRef.current = new Map(snapshots.agents.map((a) => [a.id, a]));
       // WorktreeUpdate envelope.id = WorktreeSnapshot.path (per corevents.schema.json
       // "Worktree path (unique per repo)"), so key by path to match EntityUpdate upsert/remove.
-      worktreeMapRef.current = new Map(payload.worktrees.map((w) => [w.path, w]));
+      worktreeMapRef.current = new Map(snapshots.worktrees.map((w) => [w.path, w]));
       const qMap = new Map<string, QueueAgentEntry>();
-      for (const entry of payload.queue.entries) {
+      for (const entry of snapshots.queue.entries) {
         qMap.set(entry.agent_id, entry);
       }
       queueMapRef.current = qMap;
@@ -141,10 +144,24 @@ export function SSEProvider({ children }: { children: ReactNode }) {
           }
 
           if (entity === "Agent") {
+            // tmai-core #96: AgentUpdate envelope.id is the pane target
+            // (e.g. "session-1:2.1") while bootstrap seeds the cache with
+            // snapshot.id (e.g. "add98d12"). Without normalization we end
+            // up with two entries per agent — one per identifier scheme —
+            // which surfaces as duplicate cards whose status drifts apart.
+            // Always pin the cache key to the snapshot.id and drop any
+            // stray entry that the envelope id may have created.
             if (change === "Removed") {
               agentMapRef.current.delete(id);
+              if (snapshot != null) {
+                agentMapRef.current.delete((snapshot as AgentSnapshot).id);
+              }
             } else if (snapshot != null) {
-              agentMapRef.current.set(id, snapshot as AgentSnapshot);
+              const snap = snapshot as AgentSnapshot;
+              if (snap.id !== id) {
+                agentMapRef.current.delete(id);
+              }
+              agentMapRef.current.set(snap.id, snap);
             }
             setAgents([...agentMapRef.current.values()]);
           } else if (entity === "Worktree") {

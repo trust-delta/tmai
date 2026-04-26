@@ -116,6 +116,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   const [live, setLive] = useState<string>("");
   const [liveStartLine, setLiveStartLine] = useState<number>(0);
   const [transcriptRecords, setTranscriptRecords] = useState<TranscriptRecord[]>([]);
+  // "live" = capture-pane (cheap, default). "transcript" = JSONL records
+  // (heavy: per-record react-markdown). Splitting them into tabs keeps the
+  // common monitoring path light, and the transcript polling/render only
+  // runs when the user actively opens it.
+  const [activeTab, setActiveTab] = useState<"live" | "transcript">("live");
   const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
   const [showCursor, setShowCursor] = useState(true);
   const [focused, setFocused] = useState(true);
@@ -312,11 +317,24 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // IME composition is in progress — re-rendering the preview during
   // composition disrupts the IME candidate window and causes visible
   // typing lag in CJK input methods.
+  // Guard against overlapping fetches. For agents with hundreds of KB of
+  // capture-pane scrollback, getPreview can take several seconds to
+  // arrive over a slow link; without this guard the 200ms poll cadence
+  // stacks up an arbitrary number of in-flight requests and the latest
+  // setHistory call ends up "behind" all the queued ones, which is what
+  // surfaces as "Waiting…" not progressing.
+  const fetchInFlightRef = useRef(false);
   const fetchPreview = useCallback(async () => {
     if (composingRef.current) return;
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       const data = await api.getPreview(agentId);
-      if (!data.content) return;
+      // Treat only null/undefined as "no payload" — an empty string is
+      // still a real preview state we should write through, otherwise
+      // an idle agent's quiet output keeps the UI pinned on
+      // "Waiting for output..." after an agent switch.
+      if (data.content == null) return;
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
       // Split scrollback history from the live visible region so the history
@@ -343,6 +361,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       }
     } catch {
       // Agent may not have content yet
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, [agentId]);
 
@@ -389,11 +409,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     }
   }, [agentId]);
 
+  // Only fetch transcript while the Transcript tab is active. The Live tab
+  // never needs the JSONL records, so we avoid the 3s polling and the
+  // per-record react-markdown re-render entirely while the user is just
+  // monitoring the agent.
   useEffect(() => {
+    if (activeTab !== "transcript") return;
     fetchTranscript();
     const interval = setInterval(fetchTranscript, 3000);
     return () => clearInterval(interval);
-  }, [fetchTranscript]);
+  }, [fetchTranscript, activeTab]);
 
   // Pending passthrough refresh timers (cleared on agent switch / unmount)
   const passthroughTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -404,6 +429,27 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       passthroughTimers.current = [];
     };
   }, [agentId]);
+
+  // Reset preview state on agent switch so the previous agent's
+  // capture-pane / transcript don't flash on screen until the first
+  // fetchPreview / fetchTranscript for the new agent comes back.
+  // Also kick off an immediate fetch — the poll-loop useEffect will
+  // re-mount and fire `setTimeout(tick, 0)` too, but for an idle
+  // agent (no live output, content rarely changes) the difference
+  // between "fire immediately" and "wait for the next React tick +
+  // setTimeout schedule" was visible as a long-lived "Waiting…" state.
+  useEffect(() => {
+    setHistory("");
+    setLive("");
+    setLiveStartLine(0);
+    setTranscriptRecords([]);
+    setCursorPos(null);
+    lastContentRef.current = null;
+    // Drop any in-flight guard from the previous agent so the first
+    // fetch for the new agent isn't itself skipped.
+    fetchInFlightRef.current = false;
+    void fetchPreview();
+  }, [agentId, fetchPreview]);
 
   // Clear incoming-prompt indicator on agent switch and on unmount
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear on agent switch
@@ -434,12 +480,41 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
   // Auto-scroll to bottom (toggleable, default on)
   // Scroll up → auto OFF, scroll to bottom → auto ON
+  // skipNextScrollEventRef suppresses the synthetic onScroll the browser
+  // fires when a tab toggle changes scrollHeight (which would otherwise
+  // flip autoScroll off without any user gesture).
+  const skipNextScrollEventRef = useRef(false);
   const handleScroll = useCallback(() => {
+    if (skipNextScrollEventRef.current) {
+      skipNextScrollEventRef.current = false;
+      return;
+    }
     const el = scrollContainerRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
     setAutoScroll(atBottom);
   }, [setAutoScroll]);
+
+  // Mirror autoScroll into a ref so the tab-switch effect can read the
+  // current value without re-running every time autoScroll changes.
+  const autoScrollRef = useRef(autoScroll);
+  useEffect(() => {
+    autoScrollRef.current = autoScroll;
+  }, [autoScroll]);
+
+  // On switching back to the Live tab: suppress the tab-toggle's synthetic
+  // onScroll, and if autoScroll was on, re-pin to the bottom so resumption
+  // matches the user's intent ("auto" stays auto across tab switches).
+  useEffect(() => {
+    if (activeTab !== "live") return;
+    skipNextScrollEventRef.current = true;
+    if (!autoScrollRef.current) return;
+    const id = requestAnimationFrame(() => {
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeTab]);
 
   // Handle special keys (non-IME) via the hidden input's keydown
   const handleKeyDown = useCallback(
@@ -516,10 +591,54 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     () => capHistoryLines(deferredHistory, MAX_HISTORY_LINES),
     [deferredHistory],
   );
-  const historyHtml = useMemo(() => {
-    if (!historyCap.content) return "";
-    return ansi.ansi_to_html(shrinkContentToWidth(historyCap.content, cols));
-  }, [ansi, historyCap, cols]);
+
+  // History HTML conversion happens off the main thread via a Web Worker
+  // (lib/ansi-worker.ts). For a long-running agent the scrollback can
+  // reach hundreds of KB and the synchronous AnsiUp pass would block the
+  // tab for several seconds on every poll tick. The worker lets the Live
+  // region keep painting and input keep responding while the History
+  // pipeline catches up. Each request carries an incrementing id; a
+  // response whose id no longer matches the latest request is discarded
+  // so an in-flight conversion of stale content can't overwrite a newer
+  // one (e.g. on agent switch).
+  const [historyHtml, setHistoryHtml] = useState<string>("");
+  const ansiWorkerRef = useRef<Worker | null>(null);
+  const ansiRequestSeqRef = useRef(0);
+  const ansiLatestRequestIdRef = useRef(0);
+  useEffect(() => {
+    if (typeof Worker === "undefined") return; // jsdom / SSR fallback
+    const worker = new Worker(new URL("@/lib/ansi-worker.ts", import.meta.url), {
+      type: "module",
+    });
+    ansiWorkerRef.current = worker;
+    worker.onmessage = (e: MessageEvent<{ id: number; html: string }>) => {
+      if (e.data.id !== ansiLatestRequestIdRef.current) return;
+      setHistoryHtml(e.data.html);
+    };
+    return () => {
+      worker.terminate();
+      ansiWorkerRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (!historyCap.content) {
+      ansiLatestRequestIdRef.current = ++ansiRequestSeqRef.current;
+      setHistoryHtml("");
+      return;
+    }
+    const content = shrinkContentToWidth(historyCap.content, cols);
+    const worker = ansiWorkerRef.current;
+    if (worker) {
+      const id = ++ansiRequestSeqRef.current;
+      ansiLatestRequestIdRef.current = id;
+      worker.postMessage({ id, content });
+    } else {
+      // Fallback when Web Worker is unavailable (jsdom in tests). Runs
+      // synchronously on the main thread; for production this branch
+      // should not be hit.
+      setHistoryHtml(ansi.ansi_to_html(content));
+    }
+  }, [historyCap, cols, ansi]);
 
   // Cursor row within the live region. The backend returns cursor_y as an
   // absolute row within the full capture output; since the tmux cursor is
@@ -703,41 +822,53 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         >
           X
         </span>
-        {/* Transcript history (above live capture-pane) */}
-        {hasTranscript && (
-          <div className="select-text border-b border-white/10 pb-2 mb-2">
-            <TranscriptView records={transcriptRecords} />
-          </div>
-        )}
-        {/* Capture-pane output — split into scrollback history (rendered
-            once, cached) and live visible region (re-rendered each tick). */}
-        {hasContent ? (
-          <div
-            className="ansi-preview relative m-0 cursor-text select-text whitespace-pre-wrap break-words"
-            style={{
-              fontFamily: MONO_FONT_STACK,
-            }}
-          >
-            {historyCap.dropped > 0 && (
-              <div className="text-zinc-600 text-[10px] italic pb-1 select-none">
-                {`… ${historyCap.dropped.toLocaleString()} earlier line${
-                  historyCap.dropped === 1 ? "" : "s"
-                } hidden (showing last ${MAX_HISTORY_LINES.toLocaleString()})`}
-              </div>
-            )}
-            <div ref={historyRef} />
-            <div ref={liveRef} />
-            {cursorStyle && focused && hasDomFocus && showCursor && (
-              <div
-                className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
-                style={cursorStyle}
-                aria-hidden="true"
-              />
-            )}
-          </div>
-        ) : (
-          <span className="text-zinc-600">Waiting for output...</span>
-        )}
+        {/* Transcript tab — JSONL records via per-record react-markdown.
+            Only mounted while activeTab === "transcript", so the Live tab
+            never pays the rendering cost in long conversations. */}
+        {activeTab === "transcript" &&
+          (hasTranscript ? (
+            <div className="select-text">
+              <TranscriptView records={transcriptRecords} />
+            </div>
+          ) : (
+            <div className="py-4 text-sm text-zinc-600">No transcript records yet</div>
+          ))}
+        {/* Live tab — always mounted so historyRef / liveRef survive tab
+            switches. Without this, switching to Transcript and back would
+            unmount the refs and the next innerHTML write only happens on
+            the next poll tick (visible delay). The display toggle is cheap
+            because the underlying DOM is preserved. */}
+        <div style={{ display: activeTab === "live" ? undefined : "none" }}>
+          {hasContent ? (
+            /* Capture-pane output split into scrollback history (rendered
+               once, cached) and live visible region (re-rendered each tick). */
+            <div
+              className="ansi-preview relative m-0 cursor-text select-text whitespace-pre-wrap break-words"
+              style={{
+                fontFamily: MONO_FONT_STACK,
+              }}
+            >
+              {historyCap.dropped > 0 && (
+                <div className="text-zinc-600 text-[10px] italic pb-1 select-none">
+                  {`… ${historyCap.dropped.toLocaleString()} earlier line${
+                    historyCap.dropped === 1 ? "" : "s"
+                  } hidden (showing last ${MAX_HISTORY_LINES.toLocaleString()})`}
+                </div>
+              )}
+              <div ref={historyRef} />
+              <div ref={liveRef} />
+              {cursorStyle && focused && hasDomFocus && showCursor && (
+                <div
+                  className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
+                  style={cursorStyle}
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+          ) : (
+            <span className="text-zinc-600">Waiting for output...</span>
+          )}
+        </div>
         <div ref={bottomRef} />
       </div>
 
@@ -780,6 +911,35 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
 
       {/* Footer status bar */}
       <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1.5">
+        {/* View tabs — Live (capture-pane, light) / Transcript (JSONL, heavy) */}
+        <div className="inline-flex rounded bg-white/5 p-0.5">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setActiveTab("live")}
+            className={`touch-target-sm rounded px-2 py-0.5 text-xs transition-colors ${
+              activeTab === "live"
+                ? "bg-cyan-500/20 text-cyan-400"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+            title="Live capture-pane (ANSI, lightweight)"
+          >
+            Live
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setActiveTab("transcript")}
+            className={`touch-target-sm rounded px-2 py-0.5 text-xs transition-colors ${
+              activeTab === "transcript"
+                ? "bg-cyan-500/20 text-cyan-400"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+            title="JSONL transcript (heavier; loaded on demand)"
+          >
+            Transcript
+          </button>
+        </div>
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
