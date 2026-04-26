@@ -40,6 +40,11 @@ pub enum CoreEvent {
         last_assistant_message: Option<Value>,
         target: String,
     },
+    AgentIdPromoted {
+        from: String,
+        target: String,
+        to: String,
+    },
     ContextCompacting {
         compaction_count: i32,
         target: String,

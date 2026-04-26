@@ -31,7 +31,7 @@ retry_hint?: RetryHint,
  * `unknown`, which already accepts `undefined` at the call site — no
  * `ts(optional)` because that attribute rejects non-`Option<T>` fields.
  */
-context: unknown, 
+context?: unknown, 
 /**
  * Request/span identifier for correlating this error across MCP, WebUI,
  * and internal tracing spans.
