@@ -84,21 +84,6 @@ function originLabel(o: ActionOrigin): string {
 // Per-agent auto-scroll preference (persists across agent switches)
 const agentAutoScrollMap = new Map<string, boolean>();
 
-// Per-agent preview state cache. Lets us re-show the last-seen
-// capture-pane / transcript instantly on agent switch instead of
-// blanking out for the 200-500ms it takes the next fetchPreview to
-// return for the new agent. Polling continues to refresh these the
-// moment the new fetch lands.
-interface PreviewCache {
-  history: string;
-  live: string;
-  liveStartLine: number;
-  transcriptRecords: TranscriptRecord[];
-  cursorPos: CursorPos | null;
-  lastContent: string | null;
-}
-const previewCacheMap = new Map<string, PreviewCache>();
-
 const MONO_FONT_STACK =
   "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
   "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', " +
@@ -430,54 +415,16 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     };
   }, [agentId]);
 
-  // Mirror the live preview state into a ref so the agent-switch
-  // cleanup below can capture the *most recent* values when it runs,
-  // not the closure values from when the effect last set itself up.
-  const stateForCacheRef = useRef<Omit<PreviewCache, "lastContent">>({
-    history,
-    live,
-    liveStartLine,
-    transcriptRecords,
-    cursorPos,
-  });
+  // Reset preview state on agent switch so the previous agent's
+  // capture-pane / transcript don't flash on screen until the first
+  // fetchPreview / fetchTranscript for the new agent comes back.
   useEffect(() => {
-    stateForCacheRef.current = {
-      history,
-      live,
-      liveStartLine,
-      transcriptRecords,
-      cursorPos,
-    };
-  }, [history, live, liveStartLine, transcriptRecords, cursorPos]);
-
-  // On agent switch: hydrate from previewCacheMap (if we've seen this
-  // agent before) so the panel updates instantly, then let the next
-  // fetchPreview/fetchTranscript tick refresh whatever changed. On
-  // cleanup (= the previous agentId's effect tearing down) save the
-  // most recent state so the next switch back can re-hydrate.
-  useEffect(() => {
-    const cached = previewCacheMap.get(agentId);
-    if (cached) {
-      setHistory(cached.history);
-      setLive(cached.live);
-      setLiveStartLine(cached.liveStartLine);
-      setTranscriptRecords(cached.transcriptRecords);
-      setCursorPos(cached.cursorPos);
-      lastContentRef.current = cached.lastContent;
-    } else {
-      setHistory("");
-      setLive("");
-      setLiveStartLine(0);
-      setTranscriptRecords([]);
-      setCursorPos(null);
-      lastContentRef.current = null;
-    }
-    return () => {
-      previewCacheMap.set(agentId, {
-        ...stateForCacheRef.current,
-        lastContent: lastContentRef.current,
-      });
-    };
+    setHistory("");
+    setLive("");
+    setLiveStartLine(0);
+    setTranscriptRecords([]);
+    setCursorPos(null);
+    lastContentRef.current = null;
   }, [agentId]);
 
   // Clear incoming-prompt indicator on agent switch and on unmount
