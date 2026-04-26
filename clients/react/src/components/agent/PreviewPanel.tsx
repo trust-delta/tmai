@@ -321,7 +321,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     if (composingRef.current) return;
     try {
       const data = await api.getPreview(agentId);
-      if (!data.content) return;
+      // Treat only null/undefined as "no payload" — an empty string is
+      // still a real preview state we should write through, otherwise
+      // an idle agent's quiet output keeps the UI pinned on
+      // "Waiting for output..." after an agent switch.
+      if (data.content == null) return;
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
       // Split scrollback history from the live visible region so the history
@@ -418,6 +422,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // Reset preview state on agent switch so the previous agent's
   // capture-pane / transcript don't flash on screen until the first
   // fetchPreview / fetchTranscript for the new agent comes back.
+  // Also kick off an immediate fetch — the poll-loop useEffect will
+  // re-mount and fire `setTimeout(tick, 0)` too, but for an idle
+  // agent (no live output, content rarely changes) the difference
+  // between "fire immediately" and "wait for the next React tick +
+  // setTimeout schedule" was visible as a long-lived "Waiting…" state.
   useEffect(() => {
     setHistory("");
     setLive("");
@@ -425,7 +434,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setTranscriptRecords([]);
     setCursorPos(null);
     lastContentRef.current = null;
-  }, [agentId]);
+    void fetchPreview();
+  }, [agentId, fetchPreview]);
 
   // Clear incoming-prompt indicator on agent switch and on unmount
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear on agent switch
