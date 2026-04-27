@@ -11,7 +11,7 @@
     "test": "npm run lint:openapi && npm run test:schemas"
   },
   "devDependencies": {
-    "@redocly/cli": "^2.30.0",
+    "@redocly/cli": "^2.30.1",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
   },
