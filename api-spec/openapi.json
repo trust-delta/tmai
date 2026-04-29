@@ -13,6 +13,45 @@
     "version": "2.0.0"
   },
   "paths": {
+    "/api/agents/{id}/subscribe-terminal": {
+      "post": {
+        "tags": [
+          "terminal"
+        ],
+        "summary": "Documentation stub for `POST /api/agents/{id}/subscribe-terminal`.",
+        "description": "Real handler lives in the binary crate (`crate::web::api::subscribe_terminal`).\nIssues a short-lived terminal-plane ticket bound to the resolved agent;\nUI presents the ticket on the PTY-server's terminal-plane socket\n(rev3 Δ5).",
+        "operationId": "subscribe_terminal_doc",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent identifier — canonical AgentId, target, pty_session_id, or semantic (issue:N / pr:N)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription ticket issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminalSubscription"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found"
+          },
+          "503": {
+            "description": "PTY-server not connected"
+          }
+        }
+      }
+    },
     "/api/task-meta": {
       "get": {
         "tags": [
@@ -2806,6 +2845,43 @@
           }
         }
       },
+      "TerminalSubscription": {
+        "type": "object",
+        "description": "Owned response for `POST /api/agents/{id}/subscribe-terminal`.\n\nMirrors `tmai_pty_server::proto::TerminalTicket` augmented with an\noptional `stream_endpoint` describing where the UI should connect.",
+        "required": [
+          "agent_id",
+          "token",
+          "issued_at",
+          "expires_at"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Canonical agent id (`<scheme>:<id>`) the ticket is bound to."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Wall-clock expiry time (RFC3339). UIs re-request before this."
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Wall-clock issuance time (RFC3339)."
+          },
+          "stream_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "PTY-server endpoint hint where the UI should present the ticket.\n`None` at Phase 2a — populated when the UI-facing listener lands\nin Phase 2b. UIs MUST tolerate `None` and either fall back to\nthe legacy WS or use a locally-known endpoint."
+          },
+          "token": {
+            "type": "string",
+            "description": "Opaque bearer token. UI presents this as the first frame on the\nterminal-plane socket. Treat as a credential."
+          }
+        }
+      },
       "TmaiError": {
         "type": "object",
         "description": "Structured error carried across every tmai contract boundary.\n\nThe shape is stable: `code` is the primary dispatch key; `message` is\nhuman-readable; `retry_hint` is advisory; `context` is per-code\nstructured detail; `trace_id` ties the error to a `tracing` span for\ncross-surface correlation.",
@@ -3124,6 +3200,10 @@
     {
       "name": "task-meta",
       "description": "Project task metadata — merges git worktree info with `.task-meta/` JSON"
+    },
+    {
+      "name": "terminal",
+      "description": "Terminal-plane subscription tickets (#174 — UI ↔ PTY-server direct ANSI)"
     }
   ]
 }
