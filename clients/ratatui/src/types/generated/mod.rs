@@ -84,6 +84,8 @@ pub mod team_snapshot;
 pub use team_snapshot::*;
 pub mod team_task_info;
 pub use team_task_info::*;
+pub mod terminal_subscription;
+pub use terminal_subscription::*;
 pub mod tmai_error;
 pub use tmai_error::*;
 pub mod vendor_availability_state;
