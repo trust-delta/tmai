@@ -20,6 +20,42 @@ interface UseTerminalOptions {
   autoScroll?: boolean;
 }
 
+// Per-agent ANSI replay buffer.
+//
+// The rev3 PTY-server's ANSI broadcast is push-only — there is no
+// catch-up replay for late subscribers (scrollback lands with #175).
+// When the user switches agents, the xterm instance is disposed and
+// recreated, so without our own buffer the new pane is blank until
+// the agent next emits anything (which idle agents may not do for a
+// long time). We keep a bounded chunk log per agent and replay it on
+// re-mount so switching back to a previously-seen agent restores the
+// last screen state immediately.
+const AGENT_REPLAY_BUFFERS = new Map<string, Uint8Array[]>();
+const AGENT_REPLAY_BYTE_CAP = 256_000;
+
+function appendReplay(agentId: string, bytes: Uint8Array): void {
+  const list = AGENT_REPLAY_BUFFERS.get(agentId) ?? [];
+  list.push(bytes);
+  // Drop oldest chunks until total bytes is under the cap. This trims at
+  // chunk granularity rather than byte-exact slicing, which keeps ANSI
+  // escape sequences whole.
+  let total = 0;
+  for (const b of list) total += b.byteLength;
+  while (total > AGENT_REPLAY_BYTE_CAP && list.length > 1) {
+    const dropped = list.shift();
+    if (dropped) total -= dropped.byteLength;
+  }
+  AGENT_REPLAY_BUFFERS.set(agentId, list);
+}
+
+function replayInto(term: Terminal, agentId: string): void {
+  const list = AGENT_REPLAY_BUFFERS.get(agentId);
+  if (!list) return;
+  for (const chunk of list) {
+    term.write(chunk);
+  }
+}
+
 export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTerminalOptions) {
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -32,10 +68,19 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
   }, []);
 
   // Stream incoming ANSI bytes into the terminal — `term.write` accepts
-  // `Uint8Array` directly.
-  const onData = useCallback((bytes: Uint8Array): void => {
-    termRef.current?.write(bytes);
-  }, []);
+  // `Uint8Array` directly. Also append to the per-agent replay buffer
+  // so a future re-mount of this hook can restore the screen.
+  const onData = useCallback(
+    (bytes: Uint8Array): void => {
+      termRef.current?.write(bytes);
+      if (agentId) {
+        // Copy because the underlying ArrayBuffer may be reused by the
+        // WebSocket layer for the next frame.
+        appendReplay(agentId, new Uint8Array(bytes));
+      }
+    },
+    [agentId],
+  );
 
   const { sendKeys } = useAgentTerminalStream({ agentId, onData });
 
@@ -63,6 +108,11 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    // Restore the previous screen for this agent before live bytes
+    // start arriving on the freshly-opened WebSocket. Without this the
+    // pane is blank for any agent that is currently idle.
+    replayInto(term, agentId);
 
     // Forward xterm input → keys-mode WS.
     const inputDisposable = term.onData((data: string): void => {
