@@ -6,9 +6,18 @@
 // - `?mode=stream` — receives ANSI byte chunks pushed by the PTY-server.
 // - `?mode=keys`   — sends raw key bytes to the agent's stdin.
 //
-// The hook re-subscribes automatically before the ticket expires and
-// reconnects on transport-level close. Both WebSockets close on unmount
-// or `agentId` change.
+// Tickets are one-shot bearer credentials checked at WS upgrade only;
+// once both sockets are open the ticket TTL no longer matters. The hook
+// therefore does NOT preemptively reconnect when the ticket nears its
+// expiry — doing so would tear down a perfectly healthy WS pair just to
+// open a fresh one, and each fresh stream forces the supervisor to
+// re-flush its per-agent scrollback (tmai-core PR #227). With this
+// idle preview accumulated stacked redraws every TICKET_REFRESH_LEAD_MS
+// because each scrollback replay landed on top of whatever xterm had
+// already rendered. We only reconnect when the transport actually
+// closes (proxy idle, network blip, agent died). On reconnect the
+// consumer is signalled via `onStatus("connecting")` so it can reset
+// the rendering surface before the new scrollback flush arrives.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -40,10 +49,6 @@ interface UseAgentTerminalStreamResult {
 }
 
 const RECONNECT_DELAY_MS = 3_000;
-// Re-subscribe this far ahead of the ticket's expiry — must exceed the
-// expected round-trip + WS open time so a fresh stream is ready before
-// the old token is rejected.
-const TICKET_REFRESH_LEAD_MS = 30_000;
 
 function buildWsUrl(
   agentId: string,
@@ -65,7 +70,6 @@ export function useAgentTerminalStream({
   const [status, setStatus] = useState<TerminalStreamStatus>("idle");
   const streamWsRef = useRef<WebSocket | null>(null);
   const keysWsRef = useRef<WebSocket | null>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set to `true` on unmount or agentId change. Async tasks check this
   // before touching state or refs to avoid clobbering a stale agent.
@@ -93,10 +97,6 @@ export function useAgentTerminalStream({
     abortedRef.current = false;
 
     const clearTimers = (): void => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-      }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
@@ -112,24 +112,6 @@ export function useAgentTerminalStream({
         keysWsRef.current.close(1000);
         keysWsRef.current = null;
       }
-    };
-
-    const scheduleRefresh = (expiresAt: string): void => {
-      const expiresMs = Date.parse(expiresAt);
-      // Wall-clock parse can fail or yield NaN — guard with a sane floor
-      // so we still refresh after a few minutes rather than never.
-      const rawDelay = Number.isFinite(expiresMs)
-        ? Math.max(1_000, expiresMs - Date.now() - TICKET_REFRESH_LEAD_MS)
-        : 60_000;
-      // setTimeout clamps to a 32-bit signed int internally; values past
-      // ~24.8 days (2_147_483_647 ms) get coerced to 1 ms and fire
-      // immediately. Cap at 1 hour — a far-future expires_at is fine, we
-      // just want to wake up periodically and re-evaluate.
-      const safeDelay = Math.min(rawDelay, 60 * 60 * 1_000);
-      refreshTimerRef.current = setTimeout(() => {
-        if (abortedRef.current) return;
-        void connect();
-      }, safeDelay);
     };
 
     const connect = async (): Promise<void> => {
@@ -180,8 +162,6 @@ export function useAgentTerminalStream({
         // onerror is best-effort: onclose follows reliably and drives
         // the reconnect path.
         stream.onerror = (): void => {};
-
-        scheduleRefresh(subscription.expires_at);
       } catch {
         if (abortedRef.current) return;
         setStatusBoth("error");

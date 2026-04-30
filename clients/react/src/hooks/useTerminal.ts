@@ -20,7 +20,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAgentTerminalStream } from "./useAgentTerminalStream";
+import { type TerminalStreamStatus, useAgentTerminalStream } from "./useAgentTerminalStream";
 
 interface UseTerminalOptions {
   agentId: string | null;
@@ -47,7 +47,21 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     termRef.current?.write(bytes);
   }, []);
 
-  const { sendKeys } = useAgentTerminalStream({ agentId, onData });
+  // Reset xterm whenever the stream is about to (re)connect. Each
+  // connect triggers a fresh PTY-server scrollback flush; without
+  // wiping the canvas first, those bytes would render on top of
+  // whatever was already on screen and the preview would stack.
+  // The very first connect runs against an empty xterm, so this is
+  // a no-op there. (`status === "connecting"` fires synchronously
+  // before the WebSocket opens, so the reset always lands before
+  // the first byte of the new stream arrives.)
+  const onStatus = useCallback((next: TerminalStreamStatus): void => {
+    if (next === "connecting") {
+      termRef.current?.reset();
+    }
+  }, []);
+
+  const { sendKeys } = useAgentTerminalStream({ agentId, onData, onStatus });
 
   useEffect(() => {
     if (!agentId || !containerRef.current) return;
