@@ -3,9 +3,11 @@ import DOMPurify from "dompurify";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { QueueBadge } from "@/components/ui/QueueBadge";
 import { QueuePopover } from "@/components/ui/QueuePopover";
+import { useAgentTerminalStream } from "@/hooks/useAgentTerminalStream";
 import { useQueuedPrompts } from "@/hooks/useQueuedPrompts";
 import { api } from "@/lib/api";
 import type { PreviewSettingsResponse, QueuedPrompt, TranscriptRecord } from "@/lib/api-http";
+import { keyEventToBytes, textToBytes } from "@/lib/keys";
 import type { ActionOrigin } from "@/types";
 import {
   capHistoryLines,
@@ -29,6 +31,16 @@ const MAX_HISTORY_LINES = 1000;
 
 interface PreviewPanelProps {
   agentId: string;
+  /** When true, the panel sources ANSI bytes from the rev3 terminal-plane
+   *  WebSocket (`subscribe-terminal` + push) instead of polling
+   *  `getPreview`. Gated by the caller on
+   *  `agent.connection_channels.has_pty/has_websocket` so capture-pane
+   *  agents (tmux-only) continue to receive previews via the legacy
+   *  polling path. Phase 3b-2 — Phase 3b-3 will retire the polling
+   *  fallback once telemetry confirms the WS path covers all live
+   *  PTY-server backed agents.
+   */
+  useWsTransport?: boolean;
 }
 
 // Map browser KeyboardEvent to tmux key name for special keys
@@ -106,7 +118,7 @@ interface CursorPos {
 
 import { TranscriptView } from "./TranscriptView";
 
-export function PreviewPanel({ agentId }: PreviewPanelProps) {
+export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelProps) {
   // Preview is split into two regions so scrollback history (immutable,
   // often >1MB) is not re-parsed through AnsiUp / DOMPurify / innerHTML on
   // every poll tick — the dominant input-lag cost in long sessions (#413).
@@ -208,6 +220,36 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     preview_poll_unfocused_ms: 2000,
     preview_poll_active_input_ms: 50,
     preview_active_input_window_ms: 2000,
+  });
+
+  // Rev3 terminal-plane (#174 Phase 3b-2). When `useWsTransport` is true,
+  // ANSI bytes arrive on the stream WebSocket and append into
+  // `liveBufferRef`; the polling effect below short-circuits and the key
+  // handlers route through `sendKeys` rather than `passthrough`. Phase
+  // 3b-2 keeps `liveStartLine = 0` (history optimization is restored by
+  // a future wire-metadata frame in Phase 4 alongside xterm.js).
+  //
+  // The buffer is capped at ~256 KB to keep AnsiUp / DOMPurify /
+  // innerHTML bounded — long-running agents emit megabytes of ANSI per
+  // hour and an unbounded `setLive(...)` would freeze the panel. Slicing
+  // at byte level can split a UTF-8 sequence or an ANSI escape; the
+  // worst case is a single mojibake or color glyph at the seam, which
+  // is acceptable until Phase 4 replaces this with xterm.js.
+  const LIVE_BUFFER_BYTE_CAP = 256_000;
+  const liveBufferRef = useRef<string>("");
+  const onWsData = useCallback((bytes: Uint8Array): void => {
+    if (composingRef.current) return;
+    const chunk = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    let next = liveBufferRef.current + chunk;
+    if (next.length > LIVE_BUFFER_BYTE_CAP) {
+      next = next.slice(-LIVE_BUFFER_BYTE_CAP);
+    }
+    liveBufferRef.current = next;
+    setLive(next);
+  }, []);
+  const { sendKeys: wsSendKeys } = useAgentTerminalStream({
+    agentId: useWsTransport ? agentId : null,
+    onData: onWsData,
   });
 
   // Timestamp of the last passthrough input event
@@ -336,6 +378,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // surfaces as "Waiting…" not progressing.
   const fetchInFlightRef = useRef(false);
   const fetchPreview = useCallback(async () => {
+    // WS transport supplies bytes via `onWsData`; the polling path is a
+    // no-op for those agents. Keeping the function defined (rather than
+    // gating callers individually) lets the agent-switch effect call it
+    // unconditionally and have the right thing happen.
+    if (useWsTransport) return;
     if (composingRef.current) return;
     if (fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
@@ -375,11 +422,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     } finally {
       fetchInFlightRef.current = false;
     }
-  }, [agentId]);
+  }, [agentId, useWsTransport]);
 
   // Self-rescheduling poll loop: recalculates interval each tick so it adapts
   // to active-input vs focused vs unfocused state without re-mounting.
+  // Skipped entirely under the WS transport — `useAgentTerminalStream`
+  // owns the byte path there.
   useEffect(() => {
+    if (useWsTransport) return;
     let cancelled = false;
     const tick = () => {
       if (cancelled) return;
@@ -392,7 +442,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [fetchPreview, getPollInterval]);
+  }, [fetchPreview, getPollInterval, useWsTransport]);
 
   // Fetch transcript records (slower cadence — history changes less often).
   // Skip the state update when the incoming records array matches what we
@@ -456,6 +506,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     setTranscriptRecords([]);
     setCursorPos(null);
     lastContentRef.current = null;
+    // Drop the WS append buffer too — the new agent has its own stream
+    // and `onWsData` will start filling this from zero.
+    liveBufferRef.current = "";
     // Drop any in-flight guard from the previous agent so the first
     // fetch for the new agent isn't itself skipped.
     fetchInFlightRef.current = false;
@@ -464,6 +517,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     // — without this, autoScroll would flip off without any user
     // gesture, exactly like the tab-switch case.
     skipNextScrollEventRef.current = true;
+    // No-op under WS transport (early-returned in fetchPreview).
     void fetchPreview();
   }, [agentId, fetchPreview]);
 
@@ -545,9 +599,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       }
 
       // Allow Ctrl+V to paste via browser — the pasted text will arrive
-      // through the hidden input's onInput handler and be sent as passthrough
+      // through the hidden input's onInput handler and be sent through
+      // either path below.
       if (e.ctrlKey && e.key === "v") return;
 
+      // Rev3 keys-mode WebSocket — send raw bytes directly.
+      if (useWsTransport) {
+        const bytes = keyEventToBytes(e.nativeEvent);
+        if (bytes) {
+          e.preventDefault();
+          lastInputTime.current = Date.now();
+          wsSendKeys(bytes.buffer);
+        }
+        return;
+      }
+
+      // Legacy polling path: convert to tmux name and POST passthrough.
       const tmuxKey = toTmuxKey(e.nativeEvent);
       if (tmuxKey) {
         e.preventDefault();
@@ -561,7 +628,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         sendPassthrough({ chars: e.key });
       }
     },
-    [composing, sendPassthrough],
+    [composing, sendPassthrough, useWsTransport, wsSendKeys],
   );
 
   // Handle IME confirmed text via input event
@@ -570,15 +637,18 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       const input = e.currentTarget;
       const value = input.value;
       if (value && !composing) {
-        // IME confirmed or direct paste — send the full text
-        sendPassthrough({ chars: value });
+        // IME confirmed or direct paste — send the full text via the
+        // active transport.
+        if (useWsTransport) {
+          lastInputTime.current = Date.now();
+          wsSendKeys(textToBytes(value).buffer);
+        } else {
+          sendPassthrough({ chars: value });
+        }
         input.value = "";
       }
     },
-    [
-      composing, // IME confirmed or direct paste — send the full text
-      sendPassthrough,
-    ],
+    [composing, sendPassthrough, useWsTransport, wsSendKeys],
   );
 
   // History HTML: heavy path (AnsiUp on potentially 1MB+ of text). Memoized
@@ -915,7 +985,12 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           setComposing(false);
           const value = e.currentTarget.value;
           if (value) {
-            sendPassthrough({ chars: value });
+            if (useWsTransport) {
+              lastInputTime.current = Date.now();
+              wsSendKeys(textToBytes(value).buffer);
+            } else {
+              sendPassthrough({ chars: value });
+            }
             e.currentTarget.value = "";
           }
           // Re-sync preview once IME is done — sendPassthrough's own
