@@ -9,9 +9,16 @@ import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
+import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
-export type { BootstrapRequiredEvent, EntityUpdateEnvelope, QueueAgentEntry, QueueSnapshot };
+export type {
+  BootstrapRequiredEvent,
+  EntityUpdateEnvelope,
+  QueueAgentEntry,
+  QueueSnapshot,
+  TerminalSubscription,
+};
 
 // ── Connection config ──
 
@@ -926,6 +933,15 @@ export const api = {
     }),
   killAgent: (target: string) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/kill`, { method: "POST" }),
+  /// Mint a short-lived ticket for the rev3 terminal-plane stream
+  /// (`useAgentTerminalStream`). The returned `stream_endpoint` is a
+  /// relative URL — UIs concatenate `?ticket=<token>&mode=stream|keys`
+  /// and open a WebSocket. Re-issue before `expires_at` to keep the
+  /// stream alive.
+  subscribeTerminal: (target: string) =>
+    apiFetch<TerminalSubscription>(`/agents/${encodeURIComponent(target)}/subscribe-terminal`, {
+      method: "POST",
+    }),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
       method: "PUT",
