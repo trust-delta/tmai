@@ -1622,6 +1622,43 @@
       ],
       "type": "object"
     },
+    "TerminalSubscription": {
+      "description": "Owned response for `POST /api/agents/{id}/subscribe-terminal`.\n\nMirrors `tmai_pty_server::proto::TerminalTicket` augmented with an\noptional `stream_endpoint` describing where the UI should connect.",
+      "properties": {
+        "agent_id": {
+          "description": "Canonical agent id (`<scheme>:<id>`) the ticket is bound to.",
+          "type": "string"
+        },
+        "expires_at": {
+          "description": "Wall-clock expiry time (RFC3339). UIs re-request before this.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "issued_at": {
+          "description": "Wall-clock issuance time (RFC3339).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "stream_endpoint": {
+          "description": "Relative URL of the WebSocket-to-Unix bridge for browser UIs\n(Phase 2b). UIs `WebSocket(<server>/<stream_endpoint>?ticket=<token>&mode=stream|keys)`\nto receive ANSI bytes (or send key bytes) over a binary frame\nstream. `None` only when running against a Phase 2a-era server\nthat has not yet wired the bridge — UIs MUST tolerate `None` and\neither fall back to the legacy `/api/agents/{id}/terminal` WS or\nconnect to the local `terminal.sock` directly.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token": {
+          "description": "Opaque bearer token. UI presents this as the first frame on the\nterminal-plane socket. Treat as a credential.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "token",
+        "issued_at",
+        "expires_at"
+      ],
+      "type": "object"
+    },
     "TmaiError": {
       "description": "Structured error carried across every tmai contract boundary.\n\nThe shape is stable: `code` is the primary dispatch key; `message` is\nhuman-readable; `retry_hint` is advisory; `context` is per-code\nstructured detail; `trace_id` ties the error to a `tracing` span for\ncross-surface correlation.",
       "properties": {
