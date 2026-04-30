@@ -2,18 +2,30 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTerminal } from "@/hooks/useTerminal";
 import "@xterm/xterm/css/xterm.css";
 
-interface TerminalPanelProps {
-  sessionId: string;
+// Trim the canonical id (`<scheme>:<id>`) to `<scheme>:<first-8-chars>`
+// for the panel header. `provisional:abcd1234` is more useful than the
+// raw 8-char prefix of the whole string ("provisi…").
+function agentIdShort(agentId: string): string {
+  const colon = agentId.indexOf(":");
+  if (colon < 0) return agentId.slice(0, 8);
+  return `${agentId.slice(0, colon)}:${agentId.slice(colon + 1, colon + 9)}`;
 }
 
-// Single terminal panel connected to a PTY session.
+interface TerminalPanelProps {
+  /** Canonical agent id (`<scheme>:<id>`). The terminal-plane stream
+   *  scopes on this; ticket subscription happens inside `useTerminal`. */
+  agentId: string;
+}
+
+// Single terminal panel connected to a PTY session via the rev3
+// terminal plane (#174 Phase 3a).
 // Shares the same Input/Select + Auto-scroll footer pattern as PreviewPanel.
-export function TerminalPanel({ sessionId }: TerminalPanelProps) {
+export function TerminalPanel({ agentId }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [inputMode, setInputMode] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const { setAttachable } = useTerminal({ sessionId, containerRef, autoScroll });
+  const { setAttachable } = useTerminal({ agentId, containerRef, autoScroll });
 
   // Switch to input mode (xterm captures keyboard)
   const enterInputMode = useCallback(() => {
@@ -45,7 +57,7 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
   return (
     <section className="relative flex h-full w-full flex-col">
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
-        <span className="text-xs text-zinc-500">{sessionId.slice(0, 8)}</span>
+        <span className="text-xs text-zinc-500">{agentIdShort(agentId)}</span>
       </div>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
       <div

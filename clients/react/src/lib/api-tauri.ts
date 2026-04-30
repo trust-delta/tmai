@@ -104,6 +104,7 @@ export const api = {
   selectChoice: (target: string, choice: number) => httpApi.selectChoice(target, choice),
   submitSelection: (target: string, choices: number[]) => httpApi.submitSelection(target, choices),
   killAgent: (target: string) => httpApi.killAgent(target),
+  subscribeTerminal: (target: string) => httpApi.subscribeTerminal(target),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     httpApi.setAutoApprove(target, enabled),
   passthrough: (target: string, input: { chars?: string; key?: string }) =>

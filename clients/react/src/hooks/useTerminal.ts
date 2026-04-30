@@ -1,20 +1,28 @@
+// xterm.js-backed terminal view (#174 Phase 3a).
+//
+// Wraps `useAgentTerminalStream` with an `xterm.Terminal` for visual
+// rendering. Receives ANSI bytes from the stream and writes them to the
+// terminal; forwards xterm's `onData` / `onBinary` to the keys-mode WS.
+//
+// Migrated from `connectTerminal(sessionId)` (which spoke to the legacy
+// `/api/agents/{id}/terminal` WS using a `pty_session_id` selector) to
+// `useAgentTerminalStream({ agentId })` (rev3 ticket-authorized
+// stream/keys pair scoped on the canonical agent_id).
+
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { connectTerminal } from "@/lib/api";
+import { useAgentTerminalStream } from "./useAgentTerminalStream";
 
 interface UseTerminalOptions {
-  sessionId: string | null;
+  agentId: string | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
   autoScroll?: boolean;
 }
 
-// Hook to manage xterm.js terminal connected to a PTY session via WebSocket.
-// Supports input/select mode toggling via setAttachable and auto-scroll control.
-export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseTerminalOptions) {
+export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTerminalOptions) {
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const sendRef = useRef<((data: string | ArrayBuffer) => void) | null>(null);
   const inputDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const binaryDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const [attached, setAttached] = useState(true);
@@ -23,8 +31,16 @@ export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseT
     fitAddonRef.current?.fit();
   }, []);
 
+  // Stream incoming ANSI bytes into the terminal — `term.write` accepts
+  // `Uint8Array` directly.
+  const onData = useCallback((bytes: Uint8Array): void => {
+    termRef.current?.write(bytes);
+  }, []);
+
+  const { sendKeys } = useAgentTerminalStream({ agentId, onData });
+
   useEffect(() => {
-    if (!sessionId || !containerRef.current) return;
+    if (!agentId || !containerRef.current) return;
 
     const container = containerRef.current;
 
@@ -48,33 +64,28 @@ export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseT
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Connect to PTY via WebSocket
-    const { ws, send } = connectTerminal(sessionId, (data) => {
-      term.write(data);
-    });
-    sendRef.current = send;
-
-    // Forward terminal input to PTY via WebSocket
-    const inputDisposable = term.onData((data) => {
-      send(new TextEncoder().encode(data));
+    // Forward xterm input → keys-mode WS.
+    const inputDisposable = term.onData((data: string): void => {
+      sendKeys(data);
     });
     inputDisposableRef.current = inputDisposable;
 
-    const binaryDisposable = term.onBinary((data) => {
+    const binaryDisposable = term.onBinary((data: string): void => {
       const bytes = new Uint8Array(data.length);
       for (let i = 0; i < data.length; i++) {
         bytes[i] = data.charCodeAt(i);
       }
-      send(bytes.buffer);
+      sendKeys(bytes.buffer);
     });
     binaryDisposableRef.current = binaryDisposable;
 
-    // Send resize as JSON text frame
-    const resizeDisposable = term.onResize(({ cols, rows }) => {
-      send(JSON.stringify({ type: "resize", rows, cols }));
-    });
+    // The legacy `/terminal` WS accepted a `{type:"resize"}` JSON frame
+    // on the same socket. The rev3 keys WS is byte-only — resize plumbing
+    // is not yet defined upstream (#174 Phase 2b notes raw byte mode after
+    // the handshake). For now we observe locally so the canvas still fits,
+    // and leave SIGWINCH propagation to a follow-up wire frame.
+    const resizeDisposable = term.onResize((): void => {});
 
-    // ResizeObserver for container size changes
     const observer = new ResizeObserver(() => {
       fitAddon.fit();
     });
@@ -87,36 +98,31 @@ export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseT
       resizeDisposable.dispose();
       inputDisposableRef.current = null;
       binaryDisposableRef.current = null;
-      ws.close();
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
-      sendRef.current = null;
     };
-  }, [sessionId, containerRef]);
+  }, [agentId, containerRef, sendKeys]);
 
-  // Toggle keyboard attachment (input vs select mode)
+  // Toggle keyboard attachment (input vs select mode).
   const setAttachable = useCallback(
-    (enable: boolean) => {
+    (enable: boolean): void => {
       const term = termRef.current;
-      const send = sendRef.current;
-      if (!term || !send) return;
+      if (!term) return;
 
       if (enable && !inputDisposableRef.current) {
-        // Re-attach keyboard listeners
-        inputDisposableRef.current = term.onData((data) => {
-          send(new TextEncoder().encode(data));
+        inputDisposableRef.current = term.onData((data: string): void => {
+          sendKeys(data);
         });
-        binaryDisposableRef.current = term.onBinary((data) => {
+        binaryDisposableRef.current = term.onBinary((data: string): void => {
           const bytes = new Uint8Array(data.length);
           for (let i = 0; i < data.length; i++) {
             bytes[i] = data.charCodeAt(i);
           }
-          send(bytes.buffer);
+          sendKeys(bytes.buffer);
         });
         term.focus();
       } else if (!enable && inputDisposableRef.current) {
-        // Detach keyboard listeners for text selection
         inputDisposableRef.current.dispose();
         inputDisposableRef.current = null;
         binaryDisposableRef.current?.dispose();
@@ -126,16 +132,15 @@ export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseT
 
       setAttached(enable);
     },
-    [], // refs are stable
+    [sendKeys],
   );
 
-  // Auto-scroll control: scroll to bottom on new data when enabled
+  // Auto-scroll: pin to bottom on new bytes when enabled.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
     if (autoScroll) {
       term.scrollToBottom();
-      // Also scroll on each new write
       const disposable = term.onWriteParsed(() => {
         term.scrollToBottom();
       });
@@ -143,10 +148,13 @@ export function useTerminal({ sessionId, containerRef, autoScroll = true }: UseT
     }
   }, [autoScroll]);
 
-  // Send raw text to PTY via WebSocket
-  const writeText = useCallback((text: string) => {
-    sendRef.current?.(new TextEncoder().encode(text));
-  }, []);
+  // Send raw text to PTY via the keys WebSocket.
+  const writeText = useCallback(
+    (text: string): void => {
+      sendKeys(text);
+    },
+    [sendKeys],
+  );
 
   return { terminal: termRef, fit, writeText, setAttachable, attached };
 }
