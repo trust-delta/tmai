@@ -8,6 +8,14 @@
 // `/api/agents/{id}/terminal` WS using a `pty_session_id` selector) to
 // `useAgentTerminalStream({ agentId })` (rev3 ticket-authorized
 // stream/keys pair scoped on the canonical agent_id).
+//
+// Note: an earlier revision kept a module-level `AGENT_REPLAY_BUFFERS`
+// map that replayed prior bytes when the user switched back to an
+// agent. tmai-core PR #227 made the PTY-server flush its own
+// per-agent scrollback as the first frames of every Stream attach,
+// so the React-side buffer became redundant — and worse, double-
+// rendered every reattach (PTY flush bytes were re-appended to the
+// React buffer via `onData`, so each switch grew the next replay).
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
@@ -18,42 +26,6 @@ interface UseTerminalOptions {
   agentId: string | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
   autoScroll?: boolean;
-}
-
-// Per-agent ANSI replay buffer.
-//
-// The rev3 PTY-server's ANSI broadcast is push-only — there is no
-// catch-up replay for late subscribers (scrollback lands with #175).
-// When the user switches agents, the xterm instance is disposed and
-// recreated, so without our own buffer the new pane is blank until
-// the agent next emits anything (which idle agents may not do for a
-// long time). We keep a bounded chunk log per agent and replay it on
-// re-mount so switching back to a previously-seen agent restores the
-// last screen state immediately.
-const AGENT_REPLAY_BUFFERS = new Map<string, Uint8Array[]>();
-const AGENT_REPLAY_BYTE_CAP = 256_000;
-
-function appendReplay(agentId: string, bytes: Uint8Array): void {
-  const list = AGENT_REPLAY_BUFFERS.get(agentId) ?? [];
-  list.push(bytes);
-  // Drop oldest chunks until total bytes is under the cap. This trims at
-  // chunk granularity rather than byte-exact slicing, which keeps ANSI
-  // escape sequences whole.
-  let total = 0;
-  for (const b of list) total += b.byteLength;
-  while (total > AGENT_REPLAY_BYTE_CAP && list.length > 1) {
-    const dropped = list.shift();
-    if (dropped) total -= dropped.byteLength;
-  }
-  AGENT_REPLAY_BUFFERS.set(agentId, list);
-}
-
-function replayInto(term: Terminal, agentId: string): void {
-  const list = AGENT_REPLAY_BUFFERS.get(agentId);
-  if (!list) return;
-  for (const chunk of list) {
-    term.write(chunk);
-  }
 }
 
 export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTerminalOptions) {
@@ -68,19 +40,12 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
   }, []);
 
   // Stream incoming ANSI bytes into the terminal — `term.write` accepts
-  // `Uint8Array` directly. Also append to the per-agent replay buffer
-  // so a future re-mount of this hook can restore the screen.
-  const onData = useCallback(
-    (bytes: Uint8Array): void => {
-      termRef.current?.write(bytes);
-      if (agentId) {
-        // Copy because the underlying ArrayBuffer may be reused by the
-        // WebSocket layer for the next frame.
-        appendReplay(agentId, new Uint8Array(bytes));
-      }
-    },
-    [agentId],
-  );
+  // `Uint8Array` directly. Re-attach replay is owned by the PTY-server
+  // (it flushes its scrollback ring before live ANSI on every Stream
+  // attach), so this hook does not need a local buffer.
+  const onData = useCallback((bytes: Uint8Array): void => {
+    termRef.current?.write(bytes);
+  }, []);
 
   const { sendKeys } = useAgentTerminalStream({ agentId, onData });
 
@@ -109,10 +74,10 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Restore the previous screen for this agent before live bytes
-    // start arriving on the freshly-opened WebSocket. Without this the
-    // pane is blank for any agent that is currently idle.
-    replayInto(term, agentId);
+    // Re-attach replay is handled by the PTY-server: the first frames
+    // delivered by `useAgentTerminalStream` are the agent's scrollback
+    // (tmai-core PR #227) and xterm renders them as soon as they
+    // arrive — no client-side warmup write needed.
 
     // Forward xterm input → keys-mode WS.
     const inputDisposable = term.onData((data: string): void => {
