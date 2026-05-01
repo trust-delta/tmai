@@ -6,16 +6,10 @@ import { QueuePopover } from "@/components/ui/QueuePopover";
 import { useAgentTerminalStream } from "@/hooks/useAgentTerminalStream";
 import { useQueuedPrompts } from "@/hooks/useQueuedPrompts";
 import { api } from "@/lib/api";
-import type { PreviewSettingsResponse, QueuedPrompt, TranscriptRecord } from "@/lib/api-http";
+import type { QueuedPrompt, TranscriptRecord } from "@/lib/api-http";
 import { keyEventToBytes, textToBytes } from "@/lib/keys";
 import type { ActionOrigin } from "@/types";
-import {
-  capHistoryLines,
-  charColumns,
-  shrinkContentToWidth,
-  splitPreviewContent,
-  trimPreviewContent,
-} from "./preview-content";
+import { capHistoryLines, shrinkContentToWidth, trimPreviewContent } from "./preview-content";
 
 // Maximum number of scrollback lines rendered in the history region.
 // Anything older is dropped at render time to keep AnsiUp → DOMPurify →
@@ -31,53 +25,6 @@ const MAX_HISTORY_LINES = 1000;
 
 interface PreviewPanelProps {
   agentId: string;
-  /** When true, the panel sources ANSI bytes from the rev3 terminal-plane
-   *  WebSocket (`subscribe-terminal` + push) instead of polling
-   *  `getPreview`. Gated by the caller on
-   *  `agent.connection_channels.has_pty/has_websocket` so capture-pane
-   *  agents (tmux-only) continue to receive previews via the legacy
-   *  polling path. Phase 3b-2 — Phase 3b-3 will retire the polling
-   *  fallback once telemetry confirms the WS path covers all live
-   *  PTY-server backed agents.
-   */
-  useWsTransport?: boolean;
-}
-
-// Map browser KeyboardEvent to tmux key name for special keys
-function toTmuxKey(e: KeyboardEvent): string | null {
-  if (e.ctrlKey && e.key.length === 1) return `C-${e.key.toLowerCase()}`;
-  switch (e.key) {
-    case "Enter":
-      return e.ctrlKey ? "C-m" : "Enter";
-    case "Escape":
-      return "Escape";
-    case "Backspace":
-      return "BSpace";
-    case "Tab":
-      return e.shiftKey ? "BTab" : "Tab";
-    case "ArrowUp":
-      return "Up";
-    case "ArrowDown":
-      return "Down";
-    case "ArrowLeft":
-      return "Left";
-    case "ArrowRight":
-      return "Right";
-    case "Home":
-      return "Home";
-    case "End":
-      return "End";
-    case "PageUp":
-      return "PageUp";
-    case "PageDown":
-      return "PageDown";
-    case "Delete":
-      return "DC";
-    case " ":
-      return "Space";
-    default:
-      return null;
-  }
 }
 
 // Render an ActionOrigin discriminated union as a compact label, e.g.
@@ -106,35 +53,25 @@ const MONO_FONT_STACK =
   "'Liberation Mono', 'Courier New', " +
   "'Symbols Nerd Font Mono', monospace";
 
-// Interactive terminal preview with passthrough input.
-// Renders capture-pane output with ANSI colors and forwards keystrokes
-// to the agent's terminal. Passthrough is button-controlled.
+// Interactive terminal preview wired to the rev3 terminal-plane
+// WebSocket (`subscribe-terminal` + `keys`). Renders ANSI bytes pushed by
+// the PTY-server and forwards keystrokes via `keyEventToBytes`.
 // IME (Japanese, Chinese, etc.) is supported via a hidden input element.
-// Cursor position from the backend (terminal cursor, 0-indexed)
-interface CursorPos {
-  x: number;
-  y: number;
-}
 
 import { TranscriptView } from "./TranscriptView";
 
-export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelProps) {
-  // Preview is split into two regions so scrollback history (immutable,
-  // often >1MB) is not re-parsed through AnsiUp / DOMPurify / innerHTML on
-  // every poll tick — the dominant input-lag cost in long sessions (#413).
-  // `history` changes rarely (only when new output scrolls off the top);
-  // `live` covers the visible capture-pane region and updates each tick.
+export function PreviewPanel({ agentId }: PreviewPanelProps) {
+  // `history` is reserved for a future Phase 4 wire frame that surfaces
+  // PTY-server scrollback as a separate region; under the current WS-only
+  // path it stays empty and the entire stream lands in `live`.
   const [history, setHistory] = useState<string>("");
   const [live, setLive] = useState<string>("");
-  const [liveStartLine, setLiveStartLine] = useState<number>(0);
   const [transcriptRecords, setTranscriptRecords] = useState<TranscriptRecord[]>([]);
-  // "live" = capture-pane (cheap, default). "transcript" = JSONL records
-  // (heavy: per-record react-markdown). Splitting them into tabs keeps the
-  // common monitoring path light, and the transcript polling/render only
-  // runs when the user actively opens it.
+  // "live" = streamed terminal output (cheap, default). "transcript" =
+  // JSONL records (heavy: per-record react-markdown). Splitting them into
+  // tabs keeps the common monitoring path light; the transcript polling
+  // only runs when the user actively opens it.
   const [activeTab, setActiveTab] = useState<"live" | "transcript">("live");
-  const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
-  const [showCursor, setShowCursor] = useState(true);
   const [focused, setFocused] = useState(true);
   const [queueOpen, setQueueOpen] = useState(false);
   // Track the most-recently-arrived queued prompt to show an inline warning
@@ -151,18 +88,12 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     handleNewQueueItem,
   );
   const [composing, setComposing] = useState(false);
-  // Mirror `composing` into a ref so fetchPreview / poll-tick closures can
-  // read the current composition state without being re-created (which
-  // would restart the poll timer and disrupt IME UI timing).
+  // Mirror `composing` into a ref so the WS data callback can read the
+  // current composition state without being re-created on every flip.
   const composingRef = useRef(false);
   useEffect(() => {
     composingRef.current = composing;
   }, [composing]);
-
-  // Latest raw content payload, used to skip the split/render path when
-  // the backend returned byte-identical content. Preview responses can
-  // be hundreds of KB to several MB (Hybrid Scrollback).
-  const lastContentRef = useRef<string | null>(null);
 
   const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
 
@@ -213,21 +144,10 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     return a;
   }, []);
 
-  // Default polling intervals (overridden by server settings)
-  const pollSettings = useRef<PreviewSettingsResponse>({
-    show_cursor: true,
-    preview_poll_focused_ms: 200,
-    preview_poll_unfocused_ms: 2000,
-    preview_poll_active_input_ms: 50,
-    preview_active_input_window_ms: 2000,
-  });
-
-  // Rev3 terminal-plane (#174 Phase 3b-2). When `useWsTransport` is true,
-  // ANSI bytes arrive on the stream WebSocket and append into
-  // `liveBufferRef`; the polling effect below short-circuits and the key
-  // handlers route through `sendKeys` rather than `passthrough`. Phase
-  // 3b-2 keeps `liveStartLine = 0` (history optimization is restored by
-  // a future wire-metadata frame in Phase 4 alongside xterm.js).
+  // Rev3 terminal-plane (#174 Phase 3b-3). ANSI bytes arrive on the
+  // stream WebSocket and append into `liveBufferRef`; key events route
+  // through `sendKeys` (raw bytes via the `keys` WS) rather than the old
+  // `passthrough` HTTP path.
   //
   // The buffer is capped at ~256 KB to keep AnsiUp / DOMPurify /
   // innerHTML bounded — long-running agents emit megabytes of ANSI per
@@ -248,46 +168,29 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     setLive(next);
   }, []);
   const { sendKeys: wsSendKeys } = useAgentTerminalStream({
-    agentId: useWsTransport ? agentId : null,
+    agentId,
     onData: onWsData,
   });
-
-  // Timestamp of the last passthrough input event
-  const lastInputTime = useRef(0);
-
-  // Load preview settings (cursor visibility + poll intervals) from server
-  useEffect(() => {
-    api
-      .getPreviewSettings()
-      .then((s) => {
-        setShowCursor(s.show_cursor);
-        pollSettings.current = s;
-      })
-      .catch(() => {});
-  }, []);
 
   // Reset state when switching agents (autoScroll restored from per-agent map)
   useEffect(() => {
     setHistory("");
     setLive("");
-    setLiveStartLine(0);
     setTranscriptRecords([]);
-    setCursorPos(null);
     setFocused(true);
     setHasDomFocus(true);
     setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
-    lastContentRef.current = null;
     lastHistoryHtmlRef.current = "";
     lastLiveHtmlRef.current = "";
   }, [agentId]);
 
-  // Switch to input mode (passthrough ON)
+  // Switch to input mode — keystrokes flow to the agent over the keys WS.
   const enterInputMode = useCallback(() => {
     setFocused(true);
   }, []);
 
-  // Switch to select mode (passthrough OFF, text selection enabled)
+  // Switch to select mode — input ignored so the user can drag-select text.
   const enterSelectMode = useCallback(() => {
     setFocused(false);
   }, []);
@@ -341,109 +244,6 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     }
   }, [focused]);
 
-  // Polling interval: short (active_input_ms) for a window after every
-  // keystroke, then focused (default 500ms), otherwise unfocused (2s).
-  // The keystroke-triggered 50ms/200ms fetches alone don't cover the
-  // Preview polling cadence:
-  //   - unfocused: slow (preview_poll_unfocused_ms, default 2000ms).
-  //   - focused, no recent input: medium (preview_poll_focused_ms, 200ms).
-  //   - focused, key pressed within the active-input window:
-  //     fast (preview_poll_active_input_ms, 50ms) so backend repaint after
-  //     send-keys feels near-realtime instead of lagging by a tick.
-  // The post-passthrough setTimeout(fetchPreview, 50/200) burst already
-  // catches one repaint per keystroke, but it does not cover the steady
-  // tmux/agent state changes that happen between keys (cursor blink,
-  // multi-character paste, IME confirms, etc.). lastInputTime is updated
-  // on every passthrough so this window slides forward with each key.
-  const ACTIVE_INPUT_WINDOW_MS = 500;
-  const getPollInterval = useCallback(() => {
-    const s = pollSettings.current;
-    if (!focused) return s.preview_poll_unfocused_ms;
-    if (Date.now() - lastInputTime.current < ACTIVE_INPUT_WINDOW_MS) {
-      return s.preview_poll_active_input_ms;
-    }
-    return s.preview_poll_focused_ms;
-  }, [focused]);
-
-  // Fetch preview content, shared between polling and post-keystroke refresh.
-  // Skips DOM update while user has an active text selection, or while an
-  // IME composition is in progress — re-rendering the preview during
-  // composition disrupts the IME candidate window and causes visible
-  // typing lag in CJK input methods.
-  // Guard against overlapping fetches. For agents with hundreds of KB of
-  // capture-pane scrollback, getPreview can take several seconds to
-  // arrive over a slow link; without this guard the 200ms poll cadence
-  // stacks up an arbitrary number of in-flight requests and the latest
-  // setHistory call ends up "behind" all the queued ones, which is what
-  // surfaces as "Waiting…" not progressing.
-  const fetchInFlightRef = useRef(false);
-  const fetchPreview = useCallback(async () => {
-    // WS transport supplies bytes via `onWsData`; the polling path is a
-    // no-op for those agents. Keeping the function defined (rather than
-    // gating callers individually) lets the agent-switch effect call it
-    // unconditionally and have the right thing happen.
-    if (useWsTransport) return;
-    if (composingRef.current) return;
-    if (fetchInFlightRef.current) return;
-    fetchInFlightRef.current = true;
-    try {
-      const data = await api.getPreview(agentId);
-      // Treat only null/undefined as "no payload" — an empty string is
-      // still a real preview state we should write through, otherwise
-      // an idle agent's quiet output keeps the UI pinned on
-      // "Waiting for output..." after an agent switch.
-      if (data.content == null) return;
-      const sel = window.getSelection();
-      if (sel && sel.toString().length > 0) return;
-      // Split scrollback history from the live visible region so the history
-      // path stays out of the hot render loop (#413). `history` updates only
-      // when it actually changed — React bails on setState with identical
-      // primitives, which skips the heavy history memo downstream.
-      if (data.content !== lastContentRef.current) {
-        lastContentRef.current = data.content;
-        const split = splitPreviewContent(data.content, data.live_start_line ?? 0);
-        setHistory((prev) => (prev === split.history ? prev : split.history));
-        setLive((prev) => (prev === split.live ? prev : split.live));
-        setLiveStartLine((prev) =>
-          prev === (data.live_start_line ?? 0) ? prev : (data.live_start_line ?? 0),
-        );
-      }
-      if (data.cursor_x != null && data.cursor_y != null) {
-        setCursorPos((prev) =>
-          prev?.x === data.cursor_x && prev?.y === data.cursor_y
-            ? prev
-            : { x: data.cursor_x as number, y: data.cursor_y as number },
-        );
-      } else {
-        setCursorPos((prev) => (prev === null ? prev : null));
-      }
-    } catch {
-      // Agent may not have content yet
-    } finally {
-      fetchInFlightRef.current = false;
-    }
-  }, [agentId, useWsTransport]);
-
-  // Self-rescheduling poll loop: recalculates interval each tick so it adapts
-  // to active-input vs focused vs unfocused state without re-mounting.
-  // Skipped entirely under the WS transport — `useAgentTerminalStream`
-  // owns the byte path there.
-  useEffect(() => {
-    if (useWsTransport) return;
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      fetchPreview();
-      const next = getPollInterval();
-      timer = setTimeout(tick, next);
-    };
-    let timer = setTimeout(tick, 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [fetchPreview, getPollInterval, useWsTransport]);
-
   // Fetch transcript records (slower cadence — history changes less often).
   // Skip the state update when the incoming records array matches what we
   // already have — the TranscriptView is heavy (per-record react-markdown)
@@ -481,45 +281,23 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     return () => clearInterval(interval);
   }, [fetchTranscript, activeTab]);
 
-  // Pending passthrough refresh timers (cleared on agent switch / unmount)
-  const passthroughTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear timers on agent switch
-  useEffect(() => {
-    return () => {
-      for (const t of passthroughTimers.current) clearTimeout(t);
-      passthroughTimers.current = [];
-    };
-  }, [agentId]);
-
   // Reset preview state on agent switch so the previous agent's
-  // capture-pane / transcript don't flash on screen until the first
-  // fetchPreview / fetchTranscript for the new agent comes back.
-  // Also kick off an immediate fetch — the poll-loop useEffect will
-  // re-mount and fire `setTimeout(tick, 0)` too, but for an idle
-  // agent (no live output, content rarely changes) the difference
-  // between "fire immediately" and "wait for the next React tick +
-  // setTimeout schedule" was visible as a long-lived "Waiting…" state.
+  // streamed output / transcript don't flash on screen until the new
+  // agent's WS subscription delivers its first frame.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: agentId is the trigger; body uses only setters/refs
   useEffect(() => {
     setHistory("");
     setLive("");
-    setLiveStartLine(0);
     setTranscriptRecords([]);
-    setCursorPos(null);
-    lastContentRef.current = null;
     // Drop the WS append buffer too — the new agent has its own stream
     // and `onWsData` will start filling this from zero.
     liveBufferRef.current = "";
-    // Drop any in-flight guard from the previous agent so the first
-    // fetch for the new agent isn't itself skipped.
-    fetchInFlightRef.current = false;
     // Suppress the synthetic onScroll the browser fires when the
     // history block re-rendering after the switch changes scrollHeight
     // — without this, autoScroll would flip off without any user
     // gesture, exactly like the tab-switch case.
     skipNextScrollEventRef.current = true;
-    // No-op under WS transport (early-returned in fetchPreview).
-    void fetchPreview();
-  }, [agentId, fetchPreview]);
+  }, [agentId]);
 
   // Clear incoming-prompt indicator on agent switch and on unmount
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear on agent switch
@@ -529,24 +307,6 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
       setIncomingPrompt(null);
     };
   }, [agentId]);
-
-  // Send passthrough input then refresh preview with two-stage fetch
-  // for responsive cursor tracking
-  const sendPassthrough = useCallback(
-    (input: { chars?: string; key?: string }) => {
-      lastInputTime.current = Date.now();
-      api
-        .passthrough(agentId, input)
-        .then(() => {
-          // Two-stage fetch: fast attempt + delayed retry for cursor accuracy
-          const t1 = setTimeout(fetchPreview, 50);
-          const t2 = setTimeout(fetchPreview, 200);
-          passthroughTimers.current.push(t1, t2);
-        })
-        .catch(() => {});
-    },
-    [agentId, fetchPreview],
-  );
 
   // Auto-scroll to bottom (toggleable, default on)
   // Scroll up → auto OFF, scroll to bottom → auto ON
@@ -586,7 +346,8 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     return () => cancelAnimationFrame(id);
   }, [activeTab]);
 
-  // Handle special keys (non-IME) via the hidden input's keydown
+  // Handle special keys (non-IME) via the hidden input's keydown.
+  // Sends raw bytes through the rev3 keys WebSocket.
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       // Don't intercept during IME composition
@@ -598,37 +359,18 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
         if (sel && sel.toString().length > 0) return; // let browser handle copy
       }
 
-      // Allow Ctrl+V to paste via browser — the pasted text will arrive
-      // through the hidden input's onInput handler and be sent through
-      // either path below.
+      // Allow Ctrl+V to paste via browser — the pasted text arrives
+      // through the hidden input's onInput handler and lands on the keys
+      // WebSocket from there.
       if (e.ctrlKey && e.key === "v") return;
 
-      // Rev3 keys-mode WebSocket — send raw bytes directly.
-      if (useWsTransport) {
-        const bytes = keyEventToBytes(e.nativeEvent);
-        if (bytes) {
-          e.preventDefault();
-          lastInputTime.current = Date.now();
-          wsSendKeys(bytes.buffer);
-        }
-        return;
-      }
-
-      // Legacy polling path: convert to tmux name and POST passthrough.
-      const tmuxKey = toTmuxKey(e.nativeEvent);
-      if (tmuxKey) {
+      const bytes = keyEventToBytes(e.nativeEvent);
+      if (bytes) {
         e.preventDefault();
-        sendPassthrough({ key: tmuxKey });
-        return;
-      }
-
-      // Single ASCII character (non-IME) — send directly, clear input
-      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-        sendPassthrough({ chars: e.key });
+        wsSendKeys(bytes.buffer);
       }
     },
-    [composing, sendPassthrough, useWsTransport, wsSendKeys],
+    [composing, wsSendKeys],
   );
 
   // Handle IME confirmed text via input event
@@ -637,41 +379,23 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
       const input = e.currentTarget;
       const value = input.value;
       if (value && !composing) {
-        // IME confirmed or direct paste — send the full text via the
-        // active transport.
-        if (useWsTransport) {
-          lastInputTime.current = Date.now();
-          wsSendKeys(textToBytes(value).buffer);
-        } else {
-          sendPassthrough({ chars: value });
-        }
+        // IME confirmed or direct paste — send the full text bytes
+        // through the keys WebSocket.
+        wsSendKeys(textToBytes(value).buffer);
         input.value = "";
       }
     },
-    [composing, sendPassthrough, useWsTransport, wsSendKeys],
+    [composing, wsSendKeys],
   );
 
-  // History HTML: heavy path (AnsiUp on potentially 1MB+ of text). Memoized
-  // on the `history` string so it only re-runs when scrollback actually
-  // grew — not on every poll tick that re-fetches identical scrollback
-  // alongside fresh live output. This is the core of the #413 fix.
+  // History HTML: reserved for a future Phase 4 wire frame that surfaces
+  // PTY-server scrollback as a separate region. Under the current WS-only
+  // path `history` stays empty, so the worker just receives "" — the
+  // worker plumbing is left in place to keep the eventual scrollback
+  // upgrade a single state-write away.
   //
-  // Additional guardrail: we cap to MAX_HISTORY_LINES before running the
-  // AnsiUp pipeline. Without the cap, a long-running worker's scrollback
-  // can balloon past 10k lines and the first mount (or any subsequent
-  // `history` change) freezes the tab for seconds — the dominant cause of
-  // the "Agent panel opens and freezes" reports.
-  //
-  // Trailing-blank-line stripping is intentionally skipped here: blank lines
-  // at the history/live boundary may be real printed blanks, not cosmetic.
-  // Defer the history-triggered renders behind React 19's concurrent
-  // prioritization. The live region state (updated every 200ms by the poll
-  // loop) stays on the synchronous path so the terminal feels responsive;
-  // history updates (which pull in the AnsiUp → DOMPurify → innerHTML
-  // pipeline) are allowed to land on the next idle frame, letting the
-  // browser service input and paint the live region first. This is what
-  // keeps the tab from locking up while a chatty worker is scrolling
-  // content off the top of the live region multiple times per second.
+  // We still cap to MAX_HISTORY_LINES so the worker pipeline cannot blow
+  // up if scrollback ever lands.
   const deferredHistory = useDeferredValue(history);
   const historyCap = useMemo(
     () => capHistoryLines(deferredHistory, MAX_HISTORY_LINES),
@@ -679,14 +403,9 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
   );
 
   // History HTML conversion happens off the main thread via a Web Worker
-  // (lib/ansi-worker.ts). For a long-running agent the scrollback can
-  // reach hundreds of KB and the synchronous AnsiUp pass would block the
-  // tab for several seconds on every poll tick. The worker lets the Live
-  // region keep painting and input keep responding while the History
-  // pipeline catches up. Each request carries an incrementing id; a
-  // response whose id no longer matches the latest request is discarded
-  // so an in-flight conversion of stale content can't overwrite a newer
-  // one (e.g. on agent switch).
+  // (lib/ansi-worker.ts). The worker stays even though history is empty
+  // today — this keeps Phase 4's scrollback rollout from re-introducing
+  // the old "first paint freezes for several seconds" regression.
   const [historyHtml, setHistoryHtml] = useState<string>("");
   const ansiWorkerRef = useRef<Worker | null>(null);
   const ansiRequestSeqRef = useRef(0);
@@ -726,70 +445,15 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
     }
   }, [historyCap, cols, ansi]);
 
-  // Cursor row within the live region. The backend returns cursor_y as an
-  // absolute row within the full capture output; since the tmux cursor is
-  // always on the visible screen, subtracting `liveStartLine` yields the
-  // row inside live.
-  const liveCursor = useMemo(() => {
-    if (!cursorPos) return null;
-    const relY = cursorPos.y - liveStartLine;
-    if (relY < 0) return null;
-    return { x: cursorPos.x, y: relY };
-  }, [cursorPos, liveStartLine]);
-
-  // Live HTML: cheap path (AnsiUp on ~one screenful). Re-runs each tick and
-  // when the cursor moves — but operates on a small string so it's fast.
-  const liveHtml = useMemo(() => {
-    const base = ansi.ansi_to_html(trimPreviewContent(live, cols));
-    if (!liveCursor || !showCursor) return base;
-
-    const lines = base.split("\n");
-    if (lines.length === 0) return base;
-    const clampedY = Math.min(liveCursor.y, lines.length - 1);
-
-    const line = lines[clampedY];
-    let col = 0;
-    let inTag = false;
-    let insertAt = line.length;
-    for (let i = 0; i < line.length; i++) {
-      if (line[i] === "<") {
-        inTag = true;
-        continue;
-      }
-      if (line[i] === ">") {
-        inTag = false;
-        continue;
-      }
-      if (inTag) continue;
-      if (col >= liveCursor.x) {
-        insertAt = i;
-        break;
-      }
-      let ch = line[i];
-      if (ch === "&") {
-        const semi = line.indexOf(";", i);
-        if (semi > i && semi - i < 10) {
-          const entity = line.slice(i, semi + 1);
-          if (entity === "&amp;") ch = "&";
-          else if (entity === "&lt;") ch = "<";
-          else if (entity === "&gt;") ch = ">";
-          else if (entity === "&quot;") ch = '"';
-          i = semi;
-        }
-      }
-      col += charColumns(ch.codePointAt(0) ?? 0);
-    }
-
-    const marker =
-      '<span data-tmai-cursor="1" style="display:inline-block;width:0;height:0;vertical-align:top;overflow:hidden"></span>';
-    lines[clampedY] = line.slice(0, insertAt) + marker + line.slice(insertAt);
-    return lines.join("\n");
-  }, [ansi, live, cols, liveCursor, showCursor]);
+  // Live HTML: cheap path (AnsiUp on ~one screenful). Re-runs whenever
+  // the WS push appends bytes — operates on a bounded string so it stays
+  // fast even for chatty agents.
+  const liveHtml = useMemo(
+    () => ansi.ansi_to_html(trimPreviewContent(live, cols)),
+    [ansi, live, cols],
+  );
   const hasTranscript = transcriptRecords.length > 0;
   const hasContent = history.length > 0 || live.length > 0;
-
-  // Cursor overlay position, read from the injected marker element
-  const [cursorStyle, setCursorStyle] = useState<React.CSSProperties | null>(null);
 
   // Two refs, two writes: history gets its own innerHTML write that only
   // runs when historyHtml actually changed; live gets updated on every
@@ -816,50 +480,22 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
 
     if (liveRef.current && !hasSelection && liveHtml !== lastLiveHtmlRef.current) {
       lastLiveHtmlRef.current = liveHtml;
-      liveRef.current.innerHTML = DOMPurify.sanitize(liveHtml, {
-        ADD_ATTR: ["data-tmai-cursor"],
-      });
+      liveRef.current.innerHTML = DOMPurify.sanitize(liveHtml);
     }
     // Guard auto-scroll against active text selection: jumping the viewport
     // while the user is dragging to select text destroys the selection anchor.
     if (autoScroll && !hasSelection) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-
-    // Cursor marker lives inside liveRef; offsetTop is relative to the
-    // nearest positioned ancestor (.ansi-preview), so it correctly accounts
-    // for the history block above.
-    if (!liveCursor || !liveRef.current) {
-      setCursorStyle(null);
-      return;
-    }
-    const marker = liveRef.current.querySelector("[data-tmai-cursor]") as HTMLElement | null;
-    const charSpan = measureRef.current;
-    if (!marker || !charSpan) {
-      setCursorStyle(null);
-      return;
-    }
-    const charW = charSpan.getBoundingClientRect().width;
-    if (charW <= 0) {
-      setCursorStyle(null);
-      return;
-    }
-    // Measure the actual rendered line height rather than hardcoding font
-    // metrics; the span carries the same font stack as the preview content.
-    const lineH = charSpan.getBoundingClientRect().height || 13 * 1.35;
-    setCursorStyle({
-      left: `${marker.offsetLeft}px`,
-      top: `${marker.offsetTop}px`,
-      width: `${charW}px`,
-      height: `${lineH}px`,
-    });
-  }, [liveHtml, autoScroll, liveCursor]);
+  }, [liveHtml, autoScroll]);
 
   // Pin to bottom when the History HTML lands too — for an idle agent
   // the Live region barely changes, so the liveHtml-keyed scroll above
   // would never fire and the panel would open scrolled to the top of a
-  // long scrollback. requestAnimationFrame defers until after the
-  // history innerHTML has been written and the layout is settled.
+  // long scrollback. `historyHtml` is empty under the current WS-only
+  // path; this effect re-fires once Phase 4's scrollback frame starts
+  // populating it, which is why it stays in the dep list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: historyHtml is the trigger; body only reads autoScroll
   useEffect(() => {
     if (!autoScroll) return;
     if (window.getSelection()?.toString().length) return;
@@ -957,13 +593,6 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
               )}
               <div ref={historyRef} />
               <div ref={liveRef} />
-              {cursorStyle && focused && hasDomFocus && showCursor && (
-                <div
-                  className="pointer-events-none absolute animate-pulse bg-cyan-400/70"
-                  style={cursorStyle}
-                  aria-hidden="true"
-                />
-              )}
             </div>
           ) : (
             <span className="text-zinc-600">Waiting for output...</span>
@@ -985,17 +614,9 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
           setComposing(false);
           const value = e.currentTarget.value;
           if (value) {
-            if (useWsTransport) {
-              lastInputTime.current = Date.now();
-              wsSendKeys(textToBytes(value).buffer);
-            } else {
-              sendPassthrough({ chars: value });
-            }
+            wsSendKeys(textToBytes(value).buffer);
             e.currentTarget.value = "";
           }
-          // Re-sync preview once IME is done — sendPassthrough's own
-          // fetchPreview scheduling covers the non-empty case, but for
-          // the rare empty-confirm branch we explicitly catch up here.
           composingRef.current = false;
         }}
         autoComplete="off"
@@ -1072,19 +693,6 @@ export function PreviewPanel({ agentId, useWsTransport = false }: PreviewPanelPr
           title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
         >
           {autoScroll ? "⇩ Auto" : "⇩ Off"}
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setShowCursor((v) => !v)}
-          className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-            showCursor
-              ? "bg-cyan-500/15 text-cyan-400"
-              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
-          }`}
-          title={showCursor ? "Cursor: ON" : "Cursor: OFF"}
-        >
-          {showCursor ? "▮ Cursor" : "▯ Cursor"}
         </button>
         <div className="relative">
           <QueueBadge

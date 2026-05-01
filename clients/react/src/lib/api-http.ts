@@ -834,22 +834,6 @@ export interface DryRunResult {
   next_fire: string | null;
 }
 
-export interface PreviewSettingsResponse {
-  show_cursor: boolean;
-  preview_poll_focused_ms: number;
-  preview_poll_unfocused_ms: number;
-  preview_poll_active_input_ms: number;
-  preview_active_input_window_ms: number;
-}
-
-export interface PreviewSettingsUpdate {
-  show_cursor?: boolean;
-  preview_poll_focused_ms?: number;
-  preview_poll_unfocused_ms?: number;
-  preview_poll_active_input_ms?: number;
-  preview_active_input_window_ms?: number;
-}
-
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
@@ -947,24 +931,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
-  passthrough: (target: string, input: { chars?: string; key?: string }) =>
-    apiFetch(`/agents/${encodeURIComponent(target)}/passthrough`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-  getPreview: (target: string) =>
-    apiFetch<{
-      content: string;
-      lines: number;
-      live_start_line: number;
-      cursor_x?: number;
-      cursor_y?: number;
-    }>(`/agents/${encodeURIComponent(target)}/preview`),
-  // Fast path: only the last `lines` rows of the ANSI preview cache.
-  getPreviewInput: (target: string, lines = 8) =>
-    apiFetch<{ content: string; lines: number }>(
-      `/agents/${encodeURIComponent(target)}/preview-input?lines=${lines}`,
-    ),
   getTranscript: (target: string) =>
     apiFetch<{ records: TranscriptRecord[] }>(`/agents/${encodeURIComponent(target)}/transcript`),
   getPromptQueue: (agentId: string) =>
@@ -1236,14 +1202,6 @@ export const api = {
   spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
     apiFetch<SpawnResponse>("/orchestrator/spawn", {
       method: "POST",
-      body: JSON.stringify(params),
-    }),
-
-  // Preview settings
-  getPreviewSettings: () => apiFetch<PreviewSettingsResponse>("/settings/preview"),
-  updatePreviewSettings: (params: PreviewSettingsUpdate) =>
-    apiFetch("/settings/preview", {
-      method: "PUT",
       body: JSON.stringify(params),
     }),
 

@@ -107,10 +107,6 @@ export const api = {
   subscribeTerminal: (target: string) => httpApi.subscribeTerminal(target),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     httpApi.setAutoApprove(target, enabled),
-  passthrough: (target: string, input: { chars?: string; key?: string }) =>
-    httpApi.passthrough(target, input),
-  getPreview: (target: string) => httpApi.getPreview(target),
-  getPreviewInput: (target: string, lines = 8) => httpApi.getPreviewInput(target, lines),
   getTranscript: (target: string) => httpApi.getTranscript(target),
   getPromptQueue: (agentId: string) => httpApi.getPromptQueue(agentId),
   cancelQueuedPrompt: (agentId: string, promptId: string) =>
@@ -231,11 +227,6 @@ export const api = {
   ) => httpApi.updateOrchestratorSettings(params, project),
   spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
     httpApi.spawnOrchestrator(params),
-
-  // Preview settings
-  getPreviewSettings: () => httpApi.getPreviewSettings(),
-  updatePreviewSettings: (params: Parameters<typeof httpApi.updatePreviewSettings>[0]) =>
-    httpApi.updatePreviewSettings(params),
 
   // Notification settings
   getNotificationSettings: () => httpApi.getNotificationSettings(),
