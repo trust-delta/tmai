@@ -926,6 +926,14 @@ export const api = {
     apiFetch<TerminalSubscription>(`/agents/${encodeURIComponent(target)}/subscribe-terminal`, {
       method: "POST",
     }),
+  /// Notify the PTY-server of the viewer's current terminal dimensions so the
+  /// agent's PTY winsize stays in sync with the xterm canvas. Fire-and-forget:
+  /// callers should drop the returned promise.
+  resizeAgentTerminal: (target: string, rows: number, cols: number) =>
+    apiFetch(`/agents/${encodeURIComponent(target)}/resize`, {
+      method: "POST",
+      body: JSON.stringify({ rows, cols }),
+    }),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
       method: "PUT",

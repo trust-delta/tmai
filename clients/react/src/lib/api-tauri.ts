@@ -105,6 +105,8 @@ export const api = {
   submitSelection: (target: string, choices: number[]) => httpApi.submitSelection(target, choices),
   killAgent: (target: string) => httpApi.killAgent(target),
   subscribeTerminal: (target: string) => httpApi.subscribeTerminal(target),
+  resizeAgentTerminal: (target: string, rows: number, cols: number) =>
+    httpApi.resizeAgentTerminal(target, rows, cols),
   setAutoApprove: (target: string, enabled: boolean | null) =>
     httpApi.setAutoApprove(target, enabled),
   getTranscript: (target: string) => httpApi.getTranscript(target),
