@@ -20,6 +20,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { type TerminalStreamStatus, useAgentTerminalStream } from "./useAgentTerminalStream";
 
 interface UseTerminalOptions {
@@ -33,6 +34,7 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
   const fitAddonRef = useRef<FitAddon | null>(null);
   const inputDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const binaryDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [attached, setAttached] = useState(true);
 
   const fit = useCallback(() => {
@@ -84,6 +86,9 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     term.loadAddon(fitAddon);
     term.open(container);
     fitAddon.fit();
+    // Sync initial PTY winsize so the agent doesn't inherit the server's
+    // hardcoded 24×80 default on first attach.
+    api.resizeAgentTerminal(agentId, term.rows, term.cols).catch(() => {});
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
@@ -108,12 +113,21 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     });
     binaryDisposableRef.current = binaryDisposable;
 
-    // The legacy `/terminal` WS accepted a `{type:"resize"}` JSON frame
-    // on the same socket. The rev3 keys WS is byte-only — resize plumbing
-    // is not yet defined upstream (#174 Phase 2b notes raw byte mode after
-    // the handshake). For now we observe locally so the canvas still fits,
-    // and leave SIGWINCH propagation to a follow-up wire frame.
-    const resizeDisposable = term.onResize((): void => {});
+    // Debounce resize events (~75 ms trailing edge) to avoid flooding the
+    // server during window-drag bursts. FitAddon reflows the canvas on
+    // every ResizeObserver tick; this callback only needs to tell the
+    // PTY-server about the settled size.
+    const resizeDisposable = term.onResize(
+      ({ rows, cols }: { rows: number; cols: number }): void => {
+        if (resizeTimerRef.current !== null) {
+          clearTimeout(resizeTimerRef.current);
+        }
+        resizeTimerRef.current = setTimeout(() => {
+          resizeTimerRef.current = null;
+          api.resizeAgentTerminal(agentId, rows, cols).catch(() => {});
+        }, 75);
+      },
+    );
 
     const observer = new ResizeObserver(() => {
       fitAddon.fit();
@@ -125,6 +139,10 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
       inputDisposable.dispose();
       binaryDisposable.dispose();
       resizeDisposable.dispose();
+      if (resizeTimerRef.current !== null) {
+        clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
+      }
       inputDisposableRef.current = null;
       binaryDisposableRef.current = null;
       term.dispose();
