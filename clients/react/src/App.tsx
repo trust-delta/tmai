@@ -535,10 +535,7 @@ export function App() {
                     key={selectedAgent.id}
                     className="flex flex-1 flex-col overflow-hidden animate-fade-in"
                   >
-                    <PreviewPanel
-                      agentId={selectedAgent.id}
-                      useWsTransport={selectedAgent.connection_channels?.has_websocket === true}
-                    />
+                    <PreviewPanel agentId={selectedAgent.id} />
                   </div>
                 )}
               </div>
@@ -583,10 +580,7 @@ export function App() {
                 key={selectedAgent.id}
                 className="flex flex-1 flex-col overflow-hidden animate-fade-in"
               >
-                <PreviewPanel
-                  agentId={selectedAgent.id}
-                  useWsTransport={selectedAgent.connection_channels?.has_websocket === true}
-                />
+                <PreviewPanel agentId={selectedAgent.id} />
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center animate-fade-in">

@@ -21,10 +21,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...actual,
     api: {
-      getPreview: () => hang,
-      getPreviewInput: () => hang,
+      // Hanging stub — keeps `useAgentTerminalStream` parked in
+      // `subscribing` state so the hook never attempts to construct a
+      // WebSocket against the missing test backend.
+      subscribeTerminal: () => hang,
       getTranscript: () => hang,
-      getPreviewSettings: () => hang,
       getPromptQueue: vi.fn().mockResolvedValue([]),
       cancelQueuedPrompt: vi.fn().mockResolvedValue({ status: "cancelled" }),
     },
