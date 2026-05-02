@@ -8,6 +8,7 @@ import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelop
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
+import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
@@ -17,6 +18,7 @@ export type {
   EntityUpdateEnvelope,
   QueueAgentEntry,
   QueueSnapshot,
+  SpawnRuntime,
   TerminalSubscription,
 };
 
@@ -670,9 +672,6 @@ export interface AutoApproveSettings {
 }
 
 export type WorkerPermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
-
-/** How new agents are spawned. Only "native" (PTY-server) is selectable; "tmux" is coming soon. */
-export type SpawnRuntime = "native" | "tmux";
 
 export interface SpawnSettings {
   runtime: SpawnRuntime;
