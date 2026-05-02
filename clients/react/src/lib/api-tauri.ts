@@ -16,6 +16,7 @@ import type {
   OrchestratorRules,
   PrMonitorScope,
   SpawnRequest,
+  SpawnRuntime,
   UsageSettings,
   WorkerPermissionMode,
   WorkflowSettings,
@@ -202,7 +203,7 @@ export const api = {
   // Spawn settings
   getSpawnSettings: () => httpApi.getSpawnSettings(),
   updateSpawnSettings: (params: {
-    use_tmux_window: boolean;
+    runtime: SpawnRuntime;
     tmux_window_name?: string;
     worker_permission_mode?: WorkerPermissionMode;
   }) => httpApi.updateSpawnSettings(params),
