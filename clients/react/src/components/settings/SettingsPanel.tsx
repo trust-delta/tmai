@@ -12,6 +12,7 @@ import {
   type WorktreeSettings,
 } from "@/lib/api";
 import { buildNotifyEventHelp } from "./notify-event-help";
+import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { ScheduledKicksSection } from "./ScheduledKicksSection";
 import { SpawnRuntimeSelector } from "./SpawnRuntimeSelector";
 
@@ -827,6 +828,9 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
             </div>
           </section>
         )}
+
+        {/* Orchestration dispatch bundles section (#573) */}
+        <OrchestrationDispatchSection />
 
         {/* Scheduled kicks / Routines section */}
         <ScheduledKicksSection />
