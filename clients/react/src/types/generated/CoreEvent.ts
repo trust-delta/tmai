@@ -377,7 +377,11 @@ reason: string, } | { "type": "AgentUpdate",
  */
 change: EntityChange, 
 /**
- * Stable agent identifier (UUID short hash).
+ * Canonical AgentId (`<scheme>:<id>` form, matches `AgentSnapshot.id`).
+ * Stable across tmux pane renumber, `claude --resume`, tmai restart, and
+ * process restart. Provisional ids (`provisional:<uuid>`) are normally
+ * hidden but become wire-visible when the agent has a `pty_session_id`
+ * (PTY-server backed spawn).
  */
 id: string, 
 /**

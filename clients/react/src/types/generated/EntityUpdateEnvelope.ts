@@ -30,7 +30,10 @@ change: EntityChange,
  */
 entity: string, 
 /**
- * Stable entity identifier within the domain.
+ * Stable entity identifier within the domain. For `entity == "Agent"`
+ * this is the canonical AgentId (`<scheme>:<id>` form, matches
+ * `AgentSnapshot.id`); for other entities (Dispatch, Worktree, Queue,
+ * ...) it is the corresponding domain-native id.
  */
 id: string, 
 /**

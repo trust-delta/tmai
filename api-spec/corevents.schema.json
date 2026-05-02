@@ -41,7 +41,7 @@
               ]
             },
             "id": {
-              "description": "Agent target ID (e.g., \"main:0.0\")",
+              "description": "Canonical AgentId in `<scheme>:<id>` form (e.g. `\"claude:ea760770-c137-...\"`),\nmatching `AgentSnapshot.id`.",
               "type": "string"
             },
             "is_orchestrator": {
@@ -2900,7 +2900,7 @@
           "description": "Whether the agent was upserted or removed."
         },
         "id": {
-          "description": "Stable agent identifier (UUID short hash).",
+          "description": "Canonical AgentId (`<scheme>:<id>` form, matches `AgentSnapshot.id`).\nStable across tmux pane renumber, `claude --resume`, tmai restart, and\nprocess restart. Provisional ids (`provisional:<uuid>`) are normally\nhidden but become wire-visible when the agent has a `pty_session_id`\n(PTY-server backed spawn).",
           "type": "string"
         },
         "origin": {
