@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { buildNotifyEventHelp } from "./notify-event-help";
 import { ScheduledKicksSection } from "./ScheduledKicksSection";
+import { SpawnRuntimeSelector } from "./SpawnRuntimeSelector";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -112,16 +113,6 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     } catch (_e) {}
   };
 
-  // Toggle spawn in tmux
-  const handleToggleSpawnInTmux = async () => {
-    if (!spawnSettings) return;
-    const newValue = !spawnSettings.use_tmux_window;
-    try {
-      await api.updateSpawnSettings({ use_tmux_window: newValue });
-      setSpawnSettings({ ...spawnSettings, use_tmux_window: newValue });
-    } catch (_e) {}
-  };
-
   // Update tmux window name
   const handleWindowNameChange = async (name: string) => {
     if (!spawnSettings) return;
@@ -135,7 +126,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     if (!trimmed) return;
     try {
       await api.updateSpawnSettings({
-        use_tmux_window: spawnSettings.use_tmux_window,
+        runtime: spawnSettings.runtime,
         tmux_window_name: trimmed,
       });
     } catch (_e) {}
@@ -147,7 +138,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     setSpawnSettings({ ...spawnSettings, worker_permission_mode: mode });
     try {
       await api.updateSpawnSettings({
-        use_tmux_window: spawnSettings.use_tmux_window,
+        runtime: spawnSettings.runtime,
         worker_permission_mode: mode,
       });
     } catch (_e) {}
@@ -566,43 +557,12 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               How new agents are started from the Web UI.
             </p>
 
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
-              <label className="flex items-center justify-between gap-3">
-                <div className="flex-1">
-                  <span className="text-sm text-zinc-300">Spawn in tmux window</span>
-                  <p className="mt-0.5 text-[11px] text-zinc-600">
-                    {spawnSettings.tmux_available
-                      ? `New agents will appear as tmux panes in the "${spawnSettings.tmux_window_name}" window, detected by the poller like regular sessions.`
-                      : "tmux is not available in this mode. Agents are spawned as internal PTY sessions."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleSpawnInTmux}
-                  disabled={!spawnSettings.tmux_available}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    !spawnSettings.tmux_available
-                      ? "cursor-not-allowed bg-white/5"
-                      : spawnSettings.use_tmux_window
-                        ? "bg-cyan-500/40"
-                        : "bg-white/10"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
-                      !spawnSettings.tmux_available
-                        ? "translate-x-0.5 bg-zinc-700"
-                        : spawnSettings.use_tmux_window
-                          ? "translate-x-[18px] bg-cyan-400"
-                          : "translate-x-0.5 bg-zinc-500"
-                    }`}
-                  />
-                </button>
-              </label>
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+              <SpawnRuntimeSelector settings={spawnSettings} onSettingsChange={setSpawnSettings} />
 
-              {/* Window name field — shown when tmux is available and enabled */}
-              {spawnSettings.tmux_available && spawnSettings.use_tmux_window && (
-                <div className="mt-3 flex items-center gap-2">
+              {/* Window name field — shown when runtime is tmux */}
+              {spawnSettings.runtime === "tmux" && (
+                <div className="flex items-center gap-2">
                   <span className="shrink-0 text-xs text-zinc-500">Window name</span>
                   <input
                     type="text"
@@ -618,7 +578,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               )}
 
               {/* Worker permission mode — applies to dispatched workers only */}
-              <div className="mt-4 border-t border-white/5 pt-3">
+              <div className="border-t border-white/5 pt-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1">
                     <span className="text-xs text-zinc-400">Worker permission mode</span>

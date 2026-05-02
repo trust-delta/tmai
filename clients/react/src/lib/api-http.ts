@@ -671,8 +671,11 @@ export interface AutoApproveSettings {
 
 export type WorkerPermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
 
+/** How new agents are spawned. Only "native" (PTY-server) is selectable; "tmux" is coming soon. */
+export type SpawnRuntime = "native" | "tmux";
+
 export interface SpawnSettings {
-  use_tmux_window: boolean;
+  runtime: SpawnRuntime;
   tmux_available: boolean;
   tmux_window_name: string;
   /** Permission mode injected for dispatched workers (dispatch_issue / dispatch_review). */
@@ -1171,7 +1174,7 @@ export const api = {
   // Spawn settings
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
   updateSpawnSettings: (params: {
-    use_tmux_window: boolean;
+    runtime: SpawnRuntime;
     tmux_window_name?: string;
     worker_permission_mode?: WorkerPermissionMode;
   }) =>
