@@ -2531,7 +2531,7 @@
       },
       "SpawnRole": {
         "type": "string",
-        "description": "Role of a spawned agent — governs which field of `AgentModelSettings` is\nconsulted after the per-dispatch override is checked.",
+        "description": "Role of a spawned agent.",
         "enum": [
           "orchestrator",
           "implementer",
