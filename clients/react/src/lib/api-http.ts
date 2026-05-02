@@ -3,6 +3,7 @@
 
 import type { ApprovalSnapshot } from "@/types/generated/ApprovalSnapshot";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
+import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
@@ -11,15 +12,18 @@ import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
+import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
   BootstrapRequiredEvent,
+  DispatchBundle,
   EntityUpdateEnvelope,
   QueueAgentEntry,
   QueueSnapshot,
   SpawnRuntime,
   TerminalSubscription,
+  WorkerDispatchMap,
 };
 
 // ── Connection config ──
@@ -796,6 +800,17 @@ export interface WorktreeSettings {
   branch_depth_warning: number;
 }
 
+// ── Orchestration dispatch bundle settings (#573) ──
+
+/**
+ * Per-role dispatch bundle settings persisted under [orchestration.*] in config.toml.
+ * null bundle means "use legacy [spawn.*] fallback for that role".
+ */
+export interface OrchestrationSettings {
+  orchestrator: DispatchBundle | null;
+  dispatch: WorkerDispatchMap;
+}
+
 // ── Scheduled kicks (Routines parity — #2) ──
 
 /** Interval-based or cron-based schedule for an orchestrator kick */
@@ -1241,6 +1256,17 @@ export const api = {
   getWorktreeSettings: () => apiFetch<WorktreeSettings>("/settings/worktree"),
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     apiFetch("/settings/worktree", {
+      method: "PUT",
+      body: JSON.stringify(params),
+    }),
+
+  // Orchestration dispatch bundle settings (#573)
+  getOrchestrationSettings: () => apiFetch<OrchestrationSettings>("/settings/orchestration"),
+  updateOrchestrationSettings: (params: {
+    orchestrator?: DispatchBundle | null;
+    dispatch?: WorkerDispatchMap;
+  }) =>
+    apiFetch("/settings/orchestration", {
       method: "PUT",
       body: JSON.stringify(params),
     }),

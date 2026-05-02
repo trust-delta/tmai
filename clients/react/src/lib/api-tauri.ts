@@ -10,14 +10,17 @@ import type {
   AutoActionTemplates,
   AutoApproveRules,
   AutoApproveSettings,
+  DispatchBundle,
   GuardrailsSettings,
   NotifySettings,
   NotifyTemplates,
+  OrchestrationSettings,
   OrchestratorRules,
   PrMonitorScope,
   SpawnRequest,
   SpawnRuntime,
   UsageSettings,
+  WorkerDispatchMap,
   WorkerPermissionMode,
   WorkflowSettings,
   WorktreeSettings,
@@ -247,6 +250,14 @@ export const api = {
   getWorktreeSettings: () => httpApi.getWorktreeSettings(),
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     httpApi.updateWorktreeSettings(params),
+
+  // Orchestration dispatch bundle settings (#573)
+  getOrchestrationSettings: (): Promise<OrchestrationSettings> =>
+    httpApi.getOrchestrationSettings(),
+  updateOrchestrationSettings: (params: {
+    orchestrator?: DispatchBundle | null;
+    dispatch?: WorkerDispatchMap;
+  }) => httpApi.updateOrchestrationSettings(params),
 
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
