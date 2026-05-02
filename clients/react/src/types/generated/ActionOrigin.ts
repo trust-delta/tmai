@@ -20,7 +20,8 @@ interface: string,
  */
 cwd?: string | null, } | { "kind": "Agent", 
 /**
- * Agent target ID (e.g., "main:0.0")
+ * Canonical AgentId in `<scheme>:<id>` form (e.g. `"claude:ea760770-c137-..."`),
+ * matching `AgentSnapshot.id`.
  */
 id: string, 
 /**
