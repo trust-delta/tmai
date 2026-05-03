@@ -35,8 +35,9 @@ interface DispatchBundleEditorProps {
 
 /**
  * Edits a single dispatch bundle (vendor/model/permission_mode/effort).
- * When bundle is null the "Use legacy [spawn.*] config" checkbox is checked
- * and all inputs are disabled.
+ * When bundle is null the "Use vendor CLI default" checkbox is checked,
+ * all inputs are disabled, and the role launches with the vendor CLI's own
+ * defaults (no `--model` / `--permission-mode` flags injected by tmai).
  */
 export function DispatchBundleEditor({
   title,
@@ -89,9 +90,9 @@ export function DispatchBundleEditor({
             checked={useLegacy}
             onChange={(e) => handleLegacyToggle(e.target.checked)}
             className="accent-cyan-500"
-            aria-label={`Use legacy spawn config for ${title}`}
+            aria-label={`Use vendor CLI default for ${title}`}
           />
-          <span className="text-xs text-zinc-500">Use legacy [spawn.*] config (fallback)</span>
+          <span className="text-xs text-zinc-500">Use vendor CLI default</span>
         </label>
       </div>
 

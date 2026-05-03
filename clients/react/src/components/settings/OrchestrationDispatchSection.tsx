@@ -1,46 +1,65 @@
 import { useEffect, useState } from "react";
-import type { OrchestrationSettings } from "@/lib/api";
 import { api } from "@/lib/api";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
+import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import { DispatchBundleEditor } from "./DispatchBundleEditor";
+
+interface DispatchState {
+  orchestrator: DispatchBundle | null;
+  dispatch: WorkerDispatchMap;
+}
 
 /**
  * Settings section that exposes per-role dispatch bundle editing for
  * orchestrator / implementer / reviewer.
  *
- * Sends PUT /settings/orchestration on save; surfaces validation errors
- * from the backend as inline error text (the server returns 400 with a
- * descriptive message when the vendor×model×permission_mode triple is invalid).
+ * Reads the bundles from `GET /settings/orchestrator` (the global settings
+ * endpoint that carries the dispatch fields alongside notify/guardrails/...)
+ * and saves them via the same endpoint's PUT — server-side `OrchestrationSettings`
+ * is the single source of truth, so this component only roundtrips the dispatch
+ * subset of fields.
+ *
+ * Surfaces validation errors from the backend as inline error text (the server
+ * returns 400 with a descriptive message when the vendor×model×permission_mode
+ * triple is invalid).
  */
 export function OrchestrationDispatchSection() {
-  const [settings, setSettings] = useState<OrchestrationSettings | null>(null);
+  const [state, setState] = useState<DispatchState | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getOrchestrationSettings().then(setSettings).catch(console.error);
+    api
+      .getOrchestratorSettings()
+      .then((s) =>
+        setState({
+          orchestrator: s.orchestrator ?? null,
+          dispatch: s.dispatch,
+        }),
+      )
+      .catch(console.error);
   }, []);
 
-  if (!settings) return null;
+  if (!state) return null;
 
   const handleOrchestratorChange = (bundle: DispatchBundle | null) => {
-    setSettings({ ...settings, orchestrator: bundle });
+    setState({ ...state, orchestrator: bundle });
     setSaved(false);
   };
 
   const handleImplementerChange = (bundle: DispatchBundle | null) => {
-    setSettings({
-      ...settings,
-      dispatch: { ...settings.dispatch, implementer: bundle },
+    setState({
+      ...state,
+      dispatch: { ...state.dispatch, implementer: bundle },
     });
     setSaved(false);
   };
 
   const handleReviewerChange = (bundle: DispatchBundle | null) => {
-    setSettings({
-      ...settings,
-      dispatch: { ...settings.dispatch, reviewer: bundle },
+    setState({
+      ...state,
+      dispatch: { ...state.dispatch, reviewer: bundle },
     });
     setSaved(false);
   };
@@ -49,9 +68,9 @@ export function OrchestrationDispatchSection() {
     setSaving(true);
     setSaveError(null);
     try {
-      await api.updateOrchestrationSettings({
-        orchestrator: settings.orchestrator,
-        dispatch: settings.dispatch,
+      await api.updateOrchestratorSettings({
+        orchestrator: state.orchestrator,
+        dispatch: state.dispatch,
       });
       setSaved(true);
     } catch (e) {
@@ -63,29 +82,30 @@ export function OrchestrationDispatchSection() {
 
   return (
     <section>
-      <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
+      <h3 className="text-sm font-medium text-zinc-300">Orchestration dispatch</h3>
       <p className="mt-1 text-xs text-zinc-600">
         Per-role dispatch bundles: vendor, model, permission mode, and effort for each agent role.
-        Leave "Use legacy" checked to fall back to the <code>[spawn.*]</code> config.
+        Leave "Use vendor CLI default" checked to launch that role with the vendor CLI's own
+        defaults (no <code>--model</code> / <code>--permission-mode</code> flags injected).
       </p>
 
       <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
         <DispatchBundleEditor
           title="Orchestrator"
           subtitle="the agent you attach to"
-          bundle={settings.orchestrator}
+          bundle={state.orchestrator}
           onChange={handleOrchestratorChange}
         />
         <DispatchBundleEditor
           title="Implementer"
           subtitle="dispatch_issue / spawn_worktree"
-          bundle={settings.dispatch.implementer ?? null}
+          bundle={state.dispatch.implementer ?? null}
           onChange={handleImplementerChange}
         />
         <DispatchBundleEditor
           title="Reviewer"
           subtitle="dispatch_review"
-          bundle={settings.dispatch.reviewer ?? null}
+          bundle={state.dispatch.reviewer ?? null}
           onChange={handleReviewerChange}
         />
 
