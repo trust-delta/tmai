@@ -22,6 +22,58 @@ interface SettingsPanelProps {
   onProjectsChanged: () => void;
 }
 
+/**
+ * Auto-saved textarea used by the orchestration role / workflow-rule fields.
+ * Local edits stream through `onDraft`; on blur (or Cmd/Ctrl+Enter) the value
+ * is committed via `onCommit`, routed through the section's save tracker so
+ * Saving / Saved / error indicators stay in sync. Mid-typing keystrokes clear
+ * a stale error so the inline message doesn't linger after the user starts
+ * correcting it.
+ */
+function OrchestrationRuleTextarea({
+  label,
+  placeholder,
+  rows,
+  value,
+  save,
+  onDraft,
+  onCommit,
+}: {
+  label: string;
+  placeholder: string;
+  rows: number;
+  value: string;
+  save: ReturnType<typeof useSaveTracker>;
+  onDraft: (value: string) => void;
+  onCommit: (value: string) => Promise<unknown>;
+}) {
+  return (
+    <div>
+      <span className="block text-xs text-zinc-400 mb-1">{label}</span>
+      <textarea
+        value={value}
+        onChange={(e) => {
+          save.clearError();
+          onDraft(e.target.value);
+        }}
+        onBlur={() => {
+          const commit = value;
+          void save.track(() => onCommit(commit));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            (e.currentTarget as HTMLTextAreaElement).blur();
+          }
+        }}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+      />
+    </div>
+  );
+}
+
 // Settings panel displayed in the main area
 export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps) {
   const [projects, setProjects] = useState<string[]>([]);
@@ -271,157 +323,66 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
 
               {orchestrator.enabled && (
                 <div className="space-y-3 border-t border-white/5 pt-3">
-                  {/* Role */}
-                  <div>
-                    <span className="block text-xs text-zinc-400 mb-1">Role</span>
-                    <textarea
-                      value={orchestrator.role}
-                      onChange={(e) => {
-                        orchestratorSave.clearError();
-                        setOrchestrator({ ...orchestrator, role: e.target.value });
-                      }}
-                      onBlur={() => {
-                        const role = orchestrator.role;
-                        void orchestratorSave.track(() =>
-                          api.updateOrchestratorSettings({ role }, orchProject),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLTextAreaElement).blur();
-                        }
-                      }}
-                      rows={2}
-                      placeholder="Describe the orchestrator's role and persona..."
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
-                    />
-                  </div>
+                  <OrchestrationRuleTextarea
+                    label="Role"
+                    placeholder="Describe the orchestrator's role and persona..."
+                    rows={2}
+                    value={orchestrator.role}
+                    save={orchestratorSave}
+                    onDraft={(role) => setOrchestrator({ ...orchestrator, role })}
+                    onCommit={(role) => api.updateOrchestratorSettings({ role }, orchProject)}
+                  />
 
-                  {/* Rules */}
                   <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                     Workflow Rules
                   </p>
 
-                  {/* Branch rules */}
-                  <div>
-                    <span className="block text-xs text-zinc-400 mb-1">Branch rules</span>
-                    <textarea
-                      value={orchestrator.rules.branch}
-                      onChange={(e) => {
-                        orchestratorSave.clearError();
+                  {(
+                    [
+                      {
+                        key: "branch",
+                        label: "Branch rules",
+                        placeholder: "Rules for branch naming and strategy...",
+                        rows: 2,
+                      },
+                      {
+                        key: "merge",
+                        label: "Merge rules",
+                        placeholder: "Rules for merge strategy and conflict resolution...",
+                        rows: 2,
+                      },
+                      {
+                        key: "review",
+                        label: "Review rules",
+                        placeholder: "Rules for code review process...",
+                        rows: 2,
+                      },
+                      {
+                        key: "custom",
+                        label: "Custom rules",
+                        placeholder: "Additional custom rules for the orchestrator...",
+                        rows: 3,
+                      },
+                    ] as const
+                  ).map(({ key, label, placeholder, rows }) => (
+                    <OrchestrationRuleTextarea
+                      key={key}
+                      label={label}
+                      placeholder={placeholder}
+                      rows={rows}
+                      value={orchestrator.rules[key]}
+                      save={orchestratorSave}
+                      onDraft={(value) =>
                         setOrchestrator({
                           ...orchestrator,
-                          rules: { ...orchestrator.rules, branch: e.target.value },
-                        });
-                      }}
-                      onBlur={() => {
-                        const branch = orchestrator.rules.branch;
-                        void orchestratorSave.track(() =>
-                          api.updateOrchestratorSettings({ rules: { branch } }, orchProject),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLTextAreaElement).blur();
-                        }
-                      }}
-                      rows={2}
-                      placeholder="Rules for branch naming and strategy..."
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
+                          rules: { ...orchestrator.rules, [key]: value },
+                        })
+                      }
+                      onCommit={(value) =>
+                        api.updateOrchestratorSettings({ rules: { [key]: value } }, orchProject)
+                      }
                     />
-                  </div>
-
-                  {/* Merge rules */}
-                  <div>
-                    <span className="block text-xs text-zinc-400 mb-1">Merge rules</span>
-                    <textarea
-                      value={orchestrator.rules.merge}
-                      onChange={(e) => {
-                        orchestratorSave.clearError();
-                        setOrchestrator({
-                          ...orchestrator,
-                          rules: { ...orchestrator.rules, merge: e.target.value },
-                        });
-                      }}
-                      onBlur={() => {
-                        const merge = orchestrator.rules.merge;
-                        void orchestratorSave.track(() =>
-                          api.updateOrchestratorSettings({ rules: { merge } }, orchProject),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLTextAreaElement).blur();
-                        }
-                      }}
-                      rows={2}
-                      placeholder="Rules for merge strategy and conflict resolution..."
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
-                    />
-                  </div>
-
-                  {/* Review rules */}
-                  <div>
-                    <span className="block text-xs text-zinc-400 mb-1">Review rules</span>
-                    <textarea
-                      value={orchestrator.rules.review}
-                      onChange={(e) => {
-                        orchestratorSave.clearError();
-                        setOrchestrator({
-                          ...orchestrator,
-                          rules: { ...orchestrator.rules, review: e.target.value },
-                        });
-                      }}
-                      onBlur={() => {
-                        const review = orchestrator.rules.review;
-                        void orchestratorSave.track(() =>
-                          api.updateOrchestratorSettings({ rules: { review } }, orchProject),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLTextAreaElement).blur();
-                        }
-                      }}
-                      rows={2}
-                      placeholder="Rules for code review process..."
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
-                    />
-                  </div>
-
-                  {/* Custom rules */}
-                  <div>
-                    <span className="block text-xs text-zinc-400 mb-1">Custom rules</span>
-                    <textarea
-                      value={orchestrator.rules.custom}
-                      onChange={(e) => {
-                        orchestratorSave.clearError();
-                        setOrchestrator({
-                          ...orchestrator,
-                          rules: { ...orchestrator.rules, custom: e.target.value },
-                        });
-                      }}
-                      onBlur={() => {
-                        const custom = orchestrator.rules.custom;
-                        void orchestratorSave.track(() =>
-                          api.updateOrchestratorSettings({ rules: { custom } }, orchProject),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLTextAreaElement).blur();
-                        }
-                      }}
-                      rows={3}
-                      placeholder="Additional custom rules for the orchestrator..."
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y"
-                    />
-                  </div>
+                  ))}
 
                   {/* PR Monitor */}
                   <PrMonitorSection
