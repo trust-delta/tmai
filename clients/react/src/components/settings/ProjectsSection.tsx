@@ -45,11 +45,17 @@ export function ProjectsSection({
   };
 
   const handleRemove = async (projectPath: string) => {
+    setError("");
     try {
       await api.removeProject(projectPath);
       refreshProjects();
       onProjectsChanged();
-    } catch (_e) {}
+    } catch (e) {
+      // Surface the failure in the same inline error region as add — pre-PR
+      // this catch swallowed the error silently, leaving the user wondering
+      // why the project was still listed after a failed remove.
+      setError(e instanceof Error ? e.message : "Failed to remove project");
+    }
   };
 
   return (
@@ -90,7 +96,11 @@ export function ProjectsSection({
             Browse
           </button>
         </div>
-        {error && <p className="mt-1.5 text-[11px] text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" aria-live="assertive" className="mt-1.5 text-[11px] text-red-400">
+            {error}
+          </p>
+        )}
         {browsing && (
           <div className="mt-2">
             <DirBrowser

@@ -126,4 +126,25 @@ describe("ProjectsSection", () => {
       expect(onProjectsChanged).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("Remove failure surfaces inline error and does NOT call refresh callbacks", async () => {
+    vi.mocked(api.removeProject).mockRejectedValue(new Error("permission denied"));
+    const { refreshProjects, onProjectsChanged } = setup(["/x/y/foo"]);
+    fireEvent.click(screen.getByLabelText("Remove project /x/y/foo"));
+    await waitFor(() => {
+      expect(screen.getByText(/permission denied/)).toBeTruthy();
+    });
+    expect(refreshProjects).not.toHaveBeenCalled();
+    expect(onProjectsChanged).not.toHaveBeenCalled();
+  });
+
+  it("the error region is announced to assistive tech (role=alert)", async () => {
+    vi.mocked(api.addProject).mockRejectedValue(new Error("bad"));
+    setup([]);
+    const input = screen.getByLabelText("Project path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "/p" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/bad/);
+  });
 });
