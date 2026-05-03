@@ -34,6 +34,12 @@ function isPermissionModeAllowed(vendor: Vendor, model: string, mode: Permission
       return mode === "default" || mode === "acceptEdits";
     case "gemini":
       return mode === "default";
+    default: {
+      // Exhaustiveness: a new Vendor variant must extend this matrix
+      // explicitly rather than silently disabling every mode.
+      const _exhaustive: never = vendor;
+      return false;
+    }
   }
 }
 

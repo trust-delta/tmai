@@ -4,8 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import { DispatchBundleEditor } from "../DispatchBundleEditor";
 
-const noop = () => {};
-
 function renderEditor(bundle: DispatchBundle | null) {
   const onAtomic = vi.fn();
   const onDraft = vi.fn();
@@ -116,13 +114,17 @@ describe("DispatchBundleEditor — legacy fallback", () => {
     expect(checkbox.checked).toBe(true);
   });
 
-  it("emits null on toggle on, claude default on toggle off", () => {
+  it("emits null on toggle on (concrete bundle → legacy)", () => {
     const { onAtomic } = renderEditor({ vendor: "codex", model: "codex-1" });
     const checkbox = screen.getByLabelText(/Use vendor CLI default for/i);
     fireEvent.click(checkbox);
     expect(onAtomic).toHaveBeenLastCalledWith(null);
   });
-});
 
-// quiet unused import warning when noop is not referenced
-void noop;
+  it("emits a fresh claude bundle on toggle off (legacy → concrete)", () => {
+    const { onAtomic } = renderEditor(null);
+    const checkbox = screen.getByLabelText(/Use vendor CLI default for/i);
+    fireEvent.click(checkbox);
+    expect(onAtomic).toHaveBeenLastCalledWith({ vendor: "claude" });
+  });
+});
