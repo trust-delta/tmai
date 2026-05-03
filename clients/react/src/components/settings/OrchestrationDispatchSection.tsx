@@ -12,6 +12,40 @@ interface DispatchState {
 }
 
 /**
+ * A "role" describes one editable bundle: how to read it from state and how to
+ * write a new bundle back. Keeping orchestrator / implementer / reviewer as
+ * data here rather than three near-identical handler triplets lets the render
+ * loop stay declarative.
+ */
+interface DispatchRole {
+  title: string;
+  subtitle: string;
+  read: (s: DispatchState) => DispatchBundle | null;
+  write: (s: DispatchState, bundle: DispatchBundle | null) => DispatchState;
+}
+
+const ROLES: DispatchRole[] = [
+  {
+    title: "Orchestrator",
+    subtitle: "the agent you attach to",
+    read: (s) => s.orchestrator,
+    write: (s, bundle) => ({ ...s, orchestrator: bundle }),
+  },
+  {
+    title: "Implementer",
+    subtitle: "dispatch_issue / spawn_worktree",
+    read: (s) => s.dispatch.implementer ?? null,
+    write: (s, bundle) => ({ ...s, dispatch: { ...s.dispatch, implementer: bundle } }),
+  },
+  {
+    title: "Reviewer",
+    subtitle: "dispatch_review",
+    read: (s) => s.dispatch.reviewer ?? null,
+    write: (s, bundle) => ({ ...s, dispatch: { ...s.dispatch, reviewer: bundle } }),
+  },
+];
+
+/**
  * Settings section that exposes per-role dispatch bundle editing for
  * orchestrator / implementer / reviewer (#578 — auto-save).
  *
@@ -82,62 +116,30 @@ export function OrchestrationDispatchSection() {
 
   if (!state) return null;
 
-  // ── Orchestrator role ──────────────────────────────────────────
-  const handleOrchestratorAtomic = (bundle: DispatchBundle | null) => {
-    const next = { ...state, orchestrator: bundle };
-    setState(next);
-    void persist(next, { rollbackOnError: true });
-  };
-  const handleOrchestratorTextDraft = (bundle: DispatchBundle | null) => {
-    setState({ ...state, orchestrator: bundle });
-    if (status === "error") {
-      setStatus("idle");
-      setError(null);
-    }
-  };
-  const handleOrchestratorTextCommit = (bundle: DispatchBundle | null) => {
-    const next = { ...state, orchestrator: bundle };
-    setState(next);
-    void persist(next, { rollbackOnError: false });
-  };
-
-  // ── Implementer role ───────────────────────────────────────────
-  const handleImplementerAtomic = (bundle: DispatchBundle | null) => {
-    const next = { ...state, dispatch: { ...state.dispatch, implementer: bundle } };
-    setState(next);
-    void persist(next, { rollbackOnError: true });
-  };
-  const handleImplementerTextDraft = (bundle: DispatchBundle | null) => {
-    setState({ ...state, dispatch: { ...state.dispatch, implementer: bundle } });
-    if (status === "error") {
-      setStatus("idle");
-      setError(null);
-    }
-  };
-  const handleImplementerTextCommit = (bundle: DispatchBundle | null) => {
-    const next = { ...state, dispatch: { ...state.dispatch, implementer: bundle } };
-    setState(next);
-    void persist(next, { rollbackOnError: false });
-  };
-
-  // ── Reviewer role ──────────────────────────────────────────────
-  const handleReviewerAtomic = (bundle: DispatchBundle | null) => {
-    const next = { ...state, dispatch: { ...state.dispatch, reviewer: bundle } };
-    setState(next);
-    void persist(next, { rollbackOnError: true });
-  };
-  const handleReviewerTextDraft = (bundle: DispatchBundle | null) => {
-    setState({ ...state, dispatch: { ...state.dispatch, reviewer: bundle } });
-    if (status === "error") {
-      setStatus("idle");
-      setError(null);
-    }
-  };
-  const handleReviewerTextCommit = (bundle: DispatchBundle | null) => {
-    const next = { ...state, dispatch: { ...state.dispatch, reviewer: bundle } };
-    setState(next);
-    void persist(next, { rollbackOnError: false });
-  };
+  // Build the three handler triplets from the ROLES table. Each role differs
+  // only by its read/write lens; the persistence semantics (atomic = persist
+  // immediately with rollback, text draft = local-only + clear error, text
+  // commit = persist without rollback) are identical, so we keep them in a
+  // single place.
+  const handlersFor = (role: DispatchRole) => ({
+    onAtomicChange: (bundle: DispatchBundle | null) => {
+      const next = role.write(state, bundle);
+      setState(next);
+      void persist(next, { rollbackOnError: true });
+    },
+    onTextDraft: (bundle: DispatchBundle | null) => {
+      setState(role.write(state, bundle));
+      if (status === "error") {
+        setStatus("idle");
+        setError(null);
+      }
+    },
+    onTextCommit: (bundle: DispatchBundle | null) => {
+      const next = role.write(state, bundle);
+      setState(next);
+      void persist(next, { rollbackOnError: false });
+    },
+  });
 
   return (
     <section>
@@ -152,30 +154,20 @@ export function OrchestrationDispatchSection() {
       </p>
 
       <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
-        <DispatchBundleEditor
-          title="Orchestrator"
-          subtitle="the agent you attach to"
-          bundle={state.orchestrator}
-          onAtomicChange={handleOrchestratorAtomic}
-          onTextDraft={handleOrchestratorTextDraft}
-          onTextCommit={handleOrchestratorTextCommit}
-        />
-        <DispatchBundleEditor
-          title="Implementer"
-          subtitle="dispatch_issue / spawn_worktree"
-          bundle={state.dispatch.implementer ?? null}
-          onAtomicChange={handleImplementerAtomic}
-          onTextDraft={handleImplementerTextDraft}
-          onTextCommit={handleImplementerTextCommit}
-        />
-        <DispatchBundleEditor
-          title="Reviewer"
-          subtitle="dispatch_review"
-          bundle={state.dispatch.reviewer ?? null}
-          onAtomicChange={handleReviewerAtomic}
-          onTextDraft={handleReviewerTextDraft}
-          onTextCommit={handleReviewerTextCommit}
-        />
+        {ROLES.map((role) => {
+          const handlers = handlersFor(role);
+          return (
+            <DispatchBundleEditor
+              key={role.title}
+              title={role.title}
+              subtitle={role.subtitle}
+              bundle={role.read(state)}
+              onAtomicChange={handlers.onAtomicChange}
+              onTextDraft={handlers.onTextDraft}
+              onTextCommit={handlers.onTextCommit}
+            />
+          );
+        })}
       </div>
     </section>
   );
