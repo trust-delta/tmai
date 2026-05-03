@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { Vendor } from "@/types/generated/Vendor";
@@ -30,7 +31,20 @@ interface DispatchBundleEditorProps {
   title: string;
   subtitle: string;
   bundle: DispatchBundle | null | undefined;
-  onChange: (bundle: DispatchBundle | null) => void;
+  /**
+   * Atomic-field change (vendor / permission_mode / effort dropdowns and the
+   * "Use vendor CLI default" checkbox). Caller persists immediately.
+   */
+  onAtomicChange: (bundle: DispatchBundle | null) => void;
+  /**
+   * Text-field draft (model input) — caller updates local state without saving.
+   * Used while the user is mid-typing.
+   */
+  onTextDraft: (bundle: DispatchBundle | null) => void;
+  /**
+   * Text-field commit (model input on blur or Enter). Caller persists.
+   */
+  onTextCommit: (bundle: DispatchBundle | null) => void;
 }
 
 /**
@@ -38,37 +52,65 @@ interface DispatchBundleEditorProps {
  * When bundle is null the "Use vendor CLI default" checkbox is checked,
  * all inputs are disabled, and the role launches with the vendor CLI's own
  * defaults (no `--model` / `--permission-mode` flags injected by tmai).
+ *
+ * Auto-save (#578): atomic fields persist on change; the model field
+ * persists on blur or Enter. The local model draft tracks user typing so
+ * we do not call onTextCommit on every keystroke.
  */
 export function DispatchBundleEditor({
   title,
   subtitle,
   bundle,
-  onChange,
+  onAtomicChange,
+  onTextDraft,
+  onTextCommit,
 }: DispatchBundleEditorProps) {
   const useLegacy = bundle == null;
   // Maintain a working copy for when the checkbox is unchecked.
   const active: DispatchBundle = bundle ?? { vendor: "claude" };
 
+  // Local draft for the model text field — keeps typing fluid without
+  // round-tripping to the backend on every keystroke.
+  const [modelDraft, setModelDraft] = useState<string>(active.model ?? "");
+
+  // Re-sync the draft when the upstream bundle changes (e.g., after a
+  // commit, a vendor switch reset the model, or initial load).
+  // Skipping the sync when the draft already matches avoids stomping on
+  // an in-progress edit.
+  useEffect(() => {
+    const upstream = bundle?.model ?? "";
+    setModelDraft(upstream);
+    // We deliberately re-sync only when the upstream model identity changes —
+    // not on every render — so user typing isn't reset between renders that
+    // happen while a save is in flight.
+  }, [bundle?.model]);
+
   const handleLegacyToggle = (checked: boolean) => {
-    onChange(checked ? null : { vendor: "claude" });
+    onAtomicChange(checked ? null : { vendor: "claude" });
   };
 
   const handleVendorChange = (vendor: Vendor) => {
     // Changing vendor resets model — no point keeping a cross-vendor model name.
-    onChange({ ...active, vendor, model: null });
+    setModelDraft("");
+    onAtomicChange({ ...active, vendor, model: null });
   };
 
-  const handleModelChange = (model: string) => {
-    onChange({ ...active, model: model || null });
+  const handleModelDraftChange = (model: string) => {
+    setModelDraft(model);
+    onTextDraft({ ...active, model: model || null });
+  };
+
+  const handleModelCommit = () => {
+    onTextCommit({ ...active, model: modelDraft || null });
   };
 
   const handlePermissionChange = (value: string) => {
     const mode = value === "" ? null : (value as PermissionMode);
-    onChange({ ...active, permission_mode: mode });
+    onAtomicChange({ ...active, permission_mode: mode });
   };
 
   const handleEffortChange = (value: string) => {
-    onChange({ ...active, effort: value || null });
+    onAtomicChange({ ...active, effort: value || null });
   };
 
   const inputCls =
@@ -124,9 +166,16 @@ export function DispatchBundleEditor({
           <span className="w-24 shrink-0 text-xs text-zinc-500">Model</span>
           <input
             type="text"
-            value={active.model ?? ""}
+            value={modelDraft}
             placeholder={MODEL_PLACEHOLDERS[active.vendor]}
-            onChange={(e) => handleModelChange(e.target.value)}
+            onChange={(e) => handleModelDraftChange(e.target.value)}
+            onBlur={handleModelCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleModelCommit();
+              }
+            }}
             disabled={useLegacy}
             className={inputCls}
             aria-label={`Model for ${title}`}

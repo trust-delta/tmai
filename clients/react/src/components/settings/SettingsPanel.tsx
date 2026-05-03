@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
+import { useSaveTracker } from "@/hooks/useSaveTracker";
 import {
   type AutoApproveSettings,
   api,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/api";
 import { buildNotifyEventHelp } from "./notify-event-help";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
+import { SaveStatus } from "./SaveStatus";
 import { ScheduledKicksSection } from "./ScheduledKicksSection";
 import { SpawnRuntimeSelector } from "./SpawnRuntimeSelector";
 
@@ -37,6 +39,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings | null>(null);
   const [worktreeSettings, setWorktreeSettings] = useState<WorktreeSettings | null>(null);
   const [newSetupCommand, setNewSetupCommand] = useState("");
+
+  // Per-section auto-save status (#578). Each tracker runs independently so a
+  // failure in one section does not blank out the indicator on another.
+  const autoApproveSave = useSaveTracker();
+  const spawnSave = useSaveTracker();
+  const orchestratorSave = useSaveTracker();
+  const usageSave = useSaveTracker();
+  const notifySave = useSaveTracker();
+  const workflowSave = useSaveTracker();
+  const worktreeSave = useSaveTracker();
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -119,17 +131,18 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     setSpawnSettings({ ...spawnSettings, tmux_window_name: name });
   };
 
-  // Save window name on blur or Enter
-  const handleWindowNameSave = async () => {
+  // Save window name on blur or Enter (text-field commit; no rollback so the
+  // user can edit and retry if the backend rejects the value).
+  const handleWindowNameSave = () => {
     if (!spawnSettings) return;
     const trimmed = spawnSettings.tmux_window_name.trim();
     if (!trimmed) return;
-    try {
-      await api.updateSpawnSettings({
+    void spawnSave.track(() =>
+      api.updateSpawnSettings({
         runtime: spawnSettings.runtime,
         tmux_window_name: trimmed,
-      });
-    } catch (_e) {}
+      }),
+    );
   };
 
   return (
@@ -150,7 +163,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Auto-approve section */}
         {autoApprove && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Auto-approve</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Auto-approve</h3>
+              <SaveStatus
+                status={autoApproveSave.status}
+                error={autoApproveSave.error}
+                variant="section"
+              />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">
               Automatically approve agent actions. Changes apply on restart.
             </p>
@@ -161,12 +181,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 <span className="shrink-0 text-xs text-zinc-500">Mode</span>
                 <select
                   value={autoApprove.mode}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const mode = e.target.value;
+                    const prev = autoApprove.mode;
                     setAutoApprove({ ...autoApprove, mode });
-                    try {
-                      await api.updateAutoApproveMode(mode);
-                    } catch (_err) {}
+                    void autoApproveSave.track(() => api.updateAutoApproveMode(mode), {
+                      onError: () => setAutoApprove({ ...autoApprove, mode: prev }),
+                    });
                   }}
                   className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 >
@@ -185,12 +206,13 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 </div>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     const next = !autoApprove.enabled;
                     setAutoApprove({ ...autoApprove, enabled: next });
-                    try {
-                      await api.updateAutoApproveFields({ enabled: next });
-                    } catch (_err) {}
+                    void autoApproveSave.track(
+                      () => api.updateAutoApproveFields({ enabled: next }),
+                      { onError: () => setAutoApprove({ ...autoApprove, enabled: !next }) },
+                    );
                   }}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                     autoApprove.enabled ? "bg-cyan-500/40" : "bg-white/10"
@@ -225,11 +247,19 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <input
                       type="text"
                       value={autoApprove.provider}
-                      onChange={(e) => setAutoApprove({ ...autoApprove, provider: e.target.value })}
-                      onBlur={async () => {
-                        try {
-                          await api.updateAutoApproveFields({ provider: autoApprove.provider });
-                        } catch (_err) {}
+                      onChange={(e) => {
+                        autoApproveSave.clearError();
+                        setAutoApprove({ ...autoApprove, provider: e.target.value });
+                      }}
+                      onBlur={() => {
+                        const provider = autoApprove.provider;
+                        void autoApproveSave.track(() => api.updateAutoApproveFields({ provider }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
                       }}
                       className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                     />
@@ -239,11 +269,19 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <input
                       type="text"
                       value={autoApprove.model}
-                      onChange={(e) => setAutoApprove({ ...autoApprove, model: e.target.value })}
-                      onBlur={async () => {
-                        try {
-                          await api.updateAutoApproveFields({ model: autoApprove.model });
-                        } catch (_err) {}
+                      onChange={(e) => {
+                        autoApproveSave.clearError();
+                        setAutoApprove({ ...autoApprove, model: e.target.value });
+                      }}
+                      onBlur={() => {
+                        const model = autoApprove.model;
+                        void autoApproveSave.track(() => api.updateAutoApproveFields({ model }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
                       }}
                       className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                     />
@@ -293,13 +331,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                         onChange={(e) => {
                           const val = Number.parseInt(e.target.value, 10);
                           if (!Number.isNaN(val) && val >= 0) {
+                            autoApproveSave.clearError();
                             setAutoApprove({ ...autoApprove, [key]: val });
                           }
                         }}
-                        onBlur={async () => {
-                          try {
-                            await api.updateAutoApproveFields({ [key]: autoApprove[key] });
-                          } catch (_err) {}
+                        onBlur={() => {
+                          const val = autoApprove[key];
+                          void autoApproveSave.track(() =>
+                            api.updateAutoApproveFields({ [key]: val }),
+                          );
                         }}
                         className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 text-right outline-none focus:border-cyan-500/30"
                       />
@@ -325,12 +365,20 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                             <code className="flex-1 text-[11px] text-zinc-300 font-mono">{t}</code>
                             <button
                               type="button"
-                              onClick={async () => {
-                                const updated = autoApprove.allowed_types.filter((x) => x !== t);
+                              onClick={() => {
+                                const previous = autoApprove.allowed_types;
+                                const updated = previous.filter((x) => x !== t);
                                 setAutoApprove({ ...autoApprove, allowed_types: updated });
-                                try {
-                                  await api.updateAutoApproveFields({ allowed_types: updated });
-                                } catch (_err) {}
+                                void autoApproveSave.track(
+                                  () => api.updateAutoApproveFields({ allowed_types: updated }),
+                                  {
+                                    onError: () =>
+                                      setAutoApprove({
+                                        ...autoApprove,
+                                        allowed_types: previous,
+                                      }),
+                                  },
+                                );
                               }}
                               className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                             >
@@ -345,17 +393,22 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       <input
                         type="text"
                         placeholder="e.g. Bash, Read, Write"
-                        onKeyDown={async (e) => {
+                        onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             const input = e.currentTarget;
                             const val = input.value.trim();
                             if (!val) return;
-                            const updated = [...autoApprove.allowed_types, val];
+                            const previous = autoApprove.allowed_types;
+                            const updated = [...previous, val];
                             setAutoApprove({ ...autoApprove, allowed_types: updated });
                             input.value = "";
-                            try {
-                              await api.updateAutoApproveFields({ allowed_types: updated });
-                            } catch (_err) {}
+                            void autoApproveSave.track(
+                              () => api.updateAutoApproveFields({ allowed_types: updated }),
+                              {
+                                onError: () =>
+                                  setAutoApprove({ ...autoApprove, allowed_types: previous }),
+                              },
+                            );
                           }
                         }}
                         className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-mono text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
@@ -412,15 +465,22 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       </div>
                       <button
                         type="button"
-                        onClick={async () => {
+                        onClick={() => {
                           const newVal = !autoApprove.rules[key];
                           setAutoApprove({
                             ...autoApprove,
                             rules: { ...autoApprove.rules, [key]: newVal },
                           });
-                          try {
-                            await api.updateAutoApproveRules({ [key]: newVal });
-                          } catch (_err) {}
+                          void autoApproveSave.track(
+                            () => api.updateAutoApproveRules({ [key]: newVal }),
+                            {
+                              onError: () =>
+                                setAutoApprove({
+                                  ...autoApprove,
+                                  rules: { ...autoApprove.rules, [key]: !newVal },
+                                }),
+                            },
+                          );
                         }}
                         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                           autoApprove.rules[key] ? "bg-cyan-500/40" : "bg-white/10"
@@ -459,19 +519,29 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                             </code>
                             <button
                               type="button"
-                              onClick={async () => {
-                                const updated = autoApprove.rules.allow_patterns.filter(
-                                  (p) => p !== pat,
-                                );
+                              onClick={() => {
+                                const previous = autoApprove.rules.allow_patterns;
+                                const updated = previous.filter((p) => p !== pat);
                                 setAutoApprove({
                                   ...autoApprove,
                                   rules: { ...autoApprove.rules, allow_patterns: updated },
                                 });
-                                try {
-                                  await api.updateAutoApproveRules({
-                                    allow_patterns: updated,
-                                  });
-                                } catch (_err) {}
+                                void autoApproveSave.track(
+                                  () =>
+                                    api.updateAutoApproveRules({
+                                      allow_patterns: updated,
+                                    }),
+                                  {
+                                    onError: () =>
+                                      setAutoApprove({
+                                        ...autoApprove,
+                                        rules: {
+                                          ...autoApprove.rules,
+                                          allow_patterns: previous,
+                                        },
+                                      }),
+                                  },
+                                );
                               }}
                               className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                             >
@@ -488,22 +558,28 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                         type="text"
                         value={newPattern}
                         onChange={(e) => setNewPattern(e.target.value)}
-                        onKeyDown={async (e) => {
+                        onKeyDown={(e) => {
                           if (e.key === "Enter" && newPattern.trim()) {
-                            const updated = [
-                              ...autoApprove.rules.allow_patterns,
-                              newPattern.trim(),
-                            ];
+                            const previous = autoApprove.rules.allow_patterns;
+                            const updated = [...previous, newPattern.trim()];
                             setAutoApprove({
                               ...autoApprove,
                               rules: { ...autoApprove.rules, allow_patterns: updated },
                             });
                             setNewPattern("");
-                            try {
-                              await api.updateAutoApproveRules({
-                                allow_patterns: updated,
-                              });
-                            } catch (_err) {}
+                            void autoApproveSave.track(
+                              () => api.updateAutoApproveRules({ allow_patterns: updated }),
+                              {
+                                onError: () =>
+                                  setAutoApprove({
+                                    ...autoApprove,
+                                    rules: {
+                                      ...autoApprove.rules,
+                                      allow_patterns: previous,
+                                    },
+                                  }),
+                              },
+                            );
                           }
                         }}
                         placeholder="e.g. cargo build.*"
@@ -511,19 +587,28 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       />
                       <button
                         type="button"
-                        onClick={async () => {
+                        onClick={() => {
                           if (!newPattern.trim()) return;
-                          const updated = [...autoApprove.rules.allow_patterns, newPattern.trim()];
+                          const previous = autoApprove.rules.allow_patterns;
+                          const updated = [...previous, newPattern.trim()];
                           setAutoApprove({
                             ...autoApprove,
                             rules: { ...autoApprove.rules, allow_patterns: updated },
                           });
                           setNewPattern("");
-                          try {
-                            await api.updateAutoApproveRules({
-                              allow_patterns: updated,
-                            });
-                          } catch (_err) {}
+                          void autoApproveSave.track(
+                            () => api.updateAutoApproveRules({ allow_patterns: updated }),
+                            {
+                              onError: () =>
+                                setAutoApprove({
+                                  ...autoApprove,
+                                  rules: {
+                                    ...autoApprove.rules,
+                                    allow_patterns: previous,
+                                  },
+                                }),
+                            },
+                          );
                         }}
                         className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
                       >
@@ -540,13 +625,20 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Spawn section */}
         {spawnSettings && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Spawn</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Spawn</h3>
+              <SaveStatus status={spawnSave.status} error={spawnSave.error} variant="section" />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">
               How new agents are started from the Web UI.
             </p>
 
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
-              <SpawnRuntimeSelector settings={spawnSettings} onSettingsChange={setSpawnSettings} />
+              <SpawnRuntimeSelector
+                settings={spawnSettings}
+                onSettingsChange={setSpawnSettings}
+                save={spawnSave}
+              />
 
               {/* Window name field — shown when runtime is tmux */}
               {spawnSettings.runtime === "tmux" && (
@@ -555,10 +647,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   <input
                     type="text"
                     value={spawnSettings.tmux_window_name}
-                    onChange={(e) => handleWindowNameChange(e.target.value)}
+                    onChange={(e) => {
+                      spawnSave.clearError();
+                      handleWindowNameChange(e.target.value);
+                    }}
                     onBlur={handleWindowNameSave}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleWindowNameSave();
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
                     }}
                     className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                   />
@@ -571,7 +669,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Orchestration section */}
         {orchestrator && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
+              <SaveStatus
+                status={orchestratorSave.status}
+                error={orchestratorSave.error}
+                variant="section"
+              />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">
               Configure the orchestrator agent that coordinates sub-agents for parallel development
               workflows.
@@ -612,15 +717,16 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 </div>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     const next = !orchestrator.enabled;
                     setOrchestrator({ ...orchestrator, enabled: next });
-                    try {
-                      await api.updateOrchestratorSettings({ enabled: next }, orchProject);
-                      refreshOrchestrator();
-                    } catch (_e) {
-                      setOrchestrator({ ...orchestrator, enabled: !next });
-                    }
+                    void orchestratorSave.track(
+                      async () => {
+                        await api.updateOrchestratorSettings({ enabled: next }, orchProject);
+                        refreshOrchestrator();
+                      },
+                      { onError: () => setOrchestrator({ ...orchestrator, enabled: !next }) },
+                    );
                   }}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                     orchestrator.enabled ? "bg-cyan-500/40" : "bg-white/10"
@@ -643,14 +749,21 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <span className="block text-xs text-zinc-400 mb-1">Role</span>
                     <textarea
                       value={orchestrator.role}
-                      onChange={(e) => setOrchestrator({ ...orchestrator, role: e.target.value })}
-                      onBlur={async () => {
-                        try {
-                          await api.updateOrchestratorSettings(
-                            { role: orchestrator.role },
-                            orchProject,
-                          );
-                        } catch (_e) {}
+                      onChange={(e) => {
+                        orchestratorSave.clearError();
+                        setOrchestrator({ ...orchestrator, role: e.target.value });
+                      }}
+                      onBlur={() => {
+                        const role = orchestrator.role;
+                        void orchestratorSave.track(() =>
+                          api.updateOrchestratorSettings({ role }, orchProject),
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
                       }}
                       rows={2}
                       placeholder="Describe the orchestrator's role and persona..."
@@ -668,19 +781,24 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <span className="block text-xs text-zinc-400 mb-1">Branch rules</span>
                     <textarea
                       value={orchestrator.rules.branch}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        orchestratorSave.clearError();
                         setOrchestrator({
                           ...orchestrator,
                           rules: { ...orchestrator.rules, branch: e.target.value },
-                        })
-                      }
-                      onBlur={async () => {
-                        try {
-                          await api.updateOrchestratorSettings(
-                            { rules: { branch: orchestrator.rules.branch } },
-                            orchProject,
-                          );
-                        } catch (_e) {}
+                        });
+                      }}
+                      onBlur={() => {
+                        const branch = orchestrator.rules.branch;
+                        void orchestratorSave.track(() =>
+                          api.updateOrchestratorSettings({ rules: { branch } }, orchProject),
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
                       }}
                       rows={2}
                       placeholder="Rules for branch naming and strategy..."
@@ -693,19 +811,24 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <span className="block text-xs text-zinc-400 mb-1">Merge rules</span>
                     <textarea
                       value={orchestrator.rules.merge}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        orchestratorSave.clearError();
                         setOrchestrator({
                           ...orchestrator,
                           rules: { ...orchestrator.rules, merge: e.target.value },
-                        })
-                      }
-                      onBlur={async () => {
-                        try {
-                          await api.updateOrchestratorSettings(
-                            { rules: { merge: orchestrator.rules.merge } },
-                            orchProject,
-                          );
-                        } catch (_e) {}
+                        });
+                      }}
+                      onBlur={() => {
+                        const merge = orchestrator.rules.merge;
+                        void orchestratorSave.track(() =>
+                          api.updateOrchestratorSettings({ rules: { merge } }, orchProject),
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
                       }}
                       rows={2}
                       placeholder="Rules for merge strategy and conflict resolution..."
@@ -718,19 +841,24 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <span className="block text-xs text-zinc-400 mb-1">Review rules</span>
                     <textarea
                       value={orchestrator.rules.review}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        orchestratorSave.clearError();
                         setOrchestrator({
                           ...orchestrator,
                           rules: { ...orchestrator.rules, review: e.target.value },
-                        })
-                      }
-                      onBlur={async () => {
-                        try {
-                          await api.updateOrchestratorSettings(
-                            { rules: { review: orchestrator.rules.review } },
-                            orchProject,
-                          );
-                        } catch (_e) {}
+                        });
+                      }}
+                      onBlur={() => {
+                        const review = orchestrator.rules.review;
+                        void orchestratorSave.track(() =>
+                          api.updateOrchestratorSettings({ rules: { review } }, orchProject),
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
                       }}
                       rows={2}
                       placeholder="Rules for code review process..."
@@ -743,19 +871,24 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     <span className="block text-xs text-zinc-400 mb-1">Custom rules</span>
                     <textarea
                       value={orchestrator.rules.custom}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        orchestratorSave.clearError();
                         setOrchestrator({
                           ...orchestrator,
                           rules: { ...orchestrator.rules, custom: e.target.value },
-                        })
-                      }
-                      onBlur={async () => {
-                        try {
-                          await api.updateOrchestratorSettings(
-                            { rules: { custom: orchestrator.rules.custom } },
-                            orchProject,
-                          );
-                        } catch (_e) {}
+                        });
+                      }}
+                      onBlur={() => {
+                        const custom = orchestrator.rules.custom;
+                        void orchestratorSave.track(() =>
+                          api.updateOrchestratorSettings({ rules: { custom } }, orchProject),
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
                       }}
                       rows={3}
                       placeholder="Additional custom rules for the orchestrator..."
@@ -768,6 +901,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     orchestrator={orchestrator}
                     setOrchestrator={setOrchestrator}
                     orchProject={orchProject}
+                    save={orchestratorSave}
                   />
 
                   {/* Notifications */}
@@ -775,6 +909,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     orchestrator={orchestrator}
                     setOrchestrator={setOrchestrator}
                     orchProject={orchProject}
+                    save={orchestratorSave}
                   />
 
                   {/* Guardrails */}
@@ -782,6 +917,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     orchestrator={orchestrator}
                     setOrchestrator={setOrchestrator}
                     orchProject={orchProject}
+                    save={orchestratorSave}
                   />
                 </div>
               )}
@@ -798,7 +934,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Usage monitoring section */}
         {usageSettings && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Usage Monitoring</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Usage Monitoring</h3>
+              <SaveStatus status={usageSave.status} error={usageSave.error} variant="section" />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">
               Periodically fetch Claude Code subscription usage. Spawns a temporary Claude Code
               instance (Haiku) for each refresh.
@@ -811,12 +950,12 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 </div>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     const newEnabled = !usageSettings.enabled;
                     setUsageSettings({ ...usageSettings, enabled: newEnabled });
-                    try {
-                      await api.updateUsageSettings({ enabled: newEnabled });
-                    } catch (_e) {}
+                    void usageSave.track(() => api.updateUsageSettings({ enabled: newEnabled }), {
+                      onError: () => setUsageSettings({ ...usageSettings, enabled: !newEnabled }),
+                    });
                   }}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                     usageSettings.enabled ? "bg-cyan-500/40" : "bg-white/10"
@@ -843,14 +982,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10);
                       if (!Number.isNaN(val)) {
+                        usageSave.clearError();
                         setUsageSettings({ ...usageSettings, auto_refresh_min: val });
                       }
                     }}
-                    onBlur={async () => {
+                    onBlur={() => {
                       const val = Math.max(5, usageSettings.auto_refresh_min || 30);
-                      try {
-                        await api.updateUsageSettings({ auto_refresh_min: val });
-                      } catch (_e) {}
+                      void usageSave.track(() =>
+                        api.updateUsageSettings({ auto_refresh_min: val }),
+                      );
                     }}
                     className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                   />
@@ -863,7 +1003,10 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
 
         {/* Notification section */}
         <section>
-          <h3 className="text-sm font-medium text-zinc-300">Notifications</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-zinc-300">Notifications</h3>
+            <SaveStatus status={notifySave.status} error={notifySave.error} variant="section" />
+          </div>
           <p className="mt-1 text-xs text-zinc-600">
             Browser notifications when agents finish processing and become idle.
           </p>
@@ -878,15 +1021,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
               </div>
               <button
                 type="button"
-                onClick={async () => {
+                onClick={() => {
                   const prev = notifyOnIdle;
                   const next = !prev;
                   setNotifyOnIdle(next);
-                  try {
-                    await api.updateNotificationSettings({ notify_on_idle: next });
-                  } catch (_e) {
-                    setNotifyOnIdle(prev);
-                  }
+                  void notifySave.track(
+                    () => api.updateNotificationSettings({ notify_on_idle: next }),
+                    { onError: () => setNotifyOnIdle(prev) },
+                  );
                 }}
                 className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                   notifyOnIdle ? "bg-cyan-500/40" : "bg-white/10"
@@ -911,16 +1053,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     if (!Number.isNaN(val)) {
+                      notifySave.clearError();
                       setNotifyThresholdSecs(val);
                     }
                   }}
-                  onBlur={async () => {
+                  onBlur={() => {
                     const val = Math.max(0, notifyThresholdSecs);
-                    try {
-                      await api.updateNotificationSettings({
-                        notify_idle_threshold_secs: val,
-                      });
-                    } catch (_e) {}
+                    void notifySave.track(() =>
+                      api.updateNotificationSettings({ notify_idle_threshold_secs: val }),
+                    );
                   }}
                   className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 />
@@ -940,7 +1081,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Workflow section */}
         {workflowSettings && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Workflow</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Workflow</h3>
+              <SaveStatus
+                status={workflowSave.status}
+                error={workflowSave.error}
+                variant="section"
+              />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">Workflow automation settings.</p>
 
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
@@ -953,12 +1101,19 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                 </div>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     const next = !workflowSettings.auto_rebase_on_merge;
                     setWorkflowSettings({ ...workflowSettings, auto_rebase_on_merge: next });
-                    try {
-                      await api.updateWorkflowSettings({ auto_rebase_on_merge: next });
-                    } catch (_e) {}
+                    void workflowSave.track(
+                      () => api.updateWorkflowSettings({ auto_rebase_on_merge: next }),
+                      {
+                        onError: () =>
+                          setWorkflowSettings({
+                            ...workflowSettings,
+                            auto_rebase_on_merge: !next,
+                          }),
+                      },
+                    );
                   }}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                     workflowSettings.auto_rebase_on_merge ? "bg-cyan-500/40" : "bg-white/10"
@@ -980,7 +1135,14 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         {/* Worktree section */}
         {worktreeSettings && (
           <section>
-            <h3 className="text-sm font-medium text-zinc-300">Worktree</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-300">Worktree</h3>
+              <SaveStatus
+                status={worktreeSave.status}
+                error={worktreeSave.error}
+                variant="section"
+              />
+            </div>
             <p className="mt-1 text-xs text-zinc-600">Git worktree settings for spawned agents.</p>
 
             <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
@@ -997,12 +1159,20 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                       </code>
                       <button
                         type="button"
-                        onClick={async () => {
-                          const cmds = worktreeSettings.setup_commands.filter((c) => c !== cmd);
+                        onClick={() => {
+                          const previous = worktreeSettings.setup_commands;
+                          const cmds = previous.filter((c) => c !== cmd);
                           setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
-                          try {
-                            await api.updateWorktreeSettings({ setup_commands: cmds });
-                          } catch (_e) {}
+                          void worktreeSave.track(
+                            () => api.updateWorktreeSettings({ setup_commands: cmds }),
+                            {
+                              onError: () =>
+                                setWorktreeSettings({
+                                  ...worktreeSettings,
+                                  setup_commands: previous,
+                                }),
+                            },
+                          );
                         }}
                         className="rounded px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
                       >
@@ -1016,14 +1186,22 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                     type="text"
                     value={newSetupCommand}
                     onChange={(e) => setNewSetupCommand(e.target.value)}
-                    onKeyDown={async (e) => {
+                    onKeyDown={(e) => {
                       if (e.key === "Enter" && newSetupCommand.trim()) {
-                        const cmds = [...worktreeSettings.setup_commands, newSetupCommand.trim()];
+                        const previous = worktreeSettings.setup_commands;
+                        const cmds = [...previous, newSetupCommand.trim()];
                         setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
                         setNewSetupCommand("");
-                        try {
-                          await api.updateWorktreeSettings({ setup_commands: cmds });
-                        } catch (_e) {}
+                        void worktreeSave.track(
+                          () => api.updateWorktreeSettings({ setup_commands: cmds }),
+                          {
+                            onError: () =>
+                              setWorktreeSettings({
+                                ...worktreeSettings,
+                                setup_commands: previous,
+                              }),
+                          },
+                        );
                       }
                     }}
                     placeholder="e.g., npm install"
@@ -1031,14 +1209,22 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   />
                   <button
                     type="button"
-                    onClick={async () => {
+                    onClick={() => {
                       if (!newSetupCommand.trim()) return;
-                      const cmds = [...worktreeSettings.setup_commands, newSetupCommand.trim()];
+                      const previous = worktreeSettings.setup_commands;
+                      const cmds = [...previous, newSetupCommand.trim()];
                       setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
                       setNewSetupCommand("");
-                      try {
-                        await api.updateWorktreeSettings({ setup_commands: cmds });
-                      } catch (_e) {}
+                      void worktreeSave.track(
+                        () => api.updateWorktreeSettings({ setup_commands: cmds }),
+                        {
+                          onError: () =>
+                            setWorktreeSettings({
+                              ...worktreeSettings,
+                              setup_commands: previous,
+                            }),
+                        },
+                      );
                     }}
                     className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
                   >
@@ -1057,14 +1243,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     if (!Number.isNaN(val)) {
+                      worktreeSave.clearError();
                       setWorktreeSettings({ ...worktreeSettings, setup_timeout_secs: val });
                     }
                   }}
-                  onBlur={async () => {
+                  onBlur={() => {
                     const val = Math.max(30, worktreeSettings.setup_timeout_secs);
-                    try {
-                      await api.updateWorktreeSettings({ setup_timeout_secs: val });
-                    } catch (_e) {}
+                    void worktreeSave.track(() =>
+                      api.updateWorktreeSettings({ setup_timeout_secs: val }),
+                    );
                   }}
                   className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 />
@@ -1081,14 +1268,15 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     if (!Number.isNaN(val)) {
+                      worktreeSave.clearError();
                       setWorktreeSettings({ ...worktreeSettings, branch_depth_warning: val });
                     }
                   }}
-                  onBlur={async () => {
+                  onBlur={() => {
                     const val = Math.max(1, worktreeSettings.branch_depth_warning);
-                    try {
-                      await api.updateWorktreeSettings({ branch_depth_warning: val });
-                    } catch (_e) {}
+                    void worktreeSave.track(() =>
+                      api.updateWorktreeSettings({ branch_depth_warning: val }),
+                    );
                   }}
                   className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
                 />
@@ -1295,56 +1483,53 @@ function NotifySettingsSection({
   orchestrator,
   setOrchestrator,
   orchProject,
+  save,
 }: {
   orchestrator: OrchestratorSettings;
   setOrchestrator: (v: OrchestratorSettings) => void;
   orchProject: string | undefined;
+  save: ReturnType<typeof useSaveTracker>;
 }) {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
 
   // Change the per-event handling mode (off / notify / auto_action) and persist
-  const setHandling = async (
-    key: NotifyEventDef["key"],
-    value: import("@/lib/api").EventHandling,
-  ) => {
+  const setHandling = (key: NotifyEventDef["key"], value: import("@/lib/api").EventHandling) => {
     const updated = {
       ...orchestrator,
       notify: { ...orchestrator.notify, [key]: value },
     };
     setOrchestrator(updated);
-    try {
-      await api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject);
-    } catch (_e) {
-      // Revert on error
-      setOrchestrator(orchestrator);
-    }
+    void save.track(
+      () => api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject),
+      { onError: () => setOrchestrator(orchestrator) },
+    );
   };
 
-  // Save a notify-mode template change
-  const saveTemplate = async (templateKey: NotifyEventDef["templateKey"], value: string) => {
-    try {
-      const templates: Record<string, string> = { [templateKey]: value };
-      await api.updateOrchestratorSettings(
+  // Save a notify-mode template change (text-field commit; no rollback)
+  const saveTemplate = (templateKey: NotifyEventDef["templateKey"], value: string) => {
+    const templates: Record<string, string> = { [templateKey]: value };
+    void save.track(() =>
+      api.updateOrchestratorSettings(
         { notify: { templates: templates as Partial<import("@/lib/api").NotifyTemplates> } },
         orchProject,
-      );
-    } catch (_e) {}
+      ),
+    );
   };
 
-  // Save an auto-action template change
-  const saveAutoActionTemplate = async (
+  // Save an auto-action template change (text-field commit; no rollback)
+  const saveAutoActionTemplate = (
     templateKey: keyof import("@/lib/api").AutoActionTemplates,
     value: string,
   ) => {
-    try {
-      const templates: Record<string, string> = { [templateKey]: value };
-      await api.updateOrchestratorSettings(
+    const templates: Record<string, string> = { [templateKey]: value };
+    void save.track(() =>
+      api.updateOrchestratorSettings(
         {
           auto_action_templates: templates as Partial<import("@/lib/api").AutoActionTemplates>,
         },
         orchProject,
-      );
-    } catch (_e) {}
+      ),
+    );
   };
 
   // Toggle one of the origin-aware filter booleans (#440)
@@ -1353,17 +1538,16 @@ function NotifySettingsSection({
     | "notify_on_human_action"
     | "notify_on_agent_action"
     | "notify_on_system_action";
-  const setOriginFlag = async (key: OriginFilterKey, value: boolean) => {
+  const setOriginFlag = (key: OriginFilterKey, value: boolean) => {
     const updated = {
       ...orchestrator,
       notify: { ...orchestrator.notify, [key]: value },
     };
     setOrchestrator(updated);
-    try {
-      await api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject);
-    } catch (_e) {
-      setOrchestrator(orchestrator);
-    }
+    void save.track(
+      () => api.updateOrchestratorSettings({ notify: { [key]: value } }, orchProject),
+      { onError: () => setOrchestrator(orchestrator) },
+    );
   };
 
   return (
@@ -1485,7 +1669,7 @@ function NotifySettingsSection({
                     {templateValue && (
                       <button
                         type="button"
-                        onClick={async () => {
+                        onClick={() => {
                           const updated = {
                             ...orchestrator,
                             notify: {
@@ -1497,7 +1681,7 @@ function NotifySettingsSection({
                             },
                           };
                           setOrchestrator(updated);
-                          await saveTemplate(evt.templateKey, "");
+                          saveTemplate(evt.templateKey, "");
                         }}
                         className="absolute top-1.5 right-1.5 text-zinc-600 hover:text-zinc-300 transition-colors"
                         title="Reset to default template"
@@ -1730,17 +1914,19 @@ function PrMonitorSection({
   orchestrator,
   setOrchestrator,
   orchProject,
+  save,
 }: {
   orchestrator: OrchestratorSettings;
   setOrchestrator: (v: OrchestratorSettings) => void;
   orchProject: string | undefined;
+  save: ReturnType<typeof useSaveTracker>;
 }) {
-  const updateInterval = async (value: number) => {
+  const updateInterval = (value: number) => {
     const clamped = Math.max(10, Math.min(3600, value));
     setOrchestrator({ ...orchestrator, pr_monitor_interval_secs: clamped });
-    try {
-      await api.updateOrchestratorSettings({ pr_monitor_interval_secs: clamped }, orchProject);
-    } catch (_e) {}
+    void save.track(() =>
+      api.updateOrchestratorSettings({ pr_monitor_interval_secs: clamped }, orchProject),
+    );
   };
 
   return (
@@ -1758,12 +1944,15 @@ function PrMonitorSection({
           </div>
           <button
             type="button"
-            onClick={async () => {
+            onClick={() => {
               const next = !orchestrator.pr_monitor_enabled;
               setOrchestrator({ ...orchestrator, pr_monitor_enabled: next });
-              try {
-                await api.updateOrchestratorSettings({ pr_monitor_enabled: next }, orchProject);
-              } catch (_e) {}
+              void save.track(
+                () => api.updateOrchestratorSettings({ pr_monitor_enabled: next }, orchProject),
+                {
+                  onError: () => setOrchestrator({ ...orchestrator, pr_monitor_enabled: !next }),
+                },
+              );
             }}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
               orchestrator.pr_monitor_enabled ? "bg-cyan-500/40" : "bg-white/10"
@@ -1802,6 +1991,7 @@ function PrMonitorSection({
             onChange={(e) => {
               const val = parseInt(e.target.value, 10);
               if (!Number.isNaN(val)) {
+                save.clearError();
                 setOrchestrator({ ...orchestrator, pr_monitor_interval_secs: val });
               }
             }}
@@ -1824,10 +2014,12 @@ function GuardrailsSection({
   orchestrator,
   setOrchestrator,
   orchProject,
+  save,
 }: {
   orchestrator: OrchestratorSettings;
   setOrchestrator: (v: OrchestratorSettings) => void;
   orchProject: string | undefined;
+  save: ReturnType<typeof useSaveTracker>;
 }) {
   const guardrailFields: {
     key: keyof OrchestratorSettings["guardrails"];
@@ -1851,16 +2043,16 @@ function GuardrailsSection({
     },
   ];
 
-  const updateField = async (key: keyof OrchestratorSettings["guardrails"], value: number) => {
+  const updateField = (key: keyof OrchestratorSettings["guardrails"], value: number) => {
     if (value < 1) return;
     const updated = {
       ...orchestrator,
       guardrails: { ...orchestrator.guardrails, [key]: value },
     };
     setOrchestrator(updated);
-    try {
-      await api.updateOrchestratorSettings({ guardrails: { [key]: value } }, orchProject);
-    } catch (_e) {}
+    void save.track(() =>
+      api.updateOrchestratorSettings({ guardrails: { [key]: value } }, orchProject),
+    );
   };
 
   return (
@@ -1882,6 +2074,7 @@ function GuardrailsSection({
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
                 if (!Number.isNaN(val)) {
+                  save.clearError();
                   setOrchestrator({
                     ...orchestrator,
                     guardrails: { ...orchestrator.guardrails, [field.key]: val },

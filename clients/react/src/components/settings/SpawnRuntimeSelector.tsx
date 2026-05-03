@@ -1,9 +1,17 @@
+import type { UseSaveTrackerResult } from "@/hooks/useSaveTracker";
 import type { SpawnRuntime, SpawnSettings } from "@/lib/api";
 import { api } from "@/lib/api";
 
 interface SpawnRuntimeSelectorProps {
   settings: SpawnSettings;
   onSettingsChange: (updated: SpawnSettings) => void;
+  /**
+   * Optional save tracker (#578). When provided, runtime-radio changes route
+   * through it so the parent section can render Saving / Saved / error state.
+   * Falls back to a fire-and-forget call (silent failure) for backwards
+   * compatibility with callers that have not yet adopted the tracker.
+   */
+  save?: UseSaveTrackerResult;
 }
 
 interface RuntimeOption {
@@ -30,14 +38,27 @@ const RUNTIME_OPTIONS: RuntimeOption[] = [
   },
 ];
 
-export function SpawnRuntimeSelector({ settings, onSettingsChange }: SpawnRuntimeSelectorProps) {
+export function SpawnRuntimeSelector({
+  settings,
+  onSettingsChange,
+  save,
+}: SpawnRuntimeSelectorProps) {
   const handleChange = async (runtime: SpawnRuntime) => {
     // tmux is not yet selectable; guard prevents accidental selection
     if (runtime === "tmux") return;
-    try {
-      await api.updateSpawnSettings({ runtime });
-      onSettingsChange({ ...settings, runtime });
-    } catch (_e) {}
+    const previous = settings.runtime;
+    onSettingsChange({ ...settings, runtime });
+    if (save) {
+      void save.track(() => api.updateSpawnSettings({ runtime }), {
+        onError: () => onSettingsChange({ ...settings, runtime: previous }),
+      });
+    } else {
+      try {
+        await api.updateSpawnSettings({ runtime });
+      } catch (_e) {
+        onSettingsChange({ ...settings, runtime: previous });
+      }
+    }
   };
 
   return (
