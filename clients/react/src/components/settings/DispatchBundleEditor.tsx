@@ -16,15 +16,30 @@ const PERMISSION_MODES: { value: PermissionMode; label: string }[] = [
 const EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"] as const;
 
 const MODEL_PLACEHOLDERS: Record<Vendor, string> = {
-  claude: "claude-opus-4-6",
+  claude: "claude-opus-4-7",
   codex: "codex-1",
   gemini: "gemini-2.5-pro",
 };
 
-/** auto is only valid for claude vendor with an opus-tier model. */
-function isAutoDisabled(vendor: Vendor, model: string): boolean {
-  if (vendor !== "claude") return true;
-  return !model.startsWith("claude-opus-");
+// Mirrors `vendor_compat::permission_mode_allowed` in tmai-core so the UI
+// disables combinations the backend would reject. Keep in sync with
+// `crates/tmai-core/src/config/vendor_compat.rs` — the codex / gemini rows
+// are placeholders and will tighten once vendor CLI docs are confirmed.
+function isPermissionModeAllowed(vendor: Vendor, model: string, mode: PermissionMode): boolean {
+  switch (vendor) {
+    case "claude":
+      if (mode === "auto") return model.startsWith("claude-opus-");
+      return mode === "default" || mode === "plan" || mode === "dontAsk" || mode === "acceptEdits";
+    case "codex":
+      return mode === "default" || mode === "acceptEdits";
+    case "gemini":
+      return mode === "default";
+  }
+}
+
+function permissionModeReason(vendor: Vendor, mode: PermissionMode): string {
+  if (vendor === "claude" && mode === "auto") return "requires opus-tier model";
+  return `not supported by ${vendor}`;
 }
 
 interface DispatchBundleEditorProps {
@@ -92,7 +107,14 @@ export function DispatchBundleEditor({
   const handleVendorChange = (vendor: Vendor) => {
     // Changing vendor resets model — no point keeping a cross-vendor model name.
     setModelDraft("");
-    onAtomicChange({ ...active, vendor, model: null });
+    // Drop the persisted permission_mode if it's no longer valid for the new
+    // vendor (e.g. `auto` after switching from claude to codex). Otherwise
+    // the next save would 400 on the backend's matrix check.
+    const next: DispatchBundle = { ...active, vendor, model: null };
+    if (active.permission_mode && !isPermissionModeAllowed(vendor, "", active.permission_mode)) {
+      next.permission_mode = null;
+    }
+    onAtomicChange(next);
   };
 
   const handleModelDraftChange = (model: string) => {
@@ -101,7 +123,16 @@ export function DispatchBundleEditor({
   };
 
   const handleModelCommit = () => {
-    onTextCommit({ ...active, model: modelDraft || null });
+    const next: DispatchBundle = { ...active, model: modelDraft || null };
+    // Drop `auto` if the new model isn't opus-tier — same matrix rule as
+    // handleVendorChange but triggered by the model field.
+    if (
+      next.permission_mode &&
+      !isPermissionModeAllowed(next.vendor, next.model ?? "", next.permission_mode)
+    ) {
+      next.permission_mode = null;
+    }
+    onTextCommit(next);
   };
 
   const handlePermissionChange = (value: string) => {
@@ -115,8 +146,6 @@ export function DispatchBundleEditor({
 
   const inputCls =
     "w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30 disabled:opacity-40 disabled:cursor-not-allowed";
-
-  const autoDisabled = isAutoDisabled(active.vendor, active.model ?? "");
 
   return (
     <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-3">
@@ -194,11 +223,11 @@ export function DispatchBundleEditor({
           >
             <option value="">— (default)</option>
             {PERMISSION_MODES.filter((o) => o.value !== "default").map((opt) => {
-              const disabled = opt.value === "auto" && autoDisabled;
+              const allowed = isPermissionModeAllowed(active.vendor, active.model ?? "", opt.value);
               return (
-                <option key={opt.value} value={opt.value} disabled={disabled}>
+                <option key={opt.value} value={opt.value} disabled={!allowed}>
                   {opt.label}
-                  {opt.value === "auto" && autoDisabled ? " (requires opus-tier model)" : ""}
+                  {!allowed ? ` (${permissionModeReason(active.vendor, opt.value)})` : ""}
                 </option>
               );
             })}
