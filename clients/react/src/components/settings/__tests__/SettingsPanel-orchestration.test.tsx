@@ -147,6 +147,7 @@ describe("OrchestrationDispatchSection", () => {
 
   it("switching vendor resets the model input to empty", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
 
     await waitFor(() => screen.getByText("Orchestrator"));
@@ -252,25 +253,81 @@ describe("OrchestrationDispatchSection", () => {
     expect(effortSelects.length).toBeGreaterThan(0);
   });
 
-  it("save calls updateOrchestratorSettings with the current bundle state", async () => {
+  // ── #578 auto-save behaviour ──────────────────────────────────────
+
+  it("no Save button is rendered (auto-save replaces explicit Save)", async () => {
+    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    render(<OrchestrationDispatchSection />);
+    await waitFor(() => screen.getByText("Orchestrator"));
+    expect(screen.queryByRole("button", { name: /^save/i })).toBeNull();
+  });
+
+  it("changing an atomic field (effort) triggers a single PUT immediately", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-
     await waitFor(() => screen.getByText("Orchestrator"));
 
-    const saveBtn = screen.getByRole("button", { name: /save/i });
-    fireEvent.click(saveBtn);
+    const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
+    fireEvent.change(effortSelects[0], { target: { value: "low" } });
 
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledWith({
-        orchestrator: EXPLICIT_SETTINGS.orchestrator,
-        dispatch: EXPLICIT_SETTINGS.dispatch,
-      });
+      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+      orchestrator: expect.objectContaining({ effort: "low" }),
     });
   });
 
-  it("displays backend error on save failure", async () => {
+  it("typing in the model field does NOT trigger a PUT mid-stream", async () => {
+    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
+    render(<OrchestrationDispatchSection />);
+    await waitFor(() => screen.getByText("Orchestrator"));
+
+    const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
+    fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
+    fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7-extra" } });
+
+    // No await — the PUT should never be called from typing alone.
+    expect(vi.mocked(api.updateOrchestratorSettings)).not.toHaveBeenCalled();
+    expect((modelInputs[0] as HTMLInputElement).value).toBe("claude-opus-4-7-extra");
+  });
+
+  it("blurring the model field commits the draft as a PUT", async () => {
+    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
+    render(<OrchestrationDispatchSection />);
+    await waitFor(() => screen.getByText("Orchestrator"));
+
+    const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
+    fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
+    fireEvent.blur(modelInputs[0]);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+      orchestrator: expect.objectContaining({ model: "claude-opus-4-7" }),
+    });
+  });
+
+  it("Enter on the model field commits the draft as a PUT", async () => {
+    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
+    render(<OrchestrationDispatchSection />);
+    await waitFor(() => screen.getByText("Orchestrator"));
+
+    const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
+    fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
+    fireEvent.keyDown(modelInputs[0], { key: "Enter" });
+
+    await waitFor(() => {
+      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("backend 400 on atomic change rolls back local state and surfaces inline error", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockRejectedValue(
       new Error(
@@ -278,32 +335,53 @@ describe("OrchestrationDispatchSection", () => {
       ),
     );
     render(<OrchestrationDispatchSection />);
-
     await waitFor(() => screen.getByText("Orchestrator"));
 
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
+    fireEvent.change(effortSelects[0], { target: { value: "low" } });
 
     await waitFor(() => {
       expect(screen.getByText(/permission_mode `auto` is not allowed/i)).toBeTruthy();
     });
+
+    // Rollback: the value should snap back to the previously-saved value.
+    expect((effortSelects[0] as HTMLSelectElement).value).toBe("high");
   });
 
-  it("sends null for the bundle when the default checkbox is checked", async () => {
+  it("backend 400 on text-field commit keeps the user's draft so they can correct", async () => {
+    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateOrchestratorSettings).mockRejectedValue(
+      new Error("API error 400: model `not-a-model` is unknown"),
+    );
+    render(<OrchestrationDispatchSection />);
+    await waitFor(() => screen.getByText("Orchestrator"));
+
+    const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
+    fireEvent.change(modelInputs[0], { target: { value: "not-a-model" } });
+    fireEvent.blur(modelInputs[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/model `not-a-model` is unknown/i)).toBeTruthy();
+    });
+
+    // Draft preserved so the user can edit and retry.
+    expect((modelInputs[0] as HTMLInputElement).value).toBe("not-a-model");
+  });
+
+  it("toggling 'Use vendor CLI default' sends null and persists immediately", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-
     await waitFor(() => screen.getByText("Orchestrator"));
 
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]); // orchestrator's "Use vendor CLI default"
 
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
-
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledWith(
-        expect.objectContaining({ orchestrator: null }),
-      );
+      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+      orchestrator: null,
     });
   });
 });
