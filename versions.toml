@@ -6,7 +6,7 @@
 # release.yml refuses to bundle while any key is 0.0.0, so placeholders are
 # an active safety net rather than a pending TODO.
 
-core = "2.2.0"      # tmai-core private Release (core-v2.1.0 pending push)
-react = "1.1.0"     # clients/react/package.json version
+core = "2.2.0"      # tmai-core private Release
+react = "1.2.0"     # clients/react/package.json version
 ratatui = "0.1.0"   # clients/ratatui/Cargo.toml version
 api_spec = "2.2.0"  # api-spec/openapi.json info.version
