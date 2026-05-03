@@ -14,14 +14,12 @@ import type {
   GuardrailsSettings,
   NotifySettings,
   NotifyTemplates,
-  OrchestrationSettings,
   OrchestratorRules,
   PrMonitorScope,
   SpawnRequest,
   SpawnRuntime,
   UsageSettings,
   WorkerDispatchMap,
-  WorkerPermissionMode,
   WorkflowSettings,
   WorktreeSettings,
 } from "./api-http";
@@ -205,11 +203,8 @@ export const api = {
 
   // Spawn settings
   getSpawnSettings: () => httpApi.getSpawnSettings(),
-  updateSpawnSettings: (params: {
-    runtime: SpawnRuntime;
-    tmux_window_name?: string;
-    worker_permission_mode?: WorkerPermissionMode;
-  }) => httpApi.updateSpawnSettings(params),
+  updateSpawnSettings: (params: { runtime: SpawnRuntime; tmux_window_name?: string }) =>
+    httpApi.updateSpawnSettings(params),
 
   // Orchestrator settings (per-project scope via optional project param)
   getOrchestratorSettings: (project?: string) => httpApi.getOrchestratorSettings(project),
@@ -228,6 +223,10 @@ export const api = {
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
+      /** Tri-state: omit → unchanged. `null` → clear. Object → replace. */
+      orchestrator?: DispatchBundle | null;
+      /** Replaces the entire `[orchestration.dispatch]` table. */
+      dispatch?: WorkerDispatchMap;
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),
@@ -250,14 +249,6 @@ export const api = {
   getWorktreeSettings: () => httpApi.getWorktreeSettings(),
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     httpApi.updateWorktreeSettings(params),
-
-  // Orchestration dispatch bundle settings (#573)
-  getOrchestrationSettings: (): Promise<OrchestrationSettings> =>
-    httpApi.getOrchestrationSettings(),
-  updateOrchestrationSettings: (params: {
-    orchestrator?: DispatchBundle | null;
-    dispatch?: WorkerDispatchMap;
-  }) => httpApi.updateOrchestrationSettings(params),
 
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),

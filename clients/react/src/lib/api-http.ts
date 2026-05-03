@@ -675,14 +675,10 @@ export interface AutoApproveSettings {
   max_concurrent: number;
 }
 
-export type WorkerPermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
-
 export interface SpawnSettings {
   runtime: SpawnRuntime;
   tmux_available: boolean;
   tmux_window_name: string;
-  /** Permission mode injected for dispatched workers (dispatch_issue / dispatch_review). */
-  worker_permission_mode: WorkerPermissionMode;
 }
 
 export interface OrchestratorRules {
@@ -759,6 +755,17 @@ export interface OrchestratorSettings {
   inject_state_snapshot: boolean;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
+  /**
+   * Orchestrator's own dispatch bundle (`[orchestration.orchestrator]`).
+   * `null` / omitted when unset — the orchestrator launches with the vendor
+   * CLI's user-global default.
+   */
+  orchestrator?: DispatchBundle | null;
+  /**
+   * Per-role dispatch bundles for orchestration workers
+   * (`[orchestration.dispatch.<role>]`).
+   */
+  dispatch: WorkerDispatchMap;
 }
 
 export interface SpawnRequest {
@@ -798,17 +805,6 @@ export interface WorktreeSettings {
   setup_commands: string[];
   setup_timeout_secs: number;
   branch_depth_warning: number;
-}
-
-// ── Orchestration dispatch bundle settings (#573) ──
-
-/**
- * Per-role dispatch bundle settings persisted under [orchestration.*] in config.toml.
- * null bundle means "use legacy [spawn.*] fallback for that role".
- */
-export interface OrchestrationSettings {
-  orchestrator: DispatchBundle | null;
-  dispatch: WorkerDispatchMap;
 }
 
 // ── Scheduled kicks (Routines parity — #2) ──
@@ -1187,11 +1183,7 @@ export const api = {
 
   // Spawn settings
   getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
-  updateSpawnSettings: (params: {
-    runtime: SpawnRuntime;
-    tmux_window_name?: string;
-    worker_permission_mode?: WorkerPermissionMode;
-  }) =>
+  updateSpawnSettings: (params: { runtime: SpawnRuntime; tmux_window_name?: string }) =>
     apiFetch("/settings/spawn", {
       method: "PUT",
       body: JSON.stringify(params),
@@ -1217,6 +1209,13 @@ export const api = {
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
+      /**
+       * Tri-state: omit → leave unchanged. `null` → clear the bundle. Object →
+       * replace. Persists to `[orchestration.orchestrator]` in config.toml.
+       */
+      orchestrator?: DispatchBundle | null;
+      /** Replaces the entire `[orchestration.dispatch]` table. */
+      dispatch?: WorkerDispatchMap;
     },
     project?: string,
   ) =>
@@ -1256,17 +1255,6 @@ export const api = {
   getWorktreeSettings: () => apiFetch<WorktreeSettings>("/settings/worktree"),
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     apiFetch("/settings/worktree", {
-      method: "PUT",
-      body: JSON.stringify(params),
-    }),
-
-  // Orchestration dispatch bundle settings (#573)
-  getOrchestrationSettings: () => apiFetch<OrchestrationSettings>("/settings/orchestration"),
-  updateOrchestrationSettings: (params: {
-    orchestrator?: DispatchBundle | null;
-    dispatch?: WorkerDispatchMap;
-  }) =>
-    apiFetch("/settings/orchestration", {
       method: "PUT",
       body: JSON.stringify(params),
     }),

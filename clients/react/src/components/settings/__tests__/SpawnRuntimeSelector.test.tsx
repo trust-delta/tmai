@@ -20,7 +20,6 @@ const BASE_SETTINGS: SpawnSettings = {
   runtime: "native",
   tmux_available: false,
   tmux_window_name: "tmai",
-  worker_permission_mode: "acceptEdits",
 };
 
 describe("SpawnRuntimeSelector", () => {
