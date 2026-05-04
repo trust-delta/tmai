@@ -29,11 +29,10 @@ pub enum AppEvent {
 /// `tx` is dropped or the transport permanently fails.
 pub fn spawn(client: ApiClient, tx: mpsc::UnboundedSender<AppEvent>) {
     tokio::spawn(async move {
-        let url = format!(
-            "{}?token={}",
-            client.url("/events"),
-            urlencode(client.token())
-        );
+        // Bearer token goes only in the Authorization header — never as a
+        // query string. Query-string tokens leak to upstream proxy access
+        // logs (and to any HTTP client that logs full request URLs).
+        let url = client.url("/events");
         let request = reqwest::Client::new().get(&url).bearer_auth(client.token());
         let mut source = match EventSource::new(request) {
             Ok(s) => s,
@@ -80,18 +79,4 @@ pub fn spawn(client: ApiClient, tx: mpsc::UnboundedSender<AppEvent>) {
 /// snapshot before the first SSE `agents` event lands.
 pub async fn backfill(client: &ApiClient) -> Result<Vec<AgentSnapshot>> {
     client.list_agents().await
-}
-
-fn urlencode(s: &str) -> String {
-    // RFC 3986 unreserved — good enough for a bearer token (hex chars).
-    // Falls back to percent-encoding anything else.
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{:02X}", b));
-        }
-    }
-    out
 }

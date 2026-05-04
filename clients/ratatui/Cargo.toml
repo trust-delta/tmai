@@ -1,7 +1,7 @@
-# Staged-as-standalone: the outer tmai-core workspace must not absorb
-# this crate (see issue #30 — this directory will be extracted into a
-# separate repo). Leaving `[workspace]` empty makes Cargo treat this
-# directory as its own root.
+# Independent `[workspace]` so the outer tmai-core (private) workspace
+# and this directory don't fight over Cargo.lock; this directory ships
+# in the tmai monorepo and is bundled into the release tarball as a
+# standalone binary.
 [workspace]
 
 [package]
@@ -11,7 +11,7 @@ edition = "2021"
 rust-version = "1.91"
 authors = ["TrustDelta"]
 description = "ratatui TUI client for tmai-core — speaks the tmai-api-spec HTTP + SSE contract"
-repository = "https://github.com/trust-delta/tmai-ratatui"
+repository = "https://github.com/trust-delta/tmai"
 license = "MIT"
 publish = false
 readme = "README.md"

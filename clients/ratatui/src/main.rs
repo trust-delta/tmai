@@ -16,7 +16,8 @@ struct Cli {
     #[arg(long)]
     url: Option<String>,
 
-    /// Bearer token. Used with --url; ignored when api.json is read.
+    /// Bearer token. Requires --url. Without --url, api.json is read and
+    /// supplies its own token, so passing --token alone is rejected.
     #[arg(long)]
     token: Option<String>,
 
@@ -38,7 +39,16 @@ async fn main() -> Result<()> {
             )?;
             (url, info.token)
         }
-        (None, _) => {
+        // Reject `--token` without `--url` explicitly: the auto-discovery
+        // arm below would silently override the user-supplied token with
+        // the one from api.json, hiding a likely user mistake.
+        (None, Some(_)) => {
+            bail!(
+                "--token requires --url; bare --token is not honored when discovering \
+                 tmai-core via $XDG_RUNTIME_DIR/tmai/api.json (api.json supplies its own token)"
+            );
+        }
+        (None, None) => {
             let info = api::load_connection_info()
                 .context("failed to discover tmai-core — is it running?")?;
             (format!("http://127.0.0.1:{}", info.port), info.token)
