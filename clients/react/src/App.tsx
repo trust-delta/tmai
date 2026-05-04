@@ -55,10 +55,25 @@ export function App() {
   const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSecurity, setShowSecurity] = useState(false);
+  // Main panel takes one of `"agents"` (default), `"settings"`, or `"security"`.
+  // Settings and Security replace the main panel content (not modal overlays),
+  // so they're mutually exclusive — opening one always closes the other.
+  // The previous two-booleans-cleared-in-tandem pattern was equivalent but
+  // more error-prone; this enum makes the constraint explicit.
+  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security">("agents");
   const [showHelp, setShowHelp] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown">("git");
+  const showSettings = mainPanel === "settings";
+  const showSecurity = mainPanel === "security";
+  const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
+  const toggleSettings = useCallback(
+    () => setMainPanel((mp) => (mp === "settings" ? "agents" : "settings")),
+    [],
+  );
+  const toggleSecurity = useCallback(
+    () => setMainPanel((mp) => (mp === "security" ? "agents" : "security")),
+    [],
+  );
 
   // Split-pane layout state
   const {
@@ -128,23 +143,21 @@ export function App() {
   const handleSpawned = useCallback(
     (target: string) => {
       setSelection({ type: "agent", id: target });
-      setShowSettings(false);
-      setShowSecurity(false);
+      closeMainPanelOverlay();
       refresh();
       toastSuccess("Agent spawned");
     },
-    [refresh, toastSuccess],
+    [refresh, toastSuccess, closeMainPanelOverlay],
   );
 
   // Select handler for agents — closes mobile drawer after selection
   const handleSelectAgent = useCallback(
     (target: string) => {
       setSelection({ type: "agent", id: target });
-      setShowSettings(false);
-      setShowSecurity(false);
+      closeMainPanelOverlay();
       closeMobileDrawer();
     },
-    [closeMobileDrawer],
+    [closeMobileDrawer, closeMainPanelOverlay],
   );
 
   // Derive selectedTarget string for components that need it
@@ -189,8 +202,7 @@ export function App() {
         }
       }
       setSelection({ type: "project", path, name });
-      setShowSettings(false);
-      setShowSecurity(false);
+      closeMainPanelOverlay();
       closeMobileDrawer();
     },
     [
@@ -202,6 +214,7 @@ export function App() {
       rightPanelTab,
       setSplitEnabled,
       closeMobileDrawer,
+      closeMainPanelOverlay,
     ],
   );
 
@@ -227,8 +240,7 @@ export function App() {
         }
       }
       setSelection({ type: "markdown", projectPath, projectName });
-      setShowSettings(false);
-      setShowSecurity(false);
+      closeMainPanelOverlay();
       closeMobileDrawer();
     },
     [
@@ -240,6 +252,7 @@ export function App() {
       rightPanelTab,
       setSplitEnabled,
       closeMobileDrawer,
+      closeMainPanelOverlay,
     ],
   );
 
@@ -254,10 +267,7 @@ export function App() {
       keys: [","],
       description: "Toggle settings",
       requiresCtrl: true,
-      handler: () => {
-        setShowSettings((v) => !v);
-        setShowSecurity(false);
-      },
+      handler: toggleSettings,
     },
     {
       keys: ["["],
@@ -408,12 +418,10 @@ export function App() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={toggleSidebar}
             onSettingsClick={() => {
-              setShowSettings((v) => !v);
-              setShowSecurity(false);
+              toggleSettings();
             }}
             onSecurityClick={() => {
-              setShowSecurity((v) => !v);
-              setShowSettings(false);
+              toggleSecurity();
             }}
           />
           {!sidebarCollapsed && (
@@ -455,26 +463,21 @@ export function App() {
             isMobile
             onMobileMenuClick={toggleMobileDrawer}
             onSettingsClick={() => {
-              setShowSettings((v) => !v);
-              setShowSecurity(false);
+              toggleSettings();
             }}
             onSecurityClick={() => {
-              setShowSecurity((v) => !v);
-              setShowSettings(false);
+              toggleSecurity();
             }}
           />
         )}
 
         {showSecurity ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SecurityPanel onClose={() => setShowSecurity(false)} />
+            <SecurityPanel onClose={closeMainPanelOverlay} />
           </div>
         ) : showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SettingsPanel
-              onClose={() => setShowSettings(false)}
-              onProjectsChanged={refreshProjects}
-            />
+            <SettingsPanel onClose={closeMainPanelOverlay} onProjectsChanged={refreshProjects} />
           </div>
         ) : selection?.type === "project" ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
