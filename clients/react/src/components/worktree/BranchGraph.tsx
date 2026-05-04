@@ -16,6 +16,7 @@ import { DetailPanel, type DetailView } from "./DetailPanel";
 import { LaneGraph } from "./graph/LaneGraph";
 import { computeLayout } from "./graph/layout";
 import type { BranchNode } from "./graph/types";
+import { IssueActionView } from "./IssueActionView";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssuesPanel } from "./IssuesPanel";
 
@@ -664,31 +665,17 @@ export function BranchGraph({
               />
             )}
 
-            {/* Action panel toggle + panel in issue mode */}
+            {/* Action panel toggle + Issues-tab right rail */}
             <ActionPanelToggle collapsed={actionPanelCollapsed} onToggle={onToggleActionPanel} />
             {!actionPanelCollapsed && (
               <div className="animate-slide-in-right">
-                <ActionPanel
-                  activeNode={activeNode ?? nodes[0]}
-                  branches={branches}
-                  projectPath={projectPath}
-                  nodeDepth={nodeDepth}
-                  branchDepthWarning={BRANCH_DEPTH_WARNING}
-                  prInfo={undefined}
-                  targetPrs={EMPTY_PRS}
-                  issues={issues}
-                  onRefresh={refreshBranches}
-                  onSelectNode={setSelectedNode}
-                  onFocusAgent={onFocusAgent}
-                  onOpenDetail={setDetailView}
-                  issueMode
+                <IssueActionView
                   selectedIssue={selectedIssue}
                   defaultBranch={branches?.default_branch ?? "main"}
                   worktrees={projectWorktrees}
-                  onStartWorkDone={handleStartWorkDone}
+                  projectPath={projectPath}
                   onSelectWorktreeBranch={navigateToBranch}
-                  onNavigateToIssue={navigateToIssue}
-                  onNavigateToBranch={navigateToBranch}
+                  onStartWorkDone={handleStartWorkDone}
                 />
               </div>
             )}
