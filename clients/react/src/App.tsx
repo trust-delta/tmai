@@ -17,6 +17,7 @@ import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgents } from "@/hooks/useAgents";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
@@ -28,22 +29,12 @@ export function App() {
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const toast = useToast();
   const { success: toastSuccess, error: toastError, info: toastInfo } = toast;
-  const [notifyConfig, setNotifyConfig] = useState({ enabled: true, thresholdSecs: 10 });
 
-  // Load notification settings from backend
-  useEffect(() => {
-    api
-      .getNotificationSettings()
-      .then((s) =>
-        setNotifyConfig({
-          enabled: s.notify_on_idle,
-          thresholdSecs: s.notify_idle_threshold_secs,
-        }),
-      )
-      .catch(() => {});
-  }, []);
-
-  // Browser notification on agent idle
+  // Browser notification on agent idle. The config refetches on window focus /
+  // visibility change so toggling "Notify on idle" in Settings — which
+  // tmai-core hot-reloads server-side (#255) — actually flips the WebUI
+  // behaviour on the next focus event without a tab reload.
+  const notifyConfig = useNotificationConfig();
   const { handleAgentStopped } = useIdleNotification(agents, notifyConfig);
 
   // Listen for agent_stopped SSE event for immediate hook-based notifications
