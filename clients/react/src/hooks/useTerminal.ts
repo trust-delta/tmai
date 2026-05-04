@@ -27,9 +27,23 @@ interface UseTerminalOptions {
   agentId: string | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
   autoScroll?: boolean;
+  /**
+   * When `true`, the hook does NOT attach xterm's `onData` / `onBinary`
+   * to the keys WebSocket. Callers are expected to drive `sendKeys` from
+   * their own input pipeline (e.g. PreviewPanelXterm forwards bytes
+   * through a hidden IME input + composition handler so Japanese / CJK
+   * input lands correctly). The xterm canvas is still mounted and
+   * rendered; only keyboard capture is suppressed.
+   */
+  keysHandledExternally?: boolean;
 }
 
-export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTerminalOptions) {
+export function useTerminal({
+  agentId,
+  containerRef,
+  autoScroll = true,
+  keysHandledExternally = false,
+}: UseTerminalOptions) {
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const inputDisposableRef = useRef<{ dispose: () => void } | null>(null);
@@ -98,20 +112,25 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     // (tmai-core PR #227) and xterm renders them as soon as they
     // arrive — no client-side warmup write needed.
 
-    // Forward xterm input → keys-mode WS.
-    const inputDisposable = term.onData((data: string): void => {
-      sendKeys(data);
-    });
-    inputDisposableRef.current = inputDisposable;
+    // Forward xterm input → keys-mode WS, unless the caller drives keys
+    // from its own input pipeline (PreviewPanelXterm's hidden IME input).
+    let inputDisposable: { dispose: () => void } | null = null;
+    let binaryDisposable: { dispose: () => void } | null = null;
+    if (!keysHandledExternally) {
+      inputDisposable = term.onData((data: string): void => {
+        sendKeys(data);
+      });
+      inputDisposableRef.current = inputDisposable;
 
-    const binaryDisposable = term.onBinary((data: string): void => {
-      const bytes = new Uint8Array(data.length);
-      for (let i = 0; i < data.length; i++) {
-        bytes[i] = data.charCodeAt(i);
-      }
-      sendKeys(bytes.buffer);
-    });
-    binaryDisposableRef.current = binaryDisposable;
+      binaryDisposable = term.onBinary((data: string): void => {
+        const bytes = new Uint8Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+          bytes[i] = data.charCodeAt(i);
+        }
+        sendKeys(bytes.buffer);
+      });
+      binaryDisposableRef.current = binaryDisposable;
+    }
 
     // Debounce resize events (~75 ms trailing edge) to avoid flooding the
     // server during window-drag bursts. FitAddon reflows the canvas on
@@ -136,8 +155,8 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
 
     return () => {
       observer.disconnect();
-      inputDisposable.dispose();
-      binaryDisposable.dispose();
+      inputDisposable?.dispose();
+      binaryDisposable?.dispose();
       resizeDisposable.dispose();
       if (resizeTimerRef.current !== null) {
         clearTimeout(resizeTimerRef.current);
@@ -149,7 +168,7 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, containerRef, sendKeys]);
+  }, [agentId, containerRef, sendKeys, keysHandledExternally]);
 
   // Toggle keyboard attachment (input vs select mode).
   const setAttachable = useCallback(
@@ -203,5 +222,5 @@ export function useTerminal({ agentId, containerRef, autoScroll = true }: UseTer
     [sendKeys],
   );
 
-  return { terminal: termRef, fit, writeText, setAttachable, attached };
+  return { terminal: termRef, fit, writeText, sendKeys, setAttachable, attached };
 }
