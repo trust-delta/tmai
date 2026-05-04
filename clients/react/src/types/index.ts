@@ -1,8 +1,9 @@
-// Re-exports for types sourced from tmai-api-spec.
+// Re-exports for types sourced from the in-repo wire contract.
 //
-// Files under `./generated/` are a copy of the TypeScript distribution
-// published by https://github.com/trust-delta/tmai-api-spec. Do not edit
-// them by hand — update tmai-api-spec and re-sync. See ./README.md.
+// Files under `./generated/` mirror the TypeScript output of `xtask` in
+// the private `tmai-core` repo. They land here via the `gen-spec-pr` bot
+// PRs that also refresh `api-spec/` at the monorepo root. Do not hand-edit
+// `./generated/` — see ./README.md for the sync flow.
 
 export type { ActionOrigin } from "./generated/ActionOrigin";
 export type { ApprovalSnapshot } from "./generated/ApprovalSnapshot";
