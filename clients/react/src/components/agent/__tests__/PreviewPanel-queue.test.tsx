@@ -11,6 +11,20 @@ global.ResizeObserver = class ResizeObserver {
 };
 Element.prototype.scrollIntoView = vi.fn();
 
+// xterm's internal browser-services use matchMedia / canvas APIs that
+// jsdom doesn't ship; we stub `useTerminal` instead so the panel mounts
+// without trying to spin up a real terminal.
+vi.mock("@/hooks/useTerminal", () => ({
+  useTerminal: () => ({
+    terminal: { current: null },
+    fit: vi.fn(),
+    writeText: vi.fn(),
+    sendKeys: vi.fn(),
+    setAttachable: vi.fn(),
+    attached: true,
+  }),
+}));
+
 // ── mock @/lib/sse-provider — useSSE is a no-op in these unit tests ──
 vi.mock("@/lib/sse-provider", () => ({
   useSSE: vi.fn(),
