@@ -1,9 +1,11 @@
 import { AnsiUp } from "ansi_up";
 import DOMPurify from "dompurify";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { AutoScrollToggleButton, ModeHint, ModeToggleButton } from "@/components/terminal/controls";
 import { QueueBadge } from "@/components/ui/QueueBadge";
 import { QueuePopover } from "@/components/ui/QueuePopover";
 import { useAgentTerminalStream } from "@/hooks/useAgentTerminalStream";
+import { useAutoScrollPerAgent } from "@/hooks/useAutoScrollPerAgent";
 import { useQueuedPrompts } from "@/hooks/useQueuedPrompts";
 import { api } from "@/lib/api";
 import type { QueuedPrompt, TranscriptRecord } from "@/lib/api-http";
@@ -39,9 +41,6 @@ function originLabel(o: ActionOrigin): string {
       return `System:${o.subsystem}`;
   }
 }
-
-// Per-agent auto-scroll preference (persists across agent switches)
-const agentAutoScrollMap = new Map<string, boolean>();
 
 const MONO_FONT_STACK =
   "'JetBrainsMono Nerd Font', 'JetBrainsMono NF', " +
@@ -95,19 +94,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     composingRef.current = composing;
   }, [composing]);
 
-  const [autoScroll, setAutoScrollRaw] = useState(() => agentAutoScrollMap.get(agentId) ?? true);
-
-  // Wrap setter to persist preference per agent
-  const setAutoScroll = useCallback(
-    (v: boolean | ((prev: boolean) => boolean)) => {
-      setAutoScrollRaw((prev) => {
-        const next = typeof v === "function" ? v(prev) : v;
-        agentAutoScrollMap.set(agentId, next);
-        return next;
-      });
-    },
-    [agentId],
-  );
+  const [autoScroll, setAutoScroll] = useAutoScrollPerAgent(agentId);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -172,14 +159,14 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
     onData: onWsData,
   });
 
-  // Reset state when switching agents (autoScroll restored from per-agent map)
+  // Reset state when switching agents. autoScroll syncs through
+  // `useAutoScrollPerAgent`, which has its own agentId-keyed effect.
   useEffect(() => {
     setHistory("");
     setLive("");
     setTranscriptRecords([]);
     setFocused(true);
     setHasDomFocus(true);
-    setAutoScrollRaw(agentAutoScrollMap.get(agentId) ?? true);
     setComposing(false);
     lastHistoryHtmlRef.current = "";
     lastLiveHtmlRef.current = "";
@@ -666,34 +653,11 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             Transcript
           </button>
         </div>
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={focused ? enterSelectMode : enterInputMode}
-          className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-            focused ? "bg-cyan-500/20 text-cyan-400" : "bg-amber-500/20 text-amber-400"
-          }`}
-          title={
-            focused
-              ? "Input mode — keystrokes sent to agent (click for select mode)"
-              : "Select mode — click to copy text (click for input mode)"
-          }
-        >
-          {focused ? "⌨ Input" : "📋 Select"}
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setAutoScroll((v) => !v)}
-          className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-            autoScroll
-              ? "bg-cyan-500/15 text-cyan-400"
-              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
-          }`}
-          title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
-        >
-          {autoScroll ? "⇩ Auto" : "⇩ Off"}
-        </button>
+        <ModeToggleButton
+          inputMode={focused}
+          onToggle={focused ? enterSelectMode : enterInputMode}
+        />
+        <AutoScrollToggleButton autoScroll={autoScroll} onToggle={() => setAutoScroll((v) => !v)} />
         <div className="relative">
           <QueueBadge
             count={queueItems.length}
@@ -721,9 +685,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           />
         </div>
         <div className="flex-1" />
-        <span className="hidden text-[10px] text-zinc-600 sm:block">
-          {focused ? "click to select" : "Enter or click ⌨ to input"}
-        </span>
+        <ModeHint inputMode={focused} />
       </div>
     </div>
   );
