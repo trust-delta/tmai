@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
-import {
-  api,
-  type SpawnSettings,
-  type UsageSettings,
-  type WorkflowSettings,
-  type WorktreeSettings,
-} from "@/lib/api";
+import { api, type SpawnSettings, type UsageSettings, type WorkflowSettings } from "@/lib/api";
 import { AutoApproveSection } from "./AutoApproveSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
@@ -14,6 +8,7 @@ import { ProjectsSection } from "./ProjectsSection";
 import { SaveStatus } from "./SaveStatus";
 import { ScheduledKicksSection } from "./ScheduledKicksSection";
 import { SpawnRuntimeSelector } from "./SpawnRuntimeSelector";
+import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -28,8 +23,6 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const [notifyOnIdle, setNotifyOnIdle] = useState(true);
   const [notifyThresholdSecs, setNotifyThresholdSecs] = useState(10);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings | null>(null);
-  const [worktreeSettings, setWorktreeSettings] = useState<WorktreeSettings | null>(null);
-  const [newSetupCommand, setNewSetupCommand] = useState("");
 
   // Per-section auto-save status (#578). Each tracker runs independently so a
   // failure in one section does not blank out the indicator on another.
@@ -37,7 +30,6 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
   const usageSave = useSaveTracker();
   const notifySave = useSaveTracker();
   const workflowSave = useSaveTracker();
-  const worktreeSave = useSaveTracker();
 
   const refreshProjects = useCallback(() => {
     api.listProjects().then(setProjects).catch(console.error);
@@ -65,10 +57,6 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
     api
       .getWorkflowSettings()
       .then(setWorkflowSettings)
-      .catch(() => {});
-    api
-      .getWorktreeSettings()
-      .then(setWorktreeSettings)
       .catch(() => {});
   }, [refreshProjects, refreshSpawnSettings, refreshUsageSettings]);
 
@@ -365,158 +353,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         )}
 
         {/* Worktree section */}
-        {worktreeSettings && (
-          <section>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-zinc-300">Worktree</h3>
-              <SaveStatus
-                status={worktreeSave.status}
-                error={worktreeSave.error}
-                variant="section"
-              />
-            </div>
-            <p className="mt-1 text-xs text-zinc-600">Git worktree settings for spawned agents.</p>
-
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
-              <div>
-                <span className="text-xs text-zinc-500">Setup commands</span>
-                <p className="text-[10px] text-zinc-600 mt-0.5">
-                  Commands to run after creating a new worktree (e.g., npm install).
-                </p>
-                <div className="mt-2 space-y-1">
-                  {worktreeSettings.setup_commands.map((cmd) => (
-                    <div key={cmd} className="flex items-center gap-1.5">
-                      <code className="flex-1 rounded bg-white/5 px-2 py-1 text-xs text-zinc-300">
-                        {cmd}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const previous = worktreeSettings.setup_commands;
-                          const cmds = previous.filter((c) => c !== cmd);
-                          setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
-                          void worktreeSave.track(
-                            () => api.updateWorktreeSettings({ setup_commands: cmds }),
-                            {
-                              onError: () =>
-                                setWorktreeSettings({
-                                  ...worktreeSettings,
-                                  setup_commands: previous,
-                                }),
-                            },
-                          );
-                        }}
-                        className="rounded px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex gap-1.5">
-                  <input
-                    type="text"
-                    value={newSetupCommand}
-                    onChange={(e) => setNewSetupCommand(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newSetupCommand.trim()) {
-                        const previous = worktreeSettings.setup_commands;
-                        const cmds = [...previous, newSetupCommand.trim()];
-                        setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
-                        setNewSetupCommand("");
-                        void worktreeSave.track(
-                          () => api.updateWorktreeSettings({ setup_commands: cmds }),
-                          {
-                            onError: () =>
-                              setWorktreeSettings({
-                                ...worktreeSettings,
-                                setup_commands: previous,
-                              }),
-                          },
-                        );
-                      }
-                    }}
-                    placeholder="e.g., npm install"
-                    className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!newSetupCommand.trim()) return;
-                      const previous = worktreeSettings.setup_commands;
-                      const cmds = [...previous, newSetupCommand.trim()];
-                      setWorktreeSettings({ ...worktreeSettings, setup_commands: cmds });
-                      setNewSetupCommand("");
-                      void worktreeSave.track(
-                        () => api.updateWorktreeSettings({ setup_commands: cmds }),
-                        {
-                          onError: () =>
-                            setWorktreeSettings({
-                              ...worktreeSettings,
-                              setup_commands: previous,
-                            }),
-                        },
-                      );
-                    }}
-                    className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 text-xs text-zinc-500">Setup timeout</span>
-                <input
-                  type="number"
-                  min={30}
-                  max={3600}
-                  value={worktreeSettings.setup_timeout_secs}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(val)) {
-                      worktreeSave.clearError();
-                      setWorktreeSettings({ ...worktreeSettings, setup_timeout_secs: val });
-                    }
-                  }}
-                  onBlur={() => {
-                    const val = Math.max(30, worktreeSettings.setup_timeout_secs);
-                    void worktreeSave.track(() =>
-                      api.updateWorktreeSettings({ setup_timeout_secs: val }),
-                    );
-                  }}
-                  className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
-                />
-                <span className="text-xs text-zinc-500">seconds</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 text-xs text-zinc-500">Branch depth warning</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={worktreeSettings.branch_depth_warning}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(val)) {
-                      worktreeSave.clearError();
-                      setWorktreeSettings({ ...worktreeSettings, branch_depth_warning: val });
-                    }
-                  }}
-                  onBlur={() => {
-                    const val = Math.max(1, worktreeSettings.branch_depth_warning);
-                    void worktreeSave.track(() =>
-                      api.updateWorktreeSettings({ branch_depth_warning: val }),
-                    );
-                  }}
-                  className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
-                />
-                <span className="text-xs text-zinc-500">levels</span>
-              </div>
-            </div>
-          </section>
-        )}
+        <WorktreeSection />
 
         {/* Projects section */}
         <ProjectsSection
