@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAutoScrollPerAgent } from "@/hooks/useAutoScrollPerAgent";
 import { useTerminal } from "@/hooks/useTerminal";
 import "@xterm/xterm/css/xterm.css";
+import { AutoScrollToggleButton, ModeHint, ModeToggleButton } from "./controls";
 
 // Trim the canonical id (`<scheme>:<id>`) to `<scheme>:<first-8-chars>`
 // for the panel header. `provisional:abcd1234` is more useful than the
@@ -23,7 +25,7 @@ interface TerminalPanelProps {
 export function TerminalPanel({ agentId }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [inputMode, setInputMode] = useState(true);
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [autoScroll, setAutoScroll] = useAutoScrollPerAgent(agentId);
 
   const { setAttachable } = useTerminal({ agentId, containerRef, autoScroll });
 
@@ -82,38 +84,13 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
 
       {/* Footer status bar */}
       <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1.5">
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={inputMode ? enterSelectMode : enterInputMode}
-          className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-            inputMode ? "bg-cyan-500/20 text-cyan-400" : "bg-amber-500/20 text-amber-400"
-          }`}
-          title={
-            inputMode
-              ? "Input mode — keystrokes sent to agent (click for select mode)"
-              : "Select mode — click to copy text (click for input mode)"
-          }
-        >
-          {inputMode ? "⌨ Input" : "📋 Select"}
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setAutoScroll((v) => !v)}
-          className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-            autoScroll
-              ? "bg-cyan-500/15 text-cyan-400"
-              : "bg-white/5 text-zinc-600 hover:text-zinc-400"
-          }`}
-          title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
-        >
-          {autoScroll ? "⇩ Auto" : "⇩ Off"}
-        </button>
+        <ModeToggleButton
+          inputMode={inputMode}
+          onToggle={inputMode ? enterSelectMode : enterInputMode}
+        />
+        <AutoScrollToggleButton autoScroll={autoScroll} onToggle={() => setAutoScroll((v) => !v)} />
         <div className="flex-1" />
-        <span className="hidden text-[10px] text-zinc-600 sm:block">
-          {inputMode ? "click to select" : "Enter or click ⌨ to input"}
-        </span>
+        <ModeHint inputMode={inputMode} />
       </div>
     </section>
   );
