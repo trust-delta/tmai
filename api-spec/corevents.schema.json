@@ -1071,6 +1071,17 @@
       ],
       "type": "object"
     },
+    "PermissionMode": {
+      "description": "Permission mode reported by Claude Code in hook payloads.\n\nMaps to the session's current permission level (e.g., \"default\", \"plan\",\n\"dontAsk\", \"acceptEdits\").",
+      "enum": [
+        "default",
+        "plan",
+        "dontAsk",
+        "acceptEdits",
+        "auto"
+      ],
+      "type": "string"
+    },
     "Phase": {
       "description": "Coarse-grained phase for orchestrator consumption.\n\nDerived from `AgentStatus` — orchestrator tools operate on phase for simple,\nstable categories suitable for decision-making.",
       "enum": [
@@ -1303,6 +1314,75 @@
         "capacity",
         "vendors",
         "deferred_tools"
+      ],
+      "type": "object"
+    },
+    "ScheduledSpawn": {
+      "description": "One entry of the top-level `[[scheduled]]` config table — a cron-driven\ndispatch declaration (#20).\n\nEach entry independently spawns (or kicks) one of the four roles on the\nconfigured cron cadence. Resolution rules:\n\n- `role = \"orchestrator\" | \"implementer\" | \"reviewer\"` inherits\n  `[orchestration.orchestrator]` / `[orchestration.dispatch.<role>]`\n  defaults. Per-entry `vendor` / `model` / `effort` override the bundle\n  field-by-field; `permission_mode` is **not** an override on these roles\n  by design (matches the dispatch surface).\n- `role = \"manual\"` does **not** inherit any orchestration bundle. The\n  entry must carry its own `vendor` (required) and may set `model` /\n  `effort` / `permission_mode` directly. This is the role-less escape\n  hatch for \"spawn an AI worker on a schedule that isn't part of the\n  orchestrator/dispatch pipeline\".\n\nThe scheduler service (#20 PR2) consumes this struct; PR1 only lands the\ntype + parsing + validation.",
+      "properties": {
+        "cron": {
+          "description": "Cron expression (5-field standard form, `m h dom mon dow`). Parsing\nis deferred to the scheduler service in PR2; PR1 only checks the\nstring is non-empty.",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory for the dispatched agent. Must be absolute.",
+          "type": "string"
+        },
+        "effort": {
+          "description": "Effort override (`low` / `medium` / `high` / `xhigh` / `max`).\nOnly honoured by Claude.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Model override. Falls back to the bundle's `model` for bundled roles;\nfor `Manual` falls back to the vendor CLI's user-global default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Stable identifier for this entry. Used to track per-entry\nlast-dispatch state and surface in logs / wire payloads. Must be\nnon-empty and unique across all `[[scheduled]]` entries.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/PermissionMode",
+              "description": "Permission mode override. Only honoured for `role = Manual` (the\nother roles inherit from their bundle and disallow per-call pm\noverride by design — see `Settings::resolve_dispatch`)."
+            }
+          ]
+        },
+        "prompt": {
+          "description": "Prompt seeded into the spawned agent (or the kick prompt for the\norchestrator role).",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/SpawnRole",
+          "description": "Which role to spawn. `Manual` does not inherit any bundle."
+        },
+        "vendor": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Vendor",
+              "description": "Vendor override. Required when `role = Manual`; optional override\nfor the bundled roles."
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "cron",
+        "cwd",
+        "prompt",
+        "role"
       ],
       "type": "object"
     },
@@ -1699,6 +1779,15 @@
         "message"
       ],
       "type": "object"
+    },
+    "Vendor": {
+      "description": "Vendor CLI identifier for dispatched agents.",
+      "enum": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "type": "string"
     },
     "VendorAvailabilityState": {
       "description": "Vendor availability rollup reported by\n[`CoreEvent::VendorAvailabilityChanged`].\n\n`Available` → normal operation.\n`RateLimited` → vendor returned 429 / Max-plan limit; `resume_at` is the\nadvertised reset time when known.\n`Unavailable` → outage or auth failure; retry left to policy.",
