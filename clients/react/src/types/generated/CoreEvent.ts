@@ -247,7 +247,24 @@ title: string,
 /**
  * Head branch name
  */
-branch: string, } | { "type": "GitStateChanged", 
+branch: string, } | { "type": "PrCiStartTimeout", 
+/**
+ * PR number
+ */
+pr_number: bigint, 
+/**
+ * PR title
+ */
+title: string, 
+/**
+ * Head branch name
+ */
+branch: string, 
+/**
+ * How many seconds the monitor has been watching this PR with no
+ * CI status. Always >= the configured timeout.
+ */
+waited_secs: bigint, } | { "type": "GitStateChanged", 
 /**
  * Repository directory path
  */
