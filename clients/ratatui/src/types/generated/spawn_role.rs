@@ -13,4 +13,5 @@ pub enum SpawnRole {
     orchestrator,
     implementer,
     reviewer,
+    manual,
 }

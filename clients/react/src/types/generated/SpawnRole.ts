@@ -3,4 +3,4 @@
 /**
  * Role of a spawned agent.
  */
-export type SpawnRole = "orchestrator" | "implementer" | "reviewer";
+export type SpawnRole = "orchestrator" | "implementer" | "reviewer" | "manual";
