@@ -1311,7 +1311,8 @@
       "enum": [
         "orchestrator",
         "implementer",
-        "reviewer"
+        "reviewer",
+        "manual"
       ],
       "type": "string"
     },

@@ -2574,7 +2574,8 @@
         "enum": [
           "orchestrator",
           "implementer",
-          "reviewer"
+          "reviewer",
+          "manual"
         ]
       },
       "SpawnerHandle": {
