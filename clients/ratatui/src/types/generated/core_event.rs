@@ -110,6 +110,12 @@ pub enum CoreEvent {
         pr_number: i64,
         title: String,
     },
+    PrCiStartTimeout {
+        branch: String,
+        pr_number: i64,
+        title: String,
+        waited_secs: i64,
+    },
     GitStateChanged {
         repo: String,
     },

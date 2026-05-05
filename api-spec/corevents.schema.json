@@ -2591,6 +2591,45 @@
       "type": "object"
     },
     {
+      "description": "A PR has been open without any CI run starting for longer than\n`OrchestrationSettings::pr_monitor_ci_start_timeout_secs`. Typically\nindicates GitHub Actions silently skipped (merge conflicts blocking\nCI, Actions disabled at the repo, etc.) — see #334. Counted from the\nfirst time the monitor observed the PR; warm-up baseline PRs are\nexempt so a tmai restart does not retro-fire the alarm. Emitted at\nmost once per PR.",
+      "properties": {
+        "branch": {
+          "description": "Head branch name",
+          "type": "string"
+        },
+        "pr_number": {
+          "description": "PR number",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "description": "PR title",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "PrCiStartTimeout"
+          ],
+          "type": "string"
+        },
+        "waited_secs": {
+          "description": "How many seconds the monitor has been watching this PR with no\nCI status. Always >= the configured timeout.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pr_number",
+        "title",
+        "branch",
+        "waited_secs",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
       "description": "Git state changed for a repository (branches, HEAD, commit graph).\n\nEmitted by [`crate::git::monitor::GitMonitor`] when its poll detects\na transition. WebUI subscribers refetch `/api/git/*` in response so\nthe UI and the monitor snapshot observe the same tick (#423 — sibling\nof the PR Monitor SoT pattern).",
       "properties": {
         "repo": {
