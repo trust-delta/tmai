@@ -6,12 +6,16 @@ import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequired
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
+import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
+import type { ScheduledSpawn } from "@/types/generated/ScheduledSpawn";
+import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
+import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
@@ -19,10 +23,14 @@ export type {
   BootstrapRequiredEvent,
   DispatchBundle,
   EntityUpdateEnvelope,
+  PermissionMode,
   QueueAgentEntry,
   QueueSnapshot,
+  ScheduledSpawn,
+  SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
+  Vendor,
   WorkerDispatchMap,
 };
 
@@ -807,44 +815,31 @@ export interface WorktreeSettings {
   branch_depth_warning: number;
 }
 
-// ── Scheduled kicks (Routines parity — #2) ──
+// ── Scheduled (cron-driven) dispatches — `[[scheduled]]` (tmai-core #20) ──
 
-/** Interval-based or cron-based schedule for an orchestrator kick */
-export type ScheduleSpec =
-  | { type: "interval"; seconds: number }
-  | { type: "cron"; expression: string };
-
-/** Gating predicates from #443 — conditions that suppress the kick */
-export type GatingPredicate = "any_time" | "no_active_agents" | "orchestrator_idle";
-
-export interface ScheduledKick {
-  id: string;
-  schedule: ScheduleSpec;
-  prompt: string;
-  gating_predicate: GatingPredicate;
-  enabled: boolean;
-  last_fire: string | null;
-  next_fire: string | null;
+/**
+ * Response shape of `GET /api/settings/scheduled`. A thin wrapper around
+ * the generated [`ScheduledSpawn`] entry list to leave room for adding
+ * envelope fields (next-fire schedules, last-fire telemetry) later
+ * without breaking older clients.
+ */
+export interface ScheduledSettingsResponse {
+  entries: ScheduledSpawn[];
 }
 
-export interface ScheduledKickCreate {
-  id: string;
-  schedule: ScheduleSpec;
-  prompt: string;
-  gating_predicate?: GatingPredicate;
-  enabled?: boolean;
+/** Request body for `PUT /api/settings/scheduled`. */
+export interface ScheduledSettingsRequest {
+  entries: ScheduledSpawn[];
 }
 
-export interface ScheduledKickUpdate {
-  schedule?: ScheduleSpec;
-  prompt?: string;
-  gating_predicate?: GatingPredicate;
-  enabled?: boolean;
-}
-
-export interface DryRunResult {
-  rendered_prompt: string;
-  next_fire: string | null;
+/**
+ * Per-entry validation error returned when `PUT /api/settings/scheduled`
+ * refuses to save. The `name` is either the entry's `name` field or
+ * `"<index N>"` when that field is itself empty.
+ */
+export interface ScheduledValidationError {
+  name: string;
+  reason: string;
 }
 
 // ── Security scan ──
@@ -1264,25 +1259,12 @@ export const api = {
   getTeamTasks: (teamName: string) =>
     apiFetch<import("./teams").TeamTaskInfo[]>(`/teams/${encodeURIComponent(teamName)}/tasks`),
 
-  // Scheduled kicks (Routines parity — #2)
-  listScheduledKicks: () => apiFetch<ScheduledKick[]>("/settings/kicks"),
-  createScheduledKick: (kick: ScheduledKickCreate) =>
-    apiFetch<ScheduledKick>("/settings/kicks", {
-      method: "POST",
-      body: JSON.stringify(kick),
-    }),
-  updateScheduledKick: (id: string, updates: ScheduledKickUpdate) =>
-    apiFetch<ScheduledKick>(`/settings/kicks/${encodeURIComponent(id)}`, {
+  // Scheduled (cron-driven) dispatches — tmai-core #20
+  getScheduledSettings: () => apiFetch<ScheduledSettingsResponse>("/settings/scheduled"),
+  updateScheduledSettings: (req: ScheduledSettingsRequest) =>
+    apiFetch<{ ok: boolean; count: number }>("/settings/scheduled", {
       method: "PUT",
-      body: JSON.stringify(updates),
-    }),
-  deleteScheduledKick: (id: string) =>
-    apiFetch<{ status: string }>(`/settings/kicks/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    }),
-  dryRunKick: (id: string) =>
-    apiFetch<DryRunResult>(`/settings/kicks/${encodeURIComponent(id)}/dry-run`, {
-      method: "POST",
+      body: JSON.stringify(req),
     }),
 };
 

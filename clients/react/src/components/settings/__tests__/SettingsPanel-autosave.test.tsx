@@ -32,13 +32,10 @@ vi.mock("@/lib/api", async (importOriginal) => {
       updateWorkflowSettings: vi.fn(),
       getWorktreeSettings: vi.fn(),
       updateWorktreeSettings: vi.fn(),
-      // ScheduledKicksSection (rendered as part of SettingsPanel) loads its
-      // own data on mount — stub the read so the section does not throw.
-      listScheduledKicks: vi.fn().mockResolvedValue([]),
-      createScheduledKick: vi.fn(),
-      updateScheduledKick: vi.fn(),
-      deleteScheduledKick: vi.fn(),
-      dryRunKick: vi.fn(),
+      // ScheduledSection (rendered as part of SettingsPanel) loads its own
+      // data on mount — stub the read so the section does not throw.
+      getScheduledSettings: vi.fn().mockResolvedValue({ entries: [] }),
+      updateScheduledSettings: vi.fn(),
     },
   };
 });
