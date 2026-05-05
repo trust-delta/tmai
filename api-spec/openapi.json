@@ -1056,6 +1056,45 @@
           },
           {
             "type": "object",
+            "description": "A PR has been open without any CI run starting for longer than\n`OrchestrationSettings::pr_monitor_ci_start_timeout_secs`. Typically\nindicates GitHub Actions silently skipped (merge conflicts blocking\nCI, Actions disabled at the repo, etc.) — see #334. Counted from the\nfirst time the monitor observed the PR; warm-up baseline PRs are\nexempt so a tmai restart does not retro-fire the alarm. Emitted at\nmost once per PR.",
+            "required": [
+              "pr_number",
+              "title",
+              "branch",
+              "waited_secs",
+              "type"
+            ],
+            "properties": {
+              "branch": {
+                "type": "string",
+                "description": "Head branch name"
+              },
+              "pr_number": {
+                "type": "integer",
+                "format": "int64",
+                "description": "PR number",
+                "minimum": 0
+              },
+              "title": {
+                "type": "string",
+                "description": "PR title"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PrCiStartTimeout"
+                ]
+              },
+              "waited_secs": {
+                "type": "integer",
+                "format": "int64",
+                "description": "How many seconds the monitor has been watching this PR with no\nCI status. Always >= the configured timeout.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "Git state changed for a repository (branches, HEAD, commit graph).\n\nEmitted by [`crate::git::monitor::GitMonitor`] when its poll detects\na transition. WebUI subscribers refetch `/api/git/*` in response so\nthe UI and the monitor snapshot observe the same tick (#423 — sibling\nof the PR Monitor SoT pattern).",
             "required": [
               "repo",
