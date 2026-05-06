@@ -39,9 +39,14 @@ describe("NewAgentLauncher", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /new agent/i }));
 
+    // Lock order + count: the *first* listDirectories call must be `/new`.
+    // Without `toHaveBeenNthCalledWith` a regression that opens DirBrowser
+    // before the refresh finishes — and so loads `/old` first then `/new`
+    // on a re-render — would still pass `toHaveBeenCalledWith("/new")`.
     await waitFor(() => {
       expect(vi.mocked(api.getGeneralSettings)).toHaveBeenCalledTimes(2);
-      expect(vi.mocked(api.listDirectories)).toHaveBeenCalledWith("/new");
+      expect(vi.mocked(api.listDirectories)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.listDirectories)).toHaveBeenNthCalledWith(1, "/new");
     });
   });
 });
