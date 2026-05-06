@@ -116,8 +116,15 @@ export function App() {
 
   // Default currentProject to the first derived project once one appears so
   // X-Tmai-Origin has a sensible scope before the user touches the sidebar.
+  // Also reset the scope when the previously selected project disappears
+  // (e.g. its last agent stopped) so we never keep sending a stale cwd —
+  // CodeRabbit caught this on PR #615 review.
   useEffect(() => {
-    if (currentProject === null && projectPaths.length > 0) {
+    if (projectPaths.length === 0) {
+      if (currentProject !== null) setCurrentProject(null);
+      return;
+    }
+    if (currentProject === null || !projectPaths.includes(currentProject)) {
       setCurrentProject(projectPaths[0]);
     }
   }, [currentProject, projectPaths]);

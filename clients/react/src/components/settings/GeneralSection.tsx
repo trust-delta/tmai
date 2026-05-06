@@ -40,6 +40,9 @@ export function GeneralSection() {
     if (next === general.default_project_root) return;
     const prev = general;
     setGeneral({ ...general, default_project_root: next });
+    // Mirror the normalised value back into the input so the displayed text
+    // matches what was actually persisted (e.g. trailing whitespace gone).
+    setDraft(next ?? "");
     void save.track(() => api.updateGeneralSettings({ default_project_root: next }), {
       onError: () => {
         setGeneral(prev);

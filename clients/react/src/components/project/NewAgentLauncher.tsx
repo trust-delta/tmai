@@ -51,7 +51,11 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
         onSpawned(res.session_id);
         setPickedDir(null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to spawn");
+        // Surface which runtime was tried so users can tell apart
+        // "claude is mis-installed" from "this directory can't host
+        // anything" when only one of the three buttons fails.
+        const reason = e instanceof Error ? e.message : "Failed to spawn";
+        setError(`Failed to spawn ${runtime}: ${reason}`);
       } finally {
         setSpawning(false);
       }

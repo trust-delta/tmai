@@ -66,17 +66,22 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
   const [orchScope, setOrchScope] = useState<string>("global");
   const [browsing, setBrowsing] = useState(false);
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
+  // Browse-picked paths persist for the session so switching scope back to
+  // global doesn't drop them from the dropdown — CodeRabbit caught this on
+  // PR #615 review.
+  const [pickedPaths, setPickedPaths] = useState<Set<string>>(() => new Set());
   const save = useSaveTracker();
 
-  // Seed the Browse DirBrowser with the configured default project root so
-  // operators don't have to navigate from `~` every time they edit a
-  // per-project override.
-  useEffect(() => {
+  const refreshDefaultRoot = useCallback(() => {
     api
       .getGeneralSettings()
       .then((g) => setDefaultRoot(g.default_project_root))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshDefaultRoot();
+  }, [refreshDefaultRoot]);
 
   const orchProject = orchScope === "global" ? undefined : orchScope;
   const refreshOrchestrator = useCallback(() => {
@@ -87,13 +92,15 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
     refreshOrchestrator();
   }, [refreshOrchestrator]);
 
-  // Dropdown options = active projects ∪ current scope, so a path picked via
-  // Browse stays visible after selection even when no agent runs there.
+  // Dropdown options = active projects ∪ session-picked paths ∪ current
+  // scope, so a path picked via Browse stays visible across scope toggles
+  // for the rest of the session.
   const scopeOptions = useMemo(() => {
     const set = new Set(projects);
+    for (const p of pickedPaths) set.add(p);
     if (orchScope !== "global") set.add(orchScope);
     return [...set];
-  }, [projects, orchScope]);
+  }, [projects, pickedPaths, orchScope]);
 
   if (!orchestrator) return null;
 
@@ -128,7 +135,13 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
             </select>
             <button
               type="button"
-              onClick={() => setBrowsing(true)}
+              onClick={() => {
+                // Re-fetch so an edit made in GeneralSection within the same
+                // SettingsPanel session is reflected before opening the
+                // browser — this section does not unmount on its own.
+                refreshDefaultRoot();
+                setBrowsing(true);
+              }}
               className="shrink-0 rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
               aria-label="Browse for project directory"
             >
@@ -149,6 +162,12 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
             startPath={defaultRoot ?? undefined}
             onSelect={(path) => {
               setOrchScope(path);
+              setPickedPaths((prev) => {
+                if (prev.has(path)) return prev;
+                const next = new Set(prev);
+                next.add(path);
+                return next;
+              });
               setBrowsing(false);
             }}
             onCancel={() => setBrowsing(false)}

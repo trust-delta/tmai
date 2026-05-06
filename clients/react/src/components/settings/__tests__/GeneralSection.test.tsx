@@ -86,4 +86,43 @@ describe("GeneralSection", () => {
     await Promise.resolve();
     expect(vi.mocked(api.updateGeneralSettings)).not.toHaveBeenCalled();
   });
+
+  it("pressing Enter commits the value", async () => {
+    vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
+    vi.mocked(api.updateGeneralSettings).mockResolvedValue(undefined as never);
+    render(<GeneralSection />);
+    const input = (await waitFor(() =>
+      screen.getByLabelText("Default project root"),
+    )) as HTMLInputElement;
+
+    // Focus first so the keydown handler's `.blur()` actually fires a blur
+    // event (jsdom only fires blur for elements that previously had focus).
+    input.focus();
+    fireEvent.change(input, { target: { value: "/home/works" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(vi.mocked(api.updateGeneralSettings)).toHaveBeenCalledWith({
+        default_project_root: "/home/works",
+      });
+    });
+  });
+
+  it("commit failure rolls the input back to the previously-saved value", async () => {
+    vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: "/home/works" });
+    vi.mocked(api.updateGeneralSettings).mockRejectedValue(new Error("boom"));
+    render(<GeneralSection />);
+    const input = (await waitFor(() =>
+      screen.getByLabelText("Default project root"),
+    )) as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "/elsewhere" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(input.value).toBe("/home/works");
+      // Save tracker surfaces the error inline.
+      expect(screen.getByText(/boom/)).toBeTruthy();
+    });
+  });
 });
