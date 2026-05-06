@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DirBrowser } from "@/components/project/DirBrowser";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
 import { api, type OrchestratorSettings } from "@/lib/api";
 import { GuardrailsSection } from "./GuardrailsSection";
@@ -42,8 +43,11 @@ const RULE_FIELDS = [
 }>;
 
 interface OrchestrationSectionProps {
-  /** Project paths registered globally — needed by the scope selector to
-   *  list per-project overrides alongside `Global (default)`. */
+  /** Project paths derived from currently active agents — used to seed the
+   *  scope dropdown so the common case (override the project I'm working
+   *  on) is one click. Arbitrary paths can still be picked via the Browse
+   *  button, which lets users edit overrides for projects with no live
+   *  agent without us needing a separate "list configured overrides" API. */
   projects: string[];
 }
 
@@ -60,7 +64,19 @@ interface OrchestrationSectionProps {
 export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
   const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
   const [orchScope, setOrchScope] = useState<string>("global");
+  const [browsing, setBrowsing] = useState(false);
+  const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
   const save = useSaveTracker();
+
+  // Seed the Browse DirBrowser with the configured default project root so
+  // operators don't have to navigate from `~` every time they edit a
+  // per-project override.
+  useEffect(() => {
+    api
+      .getGeneralSettings()
+      .then((g) => setDefaultRoot(g.default_project_root))
+      .catch(() => {});
+  }, []);
 
   const orchProject = orchScope === "global" ? undefined : orchScope;
   const refreshOrchestrator = useCallback(() => {
@@ -70,6 +86,14 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
   useEffect(() => {
     refreshOrchestrator();
   }, [refreshOrchestrator]);
+
+  // Dropdown options = active projects ∪ current scope, so a path picked via
+  // Browse stays visible after selection even when no agent runs there.
+  const scopeOptions = useMemo(() => {
+    const set = new Set(projects);
+    if (orchScope !== "global") set.add(orchScope);
+    return [...set];
+  }, [projects, orchScope]);
 
   if (!orchestrator) return null;
 
@@ -88,19 +112,29 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
         {/* Scope selector */}
         <div>
           <span className="block text-xs text-zinc-400 mb-1">Scope</span>
-          <select
-            value={orchScope}
-            onChange={(e) => setOrchScope(e.target.value)}
-            className="w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
-            aria-label="Orchestration scope"
-          >
-            <option value="global">Global (default)</option>
-            {projects.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-1.5">
+            <select
+              value={orchScope}
+              onChange={(e) => setOrchScope(e.target.value)}
+              className="flex-1 min-w-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              aria-label="Orchestration scope"
+            >
+              <option value="global">Global (default)</option>
+              {scopeOptions.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setBrowsing(true)}
+              className="shrink-0 rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+              aria-label="Browse for project directory"
+            >
+              Browse
+            </button>
+          </div>
           {orchScope !== "global" && (
             <p className="mt-1 text-[10px] text-zinc-600">
               {orchestrator.is_project_override
@@ -109,6 +143,17 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
             </p>
           )}
         </div>
+
+        {browsing && (
+          <DirBrowser
+            startPath={defaultRoot ?? undefined}
+            onSelect={(path) => {
+              setOrchScope(path);
+              setBrowsing(false);
+            }}
+            onCancel={() => setBrowsing(false)}
+          />
+        )}
 
         {/* Enable toggle */}
         <label className="flex items-center justify-between gap-3">

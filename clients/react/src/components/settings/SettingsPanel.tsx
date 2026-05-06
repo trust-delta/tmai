@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { type AgentSnapshot, api, groupByProject } from "@/lib/api";
 import { AutoApproveSection } from "./AutoApproveSection";
+import { GeneralSection } from "./GeneralSection";
 import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
-import { ProjectsSection } from "./ProjectsSection";
 import { ScheduledSection } from "./ScheduledSection";
 import { SpawnSection } from "./SpawnSection";
 import { UsageSection } from "./UsageSection";
@@ -13,25 +13,26 @@ import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
-  onProjectsChanged: () => void;
 }
 
 /**
  * Settings panel layout shell. Each section component owns its own state,
- * save tracker, and load — the parent only carries the project list (used
- * by both `OrchestrationSection`'s scope selector and `ProjectsSection`'s
- * registered-project view) and the cross-component refresh callback.
+ * save tracker, and load. The shell only sources the project list — derived
+ * from currently active agents — used by `OrchestrationSection`'s per-project
+ * override scope selector.
  */
-export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps) {
-  const [projects, setProjects] = useState<string[]>([]);
+export function SettingsPanel({ onClose }: SettingsPanelProps) {
+  const [agents, setAgents] = useState<AgentSnapshot[]>([]);
 
-  const refreshProjects = useCallback(() => {
-    api.listProjects().then(setProjects).catch(console.error);
+  // Pre-registered projects were retired in favour of deriving the scope
+  // selector's options from live agent cwds. We fetch agents here (not via
+  // the cross-cutting useAgents hook) because SettingsPanel is a leaf and
+  // doesn't need the full SSE wiring — a one-shot snapshot is enough.
+  useEffect(() => {
+    api.listAgents().then(setAgents).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    refreshProjects();
-  }, [refreshProjects]);
+  const projects = useMemo(() => groupByProject(agents).map((p) => p.path), [agents]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -48,6 +49,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        <GeneralSection />
         <AutoApproveSection />
         <SpawnSection />
         <OrchestrationSection projects={projects} />
@@ -57,11 +59,6 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         <NotificationSection />
         <WorkflowSection />
         <WorktreeSection />
-        <ProjectsSection
-          projects={projects}
-          refreshProjects={refreshProjects}
-          onProjectsChanged={onProjectsChanged}
-        />
       </div>
     </div>
   );

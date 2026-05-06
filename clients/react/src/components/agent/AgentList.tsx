@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { NewAgentLauncher } from "@/components/project/NewAgentLauncher";
 import { ProjectGroup } from "@/components/project/ProjectGroup";
 import {
   type AgentSnapshot,
@@ -14,7 +15,6 @@ interface AgentListProps {
   onSelectAgent: (target: string) => void;
   onSelectProject: (path: string, name: string) => void;
   onSelectMarkdown: (projectPath: string, projectName: string) => void;
-  registeredProjects: string[];
   worktrees: WorktreeSnapshot[];
   onSpawned: (sessionId: string) => void;
   splitPaneProjectPath: string | null;
@@ -29,16 +29,12 @@ export function AgentList({
   onSelectAgent,
   onSelectProject,
   onSelectMarkdown,
-  registeredProjects,
   worktrees,
   onSpawned,
   splitPaneProjectPath,
   splitPaneTab,
 }: AgentListProps) {
-  const projects = useMemo(
-    () => groupByProject(agents, registeredProjects, worktrees),
-    [agents, registeredProjects, worktrees],
-  );
+  const projects = useMemo(() => groupByProject(agents, worktrees), [agents, worktrees]);
 
   if (loading) {
     return (
@@ -48,33 +44,28 @@ export function AgentList({
     );
   }
 
-  if (agents.length === 0 && registeredProjects.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-500">
-        <p>No projects registered</p>
-        <p className="text-xs text-zinc-600">
-          Add projects in <code className="rounded bg-white/5 px-1">config.toml</code> or run{" "}
-          <code className="rounded bg-white/5 px-1">tmai init</code>
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-2">
-      {projects.map((project) => (
-        <ProjectGroup
-          key={project.path}
-          project={project}
-          selection={selection}
-          onSelectAgent={onSelectAgent}
-          onSelectProject={onSelectProject}
-          onSelectMarkdown={onSelectMarkdown}
-          onSpawned={onSpawned}
-          splitPaneProjectPath={splitPaneProjectPath}
-          splitPaneTab={splitPaneTab}
-        />
-      ))}
+      <NewAgentLauncher onSpawned={onSpawned} />
+      {projects.length === 0 ? (
+        <p className="px-2 py-6 text-center text-xs text-zinc-600">
+          No agents — pick a directory above to spawn one.
+        </p>
+      ) : (
+        projects.map((project) => (
+          <ProjectGroup
+            key={project.path}
+            project={project}
+            selection={selection}
+            onSelectAgent={onSelectAgent}
+            onSelectProject={onSelectProject}
+            onSelectMarkdown={onSelectMarkdown}
+            onSpawned={onSpawned}
+            splitPaneProjectPath={splitPaneProjectPath}
+            splitPaneTab={splitPaneTab}
+          />
+        ))
+      )}
     </div>
   );
 }

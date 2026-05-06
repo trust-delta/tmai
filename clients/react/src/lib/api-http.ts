@@ -266,8 +266,6 @@ export interface ProjectGroup {
   // Aggregate counts
   totalAgents: number;
   attentionAgents: number;
-  // Whether this project was registered in config (vs auto-discovered)
-  isRegistered: boolean;
 }
 
 // Derive project display name from path
@@ -284,11 +282,9 @@ function normalizeGitDir(dir: string): string {
 }
 
 // Group agents by project (git_common_dir) and worktree.
-// Registered projects always appear even with 0 agents.
 // When worktreeSnapshots is provided, agent-less worktrees are also shown.
 export function groupByProject(
   agents: AgentSnapshot[],
-  registeredProjects: string[] = [],
   worktreeSnapshots: WorktreeSnapshot[] = [],
 ): ProjectGroup[] {
   const projectMap = new Map<string, AgentSnapshot[]>();
@@ -412,40 +408,17 @@ export function groupByProject(
 
     const attentionCount = groupAgents.filter((a) => a.needs_attention ?? false).length;
 
-    const normRegistered = new Set(registeredProjects.map((p) => normalizeGitDir(p)));
-
     projects.push({
       name: projectName(path),
       path,
       worktrees,
       totalAgents: groupAgents.length,
       attentionAgents: attentionCount,
-      isRegistered: normRegistered.has(normalizeGitDir(path)),
     });
   }
 
-  // Add registered projects that have no agents yet
-  const existingPaths = new Set(projects.map((p) => normalizeGitDir(p.path)));
-  for (const regPath of registeredProjects) {
-    const norm = normalizeGitDir(regPath);
-    if (!existingPaths.has(norm)) {
-      projects.push({
-        name: projectName(regPath),
-        path: regPath,
-        worktrees: [],
-        totalAgents: 0,
-        attentionAgents: 0,
-        isRegistered: true,
-      });
-    }
-  }
-
-  // Sort: registered first, then by name (stable — no attention reordering)
-  projects.sort((a, b) => {
-    if (a.isRegistered && !b.isRegistered) return -1;
-    if (!a.isRegistered && b.isRegistered) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  // Sort by name (stable — no attention reordering)
+  projects.sort((a, b) => a.name.localeCompare(b.name));
 
   return projects;
 }
@@ -805,6 +778,12 @@ export interface UsageSettings {
   auto_refresh_min: number;
 }
 
+export interface GeneralSettings {
+  /** Starting directory for the WebUI's directory browser. `null` falls
+   *  back to the backend default (typically `$HOME`). */
+  default_project_root: string | null;
+}
+
 export interface WorkflowSettings {
   auto_rebase_on_merge: boolean;
 }
@@ -1116,17 +1095,16 @@ export const api = {
   listDirectories: (path?: string) =>
     apiFetch<DirEntry[]>(`/directories${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
-  // Projects
-  listProjects: () => apiFetch<string[]>("/projects"),
-  addProject: (path: string) =>
-    apiFetch("/projects", {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  removeProject: (path: string) =>
-    apiFetch("/projects/remove", {
-      method: "POST",
-      body: JSON.stringify({ path }),
+  // General settings (`[general]` table) — currently just `default_project_root`.
+  getGeneralSettings: () => apiFetch<GeneralSettings>("/settings/general"),
+  // PUT body uses double-Option semantics for `default_project_root`:
+  //   { default_project_root: "/path" } → set
+  //   { default_project_root: null }    → clear (key removed from config.toml)
+  //   {}                                → no-op
+  updateGeneralSettings: (params: { default_project_root?: string | null }) =>
+    apiFetch("/settings/general", {
+      method: "PUT",
+      body: JSON.stringify(params),
     }),
 
   // Config audit
