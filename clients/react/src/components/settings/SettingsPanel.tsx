@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AgentSnapshot, api, groupByProject } from "@/lib/api";
 import { AutoApproveSection } from "./AutoApproveSection";
+import { DeveloperSection } from "./DeveloperSection";
 import { GeneralSection } from "./GeneralSection";
 import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
@@ -59,6 +60,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <NotificationSection />
         <WorkflowSection />
         <WorktreeSection />
+        <DeveloperSection />
       </div>
     </div>
   );
