@@ -5,7 +5,7 @@ import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
 import { ProjectsSection } from "./ProjectsSection";
-import { ScheduledKicksSection } from "./ScheduledKicksSection";
+import { ScheduledSection } from "./ScheduledSection";
 import { SpawnSection } from "./SpawnSection";
 import { UsageSection } from "./UsageSection";
 import { WorkflowSection } from "./WorkflowSection";
@@ -52,7 +52,7 @@ export function SettingsPanel({ onClose, onProjectsChanged }: SettingsPanelProps
         <SpawnSection />
         <OrchestrationSection projects={projects} />
         <OrchestrationDispatchSection />
-        <ScheduledKicksSection />
+        <ScheduledSection />
         <UsageSection />
         <NotificationSection />
         <WorkflowSection />
