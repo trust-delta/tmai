@@ -5,10 +5,14 @@ import { cn } from "@/lib/utils";
 interface DirBrowserProps {
   onSelect: (path: string) => void;
   onCancel: () => void;
+  /** Initial directory to load. When unset, the backend picks a default
+   *  (typically the user's home). Phase 3 passes `default_project_root`
+   *  here so users don't have to navigate from `~` every time. */
+  startPath?: string | null;
 }
 
 // Modal directory tree browser for selecting a project folder
-export function DirBrowser({ onSelect, onCancel }: DirBrowserProps) {
+export function DirBrowser({ onSelect, onCancel, startPath }: DirBrowserProps) {
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,8 +38,8 @@ export function DirBrowser({ onSelect, onCancel }: DirBrowserProps) {
   }, []);
 
   useEffect(() => {
-    loadDir();
-  }, [loadDir]);
+    loadDir(startPath ?? undefined);
+  }, [loadDir, startPath]);
 
   const goUp = () => {
     if (!currentPath || currentPath === "/") return;

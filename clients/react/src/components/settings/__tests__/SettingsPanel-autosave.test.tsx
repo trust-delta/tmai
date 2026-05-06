@@ -15,7 +15,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...actual,
     api: {
-      listProjects: vi.fn(),
+      listAgents: vi.fn(),
+      getGeneralSettings: vi.fn(),
+      updateGeneralSettings: vi.fn(),
       getSpawnSettings: vi.fn(),
       updateSpawnSettings: vi.fn(),
       getAutoApproveSettings: vi.fn(),
@@ -144,7 +146,8 @@ function makeOrchestrator(): OrchestratorSettings {
 }
 
 function setupDefaults() {
-  vi.mocked(api.listProjects).mockResolvedValue([]);
+  vi.mocked(api.listAgents).mockResolvedValue([]);
+  vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
   vi.mocked(api.getSpawnSettings).mockResolvedValue(SPAWN);
   vi.mocked(api.getAutoApproveSettings).mockResolvedValue(AUTO_APPROVE);
   vi.mocked(api.getUsageSettings).mockResolvedValue(USAGE);
@@ -167,7 +170,7 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
 
   it("atomic dropdown change persists with a single PUT", async () => {
     vi.mocked(api.updateAutoApproveMode).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} onProjectsChanged={() => {}} />);
+    render(<SettingsPanel onClose={() => {}} />);
 
     // Wait for the auto-approve mode <select> to appear.
     const modeSelect = await waitFor(() => {
@@ -189,7 +192,7 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
 
   it("typing in the tmux window-name text field does NOT trigger PUT mid-stream", async () => {
     vi.mocked(api.updateSpawnSettings).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} onProjectsChanged={() => {}} />);
+    render(<SettingsPanel onClose={() => {}} />);
 
     // Window name input only renders when runtime === "tmux" (our fixture).
     const input = await waitFor(() => {
@@ -208,7 +211,7 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
 
   it("blurring the tmux window-name text field commits with a PUT", async () => {
     vi.mocked(api.updateSpawnSettings).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} onProjectsChanged={() => {}} />);
+    render(<SettingsPanel onClose={() => {}} />);
 
     const input = await waitFor(() => {
       const candidate = screen
@@ -234,7 +237,7 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
     vi.mocked(api.updateWorkflowSettings).mockRejectedValue(
       new Error("API error 400: cannot enable auto-rebase while a rebase is in progress"),
     );
-    render(<SettingsPanel onClose={() => {}} onProjectsChanged={() => {}} />);
+    render(<SettingsPanel onClose={() => {}} />);
 
     // Wait for the workflow section to load and find the auto-rebase toggle.
     await waitFor(() => screen.getByText("Workflow"));
@@ -258,7 +261,7 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
     vi.mocked(api.updateSpawnSettings).mockRejectedValue(
       new Error("API error 400: window name `bad name` contains invalid character"),
     );
-    render(<SettingsPanel onClose={() => {}} onProjectsChanged={() => {}} />);
+    render(<SettingsPanel onClose={() => {}} />);
 
     const input = await waitFor(() => {
       const candidate = screen

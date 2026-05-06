@@ -172,10 +172,10 @@ export const api = {
   // Directories
   listDirectories: (path?: string) => httpApi.listDirectories(path),
 
-  // Projects
-  listProjects: () => httpApi.listProjects(),
-  addProject: (path: string) => httpApi.addProject(path),
-  removeProject: (path: string) => httpApi.removeProject(path),
+  // General settings
+  getGeneralSettings: () => httpApi.getGeneralSettings(),
+  updateGeneralSettings: (params: { default_project_root?: string | null }) =>
+    httpApi.updateGeneralSettings(params),
 
   // Config audit
   runConfigAudit: () => httpApi.runConfigAudit(),

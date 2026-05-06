@@ -21,14 +21,14 @@ import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, isAiAgent, type Selection, setCallerCwd, statusName } from "@/lib/api";
+import { groupByProject, isAiAgent, type Selection, setCallerCwd, statusName } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const toast = useToast();
-  const { success: toastSuccess, error: toastError, info: toastInfo } = toast;
+  const { success: toastSuccess, info: toastInfo } = toast;
 
   // Browser notification on agent idle. The config refetches on window focus /
   // visibility change so toggling "Notify on idle" in Settings — which
@@ -52,9 +52,7 @@ export function App() {
     },
   });
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [registeredProjects, setRegisteredProjects] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
-  const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   // Main panel takes one of `"agents"` (default), `"settings"`, or `"security"`.
   // Settings and Security replace the main panel content (not modal overlays),
   // so they're mutually exclusive — opening one always closes the other.
@@ -99,25 +97,6 @@ export function App() {
     closeMobileDrawer,
   } = useResponsiveLayout();
 
-  // Fetch registered projects on mount and on demand
-  const refreshProjects = useCallback(() => {
-    api
-      .listProjects()
-      .then((projects) => {
-        setRegisteredProjects(projects);
-        // Set first project as default if not set
-        if (projects.length > 0) {
-          setCurrentProject((prev) => prev ?? projects[0]);
-        }
-      })
-      .catch((_e) => {
-        toastError("Failed to load projects");
-      });
-  }, [toastError]);
-  useEffect(() => {
-    refreshProjects();
-  }, [refreshProjects]);
-
   // Sync selected project into the API client so X-Tmai-Origin carries cwd.
   useEffect(() => {
     setCallerCwd(currentProject);
@@ -126,6 +105,29 @@ export function App() {
   // Split agents into AI agents and plain terminals
   const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
   const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
+
+  // Project list derived from active agents (replaces the pre-registered list).
+  // Used by the keyboard shortcuts to cycle the X-Tmai-Origin scope and by
+  // OrchestrationSection's per-project override selector.
+  const projectPaths = useMemo(
+    () => groupByProject(aiAgents, worktrees).map((p) => p.path),
+    [aiAgents, worktrees],
+  );
+
+  // Default currentProject to the first derived project once one appears so
+  // X-Tmai-Origin has a sensible scope before the user touches the sidebar.
+  // Also reset the scope when the previously selected project disappears
+  // (e.g. its last agent stopped) so we never keep sending a stale cwd —
+  // CodeRabbit caught this on PR #615 review.
+  useEffect(() => {
+    if (projectPaths.length === 0) {
+      if (currentProject !== null) setCurrentProject(null);
+      return;
+    }
+    if (currentProject === null || !projectPaths.includes(currentProject)) {
+      setCurrentProject(projectPaths[0]);
+    }
+  }, [currentProject, projectPaths]);
 
   // Derive selected agent from selection
   const selectedAgent =
@@ -274,12 +276,11 @@ export function App() {
       description: "Previous project",
       requiresCtrl: true,
       handler: () => {
-        const newIndex = Math.max(0, currentProjectIndex - 1);
-        setCurrentProjectIndex(newIndex);
-        if (registeredProjects[newIndex]) {
-          setCurrentProject(registeredProjects[newIndex]);
-          toastInfo("Previous project");
-        }
+        if (projectPaths.length === 0) return;
+        const idx = currentProject ? projectPaths.indexOf(currentProject) : -1;
+        const newIndex = idx <= 0 ? 0 : idx - 1;
+        setCurrentProject(projectPaths[newIndex]);
+        toastInfo("Previous project");
       },
     },
     {
@@ -304,12 +305,11 @@ export function App() {
       description: "Next project",
       requiresCtrl: true,
       handler: () => {
-        const newIndex = Math.min(registeredProjects.length - 1, currentProjectIndex + 1);
-        setCurrentProjectIndex(newIndex);
-        if (registeredProjects[newIndex]) {
-          setCurrentProject(registeredProjects[newIndex]);
-          toastInfo("Next project");
-        }
+        if (projectPaths.length === 0) return;
+        const idx = currentProject ? projectPaths.indexOf(currentProject) : -1;
+        const newIndex = Math.min(projectPaths.length - 1, idx + 1);
+        setCurrentProject(projectPaths[newIndex]);
+        toastInfo("Next project");
       },
     },
   ]);
@@ -325,14 +325,6 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showHelp]);
 
-  // Update currentProjectIndex when currentProject changes
-  useEffect(() => {
-    const idx = registeredProjects.indexOf(currentProject || "");
-    if (idx >= 0) {
-      setCurrentProjectIndex(idx);
-    }
-  }, [currentProject, registeredProjects]);
-
   // Sidebar content shared between desktop sidebar and mobile drawer
   const sidebarContent = (
     <>
@@ -343,7 +335,6 @@ export function App() {
         onSelectAgent={handleSelectAgent}
         onSelectProject={handleSelectProject}
         onSelectMarkdown={handleSelectMarkdown}
-        registeredProjects={registeredProjects}
         worktrees={worktrees}
         onSpawned={handleSpawned}
         splitPaneProjectPath={showSplitView ? agentProjectPath : null}
@@ -477,7 +468,7 @@ export function App() {
           </div>
         ) : showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SettingsPanel onClose={closeMainPanelOverlay} onProjectsChanged={refreshProjects} />
+            <SettingsPanel onClose={closeMainPanelOverlay} />
           </div>
         ) : selection?.type === "project" ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
