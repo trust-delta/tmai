@@ -24,16 +24,25 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
   const [error, setError] = useState("");
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
 
-  // Seeded from `[general] default_project_root` so the picker opens at the
-  // user's preferred root instead of `~`. AgentList (our parent) un-mounts
-  // while Settings is open, so re-fetching on mount is enough to pick up
-  // edits made in the GeneralSection without a manual refresh hook.
-  useEffect(() => {
+  // `[general] default_project_root` seeds DirBrowser's start path. AgentList
+  // (our parent) lives in the always-mounted sidebar — it does NOT unmount
+  // when Settings opens, contrary to what an earlier comment here claimed —
+  // so we have to re-fetch every time the user opens the picker, otherwise
+  // an edit in GeneralSection won't show up until a hard reload.
+  const refreshDefaultRoot = useCallback(() => {
     api
       .getGeneralSettings()
       .then((g) => setDefaultRoot(g.default_project_root))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    refreshDefaultRoot();
+  }, [refreshDefaultRoot]);
+
+  const handleOpenBrowser = useCallback(() => {
+    refreshDefaultRoot();
+    setBrowsing(true);
+  }, [refreshDefaultRoot]);
 
   const handleDirSelected = useCallback((path: string) => {
     setPickedDir(path);
@@ -67,7 +76,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
     <div className="mb-2">
       <button
         type="button"
-        onClick={() => setBrowsing(true)}
+        onClick={handleOpenBrowser}
         disabled={spawning}
         className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-cyan-500/30 hover:bg-cyan-500/5 hover:text-cyan-300 disabled:opacity-50"
       >
