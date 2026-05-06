@@ -19,6 +19,7 @@ import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useShowAutoDiscovered } from "@/hooks/useShowAutoDiscovered";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { groupByProject, isAiAgent, type Selection, setCallerCwd, statusName } from "@/lib/api";
@@ -102,9 +103,25 @@ export function App() {
     setCallerCwd(currentProject);
   }, [currentProject]);
 
+  // Hide CC sessions tmai never spawned by default — they pollute the
+  // operational view with the user's own driving sessions firing hooks
+  // through the shared `/hooks/event` URL. Dev toggle in Settings flips
+  // this for tmai/CC dev work; preference is per-browser localStorage.
+  const { show: showAutoDiscovered } = useShowAutoDiscovered();
+  const visibleAgents = useMemo(
+    () => (showAutoDiscovered ? agents : agents.filter((a) => !a.is_auto_discovered)),
+    [agents, showAutoDiscovered],
+  );
+
   // Split agents into AI agents and plain terminals
-  const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
-  const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
+  const aiAgents = useMemo(
+    () => visibleAgents.filter((a) => isAiAgent(a.agent_type)),
+    [visibleAgents],
+  );
+  const terminals = useMemo(
+    () => visibleAgents.filter((a) => !isAiAgent(a.agent_type)),
+    [visibleAgents],
+  );
 
   // Project list derived from active agents (replaces the pre-registered list).
   // Used by the keyboard shortcuts to cycle the X-Tmai-Origin scope and by

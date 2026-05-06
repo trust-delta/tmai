@@ -204,6 +204,13 @@ export interface AgentSnapshot {
   has_pending_approval?: boolean;
   primary_worktree_path?: string | null;
   current_dispatch_id?: string | null;
+  /** True when tmai did NOT spawn this agent — the Claude Code session
+   *  was started independently (e.g. interactive `claude` in a tmux
+   *  pane the user opened) and only became visible because every CC
+   *  session fires hooks at the master socket. Surfaced from
+   *  tmai-core PR #282; older servers omit the field, which we treat
+   *  as `false` (i.e. show the agent). */
+  is_auto_discovered?: boolean;
 }
 
 // ── Bootstrap payload (all 9 domain snapshots in one shot) ──
