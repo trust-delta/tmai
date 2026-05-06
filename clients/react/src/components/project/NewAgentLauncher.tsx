@@ -29,18 +29,24 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
   // when Settings opens, contrary to what an earlier comment here claimed —
   // so we have to re-fetch every time the user opens the picker, otherwise
   // an edit in GeneralSection won't show up until a hard reload.
-  const refreshDefaultRoot = useCallback(() => {
-    api
-      .getGeneralSettings()
-      .then((g) => setDefaultRoot(g.default_project_root))
-      .catch(() => {});
+  const refreshDefaultRoot = useCallback(async () => {
+    try {
+      const g = await api.getGeneralSettings();
+      setDefaultRoot(g.default_project_root);
+    } catch {
+      // Leave the previous value in place — a transient fetch failure
+      // shouldn't reset the user's configured root to null.
+    }
   }, []);
   useEffect(() => {
-    refreshDefaultRoot();
+    void refreshDefaultRoot();
   }, [refreshDefaultRoot]);
 
-  const handleOpenBrowser = useCallback(() => {
-    refreshDefaultRoot();
+  const handleOpenBrowser = useCallback(async () => {
+    // Await the fetch before opening so DirBrowser mounts with the latest
+    // startPath in one shot — opening first and updating on the next render
+    // would briefly flash the previous root's listing.
+    await refreshDefaultRoot();
     setBrowsing(true);
   }, [refreshDefaultRoot]);
 
@@ -76,7 +82,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
     <div className="mb-2">
       <button
         type="button"
-        onClick={handleOpenBrowser}
+        onClick={() => void handleOpenBrowser()}
         disabled={spawning}
         className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-cyan-500/30 hover:bg-cyan-500/5 hover:text-cyan-300 disabled:opacity-50"
       >
