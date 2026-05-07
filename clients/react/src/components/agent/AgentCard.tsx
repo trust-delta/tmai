@@ -7,23 +7,13 @@ import {
   type DetectionSource,
   isAiAgent,
   type SendCapability,
-  statusName,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const statusColors: Record<string, string> = {
-  Processing: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  AwaitingApproval: "bg-red-500/20 text-red-400 border-red-500/30",
-  Idle: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-  Error: "bg-red-500/20 text-red-300 border-red-500/30",
-  Offline: "bg-zinc-500/20 text-zinc-600 border-zinc-500/30",
-  Unknown: "bg-zinc-500/20 text-zinc-500 border-zinc-500/30",
-};
-
-const statusGlow: Record<string, string> = {
-  Processing: "glow-cyan",
-  AwaitingApproval: "glow-red",
-};
+// Step 6a (decision tmai-core@2026-05-07): `statusColors` /
+// `statusGlow` / `statusName` retired alongside the legacy
+// `AgentStatus` enum. The right-hand pill is now driven entirely
+// by the attention axis (`attentionPill` below).
 
 // Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07).
 // Map the new `attention.reason` hint to a badge label / pill style.
@@ -148,13 +138,14 @@ interface AgentCardProps {
 
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
-  const name = statusName(agent.status);
-  // Step 5 of the rebuild: prefer the new `attention` axis when present;
-  // fall back to legacy `needs_attention` so a snapshot from an older
-  // tmai-core (pre-Step 4) still renders correctly through the parallel
-  // run period. Step 6 retires the fallback.
-  const attentionRequired = agent.attention?.required ?? agent.needs_attention ?? false;
+  // Step 6a: legacy `status` / `needs_attention` paths fully retired.
+  // The right-hand pill is now driven entirely by attention + auto-
+  // approve phase. `attention === null/undefined` (sampler bootstrap
+  // window per Δ6) renders an explicit "Bootstrap" placeholder so
+  // operators see the indeterminate state rather than a blank pill.
+  const attentionRequired = agent.attention?.required ?? false;
   const attentionReason = agent.attention?.reason ?? null;
+  const hasNewAttentionAxis = agent.attention !== null && agent.attention !== undefined;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   // Auto-approve state
@@ -162,47 +153,35 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
   const isAutoApproveOn = autoApproveEffective(agent);
 
-  // Display priority for the right-hand pill:
-  //   1. Auto-approve phase (Judging / Approved) — highest, drives the
-  //      orange / emerald accents that operator already trusts.
-  //   2. New attention axis when `required` — reason-aware label so the
-  //      operator can tell "agent finished, waiting for next prompt" from
-  //      "agent halted on a permission ask".
-  //   3. New attention axis when not required (i.e. wire field present
-  //      but `required: false`) — render an "Active" pill. This case
-  //      means the new tmai-core has affirmatively signaled "agent is
-  //      doing work or just ack'd input"; the legacy `status` field is
-  //      vestigial there and may still carry stale `Processing` from
-  //      the capture-pane detector that Step 3 of the rebuild did not
-  //      decommission. Showing the legacy name in that window misleads
-  //      operators (#618 dogfood report).
-  //   4. Legacy `status` name as the baseline (only when the new axis is
-  //      absent, e.g. talking to a pre-Step-4 tmai-core).
   const phase = agent.auto_approve_phase;
   const isJudging = phase === "Judging";
   const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
-  const hasNewAttentionAxis = agent.attention !== null && agent.attention !== undefined;
-  let attentionPillInfo: { label: string; style: string } | null = null;
+  let attentionPillInfo: { label: string; style: string };
   if (attentionRequired) {
     attentionPillInfo = attentionPill(attentionReason);
   } else if (hasNewAttentionAxis) {
-    // New axis explicitly says "not required" — show neutral Active pill.
+    // attention.required === false: agent is actively working.
     attentionPillInfo = {
       label: "Active",
       style: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
     };
+  } else {
+    // Bootstrap window: sampler has not declared either way yet.
+    attentionPillInfo = {
+      label: "Bootstrap",
+      style: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+    };
   }
-  const displayName = isJudging
-    ? "Judging"
-    : isAutoApproved
-      ? "Approved"
-      : (attentionPillInfo?.label ?? name);
+  const displayName = isJudging ? "Judging" : isAutoApproved ? "Approved" : attentionPillInfo.label;
   const statusStyle = isJudging
     ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
     : isAutoApproved
       ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-      : (attentionPillInfo?.style ?? statusColors[name] ?? statusColors.Unknown);
-  const glow = isJudging || isAutoApproved ? "" : (statusGlow[name] ?? "");
+      : attentionPillInfo.style;
+  // Step 6a: glow is now reason-aware. `Halted` keeps the existing red
+  // accent, otherwise no special glow (the amber-glow-pulse on the
+  // outer card already conveys "needs attention" globally).
+  const glow = !isJudging && !isAutoApproved && attentionReason === "halted" ? "glow-red" : "";
 
   // Connection channels (with fallback for older API)
   const channels: ConnectionChannels = agent.connection_channels ?? {

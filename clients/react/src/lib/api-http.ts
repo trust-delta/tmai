@@ -90,27 +90,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // ── Types ──
 
-// Agent status (serde externally tagged)
-export type AgentStatus =
-  | "Idle"
-  | "Offline"
-  | "Unknown"
-  | { Processing: { activity: string } }
-  | { AwaitingApproval: { approval_type: string; details: string } }
-  | { Error: { message: string } };
-
-export function statusName(status: AgentStatus): string {
-  if (typeof status === "string") return status;
-  if (status == null) return "Unknown";
-  // Externally tagged: { "Processing": { "activity": "..." } }
-  const keys = Object.keys(status).filter((k) => k !== "type");
-  if (keys.length > 0) return keys[0];
-  // Internally tagged fallback: { "type": "Processing", ... }
-  if ("type" in status && typeof (status as Record<string, unknown>).type === "string") {
-    return (status as Record<string, unknown>).type as string;
-  }
-  return "Unknown";
-}
+// Step 6a (decision tmai-core@2026-05-07): the legacy `AgentStatus`
+// shim, the matching `statusName` helper, and the `Phase` / `Detail`
+// types are retired alongside the wire fields. Only the new
+// `AgentAttention` axis below survives. Use
+// `attention?.required` + `attention?.reason` to drive UI semantics
+// (see `AgentCard.tsx::attentionPill`).
 
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
@@ -147,28 +132,9 @@ export interface ConnectionChannels {
 export type AgentType = "ClaudeCode" | "OpenCode" | "CodexCli" | "GeminiCli" | { Custom: string };
 export type EffortLevel = "Low" | "Medium" | "High";
 
-/// Coarse-grained phase for orchestrator consumption
-export type Phase = "Working" | "Blocked" | "Idle" | "Offline";
-
-/// Fine-grained detail for UI display (serde externally tagged)
-export type Detail =
-  | "Idle"
-  | "Offline"
-  | "Unknown"
-  | "Compacting"
-  | "Thinking"
-  | { ToolExecution: { tool_name: string } }
-  | { AwaitingApproval: { approval_type: string; details: string } }
-  | { Error: { message: string } };
-
-/// Extract a human-readable label from a Detail value
-export function detailLabel(detail: Detail): string {
-  if (typeof detail === "string") return detail;
-  if ("ToolExecution" in detail) return `Tool: ${detail.ToolExecution.tool_name}`;
-  if ("AwaitingApproval" in detail) return `Awaiting: ${detail.AwaitingApproval.approval_type}`;
-  if ("Error" in detail) return `Error: ${detail.Error.message}`;
-  return "Unknown";
-}
+// Phase / Detail / detailLabel retired in Step 6a (decision
+// tmai-core@2026-05-07) alongside the AgentStatus pentad. Use the
+// `AgentAttention` axis above for dynamic state.
 
 /// Whether this agent type is an AI coding agent (not a plain terminal)
 export function isAiAgent(agentType: AgentType): boolean {
@@ -184,9 +150,6 @@ export interface AgentSnapshot {
   id: string;
   target: string;
   agent_type: AgentType;
-  status: AgentStatus;
-  phase: Phase;
-  detail: Detail;
   title: string;
   cwd: string;
   display_cwd: string;
@@ -217,18 +180,17 @@ export interface AgentSnapshot {
   model_id?: string | null;
   model_display_name?: string | null;
   is_orchestrator?: boolean;
-  /** New attention axis (decision tmai-core@2026-05-07 Step 4). `null` /
-   *  absent on the wire encodes "unknown" — the sampler bootstrap window
-   *  per Δ6. Step 5 of the rebuild teaches the Hub to prefer this over
-   *  the legacy `needs_attention` boolean below; Step 6 retires the
-   *  legacy field. */
+  /** Attention axis introduced by Step 4 of the agent-state attention
+   *  rebuild (decision tmai-core@2026-05-07). `null` / absent on the
+   *  wire encodes "unknown" — the sampler bootstrap window per Δ6.
+   *  Step 6a (this PR) made this the **only** dynamic-state surface
+   *  on the wire; the legacy `status` / `phase` / `detail` /
+   *  `needs_attention` / `has_pending_approval` pentad is gone. */
   attention?: AgentAttention | null;
-  // Derived fields computed by tmai-core (tmai-core@c40e8b8aa5, Phase 1)
-  needs_attention?: boolean;
+  // Other derived fields computed by tmai-core
   display_label?: string;
   has_queued_prompt?: boolean;
   queued_prompt_count?: number;
-  has_pending_approval?: boolean;
   primary_worktree_path?: string | null;
   current_dispatch_id?: string | null;
   /** True when tmai did NOT spawn this agent — the Claude Code session
@@ -440,12 +402,9 @@ export function groupByProject(
       });
     }
 
-    // Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
-    // prefer the new `attention.required` axis, fall back to the legacy
-    // `needs_attention` boolean for snapshots from pre-Step-4 servers.
-    const attentionCount = groupAgents.filter(
-      (a) => a.attention?.required ?? a.needs_attention ?? false,
-    ).length;
+    // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
+    // fallback retired with the rest of the AgentSnapshot pentad.
+    const attentionCount = groupAgents.filter((a) => a.attention?.required ?? false).length;
 
     projects.push({
       name: projectName(path),
@@ -907,10 +866,9 @@ export const api = {
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
   attentionCount: async () => {
     const agents = await apiFetch<AgentSnapshot[]>("/agents");
-    // Step 5 of the agent-state attention rebuild: same fallback as
-    // useAgents and groupByProject above. Step 6 retires the legacy
-    // `needs_attention` field.
-    return agents.filter((a) => a.attention?.required ?? a.needs_attention ?? false).length;
+    // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
+    // fallback retired with the rest of the AgentSnapshot pentad.
+    return agents.filter((a) => a.attention?.required ?? false).length;
   },
 
   // Agent actions

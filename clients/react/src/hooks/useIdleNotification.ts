@@ -7,7 +7,7 @@
 // Uses the Notification API so notifications appear even when the tab is in the background.
 
 import { useCallback, useEffect, useRef } from "react";
-import { type AgentSnapshot, type DetectionSource, isAiAgent, statusName } from "@/lib/api";
+import { type AgentSnapshot, type DetectionSource, isAiAgent } from "@/lib/api";
 
 export interface IdleNotificationConfig {
   enabled: boolean;
@@ -85,9 +85,7 @@ function sendNotification(agent: AgentSnapshot, lastMessage?: string | null) {
 export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotificationConfig) {
   // Track per-agent idle state
   const stateMap = useRef(new Map<string, AgentIdleState>());
-  // Track previous status per agent (legacy path)
-  const prevStatusMap = useRef(new Map<string, string>());
-  // Track previous attention.required per agent (Step 5 primary path)
+  // Track previous attention.required per agent (Step 6a: only signal)
   const prevAttentionMap = useRef(new Map<string, boolean>());
 
   // Request permission when enabled
@@ -105,7 +103,6 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
         if (state.timerId) clearTimeout(state.timerId);
       }
       stateMap.current.clear();
-      prevStatusMap.current.clear();
       prevAttentionMap.current.clear();
       return;
     }
@@ -117,33 +114,21 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       if (!isAiAgent(agent.agent_type)) continue;
 
       currentIds.add(agent.id);
-      const status = statusName(agent.status);
-      const prevStatus = prevStatusMap.current.get(agent.id);
-      prevStatusMap.current.set(agent.id, status);
       const attentionRequired = agent.attention?.required ?? false;
       const prevAttention = prevAttentionMap.current.get(agent.id);
       prevAttentionMap.current.set(agent.id, attentionRequired);
 
       const idleState = stateMap.current.get(agent.id);
 
-      // Step 5: "needs the human" condition is true when either the new
-      // attention axis says so or the legacy status is Idle / Offline.
-      const needsHuman = attentionRequired || status === "Idle" || status === "Offline";
-      // A *fresh* trigger requires a transition into the needs-human state
-      // on at least one of the two signals — otherwise re-renders would
-      // re-fire notifications for an agent that has been idle for hours.
-      // The attention path explicitly compares against `false` (not `!prevAttention`)
-      // so the first observation of an agent (`prevAttention === undefined`)
-      // does NOT count as a transition: a freshly-loaded tab must not
-      // shower the user with notifications for agents that have been
-      // requiring attention since long before the tab opened. CodeRabbit
-      // tmai#618.
-      const attentionTrigger = prevAttention === false && attentionRequired;
-      const statusTrigger =
-        prevStatus === "Processing" && (status === "Idle" || status === "Offline");
-      const justBecameNeedsHuman = attentionTrigger || statusTrigger;
+      // Step 6a: legacy `status` Processing → Idle path retired with the
+      // `AgentStatus` enum. Trigger entirely on the attention axis.
+      // First observation (`prevAttention === undefined`) does NOT count
+      // as a transition so a freshly-loaded tab does not shower the user
+      // with stale notifications for agents that have been requiring
+      // attention since long before the tab opened.
+      const justBecameNeedsHuman = prevAttention === false && attentionRequired;
 
-      if (needsHuman) {
+      if (attentionRequired) {
         if (justBecameNeedsHuman && !idleState?.notified) {
           const delay = getDelay(agent.detection_source, config.thresholdSecs);
 
@@ -189,7 +174,6 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       if (!currentIds.has(id)) {
         if (state.timerId) clearTimeout(state.timerId);
         stateMap.current.delete(id);
-        prevStatusMap.current.delete(id);
         prevAttentionMap.current.delete(id);
       }
     }

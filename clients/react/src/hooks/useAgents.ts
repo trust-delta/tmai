@@ -11,13 +11,10 @@ import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 export function useAgents() {
   const { cache, refreshCache } = useSSEContext();
   const { agents, loading } = cache;
-  // Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
-  // prefer the new `attention.required` axis when present, fall back to the
-  // legacy `needs_attention` boolean (#521) so older tmai-core snapshots
-  // still aggregate. Step 6 retires the fallback.
-  const attentionCount = agents.filter(
-    (a) => a.attention?.required ?? a.needs_attention ?? false,
-  ).length;
+  // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
+  // fallback retired with the rest of the AgentSnapshot pentad. Count
+  // is driven entirely by `attention.required`.
+  const attentionCount = agents.filter((a) => a.attention?.required ?? false).length;
 
   // refreshCache triggers a full re-bootstrap; used by the Tauri event path
   // to pull a fresh snapshot when the desktop app signals an agent change.
