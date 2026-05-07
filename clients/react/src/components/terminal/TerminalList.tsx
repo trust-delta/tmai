@@ -1,4 +1,4 @@
-import { type AgentSnapshot, statusName } from "@/lib/api";
+import type { AgentSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface TerminalListProps {
@@ -20,7 +20,19 @@ export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalLi
         {terminals.map((t) => {
           const selected = t.id === selectedTarget || t.target === selectedTarget;
           const name = commandLabel(t);
-          const status = statusName(t.status);
+          // Step 6a: replace legacy `status` with attention-derived label.
+          // Bootstrap (attention === undefined/null) renders "—" so the
+          // column never blanks during the sampler bootstrap window.
+          const att = t.attention;
+          const status: string = att?.required
+            ? att.reason === "halted"
+              ? "Halted"
+              : att.reason === "completed"
+                ? "Done"
+                : "Wait"
+            : att !== null && att !== undefined
+              ? "Active"
+              : "—";
           return (
             <button
               type="button"
@@ -40,7 +52,7 @@ export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalLi
               <span
                 className={cn(
                   "shrink-0 text-[10px]",
-                  status === "Idle" ? "text-zinc-600" : "text-zinc-500",
+                  status === "Active" || status === "—" ? "text-zinc-600" : "text-zinc-500",
                 )}
               >
                 {status}

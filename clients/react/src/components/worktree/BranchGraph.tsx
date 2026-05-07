@@ -7,9 +7,23 @@ import {
   type GraphData,
   type IssueInfo,
   type PrInfo,
-  statusName,
   type WorktreeSnapshot,
 } from "@/lib/api";
+
+// Step 6a (decision tmai-core@2026-05-07): the legacy `statusName`
+// helper retired with the `AgentStatus` enum. Map the new attention
+// axis onto the same single-word labels the LaneGraph rendering
+// already expects (Bootstrap → "—", Active → "Active", required
+// reasons → "Done" / "Halted" / "Wait").
+function attentionLabel(agent: AgentSnapshot | null | undefined): string {
+  const att = agent?.attention;
+  if (!att) return "—";
+  if (!att.required) return "Active";
+  if (att.reason === "completed") return "Done";
+  if (att.reason === "halted") return "Halted";
+  return "Wait";
+}
+
 import { useSSE } from "@/lib/sse-provider";
 import { ActionPanel } from "./ActionPanel";
 import { DetailPanel, type DetailView } from "./DetailPanel";
@@ -219,7 +233,7 @@ export function BranchGraph({
       agentStatus:
         mainWt?.agent_status ??
         (branchAgentMap.has(defaultBranch)
-          ? statusName(branchAgentMap.get(defaultBranch)?.status ?? "Unknown")
+          ? attentionLabel(branchAgentMap.get(defaultBranch))
           : null),
       diffSummary: null,
       worktree: mainWt ?? null,
@@ -269,7 +283,7 @@ export function BranchGraph({
             isDirty: false,
             hasAgent: !!matchedAgent,
             agentTarget: matchedAgent?.target ?? null,
-            agentStatus: matchedAgent ? statusName(matchedAgent.status) : null,
+            agentStatus: matchedAgent ? attentionLabel(matchedAgent) : null,
             diffSummary: null,
             worktree: null,
             ahead: ab?.[0] ?? 0,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { type AgentSnapshot, api, statusName } from "@/lib/api";
+import { type AgentSnapshot, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AgentActionsProps {
@@ -8,12 +8,34 @@ interface AgentActionsProps {
   passthrough?: boolean;
 }
 
-// Status bar displayed above the main panel for the selected agent
+// Status bar displayed above the main panel for the selected agent.
+//
+// Step 6a (decision tmai-core@2026-05-07): the legacy `AgentStatus`
+// enum is gone from the wire. Map the new `attention` axis onto the
+// same trio of UI states the existing layout relies on:
+//
+// - `needsPermission` ↔ attention.required && reason === "halted" —
+//   the `PermissionDenied` hook fired and auto-approve did not
+//   resolve it, so the agent is parked at a permission prompt.
+// - `isIdle` ↔ attention.required && reason !== "halted" — the
+//   agent finished a turn (`Stop` hook) or the sampler quiet signal
+//   fired; either way the agent is waiting for the next prompt.
+// - `isProcessing` ↔ attention is present but not required, i.e.
+//   the agent is actively working. Bootstrap window (attention ===
+//   undefined / null) collapses into the `isProcessing` lane so the
+//   badge never blanks during the sampler bootstrap.
 export function AgentActions({ agent, passthrough }: AgentActionsProps) {
-  const name = statusName(agent.status);
-  const needsPermission = name === "AwaitingApproval";
-  const isProcessing = name === "Processing";
-  const isIdle = name === "Idle";
+  const attention = agent.attention;
+  const needsPermission = attention?.required === true && attention.reason === "halted";
+  const isIdle = attention?.required === true && attention.reason !== "halted";
+  const isProcessing = !needsPermission && !isIdle;
+  const name = needsPermission
+    ? "Halted"
+    : isIdle
+      ? attention?.reason === "completed"
+        ? "Done"
+        : "Wait"
+      : "Active";
 
   const handleApprove = useCallback(async () => {
     try {

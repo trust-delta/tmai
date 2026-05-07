@@ -21,60 +21,21 @@ interface TauriAgentInfo {
   team_name: string | null;
 }
 
-// Convert Tauri AgentInfo to API AgentSnapshot
+// Convert Tauri AgentInfo to API AgentSnapshot.
+//
+// Step 6a (decision tmai-core@2026-05-07): the legacy `status` /
+// `phase` / `detail` triple was retired from the wire surface. The
+// Tauri bridge therefore drops the parser block — `info.status`
+// continues to flow from the Tauri side (older Tauri builds may still
+// emit it) but is not surfaced into the React snapshot. The new
+// `attention` axis is left as `null` here because the Tauri bridge
+// has no separate signal for it; downstream UI renders the bootstrap
+// indeterminate badge until the SSE / HTTP path takes over.
 function convertTauriAgent(info: TauriAgentInfo): AgentSnapshot {
-  // Parse status enum string from Tauri
-  let status: AgentSnapshot["status"];
-  if (info.status === "Idle") {
-    status = "Idle";
-  } else if (info.status === "Offline") {
-    status = "Offline";
-  } else if (info.status === "Unknown") {
-    status = "Unknown";
-  } else if (info.status.startsWith("Processing")) {
-    status = { Processing: { activity: info.status.substring(11) } };
-  } else if (info.status.startsWith("AwaitingApproval")) {
-    status = { AwaitingApproval: { approval_type: "unknown", details: "" } };
-  } else if (info.status.startsWith("Error")) {
-    status = { Error: { message: info.status.substring(7) } };
-  } else {
-    status = "Unknown";
-  }
-
-  // Derive phase and detail from status for Tauri compatibility
-  let phase: import("./api-http").Phase = "Idle";
-  let detail: import("./api-http").Detail = "Idle";
-  if (typeof status === "string") {
-    if (status === "Idle") {
-      phase = "Idle";
-      detail = "Idle";
-    } else if (status === "Offline") {
-      phase = "Offline";
-      detail = "Offline";
-    } else {
-      phase = "Idle";
-      detail = "Unknown";
-    }
-  } else if ("Processing" in status) {
-    phase = "Working";
-    detail = status.Processing.activity
-      ? { ToolExecution: { tool_name: status.Processing.activity } }
-      : "Thinking";
-  } else if ("AwaitingApproval" in status) {
-    phase = "Blocked";
-    detail = { AwaitingApproval: status.AwaitingApproval };
-  } else if ("Error" in status) {
-    phase = "Blocked";
-    detail = { Error: status.Error };
-  }
-
   return {
     id: info.id,
     target: info.target,
     agent_type: info.type as AgentType,
-    status,
-    phase,
-    detail,
     title: info.title,
     cwd: info.cwd,
     display_cwd: info.display_cwd,

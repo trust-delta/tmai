@@ -22,7 +22,7 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useShowAutoDiscovered } from "@/hooks/useShowAutoDiscovered";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { groupByProject, isAiAgent, type Selection, setCallerCwd, statusName } from "@/lib/api";
+import { groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 
 export function App() {
@@ -449,11 +449,15 @@ export function App() {
                   }`}
                   title={agent.target}
                 >
-                  {statusName(agent.status) === "Processing"
-                    ? "●"
-                    : statusName(agent.status) === "AwaitingApproval"
-                      ? "◐"
-                      : "○"}
+                  {/* Step 6a: status pentad removed — use the new
+                      attention axis. `required + halted` = AwaitingApproval
+                      analogue, `required + completed` / `required + null`
+                      = Wait, otherwise active dot. */}
+                  {agent.attention?.required && agent.attention.reason === "halted"
+                    ? "◐"
+                    : agent.attention?.required
+                      ? "○"
+                      : "●"}
                 </button>
               ))}
             </div>

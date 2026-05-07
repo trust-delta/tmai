@@ -69,7 +69,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       // Fallback: any other api call hangs rather than throwing
       attentionCount: () => hanging,
     },
-    statusName: actual.statusName,
+    // Step 6a: `statusName` was retired alongside the `AgentStatus` enum.
+    // Nothing in this suite calls it, so the re-export is dropped.
   };
 });
 
