@@ -168,11 +168,30 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   //   2. New attention axis when `required` — reason-aware label so the
   //      operator can tell "agent finished, waiting for next prompt" from
   //      "agent halted on a permission ask".
-  //   3. Legacy `status` name as the baseline.
+  //   3. New attention axis when not required (i.e. wire field present
+  //      but `required: false`) — render an "Active" pill. This case
+  //      means the new tmai-core has affirmatively signaled "agent is
+  //      doing work or just ack'd input"; the legacy `status` field is
+  //      vestigial there and may still carry stale `Processing` from
+  //      the capture-pane detector that Step 3 of the rebuild did not
+  //      decommission. Showing the legacy name in that window misleads
+  //      operators (#618 dogfood report).
+  //   4. Legacy `status` name as the baseline (only when the new axis is
+  //      absent, e.g. talking to a pre-Step-4 tmai-core).
   const phase = agent.auto_approve_phase;
   const isJudging = phase === "Judging";
   const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
-  const attentionPillInfo = attentionRequired ? attentionPill(attentionReason) : null;
+  const hasNewAttentionAxis = agent.attention !== null && agent.attention !== undefined;
+  let attentionPillInfo: { label: string; style: string } | null = null;
+  if (attentionRequired) {
+    attentionPillInfo = attentionPill(attentionReason);
+  } else if (hasNewAttentionAxis) {
+    // New axis explicitly says "not required" — show neutral Active pill.
+    attentionPillInfo = {
+      label: "Active",
+      style: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+    };
+  }
   const displayName = isJudging
     ? "Judging"
     : isAutoApproved
