@@ -67,11 +67,28 @@ function sendNotification(agent: AgentSnapshot, lastMessage?: string | null) {
 }
 
 // Hook: watch agent list for Processing → Idle transitions and fire browser notifications.
+//
+// Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
+// the legacy state machine is dismantled, so the historical
+// "Processing → Idle" status transition no longer fires for new tmai-core
+// servers. The new `attention.required` axis (Step 4a / 4b) carries the
+// transition instead. The hook now triggers when **either** signal flips
+// "becomes attention-needed":
+//
+//   1. `attention.required` goes false / undefined → true
+//      (primary path; covers both CC hook fire and PTY-server fallback)
+//   2. legacy `status` goes Processing → Idle / Offline
+//      (compat fallback for snapshots from pre-Step 4 tmai-core)
+//
+// The two paths converge during the parallel-run period; Step 6 retires
+// the legacy path along with the rest of the status field.
 export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotificationConfig) {
   // Track per-agent idle state
   const stateMap = useRef(new Map<string, AgentIdleState>());
-  // Track previous status per agent
+  // Track previous status per agent (legacy path)
   const prevStatusMap = useRef(new Map<string, string>());
+  // Track previous attention.required per agent (Step 5 primary path)
+  const prevAttentionMap = useRef(new Map<string, boolean>());
 
   // Request permission when enabled
   useEffect(() => {
@@ -89,6 +106,7 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       }
       stateMap.current.clear();
       prevStatusMap.current.clear();
+      prevAttentionMap.current.clear();
       return;
     }
 
@@ -102,13 +120,25 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       const status = statusName(agent.status);
       const prevStatus = prevStatusMap.current.get(agent.id);
       prevStatusMap.current.set(agent.id, status);
+      const attentionRequired = agent.attention?.required ?? false;
+      const prevAttention = prevAttentionMap.current.get(agent.id) ?? false;
+      prevAttentionMap.current.set(agent.id, attentionRequired);
 
       const idleState = stateMap.current.get(agent.id);
 
-      if (status === "Idle" || status === "Offline") {
-        // Agent is idle — was it previously processing?
-        if (prevStatus === "Processing" && !idleState?.notified) {
-          // Transition detected: Processing → Idle
+      // Step 5: "needs the human" condition is true when either the new
+      // attention axis says so or the legacy status is Idle / Offline.
+      const needsHuman = attentionRequired || status === "Idle" || status === "Offline";
+      // A *fresh* trigger requires a transition into the needs-human state
+      // on at least one of the two signals — otherwise re-renders would
+      // re-fire notifications for an agent that has been idle for hours.
+      const attentionTrigger = !prevAttention && attentionRequired;
+      const statusTrigger =
+        prevStatus === "Processing" && (status === "Idle" || status === "Offline");
+      const justBecameNeedsHuman = attentionTrigger || statusTrigger;
+
+      if (needsHuman) {
+        if (justBecameNeedsHuman && !idleState?.notified) {
           const delay = getDelay(agent.detection_source, config.thresholdSecs);
 
           // Clear any existing timer
@@ -138,7 +168,7 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
             });
           }
         }
-        // If already idle and already notified (or no transition), do nothing
+        // If already needs-human and already notified (or no transition), do nothing
       } else {
         // Agent is processing or in another state — reset idle tracking
         if (idleState) {
@@ -154,6 +184,7 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
         if (state.timerId) clearTimeout(state.timerId);
         stateMap.current.delete(id);
         prevStatusMap.current.delete(id);
+        prevAttentionMap.current.delete(id);
       }
     }
   }, [agents, config.enabled, config.thresholdSecs]);

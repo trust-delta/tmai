@@ -2,6 +2,7 @@ import {
   type AgentSnapshot,
   type AgentType,
   api,
+  type AttentionReason,
   type ConnectionChannels,
   type DetectionSource,
   isAiAgent,
@@ -23,6 +24,35 @@ const statusGlow: Record<string, string> = {
   Processing: "glow-cyan",
   AwaitingApproval: "glow-red",
 };
+
+// Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07).
+// Map the new `attention.reason` hint to a badge label / pill style.
+// `Completed` (CC `Stop` hook) → blue waiting-for-input look; `Halted`
+// (`PermissionDenied` after auto-approve fall-through) → red action-needed
+// look. Reason-less `required: true` (the PTY-server quiet-signal fallback
+// path) falls back to a generic "Wait" amber pill so the visual still
+// matches the glow.
+function attentionPill(reason: AttentionReason | null | undefined): {
+  label: string;
+  style: string;
+} {
+  if (reason === "completed") {
+    return {
+      label: "Done",
+      style: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+    };
+  }
+  if (reason === "halted") {
+    return {
+      label: "Halted",
+      style: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+    };
+  }
+  return {
+    label: "Wait",
+    style: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  };
+}
 
 // Agent type display: short label + color
 function agentTypeLabel(agentType: AgentType): {
@@ -119,7 +149,12 @@ interface AgentCardProps {
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const name = statusName(agent.status);
-  const attention = agent.needs_attention ?? false;
+  // Step 5 of the rebuild: prefer the new `attention` axis when present;
+  // fall back to legacy `needs_attention` so a snapshot from an older
+  // tmai-core (pre-Step 4) still renders correctly through the parallel
+  // run period. Step 6 retires the fallback.
+  const attentionRequired = agent.attention?.required ?? agent.needs_attention ?? false;
+  const attentionReason = agent.attention?.reason ?? null;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
   // Auto-approve state
@@ -127,16 +162,27 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
   const isAutoApproveOn = autoApproveEffective(agent);
 
-  // Auto-approve overrides status display when active
+  // Display priority for the right-hand pill:
+  //   1. Auto-approve phase (Judging / Approved) — highest, drives the
+  //      orange / emerald accents that operator already trusts.
+  //   2. New attention axis when `required` — reason-aware label so the
+  //      operator can tell "agent finished, waiting for next prompt" from
+  //      "agent halted on a permission ask".
+  //   3. Legacy `status` name as the baseline.
   const phase = agent.auto_approve_phase;
   const isJudging = phase === "Judging";
   const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
-  const displayName = isJudging ? "Judging" : isAutoApproved ? "Approved" : name;
+  const attentionPillInfo = attentionRequired ? attentionPill(attentionReason) : null;
+  const displayName = isJudging
+    ? "Judging"
+    : isAutoApproved
+      ? "Approved"
+      : (attentionPillInfo?.label ?? name);
   const statusStyle = isJudging
     ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
     : isAutoApproved
       ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-      : (statusColors[name] ?? statusColors.Unknown);
+      : (attentionPillInfo?.style ?? statusColors[name] ?? statusColors.Unknown);
   const glow = isJudging || isAutoApproved ? "" : (statusGlow[name] ?? "");
 
   // Connection channels (with fallback for older API)
@@ -175,7 +221,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         "hover:bg-white/[0.08] hover:border-white/10",
         agent.is_orchestrator && "!border-cyan-500/20 bg-cyan-500/[0.04]",
         selected && "!border-cyan-500/30 !bg-cyan-500/10",
-        attention && "!border-amber-500/30 animate-glow-pulse",
+        attentionRequired && "!border-amber-500/30 animate-glow-pulse",
         glow && selected && glow,
       )}
     >

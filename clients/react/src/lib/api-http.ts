@@ -115,6 +115,27 @@ export function statusName(status: AgentStatus): string {
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 
+// ── Attention axis (decision tmai-core@2026-05-07) ──
+//
+// New dynamic-state axis introduced by the agent-state attention rebuild.
+// `required = true` ↔ the agent is waiting for the human; `required =
+// false` ↔ the agent is active. `reason` is an observability hint only
+// — never branched on by Core / PTY-server / Hub. Hand-written here
+// because the matching `clients/react/src/types/generated/AgentAttention.ts`
+// arrives via the next `gen-spec-pr` bot PR; this file unblocks the UI
+// migration meanwhile and survives as a re-export shim afterwards.
+//
+// Wire shape (`AgentSnapshot.attention`) is `Option<AgentAttention>`:
+// `null`/absent encodes "unknown" — the sampler bootstrap window per
+// decision Δ6 — and the UI renders an indeterminate badge there rather
+// than reusing a stale value.
+export type AttentionReason = "completed" | "halted";
+
+export interface AgentAttention {
+  required: boolean;
+  reason?: AttentionReason | null;
+}
+
 /// Which communication channels are currently available for this agent
 export interface ConnectionChannels {
   has_tmux: boolean;
@@ -196,6 +217,12 @@ export interface AgentSnapshot {
   model_id?: string | null;
   model_display_name?: string | null;
   is_orchestrator?: boolean;
+  /** New attention axis (decision tmai-core@2026-05-07 Step 4). `null` /
+   *  absent on the wire encodes "unknown" — the sampler bootstrap window
+   *  per Δ6. Step 5 of the rebuild teaches the Hub to prefer this over
+   *  the legacy `needs_attention` boolean below; Step 6 retires the
+   *  legacy field. */
+  attention?: AgentAttention | null;
   // Derived fields computed by tmai-core (tmai-core@c40e8b8aa5, Phase 1)
   needs_attention?: boolean;
   display_label?: string;
