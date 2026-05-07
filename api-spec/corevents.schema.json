@@ -91,6 +91,30 @@
         }
       ]
     },
+    "AgentAttention": {
+      "description": "Whether the agent currently needs human attention.\n\n`required = true` ↔ the agent is waiting for the user. `reason` is an\noptional observability hint; consumers must not branch on it.",
+      "properties": {
+        "reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/AttentionReason",
+              "description": "Optional hint for UIs. Never branched on by Core / PTY-server / Hub."
+            }
+          ]
+        },
+        "required": {
+          "description": "Whether the agent currently needs human attention.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "required"
+      ],
+      "type": "object"
+    },
     "ApprovalSnapshot": {
       "description": "Snapshot of the auto-approve state for a single agent.",
       "properties": {
@@ -157,6 +181,14 @@
         "recent_decisions"
       ],
       "type": "object"
+    },
+    "AttentionReason": {
+      "description": "Why the agent is requesting attention. Hint for UIs and audit; never used\nfor branching in Core or PTY-server logic.",
+      "enum": [
+        "completed",
+        "halted"
+      ],
+      "type": "string"
     },
     "AutoActionEntry": {
       "description": "Record of the most recently fired auto-action rule.",
