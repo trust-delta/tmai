@@ -78,6 +78,123 @@ describe("sendNotification body — last_assistant_message isolation (#9)", () =
   });
 });
 
+// Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
+// useIdleNotification now treats `attention.required` as the primary signal,
+// with the legacy `status` Processing → Idle transition as a compat
+// fallback. Mirror the hook's transition rule here as a pure function so
+// the trigger semantics are pinned down without dragging React in.
+describe("attention axis triggering — Step 5 transitions", () => {
+  // Mirrors the per-agent block in useIdleNotification.ts
+  // `justBecameNeedsHuman = attentionTrigger || statusTrigger`.
+  // The attention path uses `prevAttention === false` (not `!prevAttention`)
+  // so the first observation of an agent (`prevAttention === undefined`)
+  // does NOT count as a transition — see CodeRabbit comment on tmai#618.
+  function justBecameNeedsHuman(args: {
+    prevAttention: boolean | undefined;
+    attentionRequired: boolean;
+    prevStatus: string | undefined;
+    status: string;
+  }): boolean {
+    const attentionTrigger = args.prevAttention === false && args.attentionRequired;
+    const statusTrigger =
+      args.prevStatus === "Processing" && (args.status === "Idle" || args.status === "Offline");
+    return attentionTrigger || statusTrigger;
+  }
+
+  test("attention.required false → true fires (primary path)", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: false,
+        attentionRequired: true,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(true);
+  });
+
+  test("first observation with attention.required=true does NOT fire", () => {
+    // Tab just opened on an agent that has been requiring attention for
+    // hours — the user should see the visual badge but not get a stale
+    // browser notification. CodeRabbit tmai#618.
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: undefined,
+        attentionRequired: true,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(false);
+  });
+
+  test("first observation with attention.required=false does not fire", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: undefined,
+        attentionRequired: false,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(false);
+  });
+
+  test("attention.required held true → true does not retrigger", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: true,
+        attentionRequired: true,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(false);
+  });
+
+  test("legacy status Processing → Idle fires when attention is undefined (fallback)", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: false,
+        attentionRequired: false,
+        prevStatus: "Processing",
+        status: "Idle",
+      }),
+    ).toBe(true);
+  });
+
+  test("legacy status Processing → Offline also fires (fallback)", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: false,
+        attentionRequired: false,
+        prevStatus: "Processing",
+        status: "Offline",
+      }),
+    ).toBe(true);
+  });
+
+  test("status Idle → Idle (no transition) does not retrigger", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: false,
+        attentionRequired: false,
+        prevStatus: "Idle",
+        status: "Idle",
+      }),
+    ).toBe(false);
+  });
+
+  test("attention false → true wins even when legacy status is also transitioning", () => {
+    // Both signals fire on the same tick — still only one notification
+    // because the OR collapses to a single 'true'.
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: false,
+        attentionRequired: true,
+        prevStatus: "Processing",
+        status: "Idle",
+      }),
+    ).toBe(true);
+  });
+});
+
 describe("notification trigger conditions", () => {
   // These tests document the expected behavior of status transitions
 
