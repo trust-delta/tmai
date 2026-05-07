@@ -1,8 +1,8 @@
 import {
   type AgentSnapshot,
   type AgentType,
-  api,
   type AttentionReason,
+  api,
   type ConnectionChannels,
   type DetectionSource,
   isAiAgent,
