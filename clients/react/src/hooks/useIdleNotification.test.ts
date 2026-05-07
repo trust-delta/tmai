@@ -86,13 +86,16 @@ describe("sendNotification body — last_assistant_message isolation (#9)", () =
 describe("attention axis triggering — Step 5 transitions", () => {
   // Mirrors the per-agent block in useIdleNotification.ts
   // `justBecameNeedsHuman = attentionTrigger || statusTrigger`.
+  // The attention path uses `prevAttention === false` (not `!prevAttention`)
+  // so the first observation of an agent (`prevAttention === undefined`)
+  // does NOT count as a transition — see CodeRabbit comment on tmai#618.
   function justBecameNeedsHuman(args: {
-    prevAttention: boolean;
+    prevAttention: boolean | undefined;
     attentionRequired: boolean;
     prevStatus: string | undefined;
     status: string;
   }): boolean {
-    const attentionTrigger = !args.prevAttention && args.attentionRequired;
+    const attentionTrigger = args.prevAttention === false && args.attentionRequired;
     const statusTrigger =
       args.prevStatus === "Processing" && (args.status === "Idle" || args.status === "Offline");
     return attentionTrigger || statusTrigger;
@@ -107,6 +110,31 @@ describe("attention axis triggering — Step 5 transitions", () => {
         status: "Unknown",
       }),
     ).toBe(true);
+  });
+
+  test("first observation with attention.required=true does NOT fire", () => {
+    // Tab just opened on an agent that has been requiring attention for
+    // hours — the user should see the visual badge but not get a stale
+    // browser notification. CodeRabbit tmai#618.
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: undefined,
+        attentionRequired: true,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(false);
+  });
+
+  test("first observation with attention.required=false does not fire", () => {
+    expect(
+      justBecameNeedsHuman({
+        prevAttention: undefined,
+        attentionRequired: false,
+        prevStatus: undefined,
+        status: "Unknown",
+      }),
+    ).toBe(false);
   });
 
   test("attention.required held true → true does not retrigger", () => {

@@ -440,7 +440,12 @@ export function groupByProject(
       });
     }
 
-    const attentionCount = groupAgents.filter((a) => a.needs_attention ?? false).length;
+    // Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
+    // prefer the new `attention.required` axis, fall back to the legacy
+    // `needs_attention` boolean for snapshots from pre-Step-4 servers.
+    const attentionCount = groupAgents.filter(
+      (a) => a.attention?.required ?? a.needs_attention ?? false,
+    ).length;
 
     projects.push({
       name: projectName(path),
@@ -902,7 +907,10 @@ export const api = {
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
   attentionCount: async () => {
     const agents = await apiFetch<AgentSnapshot[]>("/agents");
-    return agents.filter((a) => a.needs_attention ?? false).length;
+    // Step 5 of the agent-state attention rebuild: same fallback as
+    // useAgents and groupByProject above. Step 6 retires the legacy
+    // `needs_attention` field.
+    return agents.filter((a) => a.attention?.required ?? a.needs_attention ?? false).length;
   },
 
   // Agent actions

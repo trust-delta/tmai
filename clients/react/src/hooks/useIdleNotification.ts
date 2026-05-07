@@ -121,7 +121,7 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       const prevStatus = prevStatusMap.current.get(agent.id);
       prevStatusMap.current.set(agent.id, status);
       const attentionRequired = agent.attention?.required ?? false;
-      const prevAttention = prevAttentionMap.current.get(agent.id) ?? false;
+      const prevAttention = prevAttentionMap.current.get(agent.id);
       prevAttentionMap.current.set(agent.id, attentionRequired);
 
       const idleState = stateMap.current.get(agent.id);
@@ -132,7 +132,13 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       // A *fresh* trigger requires a transition into the needs-human state
       // on at least one of the two signals — otherwise re-renders would
       // re-fire notifications for an agent that has been idle for hours.
-      const attentionTrigger = !prevAttention && attentionRequired;
+      // The attention path explicitly compares against `false` (not `!prevAttention`)
+      // so the first observation of an agent (`prevAttention === undefined`)
+      // does NOT count as a transition: a freshly-loaded tab must not
+      // shower the user with notifications for agents that have been
+      // requiring attention since long before the tab opened. CodeRabbit
+      // tmai#618.
+      const attentionTrigger = prevAttention === false && attentionRequired;
       const statusTrigger =
         prevStatus === "Processing" && (status === "Idle" || status === "Offline");
       const justBecameNeedsHuman = attentionTrigger || statusTrigger;
