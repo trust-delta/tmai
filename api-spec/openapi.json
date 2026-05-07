@@ -171,6 +171,30 @@
         ],
         "description": "Origin of an API action — tracks who initiated the operation.\n\nUsed by the orchestrator notification middleware to provide context\nabout what triggered a side-effect API call."
       },
+      "AgentAttention": {
+        "type": "object",
+        "description": "Whether the agent currently needs human attention.\n\n`required = true` ↔ the agent is waiting for the user. `reason` is an\noptional observability hint; consumers must not branch on it.",
+        "required": [
+          "required"
+        ],
+        "properties": {
+          "reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttentionReason",
+                "description": "Optional hint for UIs. Never branched on by Core / PTY-server / Hub."
+              }
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "description": "Whether the agent currently needs human attention."
+          }
+        }
+      },
       "ApprovalSnapshot": {
         "type": "object",
         "description": "Snapshot of the auto-approve state for a single agent.",
@@ -237,6 +261,14 @@
             "description": "Recent auto-approve decisions (most recent first, capped at 20)"
           }
         }
+      },
+      "AttentionReason": {
+        "type": "string",
+        "description": "Why the agent is requesting attention. Hint for UIs and audit; never used\nfor branching in Core or PTY-server logic.",
+        "enum": [
+          "completed",
+          "halted"
+        ]
       },
       "AutoActionEntry": {
         "type": "object",

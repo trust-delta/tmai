@@ -4,8 +4,12 @@
 
 pub mod action_origin;
 pub use action_origin::*;
+pub mod agent_attention;
+pub use agent_attention::*;
 pub mod approval_snapshot;
 pub use approval_snapshot::*;
+pub mod attention_reason;
+pub use attention_reason::*;
 pub mod auto_action_entry;
 pub use auto_action_entry::*;
 pub mod auto_approve_mode;
