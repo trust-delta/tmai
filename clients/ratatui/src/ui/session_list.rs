@@ -14,7 +14,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::types::{AgentSnapshot, Phase};
+use crate::types::{attention_label, AgentSnapshot, AttentionReason};
 
 pub struct SessionListView<'a> {
     pub agents: &'a [AgentSnapshot],
@@ -137,26 +137,35 @@ fn render_status(frame: &mut Frame, area: Rect, text: &str) {
     frame.render_widget(para, area);
 }
 
-/// Phase tag label read directly from the core-provided `phase` field.
+/// Tag label derived from the new attention axis (decision tmai-core@2026-05-07
+/// Steps 4 / 6). Replaces the legacy `phase` enum that was retired by
+/// Step 6a. Lower-case to match the existing UI vocabulary; the explicit
+/// values match the React WebUI badge labels (`Done` / `Halted` / `Wait` /
+/// `Active` / `—`) lower-cased.
 fn phase_label(agent: &AgentSnapshot) -> &'static str {
-    match &agent.phase {
-        Some(Phase::Working) => "working",
-        Some(Phase::Blocked) => "blocked",
-        Some(Phase::Idle) => "idle",
-        Some(Phase::Offline) => "offline",
-        None => "?",
+    match attention_label(agent.attention.as_ref()) {
+        "Done" => "done",
+        "Halted" => "halted",
+        "Wait" => "wait",
+        "Active" => "active",
+        _ => "—",
     }
 }
 
-/// UI color for the phase tag, reading from the core-provided `phase` field.
+/// UI color for the phase tag. Maps attention states onto the same
+/// blocked / working / idle palette the legacy `phase` field used to
+/// drive — Halted keeps the urgent yellow accent, Done / Wait stay
+/// muted, Active mirrors the working cyan, bootstrap stays gray.
 fn phase_color(agent: &AgentSnapshot) -> Style {
     let base = Style::default();
-    match &agent.phase {
-        Some(Phase::Working) => base.fg(Color::Cyan),
-        Some(Phase::Blocked) => base.fg(Color::Yellow),
-        Some(Phase::Idle) => base.fg(Color::Green),
-        Some(Phase::Offline) => base.fg(Color::DarkGray),
-        None => base,
+    match agent.attention.as_ref() {
+        Some(att) if att.required => match att.reason {
+            Some(AttentionReason::halted) => base.fg(Color::Yellow),
+            Some(AttentionReason::completed) => base.fg(Color::Green),
+            None => base.fg(Color::Yellow),
+        },
+        Some(_) => base.fg(Color::Cyan),
+        None => base.fg(Color::DarkGray),
     }
 }
 
