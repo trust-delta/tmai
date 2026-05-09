@@ -35,10 +35,6 @@ is_main: boolean,
  */
 agent_target?: string, 
 /**
- * Status of the linked agent
- */
-agent_status?: string, 
-/**
  * Whether this worktree has uncommitted changes
  */
 is_dirty?: boolean, 
