@@ -13,8 +13,6 @@ pub struct WorktreeSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_pending: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_status: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_target: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<Value>,
