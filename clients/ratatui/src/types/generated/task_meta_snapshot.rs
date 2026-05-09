@@ -12,8 +12,6 @@ use std::collections::HashMap;
 pub struct TaskMetaSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_status: Option<Value>,
     pub branch: String,
     pub display_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -24,8 +22,6 @@ pub struct TaskMetaSnapshot {
     pub milestones: Option<Vec<Milestone>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_phase: Option<Phase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_agent_id: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
