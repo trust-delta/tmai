@@ -20,19 +20,16 @@ export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalLi
         {terminals.map((t) => {
           const selected = t.id === selectedTarget || t.target === selectedTarget;
           const name = commandLabel(t);
-          // Step 6a: replace legacy `status` with attention-derived label.
-          // Bootstrap (attention === undefined/null) renders "—" so the
-          // column never blanks during the sampler bootstrap window.
-          const att = t.attention;
-          const status: string = att?.required
-            ? att.reason === "halted"
+          // Decision 2026-05-09 Phase 4: flat attention enum drives the
+          // single-word label; `null` (running) renders "—".
+          const status: string =
+            t.attention === "halted"
               ? "Halted"
-              : att.reason === "completed"
+              : t.attention === "completed"
                 ? "Done"
-                : "Wait"
-            : att !== null && att !== undefined
-              ? "Active"
-              : "—";
+                : t.attention === "started"
+                  ? "Started"
+                  : "—";
           return (
             <button
               type="button"

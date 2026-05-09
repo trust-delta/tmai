@@ -14,7 +14,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::types::{attention_label, AgentSnapshot, AttentionReason};
+use crate::types::{attention_label, AgentAttention, AgentSnapshot};
 
 pub struct SessionListView<'a> {
     pub agents: &'a [AgentSnapshot],
@@ -152,19 +152,16 @@ fn phase_label(agent: &AgentSnapshot) -> &'static str {
     }
 }
 
-/// UI color for the phase tag. Maps attention states onto the same
-/// blocked / working / idle palette the legacy `phase` field used to
-/// drive — Halted keeps the urgent yellow accent, Done / Wait stay
-/// muted, Active mirrors the working cyan, bootstrap stays gray.
+/// UI color for the phase tag. Decision 2026-05-09 Phase 4: simplified
+/// to the four attention states. Halted keeps the urgent yellow accent,
+/// Started uses cyan (engaging — user just spawned, awaiting first
+/// prompt), Completed (Done) stays green, running (`None`) is gray.
 fn phase_color(agent: &AgentSnapshot) -> Style {
     let base = Style::default();
     match agent.attention.as_ref() {
-        Some(att) if att.required => match att.reason {
-            Some(AttentionReason::halted) => base.fg(Color::Yellow),
-            Some(AttentionReason::completed) => base.fg(Color::Green),
-            None => base.fg(Color::Yellow),
-        },
-        Some(_) => base.fg(Color::Cyan),
+        Some(AgentAttention::halted) => base.fg(Color::Yellow),
+        Some(AgentAttention::completed) => base.fg(Color::Green),
+        Some(AgentAttention::started) => base.fg(Color::Cyan),
         None => base.fg(Color::DarkGray),
     }
 }

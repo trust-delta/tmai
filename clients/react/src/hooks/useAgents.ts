@@ -11,10 +11,10 @@ import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 export function useAgents() {
   const { cache, refreshCache } = useSSEContext();
   const { agents, loading } = cache;
-  // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
-  // fallback retired with the rest of the AgentSnapshot pentad. Count
-  // is driven entirely by `attention.required`.
-  const attentionCount = agents.filter((a) => a.attention?.required ?? false).length;
+  // Decision tmai-core@2026-05-09 Phase 4: any non-null `attention`
+  // value (`"started" | "halted" | "completed"`) means the agent is
+  // waiting on the user. `null` is "running normally — no UI signal".
+  const attentionCount = agents.filter((a) => a.attention != null).length;
 
   // refreshCache triggers a full re-bootstrap; used by the Tauri event path
   // to pull a fresh snapshot when the desktop app signals an agent change.

@@ -2,21 +2,21 @@
 pub mod generated;
 
 pub use generated::{
-    AgentAttention, AttentionReason, DispatchSnapshot, QueueSnapshot, RuntimeSnapshot,
-    TaskMetaSnapshot, TeamSnapshot, WorkflowSnapshot, WorktreeSnapshot,
+    AgentAttention, DispatchSnapshot, QueueSnapshot, RuntimeSnapshot, TaskMetaSnapshot,
+    TeamSnapshot, WorkflowSnapshot, WorktreeSnapshot,
 };
 
 use serde::Deserialize;
 
 /// Agent snapshot returned by `GET /api/agents` and the `agents` SSE event.
 ///
-/// `display_label` is pre-computed by tmai-core (mirrors `QueueAgentEntry.agent_display_label`).
-///
-/// Step 6 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
-/// the legacy `status` (`AgentStatus` enum) and `phase` fields were retired
-/// from the wire surface. The new `attention?: AgentAttention | null`
-/// axis (decision Step 4 / 6b) is the only dynamic-state field. UI styling
-/// reads from it via [`attention_label`].
+/// Decision tmai-core@2026-05-09 (agent detection canonicalization, Phase 4):
+/// the `attention` field is now a flat string enum
+/// (`"started" | "halted" | "completed"` + `null`). The three variants are
+/// the only states that require user intervention; `null` (`Option::None`)
+/// means the agent is running normally — UI should render no special pill.
+/// The legacy `{ required, reason? }` shape and `AttentionReason` type are
+/// retired.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentSnapshot {
     pub id: String,
@@ -27,26 +27,23 @@ pub struct AgentSnapshot {
     pub is_virtual: bool,
     #[serde(default)]
     pub is_orchestrator: bool,
-    /// New attention axis (decision tmai-core@2026-05-07 Steps 4 / 6).
-    /// `None` / absent on the wire encodes the sampler bootstrap window
-    /// per Δ6 (UI renders "Bootstrap" / "—").
+    /// Attention enum (decision 2026-05-09 Phase 4 wire shape).
+    /// `None` / absent = running normally; no UI pill.
     #[serde(default)]
     pub attention: Option<AgentAttention>,
 }
 
 /// Map an [`AgentAttention`] reading to a single-word label matching the
-/// React WebUI badge vocabulary (`Done` / `Halted` / `Wait` / `Active`).
-/// `None` (sampler bootstrap window per Δ6) renders as `"—"` so the
-/// status column never blanks during the brief bootstrap interval.
+/// React WebUI pill vocabulary. `None` = "running normally"; rendered as
+/// `"Running"` so the column reads consistently with the WebUI muted
+/// chip (dogfood feedback 2026-05-10 — ambient state still wants a
+/// marker, blank felt off).
 pub fn attention_label(a: Option<&AgentAttention>) -> &'static str {
     match a {
-        Some(att) if att.required => match att.reason {
-            Some(AttentionReason::completed) => "Done",
-            Some(AttentionReason::halted) => "Halted",
-            None => "Wait",
-        },
-        Some(_) => "Active",
-        None => "—",
+        Some(AgentAttention::started) => "Started",
+        Some(AgentAttention::halted) => "Halted",
+        Some(AgentAttention::completed) => "Done",
+        None => "Running",
     }
 }
 
@@ -75,7 +72,6 @@ mod tests {
         }"#;
         let a: AgentSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(a.id, "main:0.0");
-        // Bootstrap state — no attention emitted yet.
         assert!(a.attention.is_none());
     }
 
@@ -96,8 +92,6 @@ mod tests {
     #[test]
     fn extra_fields_are_tolerated() {
         // Forward-compat: future snapshot fields must not crash the client.
-        // Also tolerates legacy `status` / `phase` from older tmai-core that
-        // hasn't merged the Step 6a wire-pentad drop yet — they're ignored.
         let json = r#"{
             "id": "x",
             "target": "x",
@@ -112,47 +106,34 @@ mod tests {
 
     #[test]
     fn attention_label_maps_variants() {
-        assert_eq!(attention_label(None), "—");
-        assert_eq!(
-            attention_label(Some(&AgentAttention {
-                required: false,
-                reason: None
-            })),
-            "Active"
-        );
-        assert_eq!(
-            attention_label(Some(&AgentAttention {
-                required: true,
-                reason: Some(AttentionReason::completed)
-            })),
-            "Done"
-        );
-        assert_eq!(
-            attention_label(Some(&AgentAttention {
-                required: true,
-                reason: Some(AttentionReason::halted)
-            })),
-            "Halted"
-        );
-        assert_eq!(
-            attention_label(Some(&AgentAttention {
-                required: true,
-                reason: None
-            })),
-            "Wait"
-        );
+        assert_eq!(attention_label(None), "Running");
+        assert_eq!(attention_label(Some(&AgentAttention::started)), "Started");
+        assert_eq!(attention_label(Some(&AgentAttention::halted)), "Halted");
+        assert_eq!(attention_label(Some(&AgentAttention::completed)), "Done");
     }
 
     #[test]
-    fn attention_field_round_trips_with_reason() {
+    fn attention_field_round_trips_with_completed() {
         let json = r#"{
             "id": "x",
             "target": "x",
-            "attention": {"required": true, "reason": "completed"}
+            "attention": "completed"
         }"#;
         let a: AgentSnapshot = serde_json::from_str(json).unwrap();
-        let att = a.attention.expect("attention populated");
-        assert!(att.required);
-        assert!(matches!(att.reason, Some(AttentionReason::completed)));
+        assert!(matches!(a.attention, Some(AgentAttention::completed)));
+    }
+
+    #[test]
+    fn attention_field_round_trips_with_halted() {
+        let json = r#"{"id":"x","target":"x","attention":"halted"}"#;
+        let a: AgentSnapshot = serde_json::from_str(json).unwrap();
+        assert!(matches!(a.attention, Some(AgentAttention::halted)));
+    }
+
+    #[test]
+    fn attention_field_round_trips_with_started() {
+        let json = r#"{"id":"x","target":"x","attention":"started"}"#;
+        let a: AgentSnapshot = serde_json::from_str(json).unwrap();
+        assert!(matches!(a.attention, Some(AgentAttention::started)));
     }
 }
