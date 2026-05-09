@@ -8,8 +8,6 @@ export * from "./teams";
 import type {
   AgentSnapshot,
   AutoActionTemplates,
-  AutoApproveRules,
-  AutoApproveSettings,
   DispatchBundle,
   GuardrailsSettings,
   NotifySettings,
@@ -109,8 +107,6 @@ export const api = {
   subscribeTerminal: (target: string) => httpApi.subscribeTerminal(target),
   resizeAgentTerminal: (target: string, rows: number, cols: number) =>
     httpApi.resizeAgentTerminal(target, rows, cols),
-  setAutoApprove: (target: string, enabled: boolean | null) =>
-    httpApi.setAutoApprove(target, enabled),
   getTranscript: (target: string) => httpApi.getTranscript(target),
   getPromptQueue: (agentId: string) => httpApi.getPromptQueue(agentId),
   cancelQueuedPrompt: (agentId: string, promptId: string) =>
@@ -186,15 +182,6 @@ export const api = {
   fetchUsage: () => httpApi.fetchUsage(),
   getUsageSettings: () => httpApi.getUsageSettings(),
   updateUsageSettings: (params: Partial<UsageSettings>) => httpApi.updateUsageSettings(params),
-
-  // Auto-approve settings
-  getAutoApproveSettings: () => httpApi.getAutoApproveSettings(),
-  updateAutoApproveMode: (mode: string) => httpApi.updateAutoApproveMode(mode),
-  updateAutoApproveRules: (rules: Partial<AutoApproveRules>) =>
-    httpApi.updateAutoApproveRules(rules),
-  updateAutoApproveFields: (
-    fields: Partial<Omit<AutoApproveSettings, "running" | "rules" | "mode">>,
-  ) => httpApi.updateAutoApproveFields(fields),
 
   // Files
   readFile: (path: string) => httpApi.readFile(path),

@@ -6,7 +6,6 @@
 // `./generated/` — see ./README.md for the sync flow.
 
 export type { ActionOrigin } from "./generated/ActionOrigin";
-export type { ApprovalSnapshot } from "./generated/ApprovalSnapshot";
 export type { BootstrapRequiredEvent } from "./generated/BootstrapRequiredEvent";
 export type { CoreEvent } from "./generated/CoreEvent";
 export type { DispatchSnapshot } from "./generated/DispatchSnapshot";

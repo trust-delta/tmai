@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AgentSnapshot, api, groupByProject } from "@/lib/api";
-import { AutoApproveSection } from "./AutoApproveSection";
 import { DeveloperSection } from "./DeveloperSection";
 import { GeneralSection } from "./GeneralSection";
 import { NotificationSection } from "./NotificationSection";
@@ -51,7 +50,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         <GeneralSection />
-        <AutoApproveSection />
         <SpawnSection />
         <OrchestrationSection projects={projects} />
         <OrchestrationDispatchSection />

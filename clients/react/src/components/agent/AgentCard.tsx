@@ -2,7 +2,6 @@ import {
   type AgentSnapshot,
   type AgentType,
   type AttentionReason,
-  api,
   type ConnectionChannels,
   type DetectionSource,
   isAiAgent,
@@ -103,11 +102,6 @@ function buildConnectionTooltip(
   return `Detect: ${detectMethods.join(" + ")} (active: ${activeLabel})\nSend: ${sendLabel}`;
 }
 
-/// Resolve effective auto-approve state from backend-computed field
-function autoApproveEffective(agent: AgentSnapshot): boolean {
-  return agent.auto_approve_effective;
-}
-
 // Channel badge: rounded pill with color when active, gray when inactive
 function ChannelBadge({
   label,
@@ -138,9 +132,8 @@ interface AgentCardProps {
 
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
-  // Step 6a: legacy `status` / `needs_attention` paths fully retired.
-  // The right-hand pill is now driven entirely by attention + auto-
-  // approve phase. `attention === null/undefined` (sampler bootstrap
+  // Step 6a + auto_approve sunset: pill is driven entirely by the
+  // attention axis. `attention === null/undefined` (sampler bootstrap
   // window per Δ6) renders an explicit "Bootstrap" placeholder so
   // operators see the indeterminate state rather than a blank pill.
   const attentionRequired = agent.attention?.required ?? false;
@@ -148,14 +141,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const hasNewAttentionAxis = agent.attention !== null && agent.attention !== undefined;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
-  // Auto-approve state
-  const hasOverride =
-    agent.auto_approve_override !== null && agent.auto_approve_override !== undefined;
-  const isAutoApproveOn = autoApproveEffective(agent);
 
-  const phase = agent.auto_approve_phase;
-  const isJudging = phase === "Judging";
-  const isAutoApproved = phase === "ApprovedByRule" || phase === "ApprovedByAi";
   let attentionPillInfo: { label: string; style: string };
   if (attentionRequired) {
     attentionPillInfo = attentionPill(attentionReason);
@@ -172,16 +158,11 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       style: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
     };
   }
-  const displayName = isJudging ? "Judging" : isAutoApproved ? "Approved" : attentionPillInfo.label;
-  const statusStyle = isJudging
-    ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-    : isAutoApproved
-      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-      : attentionPillInfo.style;
-  // Step 6a: glow is now reason-aware. `Halted` keeps the existing red
-  // accent, otherwise no special glow (the amber-glow-pulse on the
-  // outer card already conveys "needs attention" globally).
-  const glow = !isJudging && !isAutoApproved && attentionReason === "halted" ? "glow-red" : "";
+  const displayName = attentionPillInfo.label;
+  const statusStyle = attentionPillInfo.style;
+  // Halted keeps the existing red accent; other reasons rely on the
+  // outer card's amber-glow-pulse to convey "needs attention".
+  const glow = attentionReason === "halted" ? "glow-red" : "";
 
   // Connection channels (with fallback for older API)
   const channels: ConnectionChannels = agent.connection_channels ?? {
@@ -195,20 +176,6 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const tooltip = isAi
     ? buildConnectionTooltip(channels, agent.detection_source, agent.send_capability)
     : undefined;
-
-  /// Toggle auto-approve override: null → true → false → null (cycle)
-  function handleAutoApproveToggle(e: React.MouseEvent) {
-    e.stopPropagation();
-    let next: boolean | null;
-    if (agent.auto_approve_override === null || agent.auto_approve_override === undefined) {
-      next = false; // global → force off
-    } else if (agent.auto_approve_override === false) {
-      next = true; // force off → force on
-    } else {
-      next = null; // force on → back to global
-    }
-    api.setAutoApprove(agent.target, next);
-  }
 
   return (
     <button
@@ -247,33 +214,6 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {/* Auto-approve toggle */}
-          <button
-            type="button"
-            onClick={handleAutoApproveToggle}
-            className={cn(
-              "shrink-0 cursor-pointer rounded px-1 py-0.5 text-[10px] transition-subtle",
-              !hasOverride &&
-                isAutoApproveOn &&
-                "text-amber-400/60 hover:text-amber-300 hover:bg-white/5",
-              !hasOverride &&
-                !isAutoApproveOn &&
-                "text-zinc-700 hover:text-zinc-500 hover:bg-white/5",
-              hasOverride &&
-                isAutoApproveOn &&
-                "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15",
-              hasOverride && !isAutoApproveOn && "text-red-400 bg-red-500/10 hover:bg-red-500/15",
-            )}
-            title={
-              !hasOverride
-                ? `Auto-approve: global default (${isAutoApproveOn ? "ON" : "OFF"}) — click to override`
-                : isAutoApproveOn
-                  ? "Auto-approve: ON (click to cycle)"
-                  : "Auto-approve: OFF (click to cycle)"
-            }
-          >
-            {!hasOverride ? "⚡" : isAutoApproveOn ? "⚡on" : "⚡off"}
-          </button>
           <span
             className={cn(
               "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-subtle",

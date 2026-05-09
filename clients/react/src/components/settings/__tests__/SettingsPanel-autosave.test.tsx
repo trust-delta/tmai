@@ -2,7 +2,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  AutoApproveSettings,
   OrchestratorSettings,
   SpawnSettings,
   UsageSettings,
@@ -20,10 +19,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
       updateGeneralSettings: vi.fn(),
       getSpawnSettings: vi.fn(),
       updateSpawnSettings: vi.fn(),
-      getAutoApproveSettings: vi.fn(),
-      updateAutoApproveMode: vi.fn(),
-      updateAutoApproveFields: vi.fn(),
-      updateAutoApproveRules: vi.fn(),
       getUsageSettings: vi.fn(),
       updateUsageSettings: vi.fn(),
       getOrchestratorSettings: vi.fn(),
@@ -51,28 +46,6 @@ const SPAWN: SpawnSettings = {
   runtime: "tmux",
   tmux_available: true,
   tmux_window_name: "tmai",
-};
-
-const AUTO_APPROVE: AutoApproveSettings = {
-  enabled: false,
-  mode: "off",
-  running: false,
-  provider: "claude_haiku",
-  model: "claude-haiku-4-5",
-  timeout_secs: 30,
-  cooldown_secs: 5,
-  check_interval_ms: 1000,
-  max_concurrent: 4,
-  allowed_types: [],
-  rules: {
-    allow_read: true,
-    allow_tests: true,
-    allow_fetch: false,
-    allow_git_readonly: true,
-    allow_format_lint: true,
-    allow_tmai_mcp: true,
-    allow_patterns: [],
-  },
 };
 
 const USAGE: UsageSettings = {
@@ -149,7 +122,6 @@ function setupDefaults() {
   vi.mocked(api.listAgents).mockResolvedValue([]);
   vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
   vi.mocked(api.getSpawnSettings).mockResolvedValue(SPAWN);
-  vi.mocked(api.getAutoApproveSettings).mockResolvedValue(AUTO_APPROVE);
   vi.mocked(api.getUsageSettings).mockResolvedValue(USAGE);
   vi.mocked(api.getOrchestratorSettings).mockResolvedValue(makeOrchestrator());
   vi.mocked(api.getNotificationSettings).mockResolvedValue({
@@ -166,28 +138,6 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupDefaults();
-  });
-
-  it("atomic dropdown change persists with a single PUT", async () => {
-    vi.mocked(api.updateAutoApproveMode).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} />);
-
-    // Wait for the auto-approve mode <select> to appear.
-    const modeSelect = await waitFor(() => {
-      const sel = screen.getAllByRole("combobox").find((s) => {
-        const opts = Array.from(s.querySelectorAll("option")).map((o) => o.value);
-        return opts.includes("rules") && opts.includes("ai");
-      });
-      if (!sel) throw new Error("auto-approve mode select not found yet");
-      return sel as HTMLSelectElement;
-    });
-
-    fireEvent.change(modeSelect, { target: { value: "rules" } });
-
-    await waitFor(() => {
-      expect(vi.mocked(api.updateAutoApproveMode)).toHaveBeenCalledTimes(1);
-    });
-    expect(vi.mocked(api.updateAutoApproveMode)).toHaveBeenCalledWith("rules");
   });
 
   it("typing in the tmux window-name text field does NOT trigger PUT mid-stream", async () => {

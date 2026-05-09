@@ -1,7 +1,6 @@
 // HTTP/SSE/WebSocket API layer for tmai axum backend.
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
-import type { ApprovalSnapshot } from "@/types/generated/ApprovalSnapshot";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
@@ -168,14 +167,6 @@ export interface AgentSnapshot {
   send_capability: SendCapability;
   is_virtual: boolean;
   team_info: { team_name: string; member_name: string } | null;
-  auto_approve_phase:
-    | "Judging"
-    | "ApprovedByRule"
-    | "ApprovedByAi"
-    | { ManualRequired: string }
-    | null;
-  auto_approve_override: boolean | null;
-  auto_approve_effective: boolean;
   connection_channels?: ConnectionChannels;
   model_id?: string | null;
   model_display_name?: string | null;
@@ -219,7 +210,6 @@ export interface BootstrapSnapshots {
   dispatches: DispatchSnapshot[];
   workflow: WorkflowSnapshot;
   runtime: RuntimeSnapshot;
-  approvals: ApprovalSnapshot[];
 }
 
 export interface BootstrapPayload {
@@ -630,30 +620,6 @@ export interface SpawnResponse {
   command: string;
 }
 
-export interface AutoApproveRules {
-  allow_read: boolean;
-  allow_tests: boolean;
-  allow_fetch: boolean;
-  allow_git_readonly: boolean;
-  allow_format_lint: boolean;
-  allow_tmai_mcp: boolean;
-  allow_patterns: string[];
-}
-
-export interface AutoApproveSettings {
-  enabled: boolean;
-  mode: string;
-  running: boolean;
-  rules: AutoApproveRules;
-  provider: string;
-  model: string;
-  timeout_secs: number;
-  cooldown_secs: number;
-  check_interval_ms: number;
-  allowed_types: string[];
-  max_concurrent: number;
-}
-
 export interface SpawnSettings {
   runtime: SpawnRuntime;
   tmux_available: boolean;
@@ -921,11 +887,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ rows, cols }),
     }),
-  setAutoApprove: (target: string, enabled: boolean | null) =>
-    apiFetch(`/agents/${encodeURIComponent(target)}/auto-approve`, {
-      method: "PUT",
-      body: JSON.stringify({ enabled }),
-    }),
   getTranscript: (target: string) =>
     apiFetch<{ records: TranscriptRecord[] }>(`/agents/${encodeURIComponent(target)}/transcript`),
   getPromptQueue: (agentId: string) =>
@@ -1119,26 +1080,6 @@ export const api = {
     apiFetch("/settings/usage", {
       method: "PUT",
       body: JSON.stringify(params),
-    }),
-
-  // Auto-approve settings
-  getAutoApproveSettings: () => apiFetch<AutoApproveSettings>("/settings/auto-approve"),
-  updateAutoApproveMode: (mode: string) =>
-    apiFetch("/settings/auto-approve", {
-      method: "PUT",
-      body: JSON.stringify({ mode }),
-    }),
-  updateAutoApproveRules: (rules: Partial<AutoApproveRules>) =>
-    apiFetch("/settings/auto-approve", {
-      method: "PUT",
-      body: JSON.stringify({ rules }),
-    }),
-  updateAutoApproveFields: (
-    fields: Partial<Omit<AutoApproveSettings, "running" | "rules" | "mode">>,
-  ) =>
-    apiFetch("/settings/auto-approve", {
-      method: "PUT",
-      body: JSON.stringify(fields),
     }),
 
   // Files

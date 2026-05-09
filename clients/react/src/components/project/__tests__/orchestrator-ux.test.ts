@@ -39,8 +39,6 @@ function stubAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
     active_subagents: 0,
     compaction_count: 0,
     send_capability: "Tmux",
-    auto_approve_phase: null,
-    auto_approve_override: null,
     git_branch: null,
     git_dirty: null,
     is_worktree: null,
