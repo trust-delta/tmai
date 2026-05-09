@@ -2,8 +2,8 @@
 pub mod generated;
 
 pub use generated::{
-    AgentAttention, ApprovalSnapshot, AttentionReason, DispatchSnapshot, QueueSnapshot,
-    RuntimeSnapshot, TaskMetaSnapshot, TeamSnapshot, WorkflowSnapshot, WorktreeSnapshot,
+    AgentAttention, AttentionReason, DispatchSnapshot, QueueSnapshot, RuntimeSnapshot,
+    TaskMetaSnapshot, TeamSnapshot, WorkflowSnapshot, WorktreeSnapshot,
 };
 
 use serde::Deserialize;
