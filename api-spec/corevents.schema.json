@@ -115,73 +115,6 @@
       ],
       "type": "object"
     },
-    "ApprovalSnapshot": {
-      "description": "Snapshot of the auto-approve state for a single agent.",
-      "properties": {
-        "agent_id": {
-          "description": "Canonical agent identifier (`<scheme>:<id>`)",
-          "type": "string"
-        },
-        "agent_stable_id": {
-          "description": "tmux pane target (e.g. \"main:0.1\")",
-          "type": "string"
-        },
-        "current_phase": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/AutoApprovePhase",
-              "description": "Current phase of the auto-approve judgment lifecycle"
-            }
-          ]
-        },
-        "effective_mode": {
-          "$ref": "#/$defs/AutoApproveMode",
-          "description": "Resolved auto-approve mode (from global settings + per-agent override)"
-        },
-        "effective_rules_count": {
-          "description": "Count of enabled rules (bool rules + custom patterns)",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "override_enabled": {
-          "description": "Per-agent override; `None` means \"follow global setting\"",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "pending_approval": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/PendingApprovalInfo",
-              "description": "Pending approval request (set when agent is in `AwaitingApproval`)"
-            }
-          ]
-        },
-        "recent_decisions": {
-          "description": "Recent auto-approve decisions (most recent first, capped at 20)",
-          "items": {
-            "$ref": "#/$defs/RecentDecision"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "agent_id",
-        "agent_stable_id",
-        "effective_mode",
-        "effective_rules_count",
-        "recent_decisions"
-      ],
-      "type": "object"
-    },
     "AttentionReason": {
       "description": "Why the agent is requesting attention. Hint for UIs and audit; never used\nfor branching in Core or PTY-server logic.",
       "enum": [
@@ -220,55 +153,6 @@
         "action"
       ],
       "type": "object"
-    },
-    "AutoApproveMode": {
-      "description": "Auto-approve operating mode",
-      "enum": [
-        "off",
-        "rules",
-        "ai",
-        "hybrid"
-      ],
-      "type": "string"
-    },
-    "AutoApprovePhase": {
-      "description": "Phase of the auto-approve judgment lifecycle.\n\nWritten by `AutoApproveService` into `MonitoredAgent.auto_approve_phase`\nso the UI can distinguish \"wait for auto-approve\" from \"needs manual action\".",
-      "oneOf": [
-        {
-          "description": "Judgment is in progress (wait and it will resolve automatically)",
-          "enum": [
-            "Judging"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Approved by rule engine (keys sent, agent will transition soon)",
-          "enum": [
-            "ApprovedByRule"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Approved by AI judgment (keys sent, agent will transition soon)",
-          "enum": [
-            "ApprovedByAi"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Manual user action required (reason provided)",
-          "properties": {
-            "ManualRequired": {
-              "description": "Manual user action required (reason provided)",
-              "type": "string"
-            }
-          },
-          "required": [
-            "ManualRequired"
-          ],
-          "type": "object"
-        }
-      ]
     },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
@@ -387,35 +271,6 @@
         "current",
         "limit",
         "remaining"
-      ],
-      "type": "object"
-    },
-    "DeferredToolInfo": {
-      "description": "A tool call pending resolution in the deferred-approve queue.",
-      "properties": {
-        "agent_target": {
-          "description": "Agent tmux target that issued the deferred tool call.",
-          "type": "string"
-        },
-        "defer_id": {
-          "description": "Unique id of the pending deferred call (stringified u64 for JSON safety).",
-          "type": "string"
-        },
-        "deferred_at": {
-          "description": "When the tool call was deferred.",
-          "format": "date-time",
-          "type": "string"
-        },
-        "tool_name": {
-          "description": "Tool name (e.g. `\"Bash\"`, `\"Edit\"`).",
-          "type": "string"
-        }
-      },
-      "required": [
-        "defer_id",
-        "agent_target",
-        "tool_name",
-        "deferred_at"
       ],
       "type": "object"
     },
@@ -1065,44 +920,6 @@
       ],
       "type": "object"
     },
-    "PendingApprovalInfo": {
-      "description": "Details of a pending approval request.",
-      "properties": {
-        "approval_type": {
-          "description": "Category of the approval (e.g. \"Shell Command\", \"File Edit\")",
-          "type": "string"
-        },
-        "awaited_since": {
-          "description": "When the agent entered `AwaitingApproval` (approximated by `last_update`)",
-          "format": "date-time",
-          "type": "string"
-        },
-        "details": {
-          "description": "Human-readable details of what is being approved",
-          "type": "string"
-        },
-        "interaction": {
-          "description": "Interaction hint (e.g. choice labels) when applicable",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tool_name": {
-          "description": "Tool name from the PreToolUse hook event (structured path)",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "approval_type",
-        "details",
-        "awaited_since"
-      ],
-      "type": "object"
-    },
     "PermissionMode": {
       "description": "Permission mode reported by Claude Code in hook payloads.\n\nMaps to the session's current permission level (e.g., \"default\", \"plan\",\n\"dontAsk\", \"acceptEdits\").",
       "enum": [
@@ -1221,42 +1038,6 @@
       ],
       "type": "object"
     },
-    "RecentDecision": {
-      "description": "A single recorded auto-approve decision.",
-      "properties": {
-        "at": {
-          "description": "When the decision was made",
-          "format": "date-time",
-          "type": "string"
-        },
-        "decision": {
-          "description": "Decision outcome: \"approve\", \"reject\", \"uncertain\"",
-          "type": "string"
-        },
-        "elapsed_ms": {
-          "description": "Time taken to reach the decision in milliseconds",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reason": {
-          "description": "Human-readable reason or rule name",
-          "type": "string"
-        },
-        "source": {
-          "description": "Decision source: \"rule\", \"ai\", \"human\"",
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "decision",
-        "source",
-        "reason",
-        "elapsed_ms"
-      ],
-      "type": "object"
-    },
     "RetryHint": {
       "description": "Advisory retry guidance attached to a [`TmaiError`].\n\nThe hint is informational only — the caller decides whether to act on it.\nRetry orchestration is explicitly out of scope for v1 of the taxonomy.",
       "oneOf": [
@@ -1327,13 +1108,6 @@
           "$ref": "#/$defs/CapacityInfo",
           "description": "Current and configured agent capacity."
         },
-        "deferred_tools": {
-          "description": "Tool calls currently pending in the deferred-approve queue.",
-          "items": {
-            "$ref": "#/$defs/DeferredToolInfo"
-          },
-          "type": "array"
-        },
         "vendors": {
           "description": "Availability state of each tracked AI vendor.",
           "items": {
@@ -1344,8 +1118,7 @@
       },
       "required": [
         "capacity",
-        "vendors",
-        "deferred_tools"
+        "vendors"
       ],
       "type": "object"
     },
