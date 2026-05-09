@@ -9,8 +9,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AgentAttention {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<AttentionReason>,
-    pub required: bool,
+pub enum AgentAttention {
+    started,
+    halted,
+    completed,
 }

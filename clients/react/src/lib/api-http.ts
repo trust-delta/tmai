@@ -99,26 +99,17 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
 export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 
-// ── Attention axis (decision tmai-core@2026-05-07) ──
+// ── Attention axis (decision tmai-core@2026-05-09 Phase 4) ──
 //
-// New dynamic-state axis introduced by the agent-state attention rebuild.
-// `required = true` ↔ the agent is waiting for the human; `required =
-// false` ↔ the agent is active. `reason` is an observability hint only
-// — never branched on by Core / PTY-server / Hub. Hand-written here
-// because the matching `clients/react/src/types/generated/AgentAttention.ts`
-// arrives via the next `gen-spec-pr` bot PR; this file unblocks the UI
-// migration meanwhile and survives as a re-export shim afterwards.
+// Three variants represent the user-blocked states; `null` / absent
+// means "running normally — no UI signal needed". Hint-only for UI
+// consumers; the discriminant must never drive Core / PTY-server / Hub
+// logic (decision §3 wire contract).
 //
-// Wire shape (`AgentSnapshot.attention`) is `Option<AgentAttention>`:
-// `null`/absent encodes "unknown" — the sampler bootstrap window per
-// decision Δ6 — and the UI renders an indeterminate badge there rather
-// than reusing a stale value.
-export type AttentionReason = "completed" | "halted";
-
-export interface AgentAttention {
-  required: boolean;
-  reason?: AttentionReason | null;
-}
+// - `"started"`   — just spawned, awaiting first user prompt
+// - `"halted"`    — at a permission/selection prompt; user must answer
+// - `"completed"` — turn finished; user must decide what to do next
+export type AgentAttention = "started" | "halted" | "completed";
 
 /// Which communication channels are currently available for this agent
 export interface ConnectionChannels {
@@ -392,9 +383,9 @@ export function groupByProject(
       });
     }
 
-    // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
-    // fallback retired with the rest of the AgentSnapshot pentad.
-    const attentionCount = groupAgents.filter((a) => a.attention?.required ?? false).length;
+    // Decision 2026-05-09 Phase 4: any non-null attention value means
+    // the agent is on the user-blocked axis.
+    const attentionCount = groupAgents.filter((a) => a.attention != null).length;
 
     projects.push({
       name: projectName(path),
@@ -832,9 +823,9 @@ export const api = {
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
   attentionCount: async () => {
     const agents = await apiFetch<AgentSnapshot[]>("/agents");
-    // Step 6a (decision tmai-core@2026-05-07): legacy `needs_attention`
-    // fallback retired with the rest of the AgentSnapshot pentad.
-    return agents.filter((a) => a.attention?.required ?? false).length;
+    // Decision 2026-05-09 Phase 4: any non-null attention value flags
+    // the user-blocked axis.
+    return agents.filter((a) => a.attention != null).length;
   },
 
   // Agent actions

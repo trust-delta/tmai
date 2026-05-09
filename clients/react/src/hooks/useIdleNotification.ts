@@ -66,27 +66,20 @@ function sendNotification(agent: AgentSnapshot, lastMessage?: string | null) {
   });
 }
 
-// Hook: watch agent list for Processing → Idle transitions and fire browser notifications.
+// Hook: watch the agent list for transitions into a user-blocked
+// attention state and fire browser notifications.
 //
-// Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07):
-// the legacy state machine is dismantled, so the historical
-// "Processing → Idle" status transition no longer fires for new tmai-core
-// servers. The new `attention.required` axis (Step 4a / 4b) carries the
-// transition instead. The hook now triggers when **either** signal flips
-// "becomes attention-needed":
-//
-//   1. `attention.required` goes false / undefined → true
-//      (primary path; covers both CC hook fire and PTY-server fallback)
-//   2. legacy `status` goes Processing → Idle / Offline
-//      (compat fallback for snapshots from pre-Step 4 tmai-core)
-//
-// The two paths converge during the parallel-run period; Step 6 retires
-// the legacy path along with the rest of the status field.
+// Decision tmai-core@2026-05-09 Phase 4: the wire `attention` is
+// `"started" | "halted" | "completed"` + `null`. We notify on
+// transitions into `Halted` (permission prompt) or `Completed` (turn
+// done) because those are the states the user typically waits to
+// react to. `Started` is suppressed — the user just spawned the agent,
+// they don't need to be told it's started.
 export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotificationConfig) {
   // Track per-agent idle state
   const stateMap = useRef(new Map<string, AgentIdleState>());
-  // Track previous attention.required per agent (Step 6a: only signal)
-  const prevAttentionMap = useRef(new Map<string, boolean>());
+  // Track previous `attention` value per agent for transition detection.
+  const prevAttentionMap = useRef(new Map<string, AgentSnapshot["attention"]>());
 
   // Request permission when enabled
   useEffect(() => {
@@ -114,21 +107,22 @@ export function useIdleNotification(agents: AgentSnapshot[], config: IdleNotific
       if (!isAiAgent(agent.agent_type)) continue;
 
       currentIds.add(agent.id);
-      const attentionRequired = agent.attention?.required ?? false;
+      const attention = agent.attention ?? null;
       const prevAttention = prevAttentionMap.current.get(agent.id);
-      prevAttentionMap.current.set(agent.id, attentionRequired);
+      prevAttentionMap.current.set(agent.id, attention);
 
       const idleState = stateMap.current.get(agent.id);
 
-      // Step 6a: legacy `status` Processing → Idle path retired with the
-      // `AgentStatus` enum. Trigger entirely on the attention axis.
+      // Notification-worthy states: `halted` and `completed`. `started`
+      // is suppressed — the user just clicked spawn, no surprise.
       // First observation (`prevAttention === undefined`) does NOT count
-      // as a transition so a freshly-loaded tab does not shower the user
-      // with stale notifications for agents that have been requiring
-      // attention since long before the tab opened.
-      const justBecameNeedsHuman = prevAttention === false && attentionRequired;
+      // as a transition: a freshly-loaded tab should not shower stale
+      // notifications for long-pending agents.
+      const isNotifyState = attention === "halted" || attention === "completed";
+      const wasNotifyState = prevAttention === "halted" || prevAttention === "completed";
+      const justBecameNeedsHuman = prevAttention !== undefined && !wasNotifyState && isNotifyState;
 
-      if (attentionRequired) {
+      if (isNotifyState) {
         if (justBecameNeedsHuman && !idleState?.notified) {
           const delay = getDelay(agent.detection_source, config.thresholdSecs);
 

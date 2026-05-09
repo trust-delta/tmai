@@ -10,18 +10,20 @@ import {
   type WorktreeSnapshot,
 } from "@/lib/api";
 
-// Step 6a (decision tmai-core@2026-05-07): the legacy `statusName`
-// helper retired with the `AgentStatus` enum. Map the new attention
-// axis onto the same single-word labels the LaneGraph rendering
-// already expects (Bootstrap → "—", Active → "Active", required
-// reasons → "Done" / "Halted" / "Wait").
+// Decision 2026-05-09 Phase 4: flat attention enum. `null` (running)
+// renders "—" so the lane never blanks; the three user-blocked states
+// each get a single-word label.
 function attentionLabel(agent: AgentSnapshot | null | undefined): string {
-  const att = agent?.attention;
-  if (!att) return "—";
-  if (!att.required) return "Active";
-  if (att.reason === "completed") return "Done";
-  if (att.reason === "halted") return "Halted";
-  return "Wait";
+  switch (agent?.attention) {
+    case "halted":
+      return "Halted";
+    case "completed":
+      return "Done";
+    case "started":
+      return "Started";
+    default:
+      return "—";
+  }
 }
 
 import { useSSE } from "@/lib/sse-provider";
