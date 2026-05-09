@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
@@ -22,7 +22,13 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useShowAutoDiscovered } from "@/hooks/useShowAutoDiscovered";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
+import {
+  type AgentSnapshot,
+  groupByProject,
+  isAiAgent,
+  type Selection,
+  setCallerCwd,
+} from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 
 export function App() {
@@ -146,11 +152,40 @@ export function App() {
     }
   }, [currentProject, projectPaths]);
 
-  // Derive selected agent from selection
-  const selectedAgent =
+  // Derive selected agent from selection.
+  //
+  // tmai-core's L2 upgrade (decision 2026-05-09 Phase 1: hook payload
+  // binds CC's session_id → pane_id) re-keys the agent's wire `id` from
+  // `provisional:UUID` to `claude:UUID`. The wire emits `Removed`
+  // (provisional id) BEFORE the follow-up `Upserted` (canonical id), so
+  // for one render tick `agents.find` returns undefined → panels using
+  // `selectedAgent` would unmount, dropping the xterm WS connection.
+  //
+  // Defend against that race with a short-lived cache (500 ms): if the
+  // live lookup misses but a recent successful lookup is still warm,
+  // surface the cached snapshot so the panel stays mounted across the
+  // re-key. Real disappearances (kill) fall through after the window.
+  const liveSelectedAgent =
     selection?.type === "agent"
       ? agents.find((a) => a.id === selection.id || a.target === selection.id)
       : undefined;
+  const lastGoodAgentRef = useRef<{ agent: AgentSnapshot; at: number } | undefined>(undefined);
+  if (liveSelectedAgent !== undefined) {
+    lastGoodAgentRef.current = { agent: liveSelectedAgent, at: Date.now() };
+  } else if (selection?.type !== "agent") {
+    lastGoodAgentRef.current = undefined;
+  } else if (
+    lastGoodAgentRef.current !== undefined &&
+    lastGoodAgentRef.current.agent.target !== selection.id &&
+    lastGoodAgentRef.current.agent.id !== selection.id
+  ) {
+    // Selection now points at a different agent — drop the stale cache.
+    lastGoodAgentRef.current = undefined;
+  }
+  const cacheStillFresh =
+    lastGoodAgentRef.current !== undefined && Date.now() - lastGoodAgentRef.current.at < 500;
+  const selectedAgent =
+    liveSelectedAgent ?? (cacheStillFresh ? lastGoodAgentRef.current?.agent : undefined);
   const sessionId = selectedAgent?.pty_session_id ?? null;
 
   // Derive selected worktree from selection
