@@ -34,14 +34,16 @@ pub struct AgentSnapshot {
 }
 
 /// Map an [`AgentAttention`] reading to a single-word label matching the
-/// React WebUI pill vocabulary. `None` is "running normally" — rendered as
-/// `"—"` to keep the column non-empty without implying user action.
+/// React WebUI pill vocabulary. `None` = "running normally"; rendered as
+/// `"Running"` so the column reads consistently with the WebUI muted
+/// chip (dogfood feedback 2026-05-10 — ambient state still wants a
+/// marker, blank felt off).
 pub fn attention_label(a: Option<&AgentAttention>) -> &'static str {
     match a {
         Some(AgentAttention::started) => "Started",
         Some(AgentAttention::halted) => "Halted",
         Some(AgentAttention::completed) => "Done",
-        None => "—",
+        None => "Running",
     }
 }
 
@@ -104,7 +106,7 @@ mod tests {
 
     #[test]
     fn attention_label_maps_variants() {
-        assert_eq!(attention_label(None), "—");
+        assert_eq!(attention_label(None), "Running");
         assert_eq!(attention_label(Some(&AgentAttention::started)), "Started");
         assert_eq!(attention_label(Some(&AgentAttention::halted)), "Halted");
         assert_eq!(attention_label(Some(&AgentAttention::completed)), "Done");
