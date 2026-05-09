@@ -534,14 +534,14 @@ export function App() {
                 <AgentActions agent={selectedAgent} passthrough />
                 {sessionId ? (
                   <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
-                    <TerminalPanel agentId={selectedAgent.id} />
+                    <TerminalPanel agentId={selectedAgent.target} />
                   </div>
                 ) : (
                   <div
-                    key={selectedAgent.id}
+                    key={selectedAgent.target}
                     className="flex flex-1 flex-col overflow-hidden animate-fade-in"
                   >
-                    <PreviewPanel agentId={selectedAgent.id} />
+                    <PreviewPanel agentId={selectedAgent.target} />
                   </div>
                 )}
               </div>
@@ -579,14 +579,14 @@ export function App() {
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
             {sessionId && selectedAgent ? (
               <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
-                <TerminalPanel agentId={selectedAgent.id} />
+                <TerminalPanel agentId={selectedAgent.target} />
               </div>
             ) : selectedAgent ? (
               <div
-                key={selectedAgent.id}
+                key={selectedAgent.target}
                 className="flex flex-1 flex-col overflow-hidden animate-fade-in"
               >
-                <PreviewPanel agentId={selectedAgent.id} />
+                <PreviewPanel agentId={selectedAgent.target} />
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center animate-fade-in">
