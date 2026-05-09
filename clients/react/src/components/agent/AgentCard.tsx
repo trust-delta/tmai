@@ -1,7 +1,7 @@
 import {
+  type AgentAttention,
   type AgentSnapshot,
   type AgentType,
-  type AttentionReason,
   type ConnectionChannels,
   type DetectionSource,
   isAiAgent,
@@ -9,37 +9,31 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-// Step 6a (decision tmai-core@2026-05-07): `statusColors` /
-// `statusGlow` / `statusName` retired alongside the legacy
-// `AgentStatus` enum. The right-hand pill is now driven entirely
-// by the attention axis (`attentionPill` below).
-
-// Step 5 of the agent-state attention rebuild (decision tmai-core@2026-05-07).
-// Map the new `attention.reason` hint to a badge label / pill style.
-// `Completed` (CC `Stop` hook) → blue waiting-for-input look; `Halted`
-// (`PermissionDenied` after auto-approve fall-through) → red action-needed
-// look. Reason-less `required: true` (the PTY-server quiet-signal fallback
-// path) falls back to a generic "Wait" amber pill so the visual still
-// matches the glow.
-function attentionPill(reason: AttentionReason | null | undefined): {
+// Decision tmai-core@2026-05-09 Phase 4: pill is driven by a flat
+// attention enum (`"started" | "halted" | "completed"`) plus `null`
+// for "running normally — no UI signal needed". The legacy `Active` /
+// `Wait` / `Bootstrap` pills retired with the simplified wire shape.
+function attentionPill(state: AgentAttention): {
   label: string;
   style: string;
 } {
-  if (reason === "completed") {
+  if (state === "started") {
     return {
-      label: "Done",
-      style: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+      // Cyan = "engaging — agent just spawned, awaiting first prompt".
+      // Reuses the visual the legacy "Bootstrap" pill carried.
+      label: "Started",
+      style: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
     };
   }
-  if (reason === "halted") {
+  if (state === "halted") {
     return {
       label: "Halted",
       style: "bg-rose-500/20 text-rose-300 border-rose-500/30",
     };
   }
   return {
-    label: "Wait",
-    style: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    label: "Done",
+    style: "bg-sky-500/20 text-sky-300 border-sky-500/30",
   };
 }
 
@@ -132,37 +126,21 @@ interface AgentCardProps {
 
 // Card displaying a single agent's status and info
 export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
-  // Step 6a + auto_approve sunset: pill is driven entirely by the
-  // attention axis. `attention === null/undefined` (sampler bootstrap
-  // window per Δ6) renders an explicit "Bootstrap" placeholder so
-  // operators see the indeterminate state rather than a blank pill.
-  const attentionRequired = agent.attention?.required ?? false;
-  const attentionReason = agent.attention?.reason ?? null;
-  const hasNewAttentionAxis = agent.attention !== null && agent.attention !== undefined;
+  // Decision tmai-core@2026-05-09 Phase 4: the wire enum collapses the
+  // dynamic state to four values. Three flag user-blocked states (each
+  // with its own pill); `null`/absent = running normally, no pill.
+  const attention = agent.attention ?? null;
+  const hasAttention = attention !== null;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
 
-  let attentionPillInfo: { label: string; style: string };
-  if (attentionRequired) {
-    attentionPillInfo = attentionPill(attentionReason);
-  } else if (hasNewAttentionAxis) {
-    // attention.required === false: agent is actively working.
-    attentionPillInfo = {
-      label: "Active",
-      style: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    };
-  } else {
-    // Bootstrap window: sampler has not declared either way yet.
-    attentionPillInfo = {
-      label: "Bootstrap",
-      style: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-    };
-  }
-  const displayName = attentionPillInfo.label;
-  const statusStyle = attentionPillInfo.style;
+  // Pill info only shown when the agent is on the attention axis.
+  const attentionPillInfo = hasAttention ? attentionPill(attention) : null;
+  const displayName = attentionPillInfo?.label ?? "";
+  const statusStyle = attentionPillInfo?.style ?? "";
   // Halted keeps the existing red accent; other reasons rely on the
   // outer card's amber-glow-pulse to convey "needs attention".
-  const glow = attentionReason === "halted" ? "glow-red" : "";
+  const glow = attention === "halted" ? "glow-red" : "";
 
   // Connection channels (with fallback for older API)
   const channels: ConnectionChannels = agent.connection_channels ?? {
@@ -186,7 +164,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         "hover:bg-white/[0.08] hover:border-white/10",
         agent.is_orchestrator && "!border-cyan-500/20 bg-cyan-500/[0.04]",
         selected && "!border-cyan-500/30 !bg-cyan-500/10",
-        attentionRequired && "!border-amber-500/30 animate-glow-pulse",
+        hasAttention && "!border-amber-500/30 animate-glow-pulse",
         glow && selected && glow,
       )}
     >
@@ -214,14 +192,16 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <span
-            className={cn(
-              "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-subtle",
-              statusStyle,
-            )}
-          >
-            {displayName}
-          </span>
+          {hasAttention && (
+            <span
+              className={cn(
+                "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-subtle",
+                statusStyle,
+              )}
+            >
+              {displayName}
+            </span>
+          )}
         </div>
       </div>
 

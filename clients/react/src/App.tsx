@@ -449,13 +449,13 @@ export function App() {
                   }`}
                   title={agent.target}
                 >
-                  {/* Step 6a: status pentad removed — use the new
-                      attention axis. `required + halted` = AwaitingApproval
-                      analogue, `required + completed` / `required + null`
-                      = Wait, otherwise active dot. */}
-                  {agent.attention?.required && agent.attention.reason === "halted"
+                  {/* Decision 2026-05-09 Phase 4: flat attention enum.
+                      `"halted"` = permission prompt (◐), `"started"` /
+                      `"completed"` = waiting on user (○), `null` =
+                      running (●). */}
+                  {agent.attention === "halted"
                     ? "◐"
-                    : agent.attention?.required
+                    : agent.attention === "started" || agent.attention === "completed"
                       ? "○"
                       : "●"}
                 </button>
