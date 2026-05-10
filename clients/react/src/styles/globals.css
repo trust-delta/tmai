@@ -256,3 +256,20 @@ html {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
+
+/* xterm-viewport ships `overflow-y: scroll`, which reserves a 6 px scrollbar
+   gutter even on a fresh empty terminal — and against the dark canvas the
+   permanently-visible track reads as a noisy seam. Switch to `auto` so the
+   gutter only appears when scrollback actually overflows the viewport, and
+   blend the resting thumb into the terminal background so it doesn't stand
+   out as a contrasting strip. */
+.xterm .xterm-viewport {
+  overflow-y: auto !important;
+  scrollbar-color: rgba(255, 255, 255, 0.06) transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}

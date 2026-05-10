@@ -23,11 +23,34 @@ interface TerminalPanelProps {
 // terminal plane (#174 Phase 3a).
 // Shares the same Input/Select + Auto-scroll footer pattern as PreviewPanel.
 export function TerminalPanel({ agentId }: TerminalPanelProps) {
+  const sectionRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [inputMode, setInputMode] = useState(true);
+  const [hasFocus, setHasFocus] = useState(false);
   const [autoScroll, setAutoScroll] = useAutoScrollPerAgent(agentId);
 
   const { setAttachable } = useTerminal({ agentId, containerRef, autoScroll });
+
+  // Surface "this panel is the active surface" — without it, after
+  // spawning or switching agents users couldn't tell at a glance whether
+  // their next keystroke would land here or get eaten by the body.
+  // Track focus on the section wrapper so xterm's helper textarea
+  // (mounted inside `containerRef`, a descendant of the section) bubbles
+  // focusin/focusout naturally.
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const onFocusIn = () => setHasFocus(true);
+    const onFocusOut = (e: FocusEvent) => {
+      if (!el.contains(e.relatedTarget as Node)) setHasFocus(false);
+    };
+    el.addEventListener("focusin", onFocusIn);
+    el.addEventListener("focusout", onFocusOut);
+    return () => {
+      el.removeEventListener("focusin", onFocusIn);
+      el.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
 
   // Switch to input mode (xterm captures keyboard)
   const enterInputMode = useCallback(() => {
@@ -57,7 +80,14 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
   }, [inputMode, enterInputMode]);
 
   return (
-    <section className="relative flex h-full w-full flex-col">
+    <section
+      ref={sectionRef}
+      className={`relative flex h-full w-full flex-col transition-shadow ${
+        hasFocus
+          ? "shadow-[inset_0_0_0_2px_rgba(34,211,238,0.55),inset_0_0_24px_rgba(34,211,238,0.06)]"
+          : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+      }`}
+    >
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
         <span className="text-xs text-zinc-500">{agentIdShort(agentId)}</span>
       </div>
