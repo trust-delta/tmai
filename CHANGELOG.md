@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > jumped again to v2.0.0 at the 2026-04-21 monorepo re-consolidation.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [3.1.1] - 2026-05-10 — focus ring + scrollbar polish
+
+WebUI dogfooding follow-up to v3.1.0. Visual polish only — no wire / engine
+changes (tmai-core stays 3.0.0, ratatui 0.2.0, api-spec 3.0.0).
+
+### Bundled
+
+- tmai-core 3.0.0 (`core-v3.0.0`, unchanged)
+- clients/react 2.1.1
+- clients/ratatui 0.2.0 (unchanged)
+- api-spec 3.0.0 (unchanged)
+
+### Fixed
+
+- **Active panel is visibly selected**. TerminalPanel had no focus indicator
+  at all and PreviewPanel's 1 px / 30 % cyan whisper barely registered. Both
+  panels now share an inset-shadow recipe — 2 px / 55 % cyan + faint inner
+  glow when focused, faint 1 px / 4 % white outline otherwise — driven off
+  `focusin` / `focusout` on the panel wrapper so xterm's helper textarea
+  bubbles through naturally.
+- **xterm scrollbar gutter retires when empty**. xterm ships
+  `.xterm-viewport` with `overflow-y: scroll`, reserving a 6 px gutter on
+  every terminal even when there is nothing to scroll yet. Override to
+  `auto` and recolor the thumb to match the dark canvas (white/6 %, hover
+  white/18 %) so the gutter only appears when scrollback overflows.
+
 ## [3.1.0] - 2026-05-10 — spawn flow polish
 
 WebUI dogfooding pass smoothing the spawn → use → kill loop. No wire or
