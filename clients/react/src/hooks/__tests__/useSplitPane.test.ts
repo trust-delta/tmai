@@ -67,6 +67,23 @@ describe("useSplitPane.adjustRatio", () => {
     act(() => result.current.adjustRatio(Number.POSITIVE_INFINITY));
     expect(onCommit).not.toHaveBeenCalled();
   });
+
+  it("preserves the current ratio when delta makes the result NaN (CodeRabbit PR #640)", () => {
+    const onCommit = vi.fn();
+    const { result } = renderHook(() => useSplitPane({ initialRatio: 0.5, onCommit }));
+
+    // `0.5 + NaN` is NaN; the centralised clampRatio must return the
+    // previous valid ratio rather than letting NaN poison local state.
+    act(() => result.current.adjustRatio(Number.NaN));
+    expect(result.current.splitRatio).toBe(0.5);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("clamps a non-finite initialRatio at mount", () => {
+    const { result } = renderHook(() => useSplitPane({ initialRatio: Number.NaN }));
+    // Default fallback (0.5) wins over NaN seed.
+    expect(result.current.splitRatio).toBe(0.5);
+  });
 });
 
 describe("makeSplitKeyHandler", () => {

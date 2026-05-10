@@ -10,6 +10,16 @@ export const RATIO_STEP = 0.025;
 
 export type SplitOrientation = "horizontal" | "vertical";
 
+// Centralised clamp that also rejects NaN / ±Infinity. The drag handler
+// can produce non-finite ratios when the container has zero width/height
+// (mid-mount, hidden tab, ResizeObserver race), and `Math.max(min, Math.min(max, NaN))`
+// returns `NaN` rather than the fallback. Without this guard a single
+// degenerate frame would corrupt persisted state. (CodeRabbit PR #640)
+function clampRatio(value: number, fallback = DEFAULT_RATIO): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(MIN_RATIO, Math.min(MAX_RATIO, value));
+}
+
 // Build a keydown handler implementing the WAI-ARIA Window Splitter
 // pattern: arrow keys nudge the ratio by `step`, Home/End jump to
 // min/max. Both axes use the visual mapping (Left/Up = decrement,
@@ -73,9 +83,7 @@ export function useSplitPane({
   onCommit,
 }: UseSplitPaneOptions = {}): UseSplitPaneResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [splitRatio, setSplitRatio] = useState(() =>
-    Math.max(MIN_RATIO, Math.min(MAX_RATIO, initialRatio)),
-  );
+  const [splitRatio, setSplitRatio] = useState(() => clampRatio(initialRatio));
   const [isDragging, setIsDragging] = useState(false);
   const [isNarrowScreen, setIsNarrowScreen] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -87,7 +95,7 @@ export function useSplitPane({
   // truth. We skip the update mid-drag so the user's interaction wins.
   useEffect(() => {
     if (isDragging) return;
-    setSplitRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, initialRatio)));
+    setSplitRatio((prev) => clampRatio(initialRatio, prev));
   }, [initialRatio, isDragging]);
 
   // Track narrow screen via matchMedia
@@ -119,7 +127,7 @@ export function useSplitPane({
           : delta === Number.NEGATIVE_INFINITY
             ? MIN_RATIO
             : prev + delta;
-      const next = Math.max(MIN_RATIO, Math.min(MAX_RATIO, target));
+      const next = clampRatio(target, prev);
       if (next !== prev) onCommitRef.current?.(next);
       return next;
     });
@@ -135,11 +143,13 @@ export function useSplitPane({
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const ratio =
-        orientation === "horizontal"
-          ? (e.clientX - rect.left) / rect.width
-          : (e.clientY - rect.top) / rect.height;
-      setSplitRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio)));
+      const span = orientation === "horizontal" ? rect.width : rect.height;
+      // Zero-span containers (mid-mount, hidden tab) would divide by zero;
+      // skip the frame so the ratio survives a transient layout state.
+      if (span <= 0) return;
+      const offset = orientation === "horizontal" ? e.clientX - rect.left : e.clientY - rect.top;
+      const ratio = offset / span;
+      setSplitRatio((prev) => clampRatio(ratio, prev));
     };
 
     const handleMouseUp = () => {
