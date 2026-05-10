@@ -246,9 +246,20 @@ function projectName(path: string): string {
   return cleaned.split("/").filter(Boolean).pop() || path;
 }
 
-// Normalize git_common_dir: strip trailing /.git and slashes
-function normalizeGitDir(dir: string): string {
-  return dir.replace(/\/\.git\/?$/, "").replace(/\/+$/, "");
+// Normalize git_common_dir: strip trailing /.git and slashes.
+//
+// Exported for unit tests. The trailing-slash trimmer used to be
+// `.replace(/\/+$/, "")` but the `+` quantifier triggered CodeQL's
+// `js/polynomial-redos` rule (alert #1) — `dir` flows in from
+// `AgentSnapshot.git_common_dir` / `WorktreeSnapshot.repo_path` which
+// counts as untrusted wire input, and a long run of `/` would burn
+// quadratic time backtracking. A linear right-to-left scan finishes
+// in O(n) regardless of input shape.
+export function normalizeGitDir(dir: string): string {
+  const cleaned = dir.replace(/\/\.git\/?$/, "");
+  let end = cleaned.length;
+  while (end > 0 && cleaned[end - 1] === "/") end--;
+  return cleaned.slice(0, end);
 }
 
 // Group agents by project (git_common_dir) and worktree.
