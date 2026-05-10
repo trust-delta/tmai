@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > jumped again to v2.0.0 at the 2026-04-21 monorepo re-consolidation.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [3.0.0] - 2026-05-10 — agent detection canonicalization
+
+Major release closing the agent detection / state-model rebuild chain (Step 6
+through 2026-05-09 detection canonicalization, decision
+`tmai-core/.claude/decisions/2026-05-09-agent-detection-canonicalization.md`).
+**Wire shape is breaking** — the `attention` axis collapses from a
+`{required, reason?}` struct to a flat string enum
+(`"started" | "halted" | "completed" | null`); `AttentionReason` is removed.
+Mixing a v2.x client with a v3 engine (or vice-versa) is not supported.
+
+### Bundled
+
+- tmai-core 3.0.0 (`core-v3.0.0`)
+- clients/react 2.0.0
+- clients/ratatui 0.2.0
+- api-spec 3.0.0
+
+### Changed
+
+- **`AgentSnapshot.attention` is now a string enum** — three variants flag
+  user-blocked states; `null` means "running normally". Replaces the
+  `{ required: bool, reason?: "completed" | "halted" }` struct shape that
+  shipped in 2.x. UIs no longer branch on a `required` boolean — they switch
+  on the discriminator (or check `attention === null`).
+- **Three pills retire** — `Active`, `Wait`, `Bootstrap`. New pills:
+  - `Started` (cyan) — agent just spawned; awaiting first prompt.
+  - `Halted` (red) — at a permission/selection prompt.
+  - `Done` (sky blue) — turn finished; awaiting next decision.
+  - `Running` (muted gray, ambient) — `attention === null`; no UI action
+    needed.
+- **`PreToolUse` hook retired** — `tmai init` only configures `Stop`,
+  `Notification`, `UserPromptSubmit`. Existing CC settings.json files keep
+  working; on next `tmai init --force` the `PreToolUse` entry is dropped.
+- **Auto-discovery retired** — tmai exclusively manages tmai-spawned agents.
+  Manually-launched CCs no longer surface in the WebUI even with the dev
+  toggle on. Restart picks live agents back up because the PTY-server
+  dispatch ledger is the single canonical source.
+- **PTY-server attention sampler retired** — the subtree CPU/IO/PTY-write
+  quiet-signal aggregator is gone (~890 LOC). Attention is hook-driven
+  exclusively (`Stop` → Completed, `Notification[PermissionPrompt]` →
+  Halted, spawn → Started).
+
+### Fixed
+
+- L2-upgrade race that blanked the WebUI preview during the first hook —
+  wire emit reordered to `Upserted(canonical) → Removed(provisional)` so
+  the entity cache holds both keys through the swap.
+- Steady-state preview-disappear after re-selecting a hook-resolved agent —
+  `resolve_agent_key_in_state` falls through to target-based lookup when
+  the parsed canonical id doesn't match the L2-upgraded state map.
+- Terminal subscription tickets resolve via `agent.target` (PTY-server's
+  spawn-time identity, stable across L2 upgrade) instead of Core's
+  canonical id, which PTY-server doesn't track.
+
+### Migration
+
+- Re-run `tmai init --force` after upgrading to refresh `~/.claude/settings.json`
+  with the new hook set (`PreToolUse` removed, `X-Tmai-Agent-Id: $TMAI_AGENT_ID`
+  header added so spawned CCs route deterministically without cwd inference).
+- Previous `~/.claude/settings.json.before-attention-rebuild-cleanup` backup
+  remains the rollback path.
+
 ## [2.0.0] - 2026-04-22 — monorepo re-consolidation
 
 First release under the two-repo structure adopted on 2026-04-21: a public
