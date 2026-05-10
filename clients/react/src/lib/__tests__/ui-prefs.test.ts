@@ -1,0 +1,91 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  DEFAULT_UI_PREFS,
+  loadUIPrefs,
+  saveUIPrefs,
+  UI_PREFS_STORAGE_KEY,
+  type UIPrefs,
+} from "../ui-prefs";
+
+describe("ui-prefs", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns defaults when nothing is stored", () => {
+    expect(loadUIPrefs()).toEqual(DEFAULT_UI_PREFS);
+  });
+
+  it("round-trips a saved blob", () => {
+    const next: UIPrefs = {
+      ...DEFAULT_UI_PREFS,
+      displayMode: "triple",
+      splitRatioH: 0.42,
+      tabsActive: "git",
+    };
+    saveUIPrefs(next);
+    expect(loadUIPrefs()).toEqual(next);
+  });
+
+  it("clamps out-of-range ratios to the legal window", () => {
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, splitRatioH: 0.05, splitRatioV: 0.99 });
+    const loaded = loadUIPrefs();
+    // RATIO_MIN = 0.2, RATIO_MAX = 0.8
+    expect(loaded.splitRatioH).toBe(0.2);
+    expect(loaded.splitRatioV).toBe(0.8);
+  });
+
+  it("falls back to defaults for invalid enum values without nuking siblings", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        displayMode: "garbage",
+        tabsActive: "git",
+        splitRatioH: 0.65,
+      }),
+    );
+    const loaded = loadUIPrefs();
+    expect(loaded.displayMode).toBe(DEFAULT_UI_PREFS.displayMode);
+    expect(loaded.tabsActive).toBe("git");
+    expect(loaded.splitRatioH).toBe(0.65);
+  });
+
+  it("recovers gracefully when the blob is malformed JSON", () => {
+    localStorage.setItem(UI_PREFS_STORAGE_KEY, "{not json");
+    expect(loadUIPrefs()).toEqual(DEFAULT_UI_PREFS);
+  });
+
+  it("migrates legacy split keys on first load and clears them after merge", () => {
+    localStorage.setItem("tmai:split-ratio", "0.7");
+    localStorage.setItem("tmai:split-v-ratio", "0.4");
+
+    const loaded = loadUIPrefs();
+    expect(loaded.splitRatioH).toBe(0.7);
+    expect(loaded.splitRatioV).toBe(0.4);
+
+    expect(localStorage.getItem("tmai:split-ratio")).toBeNull();
+    expect(localStorage.getItem("tmai:split-v-ratio")).toBeNull();
+
+    // Subsequent load reads the consolidated blob, not the (now empty) legacy keys.
+    expect(loadUIPrefs()).toEqual(loaded);
+  });
+
+  it("sweeps the retired tmai:dev-show-auto-discovered key even though no field consumes it", () => {
+    localStorage.setItem("tmai:dev-show-auto-discovered", "true");
+    const loaded = loadUIPrefs();
+    // Defaults applied — the legacy value carries no information into the
+    // new schema, but the key still gets removed so it doesn't linger.
+    expect(loaded).toEqual(DEFAULT_UI_PREFS);
+    expect(localStorage.getItem("tmai:dev-show-auto-discovered")).toBeNull();
+  });
+
+  it("does not migrate when a consolidated blob already exists", () => {
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, splitRatioH: 0.3 });
+    localStorage.setItem("tmai:split-ratio", "0.7");
+    const loaded = loadUIPrefs();
+    expect(loaded.splitRatioH).toBe(0.3);
+    // Legacy key is left in place since migration only fires when the new blob is absent.
+    expect(localStorage.getItem("tmai:split-ratio")).toBe("0.7");
+  });
+});

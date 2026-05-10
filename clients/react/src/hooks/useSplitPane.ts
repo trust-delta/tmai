@@ -1,39 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY_RATIO = "tmai:split-ratio";
-const STORAGE_KEY_ENABLED = "tmai:split-enabled";
 const DEFAULT_RATIO = 0.5;
 const MIN_RATIO = 0.2;
 const MAX_RATIO = 0.8;
 const NARROW_BREAKPOINT = "(min-width: 1024px)";
 
-// Read a number from localStorage with a fallback default
-function readStoredNumber(key: string, fallback: number): number {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return fallback;
-    const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
+export type SplitOrientation = "horizontal" | "vertical";
 
-// Read a boolean from localStorage with a fallback default
-function readStoredBool(key: string, fallback: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return fallback;
-    return raw === "true";
-  } catch {
-    return fallback;
-  }
+interface UseSplitPaneOptions {
+  /** Orientation of the split. `horizontal` = left/right; `vertical` = top/bottom. */
+  orientation?: SplitOrientation;
+  /** Initial ratio (0–1). When this changes, the in-memory ratio is reseeded. */
+  initialRatio?: number;
+  /** Called once on mouseup with the final ratio — wire this to your prefs store. */
+  onCommit?: (ratio: number) => void;
 }
 
 export interface UseSplitPaneResult {
   splitRatio: number;
-  splitEnabled: boolean;
-  setSplitEnabled: (enabled: boolean) => void;
   isDragging: boolean;
   isNarrowScreen: boolean;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -41,15 +25,20 @@ export interface UseSplitPaneResult {
   onDividerDoubleClick: () => void;
 }
 
-// Manage split-pane layout state: drag ratio, enabled toggle, narrow-screen detection
-export function useSplitPane(): UseSplitPaneResult {
+// Manage split-pane drag state for either horizontal or vertical layouts.
+// Persistence is intentionally NOT handled here — the caller owns the
+// initialRatio (typically read from the UI prefs store) and receives the
+// final ratio via onCommit on mouseup. This keeps the hook in-memory only,
+// avoids per-frame writes during drag, and lets a single prefs store
+// coordinate all persisted layout values.
+export function useSplitPane({
+  orientation = "horizontal",
+  initialRatio = DEFAULT_RATIO,
+  onCommit,
+}: UseSplitPaneOptions = {}): UseSplitPaneResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [splitRatio, setSplitRatio] = useState(() => {
-    const stored = readStoredNumber(STORAGE_KEY_RATIO, DEFAULT_RATIO);
-    return Math.max(MIN_RATIO, Math.min(MAX_RATIO, stored));
-  });
-  const [splitEnabled, setSplitEnabledRaw] = useState(() =>
-    readStoredBool(STORAGE_KEY_ENABLED, true),
+  const [splitRatio, setSplitRatio] = useState(() =>
+    Math.max(MIN_RATIO, Math.min(MAX_RATIO, initialRatio)),
   );
   const [isDragging, setIsDragging] = useState(false);
   const [isNarrowScreen, setIsNarrowScreen] = useState(() => {
@@ -57,15 +46,13 @@ export function useSplitPane(): UseSplitPaneResult {
     return !window.matchMedia(NARROW_BREAKPOINT).matches;
   });
 
-  // Persist splitEnabled to localStorage
-  const setSplitEnabled = useCallback((enabled: boolean) => {
-    setSplitEnabledRaw(enabled);
-    try {
-      localStorage.setItem(STORAGE_KEY_ENABLED, String(enabled));
-    } catch {
-      // ignore
-    }
-  }, []);
+  // When the persisted initialRatio changes (other tab edited it, prefs
+  // reset, etc.) reseed local state so the divider tracks the source of
+  // truth. We skip the update mid-drag so the user's interaction wins.
+  useEffect(() => {
+    if (isDragging) return;
+    setSplitRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, initialRatio)));
+  }, [initialRatio, isDragging]);
 
   // Track narrow screen via matchMedia
   useEffect(() => {
@@ -75,23 +62,19 @@ export function useSplitPane(): UseSplitPaneResult {
     return () => mql.removeEventListener("change", handler);
   }, []);
 
-  // Divider mousedown handler
   const onDividerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
   }, []);
 
-  // Double-click divider to reset to 50/50
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
   const onDividerDoubleClick = useCallback(() => {
     setSplitRatio(DEFAULT_RATIO);
-    try {
-      localStorage.setItem(STORAGE_KEY_RATIO, String(DEFAULT_RATIO));
-    } catch {
-      // ignore
-    }
+    onCommitRef.current?.(DEFAULT_RATIO);
   }, []);
 
-  // Handle drag: mousemove + mouseup on document
   const splitRatioRef = useRef(splitRatio);
   splitRatioRef.current = splitRatio;
 
@@ -102,23 +85,22 @@ export function useSplitPane(): UseSplitPaneResult {
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const ratio = (e.clientX - rect.left) / rect.width;
+      const ratio =
+        orientation === "horizontal"
+          ? (e.clientX - rect.left) / rect.width
+          : (e.clientY - rect.top) / rect.height;
       setSplitRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio)));
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
-      // Persist final ratio
-      try {
-        localStorage.setItem(STORAGE_KEY_RATIO, String(splitRatioRef.current));
-      } catch {
-        // ignore
-      }
+      onCommitRef.current?.(splitRatioRef.current);
       // Notify xterm.js and other ResizeObserver-based components
       window.dispatchEvent(new Event("resize"));
     };
 
-    document.body.style.cursor = "col-resize";
+    const cursor = orientation === "horizontal" ? "col-resize" : "row-resize";
+    document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
@@ -129,12 +111,10 @@ export function useSplitPane(): UseSplitPaneResult {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, orientation]);
 
   return {
     splitRatio,
-    splitEnabled,
-    setSplitEnabled,
     isDragging,
     isNarrowScreen,
     containerRef,
