@@ -7,6 +7,6 @@
 # an active safety net rather than a pending TODO.
 
 core = "3.0.1"      # tmai-core private Release
-react = "2.1.1"     # clients/react/package.json version
+react = "2.2.0"     # clients/react/package.json version
 ratatui = "0.2.0"   # clients/ratatui/Cargo.toml version
 api_spec = "3.0.1"  # api-spec/openapi.json info.version

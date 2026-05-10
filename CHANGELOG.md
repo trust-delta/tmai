@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > jumped again to v2.0.0 at the 2026-04-21 monorepo re-consolidation.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [3.2.0] - 2026-05-11 — multi-pane display modes + WebUI prefs store
+
+WebUI dogfooding feature drop. The agent main panel learns four layouts
+(Tabs / Split-H / Split-V / Triple) instead of a single split-or-fullscreen
+toggle, and a new browser-only prefs store finally consolidates the
+ad-hoc `tmai:*` localStorage keys behind one schema. Bundles the
+`core-v3.0.1` patch from PR #639. Wire / engine unchanged from v3.1.1
+otherwise (tmai-core 3.0.1, ratatui 0.2.0, api-spec 3.0.1).
+
+### Bundled
+
+- tmai-core 3.0.1 (`core-v3.0.1`)
+- clients/react 2.2.0
+- clients/ratatui 0.2.0 (unchanged)
+- api-spec 3.0.1 (unchanged from PR #639)
+
+### Added
+
+- **Four display modes for the agent main panel**, switchable via a
+  segmented control in the panel header or `\` to cycle. `tabs` keeps a
+  single viewport with a 3-tab bar (preview / git / docs) and mounts all
+  three so xterm scrollback and graph layouts survive tab swaps.
+  `split-h` / `split-v` give the existing left-right (or new top-bottom)
+  split with a draggable divider. `triple` shows preview + git + docs
+  simultaneously with two independent dividers.
+- **Unified WebUI prefs store** at `localStorage["tmai:ui:prefs"]`
+  (`lib/ui-prefs.ts` + `UIPrefsProvider`). Replaces the per-feature
+  `tmai:split-ratio` / `tmai:split-v-ratio` / `tmai:dev-show-auto-discovered`
+  keys via one-shot migration on first load. Schema-validated: corrupt
+  fields fall back to defaults without nuking siblings; the consolidated
+  blob fires storage events once per change for cheap cross-tab sync.
+- **WAI-ARIA Window Splitter keyboard support** on every divider
+  (Split-H / Split-V / Triple outer / Triple inner). Arrow keys nudge by
+  ~2.5%, Home / End snap to min / max, double-click resets to centre.
+- **Settings panel grouping**: a new "WebUI (this browser)" header
+  separates browser-stored prefs (Display & Layout section, with a
+  ConfirmDialog-gated "Reset all WebUI prefs" button) from the existing
+  "tmai (core)" sections that write to `~/.config/tmai/config.toml`.
+
+### Changed
+
+- `useSplitPane` is now controlled (`initialRatio` + `onCommit`) so
+  persistence is owned by the prefs store. Drag stays in-memory; the
+  prefs blob is only touched on mouseup or a programmatic adjust.
+
+### Removed
+
+- Auto-discovered agent surface (`is_auto_discovered` filter,
+  `DeveloperSection`, `useShowAutoDiscovered`, `UIPrefs.showAutoDiscovered`,
+  the wire field) — detection canonicalization (core v3.0.0) removed the
+  underlying flow so the UI hatch had nothing left to gate.
+
 ## [3.1.1] - 2026-05-10 — focus ring + scrollbar polish
 
 WebUI dogfooding follow-up to v3.1.0. Visual polish only — no wire / engine
