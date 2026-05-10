@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AgentSnapshot, api, groupByProject } from "@/lib/api";
-import { DeveloperSection } from "./DeveloperSection";
+import { DisplayLayoutSection } from "./DisplayLayoutSection";
 import { GeneralSection } from "./GeneralSection";
 import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
@@ -13,6 +13,20 @@ import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
+}
+
+// Visual divider between "Core" (tmai-core config.toml) and "WebUI" (this
+// browser's localStorage) groups so the user can tell at a glance which
+// store a setting writes to.
+function GroupHeader({ label, description }: { label: string; description: string }) {
+  return (
+    <div className="border-b border-white/10 pb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80">
+        {label}
+      </div>
+      <p className="mt-1 text-xs text-zinc-600">{description}</p>
+    </div>
+  );
 }
 
 /**
@@ -49,6 +63,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        <GroupHeader
+          label="tmai (core)"
+          description="Server-side settings persisted to ~/.config/tmai/config.toml. Shared across CLI, TUI, and WebUI."
+        />
         <GeneralSection />
         <SpawnSection />
         <OrchestrationSection projects={projects} />
@@ -58,7 +76,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <NotificationSection />
         <WorkflowSection />
         <WorktreeSection />
-        <DeveloperSection />
+
+        <GroupHeader
+          label="WebUI (this browser)"
+          description="Per-browser layout for the agent main panel. Stored in localStorage, not in tmai-core."
+        />
+        <DisplayLayoutSection />
       </div>
     </div>
   );

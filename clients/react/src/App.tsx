@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
+import { type DisplayMode, DisplayModeSelector } from "@/components/layout/DisplayModeSelector";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
 import { StatusBar } from "@/components/layout/StatusBar";
+import { TabbedPaneLayout } from "@/components/layout/TabbedPaneLayout";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
+import { TriplePaneLayout } from "@/components/layout/TriplePaneLayout";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -20,11 +23,11 @@ import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
-import { useShowAutoDiscovered } from "@/hooks/useShowAutoDiscovered";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
+import { useUIPref } from "@/lib/ui-prefs-provider";
 
 export function App() {
   const { agents, attentionCount, loading, refresh } = useAgents();
@@ -62,7 +65,14 @@ export function App() {
   // more error-prone; this enum makes the constraint explicit.
   const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security">("agents");
   const [showHelp, setShowHelp] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<"git" | "markdown">("git");
+  // Multi-pane layout choices live in the WebUI prefs store (browser-only,
+  // not in tmai-core's config.toml — these describe how this WebUI shows
+  // the same backend data). The store handles persistence + cross-tab sync.
+  const [rightPanelTab, setRightPanelTab] = useUIPref("rightPanelTab");
+  const [displayMode, setDisplayMode] = useUIPref("displayMode");
+  const [tabsActive, setTabsActive] = useUIPref("tabsActive");
+  const [splitRatioH, setSplitRatioH] = useUIPref("splitRatioH");
+  const [splitRatioV, setSplitRatioV] = useUIPref("splitRatioV");
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
@@ -75,17 +85,22 @@ export function App() {
     [],
   );
 
-  // Split-pane layout state
-  const {
-    splitRatio,
-    splitEnabled,
-    setSplitEnabled,
-    isDragging,
-    isNarrowScreen,
-    containerRef,
-    onDividerMouseDown,
-    onDividerDoubleClick,
-  } = useSplitPane();
+  // Split-pane drag state — separate instances for horizontal vs vertical
+  // so the user can drag each independently and resume where they left off
+  // when cycling display modes. Persistence flows through useUIPref via
+  // onCommit; the hook stays in-memory so per-frame drag updates don't
+  // hammer localStorage.
+  const horizontalSplit = useSplitPane({
+    orientation: "horizontal",
+    initialRatio: splitRatioH,
+    onCommit: setSplitRatioH,
+  });
+  const verticalSplit = useSplitPane({
+    orientation: "vertical",
+    initialRatio: splitRatioV,
+    onCommit: setSplitRatioV,
+  });
+  const isNarrowScreen = horizontalSplit.isNarrowScreen;
 
   // Responsive layout state (sidebar & action panel collapse)
   const {
@@ -104,25 +119,9 @@ export function App() {
     setCallerCwd(currentProject);
   }, [currentProject]);
 
-  // Hide CC sessions tmai never spawned by default — they pollute the
-  // operational view with the user's own driving sessions firing hooks
-  // through the shared `/hooks/event` URL. Dev toggle in Settings flips
-  // this for tmai/CC dev work; preference is per-browser localStorage.
-  const { show: showAutoDiscovered } = useShowAutoDiscovered();
-  const visibleAgents = useMemo(
-    () => (showAutoDiscovered ? agents : agents.filter((a) => !a.is_auto_discovered)),
-    [agents, showAutoDiscovered],
-  );
-
   // Split agents into AI agents and plain terminals
-  const aiAgents = useMemo(
-    () => visibleAgents.filter((a) => isAiAgent(a.agent_type)),
-    [visibleAgents],
-  );
-  const terminals = useMemo(
-    () => visibleAgents.filter((a) => !isAiAgent(a.agent_type)),
-    [visibleAgents],
-  );
+  const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
+  const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
 
   // Project list derived from active agents (replaces the pre-registered list).
   // Used by the keyboard shortcuts to cycle the X-Tmai-Origin scope and by
@@ -207,32 +206,37 @@ export function App() {
         .split("/")
         .pop() ?? agentProjectPath)
     : null;
-  // Split view is only available on non-mobile, non-narrow screens
-  const showSplitView =
-    selection?.type === "agent" &&
-    agentProjectPath !== null &&
-    splitEnabled &&
-    !isNarrowScreen &&
-    !isMobileScreen;
+  // Multi-pane (tabs / split / triple) is only available on non-mobile,
+  // non-narrow screens with an agent and project context resolved. Below
+  // that threshold we always fall back to preview-only.
+  const canShowMultiPane =
+    selection?.type === "agent" && agentProjectPath !== null && !isNarrowScreen && !isMobileScreen;
 
-  // Select handler for project branch graph — closes mobile drawer
+  // Project / markdown sidebar buttons. When the click matches the agent's
+  // own project AND we're already showing a multi-pane layout that contains
+  // that target view, we just route the focus to the relevant tab — no need
+  // to blow away the agent context with a fullscreen swap.
+  const focusMultiPaneTab = useCallback(
+    (tab: "git" | "markdown") => {
+      if (displayMode === "tabs") {
+        setTabsActive(tab);
+        return true;
+      }
+      if (displayMode === "split-h" || displayMode === "split-v") {
+        setRightPanelTab(tab);
+        return true;
+      }
+      // triple already shows both git + markdown — nothing to switch.
+      return displayMode === "triple";
+    },
+    [displayMode, setTabsActive, setRightPanelTab],
+  );
+
   const handleSelectProject = useCallback(
     (path: string, name: string) => {
-      // In split-pane mode with matching project, switch tab instead of going fullscreen
-      if (
-        splitEnabled &&
-        !isNarrowScreen &&
-        !isMobileScreen &&
-        selection?.type === "agent" &&
-        agentProjectPath
-      ) {
-        const matchesAgent = path === agentProjectPath;
-        if (matchesAgent) {
-          if (rightPanelTab === "git") {
-            setSplitEnabled(false);
-          } else {
-            setRightPanelTab("git");
-          }
+      if (canShowMultiPane && agentProjectPath && path === agentProjectPath) {
+        if (focusMultiPaneTab("git")) {
+          closeMobileDrawer();
           return;
         }
       }
@@ -241,36 +245,19 @@ export function App() {
       closeMobileDrawer();
     },
     [
-      splitEnabled,
-      isNarrowScreen,
-      isMobileScreen,
-      selection,
+      canShowMultiPane,
       agentProjectPath,
-      rightPanelTab,
-      setSplitEnabled,
+      focusMultiPaneTab,
       closeMobileDrawer,
       closeMainPanelOverlay,
     ],
   );
 
-  // Select handler for project markdown viewer — closes mobile drawer
   const handleSelectMarkdown = useCallback(
     (projectPath: string, projectName: string) => {
-      // In split-pane mode with matching project, switch tab instead of going fullscreen
-      if (
-        splitEnabled &&
-        !isNarrowScreen &&
-        !isMobileScreen &&
-        selection?.type === "agent" &&
-        agentProjectPath
-      ) {
-        const matchesAgent = projectPath === agentProjectPath;
-        if (matchesAgent) {
-          if (rightPanelTab === "markdown") {
-            setSplitEnabled(false);
-          } else {
-            setRightPanelTab("markdown");
-          }
+      if (canShowMultiPane && agentProjectPath && projectPath === agentProjectPath) {
+        if (focusMultiPaneTab("markdown")) {
+          closeMobileDrawer();
           return;
         }
       }
@@ -279,13 +266,9 @@ export function App() {
       closeMobileDrawer();
     },
     [
-      splitEnabled,
-      isNarrowScreen,
-      isMobileScreen,
-      selection,
+      canShowMultiPane,
       agentProjectPath,
-      rightPanelTab,
-      setSplitEnabled,
+      focusMultiPaneTab,
       closeMobileDrawer,
       closeMainPanelOverlay,
     ],
@@ -318,8 +301,12 @@ export function App() {
     },
     {
       keys: ["\\"],
-      description: "Toggle split view",
-      handler: () => setSplitEnabled(!splitEnabled),
+      description: "Cycle display mode (tabs → split-h → split-v → triple)",
+      handler: () => {
+        const order: DisplayMode[] = ["tabs", "split-h", "split-v", "triple"];
+        const next = order[(order.indexOf(displayMode) + 1) % order.length];
+        setDisplayMode(next);
+      },
     },
     {
       keys: ["b"],
@@ -358,6 +345,20 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showHelp]);
 
+  // Map current displayMode to which sidebar tab badge should be highlighted.
+  // - tabs:    only when the active tab is git/markdown (preview = no badge)
+  // - split-*: the right-pane tab choice
+  // - triple:  no single tab is "active" since both surfaces are visible
+  const sidebarSplitTab: "git" | "markdown" | null = !canShowMultiPane
+    ? null
+    : displayMode === "tabs"
+      ? tabsActive === "preview"
+        ? null
+        : tabsActive
+      : displayMode === "triple"
+        ? null
+        : rightPanelTab;
+
   // Sidebar content shared between desktop sidebar and mobile drawer
   const sidebarContent = (
     <>
@@ -370,8 +371,8 @@ export function App() {
         onSelectMarkdown={handleSelectMarkdown}
         worktrees={worktrees}
         onSpawned={handleSpawned}
-        splitPaneProjectPath={showSplitView ? agentProjectPath : null}
-        splitPaneTab={showSplitView ? rightPanelTab : null}
+        splitPaneProjectPath={canShowMultiPane ? agentProjectPath : null}
+        splitPaneTab={sidebarSplitTab}
       />
       <TerminalList
         terminals={terminals}
@@ -543,53 +544,74 @@ export function App() {
               }}
             />
           </div>
-        ) : showSplitView && selectedAgent && agentProjectPath && agentProjectName ? (
-          <SplitPaneLayout
-            left={
+        ) : canShowMultiPane && selectedAgent && agentProjectPath && agentProjectName ? (
+          (() => {
+            const previewSlot = sessionId ? (
+              <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
+                <TerminalPanel agentId={selectedAgent.target} />
+              </div>
+            ) : (
+              <div
+                key={selectedAgent.target}
+                className="flex flex-1 flex-col overflow-hidden animate-fade-in"
+              >
+                <PreviewPanel agentId={selectedAgent.target} />
+              </div>
+            );
+            const gitSlot = (
+              <BranchGraph
+                key={agentProjectPath}
+                projectPath={agentProjectPath}
+                projectName={agentProjectName}
+                worktrees={worktrees}
+                agents={aiAgents}
+                onFocusAgent={handleSelectAgent}
+                actionPanelCollapsed={actionPanelCollapsed}
+                onToggleActionPanel={toggleActionPanel}
+              />
+            );
+            const markdownSlot = (
+              <MarkdownPanel
+                key={agentProjectPath}
+                projectPath={agentProjectPath}
+                projectName={agentProjectName}
+              />
+            );
+            const split = displayMode === "split-v" ? verticalSplit : horizontalSplit;
+            return (
               <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-white/[0.06] px-3 py-1">
+                  <DisplayModeSelector mode={displayMode} onChange={setDisplayMode} />
+                </div>
                 <AgentActions agent={selectedAgent} passthrough />
-                {sessionId ? (
-                  <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
-                    <TerminalPanel agentId={selectedAgent.target} />
-                  </div>
+                {displayMode === "tabs" ? (
+                  <TabbedPaneLayout
+                    active={tabsActive}
+                    onTabChange={setTabsActive}
+                    preview={previewSlot}
+                    git={gitSlot}
+                    markdown={markdownSlot}
+                  />
+                ) : displayMode === "triple" ? (
+                  <TriplePaneLayout preview={previewSlot} git={gitSlot} markdown={markdownSlot} />
                 ) : (
-                  <div
-                    key={selectedAgent.target}
-                    className="flex flex-1 flex-col overflow-hidden animate-fade-in"
-                  >
-                    <PreviewPanel agentId={selectedAgent.target} />
-                  </div>
+                  <SplitPaneLayout
+                    orientation={displayMode === "split-v" ? "vertical" : "horizontal"}
+                    left={previewSlot}
+                    right={rightPanelTab === "git" ? gitSlot : markdownSlot}
+                    rightTab={rightPanelTab}
+                    onTabChange={setRightPanelTab}
+                    splitRatio={split.splitRatio}
+                    isDragging={split.isDragging}
+                    containerRef={split.containerRef}
+                    onDividerMouseDown={split.onDividerMouseDown}
+                    onDividerDoubleClick={split.onDividerDoubleClick}
+                    onAdjustRatio={split.adjustRatio}
+                  />
                 )}
               </div>
-            }
-            right={
-              rightPanelTab === "git" ? (
-                <BranchGraph
-                  key={agentProjectPath}
-                  projectPath={agentProjectPath}
-                  projectName={agentProjectName}
-                  worktrees={worktrees}
-                  agents={aiAgents}
-                  onFocusAgent={handleSelectAgent}
-                  actionPanelCollapsed={actionPanelCollapsed}
-                  onToggleActionPanel={toggleActionPanel}
-                />
-              ) : (
-                <MarkdownPanel
-                  key={agentProjectPath}
-                  projectPath={agentProjectPath}
-                  projectName={agentProjectName}
-                />
-              )
-            }
-            rightTab={rightPanelTab}
-            onTabChange={setRightPanelTab}
-            splitRatio={splitRatio}
-            isDragging={isDragging}
-            containerRef={containerRef}
-            onDividerMouseDown={onDividerMouseDown}
-            onDividerDoubleClick={onDividerDoubleClick}
-          />
+            );
+          })()
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden">
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}

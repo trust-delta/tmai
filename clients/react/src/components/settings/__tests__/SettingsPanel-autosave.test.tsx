@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   OrchestratorSettings,
@@ -8,6 +8,7 @@ import type {
   WorkflowSettings,
   WorktreeSettings,
 } from "@/lib/api";
+import { renderWithProviders as render } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
