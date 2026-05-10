@@ -49,4 +49,40 @@ describe("NewAgentLauncher", () => {
       expect(vi.mocked(api.listDirectories)).toHaveBeenNthCalledWith(1, "/new");
     });
   });
+
+  it("spawns the chosen runtime against DirBrowser's currentPath without an intermediate confirm", async () => {
+    // Regression for the redundant "Select this" → close → re-open runtime
+    // menu flow. The fix inlines the runtime buttons into DirBrowser via
+    // `actionSlot`, so clicking `claude` while browsing in `/projects`
+    // fires `spawnPty({ command: "claude", cwd: "/projects" })` directly.
+    vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: "/projects" });
+    vi.mocked(api.listDirectories).mockResolvedValue([]);
+    vi.mocked(api.spawnPty).mockResolvedValue({
+      session_id: "sess-1",
+      pid: 42,
+      command: "claude",
+    });
+
+    const onSpawned = vi.fn();
+    render(<NewAgentLauncher onSpawned={onSpawned} />);
+    await waitFor(() => expect(vi.mocked(api.getGeneralSettings)).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /new agent/i }));
+
+    // The runtime buttons mount with DirBrowser, but they're disabled until
+    // `currentPath` is hydrated from listDirectories — wait for the path to
+    // surface in the path bar before clicking, otherwise the click lands on
+    // a disabled button and silently no-ops.
+    await screen.findByText("/projects");
+    const claudeBtn = await screen.findByRole("button", { name: /^claude$/i });
+    fireEvent.click(claudeBtn);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.spawnPty)).toHaveBeenCalledWith({
+        command: "claude",
+        cwd: "/projects",
+      });
+      expect(onSpawned).toHaveBeenCalledWith("sess-1");
+    });
+  });
 });

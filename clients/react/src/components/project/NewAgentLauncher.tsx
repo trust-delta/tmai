@@ -11,15 +11,16 @@ const RUNTIMES = ["claude", "codex", "bash"] as const;
 type Runtime = (typeof RUNTIMES)[number];
 
 /**
- * Top-of-sidebar launcher: pick a directory via DirBrowser, then choose a
- * runtime (claude / codex / bash) to spawn.  Replaces the per-project `+`
- * menu as the entry point for brand-new project work — the per-project `+`
- * inside `ProjectGroup` stays for adding agents to projects already shown
- * in the sidebar.
+ * Top-of-sidebar launcher: open DirBrowser, navigate to the desired folder,
+ * and pick a runtime (claude / codex / bash) inline to spawn there.  The
+ * runtime buttons live inside the DirBrowser via its `actionSlot` prop —
+ * earlier versions split this across "Select this" + a secondary runtime
+ * picker, which made every spawn a two-step round trip through a closing
+ * modal.  The per-project `+` inside `ProjectGroup` stays for adding agents
+ * to projects already shown in the sidebar.
  */
 export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
   const [browsing, setBrowsing] = useState(false);
-  const [pickedDir, setPickedDir] = useState<string | null>(null);
   const [spawning, setSpawning] = useState(false);
   const [error, setError] = useState("");
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
@@ -47,24 +48,19 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
     // startPath in one shot — opening first and updating on the next render
     // would briefly flash the previous root's listing.
     await refreshDefaultRoot();
+    setError("");
     setBrowsing(true);
   }, [refreshDefaultRoot]);
 
-  const handleDirSelected = useCallback((path: string) => {
-    setPickedDir(path);
-    setBrowsing(false);
-    setError("");
-  }, []);
-
   const handleSpawn = useCallback(
-    async (runtime: Runtime) => {
-      if (!pickedDir || spawning) return;
+    async (runtime: Runtime, cwd: string) => {
+      if (!cwd || spawning) return;
       setSpawning(true);
       setError("");
       try {
-        const res = await api.spawnPty({ command: runtime, cwd: pickedDir });
+        const res = await api.spawnPty({ command: runtime, cwd });
         onSpawned(res.session_id);
-        setPickedDir(null);
+        setBrowsing(false);
       } catch (e) {
         // Surface which runtime was tried so users can tell apart
         // "claude is mis-installed" from "this directory can't host
@@ -75,7 +71,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
         setSpawning(false);
       }
     },
-    [pickedDir, spawning, onSpawned],
+    [spawning, onSpawned],
   );
 
   return (
@@ -90,49 +86,35 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
         <span>New agent</span>
       </button>
 
-      {pickedDir && (
-        <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-            <span className="truncate" title={pickedDir}>
-              {pickedDir}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPickedDir(null)}
-              className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
-            >
-              Cancel
-            </button>
-          </div>
-          <div className="mt-1.5 flex gap-1">
-            {RUNTIMES.map((rt) => (
-              <button
-                key={rt}
-                type="button"
-                onClick={() => void handleSpawn(rt)}
-                disabled={spawning}
-                className={cn(
-                  "flex-1 rounded px-2 py-1 text-center text-[11px] transition-colors",
-                  "text-zinc-300 hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-50",
-                )}
-              >
-                {rt}
-              </button>
-            ))}
-          </div>
-          {error && (
-            <p role="alert" aria-live="assertive" className="mt-1.5 text-[11px] text-red-400">
-              {error}
-            </p>
-          )}
-        </div>
-      )}
-
       {browsing && (
         <DirBrowser
           startPath={defaultRoot ?? undefined}
-          onSelect={handleDirSelected}
           onCancel={() => setBrowsing(false)}
+          actionSlot={(currentPath) => (
+            <div className="flex w-full flex-col gap-1.5">
+              <div className="flex gap-1">
+                {RUNTIMES.map((rt) => (
+                  <button
+                    key={rt}
+                    type="button"
+                    onClick={() => void handleSpawn(rt, currentPath)}
+                    disabled={spawning || !currentPath}
+                    className={cn(
+                      "flex-1 rounded px-2 py-1 text-center text-[11px] transition-colors",
+                      "text-zinc-300 hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-50",
+                    )}
+                  >
+                    {rt}
+                  </button>
+                ))}
+              </div>
+              {error && (
+                <p role="alert" aria-live="assertive" className="text-[11px] text-red-400">
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
         />
       )}
     </div>
