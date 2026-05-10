@@ -1,18 +1,27 @@
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DirEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface DirBrowserProps {
-  onSelect: (path: string) => void;
+  /** Default confirm-and-close handler bound to "Select this" + entry
+   *  double-click. Required for the picker mode (GeneralSection /
+   *  OrchestrationSection); ignored when `actionSlot` is provided. */
+  onSelect?: (path: string) => void;
   onCancel: () => void;
   /** Initial directory to load. When unset, the backend picks a default
    *  (typically the user's home). Phase 3 passes `default_project_root`
    *  here so users don't have to navigate from `~` every time. */
   startPath?: string | null;
+  /** Replaces the single "Select this" button with caller-rendered actions
+   *  for the currently-browsed path. NewAgentLauncher uses this to inline
+   *  claude/codex/bash spawn buttons so the user picks a runtime in one
+   *  click instead of "Select this" → secondary runtime menu. */
+  actionSlot?: (currentPath: string) => ReactNode;
 }
 
 // Modal directory tree browser for selecting a project folder
-export function DirBrowser({ onSelect, onCancel, startPath }: DirBrowserProps) {
+export function DirBrowser({ onSelect, onCancel, startPath, actionSlot }: DirBrowserProps) {
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,14 +99,20 @@ export function DirBrowser({ onSelect, onCancel, startPath }: DirBrowserProps) {
           <span className="flex-1 truncate text-xs text-zinc-500" title={currentPath}>
             {currentPath || "~"}
           </span>
-          <button
-            type="button"
-            onClick={() => onSelect(currentPath)}
-            className="shrink-0 rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
-          >
-            Select this
-          </button>
+          {!actionSlot && (
+            <button
+              type="button"
+              onClick={() => onSelect?.(currentPath)}
+              className="shrink-0 rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
+            >
+              Select this
+            </button>
+          )}
         </div>
+
+        {actionSlot && (
+          <div className="border-b border-white/5 px-5 py-2">{actionSlot(currentPath)}</div>
+        )}
 
         {/* Directory listing */}
         <div className="max-h-80 overflow-y-auto">
@@ -113,7 +128,7 @@ export function DirBrowser({ onSelect, onCancel, startPath }: DirBrowserProps) {
                 type="button"
                 key={entry.path}
                 onClick={() => loadDir(entry.path)}
-                onDoubleClick={() => onSelect(entry.path)}
+                onDoubleClick={actionSlot ? undefined : () => onSelect?.(entry.path)}
                 className={cn(
                   "flex w-full items-center gap-2 px-5 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
                   entry.is_git ? "text-cyan-400" : "text-zinc-400",
@@ -128,7 +143,11 @@ export function DirBrowser({ onSelect, onCancel, startPath }: DirBrowserProps) {
 
         {/* Footer hint */}
         <div className="border-t border-white/5 px-5 py-2">
-          <p className="text-[10px] text-zinc-600">Click to navigate, double-click to select</p>
+          <p className="text-[10px] text-zinc-600">
+            {actionSlot
+              ? "Click to navigate, then pick a runtime to spawn here"
+              : "Click to navigate, double-click to select"}
+          </p>
         </div>
       </div>
     </div>

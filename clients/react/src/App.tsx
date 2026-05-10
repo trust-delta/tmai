@@ -14,6 +14,7 @@ import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { UsagePanel } from "@/components/usage/UsagePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
+import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -161,6 +162,12 @@ export function App() {
       ? agents.find((a) => a.id === selection.id || a.target === selection.id)
       : undefined;
   const sessionId = selectedAgent?.pty_session_id ?? null;
+
+  // When the agent we were looking at disappears (kill button, CC quit,
+  // dispatch unwind …) auto-pick a sibling in the same cwd so the user
+  // doesn't drop into an empty pane. Same-cwd preferred (orchestrator
+  // first, matching the sidebar order); else any agent; else clear.
+  useAgentSelectionFallback({ selection, selectedAgent, agents, setSelection });
 
   // Derive selected worktree from selection
   const selectedWorktree =

@@ -30,6 +30,8 @@ interface FakeTerminalInstance {
   onWriteParsed: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
   scrollToBottom: ReturnType<typeof vi.fn>;
+  focus: ReturnType<typeof vi.fn>;
+  blur: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
   _triggerResize: (dims: { rows: number; cols: number }) => void;
 }
@@ -57,6 +59,8 @@ vi.mock("@xterm/xterm", () => {
       onWriteParsed: vi.fn(() => makeDisposable()),
       reset: vi.fn(),
       scrollToBottom: vi.fn(),
+      focus: vi.fn(),
+      blur: vi.fn(),
       dispose: vi.fn(),
       _triggerResize(dims) {
         for (const cb of resizeCallbacks) cb(dims);
@@ -91,6 +95,18 @@ function makeContainerRef(): React.RefObject<HTMLDivElement> {
   return { current: div } as React.RefObject<HTMLDivElement>;
 }
 
+// Narrow `lastTermInstance` to non-null at call sites without a `!`
+// assertion — biome's noNonNullAssertion would auto-rewrite that to `?.`,
+// which silently no-ops when the mock failed to register and hides the
+// real failure (the resize-event assertion afterwards would then "pass"
+// for the wrong reason).
+function term(): FakeTerminalInstance {
+  if (lastTermInstance === null) {
+    throw new Error("Expected fake xterm Terminal to have been constructed");
+  }
+  return lastTermInstance;
+}
+
 describe("useTerminal resize wiring", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -122,7 +138,7 @@ describe("useTerminal resize wiring", () => {
     vi.mocked(api.resizeAgentTerminal).mockClear();
 
     act(() => {
-      lastTermInstance!._triggerResize({ rows: 40, cols: 200 });
+      term()._triggerResize({ rows: 40, cols: 200 });
     });
 
     // Should not have fired yet — debounce window is 75 ms.
@@ -143,9 +159,10 @@ describe("useTerminal resize wiring", () => {
     vi.mocked(api.resizeAgentTerminal).mockClear();
 
     act(() => {
-      lastTermInstance!._triggerResize({ rows: 20, cols: 80 });
-      lastTermInstance!._triggerResize({ rows: 25, cols: 100 });
-      lastTermInstance!._triggerResize({ rows: 35, cols: 150 });
+      const t = term();
+      t._triggerResize({ rows: 20, cols: 80 });
+      t._triggerResize({ rows: 25, cols: 100 });
+      t._triggerResize({ rows: 35, cols: 150 });
     });
 
     await act(async () => {
@@ -157,6 +174,29 @@ describe("useTerminal resize wiring", () => {
     expect(api.resizeAgentTerminal).toHaveBeenCalledWith("cc:agent-3", 35, 150);
   });
 
+  it("auto-focuses xterm on mount when the hook owns the keyboard", () => {
+    // Spawn-then-type relies on this: on every fresh mount of TerminalPanel
+    // (forced by the `key={sessionId}` wrapper in App.tsx) the xterm
+    // textarea must grab focus so the user doesn't have to click into the
+    // panel to start typing.
+    const containerRef = makeContainerRef();
+    renderHook(() => useTerminal({ agentId: "cc:agent-focus", containerRef }));
+
+    expect(lastTermInstance?.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-focus xterm when keys are handled externally", () => {
+    // PreviewPanel drives keyboard through its own hidden IME input — if
+    // useTerminal also focused xterm, the two would fight over caret
+    // ownership and IME composition would land in the wrong target.
+    const containerRef = makeContainerRef();
+    renderHook(() =>
+      useTerminal({ agentId: "cc:agent-preview", containerRef, keysHandledExternally: true }),
+    );
+
+    expect(lastTermInstance?.focus).not.toHaveBeenCalled();
+  });
+
   it("cancels pending debounce timer on unmount", async () => {
     const containerRef = makeContainerRef();
 
@@ -165,7 +205,7 @@ describe("useTerminal resize wiring", () => {
     vi.mocked(api.resizeAgentTerminal).mockClear();
 
     act(() => {
-      lastTermInstance!._triggerResize({ rows: 50, cols: 200 });
+      term()._triggerResize({ rows: 50, cols: 200 });
     });
 
     // Unmount before the debounce fires.

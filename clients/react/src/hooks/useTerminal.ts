@@ -107,6 +107,20 @@ export function useTerminal({
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
+    // Auto-focus the xterm textarea on every fresh mount so users can
+    // type immediately after spawn or agent switch — the wrapping `key`
+    // in App.tsx forces a fresh `useTerminal` run on each agent change,
+    // so this also covers the spawn case where wire delivery flips the
+    // panel from PreviewPanel → TerminalPanel mid-flight (the hidden
+    // IME input PreviewPanel briefly held focus on goes away with that
+    // unmount, leaving keystrokes nowhere to land without this call).
+    // PreviewPanel passes `keysHandledExternally: true` and drives focus
+    // through its own hidden input, so skip xterm focus there to avoid
+    // fighting that path.
+    if (!keysHandledExternally) {
+      term.focus();
+    }
+
     // Re-attach replay is handled by the PTY-server: the first frames
     // delivered by `useAgentTerminalStream` are the agent's scrollback
     // (tmai-core PR #227) and xterm renders them as soon as they

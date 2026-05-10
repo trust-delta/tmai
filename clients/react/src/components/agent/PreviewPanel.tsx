@@ -215,7 +215,6 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
         style={{ display: activeTab === "live" ? undefined : "none" }}
         className="flex-1 overflow-hidden"
       >
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
         <div
           ref={xtermContainerRef}
           role="log"
