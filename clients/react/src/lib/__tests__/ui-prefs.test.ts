@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_UI_PREFS,
   loadUIPrefs,
@@ -87,5 +87,35 @@ describe("ui-prefs", () => {
     expect(loaded.splitRatioH).toBe(0.3);
     // Legacy key is left in place since migration only fires when the new blob is absent.
     expect(localStorage.getItem("tmai:split-ratio")).toBe("0.7");
+  });
+
+  it("preserves legacy keys when the migration save fails (CodeRabbit #640)", () => {
+    localStorage.setItem("tmai:split-ratio", "0.7");
+    localStorage.setItem("tmai:split-v-ratio", "0.4");
+    // Force the consolidated-blob write to fail. We surface this by
+    // proxying setItem so the new key throws while every other call (legacy
+    // reads, removeItem during clearLegacyKeys, etc.) still works.
+    const realSetItem = Storage.prototype.setItem;
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === UI_PREFS_STORAGE_KEY) throw new Error("quota");
+      realSetItem.call(this, key, value);
+    });
+
+    try {
+      const loaded = loadUIPrefs();
+      // In-memory result still reflects the migrated values …
+      expect(loaded.splitRatioH).toBe(0.7);
+      expect(loaded.splitRatioV).toBe(0.4);
+      // … but legacy keys MUST stay so the next load can retry. Otherwise
+      // a quota failure would silently drop the user's persisted prefs.
+      expect(localStorage.getItem("tmai:split-ratio")).toBe("0.7");
+      expect(localStorage.getItem("tmai:split-v-ratio")).toBe("0.4");
+    } finally {
+      setItemSpy.mockRestore();
+    }
   });
 });

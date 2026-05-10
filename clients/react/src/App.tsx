@@ -606,6 +606,7 @@ export function App() {
                     containerRef={split.containerRef}
                     onDividerMouseDown={split.onDividerMouseDown}
                     onDividerDoubleClick={split.onDividerDoubleClick}
+                    onAdjustRatio={split.adjustRatio}
                   />
                 )}
               </div>

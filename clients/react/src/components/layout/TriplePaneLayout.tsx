@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useSplitPane } from "@/hooks/useSplitPane";
+import { makeSplitKeyHandler, RATIO_STEP, useSplitPane } from "@/hooks/useSplitPane";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
 interface TriplePaneLayoutProps {
@@ -13,6 +13,7 @@ interface DividerProps {
   isDragging: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
+  onAdjust: (delta: number) => void;
   ratio: number;
 }
 
@@ -20,8 +21,16 @@ function ratioToPercent(ratio: number): number {
   return Math.round(ratio * 100);
 }
 
-function Divider({ orientation, isDragging, onMouseDown, onDoubleClick, ratio }: DividerProps) {
+function Divider({
+  orientation,
+  isDragging,
+  onMouseDown,
+  onDoubleClick,
+  onAdjust,
+  ratio,
+}: DividerProps) {
   const isHorizontal = orientation === "horizontal";
+  const onKeyDown = makeSplitKeyHandler(orientation, RATIO_STEP, onAdjust);
   const containerClass = isHorizontal
     ? "group relative flex shrink-0 cursor-col-resize items-center justify-center"
     : "group relative flex shrink-0 cursor-row-resize items-center justify-center";
@@ -47,6 +56,7 @@ function Divider({ orientation, isDragging, onMouseDown, onDoubleClick, ratio }:
       style={containerStyle}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
     >
       <div className={lineClass} />
     </div>
@@ -91,6 +101,7 @@ export function TriplePaneLayout({ preview, git, markdown }: TriplePaneLayoutPro
         isDragging={outer.isDragging}
         onMouseDown={outer.onDividerMouseDown}
         onDoubleClick={outer.onDividerDoubleClick}
+        onAdjust={outer.adjustRatio}
         ratio={outer.splitRatio}
       />
 
@@ -111,6 +122,7 @@ export function TriplePaneLayout({ preview, git, markdown }: TriplePaneLayoutPro
           isDragging={inner.isDragging}
           onMouseDown={inner.onDividerMouseDown}
           onDoubleClick={inner.onDividerDoubleClick}
+          onAdjust={inner.adjustRatio}
           ratio={inner.splitRatio}
         />
 

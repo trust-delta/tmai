@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from "react";
+import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
 
 type RightTab = "git" | "markdown";
 type Orientation = "horizontal" | "vertical";
@@ -16,6 +17,10 @@ interface SplitPaneLayoutProps {
   containerRef: RefObject<HTMLDivElement | null>;
   onDividerMouseDown: (e: React.MouseEvent) => void;
   onDividerDoubleClick: () => void;
+  /** Keyboard ratio nudges (arrow keys + Home/End). When omitted, the divider
+   *  is focusable but inert for keyboard-only users — wire this to the matching
+   *  `useSplitPane().adjustRatio` to comply with WAI-ARIA Window Splitter. */
+  onAdjustRatio?: (delta: number) => void;
   orientation?: Orientation;
 }
 
@@ -59,8 +64,12 @@ export function SplitPaneLayout({
   containerRef,
   onDividerMouseDown,
   onDividerDoubleClick,
+  onAdjustRatio,
   orientation = "horizontal",
 }: SplitPaneLayoutProps) {
+  const onKeyDown = onAdjustRatio
+    ? makeSplitKeyHandler(orientation, RATIO_STEP, onAdjustRatio)
+    : undefined;
   const isHorizontal = orientation === "horizontal";
   const firstPercent = `${(splitRatio * 100).toFixed(2)}%`;
   const secondPercent = `${((1 - splitRatio) * 100).toFixed(2)}%`;
@@ -105,6 +114,7 @@ export function SplitPaneLayout({
         style={dividerStyle}
         onMouseDown={onDividerMouseDown}
         onDoubleClick={onDividerDoubleClick}
+        onKeyDown={onKeyDown}
       >
         <div className={dividerLineClass} />
         <div className={handleClass}>

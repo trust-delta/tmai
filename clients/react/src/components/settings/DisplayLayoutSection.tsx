@@ -23,7 +23,7 @@ export function DisplayLayoutSection() {
     const ok = await confirm({
       title: "Reset all WebUI preferences?",
       message:
-        "Display mode, split ratios, tab choices, and developer toggles will return to defaults. tmai-core settings are not affected.",
+        "Display mode, split ratios, and tab choices will return to defaults. tmai-core settings are not affected.",
       confirmLabel: "Reset",
       variant: "danger",
     });

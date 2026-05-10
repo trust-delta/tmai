@@ -128,11 +128,20 @@ export function loadUIPrefs(): UIPrefs {
     // No consolidated blob yet — sweep up any legacy keys (carry over the
     // ones we still understand, drop the rest) so a returning user starts
     // clean even if they only had the now-retired dev-show-auto-discovered
-    // key set.
+    // key set. We must NOT drop the legacy keys until the merged blob has
+    // actually persisted — if the write fails (quota / private mode) the
+    // legacy values are the only surviving record of the user's prefs and
+    // need to stick around so the next load can retry the migration.
     if (hasAnyLegacyKey()) {
       const merged = { ...DEFAULT_UI_PREFS, ...migrateLegacyPrefs() };
-      saveUIPrefs(merged);
-      clearLegacyKeys();
+      let persisted = false;
+      try {
+        localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(merged));
+        persisted = true;
+      } catch {
+        // Save failed — keep legacy keys in place and retry next load.
+      }
+      if (persisted) clearLegacyKeys();
       return merged;
     }
     return { ...DEFAULT_UI_PREFS };

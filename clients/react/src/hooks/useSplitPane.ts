@@ -5,7 +5,39 @@ const MIN_RATIO = 0.2;
 const MAX_RATIO = 0.8;
 const NARROW_BREAKPOINT = "(min-width: 1024px)";
 
+/** Step (fraction of total span) applied per arrow-key press on a split divider. */
+export const RATIO_STEP = 0.025;
+
 export type SplitOrientation = "horizontal" | "vertical";
+
+// Build a keydown handler implementing the WAI-ARIA Window Splitter
+// pattern: arrow keys nudge the ratio by `step`, Home/End jump to
+// min/max. Both axes use the visual mapping (Left/Up = decrement,
+// Right/Down = increment).
+export function makeSplitKeyHandler(
+  orientation: SplitOrientation,
+  step: number,
+  adjust: (delta: number) => void,
+) {
+  return (e: React.KeyboardEvent) => {
+    const isHorizontal = orientation === "horizontal";
+    const decKey = isHorizontal ? "ArrowLeft" : "ArrowUp";
+    const incKey = isHorizontal ? "ArrowRight" : "ArrowDown";
+    if (e.key === decKey) {
+      e.preventDefault();
+      adjust(-step);
+    } else if (e.key === incKey) {
+      e.preventDefault();
+      adjust(step);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      adjust(Number.NEGATIVE_INFINITY);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      adjust(Number.POSITIVE_INFINITY);
+    }
+  };
+}
 
 interface UseSplitPaneOptions {
   /** Orientation of the split. `horizontal` = left/right; `vertical` = top/bottom. */
@@ -23,6 +55,10 @@ export interface UseSplitPaneResult {
   containerRef: React.RefObject<HTMLDivElement | null>;
   onDividerMouseDown: (e: React.MouseEvent) => void;
   onDividerDoubleClick: () => void;
+  /** Programmatic ratio adjustment. `+/-Infinity` snap to max / min, finite
+   *  values add to the current ratio (clamped). Wired to keyboard arrows so
+   *  divider drag works for keyboard-only users too. */
+  adjustRatio: (delta: number) => void;
 }
 
 // Manage split-pane drag state for either horizontal or vertical layouts.
@@ -75,6 +111,20 @@ export function useSplitPane({
     onCommitRef.current?.(DEFAULT_RATIO);
   }, []);
 
+  const adjustRatio = useCallback((delta: number) => {
+    setSplitRatio((prev) => {
+      const target =
+        delta === Number.POSITIVE_INFINITY
+          ? MAX_RATIO
+          : delta === Number.NEGATIVE_INFINITY
+            ? MIN_RATIO
+            : prev + delta;
+      const next = Math.max(MIN_RATIO, Math.min(MAX_RATIO, target));
+      if (next !== prev) onCommitRef.current?.(next);
+      return next;
+    });
+  }, []);
+
   const splitRatioRef = useRef(splitRatio);
   splitRatioRef.current = splitRatio;
 
@@ -120,5 +170,6 @@ export function useSplitPane({
     containerRef,
     onDividerMouseDown,
     onDividerDoubleClick,
+    adjustRatio,
   };
 }
