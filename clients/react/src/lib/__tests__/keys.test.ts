@@ -50,13 +50,15 @@ const CASES: Array<{
   { name: "Tab", event: { key: "Tab" }, expected: [0x09] },
   { name: "Shift+Tab (BTab)", event: { key: "Tab", shiftKey: true }, expected: [0x1b, 0x5b, 0x5a] },
 
-  // Arrow / nav
-  { name: "ArrowUp", event: { key: "ArrowUp" }, expected: [0x1b, 0x5b, 0x41] },
-  { name: "ArrowDown", event: { key: "ArrowDown" }, expected: [0x1b, 0x5b, 0x42] },
-  { name: "ArrowRight", event: { key: "ArrowRight" }, expected: [0x1b, 0x5b, 0x43] },
-  { name: "ArrowLeft", event: { key: "ArrowLeft" }, expected: [0x1b, 0x5b, 0x44] },
-  { name: "Home", event: { key: "Home" }, expected: [0x1b, 0x5b, 0x48] },
-  { name: "End", event: { key: "End" }, expected: [0x1b, 0x5b, 0x46] },
+  // Arrow / nav — SS3 (application cursor mode), matching tmux's default so
+  // Ink-based TUI bindings (e.g. CC's "accept ghost suggestion" on
+  // ArrowRight) fire instead of being silently no-op'd by a bare CSI.
+  { name: "ArrowUp", event: { key: "ArrowUp" }, expected: [0x1b, 0x4f, 0x41] },
+  { name: "ArrowDown", event: { key: "ArrowDown" }, expected: [0x1b, 0x4f, 0x42] },
+  { name: "ArrowRight", event: { key: "ArrowRight" }, expected: [0x1b, 0x4f, 0x43] },
+  { name: "ArrowLeft", event: { key: "ArrowLeft" }, expected: [0x1b, 0x4f, 0x44] },
+  { name: "Home", event: { key: "Home" }, expected: [0x1b, 0x4f, 0x48] },
+  { name: "End", event: { key: "End" }, expected: [0x1b, 0x4f, 0x46] },
   { name: "PageUp", event: { key: "PageUp" }, expected: [0x1b, 0x5b, 0x35, 0x7e] },
   { name: "PageDown", event: { key: "PageDown" }, expected: [0x1b, 0x5b, 0x36, 0x7e] },
   { name: "Delete (DC)", event: { key: "Delete" }, expected: [0x1b, 0x5b, 0x33, 0x7e] },

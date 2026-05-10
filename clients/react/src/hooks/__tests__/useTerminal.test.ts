@@ -24,6 +24,7 @@ interface FakeTerminalInstance {
   cols: number;
   loadAddon: ReturnType<typeof vi.fn>;
   open: ReturnType<typeof vi.fn>;
+  write: ReturnType<typeof vi.fn>;
   onData: ReturnType<typeof vi.fn>;
   onBinary: ReturnType<typeof vi.fn>;
   onResize: ReturnType<typeof vi.fn>;
@@ -50,6 +51,7 @@ vi.mock("@xterm/xterm", () => {
       cols: 120,
       loadAddon: vi.fn(),
       open: vi.fn(),
+      write: vi.fn(),
       onData: vi.fn(() => makeDisposable()),
       onBinary: vi.fn(() => makeDisposable()),
       onResize: vi.fn((cb: ResizeCallback) => {
@@ -88,6 +90,7 @@ globalThis.ResizeObserver = function ResizeObserver() {
 } as unknown as typeof ResizeObserver;
 
 import { api } from "@/lib/api";
+import { useAgentTerminalStream } from "../useAgentTerminalStream";
 import { useTerminal } from "../useTerminal";
 
 function makeContainerRef(): React.RefObject<HTMLDivElement> {
@@ -172,6 +175,46 @@ describe("useTerminal resize wiring", () => {
     // Only the last dimension set should be forwarded.
     expect(api.resizeAgentTerminal).toHaveBeenCalledTimes(1);
     expect(api.resizeAgentTerminal).toHaveBeenCalledWith("cc:agent-3", 35, 150);
+  });
+
+  it("rewrites CSI arrow sequences to SS3 on egress so CC's bindings fire", () => {
+    // CC and other Ink-based TUIs typically sit behind tmux, which serves
+    // SS3 arrow sequences (`\x1bOC`, …) regardless of whether the inner
+    // program ever flipped DECCKM. Their key bindings — including
+    // "accept ghost-text suggestion" on ArrowRight — are wired to SS3, so a
+    // bare PTY that ships CSI silently misses the binding. We can't just
+    // pre-flip DECCKM via `term.write` on mount because CC reliably emits
+    // its own DECCKM disable shortly after attaching, so we rewrite at the
+    // egress boundary instead.
+    const sendKeysSpy = vi.fn();
+    vi.mocked(useAgentTerminalStream).mockReturnValueOnce({
+      sendKeys: sendKeysSpy,
+    } as unknown as ReturnType<typeof useAgentTerminalStream>);
+
+    const containerRef = makeContainerRef();
+    renderHook(() => useTerminal({ agentId: "cc:agent-arrows", containerRef }));
+
+    const t = term();
+    // Pull out the onData callback xterm received and feed it CSI arrows
+    const onDataCb = t.onData.mock.calls[0][0] as (s: string) => void;
+
+    onDataCb("\x1b[A");
+    onDataCb("\x1b[B");
+    onDataCb("\x1b[C");
+    onDataCb("\x1b[D");
+    onDataCb("\x1b[H");
+    onDataCb("\x1b[F");
+    onDataCb("hello"); // non-arrow data passes through verbatim
+
+    expect(sendKeysSpy.mock.calls.map((c) => c[0])).toEqual([
+      "\x1bOA",
+      "\x1bOB",
+      "\x1bOC",
+      "\x1bOD",
+      "\x1bOH",
+      "\x1bOF",
+      "hello",
+    ]);
   });
 
   it("auto-focuses xterm on mount when the hook owns the keyboard", () => {

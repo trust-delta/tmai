@@ -38,6 +38,29 @@ interface UseTerminalOptions {
   keysHandledExternally?: boolean;
 }
 
+// Rewrites CSI arrow / Home / End sequences (`\x1b[C`, …) into their SS3
+// (`\x1bOC`, …) equivalents on egress to the keys WebSocket. Why: CC and
+// other Ink-based TUIs typically sit behind tmux outside of tmai, which
+// serves SS3 arrow sequences regardless of whether the inner program ever
+// flipped DECCKM. Their key bindings — including the Tab-style "accept
+// ghost-text autosuggestion" on ArrowRight — are wired to those SS3
+// sequences, so a bare PTY that ships CSI sequences to CC silently misses
+// the binding even though every byte is technically valid. Pre-flipping
+// DECCKM via `term.write` on mount doesn't survive: CC reliably emits its
+// own DECCKM disable shortly after attaching. Rewriting at the egress
+// boundary is the narrowest fix that survives whatever DECCKM toggling the
+// agent does, and it leaves PageUp/PageDown/Delete (no SS3 form) alone.
+//
+// `String.fromCharCode` is used instead of an `\x1b` literal in the regex
+// source because biome's `noControlCharactersInRegex` rejects the literal
+// even though it's the exact byte we need to match.
+const ESC = String.fromCharCode(0x1b);
+const CSI_ARROW_REGEX = new RegExp(`${ESC}\\[([ABCDHF])`, "g");
+function remapArrowsToSs3(data: string): string {
+  if (!data.includes(`${ESC}[`)) return data;
+  return data.replace(CSI_ARROW_REGEX, (_, c: string) => `${ESC}O${c}`);
+}
+
 export function useTerminal({
   agentId,
   containerRef,
@@ -128,11 +151,13 @@ export function useTerminal({
 
     // Forward xterm input → keys-mode WS, unless the caller drives keys
     // from its own input pipeline (PreviewPanelXterm's hidden IME input).
+    // Arrow / Home / End get the CSI → SS3 remap applied — see the
+    // module-level `remapArrowsToSs3` for why.
     let inputDisposable: { dispose: () => void } | null = null;
     let binaryDisposable: { dispose: () => void } | null = null;
     if (!keysHandledExternally) {
       inputDisposable = term.onData((data: string): void => {
-        sendKeys(data);
+        sendKeys(remapArrowsToSs3(data));
       });
       inputDisposableRef.current = inputDisposable;
 
@@ -192,7 +217,7 @@ export function useTerminal({
 
       if (enable && !inputDisposableRef.current) {
         inputDisposableRef.current = term.onData((data: string): void => {
-          sendKeys(data);
+          sendKeys(remapArrowsToSs3(data));
         });
         binaryDisposableRef.current = term.onBinary((data: string): void => {
           const bytes = new Uint8Array(data.length);

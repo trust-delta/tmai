@@ -13,21 +13,28 @@
 
 const ENC = new TextEncoder();
 
-// Special-key sequences that match `tmux_key_to_bytes` exactly.
+// Special-key sequences. Arrow keys + Home/End ship SS3 (application-cursor
+// mode) variants instead of CSI even though we never asked the inner program
+// for DECCKM — Ink-based TUIs (CC, etc.) bind their key handlers (e.g.
+// "accept ghost-text autosuggestion" on ArrowRight) to the SS3 sequence
+// because in normal use they sit behind tmux, which serves SS3 by default.
+// Sending plain CSI silently misses those bindings. The matching xterm-side
+// `term.write("\x1b[?1h\x1b[?66h")` in useTerminal keeps xterm's mode
+// tracker consistent with what we emit here for the PreviewPanel keys path.
 const SPECIAL_KEY_BYTES: Record<string, Uint8Array> = {
   Enter: new Uint8Array([0x0d]), // \r
   Escape: new Uint8Array([0x1b]),
   Backspace: new Uint8Array([0x7f]),
   Tab: new Uint8Array([0x09]),
-  ArrowUp: new Uint8Array([0x1b, 0x5b, 0x41]), // CSI A
-  ArrowDown: new Uint8Array([0x1b, 0x5b, 0x42]), // CSI B
-  ArrowRight: new Uint8Array([0x1b, 0x5b, 0x43]), // CSI C
-  ArrowLeft: new Uint8Array([0x1b, 0x5b, 0x44]), // CSI D
-  Home: new Uint8Array([0x1b, 0x5b, 0x48]), // CSI H
-  End: new Uint8Array([0x1b, 0x5b, 0x46]), // CSI F
-  PageUp: new Uint8Array([0x1b, 0x5b, 0x35, 0x7e]), // CSI 5 ~
-  PageDown: new Uint8Array([0x1b, 0x5b, 0x36, 0x7e]), // CSI 6 ~
-  Delete: new Uint8Array([0x1b, 0x5b, 0x33, 0x7e]), // CSI 3 ~
+  ArrowUp: new Uint8Array([0x1b, 0x4f, 0x41]), // SS3 A
+  ArrowDown: new Uint8Array([0x1b, 0x4f, 0x42]), // SS3 B
+  ArrowRight: new Uint8Array([0x1b, 0x4f, 0x43]), // SS3 C
+  ArrowLeft: new Uint8Array([0x1b, 0x4f, 0x44]), // SS3 D
+  Home: new Uint8Array([0x1b, 0x4f, 0x48]), // SS3 H
+  End: new Uint8Array([0x1b, 0x4f, 0x46]), // SS3 F
+  PageUp: new Uint8Array([0x1b, 0x5b, 0x35, 0x7e]), // CSI 5 ~ (no SS3 form)
+  PageDown: new Uint8Array([0x1b, 0x5b, 0x36, 0x7e]), // CSI 6 ~ (no SS3 form)
+  Delete: new Uint8Array([0x1b, 0x5b, 0x33, 0x7e]), // CSI 3 ~ (no SS3 form)
   " ": new Uint8Array([0x20]),
 };
 
