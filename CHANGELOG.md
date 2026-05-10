@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > jumped again to v2.0.0 at the 2026-04-21 monorepo re-consolidation.
 > For the TUI-era changelog (v0.0.1–v0.20.0), see [Legacy Changelog](#legacy-tui-era-v001v0200).
 
+## [3.1.0] - 2026-05-10 — spawn flow polish
+
+WebUI dogfooding pass smoothing the spawn → use → kill loop. No wire or
+engine changes — bundle continues to ship `tmai-core 3.0.0`. clients/react
+ticks to 2.1.0; ratatui and api-spec stay pinned.
+
+### Bundled
+
+- tmai-core 3.0.0 (`core-v3.0.0`, unchanged)
+- clients/react 2.1.0
+- clients/ratatui 0.2.0 (unchanged)
+- api-spec 3.0.0 (unchanged)
+
+### Changed
+
+- **`+ New agent` is one click instead of two** — DirBrowser now renders
+  the runtime buttons (`claude` / `codex` / `bash`) inline against the
+  currently-browsed path. The old "Select this → close modal → pick a
+  runtime in a secondary panel" flow is retired. Picker stays open
+  until spawn succeeds, with errors surfaced inline. Settings's
+  `default_project_root` picker and OrchestrationSection's scope picker
+  keep the original "Select this" mode unchanged.
+
+### Fixed
+
+- **Type-ready on spawn / agent switch** — TerminalPanel grabs xterm
+  focus on every fresh mount instead of waiting for the user to click
+  into the panel. Also closes the spawn-time race where wire-delivered
+  `pty_session_id` flips the panel from PreviewPanel → TerminalPanel
+  mid-flight, leaving the hidden IME input's focus orphaned.
+- **Kill no longer drops you into an empty pane** — when the resolved
+  agent disappears (kill button, CC quit, dispatch unwind), selection
+  hands off to a sibling in the same cwd (orchestrator first, matching
+  sidebar order), then to any agent, and only clears when no agents
+  remain. Reacts to the resolved target rather than `selection.id` so
+  the spawn-time pre-resolution gap isn't misread as a death.
+
 ## [3.0.0] - 2026-05-10 — agent detection canonicalization
 
 Major release closing the agent detection / state-model rebuild chain (Step 6
