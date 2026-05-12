@@ -60,8 +60,6 @@ pub mod retry_hint;
 pub use retry_hint::*;
 pub mod runtime_snapshot;
 pub use runtime_snapshot::*;
-pub mod scheduled_spawn;
-pub use scheduled_spawn::*;
 pub mod spawn_role;
 pub use spawn_role::*;
 pub mod spawner_handle;
