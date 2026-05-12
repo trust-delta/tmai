@@ -3,7 +3,7 @@
 /**
  * Per-event notification handling modes expressed as wire strings.
  *
- * Values are one of `"off"`, `"notify"`, or `"auto_action"`.
+ * Values are one of `"off"` or `"notify"`.
  */
 export type NotifyModeSummary = { 
 /**

@@ -100,37 +100,6 @@
       ],
       "type": "string"
     },
-    "AutoActionEntry": {
-      "description": "Record of the most recently fired auto-action rule.",
-      "properties": {
-        "action": {
-          "description": "Human-readable description of the action taken.",
-          "type": "string"
-        },
-        "fired_at": {
-          "description": "When the auto-action was triggered.",
-          "format": "date-time",
-          "type": "string"
-        },
-        "target_agent_id": {
-          "description": "Agent that was the target of the action, if applicable.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "trigger": {
-          "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`).",
-          "type": "string"
-        }
-      },
-      "required": [
-        "fired_at",
-        "trigger",
-        "action"
-      ],
-      "type": "object"
-    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -758,88 +727,6 @@
       ],
       "type": "string"
     },
-    "GuardrailBreach": {
-      "description": "An active guardrail limit breach.",
-      "properties": {
-        "branch": {
-          "description": "Branch associated with the breach, if known.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "count": {
-          "description": "Current count that exceeded the limit.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/GuardrailKind",
-          "description": "Which guardrail was exceeded."
-        },
-        "limit": {
-          "description": "Configured limit that was exceeded.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pr_number": {
-          "description": "PR number associated with the breach, if known.",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "kind",
-        "count",
-        "limit"
-      ],
-      "type": "object"
-    },
-    "GuardrailKind": {
-      "description": "The type of guardrail that was exceeded",
-      "enum": [
-        "ci_retries",
-        "review_loops",
-        "consecutive_failures"
-      ],
-      "type": "string"
-    },
-    "GuardrailStatus": {
-      "description": "Configured guardrail limits and currently active breaches.",
-      "properties": {
-        "active_breaches": {
-          "description": "Currently active guardrail breaches (empty when all limits are clear).",
-          "items": {
-            "$ref": "#/$defs/GuardrailBreach"
-          },
-          "type": "array"
-        },
-        "max_ci_retries": {
-          "description": "Configured max CI fix attempts per PR.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "max_review_loops": {
-          "description": "Configured max review→fix cycles per PR.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "max_ci_retries",
-        "max_review_loops",
-        "active_breaches"
-      ],
-      "type": "object"
-    },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
       "properties": {
@@ -860,7 +747,7 @@
       "type": "object"
     },
     "NotifyModeSummary": {
-      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"` or `\"notify\"`.",
       "properties": {
         "on_agent_stopped": {
           "description": "Handling mode for `AgentStopped` events.",
@@ -1086,75 +973,6 @@
       "required": [
         "capacity",
         "vendors"
-      ],
-      "type": "object"
-    },
-    "ScheduledSpawn": {
-      "description": "One entry of the top-level `[[scheduled]]` config table — a cron-driven\ndispatch declaration (#20).\n\nEach entry independently spawns (or kicks) one of the four roles on the\nconfigured cron cadence. Resolution rules:\n\n- `role = \"orchestrator\" | \"implementer\" | \"reviewer\"` inherits\n  `[orchestration.orchestrator]` / `[orchestration.dispatch.<role>]`\n  defaults. Per-entry `vendor` / `model` / `effort` override the bundle\n  field-by-field; `permission_mode` is **not** an override on these roles\n  by design (matches the dispatch surface).\n- `role = \"manual\"` does **not** inherit any orchestration bundle. The\n  entry must carry its own `vendor` (required) and may set `model` /\n  `effort` / `permission_mode` directly. This is the role-less escape\n  hatch for \"spawn an AI worker on a schedule that isn't part of the\n  orchestrator/dispatch pipeline\".\n\nThe scheduler service (#20 PR2) consumes this struct; PR1 only lands the\ntype + parsing + validation.",
-      "properties": {
-        "cron": {
-          "description": "Cron expression (5-field standard form, `m h dom mon dow`). Parsing\nis deferred to the scheduler service in PR2; PR1 only checks the\nstring is non-empty.",
-          "type": "string"
-        },
-        "cwd": {
-          "description": "Working directory for the dispatched agent. Must be absolute.",
-          "type": "string"
-        },
-        "effort": {
-          "description": "Effort override (`low` / `medium` / `high` / `xhigh` / `max`).\nOnly honoured by Claude.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "description": "Model override. Falls back to the bundle's `model` for bundled roles;\nfor `Manual` falls back to the vendor CLI's user-global default.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "description": "Stable identifier for this entry. Used to track per-entry\nlast-dispatch state and surface in logs / wire payloads. Must be\nnon-empty and unique across all `[[scheduled]]` entries.",
-          "type": "string"
-        },
-        "permission_mode": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/PermissionMode",
-              "description": "Permission mode override. Only honoured for `role = Manual` (the\nother roles inherit from their bundle and disallow per-call pm\noverride by design — see `Settings::resolve_dispatch`)."
-            }
-          ]
-        },
-        "prompt": {
-          "description": "Prompt seeded into the spawned agent (or the kick prompt for the\norchestrator role).",
-          "type": "string"
-        },
-        "role": {
-          "$ref": "#/$defs/SpawnRole",
-          "description": "Which role to spawn. `Manual` does not inherit any bundle."
-        },
-        "vendor": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/Vendor",
-              "description": "Vendor override. Required when `role = Manual`; optional override\nfor the bundled roles."
-            }
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "cron",
-        "cwd",
-        "prompt",
-        "role"
       ],
       "type": "object"
     },
@@ -1638,29 +1456,8 @@
       "type": "object"
     },
     "WorkflowSnapshot": {
-      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (e.g. NotifySettings).\nInternal layer names must not appear in this type or its nested types.",
       "properties": {
-        "auto_action_fired_last_hour": {
-          "description": "Number of auto-actions that fired in the last hour.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "auto_action_last_fired": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/AutoActionEntry",
-              "description": "Most recent auto-action that fired, if any."
-            }
-          ]
-        },
-        "guardrail_status": {
-          "$ref": "#/$defs/GuardrailStatus",
-          "description": "Configured guardrail limits and active breaches."
-        },
         "notify_mode_summary": {
           "$ref": "#/$defs/NotifyModeSummary",
           "description": "Per-event notification handling modes."
@@ -1681,9 +1478,7 @@
       },
       "required": [
         "notify_mode_summary",
-        "orchestrator_notify_backlog",
-        "auto_action_fired_last_hour",
-        "guardrail_status"
+        "orchestrator_notify_backlog"
       ],
       "type": "object"
     },
@@ -2487,54 +2282,6 @@
       "type": "object"
     },
     {
-      "description": "A guardrail limit was exceeded (CI retries, review loops, or consecutive failures)",
-      "properties": {
-        "branch": {
-          "description": "Associated branch",
-          "type": "string"
-        },
-        "count": {
-          "description": "Current count that exceeded the limit",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "guardrail": {
-          "$ref": "#/$defs/GuardrailKind",
-          "description": "The type of guardrail that was exceeded"
-        },
-        "limit": {
-          "description": "The configured limit",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pr_number": {
-          "description": "Associated PR number (if any)",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "type": {
-          "enum": [
-            "GuardrailExceeded"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "guardrail",
-        "branch",
-        "count",
-        "limit",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
       "description": "An agent's tmux target changed due to pane renumbering (PID-based reconciliation)",
       "properties": {
         "new_target": {
@@ -2960,7 +2707,7 @@
       "type": "object"
     },
     {
-      "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\n`GuardrailExceeded`, or `ContextCompacting` mutate the runtime view.",
+      "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\nor `ContextCompacting` mutate the runtime view.",
       "properties": {
         "origin": {
           "oneOf": [
