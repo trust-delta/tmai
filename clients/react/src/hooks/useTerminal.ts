@@ -92,6 +92,12 @@ export function useTerminal({
         foreground: "#fafafa",
         cursor: "#a1a1aa",
         selectionBackground: "#3f3f46",
+        // Match the global thin-overlay scrollbar (rgba white/8 → 15 → 18).
+        // xterm v6 paints its own VSCode-style scrollbar; only the colors are
+        // theme-driven, the 6 px width is pinned in globals.css.
+        scrollbarSliderBackground: "rgba(255, 255, 255, 0.08)",
+        scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.15)",
+        scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.18)",
       },
       cursorBlink: true,
     });
