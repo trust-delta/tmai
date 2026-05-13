@@ -46,7 +46,14 @@ export function useResponsiveLayout(): UseResponsiveLayoutResult {
     if (typeof window !== "undefined" && !window.matchMedia(NARROW_BREAKPOINT).matches) {
       return true; // Auto-collapse on narrow screens
     }
-    return readStoredBool(STORAGE_KEY_SIDEBAR, false);
+    // Phase B of the Producer-console rebuild
+    // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
+    // flips the default to *collapsed* so the legacy AgentList stops
+    // being on the main flow. Existing operators are unaffected — their
+    // localStorage value (set by `toggleSidebar` on first use) keeps
+    // overriding the default. New / clean-state users land on the
+    // Producer console directly.
+    return readStoredBool(STORAGE_KEY_SIDEBAR, true);
   });
 
   const [actionPanelCollapsed, setActionPanelCollapsed] = useState(() => {

@@ -700,6 +700,10 @@ export function App() {
                 onOpenProducerTerminal={openProducerTerminal}
                 onOpenCalibration={openCalibration}
                 onSelectProjectByPath={handleSelectProject}
+                onOverrideSpawned={handleSpawned}
+                onOpenSidebar={toggleSidebar}
+                sidebarCollapsed={sidebarCollapsed}
+                onOpenSettings={toggleSettings}
               />
             )}
           </div>

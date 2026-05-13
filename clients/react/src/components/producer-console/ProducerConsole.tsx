@@ -44,6 +44,16 @@ interface ProducerConsoleProps {
    *  `handleSelectProject` so unit selection here matches sidebar
    *  selection there. */
   onSelectProjectByPath: (path: string, name: string) => void;
+  /** Phase B: operator-override callbacks. The override expandable
+   *  in the footer needs to spawn agents (re-using `NewAgentLauncher`),
+   *  re-expand the (now default-collapsed) sidebar, and deep-link
+   *  into the Settings page where orchestration / dispatch-bundle
+   *  config still lives. All three are pass-through to App.tsx
+   *  handlers — the console is purely a routing surface. */
+  onOverrideSpawned: (sessionId: string) => void;
+  onOpenSidebar: () => void;
+  sidebarCollapsed: boolean;
+  onOpenSettings: () => void;
 }
 
 export function ProducerConsole({
@@ -53,6 +63,10 @@ export function ProducerConsole({
   onOpenProducerTerminal,
   onOpenCalibration,
   onSelectProjectByPath,
+  onOverrideSpawned,
+  onOpenSidebar,
+  sidebarCollapsed,
+  onOpenSettings,
 }: ProducerConsoleProps) {
   const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman } =
     useHandover(currentProjectPath);
@@ -83,6 +97,10 @@ export function ProducerConsole({
         calibrationData={calibrationData}
         onOpenProducerTerminal={onOpenProducerTerminal}
         onOpenCalibration={onOpenCalibration}
+        onOverrideSpawned={onOverrideSpawned}
+        onOpenSidebar={onOpenSidebar}
+        sidebarCollapsed={sidebarCollapsed}
+        onOpenSettings={onOpenSettings}
       />
     </div>
   );
