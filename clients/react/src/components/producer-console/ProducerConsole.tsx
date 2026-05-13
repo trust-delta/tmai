@@ -78,7 +78,7 @@ export function ProducerConsole({
   sidebarCollapsed,
   onOpenSettings,
 }: ProducerConsoleProps) {
-  const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman } =
+  const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions } =
     useHandover(currentProjectPath);
 
   return (
@@ -112,6 +112,7 @@ export function ProducerConsole({
           data={crossUnit}
           activePath={currentProjectPath}
           onSelectUnit={onSelectProjectByPath}
+          preconditions={missingPreconditions}
         />
         <SettledDecisionsSection data={settledDecisions} />
         <WorkingWithThisHumanSection data={workingWithHuman} />

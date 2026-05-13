@@ -31,6 +31,14 @@
 // Both placeholders carry the exact wire-gap reason in the `reason`
 // field — the section components render that text directly so the
 // surface is self-documenting.
+//
+// Posture annotations (DR `doc/decisions/2026-05-14-webui-simulated-
+// onboarded-posture.md`): until tmai-core lands #340 (multi-repo) /
+// #341 (cold-start), this hook degrades gracefully and surfaces a
+// weak `missingPreconditions` signal so sections can render honest
+// notices instead of fabricating data. Anything tagged
+// `TODO(tmai-core#340)` / `TODO(tmai-core#341)` in this file is
+// scheduled for retirement once those ship.
 
 import { useMemo } from "react";
 import { useAgents } from "@/hooks/useAgents";
@@ -97,11 +105,40 @@ export interface WorkingWithHumanPlaceholder {
   placeholder: true;
 }
 
+/**
+ * Weak client-side signals that the unit might be incompletely onboarded
+ * or that we're only seeing a sliver of its real surface. Per the
+ * simulated-onboarded posture DR, the WebUI is not allowed to fabricate
+ * data when the underlying wire is absent — it has to be honest about
+ * which inferences are based on partial signals.
+ *
+ * These flags are *weak* by design: they come from the data we already
+ * have on the client (agent list, project grouping), not from a
+ * dedicated `compose().meta` payload (which is what tmai-core#341 will
+ * provide). Section components treat them as "may want to surface a
+ * notice", not as definitive state.
+ */
+export interface MissingPreconditions {
+  /** No live agents have been observed for this client session.
+   *  Weak signal — also true during the initial agents-fetch pre-load.
+   *  TODO(tmai-core#341): replace with `compose().meta` once the wire
+   *  endpoint reports actual missing preconditions (no
+   *  `doc/decisions/`, no `[[unit]]` config, etc.). */
+  noLiveAgents: boolean;
+  /** Only one unit derived from live agents. Because the wire side
+   *  doesn't yet expose dormant `[[unit]]` configs (#340) or a way
+   *  for a unit to span multiple repos (#340), the single-unit
+   *  view here is necessarily partial.
+   *  TODO(tmai-core#340): replace with `GET /api/units` reconciliation. */
+  singleUnitOnly: boolean;
+}
+
 export interface HandoverDigest {
   whereYouLeftOff: WhereYouLeftOff;
   crossUnit: CrossUnitStatus;
   settledDecisions: SettledDecisionsPlaceholder;
   workingWithHuman: WorkingWithHumanPlaceholder;
+  missingPreconditions: MissingPreconditions;
 }
 
 // Narrowing predicate — keeps the AttentionAgentBrief map free of the
@@ -184,5 +221,13 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const settledDecisions: SettledDecisionsPlaceholder = { placeholder: true };
   const workingWithHuman: WorkingWithHumanPlaceholder = { placeholder: true };
 
-  return { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman };
+  // Weak posture-signal derivation. See `MissingPreconditions` doc for
+  // why these are tagged TODO(tmai-core#NNN) — they get retired once
+  // the wire side surfaces the real precondition data.
+  const missingPreconditions: MissingPreconditions = {
+    noLiveAgents: aiAgents.length === 0,
+    singleUnitOnly: projectGroups.length === 1,
+  };
+
+  return { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions };
 }

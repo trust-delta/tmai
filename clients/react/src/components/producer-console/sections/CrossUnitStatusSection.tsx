@@ -11,19 +11,31 @@
 // from a `[[unit]]`-config endpoint, so units configured but currently
 // dormant are not visible here. Phase C will reconcile against a
 // `GET /api/units` endpoint and surface those too.
+//
+// TODO(tmai-core#340): when multi-repo / dormant-unit wire lands,
+// replace the live-agent derivation with a proper unit list. The
+// `singleUnitOnly` posture notice below is part of the
+// simulated-onboarded posture DR (`doc/decisions/2026-05-14-webui-
+// simulated-onboarded-posture.md`) and should be removed in the
+// same change.
 
-import type { CrossUnitStatus, UnitState } from "@/hooks/useHandover";
+import type { CrossUnitStatus, MissingPreconditions, UnitState } from "@/hooks/useHandover";
 
 interface CrossUnitStatusSectionProps {
   data: CrossUnitStatus;
   activePath: string | null;
   onSelectUnit: (path: string, name: string) => void;
+  /** Weak posture signals — see `MissingPreconditions` doc.
+   *  When omitted, no notice is rendered (back-compat for existing
+   *  tests / older callers). */
+  preconditions?: MissingPreconditions;
 }
 
 export function CrossUnitStatusSection({
   data,
   activePath,
   onSelectUnit,
+  preconditions,
 }: CrossUnitStatusSectionProps) {
   return (
     <section>
@@ -37,8 +49,8 @@ export function CrossUnitStatusSection({
 
       {data.units.length === 0 ? (
         <p className="pl-6 text-xs text-zinc-500">
-          No active units. Spawn an agent on any project to populate this list — Phase C will also
-          surface dormant configured units.
+          No active units. Spawn an agent on any project to populate this list — dormant configured
+          units aren't surfaced here yet.
         </p>
       ) : (
         <ul className="space-y-0.5 pl-6 text-xs text-zinc-300">
@@ -71,6 +83,15 @@ export function CrossUnitStatusSection({
             );
           })}
         </ul>
+      )}
+
+      {preconditions?.singleUnitOnly && (
+        // TODO(tmai-core#340): remove this notice once multi-repo /
+        // dormant-unit reconciliation lands.
+        <p className="mt-2 pl-6 text-[11px] text-zinc-600">
+          Showing one unit only — a tmai project can span multiple repos and have dormant configured
+          units, but that view isn't wired yet.
+        </p>
       )}
     </section>
   );

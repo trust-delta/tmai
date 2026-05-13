@@ -9,6 +9,16 @@
 // jargon ("Phase C: `GET /api/units/...` is not yet wired") into the
 // user UI, which read as broken; this revision drops that and
 // addresses the operator directly.
+//
+// TODO(tmai-core#340): when multi-repo unit support lands, this
+// section will need to show decisions from every repo in
+// `UnitConfig.also[]`, not just the primary cwd. Per the
+// simulated-onboarded posture DR (`doc/decisions/2026-05-14-webui-
+// simulated-onboarded-posture.md`), the current copy is intentionally
+// honest about the single-repo limitation.
+// TODO(tmai-core#341): when `compose()` cold-start hardening lands,
+// surface the `meta.missing_preconditions` signal here so an operator
+// who hasn't run `tmai onboard <unit>` sees an actionable hint.
 
 import type { SettledDecisionsPlaceholder } from "@/hooks/useHandover";
 
@@ -34,7 +44,8 @@ export function SettledDecisionsSection({ data: _data }: SettledDecisionsSection
         </p>
         <p className="mt-2 text-zinc-600">
           When wired, this section will surface them bucketed by temperature: 📌 foundational · 🔴
-          in-play · 🟡 warm · ⚪ cold.
+          in-play · 🟡 warm · ⚪ cold — pulled from every repo this unit spans, not just the one you
+          launched against.
         </p>
       </div>
     </section>

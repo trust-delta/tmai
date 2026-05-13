@@ -34,6 +34,10 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
     crossUnit: overrides.crossUnit ?? { units: [] },
     settledDecisions: overrides.settledDecisions ?? { placeholder: true },
     workingWithHuman: overrides.workingWithHuman ?? { placeholder: true },
+    missingPreconditions: overrides.missingPreconditions ?? {
+      noLiveAgents: true,
+      singleUnitOnly: false,
+    },
   };
 }
 
@@ -173,5 +177,52 @@ describe("ProducerConsole", () => {
     expect(betaButton).toBeTruthy();
     betaButton?.click();
     expect(onSelect).toHaveBeenCalledWith("/p/beta", "beta");
+  });
+
+  it("shows the singleUnitOnly posture notice when missingPreconditions flags it", () => {
+    // Per the simulated-onboarded posture DR, the WebUI is honest
+    // about the multi-repo / dormant-unit wire gap (tmai-core#340)
+    // by surfacing this notice in the ⬢ Cross-unit status section
+    // whenever only one unit is derivable from live agents.
+    useHandoverMock.mockReturnValue(
+      digest({
+        crossUnit: {
+          units: [
+            {
+              path: "/p/alpha",
+              name: "alpha",
+              state: "in-progress",
+              agentCount: 1,
+              attentionCount: 0,
+            },
+          ],
+        },
+        missingPreconditions: { noLiveAgents: false, singleUnitOnly: true },
+      }),
+    );
+
+    render(
+      <ProducerConsole {...makeProps({ currentProjectPath: "/p/alpha", unitName: "alpha" })} />,
+    );
+
+    expect(screen.getByText(/Showing one unit only/i)).toBeTruthy();
+  });
+
+  it("omits the singleUnitOnly notice when more than one unit is derived", () => {
+    useHandoverMock.mockReturnValue(
+      digest({
+        crossUnit: {
+          units: [
+            { path: "/p/a", name: "a", state: "in-progress", agentCount: 1, attentionCount: 0 },
+            { path: "/p/b", name: "b", state: "quiet", agentCount: 0, attentionCount: 0 },
+          ],
+        },
+        missingPreconditions: { noLiveAgents: false, singleUnitOnly: false },
+      }),
+    );
+
+    render(<ProducerConsole {...makeProps()} />);
+
+    expect(screen.queryByText(/Showing one unit only/i)).toBeNull();
   });
 });
