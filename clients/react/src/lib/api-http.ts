@@ -2,9 +2,14 @@
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
+import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
+import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
+import type { CalibrationResponse } from "@/types/generated/CalibrationResponse";
+import type { Confidence } from "@/types/generated/Confidence";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
+import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
@@ -13,20 +18,27 @@ import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
+import type { TriageVerdict } from "@/types/generated/TriageVerdict";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
   BootstrapRequiredEvent,
+  CalibrationCellWire,
+  CalibrationEntry,
+  CalibrationResponse,
+  Confidence,
   DispatchBundle,
   EntityUpdateEnvelope,
+  Outcome,
   PermissionMode,
   QueueAgentEntry,
   QueueSnapshot,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
+  TriageVerdict,
   Vendor,
   WorkerDispatchMap,
 };
@@ -1143,6 +1155,13 @@ export const api = {
   listTeams: () => apiFetch<import("./teams").TeamSummary[]>("/teams"),
   getTeamTasks: (teamName: string) =>
     apiFetch<import("./teams").TeamTaskInfo[]>(`/teams/${encodeURIComponent(teamName)}/tasks`),
+
+  // Calibration view — read-only window into Producer hit-rate per
+  // `2026-05-13-synthesis-processing-and-calibration-schema.md` §B.3.
+  // `days = 0` means "whole store, no time filter"; default 90 mirrors
+  // the CLI's default.
+  calibration: (unit: string, days = 90) =>
+    apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
 };
 
 // ── SSE event subscription ──
