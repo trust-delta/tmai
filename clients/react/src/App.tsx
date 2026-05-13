@@ -141,14 +141,26 @@ export function App() {
   const openProducerTerminal = useCallback(() => {
     if (!unitName) return;
     const cmd = `tmai producer ${unitName}`;
+    // The Producer is a real CC session running on a terminal substrate
+    // (tmux / wezTerm / native). The WebUI's job here is to make the
+    // launch command trivially copy-pasteable + tell the operator what
+    // happens next — earlier drafts only surfaced `Copied: <cmd>`,
+    // which left first-time users stranded ("copied… and then?").
+    const successMsg =
+      `Copied: ${cmd}\n` +
+      `Paste it in your terminal — the Producer will read your context ` +
+      `(decisions / memory) and brief you on what to look at first.`;
+    const fallbackMsg =
+      `Run in your terminal: ${cmd}\n` +
+      `The Producer will read your context and brief you on what to look at first.`;
     const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
     if (clipboard?.writeText) {
       clipboard.writeText(cmd).then(
-        () => toastSuccess(`Copied: ${cmd}`),
-        () => toastInfo(`Run in terminal: ${cmd}`),
+        () => toastSuccess(successMsg),
+        () => toastInfo(fallbackMsg),
       );
     } else {
-      toastInfo(`Run in terminal: ${cmd}`);
+      toastInfo(fallbackMsg);
     }
   }, [unitName, toastSuccess, toastInfo]);
 

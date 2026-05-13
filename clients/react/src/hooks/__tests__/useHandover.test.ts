@@ -80,12 +80,13 @@ describe("useHandover — empty state", () => {
     expect(result.current.crossUnit.units).toEqual([]);
   });
 
-  it("always exposes the two Phase-C placeholders", () => {
+  it("always exposes the two not-yet-wired placeholders as plain signals", () => {
     const { result } = renderHook(() => useHandover(null));
+    // The placeholder shape is intentionally just `{ placeholder: true }`
+    // — the section components own the user-facing copy so the hook
+    // stays free of UI strings.
     expect(result.current.settledDecisions.placeholder).toBe(true);
-    expect(result.current.settledDecisions.reason).toMatch(/Phase C/);
     expect(result.current.workingWithHuman.placeholder).toBe(true);
-    expect(result.current.workingWithHuman.reason).toMatch(/Phase C/);
   });
 });
 

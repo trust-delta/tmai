@@ -32,14 +32,8 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
       attentionAgents: [],
     },
     crossUnit: overrides.crossUnit ?? { units: [] },
-    settledDecisions: overrides.settledDecisions ?? {
-      placeholder: true,
-      reason: "PLACEHOLDER_DECISIONS_REASON",
-    },
-    workingWithHuman: overrides.workingWithHuman ?? {
-      placeholder: true,
-      reason: "PLACEHOLDER_HUMAN_REASON",
-    },
+    settledDecisions: overrides.settledDecisions ?? { placeholder: true },
+    workingWithHuman: overrides.workingWithHuman ?? { placeholder: true },
   };
 }
 
@@ -73,7 +67,7 @@ describe("ProducerConsole", () => {
 
     render(<ProducerConsole {...makeProps()} />);
 
-    expect(screen.getByRole("heading", { name: /Producer console/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Welcome to tmai/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Where you left off/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Cross-unit status/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Settled decisions/ })).toBeTruthy();
@@ -123,13 +117,17 @@ describe("ProducerConsole", () => {
     expect(screen.getByText("main")).toBeTruthy();
   });
 
-  it("surfaces the explicit Phase-C placeholder reason in both placeholder sections", () => {
+  it("renders the user-facing copy in the not-yet-wired sections", () => {
     useHandoverMock.mockReturnValue(digest());
 
     render(<ProducerConsole {...makeProps()} />);
 
-    expect(screen.getByText("PLACEHOLDER_DECISIONS_REASON")).toBeTruthy();
-    expect(screen.getByText("PLACEHOLDER_HUMAN_REASON")).toBeTruthy();
+    // Section components own these strings (not the hook); they should
+    // point the operator at the repo-side fallbacks rather than leak
+    // phase-tracking jargon ("Phase C: ... not yet wired") which read
+    // as broken on first contact.
+    expect(screen.getByText(/doc\/decisions/)).toBeTruthy();
+    expect(screen.getByText(/CLAUDE\.md/)).toBeTruthy();
   });
 
   it("renders cross-unit rows and routes click to onSelectProjectByPath", () => {

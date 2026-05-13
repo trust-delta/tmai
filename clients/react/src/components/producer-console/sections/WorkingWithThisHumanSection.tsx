@@ -3,8 +3,10 @@
 // The Producer's `compose()` baseline builder emits a "working-norms
 // delta" — process rules that diverge from the baseline `CLAUDE.md`,
 // computed at session-start. The read endpoint is not yet wired, so
-// this section displays an explicit placeholder pointing at the
-// baseline `CLAUDE.md` as the fallback.
+// this section displays a user-readable pointer at the baseline
+// `CLAUDE.md` for the time being. (Earlier drafts surfaced phase-
+// tracking text into this UI which made the section read as broken;
+// this revision speaks to the operator directly instead.)
 
 import type { WorkingWithHumanPlaceholder } from "@/hooks/useHandover";
 
@@ -12,22 +14,26 @@ interface WorkingWithThisHumanSectionProps {
   data: WorkingWithHumanPlaceholder;
 }
 
-export function WorkingWithThisHumanSection({ data }: WorkingWithThisHumanSectionProps) {
+export function WorkingWithThisHumanSection({ data: _data }: WorkingWithThisHumanSectionProps) {
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
         <span className="text-base text-cyan-400">◐</span>
         <h3 className="text-sm font-semibold text-zinc-200">Working with this human</h3>
         <span className="rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400">
-          phase C
+          not automated yet
         </span>
       </header>
 
-      <div className="pl-6">
-        <p className="text-xs text-zinc-500">{data.reason}</p>
-        <p className="mt-2 text-xs text-zinc-600">
-          Once wired, this section will list deltas from the baseline norms (language preference,
-          review rituals, branch conventions, etc.) computed by the Producer's hand-over composer.
+      <div className="pl-6 text-xs text-zinc-500">
+        <p>
+          See your repo's <code className="text-zinc-300">CLAUDE.md</code> for the baseline norms
+          (language, review rituals, branch conventions, …) — the Producer reads it on
+          session-start.
+        </p>
+        <p className="mt-2 text-zinc-600">
+          When wired, this section will surface deltas from the baseline computed by the Producer's
+          hand-over composer.
         </p>
       </div>
     </section>

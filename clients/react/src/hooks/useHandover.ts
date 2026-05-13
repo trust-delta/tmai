@@ -84,14 +84,17 @@ export interface CrossUnitStatus {
   units: UnitStatus[];
 }
 
+// Placeholder shapes are intentionally tiny — the section components
+// hard-code the user-facing copy so the hook stays free of UI strings.
+// (Earlier drafts inlined a `reason` field with "Phase C: <endpoint>
+// not yet wired" technical text, which leaked through to the user UI
+// and read as broken. Lesson: keep technical reasons out of UI hooks.)
 export interface SettledDecisionsPlaceholder {
   placeholder: true;
-  reason: string;
 }
 
 export interface WorkingWithHumanPlaceholder {
   placeholder: true;
-  reason: string;
 }
 
 export interface HandoverDigest {
@@ -174,22 +177,12 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     [projectGroups],
   );
 
-  // Plain object — does not need `useMemo`; the section component
-  // does not depend on identity stability.
-  const settledDecisions: SettledDecisionsPlaceholder = {
-    placeholder: true,
-    reason:
-      "Phase C: `GET /api/units/{unit}/decisions` is not yet wired. " +
-      "Decision records live in this repo under `doc/decisions/`; " +
-      "for now, browse them directly from the file tree.",
-  };
-
-  const workingWithHuman: WorkingWithHumanPlaceholder = {
-    placeholder: true,
-    reason:
-      "Phase C: working-norms delta from the Producer's hand-over composer is not yet wired. " +
-      "Baseline norms live in this repo's `CLAUDE.md`.",
-  };
+  // Plain signal objects — the section components own the user-facing
+  // copy. Section identity is stable across renders since the literal
+  // is structurally identical, but we still allocate fresh objects to
+  // keep the type literal `true` exact.
+  const settledDecisions: SettledDecisionsPlaceholder = { placeholder: true };
+  const workingWithHuman: WorkingWithHumanPlaceholder = { placeholder: true };
 
   return { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman };
 }

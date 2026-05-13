@@ -74,10 +74,25 @@ export function ProducerConsole({
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
       <header className="border-b border-white/5 px-6 py-4">
-        <h2 className="text-lg font-semibold text-zinc-200">Producer console</h2>
-        <p className="text-xs text-zinc-500">
-          Hand-over digest. The Producer conversation itself lives on your terminal substrate (tmux
-          / wezTerm / native) — see the actions below to launch it.
+        <h2 className="text-lg font-semibold text-zinc-200">Welcome to tmai</h2>
+        <p className="mt-1 text-xs text-zinc-400">
+          tmai routes your work through a <strong className="text-cyan-300">Producer</strong> — one
+          CC session per project that reads your decisions / memory, briefs you on what needs
+          attention, and dispatches workers. You talk to the Producer, not to individual agents.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          <span className="text-zinc-400">Quick start:</span>{" "}
+          <strong className="text-zinc-300">①</strong> Read the digest below.{" "}
+          <strong className="text-zinc-300">②</strong> Click{" "}
+          <span className="text-cyan-300">Open Producer terminal</span> at the bottom — it copies
+          the launch command, paste it in your terminal (tmux / wezTerm / native).{" "}
+          <strong className="text-zinc-300">③</strong> The Producer reads your context and briefs
+          you on what to look at first.
+        </p>
+        <p className="mt-1.5 text-[11px] text-zinc-600">
+          Need direct agent control (legacy)?{" "}
+          <span className="text-zinc-500">Operator override</span> at the bottom · expandable
+          sidebar on the left.
         </p>
       </header>
 
