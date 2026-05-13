@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 interface StatusBarProps {
   agentCount: number;
   attentionCount: number;
@@ -5,6 +7,10 @@ interface StatusBarProps {
   onToggleCollapse?: () => void;
   onSettingsClick: () => void;
   onSecurityClick: () => void;
+  /** Optional pre-rendered indicator slot — currently used for the
+   *  calibration / tier-1 tripwire chip (DR §B.3/§B.4). Sits between
+   *  the attention count and the settings / security buttons. */
+  indicatorSlot?: ReactNode;
   /** Mobile: show hamburger button instead of collapse arrow */
   isMobile?: boolean;
   onMobileMenuClick?: () => void;
@@ -18,6 +24,7 @@ export function StatusBar({
   onToggleCollapse,
   onSettingsClick,
   onSecurityClick,
+  indicatorSlot,
   isMobile,
   onMobileMenuClick,
 }: StatusBarProps) {
@@ -143,6 +150,7 @@ export function StatusBar({
             {attentionCount}
           </span>
         )}
+        {indicatorSlot}
         <button
           type="button"
           onClick={onSecurityClick}

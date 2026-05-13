@@ -240,4 +240,8 @@ export const api = {
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
   getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),
+
+  // Calibration view (HTTP only — read-only window into the file-backed
+  // calibration store; no Tauri-specific path needed)
+  calibration: (unit: string, days?: number) => httpApi.calibration(unit, days),
 };

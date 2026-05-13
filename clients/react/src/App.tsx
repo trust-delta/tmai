@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
+import { CalibrationChip } from "@/components/calibration/CalibrationChip";
+import { CalibrationPanel } from "@/components/calibration/CalibrationPanel";
+import { TripwireBanner } from "@/components/calibration/TripwireBanner";
 import { type DisplayMode, DisplayModeSelector } from "@/components/layout/DisplayModeSelector";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
@@ -19,6 +22,7 @@ import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
+import { useCalibration } from "@/hooks/useCalibration";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
@@ -63,7 +67,9 @@ export function App() {
   // so they're mutually exclusive — opening one always closes the other.
   // The previous two-booleans-cleared-in-tandem pattern was equivalent but
   // more error-prone; this enum makes the constraint explicit.
-  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security">("agents");
+  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security" | "calibration">(
+    "agents",
+  );
   const [showHelp, setShowHelp] = useState(false);
   // Multi-pane layout choices live in the WebUI prefs store (browser-only,
   // not in tmai-core's config.toml — these describe how this WebUI shows
@@ -75,6 +81,7 @@ export function App() {
   const [splitRatioV, setSplitRatioV] = useUIPref("splitRatioV");
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
+  const showCalibration = mainPanel === "calibration";
   const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
   const toggleSettings = useCallback(
     () => setMainPanel((mp) => (mp === "settings" ? "agents" : "settings")),
@@ -84,6 +91,21 @@ export function App() {
     () => setMainPanel((mp) => (mp === "security" ? "agents" : "security")),
     [],
   );
+  const openCalibration = useCallback(() => setMainPanel("calibration"), []);
+
+  // Unit name for the calibration view. The wire endpoint (`GET
+  // /api/units/{unit}/calibration`) takes a unit *name* (a configured
+  // `[[unit]]` table key or a cwd-synthesized basename) — the WebUI does
+  // not know which `[[unit]]` tables the operator has configured, so we
+  // pass the basename of the currently-selected project path. The
+  // backend's `resolve_unit_or_cwd` falls back to the basename when no
+  // matching `[[unit]]` exists, which matches what the CLI does for the
+  // same input.
+  const unitName = useMemo(() => {
+    if (!currentProject) return null;
+    return currentProject.split("/").filter(Boolean).pop() ?? null;
+  }, [currentProject]);
+  const { data: calibrationData } = useCalibration(unitName);
 
   // Split-pane drag state — separate instances for horizontal vs vertical
   // so the user can drag each independently and resume where they left off
@@ -448,6 +470,7 @@ export function App() {
             onSecurityClick={() => {
               toggleSecurity();
             }}
+            indicatorSlot={<CalibrationChip data={calibrationData} onClick={openCalibration} />}
           />
           {!sidebarCollapsed && (
             <div className="flex flex-1 flex-col overflow-y-auto">{sidebarContent}</div>
@@ -500,7 +523,17 @@ export function App() {
           />
         )}
 
-        {showSecurity ? (
+        {/* DR §B.4: zero-tolerance tier-1 tripwire banner, hoisted
+            ABOVE every main-panel switch so an operator who never
+            opens the calibration panel still cannot miss it. Empty
+            violation list = silent (the component renders null). */}
+        <TripwireBanner data={calibrationData} onDetailsClick={openCalibration} />
+
+        {showCalibration && unitName ? (
+          <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
+            <CalibrationPanel unit={unitName} onClose={closeMainPanelOverlay} />
+          </div>
+        ) : showSecurity ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
             <SecurityPanel onClose={closeMainPanelOverlay} />
           </div>
