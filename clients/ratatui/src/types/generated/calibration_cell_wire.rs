@@ -9,9 +9,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkflowSnapshot {
-    pub notify_mode_summary: NotifyModeSummary,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub orchestrator_agent_id: Option<Value>,
-    pub orchestrator_notify_backlog: i32,
+pub struct CalibrationCellWire {
+    pub confidence: Confidence,
+    pub hits: i32,
+    pub misses: i32,
+    pub n: i32,
+    pub verdict: TriageVerdict,
 }

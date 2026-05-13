@@ -100,37 +100,6 @@
       ],
       "type": "string"
     },
-    "AutoActionEntry": {
-      "description": "Record of the most recently fired auto-action rule.",
-      "properties": {
-        "action": {
-          "description": "Human-readable description of the action taken.",
-          "type": "string"
-        },
-        "fired_at": {
-          "description": "When the auto-action was triggered.",
-          "format": "date-time",
-          "type": "string"
-        },
-        "target_agent_id": {
-          "description": "Agent that was the target of the action, if applicable.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "trigger": {
-          "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`).",
-          "type": "string"
-        }
-      },
-      "required": [
-        "fired_at",
-        "trigger",
-        "action"
-      ],
-      "type": "object"
-    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -146,6 +115,158 @@
         "cancelled"
       ],
       "type": "string"
+    },
+    "CalibrationCellWire": {
+      "description": "One row of the calibration table, flattened from the workbench's\n`BTreeMap<(verdict, confidence), Cell>` for JSON serialization.\n\nJSON cannot key on a tuple; the rendered shape is a list of objects so\nthe React client iterates without having to reconstruct the map shape.",
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "hits": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "misses": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verdict": {
+          "$ref": "#/$defs/TriageVerdict"
+        }
+      },
+      "required": [
+        "verdict",
+        "confidence",
+        "n",
+        "hits",
+        "misses"
+      ],
+      "type": "object"
+    },
+    "CalibrationEntry": {
+      "description": "One entry in the calibration store: a single triage decision plus its\nlater-observed objective outcome (or none yet).",
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "note_source": {
+          "description": "Source the verdict came from, e.g. a worker friction note filename\n(`20260513-1500-baz.md`) or a drift-audit item slug. Relative to the\nunit's feedback directory; opaque to this module.",
+          "type": "string"
+        },
+        "outcome": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Outcome",
+              "description": "Objective outcome, if one has been picked up since (stage 5).\nAbsent in fresh entries; serialized only when present."
+            }
+          ]
+        },
+        "rationale": {
+          "description": "One-line rationale from the Producer, for human review later.",
+          "type": "string"
+        },
+        "recorded_at": {
+          "description": "When the entry was appended.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "synthesis_pass_id": {
+          "description": "UUID of the synthesis pass that produced this verdict. String, not\n`uuid::Uuid`, so older entries with non-UUID ids stay parseable.",
+          "type": "string"
+        },
+        "tier_routed": {
+          "description": "Tier the verdict was routed to (`1` = human-gated tripwire, `2` =\nProducer may handle). Matches `DecisionFrontmatter::tier`.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verdict": {
+          "$ref": "#/$defs/TriageVerdict"
+        }
+      },
+      "required": [
+        "synthesis_pass_id",
+        "note_source",
+        "verdict",
+        "confidence",
+        "tier_routed",
+        "rationale",
+        "recorded_at"
+      ],
+      "type": "object"
+    },
+    "CalibrationResponse": {
+      "description": "`GET /api/units/{unit}/calibration` response — read-only projection of\nthe unit's calibration store.\n\n`bootstrap_threshold` mirrors `workbench::BOOTSTRAP_ENTRY_THRESHOLD` so\nthe client can show the \"lean toward asking the human\" caveat without\nre-encoding the constant. `tier1_violations` mirrors what the hand-over\ndigest's `⚡ TIER-1 TRIPWIRE TRIGGERED` callout surfaces (DR §B.4 zero\ntolerance) — so polling this endpoint is enough to drive a top-bar\ntripwire indicator in the WebUI without depending on hand-over compose\ntiming.",
+      "properties": {
+        "bootstrap_threshold": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/CalibrationCellWire"
+          },
+          "type": "array"
+        },
+        "days": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recent_false_negatives": {
+          "items": {
+            "$ref": "#/$defs/CalibrationEntry"
+          },
+          "type": "array"
+        },
+        "tier1_routed": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tier1_violations": {
+          "items": {
+            "$ref": "#/$defs/CalibrationEntry"
+          },
+          "type": "array"
+        },
+        "total_in_store": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_in_window": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "days",
+        "total_in_store",
+        "total_in_window",
+        "bootstrap_threshold",
+        "cells",
+        "tier1_routed",
+        "tier1_violations",
+        "recent_false_negatives"
+      ],
+      "type": "object"
     },
     "CapacityCauseSummary": {
       "description": "What caused a [`CoreEvent::CapacityChanged`] emission.\n\nSubscribers use this to attribute the capacity delta without needing\na separate query. `delta == 0` is valid (e.g. `LimitChanged` when a\nconfig reload moved the ceiling but no slots moved).",
@@ -250,6 +371,14 @@
         "remaining"
       ],
       "type": "object"
+    },
+    "Confidence": {
+      "description": "The Producer's own confidence in a triage verdict. Binary by DR §B.1 —\nwhen in doubt, [`Confidence::Low`].\n\n`Ord` is derived (lexicographic on the variant order: `High` < `Low`) so\nit can be a `BTreeMap` key for stable table rendering — order has no\nnumeric meaning. Same reasoning for [`TriageVerdict`] below.",
+      "enum": [
+        "high",
+        "low"
+      ],
+      "type": "string"
     },
     "DetectionSource": {
       "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
@@ -758,88 +887,6 @@
       ],
       "type": "string"
     },
-    "GuardrailBreach": {
-      "description": "An active guardrail limit breach.",
-      "properties": {
-        "branch": {
-          "description": "Branch associated with the breach, if known.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "count": {
-          "description": "Current count that exceeded the limit.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/GuardrailKind",
-          "description": "Which guardrail was exceeded."
-        },
-        "limit": {
-          "description": "Configured limit that was exceeded.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pr_number": {
-          "description": "PR number associated with the breach, if known.",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "kind",
-        "count",
-        "limit"
-      ],
-      "type": "object"
-    },
-    "GuardrailKind": {
-      "description": "The type of guardrail that was exceeded",
-      "enum": [
-        "ci_retries",
-        "review_loops",
-        "consecutive_failures"
-      ],
-      "type": "string"
-    },
-    "GuardrailStatus": {
-      "description": "Configured guardrail limits and currently active breaches.",
-      "properties": {
-        "active_breaches": {
-          "description": "Currently active guardrail breaches (empty when all limits are clear).",
-          "items": {
-            "$ref": "#/$defs/GuardrailBreach"
-          },
-          "type": "array"
-        },
-        "max_ci_retries": {
-          "description": "Configured max CI fix attempts per PR.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "max_review_loops": {
-          "description": "Configured max review→fix cycles per PR.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "max_ci_retries",
-        "max_review_loops",
-        "active_breaches"
-      ],
-      "type": "object"
-    },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
       "properties": {
@@ -860,7 +907,7 @@
       "type": "object"
     },
     "NotifyModeSummary": {
-      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"` or `\"notify\"`.",
       "properties": {
         "on_agent_stopped": {
           "description": "Handling mode for `AgentStopped` events.",
@@ -896,6 +943,86 @@
         "on_pr_closed"
       ],
       "type": "object"
+    },
+    "Outcome": {
+      "description": "An *objective* outcome observed after a triage verdict, used as ground\ntruth for calibration. Per DR §B.2: the human's accept/reject is **not**\nhere — only failure signals the world produces independently.\n\nThe data is structurally complete in stage 1; the *detection* (scanning\ngit log / PR history to populate these) lands in stage 5.",
+      "oneOf": [
+        {
+          "description": "A `Revert \"<title>\"` commit later touched a path this verdict bore on\n— the absorbed change was wrong. Strongest false-negative signal.",
+          "properties": {
+            "commit_sha": {
+              "type": "string"
+            },
+            "date": {
+              "format": "date",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "revert_commit"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit_sha",
+            "date",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A `fix:` commit shortly after touched a path this verdict bore on —\nthe absorbed change introduced a defect. Weaker signal (fixes happen\nfor many reasons), but still informative in aggregate.",
+          "properties": {
+            "commit_sha": {
+              "type": "string"
+            },
+            "date": {
+              "format": "date",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "hotfix_commit"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit_sha",
+            "date",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "CI failed on a PR shortly after, and a follow-up PR fixed it — the\nabsorbed change broke the build.",
+          "properties": {
+            "failing_pr": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fix_pr": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "ci_fail_fix"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "failing_pr",
+            "fix_pr",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "PermissionMode": {
       "description": "Permission mode reported by Claude Code in hook payloads.\n\nMaps to the session's current permission level (e.g., \"default\", \"plan\",\n\"dontAsk\", \"acceptEdits\").",
@@ -1086,75 +1213,6 @@
       "required": [
         "capacity",
         "vendors"
-      ],
-      "type": "object"
-    },
-    "ScheduledSpawn": {
-      "description": "One entry of the top-level `[[scheduled]]` config table — a cron-driven\ndispatch declaration (#20).\n\nEach entry independently spawns (or kicks) one of the four roles on the\nconfigured cron cadence. Resolution rules:\n\n- `role = \"orchestrator\" | \"implementer\" | \"reviewer\"` inherits\n  `[orchestration.orchestrator]` / `[orchestration.dispatch.<role>]`\n  defaults. Per-entry `vendor` / `model` / `effort` override the bundle\n  field-by-field; `permission_mode` is **not** an override on these roles\n  by design (matches the dispatch surface).\n- `role = \"manual\"` does **not** inherit any orchestration bundle. The\n  entry must carry its own `vendor` (required) and may set `model` /\n  `effort` / `permission_mode` directly. This is the role-less escape\n  hatch for \"spawn an AI worker on a schedule that isn't part of the\n  orchestrator/dispatch pipeline\".\n\nThe scheduler service (#20 PR2) consumes this struct; PR1 only lands the\ntype + parsing + validation.",
-      "properties": {
-        "cron": {
-          "description": "Cron expression (5-field standard form, `m h dom mon dow`). Parsing\nis deferred to the scheduler service in PR2; PR1 only checks the\nstring is non-empty.",
-          "type": "string"
-        },
-        "cwd": {
-          "description": "Working directory for the dispatched agent. Must be absolute.",
-          "type": "string"
-        },
-        "effort": {
-          "description": "Effort override (`low` / `medium` / `high` / `xhigh` / `max`).\nOnly honoured by Claude.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "description": "Model override. Falls back to the bundle's `model` for bundled roles;\nfor `Manual` falls back to the vendor CLI's user-global default.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "description": "Stable identifier for this entry. Used to track per-entry\nlast-dispatch state and surface in logs / wire payloads. Must be\nnon-empty and unique across all `[[scheduled]]` entries.",
-          "type": "string"
-        },
-        "permission_mode": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/PermissionMode",
-              "description": "Permission mode override. Only honoured for `role = Manual` (the\nother roles inherit from their bundle and disallow per-call pm\noverride by design — see `Settings::resolve_dispatch`)."
-            }
-          ]
-        },
-        "prompt": {
-          "description": "Prompt seeded into the spawned agent (or the kick prompt for the\norchestrator role).",
-          "type": "string"
-        },
-        "role": {
-          "$ref": "#/$defs/SpawnRole",
-          "description": "Which role to spawn. `Manual` does not inherit any bundle."
-        },
-        "vendor": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/Vendor",
-              "description": "Vendor override. Required when `role = Manual`; optional override\nfor the bundled roles."
-            }
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "cron",
-        "cwd",
-        "prompt",
-        "role"
       ],
       "type": "object"
     },
@@ -1534,6 +1592,15 @@
       ],
       "type": "object"
     },
+    "TriageVerdict": {
+      "description": "How a synthesis-pass triage routed a single input (worker friction note,\ndrift-audit verdict, etc.). Matches DR §B.1's three-way routing.",
+      "enum": [
+        "absorb",
+        "escalate",
+        "tradeoff_proposal"
+      ],
+      "type": "string"
+    },
     "Vendor": {
       "description": "Vendor CLI identifier for dispatched agents.",
       "enum": [
@@ -1638,29 +1705,8 @@
       "type": "object"
     },
     "WorkflowSnapshot": {
-      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (e.g. NotifySettings).\nInternal layer names must not appear in this type or its nested types.",
       "properties": {
-        "auto_action_fired_last_hour": {
-          "description": "Number of auto-actions that fired in the last hour.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "auto_action_last_fired": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/AutoActionEntry",
-              "description": "Most recent auto-action that fired, if any."
-            }
-          ]
-        },
-        "guardrail_status": {
-          "$ref": "#/$defs/GuardrailStatus",
-          "description": "Configured guardrail limits and active breaches."
-        },
         "notify_mode_summary": {
           "$ref": "#/$defs/NotifyModeSummary",
           "description": "Per-event notification handling modes."
@@ -1681,9 +1727,7 @@
       },
       "required": [
         "notify_mode_summary",
-        "orchestrator_notify_backlog",
-        "auto_action_fired_last_hour",
-        "guardrail_status"
+        "orchestrator_notify_backlog"
       ],
       "type": "object"
     },
@@ -2487,54 +2531,6 @@
       "type": "object"
     },
     {
-      "description": "A guardrail limit was exceeded (CI retries, review loops, or consecutive failures)",
-      "properties": {
-        "branch": {
-          "description": "Associated branch",
-          "type": "string"
-        },
-        "count": {
-          "description": "Current count that exceeded the limit",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "guardrail": {
-          "$ref": "#/$defs/GuardrailKind",
-          "description": "The type of guardrail that was exceeded"
-        },
-        "limit": {
-          "description": "The configured limit",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pr_number": {
-          "description": "Associated PR number (if any)",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "type": {
-          "enum": [
-            "GuardrailExceeded"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "guardrail",
-        "branch",
-        "count",
-        "limit",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
       "description": "An agent's tmux target changed due to pane renumbering (PID-based reconciliation)",
       "properties": {
         "new_target": {
@@ -2960,7 +2956,7 @@
       "type": "object"
     },
     {
-      "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\n`GuardrailExceeded`, or `ContextCompacting` mutate the runtime view.",
+      "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\nor `ContextCompacting` mutate the runtime view.",
       "properties": {
         "origin": {
           "oneOf": [

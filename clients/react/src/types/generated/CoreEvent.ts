@@ -5,7 +5,6 @@ import type { DetectionSource } from "./DetectionSource";
 import type { DispatchIntentSummary } from "./DispatchIntentSummary";
 import type { EntityChange } from "./EntityChange";
 import type { ErrorCode } from "./ErrorCode";
-import type { GuardrailKind } from "./GuardrailKind";
 import type { TmaiError } from "./TmaiError";
 import type { VendorAvailabilityState } from "./VendorAvailabilityState";
 
@@ -268,27 +267,7 @@ waited_secs: bigint, } | { "type": "GitStateChanged",
 /**
  * Repository directory path
  */
-repo: string, } | { "type": "GuardrailExceeded", 
-/**
- * The type of guardrail that was exceeded
- */
-guardrail: GuardrailKind, 
-/**
- * Associated branch
- */
-branch: string, 
-/**
- * Associated PR number (if any)
- */
-pr_number: bigint | null, 
-/**
- * Current count that exceeded the limit
- */
-count: bigint, 
-/**
- * The configured limit
- */
-limit: bigint, } | { "type": "AgentTargetChanged", 
+repo: string, } | { "type": "AgentTargetChanged", 
 /**
  * Previous target ID (e.g., "main:0.2")
  */
