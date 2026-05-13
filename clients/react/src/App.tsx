@@ -167,9 +167,24 @@ export function App() {
         return;
       }
       try {
+        // tmai-core's `/api/spawn` only allows a tight set of commands
+        // (`claude / codex / gemini / bash / sh / zsh`) — see
+        // `tmai-core/src/server/spawn.rs`. `tmai` itself isn't on the
+        // allow-list, so we wrap the launch in a `bash -c "exec …"`.
+        //
+        // The unit name flows through `$0` so shell metacharacters in
+        // the basename (a real concern: it's a user-picked directory)
+        // can't break out of the argument. `exec` collapses the bash
+        // wrapper into the tmai process; `tmai producer` itself execs
+        // into the Claude session — net result is a clean PTY with no
+        // bash / tmai shim left on the process tree.
+        //
+        // The right long-term fix is a Producer-specific spawn
+        // endpoint (or extending the allow-list) on the tmai-core
+        // side; tracked as Phase C / D work.
         const res = await api.spawnPty({
-          command: "tmai",
-          args: ["producer", derivedUnit],
+          command: "bash",
+          args: ["-c", 'exec tmai producer "$0"', derivedUnit],
           cwd: path,
         });
         setSelection({ type: "agent", id: res.session_id });
