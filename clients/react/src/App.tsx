@@ -83,11 +83,28 @@ export function App() {
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
+  // Phase B of the Producer-console rebuild
+  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
+  // routes orchestrator-era controls behind a `<details>` section
+  // inside SettingsPanel. The flag below distinguishes:
+  //
+  // - regular Settings entry (StatusBar button / Ctrl+,) → Advanced
+  //   stays collapsed; the Producer-relevant sections are what you
+  //   see first.
+  // - "Open Settings" deep-link from `ProducerConsoleActions`'
+  //   Operator override panel → Advanced opens by default; the
+  //   operator deliberately asked to bypass the Producer, so we
+  //   land them on the orchestrator-era controls directly.
+  const [settingsOpenedFromOverride, setSettingsOpenedFromOverride] = useState(false);
   const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
-  const toggleSettings = useCallback(
-    () => setMainPanel((mp) => (mp === "settings" ? "agents" : "settings")),
-    [],
-  );
+  const toggleSettings = useCallback(() => {
+    setSettingsOpenedFromOverride(false);
+    setMainPanel((mp) => (mp === "settings" ? "agents" : "settings"));
+  }, []);
+  const openSettingsFromOverride = useCallback(() => {
+    setSettingsOpenedFromOverride(true);
+    setMainPanel("settings");
+  }, []);
   const toggleSecurity = useCallback(
     () => setMainPanel((mp) => (mp === "security" ? "agents" : "security")),
     [],
@@ -567,7 +584,10 @@ export function App() {
           </div>
         ) : showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SettingsPanel onClose={closeMainPanelOverlay} />
+            <SettingsPanel
+              onClose={closeMainPanelOverlay}
+              defaultOpenAdvanced={settingsOpenedFromOverride}
+            />
           </div>
         ) : selection?.type === "project" ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
@@ -703,7 +723,7 @@ export function App() {
                 onOverrideSpawned={handleSpawned}
                 onOpenSidebar={toggleSidebar}
                 sidebarCollapsed={sidebarCollapsed}
-                onOpenSettings={toggleSettings}
+                onOpenSettings={openSettingsFromOverride}
               />
             )}
           </div>
