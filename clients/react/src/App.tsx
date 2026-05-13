@@ -138,31 +138,57 @@ export function App() {
   // `localhost` qualifies, so it works in dev. When the API isn't
   // available (or rejects) we still surface the command in a toast
   // so the operator can copy it by hand — no silent failure.
-  const openProducerTerminal = useCallback(async () => {
-    if (!unitName) return;
-    // `tmai producer <unit>` is implemented as an `exec`-style command
-    // (`tmai-core/src/producer_cli.rs::launch_producer`) — the tmai
-    // subprocess composes the hand-over, then replaces itself with a
-    // Claude session seeded with that hand-over as the initial prompt.
-    // From the PTY-server's perspective this is just a normal spawn,
-    // so we treat it as one: `spawnPty` returns a session id, we point
-    // selection at it, and the PreviewPanel shows the Producer session
-    // immediately. No clipboard / external-terminal round-trip.
-    try {
-      const res = await api.spawnPty({
-        command: "tmai",
-        args: ["producer", unitName],
-        cwd: currentProject ?? undefined,
-      });
-      setSelection({ type: "agent", id: res.session_id });
-      closeMainPanelOverlay();
-      refresh();
-      toastSuccess(`Producer launched for ${unitName}`);
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      toastInfo(`Failed to launch Producer: ${reason}`);
-    }
-  }, [unitName, currentProject, closeMainPanelOverlay, refresh, toastSuccess, toastInfo]);
+  // `tmai producer <unit>` is implemented as an `exec`-style command
+  // (`tmai-core/src/producer_cli.rs::launch_producer`) — the tmai
+  // subprocess composes the hand-over, then replaces itself with a
+  // Claude session seeded with that hand-over as the initial prompt.
+  // From the PTY-server's perspective this is a normal spawn, so we
+  // treat it as one.
+  //
+  // Caveat that bit on first dogfood: the WebUI derives `unitName`
+  // from the *currently-selected* project, which itself comes from
+  // *currently-running* agents. On a clean start with no agents,
+  // there's no project, so no unit — the Producer launch button used
+  // to disable itself there (chicken-and-egg). We now split the path:
+  //
+  //   - `launchProducerAt(path)` is the actual spawn — takes a repo
+  //     root path explicitly, derives the unit name from its basename,
+  //     and `setCurrentProject`s it so the next click skips the dir
+  //     picker.
+  //   - `openProducerTerminal` is the "hot path" callable when
+  //     `currentProject` is already set; it delegates to the above.
+  //     When nothing is set, ProducerConsoleActions opens a DirBrowser
+  //     instead and calls `launchProducerAt` with the picked path.
+  const launchProducerAt = useCallback(
+    async (path: string) => {
+      const derivedUnit = path.split("/").filter(Boolean).pop();
+      if (!derivedUnit) {
+        toastInfo("Could not derive a unit name from the chosen path.");
+        return;
+      }
+      try {
+        const res = await api.spawnPty({
+          command: "tmai",
+          args: ["producer", derivedUnit],
+          cwd: path,
+        });
+        setSelection({ type: "agent", id: res.session_id });
+        setCurrentProject(path);
+        closeMainPanelOverlay();
+        refresh();
+        toastSuccess(`Producer launched for ${derivedUnit}`);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        toastInfo(`Failed to launch Producer: ${reason}`);
+      }
+    },
+    [closeMainPanelOverlay, refresh, toastSuccess, toastInfo],
+  );
+
+  const openProducerTerminal = useCallback(() => {
+    if (!currentProject) return; // ProducerConsoleActions opens DirBrowser in this case
+    void launchProducerAt(currentProject);
+  }, [currentProject, launchProducerAt]);
 
   // Split-pane drag state — separate instances for horizontal vs vertical
   // so the user can drag each independently and resume where they left off
@@ -732,6 +758,7 @@ export function App() {
                 onOpenProducerTerminal={openProducerTerminal}
                 onOpenCalibration={openCalibration}
                 onSelectProjectByPath={handleSelectProject}
+                onLaunchProducerAt={launchProducerAt}
                 onOverrideSpawned={handleSpawned}
                 onOpenSidebar={toggleSidebar}
                 sidebarCollapsed={sidebarCollapsed}

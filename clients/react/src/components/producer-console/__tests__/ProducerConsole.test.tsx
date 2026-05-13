@@ -47,6 +47,7 @@ function makeProps(
     unitName: null,
     calibrationData: null,
     onOpenProducerTerminal: vi.fn(),
+    onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),
     onSelectProjectByPath: vi.fn(),
     onOverrideSpawned: vi.fn(),

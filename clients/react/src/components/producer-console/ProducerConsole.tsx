@@ -43,6 +43,11 @@ interface ProducerConsoleProps {
    *  reused here for the footer's calibration-jump badge. */
   calibrationData: CalibrationResponse | null;
   onOpenProducerTerminal: () => void;
+  /** Phase B polish v3: invoked from the DirBrowser path when the
+   *  operator hasn't selected a project yet. `path` is a repo root;
+   *  App.tsx derives the unit name from its basename and spawns
+   *  `tmai producer` there. */
+  onLaunchProducerAt: (path: string) => void;
   onOpenCalibration: () => void;
   /** Click handler for the cross-unit list — wired to App.tsx's
    *  `handleSelectProject` so unit selection here matches sidebar
@@ -65,6 +70,7 @@ export function ProducerConsole({
   unitName,
   calibrationData,
   onOpenProducerTerminal,
+  onLaunchProducerAt,
   onOpenCalibration,
   onSelectProjectByPath,
   onOverrideSpawned,
@@ -115,6 +121,7 @@ export function ProducerConsole({
         unitName={unitName}
         calibrationData={calibrationData}
         onOpenProducerTerminal={onOpenProducerTerminal}
+        onLaunchProducerAt={onLaunchProducerAt}
         onOpenCalibration={onOpenCalibration}
         onOverrideSpawned={onOverrideSpawned}
         onOpenSidebar={onOpenSidebar}

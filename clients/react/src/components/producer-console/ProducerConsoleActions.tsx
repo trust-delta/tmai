@@ -2,51 +2,51 @@
 //
 // Three affordances, left-to-right:
 //
-// 1. **Open Producer terminal ▸** — clipboard copy of
-//    `tmai producer <unit>` (Phase A fallback). Decision
-//    `doc/decisions/2026-05-14-react-producer-console-rebuild.md` §
-//    "Producer chat" defers an in-WebUI launch endpoint to Phase D —
-//    the substrate swap is explicitly rejected per cross-ref
-//    `tmai-core@2026-05-13-agent-view-does-not-replace-multiplexer-
-//    substrate`, so the WebUI's role here is to make the command
-//    trivially copy-pasteable, nothing more.
+// 1. **Open Producer terminal ▸** — spawns `tmai producer <unit>` via
+//    `api.spawnPty` (`tmai-core/src/producer_cli.rs::launch_producer`
+//    exec-style replaces tmai with a seeded Claude session). The
+//    button is **always enabled**:
+//    - If `unitName` is already resolved (operator has a focused
+//      project), it delegates to `onOpenProducerTerminal`, which
+//      spawns immediately.
+//    - If not (first launch / no live agents), it opens an inline
+//      DirBrowser so the operator can pick a repo root. The picked
+//      path is forwarded to `onLaunchProducerAt`, which derives the
+//      unit name from its basename and spawns there — App.tsx also
+//      sets `currentProject` so the next click skips the picker.
+//    First-dogfood blocker: the button used to disable itself when
+//    `unitName === null`, but `unitName` derives from the *active
+//    agents*' projects — chicken-and-egg on a clean start. This
+//    revision unblocks it.
 //
 // 2. **Calibration ▸** — jumps into the existing `<CalibrationPanel>`
-//    full-screen view (PR #671). Disabled when no unit is resolvable
-//    (`unitName === null`) so the user doesn't open a panel that
-//    can't fetch anything.
+//    (PR #671). Disabled when `unitName === null` because the
+//    calibration endpoint needs an explicit unit.
 //
-// 3. **Operator override ▾** — expandable. Phase B (this revision):
-//    real surface for the post-inversion "bypass the Producer"
-//    escape hatch. Hosts the legacy spawn path (NewAgentLauncher),
-//    a sidebar-expand affordance when the sidebar is collapsed
-//    (default per `useResponsiveLayout`), and a deep-link into the
-//    Settings page where orchestration / dispatch-bundle config
-//    lives. Per `feedback_pty_emergency_terminal_access` we keep
-//    the override path — we just route it off the main flow.
+// 3. **Operator override ▾** — expandable panel hosting the legacy
+//    spawn path (`NewAgentLauncher`), a Show-sidebar affordance when
+//    the sidebar is collapsed, and an Open-Settings deep-link into
+//    the Advanced section. Per `feedback_pty_emergency_terminal_
+//    access` we keep this path — just route it off the main flow.
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { DirBrowser } from "@/components/project/DirBrowser";
 import { NewAgentLauncher } from "@/components/project/NewAgentLauncher";
-import type { CalibrationResponse } from "@/lib/api";
+import { api, type CalibrationResponse } from "@/lib/api";
 
 interface ProducerConsoleActionsProps {
   unitName: string | null;
   calibrationData: CalibrationResponse | null;
+  /** Spawn the Producer using the already-selected project. */
   onOpenProducerTerminal: () => void;
+  /** Spawn the Producer at an explicit repo root — used after the
+   *  DirBrowser picks a path. */
+  onLaunchProducerAt: (path: string) => void;
   onOpenCalibration: () => void;
-  /** Spawn callback for the operator-override NewAgentLauncher. Wired
-   *  to App.tsx's `handleSpawned` so legacy spawns from inside the
-   *  console still propagate selection + toast + cache refresh. */
+  /** Spawn callback for the operator-override NewAgentLauncher. */
   onOverrideSpawned: (sessionId: string) => void;
-  /** Re-expand the sidebar when the operator wants to see the raw
-   *  AgentList. The button is only shown when the sidebar is
-   *  currently collapsed. */
   onOpenSidebar: () => void;
   sidebarCollapsed: boolean;
-  /** Open Settings (where orchestration / dispatch-bundle editors
-   *  still live). The override panel deep-links there as the
-   *  Phase-B compromise until Settings tabs themselves are
-   *  reorganized in a follow-up. */
   onOpenSettings: () => void;
 }
 
@@ -54,6 +54,7 @@ export function ProducerConsoleActions({
   unitName,
   calibrationData,
   onOpenProducerTerminal,
+  onLaunchProducerAt,
   onOpenCalibration,
   onOverrideSpawned,
   onOpenSidebar,
@@ -61,20 +62,55 @@ export function ProducerConsoleActions({
   onOpenSettings,
 }: ProducerConsoleActionsProps) {
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
   const tripwireCount = calibrationData?.tier1_violations.length ?? 0;
   const calCount = calibrationData?.total_in_window ?? 0;
+
+  // Same pattern as NewAgentLauncher: pull `[general] default_project_
+  // root` lazily on open so an edit in GeneralSection flips the picker
+  // on the next launch without a reload. Read-only here, so a transient
+  // fetch failure just leaves `defaultRoot = null` and DirBrowser falls
+  // back to `~`.
+  const refreshDefaultRoot = useCallback(async () => {
+    try {
+      const g = await api.getGeneralSettings();
+      setDefaultRoot(g.default_project_root);
+    } catch {
+      // intentional no-op — see comment above.
+    }
+  }, []);
+  useEffect(() => {
+    void refreshDefaultRoot();
+  }, [refreshDefaultRoot]);
+
+  const handleProducerClick = useCallback(() => {
+    if (unitName !== null) {
+      onOpenProducerTerminal();
+      return;
+    }
+    void refreshDefaultRoot();
+    setBrowsing(true);
+  }, [unitName, onOpenProducerTerminal, refreshDefaultRoot]);
+
+  const handlePickPath = useCallback(
+    (path: string) => {
+      setBrowsing(false);
+      onLaunchProducerAt(path);
+    },
+    [onLaunchProducerAt],
+  );
 
   return (
     <div className="border-t border-white/5">
       <div className="flex items-center gap-2 px-6 py-3">
         <button
           type="button"
-          onClick={onOpenProducerTerminal}
-          disabled={unitName === null}
-          className="rounded-md bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={handleProducerClick}
+          className="rounded-md bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300 transition-colors hover:bg-cyan-500/20"
           title={
             unitName === null
-              ? "No unit resolvable yet — select a project first"
+              ? "Pick a repo root and launch the Producer there"
               : `Launch the Producer for ${unitName} — tmai spawns it in-place and this pane switches to the conversation`
           }
         >
@@ -88,7 +124,7 @@ export function ProducerConsoleActions({
           className="rounded-md bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
           title={
             unitName === null
-              ? "No unit resolvable yet — select a project first"
+              ? "No unit resolvable yet — launch the Producer (or pick a project) first"
               : "Open the calibration drill-down"
           }
         >
@@ -155,6 +191,30 @@ export function ProducerConsoleActions({
             </button>
           </div>
         </div>
+      )}
+
+      {browsing && (
+        <DirBrowser
+          startPath={defaultRoot ?? undefined}
+          onCancel={() => setBrowsing(false)}
+          actionSlot={(currentPath) => (
+            <div className="flex w-full flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => handlePickPath(currentPath)}
+                disabled={!currentPath}
+                className="w-full rounded bg-cyan-500/10 px-3 py-1.5 text-center text-xs text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Launch Producer here ▸
+              </button>
+              <p className="text-[10px] text-zinc-600">
+                tmai will spawn{" "}
+                <code className="text-zinc-500">tmai producer &lt;basename&gt;</code> in this
+                directory.
+              </p>
+            </div>
+          )}
+        />
       )}
     </div>
   );

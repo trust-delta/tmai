@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 //
-// ProducerConsoleActions — clipboard copy, calibration jump, and
-// the operator-override expandable (Phase B). NewAgentLauncher is
-// mocked so we don't pull in api.getGeneralSettings during render.
+// ProducerConsoleActions — top row, operator-override expandable
+// (Phase B), and DirBrowser-backed Producer launch when unit is
+// unresolved (Phase B polish v3). NewAgentLauncher + DirBrowser
+// + `api.getGeneralSettings` are mocked so we don't pull live
+// network calls into render.
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
@@ -16,6 +18,29 @@ vi.mock("@/components/project/NewAgentLauncher", () => ({
   ),
 }));
 
+vi.mock("@/components/project/DirBrowser", () => ({
+  DirBrowser: (props: {
+    onCancel: () => void;
+    actionSlot?: (currentPath: string) => ReactNode;
+    startPath?: string | null;
+  }) => (
+    <div data-testid="mock-dirbrowser" data-start-path={props.startPath ?? ""}>
+      <button type="button" data-testid="mock-dirbrowser-cancel" onClick={props.onCancel}>
+        cancel
+      </button>
+      {props.actionSlot?.("/picked/path")}
+    </div>
+  ),
+}));
+
+vi.mock("@/lib/api", () => ({
+  api: {
+    getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
+  },
+}));
+
+import type { ComponentProps } from "react";
+
 function makeProps(
   overrides: Partial<ComponentProps<typeof ProducerConsoleActions>> = {},
 ): ComponentProps<typeof ProducerConsoleActions> {
@@ -23,6 +48,7 @@ function makeProps(
     unitName: "u",
     calibrationData: null,
     onOpenProducerTerminal: vi.fn(),
+    onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),
     onOverrideSpawned: vi.fn(),
     onOpenSidebar: vi.fn(),
@@ -51,25 +77,67 @@ describe("ProducerConsoleActions — top row", () => {
     vi.clearAllMocks();
   });
 
-  it("disables both real-action buttons when unitName is null", () => {
+  it("keeps Open-Producer-terminal enabled even when unitName is null", () => {
+    // Phase B polish v3 fix: when no project is selected yet, the
+    // button should still be clickable and route to the DirBrowser
+    // path (not disabled). Calibration stays disabled because it
+    // needs an explicit unit.
     render(<ProducerConsoleActions {...makeProps({ unitName: null })} />);
 
     const openTerm = screen.getByRole("button", { name: /Open Producer terminal/ });
     const openCal = screen.getByRole("button", { name: /Calibration/ });
-    expect(openTerm).toHaveProperty("disabled", true);
+    expect(openTerm).toHaveProperty("disabled", false);
     expect(openCal).toHaveProperty("disabled", true);
   });
 
-  it("invokes onOpenProducerTerminal when the terminal button is clicked", () => {
+  it("invokes onOpenProducerTerminal when unitName is resolved and the button is clicked", () => {
     const onOpenTerm = vi.fn();
+    const onLaunchAt = vi.fn();
     render(
       <ProducerConsoleActions
-        {...makeProps({ unitName: "my-unit", onOpenProducerTerminal: onOpenTerm })}
+        {...makeProps({
+          unitName: "my-unit",
+          onOpenProducerTerminal: onOpenTerm,
+          onLaunchProducerAt: onLaunchAt,
+        })}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Open Producer terminal/ }));
     expect(onOpenTerm).toHaveBeenCalledTimes(1);
+    expect(onLaunchAt).not.toHaveBeenCalled();
+    // No DirBrowser when we have a unit already.
+    expect(screen.queryByTestId("mock-dirbrowser")).toBeNull();
+  });
+
+  it("opens DirBrowser when unitName is null and the button is clicked", () => {
+    const onOpenTerm = vi.fn();
+    render(
+      <ProducerConsoleActions
+        {...makeProps({ unitName: null, onOpenProducerTerminal: onOpenTerm })}
+      />,
+    );
+
+    expect(screen.queryByTestId("mock-dirbrowser")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Open Producer terminal/ }));
+    expect(screen.getByTestId("mock-dirbrowser")).toBeTruthy();
+    // The hot-path callback should NOT have been fired — we routed to
+    // the picker instead.
+    expect(onOpenTerm).not.toHaveBeenCalled();
+  });
+
+  it("forwards the picked path to onLaunchProducerAt and closes the browser", () => {
+    const onLaunchAt = vi.fn();
+    render(
+      <ProducerConsoleActions {...makeProps({ unitName: null, onLaunchProducerAt: onLaunchAt })} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Open Producer terminal/ }));
+    // Mock DirBrowser renders the actionSlot with `"/picked/path"`.
+    fireEvent.click(screen.getByRole("button", { name: /Launch Producer here/ }));
+    expect(onLaunchAt).toHaveBeenCalledWith("/picked/path");
+    // Modal should close after the pick.
+    expect(screen.queryByTestId("mock-dirbrowser")).toBeNull();
   });
 
   it("invokes onOpenCalibration when the calibration button is clicked", () => {
