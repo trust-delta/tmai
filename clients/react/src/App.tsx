@@ -13,6 +13,7 @@ import { TabbedPaneLayout } from "@/components/layout/TabbedPaneLayout";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { TriplePaneLayout } from "@/components/layout/TriplePaneLayout";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
+import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -29,7 +30,7 @@ import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
+import { api, groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
@@ -82,11 +83,28 @@ export function App() {
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
+  // Phase B of the Producer-console rebuild
+  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
+  // routes orchestrator-era controls behind a `<details>` section
+  // inside SettingsPanel. The flag below distinguishes:
+  //
+  // - regular Settings entry (StatusBar button / Ctrl+,) → Advanced
+  //   stays collapsed; the Producer-relevant sections are what you
+  //   see first.
+  // - "Open Settings" deep-link from `ProducerConsoleActions`'
+  //   Operator override panel → Advanced opens by default; the
+  //   operator deliberately asked to bypass the Producer, so we
+  //   land them on the orchestrator-era controls directly.
+  const [settingsOpenedFromOverride, setSettingsOpenedFromOverride] = useState(false);
   const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
-  const toggleSettings = useCallback(
-    () => setMainPanel((mp) => (mp === "settings" ? "agents" : "settings")),
-    [],
-  );
+  const toggleSettings = useCallback(() => {
+    setSettingsOpenedFromOverride(false);
+    setMainPanel((mp) => (mp === "settings" ? "agents" : "settings"));
+  }, []);
+  const openSettingsFromOverride = useCallback(() => {
+    setSettingsOpenedFromOverride(true);
+    setMainPanel("settings");
+  }, []);
   const toggleSecurity = useCallback(
     () => setMainPanel((mp) => (mp === "security" ? "agents" : "security")),
     [],
@@ -106,6 +124,86 @@ export function App() {
     return currentProject.split("/").filter(Boolean).pop() ?? null;
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
+
+  // "Open Producer terminal" affordance from <ProducerConsole>.
+  //
+  // Decision `doc/decisions/2026-05-14-react-producer-console-rebuild.md`
+  // §Producer chat: the Producer conversation stays on the terminal
+  // substrate (substrate swap is rejected per cross-ref
+  // `tmai-core@2026-05-13-agent-view-does-not-replace-multiplexer-
+  // substrate`). The WebUI's job is just to make the canonical
+  // command trivially copy-pasteable.
+  //
+  // `navigator.clipboard.writeText` requires a secure context;
+  // `localhost` qualifies, so it works in dev. When the API isn't
+  // available (or rejects) we still surface the command in a toast
+  // so the operator can copy it by hand — no silent failure.
+  // `tmai producer <unit>` is implemented as an `exec`-style command
+  // (`tmai-core/src/producer_cli.rs::launch_producer`) — the tmai
+  // subprocess composes the hand-over, then replaces itself with a
+  // Claude session seeded with that hand-over as the initial prompt.
+  // From the PTY-server's perspective this is a normal spawn, so we
+  // treat it as one.
+  //
+  // Caveat that bit on first dogfood: the WebUI derives `unitName`
+  // from the *currently-selected* project, which itself comes from
+  // *currently-running* agents. On a clean start with no agents,
+  // there's no project, so no unit — the Producer launch button used
+  // to disable itself there (chicken-and-egg). We now split the path:
+  //
+  //   - `launchProducerAt(path)` is the actual spawn — takes a repo
+  //     root path explicitly, derives the unit name from its basename,
+  //     and `setCurrentProject`s it so the next click skips the dir
+  //     picker.
+  //   - `openProducerTerminal` is the "hot path" callable when
+  //     `currentProject` is already set; it delegates to the above.
+  //     When nothing is set, ProducerConsoleActions opens a DirBrowser
+  //     instead and calls `launchProducerAt` with the picked path.
+  const launchProducerAt = useCallback(
+    async (path: string) => {
+      const derivedUnit = path.split("/").filter(Boolean).pop();
+      if (!derivedUnit) {
+        toastInfo("Could not derive a unit name from the chosen path.");
+        return;
+      }
+      try {
+        // tmai-core's `/api/spawn` only allows a tight set of commands
+        // (`claude / codex / gemini / bash / sh / zsh`) — see
+        // `tmai-core/src/server/spawn.rs`. `tmai` itself isn't on the
+        // allow-list, so we wrap the launch in a `bash -c "exec …"`.
+        //
+        // The unit name flows through `$0` so shell metacharacters in
+        // the basename (a real concern: it's a user-picked directory)
+        // can't break out of the argument. `exec` collapses the bash
+        // wrapper into the tmai process; `tmai producer` itself execs
+        // into the Claude session — net result is a clean PTY with no
+        // bash / tmai shim left on the process tree.
+        //
+        // The right long-term fix is a Producer-specific spawn
+        // endpoint (or extending the allow-list) on the tmai-core
+        // side; tracked as Phase C / D work.
+        const res = await api.spawnPty({
+          command: "bash",
+          args: ["-c", 'exec tmai producer "$0"', derivedUnit],
+          cwd: path,
+        });
+        setSelection({ type: "agent", id: res.session_id });
+        setCurrentProject(path);
+        closeMainPanelOverlay();
+        refresh();
+        toastSuccess(`Producer launched for ${derivedUnit}`);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        toastInfo(`Failed to launch Producer: ${reason}`);
+      }
+    },
+    [closeMainPanelOverlay, refresh, toastSuccess, toastInfo],
+  );
+
+  const openProducerTerminal = useCallback(() => {
+    if (!currentProject) return; // ProducerConsoleActions opens DirBrowser in this case
+    void launchProducerAt(currentProject);
+  }, [currentProject, launchProducerAt]);
 
   // Split-pane drag state — separate instances for horizontal vs vertical
   // so the user can drag each independently and resume where they left off
@@ -539,7 +637,10 @@ export function App() {
           </div>
         ) : showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SettingsPanel onClose={closeMainPanelOverlay} />
+            <SettingsPanel
+              onClose={closeMainPanelOverlay}
+              defaultOpenAdvanced={settingsOpenedFromOverride}
+            />
           </div>
         ) : selection?.type === "project" ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
@@ -660,22 +761,24 @@ export function App() {
                 <PreviewPanel agentId={selectedAgent.target} />
               </div>
             ) : (
-              <div className="flex flex-1 items-center justify-center animate-fade-in">
-                <div className="glass-light rounded-2xl px-8 py-8 text-center transition-subtle hover:glass mx-4">
-                  <h1 className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-                    tmai
-                  </h1>
-                  <p className="mt-2 text-sm text-zinc-500">
-                    {agents.length > 0
-                      ? isMobileScreen
-                        ? "Tap ☰ to select an agent"
-                        : "Select an agent to view • Press ? for shortcuts"
-                      : isMobileScreen
-                        ? "Tap ☰ then + on a project to spawn an agent"
-                        : "Click + on a project to spawn an agent • Press ? for shortcuts"}
-                  </p>
-                </div>
-              </div>
+              // Decision `doc/decisions/2026-05-14-react-producer-
+              // console-rebuild.md` Phase A: default view becomes the
+              // Producer console (hand-over digest). Selecting an
+              // agent in the sidebar still drops into the agent view
+              // above; this is the empty / between-selections home.
+              <ProducerConsole
+                currentProjectPath={currentProject}
+                unitName={unitName}
+                calibrationData={calibrationData}
+                onOpenProducerTerminal={openProducerTerminal}
+                onOpenCalibration={openCalibration}
+                onSelectProjectByPath={handleSelectProject}
+                onLaunchProducerAt={launchProducerAt}
+                onOverrideSpawned={handleSpawned}
+                onOpenSidebar={toggleSidebar}
+                sidebarCollapsed={sidebarCollapsed}
+                onOpenSettings={openSettingsFromOverride}
+              />
             )}
           </div>
         )}

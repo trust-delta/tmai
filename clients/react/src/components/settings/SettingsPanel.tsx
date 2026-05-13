@@ -12,6 +12,15 @@ import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
+  /** Phase B of the Producer-console rebuild
+   *  (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
+   *  collapses orchestrator-era controls behind an Advanced section.
+   *  When the operator arrives here from `ProducerConsoleActions`'
+   *  Operator-override panel, we want Advanced open by default so
+   *  the deep-link lands on the controls the operator was after.
+   *  Otherwise default-closed: the post-inversion default is to
+   *  let the Producer route work. */
+  defaultOpenAdvanced?: boolean;
 }
 
 // Visual divider between "Core" (tmai-core config.toml) and "WebUI" (this
@@ -33,8 +42,13 @@ function GroupHeader({ label, description }: { label: string; description: strin
  * save tracker, and load. The shell only sources the project list — derived
  * from currently active agents — used by `OrchestrationSection`'s per-project
  * override scope selector.
+ *
+ * Phase B layout: Producer-relevant sections sit at the top of the Core
+ * group; orchestrator-era controls (spawn defaults, orchestration rules,
+ * dispatch bundles, workflow engine, worktree ops) fall behind a
+ * `<details>`-backed Advanced expandable. The WebUI group is unchanged.
  */
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: SettingsPanelProps) {
   const [agents, setAgents] = useState<AgentSnapshot[]>([]);
 
   // Pre-registered projects were retired in favour of deriving the scope
@@ -63,17 +77,41 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         <GroupHeader
-          label="tmai (core)"
-          description="Server-side settings persisted to ~/.config/tmai/config.toml. Shared across CLI, TUI, and WebUI."
+          label="Producer"
+          description="Settings the Producer and the human console both read. Stored in ~/.config/tmai/config.toml; shared across CLI, TUI, and WebUI."
         />
         <GeneralSection />
-        <SpawnSection />
-        <OrchestrationSection projects={projects} />
-        <OrchestrationDispatchSection />
-        <UsageSection />
         <NotificationSection />
-        <WorkflowSection />
-        <WorktreeSection />
+        <UsageSection />
+
+        {/* Advanced — Phase B: orchestrator-era controls live here, off
+            the main flow but reachable. `<details>` is native /
+            keyboard-accessible; `open={defaultOpenAdvanced}` makes
+            the override-deep-link land with the section already
+            expanded so the operator doesn't have to click twice. */}
+        <details
+          className="rounded-md border border-white/5 bg-white/[0.02]"
+          open={defaultOpenAdvanced}
+        >
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm text-zinc-300 hover:bg-white/[0.04]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
+              Advanced
+            </span>{" "}
+            — orchestrator-era controls
+            <p className="mt-1 text-xs font-normal normal-case tracking-normal text-zinc-500">
+              These bypass the Producer (manual spawn defaults, orchestration rules, dispatch
+              bundles, workflow engine, worktree ops). The post-inversion default is to let the
+              Producer route work — open this only when you need to override directly.
+            </p>
+          </summary>
+          <div className="space-y-6 border-t border-white/5 px-4 py-4">
+            <SpawnSection />
+            <OrchestrationSection projects={projects} />
+            <OrchestrationDispatchSection />
+            <WorkflowSection />
+            <WorktreeSection />
+          </div>
+        </details>
 
         <GroupHeader
           label="WebUI (this browser)"

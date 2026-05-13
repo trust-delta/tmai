@@ -1,0 +1,42 @@
+// ⬡ Settled decisions — third hand-over section (Phase A placeholder).
+//
+// The hand-over composer on the Producer side renders decisions
+// bucketed by temperature: 📌 Foundational / 🔴 In-play / 🟡 Warm /
+// ⚪ Cold. The wire endpoint (`GET /api/units/{unit}/decisions`) is
+// not yet wired, so this section displays a user-readable "not yet
+// automated" notice pointing at the repo's `doc/decisions/` for the
+// time being. Earlier drafts of this string leaked phase-tracking
+// jargon ("Phase C: `GET /api/units/...` is not yet wired") into the
+// user UI, which read as broken; this revision drops that and
+// addresses the operator directly.
+
+import type { SettledDecisionsPlaceholder } from "@/hooks/useHandover";
+
+interface SettledDecisionsSectionProps {
+  data: SettledDecisionsPlaceholder;
+}
+
+export function SettledDecisionsSection({ data: _data }: SettledDecisionsSectionProps) {
+  return (
+    <section>
+      <header className="mb-2 flex items-baseline gap-2">
+        <span className="text-base text-cyan-400">⬡</span>
+        <h3 className="text-sm font-semibold text-zinc-200">Settled decisions</h3>
+        <span className="rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-zinc-400">
+          not automated yet
+        </span>
+      </header>
+
+      <div className="pl-6 text-xs text-zinc-500">
+        <p>
+          Browse your repo's <code className="text-zinc-300">doc/decisions/</code> directly to see
+          settled decisions for now — the Producer reads them on session-start.
+        </p>
+        <p className="mt-2 text-zinc-600">
+          When wired, this section will surface them bucketed by temperature: 📌 foundational · 🔴
+          in-play · 🟡 warm · ⚪ cold.
+        </p>
+      </div>
+    </section>
+  );
+}
