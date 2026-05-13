@@ -30,10 +30,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
       updateWorkflowSettings: vi.fn(),
       getWorktreeSettings: vi.fn(),
       updateWorktreeSettings: vi.fn(),
-      // ScheduledSection (rendered as part of SettingsPanel) loads its own
-      // data on mount — stub the read so the section does not throw.
-      getScheduledSettings: vi.fn().mockResolvedValue({ entries: [] }),
-      updateScheduledSettings: vi.fn(),
     },
   };
 });
