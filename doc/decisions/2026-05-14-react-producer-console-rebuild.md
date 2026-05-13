@@ -17,6 +17,7 @@ contract-surface: false
 related:
   - "2026-04-21-monorepo-reconsolidation"
   - "2026-04-24-snapshot-contract"
+  - "2026-05-14-webui-simulated-onboarded-posture"
 ---
 
 # React WebUI を Producer console に再構築する（段階差し替え）
