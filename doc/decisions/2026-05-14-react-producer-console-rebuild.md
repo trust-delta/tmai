@@ -1,17 +1,28 @@
+---
+status: accepted
+category: scoped
+tier: 2
+governs:
+  - clients/react/
+cross-repo-refs:
+  - "tmai-core:doc/decisions/2026-05-11-orchestration-locus-inversion.md"
+  - "tmai-core:doc/decisions/2026-05-11-producer-only-operator-interface.md"
+  - "tmai-core:doc/decisions/2026-05-11-producer-conversation-workbench.md"
+  - "tmai-core:doc/decisions/2026-05-12-producer-layer-topology.md"
+  - "tmai-core:doc/decisions/2026-05-13-tmai-is-a-producer-exoskeleton.md"
+  - "tmai-core:doc/decisions/2026-05-13-agent-view-does-not-replace-multiplexer-substrate.md"
+  - "tmai-core:doc/decisions/2026-05-13-producer-feedback-loop-and-decision-tiers.md"
+last-verified: 2026-05-14
+contract-surface: false
+related:
+  - "2026-04-21-monorepo-reconsolidation"
+  - "2026-04-24-snapshot-contract"
+---
+
 # React WebUI を Producer console に再構築する（段階差し替え）
 
 **Date:** 2026-05-14
-**Status:** Proposed
 **Tier:** 2 (methodology — tier 付与は Producer↔人間 合意で確定)
-**Governs:** `clients/react/`
-**Cross-repo refs (tmai-core, private):**
-- `doc/decisions/2026-05-11-orchestration-locus-inversion.md`
-- `doc/decisions/2026-05-11-producer-only-operator-interface.md`
-- `doc/decisions/2026-05-11-producer-conversation-workbench.md`
-- `doc/decisions/2026-05-12-producer-layer-topology.md`
-- `doc/decisions/2026-05-13-tmai-is-a-producer-exoskeleton.md`
-- `doc/decisions/2026-05-13-agent-view-does-not-replace-multiplexer-substrate.md`
-- `doc/decisions/2026-05-13-producer-feedback-loop-and-decision-tiers.md`
 
 ## Context
 
@@ -78,7 +89,7 @@ PR #671 で「Producer console」の入口は既に立ち上がっている: `Ca
   - `⬢ Cross-unit status` → 既存 `GET /api/projects` + `[[unit]]` 設定から導出
   - `⬡ Settled decisions` → **Phase A は client-side placeholder**（wire が後追い）
   - `◐ Working with this human` → 同上 placeholder
-- `[Open Producer terminal ▸]` ボタン → v1 は clipboard copy fallback（`tmai producer <unit>` を clipboard へ）。専用 endpoint は Phase C で検討
+- `[Open Producer terminal ▸]` ボタン → v1 は clipboard copy fallback。専用 endpoint は Phase D で検討
 - AgentList は subsidiary に降格（折りたたみで残す、default 閉じる）
 
 **Phase B — Legacy demote**
@@ -97,6 +108,7 @@ PR #671 で「Producer console」の入口は既に立ち上がっている: `Ca
 - Cross-unit ナビゲーション ergonomics
 - 「Open Producer terminal」の実 launch 経路（clipboard fallback から専用 endpoint or MCP に移行検討）
 - Visual: tripwire severity ramp / decision temperature glyph / `▶⬢⬡◐` typography 整え
+- Idempotent Producer launch（既存 Producer に attach する tmai-core-side ensure endpoint）
 
 ## 非範囲（NOT 構築するもの）
 
@@ -107,14 +119,14 @@ PR #671 で「Producer console」の入口は既に立ち上がっている: `Ca
 
 ## 帰結 / Open questions
 
-- **Tier**: Tier 2 (methodology) で提案。Producer↔人間で確定（memory 慣行）
+- **Tier**: Tier 2 (methodology) で確定（2026-05-14 セッション、ユーザー承認済）
 - **`is_orchestrator` agent flag**: Phase B で WebUI 側は読まなくなる方向だが、wire 上の field は tmai-core 側で残る可能性あり。Phase C で要 cross-repo 議論
-- **「Open Producer terminal」launch 方式**: Phase A は clipboard fallback、Phase D で再評価
-- **Multi-unit (cross-unit) navigation の primary affordance**: top bar の unit picker vs sidebar の unit list、Phase A 実装中に decide
+- **「Open Producer terminal」launch 方式**: Phase A は clipboard fallback → Phase B polish v2 で `api.spawnPty` 経由の in-tmai launch に移行 → Phase B polish v4 で tmai-core spawn allow-list を回避するため `bash -c 'exec tmai producer "$0"' unit` で wrap。長期的には tmai-core 側で Producer 専用 endpoint or allow-list 拡張（Phase D）
+- **Multi-unit (cross-unit) navigation の primary affordance**: top bar の unit picker vs sidebar の unit list、Phase D で decide
 
 ## Implementation order (Phase A)
 
-Branch: `feat/react-producer-console`（既に切り出し済 2026-05-14）
+Branch: `feat/react-producer-console`（2026-05-14 切り出し、PR #672）
 
 1. `components/producer-console/` 新設、`ProducerConsole.tsx` + section sub-components
 2. `hooks/useHandover.ts` 新設（既存 wire 集約 + placeholder セクション）
@@ -123,3 +135,9 @@ Branch: `feat/react-producer-console`（既に切り出し済 2026-05-14）
 5. Test: ProducerConsole composition / 各 section の rendering / placeholder 切替
 6. Lint / typecheck / build (`pnpm` 系) を pass
 7. PR を `fix/...` ではなく `feat/...` で出す（CLAUDE.md の慣行）。本 DR を PR description で参照
+
+## Update history
+
+- 2026-05-14 (initial): Proposed, Markdown-bold frontmatter
+- 2026-05-14 (PR #672 progress): Phase A + Phase B legacy demote + Phase B Settings reorg + Phase B onboarding polish + Phase B polish v2 (in-tmai spawn) + Phase B polish v3 (DirBrowser flow) + Phase B polish v4 (bash wrap)
+- 2026-05-14 (this revision): frontmatter migrated from Markdown-bold to YAML — `tmai-core/workbench/decision.rs::parse` requires a real YAML frontmatter block delimited by `---` lines (the post-#326 convention), and the hand-over composer was erroring out on the old shape. Status flipped to `accepted` since Phase A+B+polish all landed.
