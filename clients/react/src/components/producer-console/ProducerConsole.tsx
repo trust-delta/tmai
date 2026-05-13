@@ -1,0 +1,89 @@
+// Producer console — the default main view per
+// `doc/decisions/2026-05-14-react-producer-console-rebuild.md`.
+//
+// Composition mirrors the Producer's session-start hand-over digest:
+//
+//   ▶ Where you left off
+//   ⬢ Cross-unit status
+//   ⬡ Settled decisions      (Phase A placeholder)
+//   ◐ Working with this human (Phase A placeholder)
+//
+// Bottom row offers two real actions and one Phase-B stub. The
+// tier-1 tripwire banner is hoisted by `App.tsx` above the entire
+// main-pane swap (so it persists across Settings / Calibration /
+// agent views too) — this component intentionally does NOT render
+// its own tripwire band to avoid a duplicate alarm.
+//
+// Producer conversation itself stays on the terminal substrate;
+// the "Open Producer terminal" action copies the canonical command
+// to the clipboard (Phase A fallback — see ProducerConsoleActions).
+
+import { useHandover } from "@/hooks/useHandover";
+import type { CalibrationResponse } from "@/lib/api";
+import { ProducerConsoleActions } from "./ProducerConsoleActions";
+import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
+import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
+import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
+import { WorkingWithThisHumanSection } from "./sections/WorkingWithThisHumanSection";
+
+interface ProducerConsoleProps {
+  /** Currently focused project (from App.tsx's `currentProject` state).
+   *  Drives the ▶ Where-you-left-off section and the unit for the
+   *  Producer-terminal command. */
+  currentProjectPath: string | null;
+  /** Unit name — basename of `currentProjectPath`. The backend's
+   *  `resolve_unit_or_cwd` accepts this and falls back to the cwd
+   *  if no matching `[[unit]]` is configured. */
+  unitName: string | null;
+  /** Calibration response from the parent (App.tsx already polls);
+   *  reused here for the footer's calibration-jump badge. */
+  calibrationData: CalibrationResponse | null;
+  onOpenProducerTerminal: () => void;
+  onOpenCalibration: () => void;
+  /** Click handler for the cross-unit list — wired to App.tsx's
+   *  `handleSelectProject` so unit selection here matches sidebar
+   *  selection there. */
+  onSelectProjectByPath: (path: string, name: string) => void;
+}
+
+export function ProducerConsole({
+  currentProjectPath,
+  unitName,
+  calibrationData,
+  onOpenProducerTerminal,
+  onOpenCalibration,
+  onSelectProjectByPath,
+}: ProducerConsoleProps) {
+  const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman } =
+    useHandover(currentProjectPath);
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
+      <header className="border-b border-white/5 px-6 py-4">
+        <h2 className="text-lg font-semibold text-zinc-200">Producer console</h2>
+        <p className="text-xs text-zinc-500">
+          Hand-over digest. The Producer conversation itself lives on your terminal substrate (tmux
+          / wezTerm / native) — see the actions below to launch it.
+        </p>
+      </header>
+
+      <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5 text-sm">
+        <WhereYouLeftOffSection data={whereYouLeftOff} />
+        <CrossUnitStatusSection
+          data={crossUnit}
+          activePath={currentProjectPath}
+          onSelectUnit={onSelectProjectByPath}
+        />
+        <SettledDecisionsSection data={settledDecisions} />
+        <WorkingWithThisHumanSection data={workingWithHuman} />
+      </div>
+
+      <ProducerConsoleActions
+        unitName={unitName}
+        calibrationData={calibrationData}
+        onOpenProducerTerminal={onOpenProducerTerminal}
+        onOpenCalibration={onOpenCalibration}
+      />
+    </div>
+  );
+}

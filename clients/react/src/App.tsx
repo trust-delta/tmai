@@ -13,6 +13,7 @@ import { TabbedPaneLayout } from "@/components/layout/TabbedPaneLayout";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { TriplePaneLayout } from "@/components/layout/TriplePaneLayout";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
+import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -106,6 +107,33 @@ export function App() {
     return currentProject.split("/").filter(Boolean).pop() ?? null;
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
+
+  // "Open Producer terminal" affordance from <ProducerConsole>.
+  //
+  // Decision `doc/decisions/2026-05-14-react-producer-console-rebuild.md`
+  // §Producer chat: the Producer conversation stays on the terminal
+  // substrate (substrate swap is rejected per cross-ref
+  // `tmai-core@2026-05-13-agent-view-does-not-replace-multiplexer-
+  // substrate`). The WebUI's job is just to make the canonical
+  // command trivially copy-pasteable.
+  //
+  // `navigator.clipboard.writeText` requires a secure context;
+  // `localhost` qualifies, so it works in dev. When the API isn't
+  // available (or rejects) we still surface the command in a toast
+  // so the operator can copy it by hand — no silent failure.
+  const openProducerTerminal = useCallback(() => {
+    if (!unitName) return;
+    const cmd = `tmai producer ${unitName}`;
+    const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+    if (clipboard?.writeText) {
+      clipboard.writeText(cmd).then(
+        () => toastSuccess(`Copied: ${cmd}`),
+        () => toastInfo(`Run in terminal: ${cmd}`),
+      );
+    } else {
+      toastInfo(`Run in terminal: ${cmd}`);
+    }
+  }, [unitName, toastSuccess, toastInfo]);
 
   // Split-pane drag state — separate instances for horizontal vs vertical
   // so the user can drag each independently and resume where they left off
@@ -660,22 +688,19 @@ export function App() {
                 <PreviewPanel agentId={selectedAgent.target} />
               </div>
             ) : (
-              <div className="flex flex-1 items-center justify-center animate-fade-in">
-                <div className="glass-light rounded-2xl px-8 py-8 text-center transition-subtle hover:glass mx-4">
-                  <h1 className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-                    tmai
-                  </h1>
-                  <p className="mt-2 text-sm text-zinc-500">
-                    {agents.length > 0
-                      ? isMobileScreen
-                        ? "Tap ☰ to select an agent"
-                        : "Select an agent to view • Press ? for shortcuts"
-                      : isMobileScreen
-                        ? "Tap ☰ then + on a project to spawn an agent"
-                        : "Click + on a project to spawn an agent • Press ? for shortcuts"}
-                  </p>
-                </div>
-              </div>
+              // Decision `doc/decisions/2026-05-14-react-producer-
+              // console-rebuild.md` Phase A: default view becomes the
+              // Producer console (hand-over digest). Selecting an
+              // agent in the sidebar still drops into the agent view
+              // above; this is the empty / between-selections home.
+              <ProducerConsole
+                currentProjectPath={currentProject}
+                unitName={unitName}
+                calibrationData={calibrationData}
+                onOpenProducerTerminal={openProducerTerminal}
+                onOpenCalibration={openCalibration}
+                onSelectProjectByPath={handleSelectProject}
+              />
             )}
           </div>
         )}
