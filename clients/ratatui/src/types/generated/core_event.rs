@@ -119,14 +119,6 @@ pub enum CoreEvent {
     GitStateChanged {
         repo: String,
     },
-    GuardrailExceeded {
-        branch: String,
-        count: i64,
-        guardrail: GuardrailKind,
-        limit: i64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pr_number: Option<Value>,
-    },
     AgentTargetChanged {
         new_target: String,
         old_target: String,
