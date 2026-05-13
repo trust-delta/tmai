@@ -257,19 +257,28 @@ html {
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
-/* xterm-viewport ships `overflow-y: scroll`, which reserves a 6 px scrollbar
-   gutter even on a fresh empty terminal — and against the dark canvas the
-   permanently-visible track reads as a noisy seam. Switch to `auto` so the
-   gutter only appears when scrollback actually overflows the viewport, and
-   blend the resting thumb into the terminal background so it doesn't stand
-   out as a contrasting strip. */
+/* xterm v6 paints its own VSCode-derived scrollbar (`.xterm-scrollable-element
+   > .scrollbar`) instead of the native browser scrollbar, and JS pins both the
+   bar and the inner slider to an inline `width: 14px`. The native viewport
+   underneath also ships `overflow-y: scroll` which reserves a redundant gutter
+   on every empty terminal.
+
+   Force the inline 14 px down to the global thin-overlay 6 px so the preview
+   pane reads at the same scale as every other scrollable surface (git pane,
+   transcript, sidebars). Slider thumb colors come from the Terminal theme
+   (`scrollbarSliderBackground` + hover/active) so they stay in lockstep with
+   the global thumb without an `!important` color war. */
 .xterm .xterm-viewport {
   overflow-y: auto !important;
-  scrollbar-color: rgba(255, 255, 255, 0.06) transparent;
 }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+.xterm .xterm-scrollable-element > .scrollbar.vertical,
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  width: 6px !important;
 }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+.xterm .xterm-scrollable-element > .scrollbar.horizontal,
+.xterm .xterm-scrollable-element > .scrollbar.horizontal > .slider {
+  height: 6px !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar > .slider {
+  border-radius: 3px;
 }
