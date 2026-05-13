@@ -53,8 +53,8 @@ describe("CalibrationChip", () => {
         {
           synthesis_pass_id: "p",
           note_source: "n.md",
-          verdict: "Absorb",
-          confidence: "High",
+          verdict: "absorb",
+          confidence: "high",
           tier_routed: 1,
           rationale: "wrong",
           recorded_at: "2026-05-13T10:00:00Z",

@@ -8,8 +8,8 @@ function entry(overrides: Partial<CalibrationEntry> = {}): CalibrationEntry {
   return {
     synthesis_pass_id: "p",
     note_source: "note.md",
-    verdict: "Absorb",
-    confidence: "High",
+    verdict: "absorb",
+    confidence: "high",
     tier_routed: 1,
     rationale: "default",
     recorded_at: "2026-05-13T10:00:00Z",
@@ -48,7 +48,7 @@ describe("TripwireBanner", () => {
       entry({ note_source: "20260513-1000-a.md", rationale: "should have escalated" }),
       entry({
         note_source: "20260513-1100-b.md",
-        verdict: "TradeoffProposal",
+        verdict: "tradeoff_proposal",
         rationale: "tier-1 means human-only",
       }),
     ]);
