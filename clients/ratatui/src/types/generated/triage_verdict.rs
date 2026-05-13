@@ -9,10 +9,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AutoActionEntry {
-    pub action: String,
-    pub fired_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_agent_id: Option<Value>,
-    pub trigger: String,
+pub enum TriageVerdict {
+    absorb,
+    escalate,
+    tradeoff_proposal,
 }

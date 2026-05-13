@@ -76,6 +76,56 @@
           }
         }
       }
+    },
+    "/api/units/{unit}/calibration": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/calibration`.",
+        "description": "Read-only projection of `<data_dir>/feedback/<unit>/calibration-store.md`.\nThe human's escape hatch into Producer hit-rate per DR §B.3; the Producer\nitself is blind by default. Polling this endpoint is enough to drive a\nWebUI top-bar tripwire indicator without depending on hand-over compose\ntiming — DR §B.4 zero-tolerance violations land in `tier1_violations`.",
+        "operationId": "get_calibration_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Time window in days; `0` = whole store. Default 90.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calibration view + tier-1 tripwire list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Calibration store load failed"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -180,37 +230,6 @@
           "completed"
         ]
       },
-      "AutoActionEntry": {
-        "type": "object",
-        "description": "Record of the most recently fired auto-action rule.",
-        "required": [
-          "fired_at",
-          "trigger",
-          "action"
-        ],
-        "properties": {
-          "action": {
-            "type": "string",
-            "description": "Human-readable description of the action taken."
-          },
-          "fired_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the auto-action was triggered."
-          },
-          "target_agent_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Agent that was the target of the action, if applicable."
-          },
-          "trigger": {
-            "type": "string",
-            "description": "Event type that triggered the action (e.g. `\"PrCiFailed\"`)."
-          }
-        }
-      },
       "BundleId": {
         "type": "string",
         "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type."
@@ -226,6 +245,158 @@
           "failed",
           "cancelled"
         ]
+      },
+      "CalibrationCellWire": {
+        "type": "object",
+        "description": "One row of the calibration table, flattened from the workbench's\n`BTreeMap<(verdict, confidence), Cell>` for JSON serialization.\n\nJSON cannot key on a tuple; the rendered shape is a list of objects so\nthe React client iterates without having to reconstruct the map shape.",
+        "required": [
+          "verdict",
+          "confidence",
+          "n",
+          "hits",
+          "misses"
+        ],
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "hits": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "misses": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "n": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/TriageVerdict"
+          }
+        }
+      },
+      "CalibrationEntry": {
+        "type": "object",
+        "description": "One entry in the calibration store: a single triage decision plus its\nlater-observed objective outcome (or none yet).",
+        "required": [
+          "synthesis_pass_id",
+          "note_source",
+          "verdict",
+          "confidence",
+          "tier_routed",
+          "rationale",
+          "recorded_at"
+        ],
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "note_source": {
+            "type": "string",
+            "description": "Source the verdict came from, e.g. a worker friction note filename\n(`20260513-1500-baz.md`) or a drift-audit item slug. Relative to the\nunit's feedback directory; opaque to this module."
+          },
+          "outcome": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Outcome",
+                "description": "Objective outcome, if one has been picked up since (stage 5).\nAbsent in fresh entries; serialized only when present."
+              }
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "description": "One-line rationale from the Producer, for human review later."
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the entry was appended."
+          },
+          "synthesis_pass_id": {
+            "type": "string",
+            "description": "UUID of the synthesis pass that produced this verdict. String, not\n`uuid::Uuid`, so older entries with non-UUID ids stay parseable."
+          },
+          "tier_routed": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Tier the verdict was routed to (`1` = human-gated tripwire, `2` =\nProducer may handle). Matches `DecisionFrontmatter::tier`.",
+            "minimum": 0
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/TriageVerdict"
+          }
+        }
+      },
+      "CalibrationResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/calibration` response — read-only projection of\nthe unit's calibration store.\n\n`bootstrap_threshold` mirrors `workbench::BOOTSTRAP_ENTRY_THRESHOLD` so\nthe client can show the \"lean toward asking the human\" caveat without\nre-encoding the constant. `tier1_violations` mirrors what the hand-over\ndigest's `⚡ TIER-1 TRIPWIRE TRIGGERED` callout surfaces (DR §B.4 zero\ntolerance) — so polling this endpoint is enough to drive a top-bar\ntripwire indicator in the WebUI without depending on hand-over compose\ntiming.",
+        "required": [
+          "unit",
+          "days",
+          "total_in_store",
+          "total_in_window",
+          "bootstrap_threshold",
+          "cells",
+          "tier1_routed",
+          "tier1_violations",
+          "recent_false_negatives"
+        ],
+        "properties": {
+          "bootstrap_threshold": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalibrationCellWire"
+            }
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "recent_false_negatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalibrationEntry"
+            }
+          },
+          "tier1_routed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tier1_violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalibrationEntry"
+            }
+          },
+          "total_in_store": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_in_window": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
       },
       "CapacityCauseSummary": {
         "oneOf": [
@@ -330,6 +501,14 @@
             "minimum": 0
           }
         }
+      },
+      "Confidence": {
+        "type": "string",
+        "description": "The Producer's own confidence in a triage verdict. Binary by DR §B.1 —\nwhen in doubt, [`Confidence::Low`].\n\n`Ord` is derived (lexicographic on the variant order: `High` < `Low`) so\nit can be a `BTreeMap` key for stable table rendering — order has no\nnumeric meaning. Same reasoning for [`TriageVerdict`] below.",
+        "enum": [
+          "high",
+          "low"
+        ]
       },
       "CoreEvent": {
         "oneOf": [
@@ -1008,54 +1187,6 @@
           },
           {
             "type": "object",
-            "description": "A guardrail limit was exceeded (CI retries, review loops, or consecutive failures)",
-            "required": [
-              "guardrail",
-              "branch",
-              "count",
-              "limit",
-              "type"
-            ],
-            "properties": {
-              "branch": {
-                "type": "string",
-                "description": "Associated branch"
-              },
-              "count": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Current count that exceeded the limit",
-                "minimum": 0
-              },
-              "guardrail": {
-                "$ref": "#/components/schemas/GuardrailKind",
-                "description": "The type of guardrail that was exceeded"
-              },
-              "limit": {
-                "type": "integer",
-                "format": "int64",
-                "description": "The configured limit",
-                "minimum": 0
-              },
-              "pr_number": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "description": "Associated PR number (if any)",
-                "minimum": 0
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "GuardrailExceeded"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "An agent's tmux target changed due to pane renumbering (PID-based reconciliation)",
             "required": [
               "old_target",
@@ -1481,7 +1612,7 @@
           },
           {
             "type": "object",
-            "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\n`GuardrailExceeded`, or `ContextCompacting` mutate the runtime view.",
+            "description": "Runtime infrastructure state changed.\n\nEmitted when `CapacityChanged`, `VendorAvailabilityChanged`,\nor `ContextCompacting` mutate the runtime view.",
             "required": [
               "snapshot",
               "type"
@@ -2020,88 +2151,6 @@
           "Internal"
         ]
       },
-      "GuardrailBreach": {
-        "type": "object",
-        "description": "An active guardrail limit breach.",
-        "required": [
-          "kind",
-          "count",
-          "limit"
-        ],
-        "properties": {
-          "branch": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Branch associated with the breach, if known."
-          },
-          "count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Current count that exceeded the limit.",
-            "minimum": 0
-          },
-          "kind": {
-            "$ref": "#/components/schemas/GuardrailKind",
-            "description": "Which guardrail was exceeded."
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Configured limit that was exceeded.",
-            "minimum": 0
-          },
-          "pr_number": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "PR number associated with the breach, if known.",
-            "minimum": 0
-          }
-        }
-      },
-      "GuardrailKind": {
-        "type": "string",
-        "description": "The type of guardrail that was exceeded",
-        "enum": [
-          "ci_retries",
-          "review_loops",
-          "consecutive_failures"
-        ]
-      },
-      "GuardrailStatus": {
-        "type": "object",
-        "description": "Configured guardrail limits and currently active breaches.",
-        "required": [
-          "max_ci_retries",
-          "max_review_loops",
-          "active_breaches"
-        ],
-        "properties": {
-          "active_breaches": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GuardrailBreach"
-            },
-            "description": "Currently active guardrail breaches (empty when all limits are clear)."
-          },
-          "max_ci_retries": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Configured max CI fix attempts per PR.",
-            "minimum": 0
-          },
-          "max_review_loops": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Configured max review→fix cycles per PR.",
-            "minimum": 0
-          }
-        }
-      },
       "Milestone": {
         "type": "object",
         "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
@@ -2123,7 +2172,7 @@
       },
       "NotifyModeSummary": {
         "type": "object",
-        "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"`, `\"notify\"`, or `\"auto_action\"`.",
+        "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"` or `\"notify\"`.",
         "required": [
           "on_agent_stopped",
           "on_pr_created",
@@ -2158,6 +2207,86 @@
             "description": "Handling mode for `PrReviewFeedback` events."
           }
         }
+      },
+      "Outcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A `Revert \"<title>\"` commit later touched a path this verdict bore on\n— the absorbed change was wrong. Strongest false-negative signal.",
+            "required": [
+              "commit_sha",
+              "date",
+              "kind"
+            ],
+            "properties": {
+              "commit_sha": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "revert_commit"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A `fix:` commit shortly after touched a path this verdict bore on —\nthe absorbed change introduced a defect. Weaker signal (fixes happen\nfor many reasons), but still informative in aggregate.",
+            "required": [
+              "commit_sha",
+              "date",
+              "kind"
+            ],
+            "properties": {
+              "commit_sha": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hotfix_commit"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "CI failed on a PR shortly after, and a follow-up PR fixed it — the\nabsorbed change broke the build.",
+            "required": [
+              "failing_pr",
+              "fix_pr",
+              "kind"
+            ],
+            "properties": {
+              "failing_pr": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "fix_pr": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ci_fail_fix"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An *objective* outcome observed after a triage verdict, used as ground\ntruth for calibration. Per DR §B.2: the human's accept/reject is **not**\nhere — only failure signals the world produces independently.\n\nThe data is structurally complete in stage 1; the *detection* (scanning\ngit log / PR history to populate these) lands in stage 5."
       },
       "PermissionMode": {
         "type": "string",
@@ -2348,75 +2477,6 @@
               "$ref": "#/components/schemas/VendorInfo"
             },
             "description": "Availability state of each tracked AI vendor."
-          }
-        }
-      },
-      "ScheduledSpawn": {
-        "type": "object",
-        "description": "One entry of the top-level `[[scheduled]]` config table — a cron-driven\ndispatch declaration (#20).\n\nEach entry independently spawns (or kicks) one of the four roles on the\nconfigured cron cadence. Resolution rules:\n\n- `role = \"orchestrator\" | \"implementer\" | \"reviewer\"` inherits\n  `[orchestration.orchestrator]` / `[orchestration.dispatch.<role>]`\n  defaults. Per-entry `vendor` / `model` / `effort` override the bundle\n  field-by-field; `permission_mode` is **not** an override on these roles\n  by design (matches the dispatch surface).\n- `role = \"manual\"` does **not** inherit any orchestration bundle. The\n  entry must carry its own `vendor` (required) and may set `model` /\n  `effort` / `permission_mode` directly. This is the role-less escape\n  hatch for \"spawn an AI worker on a schedule that isn't part of the\n  orchestrator/dispatch pipeline\".\n\nThe scheduler service (#20 PR2) consumes this struct; PR1 only lands the\ntype + parsing + validation.",
-        "required": [
-          "name",
-          "cron",
-          "cwd",
-          "prompt",
-          "role"
-        ],
-        "properties": {
-          "cron": {
-            "type": "string",
-            "description": "Cron expression (5-field standard form, `m h dom mon dow`). Parsing\nis deferred to the scheduler service in PR2; PR1 only checks the\nstring is non-empty."
-          },
-          "cwd": {
-            "type": "string",
-            "description": "Working directory for the dispatched agent. Must be absolute."
-          },
-          "effort": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Effort override (`low` / `medium` / `high` / `xhigh` / `max`).\nOnly honoured by Claude."
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Model override. Falls back to the bundle's `model` for bundled roles;\nfor `Manual` falls back to the vendor CLI's user-global default."
-          },
-          "name": {
-            "type": "string",
-            "description": "Stable identifier for this entry. Used to track per-entry\nlast-dispatch state and surface in logs / wire payloads. Must be\nnon-empty and unique across all `[[scheduled]]` entries."
-          },
-          "permission_mode": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/PermissionMode",
-                "description": "Permission mode override. Only honoured for `role = Manual` (the\nother roles inherit from their bundle and disallow per-call pm\noverride by design — see `Settings::resolve_dispatch`)."
-              }
-            ]
-          },
-          "prompt": {
-            "type": "string",
-            "description": "Prompt seeded into the spawned agent (or the kick prompt for the\norchestrator role)."
-          },
-          "role": {
-            "$ref": "#/components/schemas/SpawnRole",
-            "description": "Which role to spawn. `Manual` does not inherit any bundle."
-          },
-          "vendor": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/Vendor",
-                "description": "Vendor override. Required when `role = Manual`; optional override\nfor the bundled roles."
-              }
-            ]
           }
         }
       },
@@ -2796,6 +2856,15 @@
           }
         }
       },
+      "TriageVerdict": {
+        "type": "string",
+        "description": "How a synthesis-pass triage routed a single input (worker friction note,\ndrift-audit verdict, etc.). Matches DR §B.1's three-way routing.",
+        "enum": [
+          "absorb",
+          "escalate",
+          "tradeoff_proposal"
+        ]
+      },
       "Vendor": {
         "type": "string",
         "description": "Vendor CLI identifier for dispatched agents.",
@@ -2901,35 +2970,12 @@
       },
       "WorkflowSnapshot": {
         "type": "object",
-        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (NotifySettings / AutoAction / Guardrail).\nInternal layer names must not appear in this type or its nested types.",
+        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (e.g. NotifySettings).\nInternal layer names must not appear in this type or its nested types.",
         "required": [
           "notify_mode_summary",
-          "orchestrator_notify_backlog",
-          "auto_action_fired_last_hour",
-          "guardrail_status"
+          "orchestrator_notify_backlog"
         ],
         "properties": {
-          "auto_action_fired_last_hour": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of auto-actions that fired in the last hour.",
-            "minimum": 0
-          },
-          "auto_action_last_fired": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AutoActionEntry",
-                "description": "Most recent auto-action that fired, if any."
-              }
-            ]
-          },
-          "guardrail_status": {
-            "$ref": "#/components/schemas/GuardrailStatus",
-            "description": "Configured guardrail limits and active breaches."
-          },
           "notify_mode_summary": {
             "$ref": "#/components/schemas/NotifyModeSummary",
             "description": "Per-event notification handling modes."
@@ -3080,6 +3126,10 @@
     {
       "name": "terminal",
       "description": "Terminal-plane subscription tickets (#174 — UI ↔ PTY-server direct ANSI)"
+    },
+    {
+      "name": "calibration",
+      "description": "Producer hit-rate / tier-1 tripwire view (DR 2026-05-13-synthesis-processing-and-calibration-schema §B.3)"
     }
   ]
 }

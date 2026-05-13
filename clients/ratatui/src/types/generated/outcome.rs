@@ -9,12 +9,5 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardrailBreach {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<Value>,
-    pub count: i32,
-    pub kind: GuardrailKind,
-    pub limit: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pr_number: Option<Value>,
-}
+#[serde(untagged)]
+pub enum Outcome {}

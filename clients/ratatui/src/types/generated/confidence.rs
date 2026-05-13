@@ -9,8 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum GuardrailKind {
-    ci_retries,
-    review_loops,
-    consecutive_failures,
+pub enum Confidence {
+    high,
+    low,
 }

@@ -9,8 +9,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardrailStatus {
-    pub active_breaches: Vec<GuardrailBreach>,
-    pub max_ci_retries: i32,
-    pub max_review_loops: i32,
+pub struct CalibrationResponse {
+    pub bootstrap_threshold: i32,
+    pub cells: Vec<CalibrationCellWire>,
+    pub days: i32,
+    pub recent_false_negatives: Vec<CalibrationEntry>,
+    pub tier1_routed: i32,
+    pub tier1_violations: Vec<CalibrationEntry>,
+    pub total_in_store: i32,
+    pub total_in_window: i32,
+    pub unit: String,
 }
