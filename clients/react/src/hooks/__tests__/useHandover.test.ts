@@ -221,3 +221,49 @@ describe("useHandover — crossUnit derivation", () => {
     expect(result.current.crossUnit.units[0]?.agentCount).toBe(2);
   });
 });
+
+describe("useHandover — missingPreconditions (simulated-onboarded posture)", () => {
+  it("flags noLiveAgents when the agent list is empty", () => {
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.noLiveAgents).toBe(true);
+  });
+
+  it("clears noLiveAgents once any AI agent is observed", () => {
+    useAgentsMock.mockReturnValue({
+      agents: [agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" })],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.noLiveAgents).toBe(false);
+  });
+
+  it("flags singleUnitOnly when only one project group is derived", () => {
+    useAgentsMock.mockReturnValue({
+      agents: [agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" })],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.singleUnitOnly).toBe(true);
+  });
+
+  it("clears singleUnitOnly when two or more projects are present", () => {
+    useAgentsMock.mockReturnValue({
+      agents: [
+        agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" }),
+        agent({ id: "a2", cwd: "/home/u/proj-b", git_common_dir: "/home/u/proj-b/.git" }),
+      ],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.singleUnitOnly).toBe(false);
+  });
+});

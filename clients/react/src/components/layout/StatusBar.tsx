@@ -11,6 +11,16 @@ interface StatusBarProps {
    *  calibration / tier-1 tripwire chip (DR §B.3/§B.4). Sits between
    *  the attention count and the settings / security buttons. */
   indicatorSlot?: ReactNode;
+  /** Producer-console return affordance.
+   *  When defined, render a 🏠 button that clears the main-pane selection
+   *  and drops the operator back on the ProducerConsole hand-over digest.
+   *  Caller is responsible for the actual reset (e.g. `setSelection(null)`);
+   *  the Producer agent session itself stays alive in the sidebar so the
+   *  conversation can be resumed by re-selecting it.
+   *  Use case: dogfood feedback 2026-05-14 — operator was talking to the
+   *  Producer in the main pane with no obvious way to glance back at the
+   *  digest without closing the session. */
+  onReturnToConsole?: () => void;
   /** Mobile: show hamburger button instead of collapse arrow */
   isMobile?: boolean;
   onMobileMenuClick?: () => void;
@@ -25,6 +35,7 @@ export function StatusBar({
   onSettingsClick,
   onSecurityClick,
   indicatorSlot,
+  onReturnToConsole,
   isMobile,
   onMobileMenuClick,
 }: StatusBarProps) {
@@ -62,6 +73,17 @@ export function StatusBar({
           )}
         </div>
         <div className="flex items-center gap-1">
+          {onReturnToConsole && (
+            <button
+              type="button"
+              onClick={onReturnToConsole}
+              className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+              title="Return to Producer console"
+              aria-label="Return to Producer console"
+            >
+              🏠
+            </button>
+          )}
           <button
             type="button"
             onClick={onSecurityClick}
@@ -107,6 +129,17 @@ export function StatusBar({
         <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-xs font-bold text-transparent">
           tm
         </span>
+        {onReturnToConsole && (
+          <button
+            type="button"
+            onClick={onReturnToConsole}
+            className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            title="Return to Producer console"
+            aria-label="Return to Producer console"
+          >
+            🏠
+          </button>
+        )}
         {attentionCount > 0 && (
           <span className="glow-amber rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
             {attentionCount}
@@ -151,6 +184,17 @@ export function StatusBar({
           </span>
         )}
         {indicatorSlot}
+        {onReturnToConsole && (
+          <button
+            type="button"
+            onClick={onReturnToConsole}
+            className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            title="Return to Producer console"
+            aria-label="Return to Producer console"
+          >
+            🏠
+          </button>
+        )}
         <button
           type="button"
           onClick={onSecurityClick}

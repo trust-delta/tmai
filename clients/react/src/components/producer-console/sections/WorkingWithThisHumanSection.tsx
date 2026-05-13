@@ -7,6 +7,13 @@
 // `CLAUDE.md` for the time being. (Earlier drafts surfaced phase-
 // tracking text into this UI which made the section read as broken;
 // this revision speaks to the operator directly instead.)
+//
+// TODO(tmai-core#341): the cold-start hardening issue is the natural
+// place to expose `compose()` output (including this baseline delta)
+// over the wire. Per the simulated-onboarded posture DR
+// (`doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md`),
+// the current "see CLAUDE.md for now" copy is honest about the gap
+// rather than fabricating a synthetic delta.
 
 import type { WorkingWithHumanPlaceholder } from "@/hooks/useHandover";
 

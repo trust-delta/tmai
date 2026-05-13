@@ -97,6 +97,17 @@ export function App() {
   //   land them on the orchestrator-era controls directly.
   const [settingsOpenedFromOverride, setSettingsOpenedFromOverride] = useState(false);
   const closeMainPanelOverlay = useCallback(() => setMainPanel("agents"), []);
+  // Producer-console return path (dogfood feedback 2026-05-14):
+  // an operator talking to the Producer in the main pane had no way
+  // back to the hand-over digest without killing the session. Reset
+  // both selection and any overlay so the ProducerConsole branch (no
+  // `selectedAgent`, no overlay) renders again. The Producer agent
+  // itself stays alive in the sidebar — re-selecting it resumes the
+  // conversation.
+  const returnToConsole = useCallback(() => {
+    setSelection(null);
+    setMainPanel("agents");
+  }, []);
   const toggleSettings = useCallback(() => {
     setSettingsOpenedFromOverride(false);
     setMainPanel((mp) => (mp === "settings" ? "agents" : "settings"));
@@ -569,6 +580,9 @@ export function App() {
               toggleSecurity();
             }}
             indicatorSlot={<CalibrationChip data={calibrationData} onClick={openCalibration} />}
+            onReturnToConsole={
+              selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
+            }
           />
           {!sidebarCollapsed && (
             <div className="flex flex-1 flex-col overflow-y-auto">{sidebarContent}</div>
@@ -618,6 +632,9 @@ export function App() {
             onSecurityClick={() => {
               toggleSecurity();
             }}
+            onReturnToConsole={
+              selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
+            }
           />
         )}
 
