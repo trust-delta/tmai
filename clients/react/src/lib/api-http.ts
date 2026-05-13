@@ -9,7 +9,6 @@ import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
-import type { ScheduledSpawn } from "@/types/generated/ScheduledSpawn";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
@@ -25,7 +24,6 @@ export type {
   PermissionMode,
   QueueAgentEntry,
   QueueSnapshot,
-  ScheduledSpawn,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
@@ -753,33 +751,6 @@ export interface WorktreeSettings {
   branch_depth_warning: number;
 }
 
-// ── Scheduled (cron-driven) dispatches — `[[scheduled]]` (tmai-core #20) ──
-
-/**
- * Response shape of `GET /api/settings/scheduled`. A thin wrapper around
- * the generated [`ScheduledSpawn`] entry list to leave room for adding
- * envelope fields (next-fire schedules, last-fire telemetry) later
- * without breaking older clients.
- */
-export interface ScheduledSettingsResponse {
-  entries: ScheduledSpawn[];
-}
-
-/** Request body for `PUT /api/settings/scheduled`. */
-export interface ScheduledSettingsRequest {
-  entries: ScheduledSpawn[];
-}
-
-/**
- * Per-entry validation error returned when `PUT /api/settings/scheduled`
- * refuses to save. The `name` is either the entry's `name` field or
- * `"<index N>"` when that field is itself empty.
- */
-export interface ScheduledValidationError {
-  name: string;
-  reason: string;
-}
-
 // ── Security scan ──
 
 export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
@@ -1172,14 +1143,6 @@ export const api = {
   listTeams: () => apiFetch<import("./teams").TeamSummary[]>("/teams"),
   getTeamTasks: (teamName: string) =>
     apiFetch<import("./teams").TeamTaskInfo[]>(`/teams/${encodeURIComponent(teamName)}/tasks`),
-
-  // Scheduled (cron-driven) dispatches — tmai-core #20
-  getScheduledSettings: () => apiFetch<ScheduledSettingsResponse>("/settings/scheduled"),
-  updateScheduledSettings: (req: ScheduledSettingsRequest) =>
-    apiFetch<{ ok: boolean; count: number }>("/settings/scheduled", {
-      method: "PUT",
-      body: JSON.stringify(req),
-    }),
 };
 
 // ── SSE event subscription ──
