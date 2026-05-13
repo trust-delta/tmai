@@ -75,7 +75,7 @@ export function ProducerConsoleActions({
           title={
             unitName === null
               ? "No unit resolvable yet — select a project first"
-              : `Copy "tmai producer ${unitName}" to clipboard`
+              : `Launch the Producer for ${unitName} — tmai spawns it in-place and this pane switches to the conversation`
           }
         >
           Open Producer terminal ▸

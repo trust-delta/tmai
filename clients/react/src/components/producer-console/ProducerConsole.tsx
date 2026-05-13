@@ -14,9 +14,13 @@
 // agent views too) — this component intentionally does NOT render
 // its own tripwire band to avoid a duplicate alarm.
 //
-// Producer conversation itself stays on the terminal substrate;
-// the "Open Producer terminal" action copies the canonical command
-// to the clipboard (Phase A fallback — see ProducerConsoleActions).
+// Producer conversation runs in-tmai via `spawnPty("tmai", ["producer",
+// unit])` — `tmai producer` `exec`s into a Claude session seeded with
+// the unit's hand-over (`tmai-core/src/producer_cli.rs::launch_producer`),
+// so from the PTY-server's perspective the Producer is just a normal
+// agent spawn. After spawn, App.tsx's `openProducerTerminal` selects
+// the new session and the main pane switches to its PreviewPanel — no
+// external-terminal round-trip.
 
 import { useHandover } from "@/hooks/useHandover";
 import type { CalibrationResponse } from "@/lib/api";
@@ -84,10 +88,10 @@ export function ProducerConsole({
           <span className="text-zinc-400">Quick start:</span>{" "}
           <strong className="text-zinc-300">①</strong> Read the digest below.{" "}
           <strong className="text-zinc-300">②</strong> Click{" "}
-          <span className="text-cyan-300">Open Producer terminal</span> at the bottom — it copies
-          the launch command, paste it in your terminal (tmux / wezTerm / native).{" "}
+          <span className="text-cyan-300">Open Producer terminal</span> at the bottom — tmai spawns
+          the Producer session and switches this pane to it.{" "}
           <strong className="text-zinc-300">③</strong> The Producer reads your context and briefs
-          you on what to look at first.
+          you on what to look at first; you converse with it right here.
         </p>
         <p className="mt-1.5 text-[11px] text-zinc-600">
           Need direct agent control (legacy)?{" "}

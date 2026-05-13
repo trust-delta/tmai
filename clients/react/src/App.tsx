@@ -30,7 +30,7 @@ import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
+import { api, groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
@@ -138,31 +138,31 @@ export function App() {
   // `localhost` qualifies, so it works in dev. When the API isn't
   // available (or rejects) we still surface the command in a toast
   // so the operator can copy it by hand — no silent failure.
-  const openProducerTerminal = useCallback(() => {
+  const openProducerTerminal = useCallback(async () => {
     if (!unitName) return;
-    const cmd = `tmai producer ${unitName}`;
-    // The Producer is a real CC session running on a terminal substrate
-    // (tmux / wezTerm / native). The WebUI's job here is to make the
-    // launch command trivially copy-pasteable + tell the operator what
-    // happens next — earlier drafts only surfaced `Copied: <cmd>`,
-    // which left first-time users stranded ("copied… and then?").
-    const successMsg =
-      `Copied: ${cmd}\n` +
-      `Paste it in your terminal — the Producer will read your context ` +
-      `(decisions / memory) and brief you on what to look at first.`;
-    const fallbackMsg =
-      `Run in your terminal: ${cmd}\n` +
-      `The Producer will read your context and brief you on what to look at first.`;
-    const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
-    if (clipboard?.writeText) {
-      clipboard.writeText(cmd).then(
-        () => toastSuccess(successMsg),
-        () => toastInfo(fallbackMsg),
-      );
-    } else {
-      toastInfo(fallbackMsg);
+    // `tmai producer <unit>` is implemented as an `exec`-style command
+    // (`tmai-core/src/producer_cli.rs::launch_producer`) — the tmai
+    // subprocess composes the hand-over, then replaces itself with a
+    // Claude session seeded with that hand-over as the initial prompt.
+    // From the PTY-server's perspective this is just a normal spawn,
+    // so we treat it as one: `spawnPty` returns a session id, we point
+    // selection at it, and the PreviewPanel shows the Producer session
+    // immediately. No clipboard / external-terminal round-trip.
+    try {
+      const res = await api.spawnPty({
+        command: "tmai",
+        args: ["producer", unitName],
+        cwd: currentProject ?? undefined,
+      });
+      setSelection({ type: "agent", id: res.session_id });
+      closeMainPanelOverlay();
+      refresh();
+      toastSuccess(`Producer launched for ${unitName}`);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      toastInfo(`Failed to launch Producer: ${reason}`);
     }
-  }, [unitName, toastSuccess, toastInfo]);
+  }, [unitName, currentProject, closeMainPanelOverlay, refresh, toastSuccess, toastInfo]);
 
   // Split-pane drag state — separate instances for horizontal vs vertical
   // so the user can drag each independently and resume where they left off
