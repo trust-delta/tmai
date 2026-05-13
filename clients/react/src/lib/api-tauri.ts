@@ -240,9 +240,4 @@ export const api = {
   // Teams (HTTP only for now)
   listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
   getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),
-
-  // Scheduled (cron-driven) dispatches — tmai-core #20
-  getScheduledSettings: () => httpApi.getScheduledSettings(),
-  updateScheduledSettings: (req: Parameters<typeof httpApi.updateScheduledSettings>[0]) =>
-    httpApi.updateScheduledSettings(req),
 };

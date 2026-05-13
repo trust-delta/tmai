@@ -11,7 +11,6 @@ export type { CoreEvent } from "./generated/CoreEvent";
 export type { DispatchSnapshot } from "./generated/DispatchSnapshot";
 export type { EntityChange } from "./generated/EntityChange";
 export type { EntityUpdateEnvelope } from "./generated/EntityUpdateEnvelope";
-export type { GuardrailKind } from "./generated/GuardrailKind";
 export type { Milestone } from "./generated/Milestone";
 export type { QueueSnapshot } from "./generated/QueueSnapshot";
 export type { RuntimeSnapshot } from "./generated/RuntimeSnapshot";
