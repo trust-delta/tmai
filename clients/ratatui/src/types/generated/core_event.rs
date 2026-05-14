@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(untagged)]
 pub enum CoreEvent {
     TeammateIdle {
         member_name: String,

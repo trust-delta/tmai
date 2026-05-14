@@ -887,6 +887,146 @@
       ],
       "type": "string"
     },
+    "HandoffRitualEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/HandoffRitualPhase",
+          "description": "Phase reached by this event (carries `reason` on `Escalate`)."
+        },
+        {
+          "properties": {
+            "message": {
+              "description": "Free-form human-readable context (omitted when absent on the wire).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "new_agent_id": {
+              "description": "Canonical AgentId of the newly spawned Producer. Set only on `Ready`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ritual_id": {
+              "description": "Fresh UUID assigned when the ritual started.",
+              "type": "string"
+            },
+            "unit": {
+              "description": "Unit name the ritual is being run for.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "unit",
+            "ritual_id"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "SSE payload emitted at each transition of the\n`POST /api/units/{unit}/handoff-and-restart` ritual.\n\nWired into [`CoreEvent::HandoffRitual`]; surfaces on `/api/events` as event\nkind `handoff_ritual`. `ritual_id` is a fresh UUID minted at ritual start\nso concurrent rituals across units (or operator retries) don't alias."
+    },
+    "HandoffRitualPhase": {
+      "description": "Phase of the Producer handoff-and-restart ritual (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C).\n\nPhases progress strictly in the order `Prompted → Validated → Killed →\nLaunching → Ready`; any step can short-circuit to `Escalate` with a\nmachine-readable `reason` (§D — uniform tier-1 escalation, no per-mode\npolicy). Consumers driving the WebUI overlay (`§E`) treat all `Escalate`\nvariants as the terminal failure state regardless of reason.",
+      "oneOf": [
+        {
+          "description": "Ritual prompt was delivered to the active Producer (§C step 2).",
+          "properties": {
+            "phase": {
+              "enum": [
+                "prompted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`HANDOFF READY` literal observed + `active.md` validated (§C steps 3-4).",
+          "properties": {
+            "phase": {
+              "enum": [
+                "validated"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Old Producer was killed via PTY-server `kill_agent` (§C step 5).",
+          "properties": {
+            "phase": {
+              "enum": [
+                "killed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "New Producer spawn submitted (§C step 6); not yet `started`.",
+          "properties": {
+            "phase": {
+              "enum": [
+                "launching"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "New Producer reported `attention = started`; ritual complete (§C step 7).",
+          "properties": {
+            "phase": {
+              "enum": [
+                "ready"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Failure path; `reason` is a machine-readable code per DR §D failure\ninventory (`no_active_producer`, `multiple_producers`, `timeout`,\n`missing_handoff_ready`, `malformed_handoff`, `kill_failed`,\n`spawn_failed`). Consumers route every variant to the same operator\ndialog (§E).",
+          "properties": {
+            "phase": {
+              "enum": [
+                "escalate"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "description": "Machine-readable failure reason (see variant doc).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "phase"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
       "properties": {
@@ -2985,6 +3125,29 @@
         "type"
       ],
       "type": "object"
+    },
+    {
+      "allOf": [
+        {
+          "$ref": "#/$defs/HandoffRitualEvent",
+          "description": "A Producer handoff-and-restart ritual transitioned phases (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Emitted by the\n`POST /api/units/{unit}/handoff-and-restart` endpoint on every step;\nstreamed to SSE consumers as event kind `handoff_ritual`."
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "HandoffRitual"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A Producer handoff-and-restart ritual transitioned phases (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Emitted by the\n`POST /api/units/{unit}/handoff-and-restart` endpoint on every step;\nstreamed to SSE consumers as event kind `handoff_ritual`."
     }
   ],
   "title": "CoreEvent"
