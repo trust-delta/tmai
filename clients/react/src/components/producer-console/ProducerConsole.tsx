@@ -22,6 +22,7 @@
 // the new session and the main pane switches to its PreviewPanel — no
 // external-terminal round-trip.
 
+import { useAgents } from "@/hooks/useAgents";
 import { useHandover } from "@/hooks/useHandover";
 import type { CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
@@ -80,6 +81,7 @@ export function ProducerConsole({
 }: ProducerConsoleProps) {
   const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions } =
     useHandover(currentProjectPath);
+  const { agents } = useAgents();
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
@@ -120,6 +122,8 @@ export function ProducerConsole({
 
       <ProducerConsoleActions
         unitName={unitName}
+        currentProjectPath={currentProjectPath}
+        agents={agents}
         calibrationData={calibrationData}
         onOpenProducerTerminal={onOpenProducerTerminal}
         onLaunchProducerAt={onLaunchProducerAt}

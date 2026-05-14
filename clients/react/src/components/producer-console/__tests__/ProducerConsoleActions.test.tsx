@@ -9,7 +9,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CalibrationResponse } from "@/lib/api";
+import type { AgentSnapshot, CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
 
 vi.mock("@/components/project/NewAgentLauncher", () => ({
@@ -33,10 +33,26 @@ vi.mock("@/components/project/DirBrowser", () => ({
   ),
 }));
 
-vi.mock("@/lib/api", () => ({
-  api: {
-    getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
-  },
+// `@/lib/api` exports both runtime helpers and `normalizeGitDir` —
+// the new Handoff & restart filter calls `normalizeGitDir`, so we
+// preserve the actual module and override only the `api` namespace.
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    api: {
+      getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
+      killAgent: vi.fn().mockResolvedValue(undefined),
+      triggerHandoffRitual: vi.fn().mockResolvedValue({ ritual_id: "r-stub" }),
+    },
+  };
+});
+
+// `useSSE` would throw because tests don't wrap in SSEProvider — stub
+// it to a no-op. `useHandoffRitual` lives inside ProducerConsoleActions
+// and registers an onEvent handler; we just need it to silently accept.
+vi.mock("@/lib/sse-provider", () => ({
+  useSSE: vi.fn(),
 }));
 
 import type { ComponentProps } from "react";
@@ -46,6 +62,8 @@ function makeProps(
 ): ComponentProps<typeof ProducerConsoleActions> {
   return {
     unitName: "u",
+    currentProjectPath: null,
+    agents: [],
     calibrationData: null,
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
@@ -55,6 +73,36 @@ function makeProps(
     sidebarCollapsed: false,
     onOpenSettings: vi.fn(),
     ...overrides,
+  };
+}
+
+// Minimal AgentSnapshot factory — same defaults as `useHandover.test.ts`
+// so the test fixtures stay aligned with the real wire shape.
+function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot {
+  return {
+    id: partial.id,
+    target: partial.target ?? partial.id,
+    agent_type: partial.agent_type ?? "ClaudeCode",
+    title: partial.title ?? partial.id,
+    cwd: partial.cwd ?? "/home/u/proj",
+    display_cwd: partial.display_cwd ?? "proj",
+    display_name: partial.display_name ?? partial.id,
+    detection_source: partial.detection_source ?? "IpcSocket",
+    git_branch: partial.git_branch ?? "main",
+    git_dirty: partial.git_dirty ?? false,
+    is_worktree: partial.is_worktree ?? false,
+    git_common_dir: partial.git_common_dir ?? "/home/u/proj/.git",
+    worktree_name: partial.worktree_name ?? null,
+    worktree_base_branch: partial.worktree_base_branch ?? null,
+    effort_level: partial.effort_level ?? null,
+    active_subagents: partial.active_subagents ?? 0,
+    compaction_count: partial.compaction_count ?? 0,
+    pty_session_id: partial.pty_session_id ?? null,
+    send_capability: partial.send_capability ?? "Ipc",
+    is_virtual: partial.is_virtual ?? false,
+    team_info: partial.team_info ?? null,
+    attention: partial.attention ?? null,
+    is_orchestrator: partial.is_orchestrator,
   };
 }
 
@@ -262,5 +310,137 @@ describe("ProducerConsoleActions — operator override (Phase B)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Open Settings/ }));
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ProducerConsoleActions — Handoff & restart button", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("is disabled when no Producer agent matches the unit", () => {
+    render(<ProducerConsoleActions {...makeProps({ unitName: "tmai", agents: [] })} />);
+    const btn = screen.getByRole("button", { name: /Handoff & restart/ });
+    expect(btn).toHaveProperty("disabled", true);
+  });
+
+  it("is enabled when exactly one claude:-scheme non-worktree Producer exists at the unit path", () => {
+    const producer = agent({
+      id: "claude:abc-123",
+      target: "claude:abc-123",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+      is_worktree: false,
+    });
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [producer],
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Handoff & restart/ });
+    expect(btn).toHaveProperty("disabled", false);
+  });
+
+  it("ignores worktree agents and stays disabled when only worktree agents exist", () => {
+    const wtAgent = agent({
+      id: "claude:abc-456",
+      target: "claude:abc-456",
+      cwd: "/home/u/proj-a/.worktrees/feat-x",
+      git_common_dir: "/home/u/proj-a/.git",
+      is_worktree: true,
+      worktree_name: "feat-x",
+    });
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [wtAgent],
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Handoff & restart/ });
+    expect(btn).toHaveProperty("disabled", true);
+  });
+
+  it("stays disabled when two Producers race the same unit (refuses to guess)", () => {
+    const producerA = agent({
+      id: "claude:a",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+    });
+    const producerB = agent({
+      id: "claude:b",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+    });
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [producerA, producerB],
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Handoff & restart/ });
+    expect(btn).toHaveProperty("disabled", true);
+  });
+
+  it("calls window.confirm and does NOT POST when confirmation is denied", async () => {
+    const { api } = await import("@/lib/api");
+    vi.mocked(api.triggerHandoffRitual).mockClear();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const producer = agent({
+      id: "claude:abc-123",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+    });
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [producer],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.triggerHandoffRitual)).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("fires the ritual when confirmation is accepted", async () => {
+    const { api } = await import("@/lib/api");
+    vi.mocked(api.triggerHandoffRitual).mockClear();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const producer = agent({
+      id: "claude:abc-123",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+    });
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [producer],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
+    expect(vi.mocked(api.triggerHandoffRitual)).toHaveBeenCalledWith("proj-a", {
+      trigger: "manual",
+    });
+
+    confirmSpy.mockRestore();
   });
 });

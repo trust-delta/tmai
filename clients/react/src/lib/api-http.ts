@@ -9,6 +9,7 @@ import type { Confidence } from "@/types/generated/Confidence";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
+import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
@@ -31,6 +32,7 @@ export type {
   Confidence,
   DispatchBundle,
   EntityUpdateEnvelope,
+  HandoffRitualEvent,
   Outcome,
   PermissionMode,
   QueueAgentEntry,
@@ -1162,7 +1164,87 @@ export const api = {
   // the CLI's default.
   calibration: (unit: string, days = 90) =>
     apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
+
+  // Handoff-and-restart ritual (tmai-core PR #352, DR
+  // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Kicks off the
+  // server-side ritual and returns a fresh `ritual_id` callers correlate
+  // against SSE `handoff_ritual` events to drive the overlay / dialog.
+  // PR4 wires only `trigger: "manual"`; the auto-trigger path with
+  // `ctx_pct` lands in PR5 (statusline auto-handoff).
+  //
+  // Surfaces typed `HandoffRitualRequestError`s so consumers can route
+  // 400 (invalid trigger / OOR ctx_pct) and 404 (unknown unit) to the
+  // failure dialog with a sensible reason instead of swallowing them
+  // as generic API errors.
+  triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>
+    handoffFetch(unit, body),
 };
+
+async function handoffFetch(
+  unit: string,
+  body: TriggerHandoffRitualRequest,
+): Promise<TriggerHandoffRitualResponse> {
+  const url = `${config.baseUrl}/api/units/${encodeURIComponent(unit)}/handoff-and-restart`;
+  const origin: { kind: "Human"; interface: string; cwd?: string } = {
+    kind: "Human",
+    interface: "webui",
+    ...(callerCwd !== null ? { cwd: callerCwd } : {}),
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.token}`,
+      "X-Tmai-Origin": JSON.stringify(origin),
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new HandoffRitualRequestError(res.status, detail);
+  }
+  return (await res.json()) as TriggerHandoffRitualResponse;
+}
+
+// ── Handoff-ritual request/response shapes ──
+
+/**
+ * Body for `POST /api/units/{unit}/handoff-and-restart`.
+ *
+ * PR4 is manual-only on the wire side — `trigger: "auto"` (and its
+ * accompanying `ctx_pct`) is reserved for the statusline auto-trigger
+ * landing in PR5.
+ */
+export interface TriggerHandoffRitualRequest {
+  trigger: "manual";
+  reason?: string;
+}
+
+export interface TriggerHandoffRitualResponse {
+  ritual_id: string;
+}
+
+/**
+ * Typed error raised by `triggerHandoffRitual`. Surfaces the HTTP
+ * status so callers can distinguish:
+ *   - 400 — bad trigger / out-of-range ctx_pct (the future PR5
+ *     auto-trigger case, but we keep the surface unified)
+ *   - 404 — unknown unit
+ *   - other — transport / server-side rejection
+ *
+ * The unwrapped raw body lives on `.detail`; downstream UI components
+ * decide whether to surface it.
+ */
+export class HandoffRitualRequestError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  constructor(status: number, detail: string) {
+    super(`handoff-and-restart failed: ${status} ${detail}`);
+    this.name = "HandoffRitualRequestError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
 
 // ── SSE event subscription ──
 
@@ -1280,6 +1362,11 @@ export function subscribeSSE(
       // drops every `git_state_changed` payload and the panel never learns
       // about backend git transitions.
       "git_state_changed",
+      // Producer handoff-and-restart ritual phase transitions (DR
+      // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §F). Without this
+      // registration `useHandoffRitual` never gets a phase update and
+      // the overlay sits in `in_progress` forever.
+      "handoff_ritual",
     ];
     for (const name of namedEvents) {
       es.addEventListener(name, (e) => {
