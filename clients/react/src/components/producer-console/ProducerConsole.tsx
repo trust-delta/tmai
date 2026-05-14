@@ -26,6 +26,7 @@ import { useAgents } from "@/hooks/useAgents";
 import { useHandover } from "@/hooks/useHandover";
 import type { CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
+import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
 import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
@@ -85,6 +86,11 @@ export function ProducerConsole({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
+      <ProducerCtxHeader
+        agents={agents}
+        currentProjectPath={currentProjectPath}
+        onOpenSettings={onOpenSettings}
+      />
       <header className="border-b border-white/5 px-6 py-4">
         <h2 className="text-lg font-semibold text-zinc-200">Welcome to tmai</h2>
         <p className="mt-1 text-xs text-zinc-400">

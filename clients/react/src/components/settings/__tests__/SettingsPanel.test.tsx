@@ -19,6 +19,9 @@ vi.mock("@/lib/api", () => ({
 vi.mock("../GeneralSection", () => ({
   GeneralSection: () => <div data-testid="section-general">General</div>,
 }));
+vi.mock("../HandoffThresholdSection", () => ({
+  HandoffThresholdSection: () => <div data-testid="section-handoff-threshold">Handoff</div>,
+}));
 vi.mock("../NotificationSection", () => ({
   NotificationSection: () => <div data-testid="section-notification">Notification</div>,
 }));
@@ -61,6 +64,7 @@ describe("SettingsPanel — Phase B layout", () => {
     render(<SettingsPanel onClose={vi.fn()} />);
 
     expect(screen.getByTestId("section-general")).toBeTruthy();
+    expect(screen.getByTestId("section-handoff-threshold")).toBeTruthy();
     expect(screen.getByTestId("section-notification")).toBeTruthy();
     expect(screen.getByTestId("section-usage")).toBeTruthy();
   });

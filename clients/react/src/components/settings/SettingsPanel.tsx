@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { type AgentSnapshot, api, groupByProject } from "@/lib/api";
 import { DisplayLayoutSection } from "./DisplayLayoutSection";
 import { GeneralSection } from "./GeneralSection";
+import { HandoffThresholdSection } from "./HandoffThresholdSection";
 import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
@@ -81,6 +82,7 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
           description="Settings the Producer and the human console both read. Stored in ~/.config/tmai/config.toml; shared across CLI, TUI, and WebUI."
         />
         <GeneralSection />
+        <HandoffThresholdSection />
         <NotificationSection />
         <UsageSection />
 
