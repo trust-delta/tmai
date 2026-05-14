@@ -23,6 +23,34 @@ vi.mock("@/components/project/NewAgentLauncher", () => ({
   NewAgentLauncher: () => <div data-testid="mock-new-agent-launcher">[mocked]</div>,
 }));
 
+// ProducerConsole reads the live agent list to forward into the new
+// Handoff & restart filter. Stub `useAgents` so the test can stay
+// SSEProvider-free.
+vi.mock("@/hooks/useAgents", () => ({
+  useAgents: () => ({ agents: [], attentionCount: 0, loading: false, refresh: vi.fn() }),
+}));
+
+// `useHandoffRitual` lives inside ProducerConsoleActions and registers
+// with useSSE — stub so it's a no-op in these composition tests.
+vi.mock("@/lib/sse-provider", () => ({
+  useSSE: vi.fn(),
+}));
+
+// `useHandoffRitual`'s API mock — only the trigger callable matters
+// here since the composition tests never fire the handoff ritual.
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
+      killAgent: vi.fn().mockResolvedValue(undefined),
+      triggerHandoffRitual: vi.fn().mockResolvedValue({ ritual_id: "r-stub" }),
+    },
+  };
+});
+
 function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
   return {
     whereYouLeftOff: overrides.whereYouLeftOff ?? {

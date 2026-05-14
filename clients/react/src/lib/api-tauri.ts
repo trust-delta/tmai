@@ -16,6 +16,7 @@ import type {
   PrMonitorScope,
   SpawnRequest,
   SpawnRuntime,
+  TriggerHandoffRitualRequest,
   UsageSettings,
   WorkerDispatchMap,
   WorkflowSettings,
@@ -244,4 +245,9 @@ export const api = {
   // Calibration view (HTTP only — read-only window into the file-backed
   // calibration store; no Tauri-specific path needed)
   calibration: (unit: string, days?: number) => httpApi.calibration(unit, days),
+
+  // Handoff-and-restart ritual (HTTP only — server-driven multi-step
+  // ritual emits its own SSE phase events; no Tauri IPC equivalent).
+  triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>
+    httpApi.triggerHandoffRitual(unit, body),
 };
