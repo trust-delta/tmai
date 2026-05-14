@@ -266,4 +266,55 @@ describe("useHandover — missingPreconditions (simulated-onboarded posture)", (
     const { result } = renderHook(() => useHandover(null));
     expect(result.current.missingPreconditions.singleUnitOnly).toBe(false);
   });
+
+  // The Producer launch wraps `tmai producer <unit>` under `bash -c` to
+  // satisfy tmai-core's `/api/spawn` allow-list (DR polish v4). The
+  // resulting agent has `agent_type: Custom("bash")` but its canonical
+  // `id` is already `claude:UUID` — `useHandover` must classify it as
+  // an AI coding agent via the id-scheme fallback, otherwise the
+  // Producer's own unit drops out of `projectGroups` and the posture
+  // notices ("no live agents" / "showing one unit only") all misfire
+  // even though the Producer is plainly running.
+  it("classifies a bash-wrapped Producer as an AI agent via canonical id scheme", () => {
+    useAgentsMock.mockReturnValue({
+      agents: [
+        agent({
+          id: "claude:8b762cf8-b5e1-48f1-a828-af6411d58e96",
+          agent_type: { Custom: "bash" },
+          title: "bash",
+          cwd: "/home/u/proj-a",
+          git_common_dir: "/home/u/proj-a/.git",
+        }),
+      ],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.noLiveAgents).toBe(false);
+    expect(result.current.missingPreconditions.singleUnitOnly).toBe(true);
+    expect(result.current.crossUnit.units).toHaveLength(1);
+  });
+
+  it("does not classify a plain Custom-type agent without an AI id scheme", () => {
+    useAgentsMock.mockReturnValue({
+      agents: [
+        agent({
+          id: "pty:00000000-0000-0000-0000-000000000001",
+          agent_type: { Custom: "bash" },
+          title: "bash",
+          cwd: "/home/u/proj-a",
+          git_common_dir: "/home/u/proj-a/.git",
+        }),
+      ],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover(null));
+    expect(result.current.missingPreconditions.noLiveAgents).toBe(true);
+    expect(result.current.crossUnit.units).toEqual([]);
+  });
 });
