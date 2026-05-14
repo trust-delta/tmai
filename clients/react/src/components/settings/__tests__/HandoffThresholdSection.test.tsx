@@ -107,6 +107,23 @@ describe("HandoffThresholdSection", () => {
     expect(screen.queryByText(/Triggers at/)).toBeNull();
   });
 
+  // Defensive guard against a pre-handoff-lifecycle tmai-core binary that
+  // omits `auto_handoff_threshold_pct` from the wire — the row must read
+  // "Disabled" (truthful) rather than fabricate "Triggers at undefined%".
+  it("missing wire field renders as Disabled (not 'Triggers at undefined%')", async () => {
+    const stale = orchestrator(0);
+    delete (stale as Partial<OrchestratorSettings>).auto_handoff_threshold_pct;
+    getMock.mockResolvedValue(stale);
+    render(<HandoffThresholdSection />);
+    await waitFor(() => {
+      const input = screen.getByLabelText(/Auto-handoff threshold percent/i) as HTMLInputElement;
+      expect(input.value).toBe("0");
+    });
+    expect(screen.getByText(/Disabled/i)).toBeTruthy();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+    expect(screen.queryByText(/Triggers at/)).toBeNull();
+  });
+
   it("blur commits a valid edit via PUT round-trip", async () => {
     getMock.mockResolvedValue(orchestrator(75));
     updateMock.mockResolvedValue(undefined);
