@@ -860,5 +860,31 @@
       "title": "SpawnWorktreeParams",
       "type": "object"
     }
+  },
+  {
+    "description": "Write the Producer hand-off baton (active.md) for the unit owning the resolved repo (handoff-lifecycle DR §C step 3)",
+    "name": "tmai_handoff_write",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "content": {
+          "description": "Hand-off markdown body for the Producer's `▶ Where you left off`\nsection. Frontmatter (`---\\nunit: ...\\ntask: ...\\n---\\n`) is\noptional but recommended — see the hand-off-lifecycle DR §6.\n`Handoff::parse` must accept it; an empty body (after trim) is\nrejected with `malformed_handoff`.",
+          "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "Optional repo path; matches the `dispatch_issue` `repo` param\nshape. When omitted, falls back to the MCP client's current\nworking directory. The server resolves the owning unit from this\npath via `Settings::unit_for_path`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "HandoffWriteParams",
+      "type": "object"
+    }
   }
 ]
