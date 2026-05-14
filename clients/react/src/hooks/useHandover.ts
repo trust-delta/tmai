@@ -51,6 +51,27 @@ import {
   type ProjectGroup,
 } from "@/lib/api";
 
+// Canonical AgentId schemes that mark a snapshot as an AI coding agent
+// regardless of `agent_type`. Post-2026-05-09 detection canonicalization,
+// `id` carries the canonical scheme (`claude:` / `codex:` / `gemini:` /
+// `opencode:`) even when the spawn command was wrapped (e.g. the
+// Producer launch wraps `tmai producer <unit>` under `bash -c` to
+// satisfy tmai-core's `/api/spawn` allow-list — see
+// `doc/decisions/2026-05-14-react-producer-console-rebuild.md` polish v4).
+// In that wrapped case `agent_type` stays `Custom("bash")` and the
+// plain `isAiAgent(agent_type)` check misses the Producer.
+//
+// TODO(tmai-core spawn-allow-list): when tmai-core's allow-list adds
+// `tmai` as a first-class command, the bash wrap goes away and
+// `agent_type` will reflect reality — this id-scheme fallback can
+// then retire.
+const AI_ID_SCHEMES = ["claude:", "codex:", "gemini:", "opencode:"] as const;
+
+function isHandoverAgent(a: AgentSnapshot): boolean {
+  if (isAiAgent(a.agent_type)) return true;
+  return AI_ID_SCHEMES.some((scheme) => a.id.startsWith(scheme));
+}
+
 export interface WorktreeBrief {
   name: string;
   branch: string | null;
@@ -164,7 +185,7 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
   const { worktrees } = useWorktrees();
 
-  const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
+  const aiAgents = useMemo(() => agents.filter(isHandoverAgent), [agents]);
 
   const projectGroups = useMemo<ProjectGroup[]>(
     () => groupByProject(aiAgents, worktrees),
