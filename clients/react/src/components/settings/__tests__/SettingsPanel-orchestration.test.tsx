@@ -79,6 +79,7 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
     pr_monitor_exclude_authors: [],
     pr_monitor_scope: "current_project",
     inject_state_snapshot: false,
+    auto_handoff_threshold_pct: 75,
     is_project_override: false,
     orchestrator: null,
     dispatch: { implementer: null, reviewer: null },

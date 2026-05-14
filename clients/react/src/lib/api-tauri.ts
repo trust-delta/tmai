@@ -211,6 +211,7 @@ export const api = {
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
+      auto_handoff_threshold_pct?: number;
       /** Tri-state: omit → unchanged. `null` → clear. Object → replace. */
       orchestrator?: DispatchBundle | null;
       /** Replaces the entire `[orchestration.dispatch]` table. */

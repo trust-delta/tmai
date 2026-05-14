@@ -1,6 +1,7 @@
 // HTTP/SSE/WebSocket API layer for tmai axum backend.
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
+import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
 import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
@@ -25,6 +26,7 @@ import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
+  AgentCtxUsage,
   BootstrapRequiredEvent,
   CalibrationCellWire,
   CalibrationEntry,
@@ -181,6 +183,12 @@ export interface AgentSnapshot {
    *  on the wire; the legacy `status` / `phase` / `detail` /
    *  `needs_attention` / `has_pending_approval` pentad is gone. */
   attention?: AgentAttention | null;
+  /** Per-agent context-window usage from CC's statusline hook. Drives
+   *  the ProducerConsole ctx% header and the auto-handoff threshold
+   *  trigger (handoff-lifecycle DR §B/§E). Absent / `null` when the
+   *  agent has not yet emitted a statusline (typical for non-CC
+   *  agents and for CC agents in their bootstrap window). */
+  ctx_usage?: AgentCtxUsage | null;
   // Other derived fields computed by tmai-core
   display_label?: string;
   has_queued_prompt?: boolean;
@@ -705,6 +713,11 @@ export interface OrchestratorSettings {
   pr_monitor_scope: PrMonitorScope;
   /** Append a live state summary to the orchestrator's spawn prompt (#381) */
   inject_state_snapshot: boolean;
+  /** Auto-handoff trigger threshold: Producer's hand-over-and-restart
+   *  ritual fires when `ctx_usage.pct >= auto_handoff_threshold_pct`
+   *  (handoff-lifecycle DR §B/§E). `0` disables the auto-trigger; the
+   *  manual ritual button still works. Rust-side default is 75. */
+  auto_handoff_threshold_pct: number;
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
   /**
@@ -1103,6 +1116,7 @@ export const api = {
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
+      auto_handoff_threshold_pct?: number;
       /**
        * Tri-state: omit → leave unchanged. `null` → clear the bundle. Object →
        * replace. Persists to `[orchestration.orchestrator]` in config.toml.
