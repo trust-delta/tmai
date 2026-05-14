@@ -5,6 +5,7 @@ import type { DetectionSource } from "./DetectionSource";
 import type { DispatchIntentSummary } from "./DispatchIntentSummary";
 import type { EntityChange } from "./EntityChange";
 import type { ErrorCode } from "./ErrorCode";
+import type { HandoffRitualEvent } from "./HandoffRitualEvent";
 import type { TmaiError } from "./TmaiError";
 import type { VendorAvailabilityState } from "./VendorAvailabilityState";
 
@@ -451,4 +452,4 @@ snapshot: unknown,
 /**
  * Who or what triggered this update.
  */
-origin: ActionOrigin | null, };
+origin: ActionOrigin | null, } | { "type": "HandoffRitual" } & HandoffRitualEvent;
