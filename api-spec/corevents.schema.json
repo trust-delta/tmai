@@ -380,6 +380,197 @@
       ],
       "type": "string"
     },
+    "CountsWire": {
+      "description": "Bucket counts for one repo's `Settled` section — mirrors\n`compose::Counts`.",
+      "properties": {
+        "cold": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "foundations": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_play": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale_suspect": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "superseded": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warm": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "in_play",
+        "warm",
+        "cold",
+        "foundations",
+        "superseded",
+        "stale_suspect"
+      ],
+      "type": "object"
+    },
+    "CurrencyItemWire": {
+      "description": "One row of the `⚠ Currency sweep` callout.",
+      "properties": {
+        "last_verified": {
+          "type": "string"
+        },
+        "remedy": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleSinceWire"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "stale",
+        "last_verified",
+        "remedy"
+      ],
+      "type": "object"
+    },
+    "DecisionCategory": {
+      "description": "What kind of decision this is — drives the workbench's temperature treatment.\n\nOrthogonal to [`DecisionFrontmatter::tier`]: `category` is the *kind*\n(blast radius / abstraction); `tier` is the *authority* (who may change it).\nThey correlate strongly — `foundational` defaults to tier-1, `scoped` /\n`principle` to tier-2 — but the binding is in `tier:`, not here.",
+      "enum": [
+        "scoped",
+        "principle",
+        "foundational"
+      ],
+      "type": "string"
+    },
+    "DecisionStatus": {
+      "description": "Current standing of a decision.",
+      "enum": [
+        "draft",
+        "proposed",
+        "accepted",
+        "superseded",
+        "superseded-in-part"
+      ],
+      "type": "string"
+    },
+    "DecisionWire": {
+      "description": "One decision projected to the wire — the human-side complement of the\ninternal `compose::DecisionView`. `last_verified` is rendered as the\nISO-8601 date the frontmatter carries (e.g. `\"2026-05-14\"`).",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/DecisionCategory"
+        },
+        "contract_surface": {
+          "type": "boolean"
+        },
+        "excerpt": {
+          "description": "For 🔴 in-play: the `## Decision` section of the body. For\neverything else: a one-paragraph summary.",
+          "type": "string"
+        },
+        "governs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "last_verified": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "stale_since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/StaleSinceWire",
+              "description": "`Some` when a `governs:` path changed in git after `last_verified` —\nthe workbench's drift signal."
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/DecisionStatus"
+        },
+        "strengthened_by": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "superseded_by": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "status",
+        "category",
+        "governs",
+        "last_verified",
+        "contract_surface",
+        "superseded_by",
+        "strengthened_by",
+        "excerpt"
+      ],
+      "type": "object"
+    },
+    "DecisionsResponse": {
+      "description": "`GET /api/units/{unit}/decisions` response — the `Settled` section of\nthe unit's hand-over, per repo, JSON-projected. Composed on demand\n(no cache), so the client polls when it wants fresh data.\n\nFor a single-repo unit this collapses to `repos.len() == 1`. For a\nmulti-repo unit (per\n`doc/decisions/2026-05-14-producer-capability-valve-principle.md`\n§C/§D) each repo is composed independently; the React side renders a\ngroup per repo without any cross-repo aggregation.",
+      "properties": {
+        "composed_at": {
+          "description": "RFC3339 compose timestamp (the moment the server gathered + composed).",
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoDecisionsWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "composed_at",
+        "repos"
+      ],
+      "type": "object"
+    },
     "DetectionSource": {
       "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
       "enum": [
@@ -887,6 +1078,35 @@
       ],
       "type": "string"
     },
+    "FoundationalDueWire": {
+      "description": "One row of the `⚠ Trajectory check due` callout — a foundational\ndecision whose `last_verified` is older than\n`workbench::FOUNDATIONAL_DUE_DAYS`.",
+      "properties": {
+        "age_days": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "last_verified": {
+          "type": "string"
+        },
+        "remedy": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "last_verified",
+        "age_days",
+        "remedy"
+      ],
+      "type": "object"
+    },
     "HandoffRitualEvent": {
       "allOf": [
         {
@@ -1272,6 +1492,88 @@
       ],
       "type": "object"
     },
+    "RepoDecisionsWire": {
+      "description": "One repo's projected `Settled` section. The bucketed lists are\nalready temperature-sorted; the renderer (React) iterates in order.",
+      "properties": {
+        "cold": {
+          "items": {
+            "$ref": "#/$defs/DecisionWire"
+          },
+          "type": "array"
+        },
+        "counts": {
+          "$ref": "#/$defs/CountsWire"
+        },
+        "currency_sweep": {
+          "items": {
+            "$ref": "#/$defs/CurrencyItemWire"
+          },
+          "type": "array"
+        },
+        "foundational_due": {
+          "items": {
+            "$ref": "#/$defs/FoundationalDueWire"
+          },
+          "type": "array"
+        },
+        "foundations": {
+          "items": {
+            "$ref": "#/$defs/DecisionWire"
+          },
+          "type": "array"
+        },
+        "in_play": {
+          "items": {
+            "$ref": "#/$defs/DecisionWire"
+          },
+          "type": "array"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "repo_head": {
+          "description": "Short HEAD sha of `repo_root`, or `None` when it is not a git repo.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo_label": {
+          "description": "Path leaf of the repo root, e.g. `\"tmai-core\"`. Drives the group\nheader in the React renderer.",
+          "type": "string"
+        },
+        "repo_root": {
+          "description": "Absolute repo root as a string (filesystem path). Surfaced for\ndisambiguation and click-through; not parsed by the client.",
+          "type": "string"
+        },
+        "superseded": {
+          "items": {
+            "$ref": "#/$defs/DecisionWire"
+          },
+          "type": "array"
+        },
+        "warm": {
+          "items": {
+            "$ref": "#/$defs/DecisionWire"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "repo_label",
+        "repo_root",
+        "primary",
+        "counts",
+        "currency_sweep",
+        "foundational_due",
+        "foundations",
+        "in_play",
+        "warm",
+        "cold",
+        "superseded"
+      ],
+      "type": "object"
+    },
     "RetryHint": {
       "description": "Advisory retry guidance attached to a [`TmaiError`].\n\nThe hint is informational only — the caller decides whether to act on it.\nRetry orchestration is explicitly out of scope for v1 of the taxonomy.",
       "oneOf": [
@@ -1410,6 +1712,30 @@
           "type": "object"
         }
       ]
+    },
+    "StaleSinceWire": {
+      "description": "The drift evidence for one decision: which `governs:` path moved and\nthe commit that moved it.",
+      "properties": {
+        "change_date": {
+          "type": "string"
+        },
+        "change_sha": {
+          "type": "string"
+        },
+        "change_subject": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "change_date",
+        "change_sha",
+        "change_subject"
+      ],
+      "type": "object"
     },
     "TaskMetaSnapshot": {
       "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nPreviously named `TaskMetaEntry`. The TypeScript definition is generated\nby ts-rs — do not edit the generated file directly.",
