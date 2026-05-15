@@ -126,6 +126,45 @@
           }
         }
       }
+    },
+    "/api/units/{unit}/decisions": {
+      "get": {
+        "tags": [
+          "decisions"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/decisions`.",
+        "description": "JSON projection of the `Settled` section of the unit's hand-over —\nbuckets (`📌 foundations` / `🔴 in_play` / `🟡 warm` / `⚪ cold` /\n`superseded`) plus the `⚠ Currency sweep` and `⚠ Trajectory check due`\ncallouts, per repo in the unit. Surfaces the same content\n`compose()` renders for the Producer's session-start digest, in a\nshape the React WebUI can consume directly.",
+        "operationId": "get_decisions_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Settled decisions projection — bucketed per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Gather (decision parse / git log) failed"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1667,6 +1706,197 @@
         ],
         "description": "Events emitted by the core when state changes occur.\n\nConsumers call [`TmaiCore::subscribe()`] to receive these events\nvia a `broadcast::Receiver`.\n\nThis enum is the single source of truth for SSE event shapes —\nthe TypeScript discriminated union in\n`crates/tmai-app/web/src/types/generated/CoreEvent.ts` is generated\nfrom this definition by ts-rs (#446). Do not edit that file by hand."
       },
+      "CountsWire": {
+        "type": "object",
+        "description": "Bucket counts for one repo's `Settled` section — mirrors\n`compose::Counts`.",
+        "required": [
+          "total",
+          "in_play",
+          "warm",
+          "cold",
+          "foundations",
+          "superseded",
+          "stale_suspect"
+        ],
+        "properties": {
+          "cold": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "foundations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "in_play": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "stale_suspect": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "superseded": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "warm": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "CurrencyItemWire": {
+        "type": "object",
+        "description": "One row of the `⚠ Currency sweep` callout.",
+        "required": [
+          "slug",
+          "title",
+          "stale",
+          "last_verified",
+          "remedy"
+        ],
+        "properties": {
+          "last_verified": {
+            "type": "string"
+          },
+          "remedy": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "stale": {
+            "$ref": "#/components/schemas/StaleSinceWire"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionCategory": {
+        "type": "string",
+        "description": "What kind of decision this is — drives the workbench's temperature treatment.\n\nOrthogonal to [`DecisionFrontmatter::tier`]: `category` is the *kind*\n(blast radius / abstraction); `tier` is the *authority* (who may change it).\nThey correlate strongly — `foundational` defaults to tier-1, `scoped` /\n`principle` to tier-2 — but the binding is in `tier:`, not here.",
+        "enum": [
+          "scoped",
+          "principle",
+          "foundational"
+        ]
+      },
+      "DecisionStatus": {
+        "type": "string",
+        "description": "Current standing of a decision.",
+        "enum": [
+          "draft",
+          "proposed",
+          "accepted",
+          "superseded",
+          "superseded-in-part"
+        ]
+      },
+      "DecisionWire": {
+        "type": "object",
+        "description": "One decision projected to the wire — the human-side complement of the\ninternal `compose::DecisionView`. `last_verified` is rendered as the\nISO-8601 date the frontmatter carries (e.g. `\"2026-05-14\"`).",
+        "required": [
+          "slug",
+          "title",
+          "status",
+          "category",
+          "governs",
+          "last_verified",
+          "contract_surface",
+          "superseded_by",
+          "strengthened_by",
+          "excerpt"
+        ],
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/DecisionCategory"
+          },
+          "contract_surface": {
+            "type": "boolean"
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "For 🔴 in-play: the `## Decision` section of the body. For\neverything else: a one-paragraph summary."
+          },
+          "governs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verified": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "stale_since": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaleSinceWire",
+                "description": "`Some` when a `governs:` path changed in git after `last_verified` —\nthe workbench's drift signal."
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/DecisionStatus"
+          },
+          "strengthened_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "superseded_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionsResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/decisions` response — the `Settled` section of\nthe unit's hand-over, per repo, JSON-projected. Composed on demand\n(no cache), so the client polls when it wants fresh data.\n\nFor a single-repo unit this collapses to `repos.len() == 1`. For a\nmulti-repo unit (per\n`doc/decisions/2026-05-14-producer-capability-valve-principle.md`\n§C/§D) each repo is composed independently; the React side renders a\ngroup per repo without any cross-repo aggregation.",
+        "required": [
+          "unit",
+          "composed_at",
+          "repos"
+        ],
+        "properties": {
+          "composed_at": {
+            "type": "string",
+            "description": "RFC3339 compose timestamp (the moment the server gathered + composed)."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoDecisionsWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
       "DetectionSource": {
         "type": "string",
         "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
@@ -2174,6 +2404,35 @@
           "Internal"
         ]
       },
+      "FoundationalDueWire": {
+        "type": "object",
+        "description": "One row of the `⚠ Trajectory check due` callout — a foundational\ndecision whose `last_verified` is older than\n`workbench::FOUNDATIONAL_DUE_DAYS`.",
+        "required": [
+          "slug",
+          "title",
+          "last_verified",
+          "age_days",
+          "remedy"
+        ],
+        "properties": {
+          "age_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_verified": {
+            "type": "string"
+          },
+          "remedy": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "HandoffRitualEvent": {
         "allOf": [
           {
@@ -2559,6 +2818,88 @@
           }
         }
       },
+      "RepoDecisionsWire": {
+        "type": "object",
+        "description": "One repo's projected `Settled` section. The bucketed lists are\nalready temperature-sorted; the renderer (React) iterates in order.",
+        "required": [
+          "repo_label",
+          "repo_root",
+          "primary",
+          "counts",
+          "currency_sweep",
+          "foundational_due",
+          "foundations",
+          "in_play",
+          "warm",
+          "cold",
+          "superseded"
+        ],
+        "properties": {
+          "cold": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionWire"
+            }
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CountsWire"
+          },
+          "currency_sweep": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencyItemWire"
+            }
+          },
+          "foundational_due": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FoundationalDueWire"
+            }
+          },
+          "foundations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionWire"
+            }
+          },
+          "in_play": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionWire"
+            }
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "repo_head": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short HEAD sha of `repo_root`, or `None` when it is not a git repo."
+          },
+          "repo_label": {
+            "type": "string",
+            "description": "Path leaf of the repo root, e.g. `\"tmai-core\"`. Drives the group\nheader in the React renderer."
+          },
+          "repo_root": {
+            "type": "string",
+            "description": "Absolute repo root as a string (filesystem path). Surfaced for\ndisambiguation and click-through; not parsed by the client."
+          },
+          "superseded": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionWire"
+            }
+          },
+          "warm": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionWire"
+            }
+          }
+        }
+      },
       "RetryHint": {
         "oneOf": [
           {
@@ -2697,6 +3038,30 @@
           }
         ],
         "description": "Who or what spawned a dispatch. For orchestrator hierarchies (#9) this\nchain is what lets a downstream observer attribute work back to its\noriginating human or parent dispatch."
+      },
+      "StaleSinceWire": {
+        "type": "object",
+        "description": "The drift evidence for one decision: which `governs:` path moved and\nthe commit that moved it.",
+        "required": [
+          "path",
+          "change_date",
+          "change_sha",
+          "change_subject"
+        ],
+        "properties": {
+          "change_date": {
+            "type": "string"
+          },
+          "change_sha": {
+            "type": "string"
+          },
+          "change_subject": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
       },
       "TaskMetaSnapshot": {
         "type": "object",
@@ -3293,6 +3658,10 @@
     {
       "name": "calibration",
       "description": "Producer hit-rate / tier-1 tripwire view (DR 2026-05-13-synthesis-processing-and-calibration-schema §B.3)"
+    },
+    {
+      "name": "decisions",
+      "description": "Settled decisions view — bucketed projection of compose() (DR 2026-05-11-producer-conversation-workbench §1)"
     }
   ]
 }
