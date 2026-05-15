@@ -38,8 +38,8 @@ vi.mock("@/lib/sse-provider", () => ({
 
 // `useHandoffRitual`'s API mock — only the trigger callable matters
 // here since the composition tests never fire the handoff ritual.
-// `decisions` is mocked so `useDecisions` (now driving the ⬡ section)
-// resolves to an empty payload instead of hitting the network.
+// `decisions` + `workingWithHuman` are mocked so the two wired
+// sections resolve to empty payloads instead of hitting the network.
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -54,6 +54,11 @@ vi.mock("@/lib/api", async () => {
         composed_at: "2026-05-15T00:00:00Z",
         repos: [],
       }),
+      workingWithHuman: vi.fn().mockResolvedValue({
+        unit: "stub",
+        dir: null,
+        memory_index: null,
+      }),
     },
   };
 });
@@ -67,7 +72,6 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
       attentionAgents: [],
     },
     crossUnit: overrides.crossUnit ?? { units: [] },
-    workingWithHuman: overrides.workingWithHuman ?? { placeholder: true },
     missingPreconditions: overrides.missingPreconditions ?? {
       noLiveAgents: true,
       singleUnitOnly: false,
@@ -156,17 +160,19 @@ describe("ProducerConsole", () => {
     expect(screen.getByText("main")).toBeTruthy();
   });
 
-  it("renders honest user-facing copy in the remaining-placeholder section + the no-unit notice in Settled decisions", () => {
+  it("renders the no-unit-yet copy in both wired sections (Settled + Working-with-human)", () => {
     useHandoverMock.mockReturnValue(digest());
 
     render(<ProducerConsole {...makeProps()} />);
 
-    // ⬡ Settled decisions is now wired (PR #359); with `unitName=null`
-    // it surfaces a "pick a project" notice rather than fabricating
-    // bucketed content. ◐ Working with this human is still a
-    // placeholder — its copy should still point at `CLAUDE.md`.
-    expect(screen.getByText(/Pick a project/i)).toBeTruthy();
-    expect(screen.getByText(/CLAUDE\.md/)).toBeTruthy();
+    // ⬡ Settled decisions + ◐ Working with this human both poll their
+    // own endpoint; with `unitName=null` each surfaces an honest
+    // "pick a project" notice rather than fabricating content.
+    // Distinguish the two by the section-specific tail of the copy.
+    expect(screen.getByText(/to see its settled decisions/i)).toBeTruthy();
+    expect(
+      screen.getByText(/this unit's memory index and working-with-human context/i),
+    ).toBeTruthy();
   });
 
   it("renders cross-unit rows and routes click to onSelectProjectByPath", () => {

@@ -932,6 +932,24 @@ export interface DecisionsResponse {
   repos: RepoDecisionsWire[];
 }
 
+// ── Working-with-human view (tmai-core PR #360) ──
+//
+// Mirror of `tmai-core::api::working_with_human_view::WorkingWithHumanResponse`.
+// `dir = null` ⇒ no memory dir resolves for this unit; `dir` non-null
+// + `memory_index = null` ⇒ the directory exists but `MEMORY.md` is
+// absent. Hand-written until `gen-spec-pr` syncs the generated type.
+
+export interface WorkingWithHumanResponse {
+  unit: string;
+  /** Absolute path of the resolved memory directory. `null` when no
+   *  override is configured and the auto-derived
+   *  `~/.claude/projects/<slug>/memory` doesn't exist. */
+  dir: string | null;
+  /** Raw markdown contents of `MEMORY.md` under `dir`. `null` when
+   *  the file is absent. */
+  memory_index: string | null;
+}
+
 // ── API wrappers ──
 
 export const api = {
@@ -1302,6 +1320,14 @@ export const api = {
   // repo unit follows once `UnitConfig.also[]` lands in tmai-core#340).
   decisions: (unit: string) =>
     apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
+
+  // Working-with-human view — memory dir + MEMORY.md projection of
+  // `compose()`'s ◐ section per the same DR. Surfaces the same content
+  // the Producer reads on session-start (process rules, cross-conversation
+  // memory index) so the WebUI can render the digest's fourth section
+  // without a Producer being attached.
+  workingWithHuman: (unit: string) =>
+    apiFetch<WorkingWithHumanResponse>(`/units/${encodeURIComponent(unit)}/working-with-human`),
 
   // Handoff-and-restart ritual (tmai-core PR #352, DR
   // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Kicks off the
