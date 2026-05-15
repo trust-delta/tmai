@@ -150,6 +150,32 @@ export function isAiAgent(agentType: AgentType): boolean {
   );
 }
 
+/// Canonical AgentId schemes that mark a snapshot as an AI coding agent
+/// regardless of `agent_type`. Post-2026-05-09 detection canonicalization,
+/// `id` carries the canonical scheme (`claude:` / `codex:` / `gemini:` /
+/// `opencode:`) even when the spawn command was wrapped — e.g. the
+/// Producer launch wraps `tmai producer <unit>` under `bash -c` to
+/// satisfy tmai-core's `/api/spawn` allow-list (see
+/// `doc/decisions/2026-05-14-react-producer-console-rebuild.md` polish v4).
+/// In that wrapped case `agent_type` stays `Custom("bash")` and the
+/// plain `isAiAgent(agent_type)` check misses the Producer.
+///
+/// TODO(tmai-core spawn-allow-list): when tmai-core's allow-list adds
+/// `tmai` as a first-class command, the bash wrap goes away and
+/// `agent_type` reflects reality — this id-scheme fallback can retire.
+const AI_ID_SCHEMES = ["claude:", "codex:", "gemini:", "opencode:"] as const;
+
+/// True if the agent is an AI coding agent — either by `agent_type` or
+/// (post-2026-05-09 fallback) by canonical AgentId scheme prefix.
+///
+/// Centralized here so the bash-wrapped Producer case (#676) classifies
+/// consistently across the WebUI: hand-over digest, App's `aiAgents` →
+/// `projectPaths` derivation, sidebar AI/terminal split, etc.
+export function isAiAgentLoose(agent: { id: string; agent_type: AgentType }): boolean {
+  if (isAiAgent(agent.agent_type)) return true;
+  return AI_ID_SCHEMES.some((scheme) => agent.id.startsWith(scheme));
+}
+
 export interface AgentSnapshot {
   id: string;
   target: string;

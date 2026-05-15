@@ -30,7 +30,7 @@ import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, groupByProject, isAiAgent, type Selection, setCallerCwd } from "@/lib/api";
+import { api, groupByProject, isAiAgentLoose, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
@@ -250,9 +250,15 @@ export function App() {
     setCallerCwd(currentProject);
   }, [currentProject]);
 
-  // Split agents into AI agents and plain terminals
-  const aiAgents = useMemo(() => agents.filter((a) => isAiAgent(a.agent_type)), [agents]);
-  const terminals = useMemo(() => agents.filter((a) => !isAiAgent(a.agent_type)), [agents]);
+  // Split agents into AI agents and plain terminals. `isAiAgentLoose`
+  // catches the bash-wrapped Producer (id starts `claude:` but
+  // `agent_type` reads `Custom("bash")`) so it lands in `aiAgents` and
+  // its repo participates in `projectPaths` / `currentProject`
+  // auto-default — without this the Producer console's ⬡ Settled
+  // decisions and ▶ Where-you-left-off sections stay parked (#676 +
+  // #685 ergonomics).
+  const aiAgents = useMemo(() => agents.filter(isAiAgentLoose), [agents]);
+  const terminals = useMemo(() => agents.filter((a) => !isAiAgentLoose(a)), [agents]);
 
   // Project list derived from active agents (replaces the pre-registered list).
   // Used by the keyboard shortcuts to cycle the X-Tmai-Origin scope and by
