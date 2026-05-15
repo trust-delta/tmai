@@ -6,7 +6,7 @@
 //   ▶ Where you left off
 //   ⬢ Cross-unit status
 //   ⬡ Settled decisions      (wired to GET /api/units/{unit}/decisions)
-//   ◐ Working with this human (Phase A placeholder)
+//   ◐ Working with this human (wired to GET /api/units/{unit}/working-with-human)
 //
 // Bottom row offers two real actions and one Phase-B stub. The
 // tier-1 tripwire banner is hoisted by `App.tsx` above the entire
@@ -80,8 +80,7 @@ export function ProducerConsole({
   sidebarCollapsed,
   onOpenSettings,
 }: ProducerConsoleProps) {
-  const { whereYouLeftOff, crossUnit, workingWithHuman, missingPreconditions } =
-    useHandover(currentProjectPath);
+  const { whereYouLeftOff, crossUnit, missingPreconditions } = useHandover(currentProjectPath);
   const { agents } = useAgents();
 
   return (
@@ -123,7 +122,7 @@ export function ProducerConsole({
           preconditions={missingPreconditions}
         />
         <SettledDecisionsSection unitName={unitName} />
-        <WorkingWithThisHumanSection data={workingWithHuman} />
+        <WorkingWithThisHumanSection unitName={unitName} />
       </div>
 
       <ProducerConsoleActions

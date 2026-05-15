@@ -251,6 +251,10 @@ export const api = {
   // Settled section; no Tauri-specific path needed)
   decisions: (unit: string) => httpApi.decisions(unit),
 
+  // Working-with-human view (HTTP only — on-demand JSON projection of
+  // compose()'s ◐ section; no Tauri-specific path needed)
+  workingWithHuman: (unit: string) => httpApi.workingWithHuman(unit),
+
   // Handoff-and-restart ritual (HTTP only — server-driven multi-step
   // ritual emits its own SSE phase events; no Tauri IPC equivalent).
   triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>

@@ -80,13 +80,19 @@ describe("useHandover — empty state", () => {
     expect(result.current.crossUnit.units).toEqual([]);
   });
 
-  it("exposes the working-with-human placeholder (settled decisions now lives in its own section)", () => {
+  it("returns only client-derived sections — the two compose-driven sections own their own polling", () => {
     const { result } = renderHook(() => useHandover(null));
-    // `⬡ Settled decisions` is now driven by `useDecisions` directly in
-    // `SettledDecisionsSection`; the hook no longer ships a placeholder
-    // for it. `◐ Working with this human` stays placeholder-shaped
-    // until its wire endpoint lands.
-    expect(result.current.workingWithHuman.placeholder).toBe(true);
+    // Both `⬡ Settled decisions` and `◐ Working with this human` now
+    // poll their respective endpoints directly (via `useDecisions` /
+    // `useWorkingWithHuman`); the hook keeps only the client-derived
+    // signals.
+    expect(result.current.whereYouLeftOff).toBeDefined();
+    expect(result.current.crossUnit).toBeDefined();
+    expect(result.current.missingPreconditions).toBeDefined();
+    // Property-absence guard: a stray placeholder on the digest type
+    // would re-introduce the contract drift removed here.
+    expect("workingWithHuman" in result.current).toBe(false);
+    expect("settledDecisions" in result.current).toBe(false);
   });
 });
 

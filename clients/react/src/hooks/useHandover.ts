@@ -101,21 +101,13 @@ export interface CrossUnitStatus {
   units: UnitStatus[];
 }
 
-// Placeholder shapes are intentionally tiny — the section components
-// hard-code the user-facing copy so the hook stays free of UI strings.
-// (Earlier drafts inlined a `reason` field with "Phase C: <endpoint>
-// not yet wired" technical text, which leaked through to the user UI
-// and read as broken. Lesson: keep technical reasons out of UI hooks.)
-//
-// `⬡ Settled decisions` is now wired to `GET /api/units/{unit}/decisions`
-// (tmai-core PR #359) — the section owns its own polling via
-// `useDecisions(unitName)` rather than receiving placeholder data here.
-// `◐ Working with this human` stays a placeholder until the next wire
-// endpoint (memory dir / MEMORY.md projection) lands.
-
-export interface WorkingWithHumanPlaceholder {
-  placeholder: true;
-}
+// Both compose-driven sections (`⬡ Settled decisions` and `◐ Working
+// with this human`) are now wired to their respective wire endpoints
+// — the sections own their own polling via `useDecisions(unitName)` /
+// `useWorkingWithHuman(unitName)` rather than receiving placeholder
+// data from this hook. The hook keeps only the client-derived signals:
+// `whereYouLeftOff` (project scoping + attention agents) and
+// `crossUnit` (per-unit hotness).
 
 /**
  * Weak client-side signals that the unit might be incompletely onboarded
@@ -148,7 +140,6 @@ export interface MissingPreconditions {
 export interface HandoverDigest {
   whereYouLeftOff: WhereYouLeftOff;
   crossUnit: CrossUnitStatus;
-  workingWithHuman: WorkingWithHumanPlaceholder;
   missingPreconditions: MissingPreconditions;
 }
 
@@ -166,11 +157,11 @@ function deriveUnitState(group: ProjectGroup): UnitState {
 }
 
 /**
- * Aggregate client-side data into the hand-over digest's four sections.
- *
- * `settledDecisions` is no longer in the digest — `SettledDecisionsSection`
- * owns its own polling via `useDecisions`. `workingWithHuman` stays a
- * placeholder until the next wire endpoint lands.
+ * Aggregate client-side data into the hand-over digest's client-derived
+ * sections. The two compose-driven sections (`⬡ Settled decisions`,
+ * `◐ Working with this human`) are now wired directly to their own
+ * endpoints — `SettledDecisionsSection` + `WorkingWithThisHumanSection`
+ * each own their own polling hook.
  */
 export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
@@ -226,12 +217,6 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     [projectGroups],
   );
 
-  // Plain signal object — the section component owns the user-facing
-  // copy. Identity is stable across renders since the literal is
-  // structurally identical, but we still allocate a fresh object to
-  // keep the type literal `true` exact.
-  const workingWithHuman: WorkingWithHumanPlaceholder = { placeholder: true };
-
   // Weak posture-signal derivation. See `MissingPreconditions` doc for
   // why these are tagged TODO(tmai-core#NNN) — they get retired once
   // the wire side surfaces the real precondition data.
@@ -240,5 +225,5 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     singleUnitOnly: projectGroups.length === 1,
   };
 
-  return { whereYouLeftOff, crossUnit, workingWithHuman, missingPreconditions };
+  return { whereYouLeftOff, crossUnit, missingPreconditions };
 }
