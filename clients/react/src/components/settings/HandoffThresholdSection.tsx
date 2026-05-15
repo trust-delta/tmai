@@ -45,7 +45,7 @@ export function HandoffThresholdSection() {
       .getOrchestratorSettings()
       .then((s) => {
         setOrchestrator(s);
-        setDraft(String(s.auto_handoff_threshold_pct));
+        setDraft(String(s.auto_handoff_threshold_pct ?? 0));
       })
       .catch(() => {});
   }, []);
@@ -72,7 +72,12 @@ export function HandoffThresholdSection() {
     });
   };
 
-  const currentPct = orchestrator.auto_handoff_threshold_pct;
+  // `auto_handoff_threshold_pct` is required on the wire post-handoff-lifecycle
+  // DR, but a tmai-core binary built before `core-v3.x` (efb8804) omits it.
+  // Mirror the `?? 0` defaulting that ProducerCtxHeader uses so the row reads
+  // "Disabled" (truthful — no auto-handoff is configured) instead of
+  // fabricating "Triggers at undefined%".
+  const currentPct = orchestrator.auto_handoff_threshold_pct ?? 0;
   const disabled = currentPct === 0;
   const statusLabel = disabled ? "Disabled" : `Triggers at ${currentPct}%`;
 
