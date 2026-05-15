@@ -77,6 +77,45 @@
         }
       }
     },
+    "/api/units/{unit}/approaches": {
+      "get": {
+        "tags": [
+          "approaches"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/approaches`.",
+        "description": "JSON projection of the `▣ Active approaches` section of the unit's\nhand-over per `doc/decisions/2026-05-15-records-architecture-two-axes.md`:\nevery `doc/approaches/*.md` record with `status: active`, grouped per\nrepo, with `serves:`, `success-signal`, `failure-signal`, and the\n`review-trigger` list surfaced as static text (mechanical trigger\ndetection lives in a follow-up PR per the trigger-semantics thread on\ntmai-core#361). Validated / rejected / replaced records are parsed\n(audit-trail preservation) but excluded from this view.",
+        "operationId": "get_approaches_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active approaches projection — bucketed per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproachesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Gather (approach parse) failed"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/calibration": {
       "get": {
         "tags": [
@@ -304,6 +343,137 @@
           "halted",
           "completed"
         ]
+      },
+      "ApproachStatus": {
+        "type": "string",
+        "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`active → validated / rejected / replaced`) rather than through a\nsupersede chain. A validated / rejected approach is preserved as the\naudit-trail record of *what we tried and what happened*; a follow-up\ndecision (if any) is authored separately rather than in-place.",
+        "enum": [
+          "active",
+          "validated",
+          "rejected",
+          "replaced"
+        ]
+      },
+      "ApproachWire": {
+        "type": "object",
+        "description": "One approach projected to the wire — the human-side complement of the\ninternal [`crate::workbench::compose::ApproachView`].",
+        "required": [
+          "slug",
+          "title",
+          "date",
+          "status",
+          "governs",
+          "serves",
+          "success_signal",
+          "failure_signal",
+          "review_triggers",
+          "review_history",
+          "replaced_by",
+          "excerpt"
+        ],
+        "properties": {
+          "confidence": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Confidence",
+                "description": "Producer confidence; `None` when no confidence is on record."
+              }
+            ]
+          },
+          "date": {
+            "type": "string",
+            "description": "ISO-8601 date parsed from the slug's `YYYY-MM-DD-` prefix — the\ncreation date. Approaches don't carry a `last_verified` field;\nre-evaluation is signal-driven via `review_triggers`."
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "First-paragraph summary of the body."
+          },
+          "failure_signal": {
+            "type": "string"
+          },
+          "governs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replaced_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Approach slugs that replaced this one — meaningful only when\n`status: replaced`."
+          },
+          "review_history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewExtensionWire"
+            },
+            "description": "Extend ledger — empty for fresh approaches."
+          },
+          "review_triggers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewTriggerWire"
+            },
+            "description": "Re-evaluation triggers, non-empty per parse-time validation. The\nsingle-date `review_after:` sugar is already expanded into a `Date`\ntrigger by the parser."
+          },
+          "serves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`serves:` — non-empty per parse-time validation."
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApproachStatus"
+          },
+          "success_signal": {
+            "type": "string"
+          },
+          "tier": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Authority level (1 = tier-1, 2 = tier-2). `None` ⇒ untiered.",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ApproachesResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/approaches` response — the `▣ Active approaches`\nsection of the unit's hand-over, per repo, JSON-projected. Composed on\ndemand (no cache).\n\nFor a single-repo unit this collapses to `repos.len() == 1` — the\ncommon case until per-unit `also[]` per-repo `approaches_dir`\noverrides land (tracked in tmai-core#340 for the multi-repo follow-up\nalongside the decisions-side override).",
+        "required": [
+          "unit",
+          "composed_at",
+          "repos"
+        ],
+        "properties": {
+          "composed_at": {
+            "type": "string",
+            "description": "RFC3339 compose timestamp."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoApproachesWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
       },
       "BundleId": {
         "type": "string",
@@ -2854,6 +3024,39 @@
           }
         }
       },
+      "RepoApproachesWire": {
+        "type": "object",
+        "description": "One repo's projected `▣ Active approaches` slice. The list carries\n`status: active` records only; validated / rejected / replaced records\nare filtered out at compose time (preserved in memory as audit-trail\ncontext, not surfaced on the wire yet).",
+        "required": [
+          "repo_label",
+          "repo_root",
+          "primary",
+          "active"
+        ],
+        "properties": {
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApproachWire"
+            }
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "repo_head": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo_label": {
+            "type": "string"
+          },
+          "repo_root": {
+            "type": "string"
+          }
+        }
+      },
       "RepoDecisionsWire": {
         "type": "object",
         "description": "One repo's projected `Settled` section. The bucketed lists are\nalready temperature-sorted; the renderer (React) iterates in order.",
@@ -2998,6 +3201,173 @@
           }
         ],
         "description": "Advisory retry guidance attached to a [`TmaiError`].\n\nThe hint is informational only — the caller decides whether to act on it.\nRetry orchestration is explicitly out of scope for v1 of the taxonomy."
+      },
+      "ReviewExtensionWire": {
+        "type": "object",
+        "description": "One entry in an approach's extend ledger, wire-projected.",
+        "required": [
+          "extended_on",
+          "new_trigger",
+          "reason"
+        ],
+        "properties": {
+          "extended_on": {
+            "type": "string",
+            "description": "ISO-8601 date the extension was recorded."
+          },
+          "new_trigger": {
+            "$ref": "#/components/schemas/ReviewTriggerWire"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewTriggerWire": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Calendar fallback — `value` is `YYYY-MM-DD`.",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "date"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`reference` is `<owner>/<repo>#<number>`.",
+            "required": [
+              "ref",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pr-closed"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`reference` is `<owner>/<repo>#<number>`.",
+            "required": [
+              "ref",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pr-merged"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`reference` is `<owner>/<repo>#<number>`.",
+            "required": [
+              "ref",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "issue-closed"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`reference` is a decision-record slug; `target_status` matches the\n`DecisionStatus` wire enum (`accepted` / `proposed` / etc.).",
+            "required": [
+              "ref",
+              "target-status",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "decision-status"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "target-status": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`reference` is an approach-record slug; `target_status` matches the\n`ApproachStatus` wire enum (`validated` / `rejected` / etc.).",
+            "required": [
+              "ref",
+              "target-status",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "approach-status"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "target-status": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Never auto-fires. `description` records the operator's intent for a\nfuture Producer suggestion pass.",
+            "required": [
+              "description",
+              "kind"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "manual"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One review trigger, wire-projected. Tagged on `kind` so the TS shape\nmatches the Rust [`crate::workbench::ReviewTrigger`] one-for-one;\n`Date.value` becomes an ISO-8601 string on the wire (the underlying\n`NaiveDate` is private to the parser)."
       },
       "RuntimeSnapshot": {
         "type": "object",
@@ -3724,6 +4094,10 @@
     {
       "name": "decisions",
       "description": "Settled decisions view — bucketed projection of compose() (DR 2026-05-11-producer-conversation-workbench §1)"
+    },
+    {
+      "name": "approaches",
+      "description": "Active approaches view — peer of decisions per DR 2026-05-15-records-architecture-two-axes; surfaces status:active records with their serves / signal / review-trigger fields"
     },
     {
       "name": "working-with-human",
