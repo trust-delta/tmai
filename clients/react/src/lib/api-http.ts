@@ -150,6 +150,32 @@ export function isAiAgent(agentType: AgentType): boolean {
   );
 }
 
+/// Canonical AgentId schemes that mark a snapshot as an AI coding agent
+/// regardless of `agent_type`. Post-2026-05-09 detection canonicalization,
+/// `id` carries the canonical scheme (`claude:` / `codex:` / `gemini:` /
+/// `opencode:`) even when the spawn command was wrapped — e.g. the
+/// Producer launch wraps `tmai producer <unit>` under `bash -c` to
+/// satisfy tmai-core's `/api/spawn` allow-list (see
+/// `doc/decisions/2026-05-14-react-producer-console-rebuild.md` polish v4).
+/// In that wrapped case `agent_type` stays `Custom("bash")` and the
+/// plain `isAiAgent(agent_type)` check misses the Producer.
+///
+/// TODO(tmai-core spawn-allow-list): when tmai-core's allow-list adds
+/// `tmai` as a first-class command, the bash wrap goes away and
+/// `agent_type` reflects reality — this id-scheme fallback can retire.
+const AI_ID_SCHEMES = ["claude:", "codex:", "gemini:", "opencode:"] as const;
+
+/// True if the agent is an AI coding agent — either by `agent_type` or
+/// (post-2026-05-09 fallback) by canonical AgentId scheme prefix.
+///
+/// Centralized here so the bash-wrapped Producer case (#676) classifies
+/// consistently across the WebUI: hand-over digest, App's `aiAgents` →
+/// `projectPaths` derivation, sidebar AI/terminal split, etc.
+export function isAiAgentLoose(agent: { id: string; agent_type: AgentType }): boolean {
+  if (isAiAgent(agent.agent_type)) return true;
+  return AI_ID_SCHEMES.some((scheme) => agent.id.startsWith(scheme));
+}
+
 export interface AgentSnapshot {
   id: string;
   target: string;
@@ -815,6 +841,97 @@ export interface DirEntry {
   is_git: boolean;
 }
 
+// ── Decisions view (tmai-core PR #359) ──
+//
+// Wire types mirroring `tmai-core::api::decisions_view` for the
+// `GET /api/units/{unit}/decisions` endpoint. Hand-written here until
+// the `gen-spec-pr` bot PR syncs them into `src/types/generated/`;
+// once that lands the hand-written exports collapse to re-exports of
+// the generated bindings (same shape).
+//
+// Doc-decision basis: `2026-05-11-producer-conversation-workbench` §1
+// (Settled-section projection) + DR §D of
+// `2026-05-14-producer-capability-valve-principle` (per-repo render,
+// no cross-repo aggregation).
+export type DecisionStatusWire =
+  | "draft"
+  | "proposed"
+  | "accepted"
+  | "superseded"
+  | "superseded-in-part";
+
+export type DecisionCategoryWire = "scoped" | "principle" | "foundational";
+
+export interface StaleSinceWire {
+  path: string;
+  change_date: string;
+  change_sha: string;
+  change_subject: string;
+}
+
+export interface DecisionWire {
+  slug: string;
+  title: string;
+  status: DecisionStatusWire;
+  category: DecisionCategoryWire;
+  governs: string[];
+  /** ISO-8601 date string, e.g. "2026-05-14". */
+  last_verified: string;
+  contract_surface: boolean;
+  stale_since: StaleSinceWire | null;
+  superseded_by: string[];
+  strengthened_by: string[];
+  excerpt: string;
+}
+
+export interface CurrencyItemWire {
+  slug: string;
+  title: string;
+  stale: StaleSinceWire;
+  last_verified: string;
+  remedy: string;
+}
+
+export interface FoundationalDueWire {
+  slug: string;
+  title: string;
+  last_verified: string;
+  age_days: number;
+  remedy: string;
+}
+
+export interface DecisionCountsWire {
+  total: number;
+  in_play: number;
+  warm: number;
+  cold: number;
+  foundations: number;
+  superseded: number;
+  stale_suspect: number;
+}
+
+export interface RepoDecisionsWire {
+  repo_label: string;
+  repo_root: string;
+  primary: boolean;
+  repo_head: string | null;
+  counts: DecisionCountsWire;
+  currency_sweep: CurrencyItemWire[];
+  foundational_due: FoundationalDueWire[];
+  foundations: DecisionWire[];
+  in_play: DecisionWire[];
+  warm: DecisionWire[];
+  cold: DecisionWire[];
+  superseded: DecisionWire[];
+}
+
+export interface DecisionsResponse {
+  unit: string;
+  /** RFC3339 timestamp. */
+  composed_at: string;
+  repos: RepoDecisionsWire[];
+}
+
 // ── API wrappers ──
 
 export const api = {
@@ -1178,6 +1295,13 @@ export const api = {
   // the CLI's default.
   calibration: (unit: string, days = 90) =>
     apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
+
+  // Decisions view — bucketed projection of `compose()`'s Settled section
+  // per `2026-05-11-producer-conversation-workbench.md` §1. Returns
+  // per-repo groups (single-element list for a single-repo unit; multi-
+  // repo unit follows once `UnitConfig.also[]` lands in tmai-core#340).
+  decisions: (unit: string) =>
+    apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
 
   // Handoff-and-restart ritual (tmai-core PR #352, DR
   // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Kicks off the

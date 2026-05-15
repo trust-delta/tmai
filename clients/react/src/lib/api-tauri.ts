@@ -247,6 +247,10 @@ export const api = {
   // calibration store; no Tauri-specific path needed)
   calibration: (unit: string, days?: number) => httpApi.calibration(unit, days),
 
+  // Decisions view (HTTP only — on-demand JSON projection of compose()'s
+  // Settled section; no Tauri-specific path needed)
+  decisions: (unit: string) => httpApi.decisions(unit),
+
   // Handoff-and-restart ritual (HTTP only — server-driven multi-step
   // ritual emits its own SSE phase events; no Tauri IPC equivalent).
   triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>

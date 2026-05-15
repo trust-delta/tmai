@@ -5,7 +5,7 @@
 //
 //   ▶ Where you left off
 //   ⬢ Cross-unit status
-//   ⬡ Settled decisions      (Phase A placeholder)
+//   ⬡ Settled decisions      (wired to GET /api/units/{unit}/decisions)
 //   ◐ Working with this human (Phase A placeholder)
 //
 // Bottom row offers two real actions and one Phase-B stub. The
@@ -80,7 +80,7 @@ export function ProducerConsole({
   sidebarCollapsed,
   onOpenSettings,
 }: ProducerConsoleProps) {
-  const { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions } =
+  const { whereYouLeftOff, crossUnit, workingWithHuman, missingPreconditions } =
     useHandover(currentProjectPath);
   const { agents } = useAgents();
 
@@ -122,7 +122,7 @@ export function ProducerConsole({
           onSelectUnit={onSelectProjectByPath}
           preconditions={missingPreconditions}
         />
-        <SettledDecisionsSection data={settledDecisions} />
+        <SettledDecisionsSection unitName={unitName} />
         <WorkingWithThisHumanSection data={workingWithHuman} />
       </div>
 

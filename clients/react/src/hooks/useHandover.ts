@@ -47,30 +47,18 @@ import {
   type AgentAttention,
   type AgentSnapshot,
   groupByProject,
-  isAiAgent,
+  isAiAgentLoose,
   type ProjectGroup,
 } from "@/lib/api";
 
-// Canonical AgentId schemes that mark a snapshot as an AI coding agent
-// regardless of `agent_type`. Post-2026-05-09 detection canonicalization,
-// `id` carries the canonical scheme (`claude:` / `codex:` / `gemini:` /
-// `opencode:`) even when the spawn command was wrapped (e.g. the
-// Producer launch wraps `tmai producer <unit>` under `bash -c` to
-// satisfy tmai-core's `/api/spawn` allow-list — see
-// `doc/decisions/2026-05-14-react-producer-console-rebuild.md` polish v4).
-// In that wrapped case `agent_type` stays `Custom("bash")` and the
-// plain `isAiAgent(agent_type)` check misses the Producer.
-//
-// TODO(tmai-core spawn-allow-list): when tmai-core's allow-list adds
-// `tmai` as a first-class command, the bash wrap goes away and
-// `agent_type` will reflect reality — this id-scheme fallback can
-// then retire.
-const AI_ID_SCHEMES = ["claude:", "codex:", "gemini:", "opencode:"] as const;
-
-function isHandoverAgent(a: AgentSnapshot): boolean {
-  if (isAiAgent(a.agent_type)) return true;
-  return AI_ID_SCHEMES.some((scheme) => a.id.startsWith(scheme));
-}
+// The `isAiAgentLoose` helper (centralized in `@/lib/api`) handles the
+// bash-wrapped Producer case for us — when the spawn is wrapped under
+// `bash -c` to satisfy tmai-core's `/api/spawn` allow-list, the
+// `agent_type` stays `Custom("bash")` but the canonical id scheme
+// (`claude:` / `codex:` / `gemini:` / `opencode:`) still identifies
+// the underlying AI agent. The hand-over digest needs the loose
+// classifier so that wrapped Producer doesn't drop out of
+// `projectGroups` and break the cross-unit derivation.
 
 export interface WorktreeBrief {
   name: string;
@@ -118,9 +106,12 @@ export interface CrossUnitStatus {
 // (Earlier drafts inlined a `reason` field with "Phase C: <endpoint>
 // not yet wired" technical text, which leaked through to the user UI
 // and read as broken. Lesson: keep technical reasons out of UI hooks.)
-export interface SettledDecisionsPlaceholder {
-  placeholder: true;
-}
+//
+// `⬡ Settled decisions` is now wired to `GET /api/units/{unit}/decisions`
+// (tmai-core PR #359) — the section owns its own polling via
+// `useDecisions(unitName)` rather than receiving placeholder data here.
+// `◐ Working with this human` stays a placeholder until the next wire
+// endpoint (memory dir / MEMORY.md projection) lands.
 
 export interface WorkingWithHumanPlaceholder {
   placeholder: true;
@@ -157,7 +148,6 @@ export interface MissingPreconditions {
 export interface HandoverDigest {
   whereYouLeftOff: WhereYouLeftOff;
   crossUnit: CrossUnitStatus;
-  settledDecisions: SettledDecisionsPlaceholder;
   workingWithHuman: WorkingWithHumanPlaceholder;
   missingPreconditions: MissingPreconditions;
 }
@@ -178,14 +168,15 @@ function deriveUnitState(group: ProjectGroup): UnitState {
 /**
  * Aggregate client-side data into the hand-over digest's four sections.
  *
- * Phase A: `settledDecisions` and `workingWithHuman` are placeholders;
- * see file header for the wire endpoints Phase C will introduce.
+ * `settledDecisions` is no longer in the digest — `SettledDecisionsSection`
+ * owns its own polling via `useDecisions`. `workingWithHuman` stays a
+ * placeholder until the next wire endpoint lands.
  */
 export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
   const { worktrees } = useWorktrees();
 
-  const aiAgents = useMemo(() => agents.filter(isHandoverAgent), [agents]);
+  const aiAgents = useMemo(() => agents.filter(isAiAgentLoose), [agents]);
 
   const projectGroups = useMemo<ProjectGroup[]>(
     () => groupByProject(aiAgents, worktrees),
@@ -235,11 +226,10 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     [projectGroups],
   );
 
-  // Plain signal objects — the section components own the user-facing
-  // copy. Section identity is stable across renders since the literal
-  // is structurally identical, but we still allocate fresh objects to
+  // Plain signal object — the section component owns the user-facing
+  // copy. Identity is stable across renders since the literal is
+  // structurally identical, but we still allocate a fresh object to
   // keep the type literal `true` exact.
-  const settledDecisions: SettledDecisionsPlaceholder = { placeholder: true };
   const workingWithHuman: WorkingWithHumanPlaceholder = { placeholder: true };
 
   // Weak posture-signal derivation. See `MissingPreconditions` doc for
@@ -250,5 +240,5 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     singleUnitOnly: projectGroups.length === 1,
   };
 
-  return { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions };
+  return { whereYouLeftOff, crossUnit, workingWithHuman, missingPreconditions };
 }
