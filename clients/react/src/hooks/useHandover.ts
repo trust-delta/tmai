@@ -118,9 +118,12 @@ export interface CrossUnitStatus {
 // (Earlier drafts inlined a `reason` field with "Phase C: <endpoint>
 // not yet wired" technical text, which leaked through to the user UI
 // and read as broken. Lesson: keep technical reasons out of UI hooks.)
-export interface SettledDecisionsPlaceholder {
-  placeholder: true;
-}
+//
+// `⬡ Settled decisions` is now wired to `GET /api/units/{unit}/decisions`
+// (tmai-core PR #359) — the section owns its own polling via
+// `useDecisions(unitName)` rather than receiving placeholder data here.
+// `◐ Working with this human` stays a placeholder until the next wire
+// endpoint (memory dir / MEMORY.md projection) lands.
 
 export interface WorkingWithHumanPlaceholder {
   placeholder: true;
@@ -157,7 +160,6 @@ export interface MissingPreconditions {
 export interface HandoverDigest {
   whereYouLeftOff: WhereYouLeftOff;
   crossUnit: CrossUnitStatus;
-  settledDecisions: SettledDecisionsPlaceholder;
   workingWithHuman: WorkingWithHumanPlaceholder;
   missingPreconditions: MissingPreconditions;
 }
@@ -178,8 +180,9 @@ function deriveUnitState(group: ProjectGroup): UnitState {
 /**
  * Aggregate client-side data into the hand-over digest's four sections.
  *
- * Phase A: `settledDecisions` and `workingWithHuman` are placeholders;
- * see file header for the wire endpoints Phase C will introduce.
+ * `settledDecisions` is no longer in the digest — `SettledDecisionsSection`
+ * owns its own polling via `useDecisions`. `workingWithHuman` stays a
+ * placeholder until the next wire endpoint lands.
  */
 export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
@@ -235,11 +238,10 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     [projectGroups],
   );
 
-  // Plain signal objects — the section components own the user-facing
-  // copy. Section identity is stable across renders since the literal
-  // is structurally identical, but we still allocate fresh objects to
+  // Plain signal object — the section component owns the user-facing
+  // copy. Identity is stable across renders since the literal is
+  // structurally identical, but we still allocate a fresh object to
   // keep the type literal `true` exact.
-  const settledDecisions: SettledDecisionsPlaceholder = { placeholder: true };
   const workingWithHuman: WorkingWithHumanPlaceholder = { placeholder: true };
 
   // Weak posture-signal derivation. See `MissingPreconditions` doc for
@@ -250,5 +252,5 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     singleUnitOnly: projectGroups.length === 1,
   };
 
-  return { whereYouLeftOff, crossUnit, settledDecisions, workingWithHuman, missingPreconditions };
+  return { whereYouLeftOff, crossUnit, workingWithHuman, missingPreconditions };
 }

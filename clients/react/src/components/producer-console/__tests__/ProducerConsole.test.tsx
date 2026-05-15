@@ -38,6 +38,8 @@ vi.mock("@/lib/sse-provider", () => ({
 
 // `useHandoffRitual`'s API mock — only the trigger callable matters
 // here since the composition tests never fire the handoff ritual.
+// `decisions` is mocked so `useDecisions` (now driving the ⬡ section)
+// resolves to an empty payload instead of hitting the network.
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -47,6 +49,11 @@ vi.mock("@/lib/api", async () => {
       getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
       killAgent: vi.fn().mockResolvedValue(undefined),
       triggerHandoffRitual: vi.fn().mockResolvedValue({ ritual_id: "r-stub" }),
+      decisions: vi.fn().mockResolvedValue({
+        unit: "stub",
+        composed_at: "2026-05-15T00:00:00Z",
+        repos: [],
+      }),
     },
   };
 });
@@ -60,7 +67,6 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
       attentionAgents: [],
     },
     crossUnit: overrides.crossUnit ?? { units: [] },
-    settledDecisions: overrides.settledDecisions ?? { placeholder: true },
     workingWithHuman: overrides.workingWithHuman ?? { placeholder: true },
     missingPreconditions: overrides.missingPreconditions ?? {
       noLiveAgents: true,
@@ -150,16 +156,16 @@ describe("ProducerConsole", () => {
     expect(screen.getByText("main")).toBeTruthy();
   });
 
-  it("renders the user-facing copy in the not-yet-wired sections", () => {
+  it("renders honest user-facing copy in the remaining-placeholder section + the no-unit notice in Settled decisions", () => {
     useHandoverMock.mockReturnValue(digest());
 
     render(<ProducerConsole {...makeProps()} />);
 
-    // Section components own these strings (not the hook); they should
-    // point the operator at the repo-side fallbacks rather than leak
-    // phase-tracking jargon ("Phase C: ... not yet wired") which read
-    // as broken on first contact.
-    expect(screen.getByText(/doc\/decisions/)).toBeTruthy();
+    // ⬡ Settled decisions is now wired (PR #359); with `unitName=null`
+    // it surfaces a "pick a project" notice rather than fabricating
+    // bucketed content. ◐ Working with this human is still a
+    // placeholder — its copy should still point at `CLAUDE.md`.
+    expect(screen.getByText(/Pick a project/i)).toBeTruthy();
     expect(screen.getByText(/CLAUDE\.md/)).toBeTruthy();
   });
 

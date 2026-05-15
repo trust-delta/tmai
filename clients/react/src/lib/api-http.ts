@@ -815,6 +815,97 @@ export interface DirEntry {
   is_git: boolean;
 }
 
+// ── Decisions view (tmai-core PR #359) ──
+//
+// Wire types mirroring `tmai-core::api::decisions_view` for the
+// `GET /api/units/{unit}/decisions` endpoint. Hand-written here until
+// the `gen-spec-pr` bot PR syncs them into `src/types/generated/`;
+// once that lands the hand-written exports collapse to re-exports of
+// the generated bindings (same shape).
+//
+// Doc-decision basis: `2026-05-11-producer-conversation-workbench` §1
+// (Settled-section projection) + DR §D of
+// `2026-05-14-producer-capability-valve-principle` (per-repo render,
+// no cross-repo aggregation).
+export type DecisionStatusWire =
+  | "draft"
+  | "proposed"
+  | "accepted"
+  | "superseded"
+  | "superseded-in-part";
+
+export type DecisionCategoryWire = "scoped" | "principle" | "foundational";
+
+export interface StaleSinceWire {
+  path: string;
+  change_date: string;
+  change_sha: string;
+  change_subject: string;
+}
+
+export interface DecisionWire {
+  slug: string;
+  title: string;
+  status: DecisionStatusWire;
+  category: DecisionCategoryWire;
+  governs: string[];
+  /** ISO-8601 date string, e.g. "2026-05-14". */
+  last_verified: string;
+  contract_surface: boolean;
+  stale_since: StaleSinceWire | null;
+  superseded_by: string[];
+  strengthened_by: string[];
+  excerpt: string;
+}
+
+export interface CurrencyItemWire {
+  slug: string;
+  title: string;
+  stale: StaleSinceWire;
+  last_verified: string;
+  remedy: string;
+}
+
+export interface FoundationalDueWire {
+  slug: string;
+  title: string;
+  last_verified: string;
+  age_days: number;
+  remedy: string;
+}
+
+export interface DecisionCountsWire {
+  total: number;
+  in_play: number;
+  warm: number;
+  cold: number;
+  foundations: number;
+  superseded: number;
+  stale_suspect: number;
+}
+
+export interface RepoDecisionsWire {
+  repo_label: string;
+  repo_root: string;
+  primary: boolean;
+  repo_head: string | null;
+  counts: DecisionCountsWire;
+  currency_sweep: CurrencyItemWire[];
+  foundational_due: FoundationalDueWire[];
+  foundations: DecisionWire[];
+  in_play: DecisionWire[];
+  warm: DecisionWire[];
+  cold: DecisionWire[];
+  superseded: DecisionWire[];
+}
+
+export interface DecisionsResponse {
+  unit: string;
+  /** RFC3339 timestamp. */
+  composed_at: string;
+  repos: RepoDecisionsWire[];
+}
+
 // ── API wrappers ──
 
 export const api = {
@@ -1178,6 +1269,13 @@ export const api = {
   // the CLI's default.
   calibration: (unit: string, days = 90) =>
     apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
+
+  // Decisions view — bucketed projection of `compose()`'s Settled section
+  // per `2026-05-11-producer-conversation-workbench.md` §1. Returns
+  // per-repo groups (single-element list for a single-repo unit; multi-
+  // repo unit follows once `UnitConfig.also[]` lands in tmai-core#340).
+  decisions: (unit: string) =>
+    apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
 
   // Handoff-and-restart ritual (tmai-core PR #352, DR
   // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Kicks off the
