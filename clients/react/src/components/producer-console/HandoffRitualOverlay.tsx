@@ -54,9 +54,9 @@ const STATUS_MARK = {
 } as const;
 
 const STATUS_CLASS = {
-  done: "text-emerald-400",
-  current: "text-cyan-300",
-  pending: "text-zinc-600",
+  done: "text-success",
+  current: "text-primary",
+  pending: "text-subtle-foreground",
 } as const;
 
 export function HandoffRitualOverlay({ unitName, ritualId, phases }: HandoffRitualOverlayProps) {
@@ -84,11 +84,11 @@ export function HandoffRitualOverlay({ unitName, ritualId, phases }: HandoffRitu
       role="dialog"
       aria-modal="true"
       aria-label="Handoff and restart in progress"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
     >
-      <div className="w-full max-w-lg rounded-xl border border-white/10 bg-zinc-900 p-5 shadow-2xl">
-        <h3 className="text-sm font-semibold text-zinc-100">
-          Handoff & restart — unit <code className="text-cyan-300">{unitName}</code>
+      <div className="w-full max-w-lg rounded-xl border border-hairline-strong bg-surface-strong p-5 shadow-2xl">
+        <h3 className="text-sm font-semibold text-foreground">
+          Handoff & restart — unit <code className="text-primary">{unitName}</code>
         </h3>
         <ul className="mt-4 space-y-2">
           {FORWARD_PHASES.map((row) => {
@@ -106,21 +106,23 @@ export function HandoffRitualOverlay({ unitName, ritualId, phases }: HandoffRitu
                 <span
                   className={
                     status === "done"
-                      ? "text-zinc-300"
+                      ? "text-foreground"
                       : status === "current"
-                        ? "text-cyan-200"
-                        : "text-zinc-500"
+                        ? "text-primary"
+                        : "text-muted-foreground"
                   }
                 >
                   {row.label}
                 </span>
-                {row.detail && <span className="text-[11px] text-zinc-500">— {row.detail}</span>}
+                {row.detail && (
+                  <span className="text-[11px] text-muted-foreground">— {row.detail}</span>
+                )}
               </li>
             );
           })}
         </ul>
         {ritualId !== null && (
-          <p className="mt-4 font-mono text-[10px] text-zinc-600">ritual_id: {ritualId}</p>
+          <p className="mt-4 font-mono text-[10px] text-subtle-foreground">ritual_id: {ritualId}</p>
         )}
       </div>
     </div>

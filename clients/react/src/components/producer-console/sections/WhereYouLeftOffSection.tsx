@@ -17,11 +17,11 @@ export function WhereYouLeftOffSection({ data }: WhereYouLeftOffSectionProps) {
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
-        <span className="text-base text-cyan-400">▶</span>
-        <h3 className="text-sm font-semibold text-zinc-200">Where you left off</h3>
+        <span className="text-base text-primary">▶</span>
+        <h3 className="text-sm font-semibold text-foreground">Where you left off</h3>
         {activeProjectName && (
-          <span className="text-xs text-zinc-500">
-            on <code className="text-zinc-300">{activeProjectName}</code>
+          <span className="text-xs text-muted-foreground">
+            on <code className="text-foreground">{activeProjectName}</code>
           </span>
         )}
       </header>
@@ -40,7 +40,7 @@ export function WhereYouLeftOffSection({ data }: WhereYouLeftOffSectionProps) {
 
 function EmptyProject() {
   return (
-    <p className="pl-6 text-xs text-zinc-500">
+    <p className="pl-6 text-xs text-muted-foreground">
       No project scoped yet. Click + on a project in the sidebar to spawn an agent, or pick an
       existing project to focus this view.
     </p>
@@ -49,20 +49,20 @@ function EmptyProject() {
 
 function WorktreeList({ worktrees }: { worktrees: WorktreeBrief[] }) {
   if (worktrees.length === 0) {
-    return <p className="text-xs text-zinc-500">No worktrees discovered yet.</p>;
+    return <p className="text-xs text-muted-foreground">No worktrees discovered yet.</p>;
   }
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Worktrees</p>
-      <ul className="mt-1 space-y-0.5 text-xs text-zinc-300">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Worktrees</p>
+      <ul className="mt-1 space-y-0.5 text-xs text-foreground">
         {worktrees.map((wt) => (
           <li key={`${wt.path}-${wt.name}`} className="flex items-baseline gap-2">
-            <code className="text-zinc-200">
+            <code className="text-foreground">
               {wt.isMain ? "main" : wt.name}
-              {wt.dirty && <span className="ml-1 text-amber-400">●</span>}
+              {wt.dirty && <span className="ml-1 text-warning">●</span>}
             </code>
-            {wt.branch && <span className="text-zinc-500">({wt.branch})</span>}
-            <span className="text-zinc-600">
+            {wt.branch && <span className="text-muted-foreground">({wt.branch})</span>}
+            <span className="text-subtle-foreground">
               {wt.agentCount} agent{wt.agentCount === 1 ? "" : "s"}
             </span>
           </li>
@@ -76,25 +76,26 @@ function AttentionAgentsList({ agents }: { agents: AttentionAgentBrief[] }) {
   if (agents.length === 0) {
     return (
       <div>
-        <p className="text-[11px] uppercase tracking-wider text-zinc-500">Attention</p>
-        <p className="mt-1 text-xs text-zinc-500">
-          No agent is waiting on you on this project. <span className="text-zinc-600">✓</span>
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Attention</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          No agent is waiting on you on this project.{" "}
+          <span className="text-subtle-foreground">✓</span>
         </p>
       </div>
     );
   }
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Attention</p>
-      <ul className="mt-1 space-y-0.5 text-xs text-zinc-300">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Attention</p>
+      <ul className="mt-1 space-y-0.5 text-xs text-foreground">
         {agents.map((a) => (
           <li key={a.target} className="flex items-baseline gap-2">
             <AttentionGlyph kind={a.attention} />
-            <code className="text-zinc-200">{a.displayName}</code>
+            <code className="text-foreground">{a.displayName}</code>
             {a.isOrchestrator && (
-              <span className="rounded bg-cyan-500/10 px-1 text-[10px] text-cyan-300">orch</span>
+              <span className="rounded bg-primary/10 px-1 text-[10px] text-primary">orch</span>
             )}
-            <span className="text-zinc-600">{a.cwd}</span>
+            <span className="text-subtle-foreground">{a.cwd}</span>
           </li>
         ))}
       </ul>
@@ -109,19 +110,19 @@ function AttentionGlyph({ kind }: { kind: AttentionAgentBrief["attention"] }) {
   switch (kind) {
     case "halted":
       return (
-        <span className="text-amber-400" title="permission/selection prompt">
+        <span className="text-warning" title="permission/selection prompt">
           ◐
         </span>
       );
     case "started":
       return (
-        <span className="text-cyan-300" title="just spawned, awaiting first prompt">
+        <span className="text-primary" title="just spawned, awaiting first prompt">
           ○
         </span>
       );
     case "completed":
       return (
-        <span className="text-zinc-300" title="turn finished, awaiting your next move">
+        <span className="text-foreground" title="turn finished, awaiting your next move">
           ○
         </span>
       );

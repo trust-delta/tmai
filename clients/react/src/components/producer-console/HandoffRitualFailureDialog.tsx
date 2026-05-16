@@ -76,25 +76,25 @@ export function HandoffRitualFailureDialog({
       role="dialog"
       aria-modal="true"
       aria-label="Handoff ritual rejected"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
     >
-      <div className="w-full max-w-lg rounded-xl border border-red-500/30 bg-zinc-900 p-5 shadow-2xl">
-        <h3 className="text-sm font-semibold text-red-200">
-          Handoff ritual rejected — unit <code className="text-cyan-300">{unitName}</code>
+      <div className="w-full max-w-lg rounded-xl border border-destructive/30 bg-surface-strong p-5 shadow-2xl">
+        <h3 className="text-sm font-semibold text-destructive">
+          Handoff ritual rejected — unit <code className="text-primary">{unitName}</code>
         </h3>
 
         <dl className="mt-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-[12px]">
-          <dt className="text-zinc-500">reason:</dt>
-          <dd className="font-mono text-zinc-300">{reason}</dd>
+          <dt className="text-muted-foreground">reason:</dt>
+          <dd className="font-mono text-foreground">{reason}</dd>
           {message !== null && (
             <>
-              <dt className="text-zinc-500">detail:</dt>
-              <dd className="whitespace-pre-wrap break-words text-zinc-300">{message}</dd>
+              <dt className="text-muted-foreground">detail:</dt>
+              <dd className="whitespace-pre-wrap break-words text-foreground">{message}</dd>
             </>
           )}
         </dl>
 
-        <p className="mt-3 text-[12px] leading-relaxed text-zinc-400">
+        <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
           Producer rejected the handoff ritual (tmai tier-1: Producer's obligation to obey
           instructions). Decide how to proceed:
         </p>
@@ -104,7 +104,7 @@ export function HandoffRitualFailureDialog({
             type="button"
             onClick={onForceKill}
             disabled={producerAgentId === null}
-            className="rounded-md bg-red-500/15 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-destructive/15 px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25 disabled:cursor-not-allowed disabled:opacity-50"
             title={
               producerAgentId === null
                 ? "No live Producer to kill"
@@ -118,7 +118,7 @@ export function HandoffRitualFailureDialog({
             type="button"
             onClick={onRetry}
             disabled={retryDisabled}
-            className="rounded-md bg-cyan-500/15 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-primary/15 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
             title={
               retryDisabled
                 ? "DR §E: second rejection is a hard escalate — no further automatic retry"
@@ -131,7 +131,7 @@ export function HandoffRitualFailureDialog({
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-md bg-white/[0.04] px-3 py-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08]"
+            className="rounded-md bg-surface px-3 py-2 text-xs text-foreground transition-colors hover:bg-surface"
             title="Producer is still alive; next manual handoff or session-end will re-surface this state"
           >
             Continue with stale
@@ -144,7 +144,7 @@ export function HandoffRitualFailureDialog({
               else onDismiss();
             }}
             disabled={resumeUuid === null}
-            className="rounded-md bg-white/[0.04] px-3 py-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-surface px-3 py-2 text-xs text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
             title={
               resumeUuid === null
                 ? "No live Producer's session id available"
@@ -156,17 +156,17 @@ export function HandoffRitualFailureDialog({
         </div>
 
         {resumeRevealed && resumeUuid !== null && (
-          <div className="mt-4 rounded-md border border-white/10 bg-black/40 p-3 text-[12px]">
-            <p className="text-zinc-400">
+          <div className="mt-4 rounded-md border border-hairline-strong bg-background p-3 text-[12px]">
+            <p className="text-muted-foreground">
               Run this in a separate terminal where you have <code>claude</code> on PATH:
             </p>
-            <pre className="mt-2 overflow-x-auto font-mono text-cyan-300">
+            <pre className="mt-2 overflow-x-auto font-mono text-primary">
               claude --resume {resumeUuid}
             </pre>
             <button
               type="button"
               onClick={onDismiss}
-              className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+              className="mt-2 text-[11px] text-muted-foreground hover:text-foreground"
             >
               Close
             </button>

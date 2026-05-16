@@ -40,20 +40,20 @@ export function CrossUnitStatusSection({
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
-        <span className="text-base text-cyan-400">⬢</span>
-        <h3 className="text-sm font-semibold text-zinc-200">Cross-unit status</h3>
-        <span className="text-xs text-zinc-500">
+        <span className="text-base text-primary">⬢</span>
+        <h3 className="text-sm font-semibold text-foreground">Cross-unit status</h3>
+        <span className="text-xs text-muted-foreground">
           {data.units.length} unit{data.units.length === 1 ? "" : "s"} derived from live agents
         </span>
       </header>
 
       {data.units.length === 0 ? (
-        <p className="pl-6 text-xs text-zinc-500">
+        <p className="pl-6 text-xs text-muted-foreground">
           No active units. Spawn an agent on any project to populate this list — dormant configured
           units aren't surfaced here yet.
         </p>
       ) : (
-        <ul className="space-y-0.5 pl-6 text-xs text-zinc-300">
+        <ul className="space-y-0.5 pl-6 text-xs text-foreground">
           {data.units.map((u) => {
             const isActive = u.path === activePath;
             return (
@@ -61,20 +61,20 @@ export function CrossUnitStatusSection({
                 <button
                   type="button"
                   onClick={() => onSelectUnit(u.path, u.name)}
-                  className={`flex w-full items-baseline gap-2 rounded px-2 py-1 text-left transition-colors hover:bg-white/[0.04] ${
-                    isActive ? "bg-white/[0.04]" : ""
+                  className={`flex w-full items-baseline gap-2 rounded px-2 py-1 text-left transition-colors hover:bg-surface ${
+                    isActive ? "bg-surface" : ""
                   }`}
                 >
                   <StatePill state={u.state} />
-                  <code className="text-zinc-200">{u.name}</code>
-                  <span className="text-zinc-600">
+                  <code className="text-foreground">{u.name}</code>
+                  <span className="text-subtle-foreground">
                     {u.attentionCount > 0 && (
-                      <span className="text-amber-400">{u.attentionCount}↑ </span>
+                      <span className="text-warning">{u.attentionCount}↑ </span>
                     )}
                     {u.agentCount} agent{u.agentCount === 1 ? "" : "s"}
                   </span>
                   {isActive && (
-                    <span className="ml-auto text-[10px] uppercase tracking-wider text-cyan-400">
+                    <span className="ml-auto text-[10px] uppercase tracking-wider text-primary">
                       active
                     </span>
                   )}
@@ -88,7 +88,7 @@ export function CrossUnitStatusSection({
       {preconditions?.singleUnitOnly && (
         // TODO(tmai-core#340): remove this notice once multi-repo /
         // dormant-unit reconciliation lands.
-        <p className="mt-2 pl-6 text-[11px] text-zinc-600">
+        <p className="mt-2 pl-6 text-[11px] text-subtle-foreground">
           Showing one unit only — a tmai project can span multiple repos and have dormant configured
           units, but that view isn't wired yet.
         </p>
@@ -101,19 +101,19 @@ function StatePill({ state }: { state: UnitState }) {
   switch (state) {
     case "needs-you":
       return (
-        <span className="text-red-400" title="agent(s) on the attention axis">
+        <span className="text-destructive" title="agent(s) on the attention axis">
           🔴
         </span>
       );
     case "in-progress":
       return (
-        <span className="text-amber-300" title="agents present, none waiting on you">
+        <span className="text-warning" title="agents present, none waiting on you">
           🟡
         </span>
       );
     case "quiet":
       return (
-        <span className="text-zinc-500" title="no agents">
+        <span className="text-muted-foreground" title="no agents">
           ⚪
         </span>
       );

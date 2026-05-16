@@ -91,26 +91,26 @@ export function ProducerConsole({
         currentProjectPath={currentProjectPath}
         onOpenSettings={onOpenSettings}
       />
-      <header className="border-b border-white/5 px-6 py-4">
-        <h2 className="text-lg font-semibold text-zinc-200">Welcome to tmai</h2>
-        <p className="mt-1 text-xs text-zinc-400">
-          tmai routes your work through a <strong className="text-cyan-300">Producer</strong> — one
+      <header className="border-b border-hairline px-6 py-4">
+        <h2 className="text-lg font-semibold text-foreground">Welcome to tmai</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          tmai routes your work through a <strong className="text-primary">Producer</strong> — one
           CC session per project that reads your decisions / memory, briefs you on what needs
           attention, and dispatches workers. You talk to the Producer, not to individual agents.
         </p>
-        <p className="mt-2 text-xs text-zinc-500">
-          <span className="text-zinc-400">Quick start:</span>{" "}
-          <strong className="text-zinc-300">①</strong> Read the digest below.{" "}
-          <strong className="text-zinc-300">②</strong> Click{" "}
-          <span className="text-cyan-300">Open Producer terminal</span> at the bottom — tmai spawns
+        <p className="mt-2 text-xs text-muted-foreground">
+          <span className="text-muted-foreground">Quick start:</span>{" "}
+          <strong className="text-foreground">①</strong> Read the digest below.{" "}
+          <strong className="text-foreground">②</strong> Click{" "}
+          <span className="text-primary">Open Producer terminal</span> at the bottom — tmai spawns
           the Producer session and switches this pane to it.{" "}
-          <strong className="text-zinc-300">③</strong> The Producer reads your context and briefs
+          <strong className="text-foreground">③</strong> The Producer reads your context and briefs
           you on what to look at first; you converse with it right here.
         </p>
-        <p className="mt-1.5 text-[11px] text-zinc-600">
+        <p className="mt-1.5 text-[11px] text-subtle-foreground">
           Need direct agent control (legacy)?{" "}
-          <span className="text-zinc-500">Operator override</span> at the bottom · expandable
-          sidebar on the left.
+          <span className="text-muted-foreground">Operator override</span> at the bottom ·
+          expandable sidebar on the left.
         </p>
       </header>
 
