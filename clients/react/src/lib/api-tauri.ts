@@ -251,6 +251,10 @@ export const api = {
   // Settled section; no Tauri-specific path needed)
   decisions: (unit: string) => httpApi.decisions(unit),
 
+  // Active approaches view (HTTP only — on-demand JSON projection of
+  // compose()'s ▣ section; no Tauri-specific path needed)
+  approaches: (unit: string) => httpApi.approaches(unit),
+
   // Working-with-human view (HTTP only — on-demand JSON projection of
   // compose()'s ◐ section; no Tauri-specific path needed)
   workingWithHuman: (unit: string) => httpApi.workingWithHuman(unit),

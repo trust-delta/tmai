@@ -950,6 +950,68 @@ export interface WorkingWithHumanResponse {
   memory_index: string | null;
 }
 
+// ── Active approaches view (tmai-core PR #369) ──
+//
+// Mirror of `tmai-core::api::approaches_view`. `RepoApproachesWire.active`
+// carries `status: active` records only — validated / rejected / replaced
+// are filtered at compose time (audit-trail, not yet on the wire; the
+// console's Verdict-inbox surfaces that gap honestly per
+// `doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md`).
+// Hand-written until `gen-spec-pr` syncs the generated type; A2 fidelity
+// (core-computed trigger firing + verdict authority + settled projection)
+// is tracked in tmai-core#381.
+
+export type ApproachStatusWire = "active" | "validated" | "rejected" | "replaced";
+
+/** One review trigger, tagged on `kind` (mirrors the Rust enum 1:1; the
+ *  `Date` value is an ISO-8601 string on the wire). Only `date` is
+ *  client-evaluable; the rest need core/gh resolution (tmai-core#381). */
+export type ReviewTriggerWire =
+  | { kind: "date"; value: string }
+  | { kind: "pr-closed"; ref: string }
+  | { kind: "pr-merged"; ref: string }
+  | { kind: "issue-closed"; ref: string }
+  | { kind: "decision-status"; ref: string; "target-status": string }
+  | { kind: "approach-status"; ref: string; "target-status": string }
+  | { kind: "manual"; description: string };
+
+export interface ApproachWire {
+  slug: string;
+  title: string;
+  /** ISO-8601 date from the slug prefix (creation date — approaches have
+   *  no `last_verified`; re-evaluation is signal-driven). */
+  date: string;
+  status: ApproachStatusWire;
+  governs: string[];
+  /** `serves:` — the decision slug(s) this approach's means serve. */
+  serves: string[];
+  success_signal: string;
+  failure_signal: string;
+  review_triggers: ReviewTriggerWire[];
+  /** Producer confidence; `null` when none on record. */
+  confidence: "high" | "low" | null;
+  /** Successor approach slugs — meaningful only when `status: replaced`. */
+  replaced_by: string[];
+  /** First-paragraph summary of the body. */
+  excerpt: string;
+}
+
+export interface RepoApproachesWire {
+  repo_label: string;
+  repo_root: string;
+  primary: boolean;
+  repo_head: string | null;
+  /** `status: active` records only (see module note). */
+  active: ApproachWire[];
+}
+
+export interface ApproachesResponse {
+  unit: string;
+  /** RFC3339 compose timestamp. */
+  composed_at: string;
+  repos: RepoApproachesWire[];
+}
+
 // ── API wrappers ──
 
 export const api = {
@@ -1320,6 +1382,13 @@ export const api = {
   // repo unit follows once `UnitConfig.also[]` lands in tmai-core#340).
   decisions: (unit: string) =>
     apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
+
+  // Active approaches view — `▣ Active approaches` slice of `compose()`
+  // (tmai-core PR #369). `status: active` records only; per-repo groups
+  // (multi-repo follows tmai-core#340, same as decisions). The console
+  // turns this into the Verdict-inbox.
+  approaches: (unit: string) =>
+    apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
 
   // Working-with-human view — memory dir + MEMORY.md projection of
   // `compose()`'s ◐ section per the same DR. Surfaces the same content
