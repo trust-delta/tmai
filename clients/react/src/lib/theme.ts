@@ -25,19 +25,14 @@
 
 import type { ITheme } from "@xterm/xterm";
 
-// User-SELECTABLE themes — drives the Settings switcher and ui-prefs
-// validation. `light` is intentionally NOT here yet: it is fully defined
-// (below) and resolvable so it can serve as the acceptance test for the
-// semantic-token migration, but until the component tree actually
-// consumes the tokens it would render broken, so it stays unreachable
-// from the UI until the migration's final PR promotes it into this list.
-export const THEME_NAMES = ["tokyonight", "zinc"] as const;
+// User-selectable themes — drives the Settings switcher, ui-prefs
+// validation, the registry and `resolveTheme`. `light` (Tokyo Night
+// Day) graduated here once the component tree finished migrating onto
+// semantic tokens (PRs A–H): the whole UI now genuinely re-skins under
+// a light theme, so it is a first-class choice. (Earlier it was held in
+// a separate registry-only list until the migration could back it.)
+export const THEME_NAMES = ["tokyonight", "zinc", "light"] as const;
 export type ThemeName = (typeof THEME_NAMES)[number];
-
-// All themes in the registry (selectable + not-yet-selectable). Used by
-// `resolveTheme` and `THEMES` so `light` exists and is testable now.
-export const REGISTERED_THEME_NAMES = ["tokyonight", "zinc", "light"] as const;
-export type RegisteredThemeName = (typeof REGISTERED_THEME_NAMES)[number];
 
 // New installs default to Tokyo Night so the WebUI matches the operator's
 // tmux out of the box.
@@ -184,7 +179,7 @@ export interface ThemePalette {
 }
 
 export interface Theme {
-  name: RegisteredThemeName;
+  name: ThemeName;
   label: string;
   palette: ThemePalette;
 }
@@ -505,7 +500,7 @@ const LIGHT: Theme = {
   },
 };
 
-export const THEMES: Record<RegisteredThemeName, Theme> = Object.freeze({
+export const THEMES: Record<ThemeName, Theme> = Object.freeze({
   tokyonight: TOKYONIGHT,
   zinc: ZINC,
   light: LIGHT,
@@ -514,12 +509,10 @@ export const THEMES: Record<RegisteredThemeName, Theme> = Object.freeze({
 // Resolve a (possibly untrusted / persisted) name to a Theme. Returns a
 // stable singleton per name — callers can safely use the result as a
 // React effect dependency; identity only changes when the name changes.
-// Resolves any REGISTERED theme (incl. the not-yet-selectable `light`)
-// so tests and the migration's final PR can reach it; ui-prefs still
-// validates persisted values against the selectable THEME_NAMES.
+// Unknown / nullish names fall back to the default theme.
 export function resolveTheme(name: string | null | undefined): Theme {
-  if (name && (REGISTERED_THEME_NAMES as readonly string[]).includes(name)) {
-    return THEMES[name as RegisteredThemeName];
+  if (name && (THEME_NAMES as readonly string[]).includes(name)) {
+    return THEMES[name as ThemeName];
   }
   return THEMES[DEFAULT_THEME_NAME];
 }
