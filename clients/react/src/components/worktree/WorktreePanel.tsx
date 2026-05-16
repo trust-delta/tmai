@@ -70,33 +70,33 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="glass shrink-0 border-b border-white/5 px-4 py-3 md:px-6 md:py-4">
+      <div className="glass shrink-0 border-b border-hairline px-4 py-3 md:px-6 md:py-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-emerald-500">🌿</span>
-              <h2 className="truncate text-base font-semibold text-zinc-100 md:text-lg">
+              <span className="text-success">🌿</span>
+              <h2 className="truncate text-base font-semibold text-foreground md:text-lg">
                 {worktree.branch || worktree.name}
               </h2>
-              {worktree.is_dirty && <span className="shrink-0 text-sm text-amber-500">*</span>}
+              {worktree.is_dirty && <span className="shrink-0 text-sm text-warning">*</span>}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {ds && (
                 <span>
-                  <span className="text-emerald-400">+{ds.insertions}</span>{" "}
-                  <span className="text-red-400">-{ds.deletions}</span>
+                  <span className="text-success">+{ds.insertions}</span>{" "}
+                  <span className="text-destructive">-{ds.deletions}</span>
                   {" · "}
                   {ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}
                 </span>
               )}
               {hasAgent ? (
-                <span className="text-cyan-400">Agent: {worktree.agent_status || "active"}</span>
+                <span className="text-primary">Agent: {worktree.agent_status || "active"}</span>
               ) : (
-                <span className="text-zinc-600">No agent</span>
+                <span className="text-subtle-foreground">No agent</span>
               )}
             </div>
           </div>
-          <div className="shrink-0 text-xs text-zinc-500">
+          <div className="shrink-0 text-xs text-muted-foreground">
             <span className="font-mono">{worktree.repo_name}</span>
           </div>
         </div>
@@ -108,7 +108,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
               type="button"
               onClick={handleLaunch}
               disabled={launching}
-              className="touch-target-sm rounded-lg bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-50"
+              className="touch-target-sm rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-50"
             >
               {launching ? "Launching..." : "Launch Agent"}
             </button>
@@ -117,18 +117,18 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="touch-target-sm rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+              className="touch-target-sm rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
             >
               Delete
             </button>
           ) : (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
-              <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={forceDelete}
                   onChange={(e) => setForceDelete(e.target.checked)}
-                  className="accent-red-500"
+                  className="accent-destructive"
                 />
                 Force
               </label>
@@ -136,7 +136,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="touch-target-sm rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
+                className="touch-target-sm rounded bg-destructive/20 px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/30 disabled:opacity-50"
               >
                 {deleting ? "Deleting..." : "Confirm"}
               </button>
@@ -146,7 +146,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
                   setConfirmDelete(false);
                   setForceDelete(false);
                 }}
-                className="touch-target-sm text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+                className="touch-target-sm text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
                 Cancel
               </button>
@@ -156,7 +156,7 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
             type="button"
             onClick={fetchDiff}
             disabled={diffLoading}
-            className="touch-target-sm rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 disabled:opacity-50"
+            className="touch-target-sm rounded-lg bg-surface px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
           >
             {diffLoading ? "Loading..." : "Refresh Diff"}
           </button>
@@ -166,15 +166,17 @@ export function WorktreePanel({ worktree, onLaunched, onDeleted }: WorktreePanel
       {/* Diff content */}
       <div className="flex-1 overflow-y-auto p-4">
         {diffError ? (
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {diffError}
           </div>
         ) : diffLoading && !diffData ? (
-          <div className="py-8 text-center text-sm text-zinc-500">Loading diff...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">Loading diff...</div>
         ) : diffData?.diff ? (
           <DiffViewer diff={diffData.diff} />
         ) : (
-          <div className="py-8 text-center text-sm text-zinc-500">No changes vs base branch</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No changes vs base branch
+          </div>
         )}
       </div>
     </div>

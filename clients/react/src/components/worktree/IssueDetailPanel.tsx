@@ -21,17 +21,17 @@ function formatRelative(iso: string): string {
 
 // Shared prose class for rendered markdown
 const proseClassName = `prose prose-invert prose-sm max-w-none
-  prose-headings:text-zinc-100 prose-headings:font-semibold
-  prose-p:text-zinc-300 prose-p:leading-relaxed
-  prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-  prose-strong:text-zinc-200
-  prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-  prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg
-  prose-li:text-zinc-300
-  prose-th:text-zinc-300 prose-th:border-white/10
-  prose-td:text-zinc-400 prose-td:border-white/10
-  prose-hr:border-white/10
-  prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400`;
+  prose-headings:text-foreground prose-headings:font-semibold
+  prose-p:text-foreground prose-p:leading-relaxed
+  prose-a:text-info prose-a:no-underline hover:prose-a:underline
+  prose-strong:text-foreground
+  prose-code:text-primary prose-code:bg-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+  prose-pre:bg-surface-strong/50 prose-pre:border prose-pre:border-hairline prose-pre:rounded-lg
+  prose-li:text-foreground
+  prose-th:text-foreground prose-th:border-hairline-strong
+  prose-td:text-muted-foreground prose-td:border-hairline-strong
+  prose-hr:border-hairline-strong
+  prose-blockquote:border-info/30 prose-blockquote:text-muted-foreground`;
 
 // Issue detail panel — shows full issue info when selected in Issues tab
 export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDetailPanelProps) {
@@ -64,16 +64,16 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
   }, [fetchDetail]);
 
   return (
-    <div className="min-w-[480px] flex-[2] overflow-hidden flex flex-col border-l border-white/5 bg-black/20">
+    <div className="min-w-[480px] flex-[2] overflow-hidden flex flex-col border-l border-hairline bg-background">
       {/* Header */}
-      <div className="shrink-0 flex items-center gap-2 border-b border-white/5 px-4 py-2">
-        <h3 className="flex-1 text-sm font-semibold text-zinc-100 truncate">
+      <div className="shrink-0 flex items-center gap-2 border-b border-hairline px-4 py-2">
+        <h3 className="flex-1 text-sm font-semibold text-foreground truncate">
           Issue #{issueNumber}
         </h3>
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
           title="Close detail panel"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -90,8 +90,8 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
 
       {/* Body */}
       <div className="flex-1 overflow-auto p-4">
-        {loading && <div className="text-sm text-zinc-500">Loading issue detail...</div>}
-        {error && <div className="text-sm text-red-400">{error}</div>}
+        {loading && <div className="text-sm text-muted-foreground">Loading issue detail...</div>}
+        {error && <div className="text-sm text-destructive">{error}</div>}
         {!loading && !error && detail && (
           <div className="flex flex-col gap-4">
             {/* Title and state */}
@@ -100,8 +100,8 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                     detail.state === "OPEN"
-                      ? "bg-green-500/15 text-green-400"
-                      : "bg-purple-500/15 text-purple-400"
+                      ? "bg-success/15 text-success"
+                      : "bg-accent/15 text-accent"
                   }`}
                 >
                   {detail.state}
@@ -119,11 +119,11 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
                   </span>
                 ))}
               </div>
-              <h2 className="mt-2 text-base font-semibold text-zinc-100">{detail.title}</h2>
+              <h2 className="mt-2 text-base font-semibold text-foreground">{detail.title}</h2>
             </div>
 
             {/* Metadata */}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               {detail.assignees.length > 0 && <span>Assignees: {detail.assignees.join(", ")}</span>}
               {detail.created_at && <span>Created {formatRelative(detail.created_at)}</span>}
               {detail.updated_at && <span>Updated {formatRelative(detail.updated_at)}</span>}
@@ -134,7 +134,7 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
               href={detail.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex w-fit items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100"
+              className="inline-flex w-fit items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
             >
               Open on GitHub
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -151,9 +151,7 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
 
             {/* Body (rendered markdown) */}
             {detail.body && (
-              <div
-                className={`rounded-lg border border-white/5 bg-white/[0.02] p-4 ${proseClassName}`}
-              >
+              <div className={`rounded-lg border border-hairline bg-surface p-4 ${proseClassName}`}>
                 <Markdown remarkPlugins={[remarkGfm]}>{detail.body}</Markdown>
               </div>
             )}
@@ -161,17 +159,19 @@ export function IssueDetailPanel({ issueNumber, projectPath, onClose }: IssueDet
             {/* Comments */}
             {detail.comments.length > 0 && (
               <div className="flex flex-col gap-3">
-                <h4 className="text-xs font-semibold text-zinc-400">
+                <h4 className="text-xs font-semibold text-muted-foreground">
                   {detail.comments.length} comment{detail.comments.length !== 1 ? "s" : ""}
                 </h4>
                 {detail.comments.map((comment) => (
                   <div
                     key={comment.url}
-                    className="rounded-lg border border-white/5 bg-white/[0.02] p-3"
+                    className="rounded-lg border border-hairline bg-surface p-3"
                   >
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="font-semibold text-zinc-200">{comment.author}</span>
-                      <span className="text-zinc-600">{formatRelative(comment.created_at)}</span>
+                      <span className="font-semibold text-foreground">{comment.author}</span>
+                      <span className="text-subtle-foreground">
+                        {formatRelative(comment.created_at)}
+                      </span>
                     </div>
                     <div className={`mt-2 ${proseClassName}`}>
                       <Markdown remarkPlugins={[remarkGfm]}>{comment.body}</Markdown>

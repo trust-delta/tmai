@@ -25,13 +25,13 @@ interface PrCardProps {
 function ciColor(status: PrInfo["check_status"]): string {
   switch (status) {
     case "SUCCESS":
-      return "text-green-400";
+      return "text-success";
     case "FAILURE":
-      return "text-red-400";
+      return "text-destructive";
     case "PENDING":
-      return "text-yellow-400";
+      return "text-warning";
     default:
-      return "text-zinc-600";
+      return "text-subtle-foreground";
   }
 }
 
@@ -39,13 +39,13 @@ function ciColor(status: PrInfo["check_status"]): string {
 function ciDotBg(status: PrInfo["check_status"]): string {
   switch (status) {
     case "SUCCESS":
-      return "bg-green-400";
+      return "bg-success";
     case "FAILURE":
-      return "bg-red-400";
+      return "bg-destructive";
     case "PENDING":
-      return "bg-yellow-400";
+      return "bg-warning";
     default:
-      return "bg-zinc-600";
+      return "bg-muted-foreground";
   }
 }
 
@@ -85,19 +85,19 @@ export function PrCard({
     return issues.filter((i) => nums.includes(i.number));
   })();
   return (
-    <div className="rounded-lg border border-white/5 bg-white/[0.03] p-2">
+    <div className="rounded-lg border border-hairline bg-surface p-2">
       {/* Header: PR number + draft badge + review decision */}
       <div className="flex items-center gap-1.5 text-[11px]">
         <a
           href={pr.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-green-400 hover:underline"
+          className="font-medium text-success hover:underline"
         >
           PR #{pr.number}
         </a>
         {pr.is_draft && (
-          <span className="rounded bg-zinc-500/15 px-1 py-0.5 text-[10px] text-zinc-500">
+          <span className="rounded bg-muted-foreground/15 px-1 py-0.5 text-[10px] text-muted-foreground">
             draft
           </span>
         )}
@@ -105,10 +105,10 @@ export function PrCard({
           <span
             className={`text-[10px] ${
               pr.review_decision === "APPROVED"
-                ? "text-green-400"
+                ? "text-success"
                 : pr.review_decision === "CHANGES_REQUESTED"
-                  ? "text-orange-400"
-                  : "text-zinc-500"
+                  ? "text-warning"
+                  : "text-muted-foreground"
             }`}
           >
             {pr.review_decision === "APPROVED"
@@ -121,21 +121,21 @@ export function PrCard({
       </div>
 
       {/* Title */}
-      <div className="mt-0.5 truncate text-[11px] text-zinc-400">{pr.title}</div>
+      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{pr.title}</div>
 
       {/* Branch flow (incoming PRs) */}
       {showBranchFlow && targetBranch && (
-        <div className="mt-0.5 text-[10px] text-zinc-600">
+        <div className="mt-0.5 text-[10px] text-subtle-foreground">
           {pr.head_branch} → {targetBranch}
         </div>
       )}
 
       {/* Stats: additions/deletions + reviews/comments */}
-      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-zinc-600">
+      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-subtle-foreground">
         {(pr.additions > 0 || pr.deletions > 0) && (
           <span>
-            <span className="text-emerald-400">+{pr.additions}</span>{" "}
-            <span className="text-red-400">-{pr.deletions}</span>
+            <span className="text-success">+{pr.additions}</span>{" "}
+            <span className="text-destructive">-{pr.deletions}</span>
           </span>
         )}
         {pr.reviews > 0 && (
@@ -163,21 +163,21 @@ export function PrCard({
         <button
           type="button"
           onClick={() => onOpenDetail({ kind: "pr-comments", prNumber: pr.number })}
-          className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+          className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           Comments
         </button>
         <button
           type="button"
           onClick={() => onOpenDetail({ kind: "pr-files", prNumber: pr.number })}
-          className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+          className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           Files
         </button>
         <button
           type="button"
           onClick={() => onOpenDetail({ kind: "merge-status", prNumber: pr.number })}
-          className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+          className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           Merge
         </button>
@@ -189,7 +189,7 @@ export function PrCard({
               key={issue.number}
               type="button"
               onClick={() => onNavigateToIssue(issue)}
-              className="inline-flex items-center gap-0.5 rounded bg-green-500/10 px-1.5 py-0.5 text-[10px] text-green-400 transition-colors hover:bg-green-500/20 hover:text-green-300"
+              className="inline-flex items-center gap-0.5 rounded bg-success/10 px-1.5 py-0.5 text-[10px] text-success transition-colors hover:bg-success/20 hover:text-success"
               title={`Go to issue #${issue.number}: ${issue.title}`}
             >
               <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -203,7 +203,7 @@ export function PrCard({
           <button
             type="button"
             onClick={() => onNavigateToBranch(pr.head_branch)}
-            className="inline-flex items-center gap-0.5 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:text-emerald-300"
+            className="inline-flex items-center gap-0.5 rounded bg-success/10 px-1.5 py-0.5 text-[10px] text-success transition-colors hover:bg-success/20 hover:text-success"
             title={`Go to branch: ${pr.head_branch}`}
           >
             <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -220,7 +220,7 @@ export function PrCard({
           type="button"
           onClick={onAiMerge}
           disabled={actionBusy}
-          className="mt-1.5 w-full rounded bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
+          className="mt-1.5 w-full rounded bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
         >
           AI Merge PR #{pr.number}
         </button>

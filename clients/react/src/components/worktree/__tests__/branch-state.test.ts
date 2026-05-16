@@ -126,11 +126,14 @@ describe("branchStateLabel", () => {
 });
 
 describe("branchStateBadgeClass", () => {
-  it("returns non-empty classes for non-default states", () => {
-    expect(branchStateBadgeClass("merged")).toContain("purple");
-    expect(branchStateBadgeClass("has-open-pr")).toContain("blue");
-    expect(branchStateBadgeClass("active")).toContain("cyan");
-    expect(branchStateBadgeClass("stale")).toContain("amber");
+  it("returns the semantic-token class for each non-default state", () => {
+    // Migrated off raw palette (purple/blue/cyan/amber) onto theme
+    // tokens — see scripts/theme-codemod.mjs. `merged` uses the
+    // repurposed secondary accent.
+    expect(branchStateBadgeClass("merged")).toContain("accent");
+    expect(branchStateBadgeClass("has-open-pr")).toContain("info");
+    expect(branchStateBadgeClass("active")).toContain("primary");
+    expect(branchStateBadgeClass("stale")).toContain("warning");
   });
 
   it("returns empty string for default state", () => {

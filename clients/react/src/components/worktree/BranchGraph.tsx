@@ -60,9 +60,9 @@ function formatRelativeTime(unixSecs: number): string {
 // Return CSS color class for commit age: recent → aging → stale
 function commitAgeColor(unixSecs: number): string {
   const days = Math.floor((Date.now() / 1000 - unixSecs) / 86400);
-  if (days <= 3) return "text-zinc-400";
-  if (days <= 14) return "text-yellow-500/70";
-  return "text-red-400/70";
+  if (days <= 3) return "text-muted-foreground";
+  if (days <= 14) return "text-warning/70";
+  return "text-destructive/70";
 }
 
 const BRANCH_DEPTH_WARNING = 3;
@@ -79,7 +79,7 @@ function ActionPanelToggle({ collapsed, onToggle }: { collapsed: boolean; onTogg
     <button
       type="button"
       onClick={onToggle}
-      className="flex h-full w-5 shrink-0 items-center justify-center border-l border-white/5 text-zinc-600 transition-colors hover:bg-white/5 hover:text-zinc-400"
+      className="flex h-full w-5 shrink-0 items-center justify-center border-l border-hairline text-subtle-foreground transition-colors hover:bg-surface hover:text-muted-foreground"
       title={collapsed ? "Show action panel" : "Hide action panel"}
     >
       <svg
@@ -550,7 +550,7 @@ export function BranchGraph({
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Loading branches...
       </div>
     );
@@ -559,7 +559,7 @@ export function BranchGraph({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="glass shrink-0 border-b border-white/5 px-4 py-3 md:px-6 md:py-4">
+      <div className="glass shrink-0 border-b border-hairline px-4 py-3 md:px-6 md:py-4">
         {/* Row 1: icon + name + tab switcher */}
         <div className="flex flex-wrap items-center gap-2">
           <svg
@@ -567,7 +567,7 @@ export function BranchGraph({
             height="18"
             viewBox="0 0 16 16"
             fill="none"
-            className="shrink-0 text-emerald-400"
+            className="shrink-0 text-success"
             role="img"
             aria-label="Branch graph"
           >
@@ -578,11 +578,11 @@ export function BranchGraph({
             <line x1="4" y1="6" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
             <path d="M4 6 C4 8, 8 8, 12 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
           </svg>
-          <h2 className="truncate text-base font-semibold text-zinc-100 md:text-lg">
+          <h2 className="truncate text-base font-semibold text-foreground md:text-lg">
             {projectName}
           </h2>
           {/* Tab switcher */}
-          <div className="flex gap-1 rounded-lg bg-white/5 p-0.5">
+          <div className="flex gap-1 rounded-lg bg-surface p-0.5">
             <button
               type="button"
               onClick={() => {
@@ -590,7 +590,9 @@ export function BranchGraph({
                 setSelectedIssue(null);
               }}
               className={`touch-target-sm rounded-md px-2.5 py-1 text-xs transition-colors ${
-                !showIssues ? "bg-white/10 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+                !showIssues
+                  ? "bg-surface-strong text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Branches
@@ -599,7 +601,9 @@ export function BranchGraph({
               type="button"
               onClick={() => setShowIssues(true)}
               className={`touch-target-sm rounded-md px-2.5 py-1 text-xs transition-colors ${
-                showIssues ? "bg-white/10 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+                showIssues
+                  ? "bg-surface-strong text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Issues{issues.length > 0 ? ` (${issues.length})` : ""}
@@ -610,7 +614,7 @@ export function BranchGraph({
           <div className="flex items-center gap-1.5">
             {branches?.last_fetch && (
               <span
-                className="hidden text-[10px] text-zinc-600 md:block"
+                className="hidden text-[10px] text-subtle-foreground md:block"
                 title={new Date(branches.last_fetch * 1000).toLocaleString()}
               >
                 fetched {formatRelativeTime(branches.last_fetch)}
@@ -621,7 +625,7 @@ export function BranchGraph({
                 type="button"
                 onClick={handleBulkDeleteMerged}
                 disabled={bulkDeleteBusy}
-                className="touch-target-sm rounded-lg bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50"
+                className="touch-target-sm rounded-lg bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/20 hover:text-destructive disabled:opacity-50"
               >
                 {bulkDeleteBusy ? "Deleting..." : `Delete Merged (${mergedBranches.length})`}
               </button>
@@ -630,7 +634,7 @@ export function BranchGraph({
               type="button"
               onClick={handleRefresh}
               disabled={refreshBusy}
-              className="touch-target-sm rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 disabled:opacity-50"
+              className="touch-target-sm rounded-lg bg-surface px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground disabled:opacity-50"
             >
               {refreshBusy ? "..." : "Refresh"}
             </button>
@@ -638,7 +642,7 @@ export function BranchGraph({
         </div>
         {/* Row 2: stats (hidden on smallest screens) */}
         {!showIssues && (
-          <div className="mt-1 hidden text-xs text-zinc-500 sm:block">
+          <div className="mt-1 hidden text-xs text-muted-foreground sm:block">
             {branchCount} branch{branchCount !== 1 ? "es" : ""}
             {(() => {
               const wtCount = projectWorktrees.filter((w) => !w.is_main).length;
@@ -654,7 +658,7 @@ export function BranchGraph({
             )}
           </div>
         )}
-        {refreshError && <div className="mt-2 text-xs text-red-400">{refreshError}</div>}
+        {refreshError && <div className="mt-2 text-xs text-destructive">{refreshError}</div>}
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -712,7 +716,7 @@ export function BranchGraph({
                   onToggleCollapse={toggleCollapse}
                 />
               ) : (
-                <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
+                <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
                   {graphData?.commits.length === 0
                     ? "No commits found"
                     : "Only the default branch exists"}
@@ -728,7 +732,7 @@ export function BranchGraph({
                       savedScrollTop.current = scrollRef.current?.scrollTop ?? null;
                       setGraphLimit((prev) => prev + 200);
                     }}
-                    className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                    className="rounded-lg bg-surface px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
                   >
                     Load more commits ({graphLimit} shown)
                   </button>
@@ -746,8 +750,8 @@ export function BranchGraph({
                   n.ahead === 0 &&
                   !n.isCurrent,
               ).length > 0 && (
-                <div className="mt-6 border-t border-white/5 pt-4">
-                  <div className="mb-2 text-[11px] text-zinc-600">Inactive branches</div>
+                <div className="mt-6 border-t border-hairline pt-4">
+                  <div className="mb-2 text-[11px] text-subtle-foreground">Inactive branches</div>
                   <div className="flex flex-wrap gap-1.5">
                     {nodes
                       .filter(
@@ -767,13 +771,13 @@ export function BranchGraph({
                           onClick={() => selectBranch(n.name)}
                           className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
                             selectedNode === n.name
-                              ? "bg-cyan-500/15 text-cyan-400"
-                              : "bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                              ? "bg-primary/15 text-primary"
+                              : "bg-surface text-muted-foreground hover:bg-surface-strong hover:text-foreground"
                           }`}
                         >
                           {n.name}
                           {n.behind > 0 && (
-                            <span className="ml-1 text-[10px] text-red-400">{n.behind}↓</span>
+                            <span className="ml-1 text-[10px] text-destructive">{n.behind}↓</span>
                           )}
                           {n.lastCommitTime != null && (
                             <span
@@ -790,8 +794,8 @@ export function BranchGraph({
 
               {/* Remote-only branches (no local counterpart) */}
               {nodes.filter((n) => n.isRemoteOnly).length > 0 && (
-                <div className="mt-6 border-t border-white/5 pt-4">
-                  <div className="mb-2 text-[11px] text-zinc-600">Remote branches</div>
+                <div className="mt-6 border-t border-hairline pt-4">
+                  <div className="mb-2 text-[11px] text-subtle-foreground">Remote branches</div>
                   <div className="flex flex-wrap gap-1.5">
                     {nodes
                       .filter((n) => n.isRemoteOnly)
@@ -802,11 +806,11 @@ export function BranchGraph({
                           onClick={() => selectBranch(n.name)}
                           className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
                             selectedNode === n.name
-                              ? "bg-purple-500/15 text-purple-400"
-                              : "bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                              ? "bg-accent/15 text-accent"
+                              : "bg-surface text-muted-foreground hover:bg-surface-strong hover:text-foreground"
                           }`}
                         >
-                          <span className="mr-1 text-[10px] text-purple-500/60">remote</span>
+                          <span className="mr-1 text-[10px] text-accent/60">remote</span>
                           {n.name}
                           {n.lastCommitTime != null && (
                             <span

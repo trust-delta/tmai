@@ -263,8 +263,13 @@ const TOKYONIGHT: Theme = {
       "secondary-foreground": "#c0caf5",
       muted: "#292e42",
       "muted-foreground": "#565f89",
-      accent: "#292e42",
-      "accent-foreground": "#c0caf5",
+      // `accent` is REPURPOSED: shadcn's muted-hover-surface meaning is
+      // unused in this codebase (surfaces map to surface/elevated), so
+      // accent is the WebUI's themed *secondary* categorical accent —
+      // what the hardcoded `purple/violet` (dispatch / agent / "remote"
+      // tags) migrates to. Tokyo Night magenta; distinct from primary.
+      accent: "#bb9af7",
+      "accent-foreground": "#15161e",
       destructive: "#f7768e",
       "destructive-foreground": "#15161e",
       warning: "#e0af68",
@@ -349,10 +354,10 @@ const ZINC: Theme = {
     },
     // Values mirror the Tailwind palette colours the components actually
     // hardcoded (zinc-200/400/600, cyan-400, red-400, amber/emerald/blue
-    // -500, white/N overlays) so the codemod swap is a faithful re-skin,
-    // not a re-colour, when `zinc` is selected. Tokens the canonical
-    // mapping never emits (card/popover/secondary/accent/border/input/
-    // ring/sidebar-*) keep their original neutral OKLch.
+    // -500, purple-400, white/N overlays) so the codemod swap is a
+    // faithful re-skin, not a re-colour, when `zinc` is selected. Tokens
+    // the canonical mapping never emits (card/popover/secondary/border/
+    // input/ring/sidebar-*) keep their original neutral OKLch.
     tokens: {
       background: "oklch(0.145 0 0)",
       foreground: "#e4e4e7",
@@ -366,8 +371,10 @@ const ZINC: Theme = {
       "secondary-foreground": "oklch(0.985 0 0)",
       muted: "oklch(0.269 0 0)",
       "muted-foreground": "#a1a1aa",
-      accent: "oklch(0.269 0 0)",
-      "accent-foreground": "oklch(0.985 0 0)",
+      // Repurposed secondary accent (see tokyonight). Faithful to the
+      // dominant `text-purple-400` the components hardcoded.
+      accent: "#c084fc",
+      "accent-foreground": "#18181b",
       destructive: "#f87171",
       "destructive-foreground": "oklch(0.637 0.237 25.331)",
       warning: "#f59e0b",
@@ -466,8 +473,9 @@ const LIGHT: Theme = {
       "secondary-foreground": "#3760bf",
       muted: "#c4c8da",
       "muted-foreground": "#6172b0",
-      accent: "#c4c8da",
-      "accent-foreground": "#3760bf",
+      // Repurposed secondary accent (see tokyonight). Tokyo Night Day magenta.
+      accent: "#9854f1",
+      "accent-foreground": "#ffffff",
       destructive: "#f52a65",
       "destructive-foreground": "#ffffff",
       warning: "#8c6c3e",

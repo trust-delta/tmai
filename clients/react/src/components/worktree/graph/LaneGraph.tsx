@@ -528,10 +528,10 @@ export const LaneGraph = memo(function LaneGraph({
                 <span className="text-[10px]" style={{ color, opacity: 0.5 }}>
                   {"\u22EE"}
                 </span>
-                <span className="text-[10px] text-zinc-500">
+                <span className="text-[10px] text-muted-foreground">
                   {row.foldCount} commit{row.foldCount > 1 ? "s" : ""} hidden
                 </span>
-                <span className="text-[9px] text-zinc-600">click to expand</span>
+                <span className="text-[9px] text-subtle-foreground">click to expand</span>
               </button>
             );
           }
@@ -552,8 +552,8 @@ export const LaneGraph = memo(function LaneGraph({
               type="button"
               key={row.sha}
               className={`absolute flex cursor-pointer items-center gap-2 px-2 text-left transition-colors ${
-                isHovered ? "bg-white/[0.02]" : ""
-              } ${isExpanded ? "bg-cyan-500/[0.04]" : ""}`}
+                isHovered ? "bg-surface" : ""
+              } ${isExpanded ? "bg-primary/[0.04]" : ""}`}
               style={{ height: ROW_H, top: row.y - ROW_H / 2, left: 0, right: 0 }}
               onMouseEnter={() => setHoveredSha(row.sha)}
               onMouseLeave={() => setHoveredSha(null)}
@@ -626,26 +626,26 @@ export const LaneGraph = memo(function LaneGraph({
                       {pr.is_draft && <span className="text-[9px] opacity-60">draft</span>}
                       {/* Review decision icon */}
                       {pr.review_decision === "APPROVED" && (
-                        <span className="text-green-400">{"\u2714"}</span>
+                        <span className="text-success">{"\u2714"}</span>
                       )}
                       {pr.review_decision === "CHANGES_REQUESTED" && (
-                        <span className="text-orange-400">{"\u2716"}</span>
+                        <span className="text-warning">{"\u2716"}</span>
                       )}
                       {/* CI dot */}
                       {pr.check_status && (
                         <span
                           className={`inline-block h-2 w-2 rounded-full ${
                             pr.check_status === "SUCCESS"
-                              ? "bg-green-400"
+                              ? "bg-success"
                               : pr.check_status === "FAILURE"
-                                ? "bg-red-400"
-                                : "bg-yellow-400"
+                                ? "bg-destructive"
+                                : "bg-warning"
                           }`}
                         />
                       )}
                       {/* Review count */}
                       {pr.reviews > 0 && (
-                        <span className="text-[9px] text-zinc-500">{pr.reviews}r</span>
+                        <span className="text-[9px] text-muted-foreground">{pr.reviews}r</span>
                       )}
                     </a>
                   )}
@@ -659,7 +659,7 @@ export const LaneGraph = memo(function LaneGraph({
       {/* Commit detail overlay */}
       {expandedRow && expandedRow.kind === "commit" && (
         <div
-          className="absolute z-10 rounded-lg border border-white/10 bg-zinc-900/95 shadow-xl backdrop-blur-sm"
+          className="absolute z-10 rounded-lg border border-hairline-strong bg-surface-strong/95 shadow-xl backdrop-blur-sm"
           style={{
             left: svgWidth + 8,
             top: expandedRow.y + ROW_H / 2 + 4,
@@ -672,7 +672,7 @@ export const LaneGraph = memo(function LaneGraph({
               <CopyableSha
                 sha={commitDetail?.sha ?? expandedRow.sha}
                 displayLength={40}
-                className="text-[11px] text-cyan-400"
+                className="text-[11px] text-primary"
               />
               <button
                 type="button"
@@ -680,22 +680,22 @@ export const LaneGraph = memo(function LaneGraph({
                   setExpandedSha(null);
                   setCommitDetail(null);
                 }}
-                className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors"
+                className="text-[10px] text-subtle-foreground hover:text-foreground transition-colors"
               >
                 Esc
               </button>
             </div>
-            <div className="mt-1.5 text-xs font-medium text-zinc-200 select-text">
+            <div className="mt-1.5 text-xs font-medium text-foreground select-text">
               {expandedRow.subject}
             </div>
             {detailLoading ? (
-              <div className="mt-2 text-[11px] text-zinc-600">Loading...</div>
+              <div className="mt-2 text-[11px] text-subtle-foreground">Loading...</div>
             ) : commitDetail?.body ? (
-              <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap break-words select-text max-h-48 overflow-y-auto">
+              <div className="mt-2 rounded bg-surface px-2 py-1.5 text-[11px] text-muted-foreground font-mono whitespace-pre-wrap break-words select-text max-h-48 overflow-y-auto">
                 {commitDetail.body}
               </div>
             ) : null}
-            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-zinc-600">
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-subtle-foreground">
               <span
                 className="rounded px-1.5 py-0.5"
                 style={{
@@ -708,9 +708,7 @@ export const LaneGraph = memo(function LaneGraph({
                 {branchForLane(expandedRow.lane)}
               </span>
               {expandedRow.isMerge && (
-                <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-purple-400">
-                  merge
-                </span>
+                <span className="rounded bg-accent/10 px-1.5 py-0.5 text-accent">merge</span>
               )}
             </div>
           </div>

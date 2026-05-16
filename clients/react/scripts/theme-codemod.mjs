@@ -58,6 +58,11 @@ const RULES = [
   [/(?<![\w-])border-white\/5(?!\d)/g, "border-hairline"],
   [/(?<![\w-])border-white\/(?:10|15|20|30)(?!\d)/g, "border-hairline-strong"],
   [/(?<![\w-])border-white(?![\w/[-])/g, "border-hairline-strong"],
+  // Ring overlays → the strong hairline. (A resting-vs-focus pair that
+  // collapses to the same ring is a deliberate manual-fixup point: the
+  // focus ring is upgraded to ring-primary by hand, matching this
+  // codebase's focus convention.)
+  [/(?<![\w-])ring-white(?:\/(?:\[[0-9.]+\]|[0-9]{1,3}))?(?![\w-])/g, "ring-hairline-strong"],
 
   // ── Neutral fills/borders that aren't white overlays ──
   [/(?<![\w-])bg-zinc-(?:400|500|600)(?![\w-])/g, "bg-muted-foreground"],
@@ -83,6 +88,22 @@ const RULES = [
     new RegExp(`(?<![\\w-])(${PREFIX})-(?:blue|sky|indigo)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
     "$1-info",
   ],
+  // Purple/violet is the WebUI's *secondary* categorical accent (dispatch
+  // / agent / "remote" tags) — deliberately distinct from the primary
+  // accent. The shadcn `accent`/`accent-foreground` token slots were the
+  // muted-hover-surface convention but are UNUSED in this codebase
+  // (surfaces map to surface/elevated), so they are repurposed in
+  // theme.ts as this themed secondary accent. See lib/theme.ts.
+  [
+    new RegExp(`(?<![\\w-])(${PREFIX})-(?:purple|violet|fuchsia)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
+    "$1-accent",
+  ],
+  // Black scrims (`bg-black/20`, `bg-black/[0.3]`) are "recessed to the
+  // base background" surfaces (inset side-panels, form inputs). Map to
+  // the theme base bg so they invert correctly under a light theme
+  // instead of staying a hardcoded black darkener. The `/alpha` is
+  // dropped on purpose — the token is the solid recessed surface.
+  [/(?<![\w-])bg-black(?:\/(?:\[[0-9.]+\]|[0-9]{1,3}))?(?![\w-])/g, "bg-background"],
 ];
 
 function* walk(dir) {
