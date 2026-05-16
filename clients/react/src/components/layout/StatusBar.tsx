@@ -41,12 +41,12 @@ export function StatusBar({
 }: StatusBarProps) {
   if (isMobile) {
     return (
-      <div className="flex items-center justify-between border-b border-white/5 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-hairline px-3 py-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onMobileMenuClick}
-            className="touch-target flex items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Open navigation"
             aria-label="Open navigation menu"
           >
@@ -63,11 +63,11 @@ export function StatusBar({
               <path d="M3 5h14M3 10h14M3 15h14" />
             </svg>
           </button>
-          <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-sm font-bold tracking-wide text-transparent">
+          <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
             tmai
           </span>
           {attentionCount > 0 && (
-            <span className="glow-amber rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-400">
+            <span className="glow-amber rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning">
               {attentionCount}
             </span>
           )}
@@ -77,7 +77,7 @@ export function StatusBar({
             <button
               type="button"
               onClick={onReturnToConsole}
-              className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+              className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
               title="Return to Producer console"
               aria-label="Return to Producer console"
             >
@@ -87,7 +87,7 @@ export function StatusBar({
           <button
             type="button"
             onClick={onSecurityClick}
-            className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Config Audit"
           >
             🛡
@@ -95,7 +95,7 @@ export function StatusBar({
           <button
             type="button"
             onClick={onSettingsClick}
-            className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Settings"
           >
             ⚙
@@ -107,11 +107,11 @@ export function StatusBar({
 
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-2 border-b border-white/5 px-2 py-3">
+      <div className="flex flex-col items-center gap-2 border-b border-hairline px-2 py-3">
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+          className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
           title="Expand sidebar"
         >
           <svg
@@ -126,14 +126,14 @@ export function StatusBar({
             <path d="M6 3l5 5-5 5" />
           </svg>
         </button>
-        <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-xs font-bold text-transparent">
+        <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-xs font-bold text-transparent">
           tm
         </span>
         {onReturnToConsole && (
           <button
             type="button"
             onClick={onReturnToConsole}
-            className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Return to Producer console"
             aria-label="Return to Producer console"
           >
@@ -141,7 +141,7 @@ export function StatusBar({
           </button>
         )}
         {attentionCount > 0 && (
-          <span className="glow-amber rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+          <span className="glow-amber rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
             {attentionCount}
           </span>
         )}
@@ -150,13 +150,13 @@ export function StatusBar({
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+    <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
       <div className="flex items-center gap-2">
         {onToggleCollapse && (
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="rounded px-1 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Collapse sidebar"
           >
             <svg
@@ -172,14 +172,14 @@ export function StatusBar({
             </svg>
           </button>
         )}
-        <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-sm font-bold tracking-wide text-transparent">
+        <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
           tmai
         </span>
       </div>
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-zinc-500">{agentCount} agents</span>
+        <span className="text-muted-foreground">{agentCount} agents</span>
         {attentionCount > 0 && (
-          <span className="glow-amber rounded-full bg-amber-500/15 px-2.5 py-0.5 text-amber-400">
+          <span className="glow-amber rounded-full bg-warning/15 px-2.5 py-0.5 text-warning">
             {attentionCount}
           </span>
         )}
@@ -188,7 +188,7 @@ export function StatusBar({
           <button
             type="button"
             onClick={onReturnToConsole}
-            className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+            className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
             title="Return to Producer console"
             aria-label="Return to Producer console"
           >
@@ -198,7 +198,7 @@ export function StatusBar({
         <button
           type="button"
           onClick={onSecurityClick}
-          className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+          className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
           title="Config Audit"
         >
           🛡
@@ -206,7 +206,7 @@ export function StatusBar({
         <button
           type="button"
           onClick={onSettingsClick}
-          className="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400"
+          className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
           title="Settings"
         >
           ⚙

@@ -25,6 +25,7 @@ const MIGRATED = [
   "components/worktree",
   "components/producer-console",
   "components/agent",
+  "components/layout",
 ];
 
 // A raw Tailwind palette colour utility: <prefix>-<family>[-<shade>][/<alpha>].

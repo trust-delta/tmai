@@ -26,8 +26,8 @@ function ModeIcon({ mode, active, onClick, title, children }: ModeIconProps) {
       data-mode={mode}
       className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
         active
-          ? "bg-white/10 text-cyan-400"
-          : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300"
+          ? "bg-surface-strong text-primary"
+          : "text-muted-foreground hover:bg-surface hover:text-foreground"
       }`}
     >
       {children}
@@ -111,7 +111,7 @@ function TripleIcon() {
 // Split-V / Triple display modes for the agent main panel.
 export function DisplayModeSelector({ mode, onChange }: DisplayModeSelectorProps) {
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-white/[0.03] p-0.5">
+    <div className="flex items-center gap-0.5 rounded-lg bg-surface p-0.5">
       <ModeIcon
         mode="tabs"
         active={mode === "tabs"}
