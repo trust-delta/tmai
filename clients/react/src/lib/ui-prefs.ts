@@ -25,6 +25,9 @@ export interface UIPrefs {
   // WebUI colour theme. Presentation-only; lives here (not in tmai-core
   // config / api-spec) by the same convention as every other field.
   theme: ThemeName;
+  // xterm font size (px). Presentation-only, browser-side; replaces the
+  // old hardcoded `fontSize: 13` in useTerminal.
+  terminalFontSize: number;
 }
 
 export const DEFAULT_UI_PREFS: UIPrefs = {
@@ -36,6 +39,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   tripleOuterRatio: 0.55,
   tripleInnerRatio: 0.5,
   theme: DEFAULT_THEME_NAME,
+  terminalFontSize: 13,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -48,9 +52,18 @@ const VALID_THEMES: readonly ThemeName[] = THEME_NAMES;
 const RATIO_MIN = 0.2;
 const RATIO_MAX = 0.8;
 
+// Keep the terminal legible and the layout sane at the extremes.
+export const TERMINAL_FONT_SIZE_MIN = 8;
+export const TERMINAL_FONT_SIZE_MAX = 32;
+
 function clampRatio(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.max(RATIO_MIN, Math.min(RATIO_MAX, value));
+}
+
+function clampFontSize(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(TERMINAL_FONT_SIZE_MIN, Math.min(TERMINAL_FONT_SIZE_MAX, Math.round(value)));
 }
 
 // Validate each field individually so a partially corrupt blob still
@@ -75,6 +88,7 @@ function coercePrefs(raw: unknown): UIPrefs {
     theme: VALID_THEMES.includes(r.theme as ThemeName)
       ? (r.theme as ThemeName)
       : DEFAULT_UI_PREFS.theme,
+    terminalFontSize: clampFontSize(r.terminalFontSize, DEFAULT_UI_PREFS.terminalFontSize),
   };
 }
 

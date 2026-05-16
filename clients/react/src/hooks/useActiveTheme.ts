@@ -28,3 +28,11 @@ export function useApplyTheme(): Theme {
   }, [theme]);
   return theme;
 }
+
+// The xterm font size from ui-prefs (px). Same provider-optional fallback
+// as useActiveTheme so the terminal-wiring unit tests (rendered without a
+// provider) keep working.
+export function useTerminalFontSize(): number {
+  const ctx = useUIPrefsOptional();
+  return ctx ? ctx.prefs.terminalFontSize : loadUIPrefs().terminalFontSize;
+}
