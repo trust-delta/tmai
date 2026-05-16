@@ -25,8 +25,19 @@
 
 import type { ITheme } from "@xterm/xterm";
 
+// User-SELECTABLE themes — drives the Settings switcher and ui-prefs
+// validation. `light` is intentionally NOT here yet: it is fully defined
+// (below) and resolvable so it can serve as the acceptance test for the
+// semantic-token migration, but until the component tree actually
+// consumes the tokens it would render broken, so it stays unreachable
+// from the UI until the migration's final PR promotes it into this list.
 export const THEME_NAMES = ["tokyonight", "zinc"] as const;
 export type ThemeName = (typeof THEME_NAMES)[number];
+
+// All themes in the registry (selectable + not-yet-selectable). Used by
+// `resolveTheme` and `THEMES` so `light` exists and is testable now.
+export const REGISTERED_THEME_NAMES = ["tokyonight", "zinc", "light"] as const;
+export type RegisteredThemeName = (typeof REGISTERED_THEME_NAMES)[number];
 
 // New installs default to Tokyo Night so the WebUI matches the operator's
 // tmux out of the box.
@@ -52,6 +63,27 @@ export const SEMANTIC_TOKENS = [
   "accent-foreground",
   "destructive",
   "destructive-foreground",
+  // Status families the component tree currently spells with raw
+  // palette classes (amber/emerald|green/blue). `destructive` already
+  // covers red/error. Added now so the migration has a target; nothing
+  // consumes them yet, so emitting them is visually inert.
+  "warning",
+  "warning-foreground",
+  "success",
+  "success-foreground",
+  "info",
+  "info-foreground",
+  // Elevation/overlay surfaces — the replacement for the ~540
+  // `bg-white/N` / `border-white/N` overlays. These are an *elevation*
+  // concept, not "foreground at N%", so they get dedicated tokens
+  // instead of an opacity modifier on `foreground`.
+  "surface",
+  "surface-strong",
+  "elevated",
+  "hairline",
+  "hairline-strong",
+  // Dimmest text tier (the zinc-600/700 labels), below muted-foreground.
+  "subtle-foreground",
   "border",
   "input",
   "ring",
@@ -112,6 +144,20 @@ export interface ShellPalette {
   glassDeepBorder: string;
 }
 
+// Decorative effects that aren't Tailwind colour tokens: the status
+// glow box-shadows (`.glow-*` / `glowPulse` in globals.css) and the
+// "tmai" brand gradient. Glow values are space-separated rgb *channel*
+// triples (e.g. "34 211 238") so globals.css can do
+// `rgb(var(--glow-accent) / 0.15)`. Emitted as plain `--glow-*` /
+// `--brand-*` vars (not `--color-*`) so Tailwind doesn't mint utilities.
+export interface FxPalette {
+  glowAccent: string;
+  glowWarning: string;
+  glowDanger: string;
+  brandFrom: string;
+  brandTo: string;
+}
+
 export interface ThemePalette {
   // ── Terminal canvas ── these feed the xterm `ITheme`. They must be
   // hex / rgb(a): xterm's colour parser does not understand `oklch()`.
@@ -129,6 +175,8 @@ export interface ThemePalette {
   ansi?: AnsiPalette;
   // ── App shell ── body backdrop + glass panels (see ShellPalette).
   shell: ShellPalette;
+  // ── Decorative effects ── glow box-shadows + brand gradient.
+  fx: FxPalette;
   // ── Tailwind semantic tokens ── any valid CSS colour. `zinc` keeps the
   // original OKLch strings verbatim (zero-risk faithful snapshot);
   // `tokyonight` uses hex.
@@ -136,7 +184,7 @@ export interface ThemePalette {
 }
 
 export interface Theme {
-  name: ThemeName;
+  name: RegisteredThemeName;
   label: string;
   palette: ThemePalette;
 }
@@ -192,6 +240,16 @@ const TOKYONIGHT: Theme = {
       glassDeepBg: "rgba(22, 22, 30, 0.7)",
       glassDeepBorder: "rgba(192, 202, 245, 0.08)",
     },
+    // glow* kept at the pre-theme literal cyan/amber/red so the
+    // globals.css glow rewrite is provably inert for this (default)
+    // theme; per-theme glow tuning is deferred (see PR plan).
+    fx: {
+      glowAccent: "34 211 238",
+      glowWarning: "245 158 11",
+      glowDanger: "239 68 68",
+      brandFrom: "#22d3ee",
+      brandTo: "#60a5fa",
+    },
     tokens: {
       background: "#1a1b26",
       foreground: "#c0caf5",
@@ -209,6 +267,18 @@ const TOKYONIGHT: Theme = {
       "accent-foreground": "#c0caf5",
       destructive: "#f7768e",
       "destructive-foreground": "#15161e",
+      warning: "#e0af68",
+      "warning-foreground": "#15161e",
+      success: "#9ece6a",
+      "success-foreground": "#15161e",
+      info: "#7dcfff",
+      "info-foreground": "#15161e",
+      surface: "rgba(192, 202, 245, 0.05)",
+      "surface-strong": "rgba(192, 202, 245, 0.1)",
+      elevated: "#24283b",
+      hairline: "rgba(192, 202, 245, 0.06)",
+      "hairline-strong": "rgba(192, 202, 245, 0.12)",
+      "subtle-foreground": "#414868",
       border: "#292e42",
       input: "#292e42",
       ring: "#7aa2f7",
@@ -258,6 +328,18 @@ const ZINC: Theme = {
       glassDeepBg: "rgba(10, 10, 15, 0.7)",
       glassDeepBorder: "rgba(255, 255, 255, 0.08)",
     },
+    // Same literal glow/brand values the pre-theme code used — keeps the
+    // globals.css glow rewrite pixel-identical when `zinc` is active.
+    fx: {
+      glowAccent: "34 211 238",
+      glowWarning: "245 158 11",
+      glowDanger: "239 68 68",
+      brandFrom: "#22d3ee",
+      brandTo: "#60a5fa",
+    },
+    // New tokens mirror the Tailwind palette values the components
+    // currently hardcode (amber/emerald/blue, white/N overlays) so the
+    // future per-area migration is a faithful swap, not a re-colour.
     tokens: {
       background: "oklch(0.145 0 0)",
       foreground: "oklch(0.985 0 0)",
@@ -275,6 +357,18 @@ const ZINC: Theme = {
       "accent-foreground": "oklch(0.985 0 0)",
       destructive: "oklch(0.396 0.141 25.723)",
       "destructive-foreground": "oklch(0.637 0.237 25.331)",
+      warning: "#f59e0b",
+      "warning-foreground": "#18181b",
+      success: "#10b981",
+      "success-foreground": "#18181b",
+      info: "#3b82f6",
+      "info-foreground": "#18181b",
+      surface: "rgba(255, 255, 255, 0.05)",
+      "surface-strong": "rgba(255, 255, 255, 0.1)",
+      elevated: "rgba(255, 255, 255, 0.08)",
+      hairline: "rgba(255, 255, 255, 0.06)",
+      "hairline-strong": "rgba(255, 255, 255, 0.1)",
+      "subtle-foreground": "oklch(0.556 0 0)",
       border: "oklch(0.269 0 0)",
       input: "oklch(0.269 0 0)",
       ring: "oklch(0.556 0 0)",
@@ -290,17 +384,121 @@ const ZINC: Theme = {
   },
 };
 
-export const THEMES: Record<ThemeName, Theme> = Object.freeze({
+// `light` = Tokyo Night Day (canonical folke/tokyonight-day). Defined
+// and resolvable now so it is the acceptance test for the semantic-token
+// migration, but kept out of THEME_NAMES (not user-selectable) until the
+// component tree actually consumes the tokens — otherwise the many
+// hardcoded dark palette classes would render unreadable on a light bg.
+const LIGHT: Theme = {
+  name: "light",
+  label: "Tokyo Night Day",
+  palette: {
+    terminalBackground: "#e1e2e7",
+    terminalForeground: "#3760bf",
+    terminalCursor: "#3760bf",
+    terminalSelection: "#b6bfe2",
+    // White overlays vanish on a light bg — use a dark overlay so the
+    // xterm scrollbar slider stays visible.
+    scrollbar: "rgba(0, 0, 0, 0.12)",
+    scrollbarHover: "rgba(0, 0, 0, 0.2)",
+    scrollbarActive: "rgba(0, 0, 0, 0.28)",
+    ansi: {
+      black: "#b4b5b9",
+      red: "#f52a65",
+      green: "#587539",
+      yellow: "#8c6c3e",
+      blue: "#2e7de9",
+      magenta: "#9854f1",
+      cyan: "#007197",
+      white: "#6172b0",
+      brightBlack: "#a1a6c5",
+      brightRed: "#f52a65",
+      brightGreen: "#587539",
+      brightYellow: "#8c6c3e",
+      brightBlue: "#2e7de9",
+      brightMagenta: "#9854f1",
+      brightCyan: "#007197",
+      brightWhite: "#3760bf",
+    },
+    shell: {
+      appBg: "linear-gradient(135deg, #d5d6db 0%, #e1e2e7 50%, #d5d6db 100%)",
+      glassBg: "rgba(255, 255, 255, 0.6)",
+      glassBorder: "rgba(55, 96, 191, 0.1)",
+      glassLightBg: "rgba(255, 255, 255, 0.45)",
+      glassLightBorder: "rgba(55, 96, 191, 0.12)",
+      glassCardBg: "rgba(255, 255, 255, 0.5)",
+      glassCardBorder: "rgba(55, 96, 191, 0.08)",
+      glassCardHoverBg: "rgba(255, 255, 255, 0.7)",
+      glassCardHoverBorder: "rgba(55, 96, 191, 0.16)",
+      glassDeepBg: "rgba(233, 233, 236, 0.75)",
+      glassDeepBorder: "rgba(55, 96, 191, 0.12)",
+    },
+    fx: {
+      glowAccent: "46 125 233",
+      glowWarning: "177 92 0",
+      glowDanger: "245 42 101",
+      brandFrom: "#2e7de9",
+      brandTo: "#9854f1",
+    },
+    tokens: {
+      background: "#e1e2e7",
+      foreground: "#3760bf",
+      card: "#e9e9ec",
+      "card-foreground": "#3760bf",
+      popover: "#ffffff",
+      "popover-foreground": "#3760bf",
+      primary: "#2e7de9",
+      "primary-foreground": "#e1e2e7",
+      secondary: "#c4c8da",
+      "secondary-foreground": "#3760bf",
+      muted: "#c4c8da",
+      "muted-foreground": "#6172b0",
+      accent: "#c4c8da",
+      "accent-foreground": "#3760bf",
+      destructive: "#f52a65",
+      "destructive-foreground": "#ffffff",
+      warning: "#8c6c3e",
+      "warning-foreground": "#ffffff",
+      success: "#587539",
+      "success-foreground": "#ffffff",
+      info: "#2e7de9",
+      "info-foreground": "#ffffff",
+      surface: "rgba(55, 96, 191, 0.05)",
+      "surface-strong": "rgba(55, 96, 191, 0.1)",
+      elevated: "#ffffff",
+      hairline: "rgba(55, 96, 191, 0.12)",
+      "hairline-strong": "rgba(55, 96, 191, 0.22)",
+      "subtle-foreground": "#8990b3",
+      border: "#c4c8da",
+      input: "#c4c8da",
+      ring: "#2e7de9",
+      "sidebar-background": "#d5d6db",
+      "sidebar-foreground": "#6172b0",
+      "sidebar-primary": "#2e7de9",
+      "sidebar-primary-foreground": "#e1e2e7",
+      "sidebar-accent": "#c4c8da",
+      "sidebar-accent-foreground": "#3760bf",
+      "sidebar-border": "#c4c8da",
+      "sidebar-ring": "#2e7de9",
+    },
+  },
+};
+
+export const THEMES: Record<RegisteredThemeName, Theme> = Object.freeze({
   tokyonight: TOKYONIGHT,
   zinc: ZINC,
+  light: LIGHT,
 });
 
 // Resolve a (possibly untrusted / persisted) name to a Theme. Returns a
 // stable singleton per name — callers can safely use the result as a
 // React effect dependency; identity only changes when the name changes.
+// Resolves any REGISTERED theme (incl. the not-yet-selectable `light`)
+// so tests and the migration's final PR can reach it; ui-prefs still
+// validates persisted values against the selectable THEME_NAMES.
 export function resolveTheme(name: string | null | undefined): Theme {
-  if (name && (THEME_NAMES as readonly string[]).includes(name)) {
-    return THEMES[name as ThemeName];
+  if (name && (REGISTERED_THEME_NAMES as readonly string[]).includes(name)) {
+    return THEMES[name as RegisteredThemeName];
   }
   return THEMES[DEFAULT_THEME_NAME];
 }
@@ -367,6 +565,16 @@ export function themeCssVars(theme: Theme): Record<string, string> {
   vars["--glass-card-hover-border"] = s.glassCardHoverBorder;
   vars["--glass-deep-bg"] = s.glassDeepBg;
   vars["--glass-deep-border"] = s.glassDeepBorder;
+
+  // Decorative-effect vars (no `--color-` prefix). Glow values are rgb
+  // channel triples so globals.css can apply its own alpha:
+  // `rgb(var(--glow-accent) / 0.15)`.
+  const f = theme.palette.fx;
+  vars["--glow-accent"] = f.glowAccent;
+  vars["--glow-warning"] = f.glowWarning;
+  vars["--glow-danger"] = f.glowDanger;
+  vars["--brand-from"] = f.brandFrom;
+  vars["--brand-to"] = f.brandTo;
   return vars;
 }
 

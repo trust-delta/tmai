@@ -36,6 +36,21 @@
   --color-accent-foreground: #c0caf5;
   --color-destructive: #f7768e;
   --color-destructive-foreground: #15161e;
+  /* Status + surface + dim-text tokens (migration targets; no component
+     consumes them yet so declaring them is visually inert). Mirror
+     THEMES.tokyonight in theme.ts. */
+  --color-warning: #e0af68;
+  --color-warning-foreground: #15161e;
+  --color-success: #9ece6a;
+  --color-success-foreground: #15161e;
+  --color-info: #7dcfff;
+  --color-info-foreground: #15161e;
+  --color-surface: rgba(192, 202, 245, 0.05);
+  --color-surface-strong: rgba(192, 202, 245, 0.1);
+  --color-elevated: #24283b;
+  --color-hairline: rgba(192, 202, 245, 0.06);
+  --color-hairline-strong: rgba(192, 202, 245, 0.12);
+  --color-subtle-foreground: #414868;
   --color-border: #292e42;
   --color-input: #292e42;
   --color-ring: #7aa2f7;
@@ -76,6 +91,16 @@
   --glass-card-hover-border: rgba(192, 202, 245, 0.1);
   --glass-deep-bg: rgba(22, 22, 30, 0.7);
   --glass-deep-border: rgba(192, 202, 245, 0.08);
+  /* Decorative-effect vars (single source: theme.ts FxPalette). Glow
+     values are rgb channel triples so the .glow-* classes apply their
+     own alpha. tokyonight defaults intentionally keep the pre-theme
+     literal cyan/amber/red so the glow rewrite below is visually inert
+     for the selectable themes; overridden at runtime per active theme. */
+  --glow-accent: 34 211 238;
+  --glow-warning: 245 158 11;
+  --glow-danger: 239 68 68;
+  --brand-from: #22d3ee;
+  --brand-to: #60a5fa;
 }
 
 body {
@@ -122,17 +147,22 @@ body {
   border: 1px solid var(--glass-deep-border);
 }
 
-/* Glow effects for status indicators */
+/* Glow effects for status indicators. Colours come from the active
+   theme's FxPalette (theme.ts) via --glow-* rgb channel triples; the
+   alpha stays here. Class names keep their historic hue suffix
+   (cyan/amber/red) but now map to the semantic accent/warning/danger
+   glow so they follow the theme. */
 .glow-cyan {
-  box-shadow: 0 0 12px rgba(34, 211, 238, 0.15), inset 0 0 12px rgba(34, 211, 238, 0.05);
+  box-shadow: 0 0 12px rgb(var(--glow-accent) / 0.15), inset 0 0 12px rgb(var(--glow-accent) / 0.05);
 }
 
 .glow-amber {
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.15), inset 0 0 12px rgba(245, 158, 11, 0.05);
+  box-shadow: 0 0 12px rgb(var(--glow-warning) / 0.15),
+    inset 0 0 12px rgb(var(--glow-warning) / 0.05);
 }
 
 .glow-red {
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15), inset 0 0 12px rgba(239, 68, 68, 0.05);
+  box-shadow: 0 0 12px rgb(var(--glow-danger) / 0.15), inset 0 0 12px rgb(var(--glow-danger) / 0.05);
 }
 
 /* Smooth transitions for interactive elements */
@@ -208,10 +238,12 @@ body {
 /* Glow pulse for attention-grabbing elements */
 @keyframes glowPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.15), inset 0 0 12px rgba(245, 158, 11, 0.05);
+    box-shadow: 0 0 12px rgb(var(--glow-warning) / 0.15),
+      inset 0 0 12px rgb(var(--glow-warning) / 0.05);
   }
   50% {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.25), inset 0 0 12px rgba(245, 158, 11, 0.1);
+    box-shadow: 0 0 20px rgb(var(--glow-warning) / 0.25),
+      inset 0 0 12px rgb(var(--glow-warning) / 0.1);
   }
 }
 
