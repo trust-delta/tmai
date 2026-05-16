@@ -14,11 +14,7 @@ export type ApproachWire = { slug: string, title: string,
  * creation date. Approaches don't carry a `last_verified` field;
  * re-evaluation is signal-driven via `review_triggers`.
  */
-date: string, status: ApproachStatus, 
-/**
- * Authority level (1 = tier-1, 2 = tier-2). `None` ⇒ untiered.
- */
-tier: number | null, governs: Array<string>, 
+date: string, status: ApproachStatus, governs: Array<string>, 
 /**
  * `serves:` — non-empty per parse-time validation.
  */

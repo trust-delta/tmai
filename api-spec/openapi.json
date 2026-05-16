@@ -437,15 +437,6 @@
           "success_signal": {
             "type": "string"
           },
-          "tier": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Authority level (1 = tier-1, 2 = tier-2). `None` ⇒ untiered.",
-            "minimum": 0
-          },
           "title": {
             "type": "string"
           }
@@ -1992,7 +1983,7 @@
       },
       "DecisionCategory": {
         "type": "string",
-        "description": "What kind of decision this is — drives the workbench's temperature treatment.\n\nOrthogonal to [`DecisionFrontmatter::tier`]: `category` is the *kind*\n(blast radius / abstraction); `tier` is the *authority* (who may change it).\nThey correlate strongly — `foundational` defaults to tier-1, `scoped` /\n`principle` to tier-2 — but the binding is in `tier:`, not here.",
+        "description": "What kind of decision this is — drives the workbench's temperature treatment.\n\n`category` is the *kind* (blast radius / abstraction), not the authority.\nAuthority is not a stored field: it is derived from the slot\n(`doc/decisions/` ⇒ a human-accepted decision vs `doc/approaches/` ⇒ a\nProducer-run experiment), `category: foundational`, and the act itself\n(accepting a decision is a human gate; running an approach is the\nProducer's). See `doc/decisions/2026-05-16-authority-attaches-to-the-act.md`.",
         "enum": [
           "scoped",
           "principle",
