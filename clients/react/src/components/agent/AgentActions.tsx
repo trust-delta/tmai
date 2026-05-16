@@ -61,15 +61,18 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
   }, [needsPermission, handleApprove]);
 
   return (
-    <div className="glass flex flex-wrap items-center gap-2 border-0 border-b border-white/5 px-3 py-2">
-      <span className="truncate text-sm font-medium text-zinc-300">{agent.display_name}</span>
+    <div className="glass flex flex-wrap items-center gap-2 border-0 border-b border-hairline px-3 py-2">
+      <span className="truncate text-sm font-medium text-foreground">{agent.display_name}</span>
       <span
         className={cn(
           "shrink-0 rounded px-1.5 py-0.5 text-xs",
-          needsPermission && "bg-red-500/20 text-red-400",
-          isProcessing && "bg-cyan-500/20 text-cyan-400",
-          isIdle && "bg-zinc-500/20 text-zinc-400",
-          !needsPermission && !isProcessing && !isIdle && "bg-zinc-700/50 text-zinc-400",
+          needsPermission && "bg-destructive/20 text-destructive",
+          isProcessing && "bg-primary/20 text-primary",
+          isIdle && "bg-muted-foreground/20 text-muted-foreground",
+          !needsPermission &&
+            !isProcessing &&
+            !isIdle &&
+            "bg-surface-strong/50 text-muted-foreground",
         )}
       >
         {name}
@@ -82,7 +85,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
           <button
             type="button"
             onClick={handleApprove}
-            className="touch-target-sm rounded-md bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30"
+            className="touch-target-sm rounded-md bg-success/20 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/30"
             title="Ctrl+Enter"
           >
             Approve
@@ -90,7 +93,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
           <button
             type="button"
             onClick={handleReject}
-            className="touch-target-sm glass-card rounded-md px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors"
+            className="touch-target-sm glass-card rounded-md px-3 py-1.5 text-xs font-medium text-foreground transition-colors"
           >
             Reject
           </button>
@@ -100,7 +103,7 @@ export function AgentActions({ agent, passthrough }: AgentActionsProps) {
       <button
         type="button"
         onClick={handleKill}
-        className="touch-target-sm rounded-md px-2 py-1.5 text-xs text-zinc-600 transition-colors hover:text-red-400"
+        className="touch-target-sm rounded-md px-2 py-1.5 text-xs text-subtle-foreground transition-colors hover:text-destructive"
         title="Kill agent"
       >
         Kill

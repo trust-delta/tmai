@@ -20,7 +20,12 @@ import { describe, expect, it } from "vitest";
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 // Directories (relative to src/) that have completed the migration.
-const MIGRATED = ["components/settings", "components/worktree", "components/producer-console"];
+const MIGRATED = [
+  "components/settings",
+  "components/worktree",
+  "components/producer-console",
+  "components/agent",
+];
 
 // A raw Tailwind palette colour utility: <prefix>-<family>[-<shade>][/<alpha>].
 // Semantic tokens (foreground / surface / primary / hairline / …) do not

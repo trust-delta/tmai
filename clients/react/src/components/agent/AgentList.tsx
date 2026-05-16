@@ -38,7 +38,7 @@ export function AgentList({
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Initializing...
       </div>
     );
@@ -53,18 +53,18 @@ export function AgentList({
           collapsed, opt-in via the Operator override panel or the
           sidebar toggle — so the operator has a direct-agent
           escape hatch. The label below makes that intent visible. */}
-      <div className="mb-2 border-b border-white/5 pb-2">
-        <p className="text-[11px] uppercase tracking-wider text-amber-400/70">
+      <div className="mb-2 border-b border-hairline pb-2">
+        <p className="text-[11px] uppercase tracking-wider text-warning/70">
           Operator view (legacy)
         </p>
-        <p className="mt-0.5 text-[10px] leading-tight text-zinc-600">
+        <p className="mt-0.5 text-[10px] leading-tight text-subtle-foreground">
           Direct agent / project access. The new main flow is the Producer console — use this
           sidebar only when you need to bypass the Producer.
         </p>
       </div>
       <NewAgentLauncher onSpawned={onSpawned} />
       {projects.length === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-zinc-600">
+        <p className="px-2 py-6 text-center text-xs text-subtle-foreground">
           No agents — pick a directory above to spawn one.
         </p>
       ) : (

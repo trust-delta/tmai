@@ -178,13 +178,14 @@ describe("transcript polling bail-out", () => {
 });
 
 describe("record type styling expectations", () => {
-  it("UserRecord uses ❯ prefix and bold white", () => {
-    // Verify the design contract: user records get the Claude Code prompt style
+  it("UserRecord uses ❯ prefix and bold foreground", () => {
+    // Design contract, post semantic-token migration: user records get
+    // the Claude Code prompt style (text-white → text-foreground).
     const prefix = "❯";
-    const styleClasses = "text-white font-bold";
+    const styleClasses = "text-foreground font-bold";
     expect(prefix).toBe("❯");
     expect(styleClasses).toContain("font-bold");
-    expect(styleClasses).toContain("text-white");
+    expect(styleClasses).toContain("text-foreground");
   });
 
   it("ToolUseRecord uses ● prefix", () => {
@@ -192,15 +193,15 @@ describe("record type styling expectations", () => {
     expect(prefix).toBe("●");
   });
 
-  it("ToolResultRecord uses ⎿ prefix with gray block", () => {
+  it("ToolResultRecord uses ⎿ prefix with a muted surface block", () => {
     const prefix = "⎿";
-    const blockClasses = "border-zinc-700/50 bg-zinc-900/30";
+    const blockClasses = "border-hairline-strong/50 bg-surface-strong/30";
     expect(prefix).toBe("⎿");
-    expect(blockClasses).toContain("bg-zinc-900/30");
+    expect(blockClasses).toContain("bg-surface-strong");
   });
 
-  it("error tool results use red styling", () => {
-    const errorClasses = "border-red-500/40 bg-red-950/20";
-    expect(errorClasses).toContain("red");
+  it("error tool results use destructive styling", () => {
+    const errorClasses = "border-destructive/40 bg-destructive/20";
+    expect(errorClasses).toContain("destructive");
   });
 });

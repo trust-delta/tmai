@@ -255,7 +255,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
               <TranscriptView records={transcriptRecords} />
             </div>
           ) : (
-            <div className="py-4 text-sm text-zinc-600">No transcript records yet</div>
+            <div className="py-4 text-sm text-subtle-foreground">No transcript records yet</div>
           )}
         </div>
       )}
@@ -287,22 +287,22 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
       />
 
       {incomingPrompt && (
-        <div className="mx-3 mb-1 flex items-center gap-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-400">
+        <div className="mx-3 mb-1 flex items-center gap-1.5 rounded border border-warning/20 bg-warning/10 px-2 py-1 text-[10px] text-warning">
           <span className="shrink-0">⚠ Incoming notification:</span>
-          <span className="truncate text-amber-300">{incomingPrompt}</span>
+          <span className="truncate text-warning">{incomingPrompt}</span>
         </div>
       )}
 
-      <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1.5">
-        <div className="inline-flex rounded bg-white/5 p-0.5">
+      <div className="flex items-center gap-2 border-t border-hairline px-3 py-1.5">
+        <div className="inline-flex rounded bg-surface p-0.5">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setActiveTab("live")}
             className={`touch-target-sm rounded px-2 py-0.5 text-xs transition-colors ${
               activeTab === "live"
-                ? "bg-cyan-500/20 text-cyan-400"
-                : "text-zinc-500 hover:text-zinc-300"
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             title="Live xterm preview"
           >
@@ -314,8 +314,8 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             onClick={() => setActiveTab("transcript")}
             className={`touch-target-sm rounded px-2 py-0.5 text-xs transition-colors ${
               activeTab === "transcript"
-                ? "bg-cyan-500/20 text-cyan-400"
-                : "text-zinc-500 hover:text-zinc-300"
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             title="JSONL transcript (heavier; loaded on demand)"
           >
@@ -342,10 +342,10 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             title="Queued Prompts"
             renderItem={(item) => (
               <div>
-                <p className="truncate text-[11px] text-zinc-200" title={item.prompt}>
+                <p className="truncate text-[11px] text-foreground" title={item.prompt}>
                   {item.prompt}
                 </p>
-                <p className="mt-0.5 text-[10px] text-zinc-500">
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
                   {item.origin && <span className="mr-2">{originLabel(item.origin)}</span>}
                   {new Date(item.queued_at).toLocaleTimeString()}
                 </p>

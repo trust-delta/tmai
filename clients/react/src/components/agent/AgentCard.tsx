@@ -34,26 +34,26 @@ function attentionPill(state: AgentAttention | null): {
       // Cyan = "engaging — agent just spawned, awaiting first prompt".
       // Reuses the visual the legacy "Bootstrap" pill carried.
       label: "Started",
-      style: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+      style: "bg-primary/20 text-primary border-primary/30",
     };
   }
   if (state === "halted") {
     return {
       label: "Halted",
-      style: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+      style: "bg-destructive/20 text-destructive border-destructive/30",
     };
   }
   if (state === "completed") {
     return {
       label: "Done",
-      style: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+      style: "bg-info/20 text-info border-info/30",
     };
   }
   // null — agent is running, no user action needed. Muted styling so
   // the ambient state does not compete with the three blocking pills.
   return {
     label: "Running",
-    style: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+    style: "bg-muted-foreground/10 text-muted-foreground border-hairline-strong/20",
   };
 }
 
@@ -63,24 +63,24 @@ function agentTypeLabel(agentType: AgentType): {
   label: string;
   color: string;
 } {
-  if (agentType === "ClaudeCode") return { icon: "⬡", label: "Claude", color: "text-orange-400" };
-  if (agentType === "CodexCli") return { icon: "◆", label: "Codex", color: "text-green-400" };
-  if (agentType === "GeminiCli") return { icon: "✦", label: "Gemini", color: "text-blue-400" };
-  if (agentType === "OpenCode") return { icon: "◇", label: "OpenCode", color: "text-purple-400" };
+  if (agentType === "ClaudeCode") return { icon: "⬡", label: "Claude", color: "text-warning" };
+  if (agentType === "CodexCli") return { icon: "◆", label: "Codex", color: "text-success" };
+  if (agentType === "GeminiCli") return { icon: "✦", label: "Gemini", color: "text-info" };
+  if (agentType === "OpenCode") return { icon: "◇", label: "OpenCode", color: "text-accent" };
   if (typeof agentType === "object" && "Custom" in agentType)
-    return { icon: "›", label: agentType.Custom, color: "text-zinc-400" };
-  return { icon: "›", label: "agent", color: "text-zinc-400" };
+    return { icon: "›", label: agentType.Custom, color: "text-muted-foreground" };
+  return { icon: "›", label: "agent", color: "text-muted-foreground" };
 }
 
 // Model tier styling: color gradient per model family
 function modelStyle(displayName: string): { color: string; glow: string } {
   const lower = displayName.toLowerCase();
   if (lower.includes("opus"))
-    return { color: "text-amber-400/80", glow: "drop-shadow-[0_0_3px_rgba(251,191,36,0.3)]" };
+    return { color: "text-warning/80", glow: "drop-shadow-[0_0_3px_rgba(251,191,36,0.3)]" };
   if (lower.includes("sonnet"))
-    return { color: "text-violet-400/80", glow: "drop-shadow-[0_0_3px_rgba(167,139,250,0.2)]" };
-  if (lower.includes("haiku")) return { color: "text-emerald-400/70", glow: "" };
-  return { color: "text-zinc-500", glow: "" };
+    return { color: "text-accent/80", glow: "drop-shadow-[0_0_3px_rgba(167,139,250,0.2)]" };
+  if (lower.includes("haiku")) return { color: "text-success/70", glow: "" };
+  return { color: "text-muted-foreground", glow: "" };
 }
 
 // Build tooltip describing detection and send details
@@ -130,7 +130,9 @@ function ChannelBadge({
     <span
       className={cn(
         "rounded-sm px-1 py-px text-[9px] font-medium leading-tight transition-subtle",
-        active ? `${activeColor} border border-current/20` : "text-zinc-700 border border-zinc-800",
+        active
+          ? `${activeColor} border border-current/20`
+          : "text-subtle-foreground border border-hairline-strong",
       )}
     >
       {label}
@@ -182,10 +184,10 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       onClick={onClick}
       className={cn(
         "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
-        "hover:bg-white/[0.08] hover:border-white/10",
-        agent.is_orchestrator && "!border-cyan-500/20 bg-cyan-500/[0.04]",
-        selected && "!border-cyan-500/30 !bg-cyan-500/10",
-        hasAttention && "!border-amber-500/30 animate-glow-pulse",
+        "hover:bg-surface hover:border-hairline-strong",
+        agent.is_orchestrator && "!border-primary/20 bg-primary/[0.04]",
+        selected && "!border-primary/30 !bg-primary/10",
+        hasAttention && "!border-warning/30 animate-glow-pulse",
         glow && selected && glow,
       )}
     >
@@ -193,11 +195,11 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
           {agent.is_orchestrator && (
-            <span className="shrink-0 rounded border border-cyan-500/30 bg-cyan-500/10 px-1 py-px text-[9px] font-semibold text-cyan-400">
+            <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 py-px text-[9px] font-semibold text-primary">
               ORCH
             </span>
           )}
-          <span className="truncate text-sm font-medium text-zinc-200 group-hover:text-zinc-100 transition-subtle">
+          <span className="truncate text-sm font-medium text-foreground group-hover:text-foreground transition-subtle">
             {isAi ? typeInfo.label : agent.display_name || typeInfo.label}
             {isAi && agent.model_display_name && (
               <span
@@ -225,26 +227,26 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       </div>
 
       {/* Row 2: connection channel badges + branch */}
-      <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 transition-subtle group-hover:text-zinc-400">
+      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground transition-subtle group-hover:text-muted-foreground">
         {isAi && (
           <div className="flex items-center gap-0.5" title={tooltip}>
             {(channels.has_hook || channels.has_websocket) && (
               <ChannelBadge
                 label={channels.has_websocket ? "WS" : "Hook"}
                 active={channels.has_hook || channels.has_websocket}
-                activeColor="text-cyan-400"
+                activeColor="text-primary"
               />
             )}
             {(channels.has_ipc ||
               channels.has_hook ||
               channels.has_websocket ||
               channels.has_tmux) && (
-              <ChannelBadge label="IPC" active={channels.has_ipc} activeColor="text-emerald-400" />
+              <ChannelBadge label="IPC" active={channels.has_ipc} activeColor="text-success" />
             )}
             {channels.has_tmux && (
-              <ChannelBadge label="tmux" active={channels.has_tmux} activeColor="text-yellow-400" />
+              <ChannelBadge label="tmux" active={channels.has_tmux} activeColor="text-warning" />
             )}
-            {channels.has_pty && <ChannelBadge label="PTY" active activeColor="text-violet-400" />}
+            {channels.has_pty && <ChannelBadge label="PTY" active activeColor="text-accent" />}
             {/* Fallback: no known channel */}
             {!channels.has_hook &&
               !channels.has_websocket &&
@@ -261,30 +263,30 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
           <span
             className={cn(
               "truncate text-right",
-              agent.is_worktree ? "text-emerald-600" : "text-zinc-600",
-              "group-hover:text-zinc-500 transition-subtle",
+              agent.is_worktree ? "text-success" : "text-subtle-foreground",
+              "group-hover:text-muted-foreground transition-subtle",
             )}
             title={`${agent.is_worktree ? "worktree: " : "branch: "}${agent.git_branch}${agent.git_dirty ? " (dirty)" : ""}`}
           >
             {agent.is_worktree && "🌿"}
             {agent.git_branch}
-            {agent.git_dirty && <span className="text-amber-500">*</span>}
+            {agent.git_dirty && <span className="text-warning">*</span>}
           </span>
         ) : (
           <span
-            className="truncate text-right text-zinc-600 group-hover:text-zinc-500 transition-subtle"
+            className="truncate text-right text-subtle-foreground group-hover:text-muted-foreground transition-subtle"
             title={agent.cwd}
           >
             {agent.display_cwd}
           </span>
         )}
         {agent.active_subagents > 0 && (
-          <span className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-subtle">
+          <span className="shrink-0 text-subtle-foreground group-hover:text-muted-foreground transition-subtle">
             ⑂{agent.active_subagents}
           </span>
         )}
         {agent.compaction_count > 0 && (
-          <span className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-subtle">
+          <span className="shrink-0 text-subtle-foreground group-hover:text-muted-foreground transition-subtle">
             ♻{agent.compaction_count}
           </span>
         )}
