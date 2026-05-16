@@ -52,6 +52,56 @@
         }
       }
     },
+    "/api/github/pr/diff": {
+      "get": {
+        "tags": [
+          "prs"
+        ],
+        "summary": "Documentation stub for `GET /api/github/pr/diff`.",
+        "description": "Stage-1 in-tmai dev-loop (DR §A/§B): a PR's raw unified patch\n(`gh pr diff <n> --patch`) so the operator reviews the code diff\nin-tmai instead of on github.com. Verbatim diff text, not a parsed\nAST. Same `repo` + `pr_number` query shape and 30s TTL-cache\ndiscipline as the neighbouring `GET /api/github/pr/files`.",
+        "operationId": "get_pr_diff_doc",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Absolute repo path (a `repo_path` from `GET /api/units/{unit}/prs`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pr_number",
+            "in": "query",
+            "description": "PR number within that repo",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw unified patch for the PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrDiffResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "500": {
+            "description": "gh pr diff failed (is gh authenticated?)"
+          }
+        }
+      }
+    },
     "/api/task-meta": {
       "get": {
         "tags": [
@@ -201,6 +251,45 @@
           },
           "500": {
             "description": "Gather (decision parse / git log) failed"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/prs": {
+      "get": {
+        "tags": [
+          "prs"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/prs`.",
+        "description": "Stage-1 in-tmai dev-loop (DR `2026-05-16-dev-loop-completes-in-tmai.md`\n§A): one unit-scoped list of the *open* PRs across every repo in the\nunit's `repos[]`, each PR tagged with the repo it belongs to (path +\nstable label + primary flag). Reuses the single-repo `GET /api/github/prs`\ngh-CLI path (30s TTL cache) fanned out over the unit's repos. Unit\nresolution goes through the post-#387 resolver, so a worktree-name unit\nstill reduces to its owning unit.",
+        "operationId": "get_unit_prs_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open PRs across the unit's repos, grouped per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitPrsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "PR listing failed for a repo (is gh authenticated?)"
           }
         }
       }
@@ -2918,6 +3007,121 @@
           "auto"
         ]
       },
+      "PrDiffResponse": {
+        "type": "object",
+        "description": "`GET /api/github/pr/diff` response — a PR's raw unified patch\n(`gh pr diff <n> --patch`). Deliberately verbatim text, not a parsed\nhunk AST: the diff *is* the contract; rendering structure is the React\nviewer's concern (DR §A — review the code diff in-tmai).",
+        "required": [
+          "repo",
+          "pr_number",
+          "patch"
+        ],
+        "properties": {
+          "patch": {
+            "type": "string",
+            "description": "Verbatim unified-diff text. Empty string is a valid response (a PR\nwhose head equals its base produces an empty patch)."
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "repo": {
+            "type": "string",
+            "description": "Absolute repo path the diff was read from (echoes the request)."
+          }
+        }
+      },
+      "PrSummaryWire": {
+        "type": "object",
+        "description": "One PR projected to the wire. Field-for-field parity with\n[`crate::github::PrInfo`] (the single-repo `GET /api/github/prs` shape)\nso the React client renders a cross-repo entry with the exact same\ncomponent it already uses for the per-repo list.\n\n`review_decision` / `check_status` are carried as the raw uppercased\nstrings `gh` emits (`\"APPROVED\"`, `\"CHANGES_REQUESTED\"`, `\"SUCCESS\"`,\n…) rather than typed enums. WHY: the domain enums\n(`github::ReviewDecision` / `CheckStatus`) do not derive `ts_rs::TS` /\n`utoipa::ToSchema`, and giving them those derives would cascade new\ngenerated TS enums whose casing must then be kept in lock-step with\n`gh`'s `SCREAMING_SNAKE_CASE` serde repr — a downstream `tsc -b` break\nrisk for zero UI gain (the viewer only displays the badge text). A\nstring passthrough keeps the value byte-identical to what\n`GET /api/github/prs` already serializes; the conversion below derives\nit from the very same `serde` impl, so the two endpoints can never drift.",
+        "required": [
+          "number",
+          "title",
+          "state",
+          "head_branch",
+          "head_sha",
+          "base_branch",
+          "url",
+          "is_draft",
+          "additions",
+          "deletions",
+          "comments",
+          "reviews",
+          "author"
+        ],
+        "properties": {
+          "additions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "author": {
+            "type": "string"
+          },
+          "base_branch": {
+            "type": "string"
+          },
+          "check_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw rolled-up check status (`\"SUCCESS\"` / `\"FAILURE\"` / `\"PENDING\"`),\nor `null` when there are no checks."
+          },
+          "comments": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "deletions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "head_branch": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "is_draft": {
+            "type": "boolean"
+          },
+          "merge_commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set only for merged PRs (the unit list is open-only, so this is\n`null` in practice — kept for shape parity with `PrInfo`)."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "review_decision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw `gh` review-decision string (`\"APPROVED\"` / `\"CHANGES_REQUESTED\"`\n/ `\"REVIEW_REQUIRED\"`), or `null` when GitHub reports none."
+          },
+          "reviews": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "QueueAgentEntry": {
         "type": "object",
         "description": "Per-agent view of the prompt queue.",
@@ -3127,6 +3331,35 @@
             "items": {
               "$ref": "#/components/schemas/DecisionWire"
             }
+          }
+        }
+      },
+      "RepoPrsWire": {
+        "type": "object",
+        "description": "One repo's slice of the unit-scoped PR list. `repo_label` is the stable\ndirectory basename (e.g. `\"tmai-core\"`) — the same scheme\n[`crate::config::ResolvedUnit::from_dir`] uses for unit names; `repo_path`\nis the absolute path the diff/merge endpoints take as their `repo` param.",
+        "required": [
+          "repo_path",
+          "repo_label",
+          "primary",
+          "prs"
+        ],
+        "properties": {
+          "primary": {
+            "type": "boolean",
+            "description": "`true` for the unit's primary repo (where the Producer is launched)."
+          },
+          "prs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrSummaryWire"
+            },
+            "description": "Open PRs in this repo, newest first (descending PR number)."
+          },
+          "repo_label": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
           }
         }
       },
@@ -3790,6 +4023,25 @@
           "tradeoff_proposal"
         ]
       },
+      "UnitPrsResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+        "required": [
+          "unit",
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoPrsWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
       "Vendor": {
         "type": "string",
         "description": "Vendor CLI identifier for dispatched agents.",
@@ -4093,6 +4345,10 @@
     {
       "name": "working-with-human",
       "description": "Working-with-human view — memory dir + MEMORY.md projection of compose() (DR 2026-05-11-producer-conversation-workbench §1)"
+    },
+    {
+      "name": "prs",
+      "description": "Stage-1 in-tmai dev-loop: unit-scoped multi-repo PR list + PR code-diff (DR 2026-05-16-dev-loop-completes-in-tmai §A/§B)"
     }
   ]
 }
