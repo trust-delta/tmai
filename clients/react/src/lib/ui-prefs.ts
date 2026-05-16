@@ -10,6 +10,7 @@
 
 import type { DisplayMode } from "@/components/layout/DisplayModeSelector";
 import type { PaneTab } from "@/components/layout/TabbedPaneLayout";
+import { DEFAULT_THEME_NAME, THEME_NAMES, type ThemeName } from "@/lib/theme";
 
 export type RightPanelTab = "git" | "markdown";
 
@@ -21,6 +22,9 @@ export interface UIPrefs {
   splitRatioV: number;
   tripleOuterRatio: number;
   tripleInnerRatio: number;
+  // WebUI colour theme. Presentation-only; lives here (not in tmai-core
+  // config / api-spec) by the same convention as every other field.
+  theme: ThemeName;
 }
 
 export const DEFAULT_UI_PREFS: UIPrefs = {
@@ -31,6 +35,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   splitRatioV: 0.5,
   tripleOuterRatio: 0.55,
   tripleInnerRatio: 0.5,
+  theme: DEFAULT_THEME_NAME,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -38,6 +43,7 @@ export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
 const VALID_DISPLAY_MODES: readonly DisplayMode[] = ["tabs", "split-h", "split-v", "triple"];
 const VALID_PANE_TABS: readonly PaneTab[] = ["preview", "git", "markdown"];
 const VALID_RIGHT_PANEL_TABS: readonly RightPanelTab[] = ["git", "markdown"];
+const VALID_THEMES: readonly ThemeName[] = THEME_NAMES;
 
 const RATIO_MIN = 0.2;
 const RATIO_MAX = 0.8;
@@ -66,6 +72,9 @@ function coercePrefs(raw: unknown): UIPrefs {
     splitRatioV: clampRatio(r.splitRatioV, DEFAULT_UI_PREFS.splitRatioV),
     tripleOuterRatio: clampRatio(r.tripleOuterRatio, DEFAULT_UI_PREFS.tripleOuterRatio),
     tripleInnerRatio: clampRatio(r.tripleInnerRatio, DEFAULT_UI_PREFS.tripleInnerRatio),
+    theme: VALID_THEMES.includes(r.theme as ThemeName)
+      ? (r.theme as ThemeName)
+      : DEFAULT_UI_PREFS.theme,
   };
 }
 

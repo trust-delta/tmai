@@ -64,6 +64,13 @@ export function useUIPrefs(): UIPrefsContextValue {
   return ctx;
 }
 
+// Non-throwing variant. `useActiveTheme` lives deep in the terminal hook,
+// which a few unit tests render outside any provider (xterm wiring tests);
+// they should fall back to persisted/default prefs rather than crash.
+export function useUIPrefsOptional(): UIPrefsContextValue | null {
+  return useContext(UIPrefsContext);
+}
+
 // Convenience selector for a single field. Returns `[value, setter]` —
 // shaped like useState so call sites read naturally.
 export function useUIPref<K extends keyof UIPrefs>(

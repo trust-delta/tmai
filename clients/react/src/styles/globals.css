@@ -10,34 +10,47 @@
   font-display: swap;
 }
 
+/* The single source of truth for these colours is `src/lib/theme.ts`,
+   NOT this block. The values below mirror the default `tokyonight` theme
+   for two reasons only: (1) Tailwind v4 needs the color tokens declared
+   at build time so it can generate the color utility classes;
+   (2) they make the very first paint correct before JS runs.
+   At runtime `applyThemeToDocument()` (lib/theme.ts) writes the active
+   theme's vars as inline custom properties on <html>, which override
+   this `:root` block — that is what makes theme switching live and
+   reload-free. Keep these in sync with THEMES.tokyonight in theme.ts. */
 @theme {
-  --color-background: oklch(0.145 0 0);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.145 0 0);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-popover: oklch(0.145 0 0);
-  --color-popover-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.985 0 0);
-  --color-primary-foreground: oklch(0.205 0 0);
-  --color-secondary: oklch(0.269 0 0);
-  --color-secondary-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.269 0 0);
-  --color-muted-foreground: oklch(0.708 0 0);
-  --color-accent: oklch(0.269 0 0);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-destructive: oklch(0.396 0.141 25.723);
-  --color-destructive-foreground: oklch(0.637 0.237 25.331);
-  --color-border: oklch(0.269 0 0);
-  --color-input: oklch(0.269 0 0);
-  --color-ring: oklch(0.556 0 0);
-  --color-sidebar-background: oklch(0.145 0 0);
-  --color-sidebar-foreground: oklch(0.708 0 0);
-  --color-sidebar-primary: oklch(0.985 0 0);
-  --color-sidebar-primary-foreground: oklch(0.205 0 0);
-  --color-sidebar-accent: oklch(0.269 0 0);
-  --color-sidebar-accent-foreground: oklch(0.985 0 0);
-  --color-sidebar-border: oklch(0.269 0 0);
-  --color-sidebar-ring: oklch(0.556 0 0);
+  --color-background: #1a1b26;
+  --color-foreground: #c0caf5;
+  --color-card: #1a1b26;
+  --color-card-foreground: #c0caf5;
+  --color-popover: #16161e;
+  --color-popover-foreground: #c0caf5;
+  --color-primary: #7aa2f7;
+  --color-primary-foreground: #15161e;
+  --color-secondary: #292e42;
+  --color-secondary-foreground: #c0caf5;
+  --color-muted: #292e42;
+  --color-muted-foreground: #565f89;
+  --color-accent: #292e42;
+  --color-accent-foreground: #c0caf5;
+  --color-destructive: #f7768e;
+  --color-destructive-foreground: #15161e;
+  --color-border: #292e42;
+  --color-input: #292e42;
+  --color-ring: #7aa2f7;
+  --color-sidebar-background: #16161e;
+  --color-sidebar-foreground: #a9b1d6;
+  --color-sidebar-primary: #7aa2f7;
+  --color-sidebar-primary-foreground: #15161e;
+  --color-sidebar-accent: #292e42;
+  --color-sidebar-accent-foreground: #c0caf5;
+  --color-sidebar-border: #292e42;
+  --color-sidebar-ring: #7aa2f7;
+  /* Terminal canvas bg — PreviewPanel/TerminalPanel containers read this
+     so their padding gutter matches the xterm canvas (single-sourced via
+     theme.ts → no more #0c0c0c vs #09090b divergence). */
+  --color-terminal-background: #1a1b26;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;

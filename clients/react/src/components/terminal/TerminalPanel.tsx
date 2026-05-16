@@ -94,7 +94,7 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden bg-[#09090b] p-1"
+        className="flex-1 overflow-hidden bg-[var(--color-terminal-background)] p-1"
         onMouseDown={() => {
           if (inputMode) enterSelectMode();
         }}
