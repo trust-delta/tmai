@@ -23,7 +23,5 @@ pub struct ApproachWire {
     pub slug: String,
     pub status: ApproachStatus,
     pub success_signal: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tier: Option<Value>,
     pub title: String,
 }

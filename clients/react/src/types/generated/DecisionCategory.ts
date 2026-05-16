@@ -3,9 +3,11 @@
 /**
  * What kind of decision this is — drives the workbench's temperature treatment.
  *
- * Orthogonal to [`DecisionFrontmatter::tier`]: `category` is the *kind*
- * (blast radius / abstraction); `tier` is the *authority* (who may change it).
- * They correlate strongly — `foundational` defaults to tier-1, `scoped` /
- * `principle` to tier-2 — but the binding is in `tier:`, not here.
+ * `category` is the *kind* (blast radius / abstraction), not the authority.
+ * Authority is not a stored field: it is derived from the slot
+ * (`doc/decisions/` ⇒ a human-accepted decision vs `doc/approaches/` ⇒ a
+ * Producer-run experiment), `category: foundational`, and the act itself
+ * (accepting a decision is a human gate; running an approach is the
+ * Producer's). See `doc/decisions/2026-05-16-authority-attaches-to-the-act.md`.
  */
 export type DecisionCategory = "scoped" | "principle" | "foundational";
