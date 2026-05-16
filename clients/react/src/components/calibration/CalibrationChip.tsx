@@ -31,7 +31,7 @@ export function CalibrationChip({ data, onClick }: CalibrationChipProps) {
       <button
         type="button"
         onClick={onClick}
-        className="glow-red rounded-full bg-red-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/30 transition-colors"
+        className="glow-red rounded-full bg-destructive/20 px-2.5 py-0.5 text-[11px] font-semibold text-destructive hover:bg-destructive/30 transition-colors"
         title={`${tripwire} tier-1 tripwire violation(s) — DR §B.4 zero tolerance`}
       >
         ⚡ {tripwire}
@@ -47,7 +47,7 @@ export function CalibrationChip({ data, onClick }: CalibrationChipProps) {
     <button
       type="button"
       onClick={onClick}
-      className="rounded-full bg-zinc-700/50 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-700/80 hover:text-zinc-200 transition-colors"
+      className="rounded-full bg-surface-strong/50 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-surface-strong/80 hover:text-foreground transition-colors"
       title={`${data.total_in_window}/${data.total_in_store} calibration entries — click for details`}
     >
       cal {data.total_in_window}

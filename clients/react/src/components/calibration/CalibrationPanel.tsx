@@ -27,27 +27,27 @@ export function CalibrationPanel({ unit, onClose }: CalibrationPanelProps) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-white/5 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-hairline px-6 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-200">Calibration</h2>
-          <p className="text-xs text-zinc-500">
-            Unit: <code className="text-zinc-300">{unit}</code> · DR §B.3 read-only window into
+          <h2 className="text-lg font-semibold text-foreground">Calibration</h2>
+          <p className="text-xs text-muted-foreground">
+            Unit: <code className="text-foreground">{unit}</code> · DR §B.3 read-only window into
             Producer hit-rate
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md px-3 py-1 text-sm text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300"
+          className="rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           Close
         </button>
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-4 text-sm">
-        {loading && !data && <p className="text-zinc-500">Loading…</p>}
+        {loading && !data && <p className="text-muted-foreground">Loading…</p>}
         {error && !data && (
-          <p className="text-red-400">
+          <p className="text-destructive">
             Failed to load calibration: <code>{error.message}</code>
           </p>
         )}
@@ -66,22 +66,22 @@ function CalibrationContent({
   const shallow = !empty && data.total_in_store < data.bootstrap_threshold;
   return (
     <>
-      <section className="rounded-md border border-white/5 bg-white/[0.02] px-4 py-3">
-        <p className="text-xs uppercase tracking-wider text-zinc-500">Window</p>
-        <p className="mt-1 text-zinc-200">
+      <section className="rounded-md border border-hairline bg-surface px-4 py-3">
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">Window</p>
+        <p className="mt-1 text-foreground">
           {data.days === 0 ? "Whole store" : `Last ${data.days} days`}{" "}
-          <span className="text-zinc-500">
+          <span className="text-muted-foreground">
             ({data.total_in_window} entries; {data.total_in_store} in store)
           </span>
         </p>
         {empty && (
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Store is empty. The Producer has not recorded any triage verdicts for this unit yet —
             run <code>tmai producer {data.unit} --synthesize</code> to start one.
           </p>
         )}
         {shallow && (
-          <p className="mt-2 text-xs text-amber-300/80">
+          <p className="mt-2 text-xs text-warning/80">
             Only {data.total_in_store} entries in the store (&lt; {data.bootstrap_threshold}{" "}
             bootstrap threshold). Numbers below carry low confidence; lean toward asking the human,
             not these stats. (DR §B.5)
@@ -102,16 +102,16 @@ function CellTable({ cells }: { cells: CalibrationCellWire[] }) {
   if (cells.length === 0) {
     return (
       <section>
-        <h3 className="text-xs uppercase tracking-wider text-zinc-500">Verdicts</h3>
-        <p className="mt-2 text-zinc-500">(no entries in this window)</p>
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">Verdicts</h3>
+        <p className="mt-2 text-muted-foreground">(no entries in this window)</p>
       </section>
     );
   }
   return (
     <section>
-      <h3 className="text-xs uppercase tracking-wider text-zinc-500">Verdicts</h3>
+      <h3 className="text-xs uppercase tracking-wider text-muted-foreground">Verdicts</h3>
       <table className="mt-2 w-full text-left">
-        <thead className="text-[11px] uppercase tracking-wider text-zinc-500">
+        <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
           <tr>
             <th className="px-2 py-1 font-medium">Verdict</th>
             <th className="px-2 py-1 font-medium">Confidence</th>
@@ -121,24 +121,28 @@ function CellTable({ cells }: { cells: CalibrationCellWire[] }) {
             <th className="px-2 py-1 text-right font-medium">accuracy</th>
           </tr>
         </thead>
-        <tbody className="text-zinc-300">
+        <tbody className="text-foreground">
           {cells.map((c) => {
             const accuracy = c.n === 0 ? null : (c.hits / c.n) * 100;
             const smallN = c.n < 5;
             return (
-              <tr key={`${c.verdict}-${c.confidence}`} className="border-t border-white/5">
+              <tr key={`${c.verdict}-${c.confidence}`} className="border-t border-hairline">
                 <td className="px-2 py-1 font-mono text-xs">{c.verdict}</td>
                 <td className="px-2 py-1 font-mono text-xs">{c.confidence}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{c.n}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-emerald-400/90">{c.hits}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-red-400/90">{c.misses}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-success/90">{c.hits}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-destructive/90">
+                  {c.misses}
+                </td>
                 <td className="px-2 py-1 text-right tabular-nums">
                   {accuracy === null ? (
-                    <span className="text-zinc-500">—</span>
+                    <span className="text-muted-foreground">—</span>
                   ) : (
                     <>
                       {accuracy.toFixed(1)}%
-                      {smallN && <span className="ml-1 text-[10px] text-zinc-500">(small n)</span>}
+                      {smallN && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">(small n)</span>
+                      )}
                     </>
                   )}
                 </td>
@@ -155,30 +159,32 @@ function FalseNegativesList({ entries }: { entries: CalibrationEntry[] }) {
   if (entries.length === 0) {
     return (
       <section>
-        <h3 className="text-xs uppercase tracking-wider text-zinc-500">False-negative recents</h3>
-        <p className="mt-2 text-zinc-500">none</p>
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+          False-negative recents
+        </h3>
+        <p className="mt-2 text-muted-foreground">none</p>
       </section>
     );
   }
   return (
     <section>
-      <h3 className="text-xs uppercase tracking-wider text-zinc-500">
+      <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
         False-negative recents (newest first)
       </h3>
-      <ul className="mt-2 space-y-1 text-xs text-zinc-300">
+      <ul className="mt-2 space-y-1 text-xs text-foreground">
         {entries.slice(0, 10).map((e) => (
           <li key={`${e.synthesis_pass_id}-${e.note_source}`}>
-            <span className="text-zinc-500">{e.recorded_at.slice(0, 10)}</span>{" "}
-            <code className="text-zinc-200">{e.verdict}</code>{" "}
-            <span className="text-zinc-500">
+            <span className="text-muted-foreground">{e.recorded_at.slice(0, 10)}</span>{" "}
+            <code className="text-foreground">{e.verdict}</code>{" "}
+            <span className="text-muted-foreground">
               {e.confidence} (tier {e.tier_routed})
             </span>{" "}
-            &ldquo;<code className="text-zinc-300">{e.note_source}</code>&rdquo;:{" "}
+            &ldquo;<code className="text-foreground">{e.note_source}</code>&rdquo;:{" "}
             {e.outcome ? <OutcomeSummary outcome={e.outcome} /> : <span>?</span>}
           </li>
         ))}
         {entries.length > 10 && (
-          <li className="text-zinc-500 italic">... and {entries.length - 10} more</li>
+          <li className="text-muted-foreground italic">... and {entries.length - 10} more</li>
         )}
       </ul>
     </section>
@@ -218,22 +224,22 @@ function Tier1Counter({ routed, violations }: { routed: number; violations: Cali
     <section
       className={
         clean
-          ? "rounded-md border border-white/5 bg-white/[0.02] px-4 py-3"
-          : "rounded-md border border-red-500/40 bg-red-950/30 px-4 py-3"
+          ? "rounded-md border border-hairline bg-surface px-4 py-3"
+          : "rounded-md border border-destructive/40 bg-destructive/30 px-4 py-3"
       }
     >
-      <p className="text-xs uppercase tracking-wider text-zinc-500">Tier-1 routings</p>
-      <p className="mt-1 text-zinc-200">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">Tier-1 routings</p>
+      <p className="mt-1 text-foreground">
         {routed} (violations: {violations.length}{" "}
         {clean ? (
-          <span className="text-emerald-400">✓</span>
+          <span className="text-success">✓</span>
         ) : (
-          <span className="text-red-300">⚠</span>
+          <span className="text-destructive">⚠</span>
         )}
         )
       </p>
       {!clean && (
-        <p className="mt-2 text-xs text-red-300/80">
+        <p className="mt-2 text-xs text-destructive/80">
           Tier-1 violations are zero-tolerance (DR §B.4). Each non-
           <code>escalate</code> verdict routed to tier-1 is either a tier-gate bug or a Producer
           posture failure — review the entries above and decide whether to tighten the gate or the

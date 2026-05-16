@@ -70,7 +70,7 @@ export function MermaidBlock({ source }: MermaidBlockProps) {
   }
 
   if (!svg) {
-    return <div className="px-2 py-3 text-xs text-zinc-500">Rendering diagram…</div>;
+    return <div className="px-2 py-3 text-xs text-muted-foreground">Rendering diagram…</div>;
   }
 
   return (
