@@ -136,7 +136,7 @@ export function ProjectGroup({
   return (
     <div className="mb-1">
       {/* Project header */}
-      <div className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/5">
+      <div className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface">
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
@@ -144,7 +144,7 @@ export function ProjectGroup({
         >
           <span
             className={cn(
-              "text-[10px] text-zinc-600 transition-transform shrink-0",
+              "text-[10px] text-subtle-foreground transition-transform shrink-0",
               collapsed && "-rotate-90",
             )}
           >
@@ -154,7 +154,7 @@ export function ProjectGroup({
             <span
               className={cn(
                 "block truncate text-xs font-semibold",
-                isEmpty ? "text-zinc-500" : "text-zinc-300",
+                isEmpty ? "text-muted-foreground" : "text-foreground",
               )}
             >
               {project.name}
@@ -162,16 +162,16 @@ export function ProjectGroup({
             {/* Branch info under project name */}
             <div className="flex items-center gap-1.5 mt-0.5">
               {mainBranch && (
-                <span className="truncate text-[10px] text-zinc-500">
+                <span className="truncate text-[10px] text-muted-foreground">
                   {mainBranch}
-                  {mainDirty && <span className="text-amber-500">*</span>}
+                  {mainDirty && <span className="text-warning">*</span>}
                 </span>
               )}
               {worktreeCount > 0 && (
-                <span className="flex items-center gap-0.5 text-[10px] text-emerald-600">
+                <span className="flex items-center gap-0.5 text-[10px] text-success">
                   <span>🌿</span>
                   <span>×{worktreeCount}</span>
-                  {worktreesDirty && <span className="text-amber-500">*</span>}
+                  {worktreesDirty && <span className="text-warning">*</span>}
                 </span>
               )}
             </div>
@@ -179,10 +179,10 @@ export function ProjectGroup({
         </button>
         <div className="flex items-center gap-1.5">
           {project.totalAgents > 0 && (
-            <span className="text-[10px] text-zinc-600">{project.totalAgents}</span>
+            <span className="text-[10px] text-subtle-foreground">{project.totalAgents}</span>
           )}
           {project.attentionAgents > 0 && (
-            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+            <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
               {project.attentionAgents}
             </span>
           )}
@@ -193,8 +193,8 @@ export function ProjectGroup({
             className={cn(
               "rounded px-1 py-0.5 transition-colors",
               isProjectSelected
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-600 hover:text-emerald-400 hover:bg-emerald-500/10",
+                ? "text-success bg-success/10"
+                : "text-subtle-foreground hover:text-success hover:bg-success/10",
             )}
             title="Branch graph"
           >
@@ -225,8 +225,8 @@ export function ProjectGroup({
             className={cn(
               "rounded px-1 py-0.5 transition-colors",
               isMarkdownSelected
-                ? "text-blue-400 bg-blue-500/10"
-                : "text-zinc-600 hover:text-blue-400 hover:bg-blue-500/10",
+                ? "text-info bg-info/10"
+                : "text-subtle-foreground hover:text-info hover:bg-info/10",
             )}
             title="Markdown files"
           >
@@ -268,13 +268,13 @@ export function ProjectGroup({
               type="button"
               onClick={() => setShowSpawn((v) => !v)}
               disabled={spawning}
-              className="rounded px-1 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/10 hover:text-cyan-400 disabled:opacity-50"
+              className="rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary disabled:opacity-50"
               title="Spawn agent"
             >
               +
             </button>
             {showSpawn && (
-              <div className="absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-white/10 bg-zinc-900 p-1 shadow-lg min-w-[140px]">
+              <div className="absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-hairline-strong bg-surface-strong p-1 shadow-lg min-w-[140px]">
                 {/* Orchestrator option (shown when enabled for this project) */}
                 {orchEnabled && (
                   <>
@@ -285,8 +285,8 @@ export function ProjectGroup({
                       className={cn(
                         "whitespace-nowrap rounded px-3 py-1 text-left text-xs transition-colors",
                         hasRunningOrchestrator
-                          ? "text-zinc-600 cursor-not-allowed"
-                          : "text-cyan-400 hover:bg-white/10 hover:text-cyan-300",
+                          ? "text-subtle-foreground cursor-not-allowed"
+                          : "text-primary hover:bg-surface-strong hover:text-primary",
                       )}
                       title={
                         hasRunningOrchestrator
@@ -296,10 +296,10 @@ export function ProjectGroup({
                     >
                       Orchestrator
                       {hasRunningOrchestrator && (
-                        <span className="ml-1 text-[10px] text-zinc-600">(active)</span>
+                        <span className="ml-1 text-[10px] text-subtle-foreground">(active)</span>
                       )}
                     </button>
-                    <div className="mx-1 border-t border-white/5" />
+                    <div className="mx-1 border-t border-hairline" />
                   </>
                 )}
                 {hasMultipleTargets
@@ -308,11 +308,11 @@ export function ProjectGroup({
                       const hasAgent = target.agents.length > 0;
                       return (
                         <div key={target.name}>
-                          <div className="px-2 py-0.5 text-[10px] text-zinc-500 truncate">
+                          <div className="px-2 py-0.5 text-[10px] text-muted-foreground truncate">
                             {target.isWorktree ? "🌿 " : ""}
                             {target.branch || target.name}
                             {hasAgent && (
-                              <span className="ml-1 text-amber-500" title="Agent active">
+                              <span className="ml-1 text-warning" title="Agent active">
                                 ●
                               </span>
                             )}
@@ -323,7 +323,7 @@ export function ProjectGroup({
                                 type="button"
                                 key={`${target.name}-${cmd}`}
                                 onClick={() => spawn(cmd, target.path, hasAgent)}
-                                className="flex-1 whitespace-nowrap rounded px-2 py-0.5 text-center text-[11px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-cyan-400"
+                                className="flex-1 whitespace-nowrap rounded px-2 py-0.5 text-center text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
                               >
                                 {cmd}
                               </button>
@@ -340,7 +340,7 @@ export function ProjectGroup({
                           type="button"
                           key={cmd}
                           onClick={() => spawn(cmd, spawnTargets[0].path, hasAgent)}
-                          className="whitespace-nowrap rounded px-3 py-1 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-cyan-400"
+                          className="whitespace-nowrap rounded px-3 py-1 text-left text-xs text-foreground transition-colors hover:bg-surface-strong hover:text-primary"
                         >
                           {cmd}
                         </button>
@@ -354,7 +354,7 @@ export function ProjectGroup({
 
       {/* Agent sub-groups */}
       {!collapsed && (
-        <div className="ml-1 border-l border-white/5 pl-2">
+        <div className="ml-1 border-l border-hairline pl-2">
           {project.worktrees.map((wt) => (
             <WorktreeSection
               key={wt.name}
@@ -364,7 +364,9 @@ export function ProjectGroup({
             />
           ))}
           {isEmpty && (
-            <div className="px-2 py-2 text-[11px] text-zinc-600">No agents — click + to spawn</div>
+            <div className="px-2 py-2 text-[11px] text-subtle-foreground">
+              No agents — click + to spawn
+            </div>
           )}
         </div>
       )}

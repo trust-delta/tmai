@@ -28,6 +28,12 @@ const MIGRATED = [
   "components/layout",
   "components/calibration",
   "components/markdown",
+  "components/project",
+  "components/teams",
+  "components/terminal",
+  "components/ui",
+  "components/usage",
+  "App.tsx",
 ];
 
 // A raw Tailwind palette colour utility: <prefix>-<family>[-<shade>][/<alpha>].
@@ -43,6 +49,11 @@ const RAW_PALETTE = new RegExp(
 );
 
 function* walk(dir: string): Generator<string> {
+  // Accept a single-file area (e.g. "App.tsx") as well as a directory.
+  if (statSync(dir).isFile()) {
+    if (/\.tsx?$/.test(dir) && !/\.test\.tsx?$/.test(dir)) yield dir;
+    return;
+  }
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
     if (statSync(p).isDirectory()) {

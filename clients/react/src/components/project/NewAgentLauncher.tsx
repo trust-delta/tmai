@@ -80,7 +80,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
         type="button"
         onClick={() => void handleOpenBrowser()}
         disabled={spawning}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-cyan-500/30 hover:bg-cyan-500/5 hover:text-cyan-300 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-hairline-strong bg-surface px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
       >
         <span className="text-sm leading-none">+</span>
         <span>New agent</span>
@@ -101,7 +101,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
                     disabled={spawning || !currentPath}
                     className={cn(
                       "flex-1 rounded px-2 py-1 text-center text-[11px] transition-colors",
-                      "text-zinc-300 hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-50",
+                      "text-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50",
                     )}
                   >
                     {rt}
@@ -109,7 +109,7 @@ export function NewAgentLauncher({ onSpawned }: NewAgentLauncherProps) {
                 ))}
               </div>
               {error && (
-                <p role="alert" aria-live="assertive" className="text-[11px] text-red-400">
+                <p role="alert" aria-live="assertive" className="text-[11px] text-destructive">
                   {error}
                 </p>
               )}

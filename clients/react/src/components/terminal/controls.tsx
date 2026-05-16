@@ -19,7 +19,7 @@ export function ModeToggleButton({ inputMode, onToggle }: ModeToggleButtonProps)
       onMouseDown={(e) => e.preventDefault()}
       onClick={onToggle}
       className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-        inputMode ? "bg-cyan-500/20 text-cyan-400" : "bg-amber-500/20 text-amber-400"
+        inputMode ? "bg-primary/20 text-primary" : "bg-warning/20 text-warning"
       }`}
       title={
         inputMode
@@ -45,7 +45,9 @@ export function AutoScrollToggleButton({ autoScroll, onToggle }: AutoScrollToggl
       onMouseDown={(e) => e.preventDefault()}
       onClick={onToggle}
       className={`touch-target-sm rounded px-2 py-1 text-xs transition-colors ${
-        autoScroll ? "bg-cyan-500/15 text-cyan-400" : "bg-white/5 text-zinc-600 hover:text-zinc-400"
+        autoScroll
+          ? "bg-primary/15 text-primary"
+          : "bg-surface text-subtle-foreground hover:text-muted-foreground"
       }`}
       title={autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
     >
@@ -60,7 +62,7 @@ export function AutoScrollToggleButton({ autoScroll, onToggle }: AutoScrollToggl
  */
 export function ModeHint({ inputMode }: { inputMode: boolean }) {
   return (
-    <span className="hidden text-[10px] text-zinc-600 sm:block">
+    <span className="hidden text-[10px] text-subtle-foreground sm:block">
       {inputMode ? "click to select" : "Enter or click ⌨ to input"}
     </span>
   );

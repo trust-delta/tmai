@@ -4,16 +4,16 @@ import { useSSE } from "@/lib/sse-provider";
 
 // Color class based on usage percentage
 function meterColor(percent: number): string {
-  if (percent >= 80) return "text-red-400";
-  if (percent >= 50) return "text-amber-400";
-  return "text-cyan-400";
+  if (percent >= 80) return "text-destructive";
+  if (percent >= 50) return "text-warning";
+  return "text-primary";
 }
 
 // Bar gradient class based on usage percentage
 function barGradient(percent: number): string {
-  if (percent >= 80) return "from-red-500 to-red-400";
-  if (percent >= 50) return "from-amber-500 to-amber-400";
-  return "from-cyan-500 to-blue-500";
+  if (percent >= 80) return "from-destructive to-destructive";
+  if (percent >= 50) return "from-warning to-warning";
+  return "from-primary to-info";
 }
 
 // Format "fetched_at" as relative time
@@ -58,14 +58,16 @@ export function UsagePanel() {
   const hasData = usage && usage.meters.length > 0;
 
   return (
-    <div className="border-t border-white/5">
+    <div className="border-t border-hairline">
       {/* Header row */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-white/5"
+        className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-surface"
       >
-        <span className="text-[10px] font-semibold tracking-wider text-zinc-500">USAGE</span>
+        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground">
+          USAGE
+        </span>
 
         {/* Collapsed: show top 2 meters as badges */}
         {!expanded && hasData && (
@@ -78,7 +80,9 @@ export function UsagePanel() {
           </div>
         )}
 
-        {!expanded && !hasData && <span className="flex-1 text-[11px] text-zinc-600">—</span>}
+        {!expanded && !hasData && (
+          <span className="flex-1 text-[11px] text-subtle-foreground">—</span>
+        )}
 
         {/* Refresh button */}
         <button
@@ -87,7 +91,7 @@ export function UsagePanel() {
             e.stopPropagation();
             handleFetch();
           }}
-          className={`text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${
+          className={`text-xs text-muted-foreground transition-colors hover:text-foreground ${
             fetching ? "animate-spin" : ""
           }`}
         >
@@ -103,13 +107,13 @@ export function UsagePanel() {
               {usage.meters.map((m) => (
                 <div key={m.label} className="space-y-1">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] text-zinc-400">{m.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{m.label}</span>
                     <span className={`text-[11px] font-medium ${meterColor(m.percent)}`}>
                       {m.percent}%
                     </span>
                   </div>
                   {/* Progress bar */}
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface">
                     <div
                       className={`h-full rounded-full bg-gradient-to-r ${barGradient(m.percent)} transition-all duration-500`}
                       style={{ width: `${Math.min(m.percent, 100)}%` }}
@@ -117,7 +121,7 @@ export function UsagePanel() {
                   </div>
                   {/* Reset info / spending */}
                   {(m.reset_info || m.spending) && (
-                    <p className="text-[10px] text-zinc-600">
+                    <p className="text-[10px] text-subtle-foreground">
                       {m.spending && <span>{m.spending}</span>}
                       {m.spending && m.reset_info && <span> · </span>}
                       {m.reset_info && <span>{m.reset_info}</span>}
@@ -126,15 +130,17 @@ export function UsagePanel() {
                 </div>
               ))}
               {/* Updated timestamp */}
-              <p className="text-[10px] text-zinc-600">Updated {timeAgo(usage.fetched_at)}</p>
+              <p className="text-[10px] text-subtle-foreground">
+                Updated {timeAgo(usage.fetched_at)}
+              </p>
             </>
           ) : (
-            <p className="text-[11px] text-zinc-600">
+            <p className="text-[11px] text-subtle-foreground">
               {fetching ? "Fetching usage..." : "Click ↻ to fetch usage data"}
             </p>
           )}
 
-          {usage?.error && <p className="text-[10px] text-red-400/70">{usage.error}</p>}
+          {usage?.error && <p className="text-[10px] text-destructive/70">{usage.error}</p>}
         </div>
       )}
     </div>

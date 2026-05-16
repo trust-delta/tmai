@@ -88,8 +88,8 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
           : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
       }`}
     >
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
-        <span className="text-xs text-zinc-500">{agentIdShort(agentId)}</span>
+      <div className="flex items-center justify-between border-b border-hairline-strong px-3 py-1.5">
+        <span className="text-xs text-muted-foreground">{agentIdShort(agentId)}</span>
       </div>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
       <div
@@ -113,7 +113,7 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
       />
 
       {/* Footer status bar */}
-      <div className="flex items-center gap-2 border-t border-white/5 px-3 py-1.5">
+      <div className="flex items-center gap-2 border-t border-hairline px-3 py-1.5">
         <ModeToggleButton
           inputMode={inputMode}
           onToggle={inputMode ? enterSelectMode : enterInputMode}

@@ -12,8 +12,8 @@ export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalLi
   if (terminals.length === 0) return null;
 
   return (
-    <div className="border-t border-white/5 px-2 pb-2 pt-1">
-      <div className="px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+    <div className="border-t border-hairline px-2 pb-2 pt-1">
+      <div className="px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-subtle-foreground">
         Terminals
       </div>
       <div className="flex flex-col gap-0.5">
@@ -38,18 +38,20 @@ export function TerminalList({ terminals, selectedTarget, onSelect }: TerminalLi
               className={cn(
                 "flex items-center justify-between rounded-md px-2 py-1 text-left text-xs transition-colors",
                 selected
-                  ? "bg-cyan-500/10 text-cyan-400"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-300",
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-surface hover:text-foreground",
               )}
             >
               <div className="flex items-center gap-1.5 truncate">
-                <span className="text-zinc-600">{">"}</span>
+                <span className="text-subtle-foreground">{">"}</span>
                 <span className="truncate">{name}</span>
               </div>
               <span
                 className={cn(
                   "shrink-0 text-[10px]",
-                  status === "Active" || status === "—" ? "text-zinc-600" : "text-zinc-500",
+                  status === "Active" || status === "—"
+                    ? "text-subtle-foreground"
+                    : "text-muted-foreground",
                 )}
               >
                 {status}
