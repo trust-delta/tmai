@@ -21,6 +21,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { toXtermTheme } from "@/lib/theme";
+import { useActiveTheme } from "./useActiveTheme";
 import { type TerminalStreamStatus, useAgentTerminalStream } from "./useAgentTerminalStream";
 
 interface UseTerminalOptions {
@@ -79,6 +81,13 @@ export function useTerminal({
 
   const { sendKeys } = useAgentTerminalStream({ agentId, onData, onStatus });
 
+  // The xterm ITheme is DERIVED from the active WebUI theme (single
+  // source — see lib/theme.ts), never hardcoded here. `activeTheme` is a
+  // stable singleton per theme name, so listing it as an effect dep means
+  // switching themes tears down and rebuilds the terminal with the new
+  // palette — a live re-skin with no reload, on both terminal twins.
+  const activeTheme = useActiveTheme();
+
   useEffect(() => {
     if (!agentId || !containerRef.current) return;
 
@@ -87,18 +96,7 @@ export function useTerminal({
     const term = new Terminal({
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
-      theme: {
-        background: "#09090b",
-        foreground: "#fafafa",
-        cursor: "#a1a1aa",
-        selectionBackground: "#3f3f46",
-        // Match the global thin-overlay scrollbar (rgba white/8 → 15 → 18).
-        // xterm v6 paints its own VSCode-style scrollbar; only the colors are
-        // theme-driven, the 6 px width is pinned in globals.css.
-        scrollbarSliderBackground: "rgba(255, 255, 255, 0.08)",
-        scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.15)",
-        scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.18)",
-      },
+      theme: toXtermTheme(activeTheme),
       cursorBlink: true,
     });
 
@@ -188,7 +186,7 @@ export function useTerminal({
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, containerRef, sendKeys, keysHandledExternally]);
+  }, [agentId, containerRef, sendKeys, keysHandledExternally, activeTheme]);
 
   // Toggle keyboard attachment (input vs select mode).
   const setAttachable = useCallback(

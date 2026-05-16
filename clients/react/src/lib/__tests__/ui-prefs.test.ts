@@ -17,6 +17,25 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
+  it("defaults the theme to tokyonight (matches the operator's tmux)", () => {
+    expect(loadUIPrefs().theme).toBe("tokyonight");
+  });
+
+  it("round-trips a theme selection through localStorage", () => {
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, theme: "zinc" });
+    // Persisted to the consolidated blob, not a side key.
+    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").theme).toBe("zinc");
+    expect(loadUIPrefs().theme).toBe("zinc");
+  });
+
+  it("falls back to the default theme for an unknown theme value", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, theme: "midnight" }),
+    );
+    expect(loadUIPrefs().theme).toBe(DEFAULT_UI_PREFS.theme);
+  });
+
   it("round-trips a saved blob", () => {
     const next: UIPrefs = {
       ...DEFAULT_UI_PREFS,

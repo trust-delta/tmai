@@ -46,6 +46,9 @@ vi.mock("../WorktreeSection", () => ({
 vi.mock("../DisplayLayoutSection", () => ({
   DisplayLayoutSection: () => <div data-testid="section-display">Display</div>,
 }));
+vi.mock("../ThemeSection", () => ({
+  ThemeSection: () => <div data-testid="section-theme">Theme</div>,
+}));
 
 const ADVANCED_TESTIDS = [
   "section-spawn",
@@ -69,10 +72,18 @@ describe("SettingsPanel — Phase B layout", () => {
     expect(screen.getByTestId("section-usage")).toBeTruthy();
   });
 
-  it("renders the WebUI-group section directly", () => {
+  it("renders the WebUI-group sections directly", () => {
     render(<SettingsPanel onClose={vi.fn()} />);
 
     expect(screen.getByTestId("section-display")).toBeTruthy();
+    expect(screen.getByTestId("section-theme")).toBeTruthy();
+  });
+
+  it("puts the theme switcher in the primary flow, not behind Advanced", () => {
+    render(<SettingsPanel onClose={vi.fn()} />);
+
+    const details = screen.getByText(/Advanced/).closest("details");
+    expect(details?.contains(screen.getByTestId("section-theme"))).toBe(false);
   });
 
   it("keeps the Advanced sections hidden by default", () => {

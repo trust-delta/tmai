@@ -204,7 +204,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   return (
     <div
       ref={containerRef}
-      className={`relative flex flex-1 flex-col overflow-hidden bg-[#0c0c0c] outline-none transition-shadow ${
+      className={`relative flex flex-1 flex-col overflow-hidden bg-[var(--color-terminal-background)] outline-none transition-shadow ${
         focused && hasDomFocus
           ? "shadow-[inset_0_0_0_2px_rgba(34,211,238,0.55),inset_0_0_24px_rgba(34,211,238,0.06)]"
           : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"

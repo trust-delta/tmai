@@ -7,6 +7,7 @@ import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
 import { SpawnSection } from "./SpawnSection";
+import { ThemeSection } from "./ThemeSection";
 import { UsageSection } from "./UsageSection";
 import { WorkflowSection } from "./WorkflowSection";
 import { WorktreeSection } from "./WorktreeSection";
@@ -117,8 +118,9 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
 
         <GroupHeader
           label="WebUI (this browser)"
-          description="Per-browser layout for the agent main panel. Stored in localStorage, not in tmai-core."
+          description="Per-browser presentation. Stored in localStorage, not in tmai-core."
         />
+        <ThemeSection />
         <DisplayLayoutSection />
       </div>
     </div>

@@ -21,6 +21,7 @@ import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { UsagePanel } from "@/components/usage/UsagePanel";
 import { BranchGraph } from "@/components/worktree/BranchGraph";
 import { WorktreePanel } from "@/components/worktree/WorktreePanel";
+import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
 import { useCalibration } from "@/hooks/useCalibration";
@@ -35,6 +36,11 @@ import { useSSE } from "@/lib/sse-provider";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
 export function App() {
+  // Apply the active WebUI theme's css vars to <html> and keep them in
+  // sync when the user switches themes in Settings — re-skins the whole
+  // UI live, no reload.
+  useApplyTheme();
+
   const { agents, attentionCount, loading, refresh } = useAgents();
   const { worktrees, refresh: refreshWorktrees } = useWorktrees();
   const toast = useToast();
