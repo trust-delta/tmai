@@ -13,14 +13,18 @@ import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelop
 import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
+import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
+import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
+import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { TriageVerdict } from "@/types/generated/TriageVerdict";
+import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
@@ -37,12 +41,16 @@ export type {
   HandoffRitualEvent,
   Outcome,
   PermissionMode,
+  PrDiffResponse,
+  PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
+  RepoPrsWire,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
   TriageVerdict,
+  UnitPrsResponse,
   Vendor,
   WorkerDispatchMap,
 };
@@ -642,6 +650,25 @@ export interface PrMergeStatus {
   check_status: string | null;
 }
 
+/** Merge strategy passed to `POST /api/github/pr/merge`. Mirrors the
+ *  `method` enum the MCP `merge_pr` tool proxies to the same backend
+ *  (squash is the repo default, matching the retired AI-merge prompt). */
+export type PrMergeMethod = "squash" | "merge" | "rebase";
+
+/**
+ * Response of `POST /api/github/pr/merge`.
+ *
+ * WHY permissive: this endpoint predates the Stage-1 doc stubs and is
+ * not in `api-spec/openapi.json`, so its body shape is not codegen-
+ * pinned. The UI treats a resolved `apiFetch` (HTTP 2xx) as success
+ * and only surfaces `status` / `message` when the server includes them
+ * — both are optional so a leaner body still type-checks.
+ */
+export interface MergePrResponse {
+  status?: string;
+  message?: string;
+}
+
 export interface CiFailureLog {
   run_id: number;
   log_text: string;
@@ -1185,6 +1212,32 @@ export const api = {
     apiFetch<PrMergeStatus>(
       `/github/pr/merge-status?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
     ),
+  // Stage-1 in-tmai dev-loop (DR `2026-05-16-dev-loop-completes-in-tmai.md`
+  // §A/§B): a PR's raw unified patch so the operator reviews the code
+  // diff in-tmai. `repoPath` is an absolute `repo_path` from `unitPrs`.
+  prDiff: (repoPath: string, prNumber: number) =>
+    apiFetch<PrDiffResponse>(
+      `/github/pr/diff?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
+    ),
+  // Stage-1 §C — direct operator merge. Replaces the retired AI-merge
+  // delegation (ActionPanel/PrCard `delegateToAi('gh pr merge …')`):
+  // the operator merges directly, not via a spawned agent. Defaults
+  // (squash + delete-branch) match the prompt that path used; cleanup
+  // of the head worktree stays off (Stage-1 scope is merge only).
+  mergePr: (
+    repoPath: string,
+    prNumber: number,
+    opts?: { method?: PrMergeMethod; deleteBranch?: boolean },
+  ) =>
+    apiFetch<MergePrResponse>("/github/pr/merge", {
+      method: "POST",
+      body: JSON.stringify({
+        repo: repoPath,
+        pr_number: prNumber,
+        method: opts?.method ?? "squash",
+        delete_branch: opts?.deleteBranch ?? true,
+      }),
+    }),
   getCiFailureLog: (repoPath: string, runId: number) =>
     apiFetch<CiFailureLog>(
       `/github/ci/failure-log?repo=${encodeURIComponent(repoPath)}&run_id=${runId}`,
@@ -1389,6 +1442,14 @@ export const api = {
   // turns this into the Verdict-inbox.
   approaches: (unit: string) =>
     apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
+
+  // Unit-scoped cross-repo open-PR list — Stage-1 in-tmai dev-loop
+  // (DR `2026-05-16-dev-loop-completes-in-tmai.md` §A). One unified
+  // list across every repo in the unit, each PR repo-tagged (path +
+  // stable label + primary flag); the React side renders one flat
+  // list, NOT a per-repo switcher. Single-repo unit collapses to
+  // `repos.length === 1`.
+  unitPrs: (unit: string) => apiFetch<UnitPrsResponse>(`/units/${encodeURIComponent(unit)}/prs`),
 
   // Working-with-human view — memory dir + MEMORY.md projection of
   // `compose()`'s ◐ section per the same DR. Surfaces the same content

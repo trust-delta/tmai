@@ -30,6 +30,7 @@ import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { ActiveApproachesSection } from "./sections/ActiveApproachesSection";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
+import { UnitPrsSection } from "./sections/UnitPrsSection";
 import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
 import { WorkingWithThisHumanSection } from "./sections/WorkingWithThisHumanSection";
 
@@ -124,6 +125,7 @@ export function ProducerConsole({
         />
         <SettledDecisionsSection unitName={unitName} />
         <ActiveApproachesSection unitName={unitName} />
+        <UnitPrsSection unitName={unitName} />
         <WorkingWithThisHumanSection unitName={unitName} />
       </div>
 
