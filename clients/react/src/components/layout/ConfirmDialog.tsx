@@ -56,7 +56,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         <div
           role="dialog"
           ref={backdropRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === backdropRef.current) handleResolve(false);
           }}
@@ -64,16 +64,16 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             if (e.key === "Escape") handleResolve(false);
           }}
         >
-          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 p-5 shadow-2xl">
+          <div className="w-full max-w-sm rounded-xl border border-hairline-strong bg-surface-strong p-5 shadow-2xl">
             {state.title && (
-              <h3 className="mb-1 text-sm font-semibold text-zinc-100">{state.title}</h3>
+              <h3 className="mb-1 text-sm font-semibold text-foreground">{state.title}</h3>
             )}
-            <p className="text-[13px] leading-relaxed text-zinc-400">{state.message}</p>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">{state.message}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => handleResolve(false)}
-                className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
               >
                 {state.cancelLabel ?? "Cancel"}
               </button>
@@ -83,8 +83,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 onClick={() => handleResolve(true)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   state.variant === "danger"
-                    ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                    : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+                    ? "bg-destructive/15 text-destructive hover:bg-destructive/25"
+                    : "bg-primary/15 text-primary hover:bg-primary/25"
                 }`}
               >
                 {state.confirmLabel ?? "Confirm"}

@@ -25,8 +25,8 @@ function TabButton({
       onClick={onClick}
       className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
         active
-          ? "bg-white/10 text-cyan-400"
-          : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300"
+          ? "bg-surface-strong text-primary"
+          : "text-muted-foreground hover:bg-surface hover:text-foreground"
       }`}
     >
       {children}
@@ -47,7 +47,7 @@ export function TabbedPaneLayout({
 }: TabbedPaneLayoutProps) {
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-1.5">
+      <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-1.5">
         <TabButton active={active === "preview"} onClick={() => onTabChange("preview")}>
           Preview
         </TabButton>

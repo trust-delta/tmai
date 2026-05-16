@@ -49,21 +49,21 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
   };
 
   const bgColors = {
-    info: "bg-blue-500/10 border-blue-500/20",
-    success: "bg-emerald-500/10 border-emerald-500/20",
-    error: "bg-red-500/10 border-red-500/20",
+    info: "bg-info/10 border-info/20",
+    success: "bg-success/10 border-success/20",
+    error: "bg-destructive/10 border-destructive/20",
   };
 
   const iconColors = {
-    info: "text-blue-400",
-    success: "text-emerald-400",
-    error: "text-red-400",
+    info: "text-info",
+    success: "text-success",
+    error: "text-destructive",
   };
 
   const textColors = {
-    info: "text-blue-100",
-    success: "text-emerald-100",
-    error: "text-red-100",
+    info: "text-info",
+    success: "text-success",
+    error: "text-destructive",
   };
 
   return (
@@ -78,9 +78,9 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
       <button
         type="button"
         onClick={() => onRemove(toast.id)}
-        className="flex-shrink-0 rounded p-0.5 transition-colors hover:bg-white/10"
+        className="flex-shrink-0 rounded p-0.5 transition-colors hover:bg-surface-strong"
       >
-        <X size={14} className="text-zinc-500 hover:text-zinc-300" />
+        <X size={14} className="text-muted-foreground hover:text-foreground" />
       </button>
     </div>
   );

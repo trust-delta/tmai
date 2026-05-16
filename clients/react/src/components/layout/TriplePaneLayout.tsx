@@ -37,10 +37,10 @@ function Divider({
   const containerStyle = isHorizontal ? { width: "5px" } : { height: "5px" };
   const lineClass = isHorizontal
     ? `h-full w-px transition-colors ${
-        isDragging ? "bg-cyan-500/50" : "bg-white/[0.06] group-hover:bg-cyan-500/30"
+        isDragging ? "bg-primary/50" : "bg-surface group-hover:bg-primary/30"
       }`
     : `h-px w-full transition-colors ${
-        isDragging ? "bg-cyan-500/50" : "bg-white/[0.06] group-hover:bg-cyan-500/30"
+        isDragging ? "bg-primary/50" : "bg-surface group-hover:bg-primary/30"
       }`;
   return (
     // biome-ignore lint/a11y/useSemanticElements: <hr> cannot serve as a draggable split handle
@@ -111,8 +111,8 @@ export function TriplePaneLayout({ preview, git, markdown }: TriplePaneLayoutPro
         style={{ width: rightPercent }}
       >
         <div className="flex flex-col overflow-hidden" style={{ height: topPercent }}>
-          <div className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-1.5">
-            <span className="rounded-md px-3 py-1 text-xs font-medium text-cyan-400">Git</span>
+          <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-1.5">
+            <span className="rounded-md px-3 py-1 text-xs font-medium text-primary">Git</span>
           </div>
           <div className="flex flex-1 flex-col overflow-hidden">{git}</div>
         </div>
@@ -127,8 +127,8 @@ export function TriplePaneLayout({ preview, git, markdown }: TriplePaneLayoutPro
         />
 
         <div className="flex flex-col overflow-hidden" style={{ height: bottomPercent }}>
-          <div className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-1.5">
-            <span className="rounded-md px-3 py-1 text-xs font-medium text-cyan-400">Docs</span>
+          <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-1.5">
+            <span className="rounded-md px-3 py-1 text-xs font-medium text-primary">Docs</span>
           </div>
           <div className="flex flex-1 flex-col overflow-hidden">{markdown}</div>
         </div>

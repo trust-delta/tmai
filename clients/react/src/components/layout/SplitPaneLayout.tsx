@@ -43,8 +43,8 @@ function TabButton({
       onClick={onClick}
       className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
         active
-          ? "bg-white/10 text-cyan-400"
-          : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300"
+          ? "bg-surface-strong text-primary"
+          : "text-muted-foreground hover:bg-surface hover:text-foreground"
       }`}
     >
       {children}
@@ -83,10 +83,10 @@ export function SplitPaneLayout({
   const dividerStyle = isHorizontal ? { width: "5px" } : { height: "5px" };
   const dividerLineClass = isHorizontal
     ? `h-full w-px transition-colors ${
-        isDragging ? "bg-cyan-500/50" : "bg-white/[0.06] group-hover:bg-cyan-500/30"
+        isDragging ? "bg-primary/50" : "bg-surface group-hover:bg-primary/30"
       }`
     : `h-px w-full transition-colors ${
-        isDragging ? "bg-cyan-500/50" : "bg-white/[0.06] group-hover:bg-cyan-500/30"
+        isDragging ? "bg-primary/50" : "bg-surface group-hover:bg-primary/30"
       }`;
   const handleClass = isHorizontal
     ? "absolute flex flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -118,14 +118,14 @@ export function SplitPaneLayout({
       >
         <div className={dividerLineClass} />
         <div className={handleClass}>
-          <div className="h-1 w-1 rounded-full bg-zinc-500" />
-          <div className="h-1 w-1 rounded-full bg-zinc-500" />
-          <div className="h-1 w-1 rounded-full bg-zinc-500" />
+          <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+          <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+          <div className="h-1 w-1 rounded-full bg-muted-foreground" />
         </div>
       </div>
 
       <div className="flex flex-col overflow-hidden" style={secondPaneStyle}>
-        <div className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-1.5">
+        <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-1.5">
           <TabButton active={rightTab === "git"} onClick={() => onTabChange("git")}>
             Git
           </TabButton>
