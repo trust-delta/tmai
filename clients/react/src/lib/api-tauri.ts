@@ -13,6 +13,7 @@ import type {
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
+  PrMergeMethod,
   PrMonitorScope,
   SpawnRequest,
   SpawnRuntime,
@@ -148,6 +149,14 @@ export const api = {
   getPrFiles: (repoPath: string, prNumber: number) => httpApi.getPrFiles(repoPath, prNumber),
   getPrMergeStatus: (repoPath: string, prNumber: number) =>
     httpApi.getPrMergeStatus(repoPath, prNumber),
+  // Stage-1 in-tmai dev-loop (HTTP only — gh-CLI passthrough, no
+  // Tauri-specific path needed)
+  prDiff: (repoPath: string, prNumber: number) => httpApi.prDiff(repoPath, prNumber),
+  mergePr: (
+    repoPath: string,
+    prNumber: number,
+    opts?: { method?: PrMergeMethod; deleteBranch?: boolean },
+  ) => httpApi.mergePr(repoPath, prNumber, opts),
   getCiFailureLog: (repoPath: string, runId: number) => httpApi.getCiFailureLog(repoPath, runId),
   rerunFailedChecks: (repoPath: string, runId: number) =>
     httpApi.rerunFailedChecks(repoPath, runId),
@@ -254,6 +263,10 @@ export const api = {
   // Active approaches view (HTTP only — on-demand JSON projection of
   // compose()'s ▣ section; no Tauri-specific path needed)
   approaches: (unit: string) => httpApi.approaches(unit),
+
+  // Unit-scoped cross-repo PR list (HTTP only — gh-CLI passthrough
+  // fanned out over the unit's repos; no Tauri-specific path needed)
+  unitPrs: (unit: string) => httpApi.unitPrs(unit),
 
   // Working-with-human view (HTTP only — on-demand JSON projection of
   // compose()'s ◐ section; no Tauri-specific path needed)

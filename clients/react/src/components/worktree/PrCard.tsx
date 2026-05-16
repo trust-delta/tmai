@@ -9,10 +9,6 @@ interface PrCardProps {
   showBranchFlow?: boolean;
   /** Target branch name (used for branch flow display) */
   targetBranch?: string;
-  /** AI Merge handler — shown when provided */
-  onAiMerge?: () => void;
-  /** Disables AI Merge button */
-  actionBusy?: boolean;
   /** Navigate to a linked issue in Issues tab */
   onNavigateToIssue?: (issue: IssueInfo) => void;
   /** Navigate to branch in Branches tab */
@@ -69,8 +65,6 @@ export function PrCard({
   onOpenDetail,
   showBranchFlow,
   targetBranch,
-  onAiMerge,
-  actionBusy,
   onNavigateToIssue,
   onNavigateToBranch,
   issues,
@@ -213,18 +207,6 @@ export function PrCard({
           </button>
         )}
       </div>
-
-      {/* AI Merge button (incoming PRs) */}
-      {onAiMerge && (
-        <button
-          type="button"
-          onClick={onAiMerge}
-          disabled={actionBusy}
-          className="mt-1.5 w-full rounded bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
-        >
-          AI Merge PR #{pr.number}
-        </button>
-      )}
     </div>
   );
 }

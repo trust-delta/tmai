@@ -594,14 +594,6 @@ export const ActionPanel = memo(function ActionPanel({
                   onOpenDetail={onOpenDetail}
                   showBranchFlow
                   targetBranch={activeNode.name}
-                  onAiMerge={() =>
-                    confirmIfAgentActive("Merge", () =>
-                      delegateToAi(
-                        `Merge PR #${pr.number}. First run 'gh pr view ${pr.number} --json baseRefName -q .baseRefName' to verify base is '${activeNode.name}'. If base matches, run 'gh pr merge ${pr.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`,
-                      ),
-                    )
-                  }
-                  actionBusy={actionBusy}
                   onNavigateToIssue={onNavigateToIssue}
                   onNavigateToBranch={onNavigateToBranch}
                   issues={issues}
@@ -704,42 +696,25 @@ export const ActionPanel = memo(function ActionPanel({
                       )
                     ))}
 
-                  {/* Merge into parent / Create PR — hidden for merged and open-PR, disabled for stale */}
+                  {/* Create PR — hidden for merged and open-PR, disabled for stale.
+                      The former "AI Merge" delegation was removed in the Stage-1
+                      in-tmai dev-loop: merging now runs directly from the Producer
+                      console's "Open PRs" section (POST /api/github/pr/merge), not
+                      via a spawned agent — no two coexisting merge paths. */}
                   {!isMerged && !hasOpenPr && activeNode.ahead > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          confirmIfAgentActive("Merge", () =>
-                            delegateToAi(
-                              prInfo
-                                ? `Merge PR #${prInfo.number}. First run 'gh pr view ${prInfo.number} --json baseRefName -q .baseRefName' to verify base is '${baseBranch}'. If base matches, run 'gh pr merge ${prInfo.number} --squash --delete-branch'. If base does NOT match, STOP and report the mismatch — do not merge.`
-                                : `Merge branch '${activeNode.name}' into '${baseBranch}'. First check 'gh pr list --head ${activeNode.name} --base ${baseBranch}'. If PR exists and its base is '${baseBranch}', run 'gh pr merge <number> --squash --delete-branch'. If no PR, run 'git checkout ${baseBranch} && git merge ${activeNode.name}'. Do not merge into any branch other than '${baseBranch}'.`,
-                            ),
-                          )
-                        }
-                        disabled={actionBusy || isStale}
-                        className="w-full rounded-lg bg-accent/15 px-3 py-2 text-left text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-30"
-                        title={isStale ? "Pull from main before merging" : undefined}
-                      >
-                        {prInfo
-                          ? `AI Merge PR #${prInfo.number} into ${baseBranch}`
-                          : `AI Merge into ${baseBranch}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          delegateToAi(
-                            `Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`,
-                          )
-                        }
-                        disabled={actionBusy || isStale}
-                        className="w-full rounded-lg bg-info/15 px-3 py-2 text-left text-xs font-medium text-info transition-colors hover:bg-info/25 disabled:opacity-30"
-                        title={isStale ? "Pull from main before creating PR" : undefined}
-                      >
-                        AI Create PR → {baseBranch}
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        delegateToAi(
+                          `Run 'gh pr create --base ${baseBranch} --head ${activeNode.name}' to create a PR. Generate a title and description summarizing the changes. Do not merge anything.`,
+                        )
+                      }
+                      disabled={actionBusy || isStale}
+                      className="w-full rounded-lg bg-info/15 px-3 py-2 text-left text-xs font-medium text-info transition-colors hover:bg-info/25 disabled:opacity-30"
+                      title={isStale ? "Pull from main before creating PR" : undefined}
+                    >
+                      AI Create PR → {baseBranch}
+                    </button>
                   )}
 
                   {/* Behind warning — shown for non-merged branches (prominent in stale already handled above) */}
