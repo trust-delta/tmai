@@ -1,16 +1,21 @@
-// Regression guard for the WebUI semantic-token migration.
+// Repo-wide regression lock for the WebUI semantic-token migration.
 //
-// Once an area has been migrated off the hardcoded Tailwind palette
-// classes (`text-zinc-300`, `bg-white/10`, `text-cyan-400`, …) onto the
-// semantic theme tokens, it must STAY migrated — otherwise the theme
-// silently stops applying there again. This test fails if any raw
-// palette utility reappears in a migrated directory.
+// The migration (PRs A–H) moved the entire component tree off the
+// hardcoded Tailwind palette classes (`text-zinc-300`, `bg-white/10`,
+// `text-cyan-400`, …) onto the semantic theme tokens, so every surface
+// re-skins with the active theme (including the `light` theme). This
+// guard makes that permanent: if a raw palette utility reappears
+// ANYWHERE under `src/` it fails, so the theme can never silently stop
+// applying again.
 //
-// `MIGRATED` is the allowlist that grows one entry per area PR. The
-// remaining (not-yet-migrated) directories are intentionally NOT scanned
-// — they still hardcode palette classes by design until their PR lands.
-// The migration's final PR scans `components` wholesale and deletes this
-// comment's caveat.
+// (Earlier PRs used a growing `MIGRATED` allowlist; the final PR drops
+// it and scans the whole tree.)
+//
+// Excluded, by design:
+//   • `__tests__` dirs and `*.test.*` — test fixtures/strings.
+//   • `types/generated/**` — generated wire types, not styled.
+//   • `lib/theme.ts` — the single source of truth; it legitimately
+//     holds colour *values* (hex/oklch), never Tailwind palette classes.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -19,22 +24,8 @@ import { describe, expect, it } from "vitest";
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-// Directories (relative to src/) that have completed the migration.
-const MIGRATED = [
-  "components/settings",
-  "components/worktree",
-  "components/producer-console",
-  "components/agent",
-  "components/layout",
-  "components/calibration",
-  "components/markdown",
-  "components/project",
-  "components/teams",
-  "components/terminal",
-  "components/ui",
-  "components/usage",
-  "App.tsx",
-];
+// Paths (relative to src/) excluded from the scan.
+const EXCLUDED = new Set(["types/generated", "lib/theme.ts"]);
 
 // A raw Tailwind palette colour utility: <prefix>-<family>[-<shade>][/<alpha>].
 // Semantic tokens (foreground / surface / primary / hairline / …) do not
@@ -49,13 +40,10 @@ const RAW_PALETTE = new RegExp(
 );
 
 function* walk(dir: string): Generator<string> {
-  // Accept a single-file area (e.g. "App.tsx") as well as a directory.
-  if (statSync(dir).isFile()) {
-    if (/\.tsx?$/.test(dir) && !/\.test\.tsx?$/.test(dir)) yield dir;
-    return;
-  }
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
+    const rel = relative(SRC, p);
+    if (EXCLUDED.has(rel)) continue;
     if (statSync(p).isDirectory()) {
       if (entry === "__tests__") continue;
       yield* walk(p);
@@ -69,48 +57,47 @@ function* walk(dir: string): Generator<string> {
 // `cond ? "text-muted-foreground" : "text-muted-foreground"`. The
 // codemod collapses shade ranges (zinc-400 & zinc-500 → muted-foreground),
 // which can silently turn a meaningful "dimmer-when-disabled" branch into
-// a no-op conditional that drops a UX cue. Catch it here so every future
-// area PR fixes it (restore the distinction with a different token, e.g.
-// subtle-foreground, or simplify) instead of relying on a human reviewer.
+// a no-op conditional that drops a UX cue. Restore the distinction with a
+// different token (e.g. subtle-foreground) or simplify to a single class.
 const IDENTICAL_TERNARY = /\?\s*("(?:[^"\\]|\\.)*")\s*:\s*("(?:[^"\\]|\\.)*")/g;
 
-describe("semantic-token migration regression guard", () => {
-  for (const area of MIGRATED) {
-    it(`'${area}' stays free of raw Tailwind palette classes`, () => {
-      const violations: string[] = [];
-      for (const file of walk(join(SRC, area))) {
-        const text = readFileSync(file, "utf8");
-        text.split("\n").forEach((line, i) => {
-          const hits = line.match(RAW_PALETTE);
-          if (hits) {
-            violations.push(`${relative(SRC, file)}:${i + 1}  ${[...new Set(hits)].join(" ")}`);
-          }
-        });
-      }
-      expect(
-        violations,
-        `Raw palette classes found in a migrated area — run scripts/theme-codemod.mjs ` +
-          `and map any leftovers to semantic tokens:\n${violations.join("\n")}`,
-      ).toEqual([]);
-    });
+describe("semantic-token migration — repo-wide lock", () => {
+  it("src/ is free of raw Tailwind palette classes", () => {
+    const violations: string[] = [];
+    for (const file of walk(SRC)) {
+      const text = readFileSync(file, "utf8");
+      text.split("\n").forEach((line, i) => {
+        const hits = line.match(RAW_PALETTE);
+        if (hits) {
+          violations.push(`${relative(SRC, file)}:${i + 1}  ${[...new Set(hits)].join(" ")}`);
+        }
+      });
+    }
+    expect(
+      violations,
+      `Raw Tailwind palette classes found — the WebUI is fully migrated to ` +
+        `semantic theme tokens. Run scripts/theme-codemod.mjs on the file(s) ` +
+        `and map any leftovers to semantic tokens:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
 
-    it(`'${area}' has no codemod-collapsed (identical-branch) class ternaries`, () => {
-      const violations: string[] = [];
-      for (const file of walk(join(SRC, area))) {
-        const text = readFileSync(file, "utf8");
-        for (const m of text.matchAll(IDENTICAL_TERNARY)) {
-          if (m[1] === m[2]) {
-            const ln = text.slice(0, m.index).split("\n").length;
-            violations.push(`${relative(SRC, file)}:${ln}  ${m[1]}`);
-          }
+  it("src/ has no codemod-collapsed (identical-branch) class ternaries", () => {
+    const violations: string[] = [];
+    for (const file of walk(SRC)) {
+      const text = readFileSync(file, "utf8");
+      for (const m of text.matchAll(IDENTICAL_TERNARY)) {
+        if (m[1] === m[2]) {
+          const ln = text.slice(0, m.index).split("\n").length;
+          violations.push(`${relative(SRC, file)}:${ln}  ${m[1]}`);
         }
       }
-      expect(
-        violations,
-        `Both ternary branches resolve to the same class (the codemod collapsed a ` +
-          `distinction). Restore it with a different token (e.g. subtle-foreground for ` +
-          `the disabled/inactive branch) or simplify to a single class:\n${violations.join("\n")}`,
-      ).toEqual([]);
-    });
-  }
+    }
+    expect(
+      violations,
+      `Both ternary branches resolve to the same class (a collapsed ` +
+        `distinction). Restore it with a different token (e.g. ` +
+        `subtle-foreground for the disabled/inactive branch) or simplify ` +
+        `to a single class:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
 });

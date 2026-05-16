@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyThemeToDocument,
   DEFAULT_THEME_NAME,
-  REGISTERED_THEME_NAMES,
   resolveTheme,
   SEMANTIC_TOKENS,
   THEME_NAMES,
@@ -32,14 +31,12 @@ describe("theme registry", () => {
     expect(DEFAULT_THEME_NAME).toBe("tokyonight");
   });
 
-  it("resolves the registry-only `light` theme but keeps it un-selectable", () => {
-    // Resolvable now (acceptance-test theme for the token migration)…
+  it("exposes `light` as a first-class selectable theme (migration complete)", () => {
     expect(resolveTheme("light")).toBe(THEMES.light);
-    expect(REGISTERED_THEME_NAMES).toContain("light");
-    // …but NOT user-selectable (Settings switcher + ui-prefs validation
-    // both key off THEME_NAMES) until the component tree consumes tokens.
-    expect(THEME_NAMES as readonly string[]).not.toContain("light");
-    expect(THEME_NAMES as readonly string[]).toEqual(["tokyonight", "zinc"]);
+    // Graduated into the selectable set once the component tree finished
+    // migrating onto semantic tokens (Settings switcher + ui-prefs
+    // validation both key off THEME_NAMES).
+    expect(THEME_NAMES as readonly string[]).toEqual(["tokyonight", "zinc", "light"]);
   });
 });
 
@@ -152,11 +149,13 @@ describe("themeCssVars / applyThemeToDocument — the CSS-var surface", () => {
     expect(lt["--color-background"]).toBe("#e1e2e7");
   });
 
-  it("PR-A inert invariant: glow vars match the pre-theme literals for the selectable themes", () => {
-    // The globals.css `.glow-*` / glowPulse rewrite only stays visually
-    // identical if every SELECTABLE theme keeps the original cyan/amber/
-    // red literals. (light may differ — it isn't selectable yet.)
-    for (const name of THEME_NAMES) {
+  it("PR-A inert invariant: the dark themes keep the pre-theme glow literals", () => {
+    // The globals.css `.glow-*` / glowPulse rewrite stayed visually
+    // identical for the pre-existing dark themes only by keeping the
+    // original cyan/amber/red literals. `light` is a new theme and
+    // legitimately retunes the glow for a light backdrop, so it is
+    // intentionally excluded from this invariant.
+    for (const name of ["tokyonight", "zinc"] as const) {
       const v = themeCssVars(THEMES[name]);
       expect(v["--glow-accent"]).toBe("34 211 238");
       expect(v["--glow-warning"]).toBe("245 158 11");
