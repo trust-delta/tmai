@@ -48,6 +48,15 @@ export function useCalibration(unit: string | null, days = 90): UseCalibrationRe
       return;
     }
     const myGen = ++generationRef.current;
+    // Clear on unit/days *change* (this effect's only re-triggers — deps
+    // are [unit, days]) so a previous query's tripwire/chip is never
+    // shown under a new unit's context. The 60s same-query re-poll goes
+    // through fetchOnce, which intentionally keeps the last response
+    // visible (anti-flicker); that path is untouched. Mirrors the same
+    // guard in useApproaches; transparency-over-completeness per
+    // doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md.
+    setData(null);
+    setError(null);
     setLoading(true);
 
     const fetchOnce = async () => {
