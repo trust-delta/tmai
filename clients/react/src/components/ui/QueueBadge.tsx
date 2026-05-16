@@ -15,7 +15,7 @@ export function QueueBadge({ count, onClick, icon = "✉", title }: QueueBadgePr
       type="button"
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="rounded px-1.5 py-0.5 text-[10px] transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+      className="rounded px-1.5 py-0.5 text-[10px] transition-colors bg-warning/20 text-warning hover:bg-warning/30"
       title={title ?? `${count} item${count !== 1 ? "s" : ""} queued — click to view`}
     >
       {icon} {count}

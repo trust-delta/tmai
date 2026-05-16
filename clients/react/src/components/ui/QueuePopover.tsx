@@ -38,27 +38,27 @@ export function QueuePopover<T extends { id: string }>({
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 z-50 mb-1 w-80 rounded-lg border border-white/10 bg-[#1a1a1a] shadow-xl"
+      className="absolute bottom-full left-0 z-50 mb-1 w-80 rounded-lg border border-hairline-strong bg-popover shadow-xl"
     >
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-        <span className="text-[11px] font-medium text-zinc-300">{title}</span>
+      <div className="flex items-center justify-between border-b border-hairline-strong px-3 py-2">
+        <span className="text-[11px] font-medium text-foreground">{title}</span>
         <button
           type="button"
           onClick={onClose}
-          className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Close"
         >
           ✕
         </button>
       </div>
-      <ul className="max-h-60 divide-y divide-white/5 overflow-y-auto">
+      <ul className="max-h-60 divide-y divide-hairline overflow-y-auto">
         {items.map((item) => (
           <li key={item.id} className="flex items-start gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">{renderItem(item)}</div>
             <button
               type="button"
               onClick={() => onCancel(item.id)}
-              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-red-400 transition-colors hover:bg-red-500/20"
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-destructive transition-colors hover:bg-destructive/20"
               aria-label="Cancel queued prompt"
             >
               Cancel

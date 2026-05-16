@@ -527,13 +527,13 @@ export function App() {
   );
 
   return (
-    <div className="flex h-screen text-zinc-100">
+    <div className="flex h-screen text-foreground">
       {/* Mobile: overlay backdrop when drawer is open */}
       {isMobileScreen && mobileDrawerOpen && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap to close
         // biome-ignore lint/a11y/noStaticElementInteractions: backdrop tap to close
         <div
-          className="fixed inset-0 z-40 bg-black/60 animate-fade-in"
+          className="fixed inset-0 z-40 bg-background animate-fade-in"
           onClick={closeMobileDrawer}
         />
       )}
@@ -541,18 +541,18 @@ export function App() {
       {/* Mobile drawer (off-canvas) */}
       {isMobileScreen && (
         <div
-          className={`fixed inset-y-0 left-0 z-50 flex w-80 flex-col glass border-r border-white/5 transition-transform duration-300 ease-out safe-top safe-bottom ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-80 flex-col glass border-r border-hairline transition-transform duration-300 ease-out safe-top safe-bottom ${
             mobileDrawerOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-            <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-sm font-bold tracking-wide text-transparent">
+          <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+            <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
               tmai
             </span>
             <button
               type="button"
               onClick={closeMobileDrawer}
-              className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300"
+              className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
               title="Close navigation"
               aria-label="Close navigation"
             >
@@ -608,8 +608,8 @@ export function App() {
                   onClick={() => handleSelectAgent(agent.target)}
                   className={`h-8 w-8 rounded-lg text-[10px] transition-colors ${
                     selectedTarget === agent.target
-                      ? "bg-cyan-500/20 text-cyan-400"
-                      : "text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+                      ? "bg-primary/20 text-primary"
+                      : "text-muted-foreground hover:bg-surface-strong hover:text-foreground"
                   }`}
                   title={agent.target}
                 >
@@ -743,7 +743,7 @@ export function App() {
             const split = displayMode === "split-v" ? verticalSplit : horizontalSplit;
             return (
               <div className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-white/[0.06] px-3 py-1">
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-hairline px-3 py-1">
                   <DisplayModeSelector mode={displayMode} onChange={setDisplayMode} />
                 </div>
                 <AgentActions agent={selectedAgent} passthrough />

@@ -65,6 +65,12 @@ const RULES = [
   [/(?<![\w-])border-white\/5(?!\d)/g, "border-hairline"],
   [/(?<![\w-])border-white\/(?:10|15|20|30)(?!\d)/g, "border-hairline-strong"],
   [/(?<![\w-])border-white(?![\w/[-])/g, "border-hairline-strong"],
+  // Divider lines (`divide-*`) follow the same hairline mapping as
+  // borders (the utility sets border-color on between-children).
+  [/(?<![\w-])divide-white\/\[[0-9.]+\](?![\w-])/g, "divide-hairline"],
+  [/(?<![\w-])divide-white\/5(?!\d)/g, "divide-hairline"],
+  [/(?<![\w-])divide-white\/(?:10|15|20|30)(?!\d)/g, "divide-hairline-strong"],
+  [/(?<![\w-])divide-white(?![\w/[-])/g, "divide-hairline-strong"],
   // Ring overlays → the strong hairline. (A resting-vs-focus pair that
   // collapses to the same ring is a deliberate manual-fixup point: the
   // focus ring is upgraded to ring-primary by hand, matching this
@@ -115,9 +121,16 @@ const RULES = [
   [/(?<![\w-])bg-black(?:\/(?:\[[0-9.]+\]|[0-9]{1,3}))?(?![\w-])/g, "bg-background"],
 ];
 
-function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
+// Yields source files under `target` — accepts a directory OR a single
+// file path (e.g. `src/App.tsx`), so the migration's final stretch can
+// target loose top-level files too.
+function* walk(target) {
+  if (statSync(target).isFile()) {
+    if (/\.(tsx|ts)$/.test(target) && !/\.test\.(tsx|ts)$/.test(target)) yield target;
+    return;
+  }
+  for (const entry of readdirSync(target)) {
+    const p = join(target, entry);
     const st = statSync(p);
     if (st.isDirectory()) {
       if (entry === "__tests__" || entry === "node_modules") continue;
