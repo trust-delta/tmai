@@ -27,6 +27,7 @@ import { useHandover } from "@/hooks/useHandover";
 import type { CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
+import { ActiveApproachesSection } from "./sections/ActiveApproachesSection";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
 import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
@@ -122,6 +123,7 @@ export function ProducerConsole({
           preconditions={missingPreconditions}
         />
         <SettledDecisionsSection unitName={unitName} />
+        <ActiveApproachesSection unitName={unitName} />
         <WorkingWithThisHumanSection unitName={unitName} />
       </div>
 
