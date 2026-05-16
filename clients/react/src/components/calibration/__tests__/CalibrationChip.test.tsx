@@ -41,7 +41,7 @@ describe("CalibrationChip", () => {
     );
     const btn = screen.getByRole("button");
     expect(btn.textContent).toContain("cal 2");
-    expect(btn.className).toContain("zinc"); // muted, not red
+    expect(btn.className).toContain("muted-foreground"); // muted, not destructive
   });
 
   it("renders the urgent ⚡N chip when tier-1 tripwire violations exist", () => {
@@ -65,6 +65,6 @@ describe("CalibrationChip", () => {
     render(<CalibrationChip data={tripped} onClick={vi.fn()} />);
     const btn = screen.getByRole("button");
     expect(btn.textContent ?? "").toMatch(/⚡\s*1/);
-    expect(btn.className).toContain("red");
+    expect(btn.className).toContain("destructive");
   });
 });

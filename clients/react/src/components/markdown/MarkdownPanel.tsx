@@ -105,9 +105,9 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
   const fileTree = (
     <>
       {loading ? (
-        <div className="px-3 py-2 text-xs text-zinc-500">Loading...</div>
+        <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
       ) : tree.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-zinc-500">No markdown files</div>
+        <div className="px-3 py-2 text-xs text-muted-foreground">No markdown files</div>
       ) : (
         <TreeNode entries={tree} selectedFile={selectedFile} onSelect={loadFile} depth={0} />
       )}
@@ -117,13 +117,13 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="glass shrink-0 border-b border-white/5 px-4 py-3">
+      <div className="glass shrink-0 border-b border-hairline px-4 py-3">
         <div className="flex items-center gap-3">
           {/* Mobile: toggle file tree button */}
           <button
             type="button"
             onClick={() => setTreeOpen((v) => !v)}
-            className="touch-target flex items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300 md:hidden"
+            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground md:hidden"
             title="Toggle file list"
             aria-label="Toggle file list"
           >
@@ -147,7 +147,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
             height="20"
             viewBox="0 0 16 16"
             fill="none"
-            className="hidden shrink-0 text-blue-400 md:block"
+            className="hidden shrink-0 text-info md:block"
             role="img"
             aria-label="Document icon"
           >
@@ -190,8 +190,8 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
               opacity="0.5"
             />
           </svg>
-          <h2 className="truncate text-base font-semibold text-zinc-100">{projectName}</h2>
-          <span className="shrink-0 text-xs text-zinc-500">Markdown</span>
+          <h2 className="truncate text-base font-semibold text-foreground">{projectName}</h2>
+          <span className="shrink-0 text-xs text-muted-foreground">Markdown</span>
         </div>
       </div>
 
@@ -202,42 +202,42 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
             {/* biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap to close */}
             {/* biome-ignore lint/a11y/noStaticElementInteractions: backdrop tap to close */}
             <div
-              className="absolute inset-0 z-10 bg-black/50 md:hidden"
+              className="absolute inset-0 z-10 bg-background md:hidden"
               onClick={() => setTreeOpen(false)}
             />
-            <div className="absolute inset-y-0 left-0 z-20 w-56 overflow-y-auto border-r border-white/5 bg-zinc-950 py-2 md:hidden animate-slide-in-left">
+            <div className="absolute inset-y-0 left-0 z-20 w-56 overflow-y-auto border-r border-hairline bg-surface-strong py-2 md:hidden animate-slide-in-left">
               {fileTree}
             </div>
           </>
         )}
 
         {/* Desktop: file tree as persistent sidebar */}
-        <div className="hidden w-56 shrink-0 overflow-y-auto border-r border-white/5 bg-black/10 py-2 md:block">
+        <div className="hidden w-56 shrink-0 overflow-y-auto border-r border-hairline bg-background py-2 md:block">
           {fileTree}
         </div>
 
         {/* Right: Preview / Editor */}
         <div className="flex flex-1 flex-col overflow-auto">
           {!selectedFile ? (
-            <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
+            <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
               {treeOpen ? null : "Select a file to preview"}
             </div>
           ) : fileLoading ? (
-            <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
+            <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
               Loading...
             </div>
           ) : editing ? (
             <div className="flex flex-1 flex-col h-full">
               {/* Editor toolbar */}
-              <div className="flex items-center gap-2 border-b border-white/5 px-4 py-2">
-                <span className="text-xs text-zinc-400 font-mono truncate flex-1">
+              <div className="flex items-center gap-2 border-b border-hairline px-4 py-2">
+                <span className="text-xs text-muted-foreground font-mono truncate flex-1">
                   {selectedFile.split("/").pop()}
                 </span>
                 <button
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="touch-target-sm rounded bg-blue-500/20 px-3 py-1 text-xs text-blue-400 hover:bg-blue-500/30 disabled:opacity-50"
+                  className="touch-target-sm rounded bg-info/20 px-3 py-1 text-xs text-info hover:bg-info/30 disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -248,40 +248,40 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                     setEditContent(content);
                     setSaveError(null);
                   }}
-                  className="touch-target-sm rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10"
+                  className="touch-target-sm rounded bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-surface-strong"
                 >
                   Cancel
                 </button>
               </div>
               {saveError && (
-                <div className="border-b border-red-500/20 bg-red-500/5 px-4 py-1 text-xs text-red-400">
+                <div className="border-b border-destructive/20 bg-destructive/5 px-4 py-1 text-xs text-destructive">
                   {saveError}
                 </div>
               )}
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="flex-1 resize-none bg-transparent px-4 py-4 font-mono text-sm text-zinc-200 outline-none md:px-6"
+                className="flex-1 resize-none bg-transparent px-4 py-4 font-mono text-sm text-foreground outline-none md:px-6"
                 spellCheck={false}
               />
             </div>
           ) : (
             <div className="flex flex-1 flex-col h-full">
               {/* Preview toolbar */}
-              <div className="flex items-center gap-2 border-b border-white/5 px-4 py-2">
-                <span className="text-xs text-zinc-400 font-mono truncate flex-1">
+              <div className="flex items-center gap-2 border-b border-hairline px-4 py-2">
+                <span className="text-xs text-muted-foreground font-mono truncate flex-1">
                   {selectedFile.split("/").pop()}
                 </span>
                 {editable ? (
                   <button
                     type="button"
                     onClick={() => setEditing(true)}
-                    className="touch-target-sm rounded bg-white/5 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                    className="touch-target-sm rounded bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-surface-strong hover:text-foreground"
                   >
                     Edit
                   </button>
                 ) : (
-                  <span className="text-[10px] text-zinc-600">read-only</span>
+                  <span className="text-[10px] text-subtle-foreground">read-only</span>
                 )}
               </div>
               {/* Content: markdown preview or code view */}
@@ -289,17 +289,17 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                 {selectedFile.endsWith(".md") ? (
                   <div
                     className="prose prose-invert prose-sm max-w-none
-                    prose-headings:text-zinc-100 prose-headings:font-semibold
-                    prose-p:text-zinc-300 prose-p:leading-relaxed
-                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-                    prose-strong:text-zinc-200
-                    prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-                    prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg prose-pre:overflow-x-auto
-                    prose-li:text-zinc-300
-                    prose-th:text-zinc-300 prose-th:border-white/10
-                    prose-td:text-zinc-400 prose-td:border-white/10
-                    prose-hr:border-white/10
-                    prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400
+                    prose-headings:text-foreground prose-headings:font-semibold
+                    prose-p:text-foreground prose-p:leading-relaxed
+                    prose-a:text-info prose-a:no-underline hover:prose-a:underline
+                    prose-strong:text-foreground
+                    prose-code:text-primary prose-code:bg-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+                    prose-pre:bg-surface-strong/50 prose-pre:border prose-pre:border-hairline prose-pre:rounded-lg prose-pre:overflow-x-auto
+                    prose-li:text-foreground
+                    prose-th:text-foreground prose-th:border-hairline-strong
+                    prose-td:text-muted-foreground prose-td:border-hairline-strong
+                    prose-hr:border-hairline-strong
+                    prose-blockquote:border-info/30 prose-blockquote:text-muted-foreground
                   "
                   >
                     <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -307,7 +307,7 @@ export function MarkdownPanel({ projectPath, projectName }: MarkdownPanelProps) 
                     </Markdown>
                   </div>
                 ) : (
-                  <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-words select-text leading-relaxed">
+                  <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words select-text leading-relaxed">
                     {content}
                   </pre>
                 )}
@@ -376,7 +376,7 @@ function TreeNode({
                     return next;
                   })
                 }
-                className="flex w-full items-center gap-1 py-1.5 text-left text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="flex w-full items-center gap-1 py-1.5 text-left text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                 style={{ paddingLeft: 8 + depth * 12, paddingRight: 8 }}
               >
                 <span className="text-[9px]">{isCollapsed ? "\u25B8" : "\u25BE"}</span>
@@ -401,16 +401,20 @@ function TreeNode({
             onClick={() => onSelect(entry.path)}
             className={`flex w-full items-center gap-1.5 py-1.5 text-left text-[11px] transition-colors ${
               isSelected
-                ? "bg-blue-500/10 text-blue-400"
+                ? "bg-info/10 text-info"
                 : entry.openable
-                  ? "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-                  : "text-zinc-600 hover:bg-white/[0.03] hover:text-zinc-400"
+                  ? "text-muted-foreground hover:bg-surface hover:text-foreground"
+                  : "text-subtle-foreground hover:bg-surface hover:text-muted-foreground"
             }`}
             style={{ paddingLeft: 8 + depth * 12, paddingRight: 8 }}
           >
             <span
               className={`shrink-0 text-[10px] ${
-                isSelected ? "text-blue-500" : entry.openable ? "text-zinc-500" : "text-zinc-700"
+                isSelected
+                  ? "text-info"
+                  : entry.openable
+                    ? "text-muted-foreground"
+                    : "text-subtle-foreground"
               }`}
             >
               {extLabel(entry.name)}
