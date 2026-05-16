@@ -116,7 +116,7 @@ export function HandoffThresholdSection() {
             aria-label="Auto-handoff threshold percent"
           />
           <span
-            className={`text-xs ${disabled ? "text-muted-foreground" : "text-muted-foreground"}`}
+            className={`text-xs ${disabled ? "text-subtle-foreground" : "text-muted-foreground"}`}
           >
             {statusLabel}
           </span>

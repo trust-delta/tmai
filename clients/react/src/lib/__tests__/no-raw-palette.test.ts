@@ -46,6 +46,15 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
+// A string ternary whose two operands are byte-identical, e.g.
+// `cond ? "text-muted-foreground" : "text-muted-foreground"`. The
+// codemod collapses shade ranges (zinc-400 & zinc-500 → muted-foreground),
+// which can silently turn a meaningful "dimmer-when-disabled" branch into
+// a no-op conditional that drops a UX cue. Catch it here so every future
+// area PR fixes it (restore the distinction with a different token, e.g.
+// subtle-foreground, or simplify) instead of relying on a human reviewer.
+const IDENTICAL_TERNARY = /\?\s*("(?:[^"\\]|\\.)*")\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
 describe("semantic-token migration regression guard", () => {
   for (const area of MIGRATED) {
     it(`'${area}' stays free of raw Tailwind palette classes`, () => {
@@ -63,6 +72,25 @@ describe("semantic-token migration regression guard", () => {
         violations,
         `Raw palette classes found in a migrated area — run scripts/theme-codemod.mjs ` +
           `and map any leftovers to semantic tokens:\n${violations.join("\n")}`,
+      ).toEqual([]);
+    });
+
+    it(`'${area}' has no codemod-collapsed (identical-branch) class ternaries`, () => {
+      const violations: string[] = [];
+      for (const file of walk(join(SRC, area))) {
+        const text = readFileSync(file, "utf8");
+        for (const m of text.matchAll(IDENTICAL_TERNARY)) {
+          if (m[1] === m[2]) {
+            const ln = text.slice(0, m.index).split("\n").length;
+            violations.push(`${relative(SRC, file)}:${ln}  ${m[1]}`);
+          }
+        }
+      }
+      expect(
+        violations,
+        `Both ternary branches resolve to the same class (the codemod collapsed a ` +
+          `distinction). Restore it with a different token (e.g. subtle-foreground for ` +
+          `the disabled/inactive branch) or simplify to a single class:\n${violations.join("\n")}`,
       ).toEqual([]);
     });
   }
