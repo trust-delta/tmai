@@ -93,16 +93,18 @@ describe("ProducerCtxHeader — pure helpers", () => {
     expect(renderBar(150).filled).toBe(10);
   });
 
-  it("thresholdColorClass flips zinc / amber / red across the boundary", () => {
-    expect(thresholdColorClass(50, 75)).toMatch(/zinc/);
-    expect(thresholdColorClass(66, 75)).toMatch(/amber/);
-    expect(thresholdColorClass(74, 75)).toMatch(/amber/);
-    expect(thresholdColorClass(75, 75)).toMatch(/red/);
-    expect(thresholdColorClass(95, 75)).toMatch(/red/);
-    // Disabled threshold keeps the readout zinc regardless of pct
-    expect(thresholdColorClass(99, 0)).toMatch(/zinc/);
-    // null pct (no ctx_usage yet) → zinc
-    expect(thresholdColorClass(null, 75)).toMatch(/zinc/);
+  // Migrated off raw palette onto semantic tokens (zinc→muted-foreground,
+  // amber→warning, red→destructive) — see scripts/theme-codemod.mjs.
+  it("thresholdColorClass flips muted / warning / destructive across the boundary", () => {
+    expect(thresholdColorClass(50, 75)).toMatch(/muted-foreground/);
+    expect(thresholdColorClass(66, 75)).toMatch(/warning/);
+    expect(thresholdColorClass(74, 75)).toMatch(/warning/);
+    expect(thresholdColorClass(75, 75)).toMatch(/destructive/);
+    expect(thresholdColorClass(95, 75)).toMatch(/destructive/);
+    // Disabled threshold keeps the readout muted regardless of pct
+    expect(thresholdColorClass(99, 0)).toMatch(/muted-foreground/);
+    // null pct (no ctx_usage yet) → muted
+    expect(thresholdColorClass(null, 75)).toMatch(/muted-foreground/);
   });
 });
 

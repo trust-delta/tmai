@@ -34,9 +34,11 @@ export function WorkingWithThisHumanSection({ unitName }: WorkingWithThisHumanSe
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
-        <span className="text-base text-cyan-400">◐</span>
-        <h3 className="text-sm font-semibold text-zinc-200">Working with this human</h3>
-        {loading && data === null && <span className="text-[10px] text-zinc-500">loading…</span>}
+        <span className="text-base text-primary">◐</span>
+        <h3 className="text-sm font-semibold text-foreground">Working with this human</h3>
+        {loading && data === null && (
+          <span className="text-[10px] text-muted-foreground">loading…</span>
+        )}
       </header>
       <WorkingBody unitName={unitName} data={data} loading={loading} error={error} />
     </section>
@@ -53,11 +55,11 @@ interface WorkingBodyProps {
 function WorkingBody({ unitName, data, loading, error }: WorkingBodyProps) {
   if (unitName === null) {
     return (
-      <div className="pl-6 text-xs text-zinc-500">
+      <div className="pl-6 text-xs text-muted-foreground">
         <p>
           Pick a project (click a unit chip in{" "}
-          <span className="text-zinc-400">⬢ Cross-unit status</span> above, or use the sidebar) to
-          see this unit's memory index and working-with-human context.
+          <span className="text-muted-foreground">⬢ Cross-unit status</span> above, or use the
+          sidebar) to see this unit's memory index and working-with-human context.
         </p>
       </div>
     );
@@ -65,27 +67,27 @@ function WorkingBody({ unitName, data, loading, error }: WorkingBodyProps) {
 
   if (error !== null) {
     return (
-      <div className="pl-6 text-xs text-red-300/80">
+      <div className="pl-6 text-xs text-destructive/80">
         <p>
           Failed to load working-with-human view:{" "}
-          <code className="text-red-300">{error.message}</code>
+          <code className="text-destructive">{error.message}</code>
         </p>
-        <p className="mt-1 text-zinc-500">
-          Baseline norms live in your repo's <code className="text-zinc-300">CLAUDE.md</code>
+        <p className="mt-1 text-muted-foreground">
+          Baseline norms live in your repo's <code className="text-foreground">CLAUDE.md</code>
           {"; per-conversation memory under "}
-          <code className="text-zinc-300">~/.claude/projects/</code>.
+          <code className="text-foreground">~/.claude/projects/</code>.
         </p>
       </div>
     );
   }
 
   if (data === null && loading) {
-    return <div className="pl-6 text-xs text-zinc-500">Loading…</div>;
+    return <div className="pl-6 text-xs text-muted-foreground">Loading…</div>;
   }
 
   if (data === null) {
     return (
-      <div className="pl-6 text-xs text-zinc-500">
+      <div className="pl-6 text-xs text-muted-foreground">
         <p>No data resolved for this unit.</p>
       </div>
     );
@@ -93,16 +95,16 @@ function WorkingBody({ unitName, data, loading, error }: WorkingBodyProps) {
 
   if (data.dir === null) {
     return (
-      <div className="pl-6 text-xs text-zinc-500">
+      <div className="pl-6 text-xs text-muted-foreground">
         <p>
-          No memory directory configured for <code className="text-zinc-300">{data.unit}</code>. The
-          Producer will work from <code className="text-zinc-300">CLAUDE.md</code> + decision
+          No memory directory configured for <code className="text-foreground">{data.unit}</code>.
+          The Producer will work from <code className="text-foreground">CLAUDE.md</code> + decision
           records only.
         </p>
-        <p className="mt-1 text-zinc-600">
-          To opt in: set <code className="text-zinc-300">[[unit]].memory_dir</code> in{" "}
-          <code className="text-zinc-300">~/.config/tmai/config.toml</code>, or create{" "}
-          <code className="text-zinc-300">~/.claude/projects/&lt;slug&gt;/memory/</code> for the
+        <p className="mt-1 text-subtle-foreground">
+          To opt in: set <code className="text-foreground">[[unit]].memory_dir</code> in{" "}
+          <code className="text-foreground">~/.config/tmai/config.toml</code>, or create{" "}
+          <code className="text-foreground">~/.claude/projects/&lt;slug&gt;/memory/</code> for the
           unit's primary repo.
         </p>
       </div>
@@ -111,21 +113,21 @@ function WorkingBody({ unitName, data, loading, error }: WorkingBodyProps) {
 
   return (
     <div className="space-y-2 pl-6 text-xs">
-      <p className="text-zinc-500">
-        Process rules: per repo's <code className="text-zinc-300">CLAUDE.md</code>.
+      <p className="text-muted-foreground">
+        Process rules: per repo's <code className="text-foreground">CLAUDE.md</code>.
         Cross-conversation memory index lives at{" "}
-        <code className="text-[10.5px] text-zinc-400">{data.dir}</code>.
+        <code className="text-[10.5px] text-muted-foreground">{data.dir}</code>.
       </p>
       {data.memory_index === null || data.memory_index.trim() === "" ? (
-        <p className="text-zinc-600">
-          (no <code className="text-zinc-300">MEMORY.md</code> found in this dir yet)
+        <p className="text-subtle-foreground">
+          (no <code className="text-foreground">MEMORY.md</code> found in this dir yet)
         </p>
       ) : (
-        <details className="rounded border border-white/5 bg-white/[0.02]">
-          <summary className="cursor-pointer select-none px-3 py-1.5 text-[11px] text-zinc-300 hover:text-zinc-100">
+        <details className="rounded border border-hairline bg-surface">
+          <summary className="cursor-pointer select-none px-3 py-1.5 text-[11px] text-foreground hover:text-foreground">
             Memory index ({lineCount(data.memory_index)} lines)
           </summary>
-          <div className="prose prose-invert prose-sm max-w-none border-t border-white/5 px-3 py-2 text-zinc-300 [&_a]:text-cyan-300 [&_code]:rounded [&_code]:bg-white/[0.04] [&_code]:px-1 [&_code]:py-px [&_code]:text-zinc-300 [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-xs [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_pre]:rounded [&_pre]:bg-black/30 [&_pre]:p-2 [&_strong]:text-zinc-200 [&_ul]:my-1">
+          <div className="prose prose-invert prose-sm max-w-none border-t border-hairline px-3 py-2 text-foreground [&_a]:text-primary [&_code]:rounded [&_code]:bg-surface [&_code]:px-1 [&_code]:py-px [&_code]:text-foreground [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-xs [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_pre]:rounded [&_pre]:bg-background [&_pre]:p-2 [&_strong]:text-foreground [&_ul]:my-1">
             <Markdown remarkPlugins={[remarkGfm]}>{data.memory_index}</Markdown>
           </div>
         </details>

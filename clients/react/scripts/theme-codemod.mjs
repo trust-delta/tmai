@@ -37,6 +37,13 @@ import { join } from "node:path";
 // `hover:text-foreground` and `text-cyan-400/80` → `text-primary/80`
 // fall out for free. `$1` is the utility prefix (text/bg/border/…).
 const PREFIX = "(?:text|bg|border|ring|from|via|to|fill|stroke|accent|placeholder|outline|decoration)";
+// Full Tailwind shade range. Status / accent families map to one
+// semantic token regardless of shade (red is `destructive` whether it's
+// red-200 error text on a tint or red-500 a fill), so accepting every
+// shade keeps the mapping consistent and avoids per-area residual
+// whack-a-mole. (The zinc *text* scale is the deliberate exception — it
+// is tiered into foreground/muted/subtle and keeps its own buckets.)
+const SH = "(?:50|100|200|300|400|500|600|700|800|900)";
 
 const RULES = [
   // ── Neutral text scale → foreground / muted / subtle tiers ──
@@ -70,24 +77,18 @@ const RULES = [
   [/(?<![\w-])border-zinc-(?:600|700|800)(?![\w-])/g, "border-hairline-strong"],
 
   // ── Accent (cyan is the product accent) → primary ──
-  [
-    new RegExp(`(?<![\\w-])(${PREFIX})-cyan-(?:200|300|400|500|600)(?![\\w-])`, "g"),
-    "$1-primary",
-  ],
+  [new RegExp(`(?<![\\w-])(${PREFIX})-cyan-${SH}(?![\\w-])`, "g"), "$1-primary"],
   // ── Status families ──
-  [new RegExp(`(?<![\\w-])(${PREFIX})-red-(?:300|400|500|600)(?![\\w-])`, "g"), "$1-destructive"],
+  [new RegExp(`(?<![\\w-])(${PREFIX})-red-${SH}(?![\\w-])`, "g"), "$1-destructive"],
   [
-    new RegExp(`(?<![\\w-])(${PREFIX})-(?:amber|yellow|orange)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
+    new RegExp(`(?<![\\w-])(${PREFIX})-(?:amber|yellow|orange)-${SH}(?![\\w-])`, "g"),
     "$1-warning",
   ],
   [
-    new RegExp(`(?<![\\w-])(${PREFIX})-(?:emerald|green|teal|lime)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
+    new RegExp(`(?<![\\w-])(${PREFIX})-(?:emerald|green|teal|lime)-${SH}(?![\\w-])`, "g"),
     "$1-success",
   ],
-  [
-    new RegExp(`(?<![\\w-])(${PREFIX})-(?:blue|sky|indigo)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
-    "$1-info",
-  ],
+  [new RegExp(`(?<![\\w-])(${PREFIX})-(?:blue|sky|indigo)-${SH}(?![\\w-])`, "g"), "$1-info"],
   // Purple/violet is the WebUI's *secondary* categorical accent (dispatch
   // / agent / "remote" tags) — deliberately distinct from the primary
   // accent. The shadcn `accent`/`accent-foreground` token slots were the
@@ -95,7 +96,7 @@ const RULES = [
   // (surfaces map to surface/elevated), so they are repurposed in
   // theme.ts as this themed secondary accent. See lib/theme.ts.
   [
-    new RegExp(`(?<![\\w-])(${PREFIX})-(?:purple|violet|fuchsia)-(?:200|300|400|500|600)(?![\\w-])`, "g"),
+    new RegExp(`(?<![\\w-])(${PREFIX})-(?:purple|violet|fuchsia)-${SH}(?![\\w-])`, "g"),
     "$1-accent",
   ],
   // Black scrims (`bg-black/20`, `bg-black/[0.3]`) are "recessed to the

@@ -78,11 +78,11 @@ export function renderBar(pct: number): { filled: number; empty: number; chars: 
 // Threshold == 0 means auto-handoff is disabled — never colour the
 // readout in that mode; the row instead labels it "disabled".
 export function thresholdColorClass(pct: number | null, threshold: number): string {
-  if (threshold <= 0) return "text-zinc-500";
-  if (pct === null) return "text-zinc-500";
-  if (pct >= threshold) return "text-red-300";
-  if (pct >= threshold - 10) return "text-amber-300";
-  return "text-zinc-400";
+  if (threshold <= 0) return "text-muted-foreground";
+  if (pct === null) return "text-muted-foreground";
+  if (pct >= threshold) return "text-destructive";
+  if (pct >= threshold - 10) return "text-warning";
+  return "text-muted-foreground";
 }
 
 export function ProducerCtxHeader({
@@ -126,26 +126,26 @@ export function ProducerCtxHeader({
   const readoutColor = thresholdColorClass(ctx?.pct ?? null, effectiveThreshold);
 
   return (
-    <div className="border-b border-white/5 bg-white/[0.02] px-6 py-2 text-xs">
-      <div className="flex items-center gap-3 text-zinc-400">
+    <div className="border-b border-hairline bg-surface px-6 py-2 text-xs">
+      <div className="flex items-center gap-3 text-muted-foreground">
         {ctx ? (
           <>
-            <span className="font-mono text-zinc-300">
-              ctx: <span className="text-zinc-200">{formatThousands(ctx.used)}</span>
+            <span className="font-mono text-foreground">
+              ctx: <span className="text-foreground">{formatThousands(ctx.used)}</span>
               {" / "}
-              <span className="text-zinc-200">{formatThousands(ctx.total)}</span>
+              <span className="text-foreground">{formatThousands(ctx.total)}</span>
               {" ("}
-              <span className="text-zinc-200">{ctx.pct}%</span>
+              <span className="text-foreground">{ctx.pct}%</span>
               {")"}
             </span>
-            <span className="font-mono text-zinc-500" aria-hidden="true">
+            <span className="font-mono text-muted-foreground" aria-hidden="true">
               {renderBar(ctx.pct).chars}
             </span>
           </>
         ) : (
-          <span className="font-mono text-zinc-600">ctx: — / —</span>
+          <span className="font-mono text-subtle-foreground">ctx: — / —</span>
         )}
-        <span className="text-zinc-700" aria-hidden="true">
+        <span className="text-subtle-foreground" aria-hidden="true">
           │
         </span>
         <span className={`font-mono ${readoutColor}`}>{thresholdLabel}</span>
@@ -154,7 +154,7 @@ export function ProducerCtxHeader({
           onClick={onOpenSettings}
           aria-label="Open settings — auto-handoff threshold"
           title="Open settings — auto-handoff threshold"
-          className="ml-0 rounded text-zinc-500 transition-colors hover:text-zinc-200"
+          className="ml-0 rounded text-muted-foreground transition-colors hover:text-foreground"
         >
           ⚙
         </button>

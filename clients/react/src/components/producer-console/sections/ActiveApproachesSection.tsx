@@ -32,9 +32,11 @@ export function ActiveApproachesSection({ unitName }: ActiveApproachesSectionPro
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
-        <span className="text-base text-cyan-400">▣</span>
-        <h3 className="text-sm font-semibold text-zinc-200">Active approaches</h3>
-        {loading && data === null && <span className="text-[10px] text-zinc-500">loading…</span>}
+        <span className="text-base text-primary">▣</span>
+        <h3 className="text-sm font-semibold text-foreground">Active approaches</h3>
+        {loading && data === null && (
+          <span className="text-[10px] text-muted-foreground">loading…</span>
+        )}
       </header>
       <Body unitName={unitName} data={data} loading={loading} error={error} />
     </section>
@@ -51,10 +53,11 @@ interface BodyProps {
 function Body({ unitName, data, loading, error }: BodyProps) {
   if (unitName === null) {
     return (
-      <div className="pl-6 text-xs text-zinc-500">
+      <div className="pl-6 text-xs text-muted-foreground">
         <p>
-          Pick a project (a unit chip in <span className="text-zinc-400">⬢ Cross-unit status</span>{" "}
-          above, or the sidebar) to see its active approaches awaiting a verdict.
+          Pick a project (a unit chip in{" "}
+          <span className="text-muted-foreground">⬢ Cross-unit status</span> above, or the sidebar)
+          to see its active approaches awaiting a verdict.
         </p>
       </div>
     );
@@ -62,12 +65,12 @@ function Body({ unitName, data, loading, error }: BodyProps) {
 
   if (error !== null) {
     return (
-      <div className="pl-6 text-xs text-red-300/80">
+      <div className="pl-6 text-xs text-destructive/80">
         <p>
-          Failed to load approaches: <code className="text-red-300">{error.message}</code>
+          Failed to load approaches: <code className="text-destructive">{error.message}</code>
         </p>
-        <p className="mt-1 text-zinc-500">
-          Browse <code className="text-zinc-300">doc/approaches/</code> directly in the repo as a
+        <p className="mt-1 text-muted-foreground">
+          Browse <code className="text-foreground">doc/approaches/</code> directly in the repo as a
           fallback.
         </p>
       </div>
@@ -75,16 +78,16 @@ function Body({ unitName, data, loading, error }: BodyProps) {
   }
 
   if (data === null && loading) {
-    return <div className="pl-6 text-xs text-zinc-500">Loading…</div>;
+    return <div className="pl-6 text-xs text-muted-foreground">Loading…</div>;
   }
 
   if (data === null || data.repos.length === 0) {
     return (
-      <div className="pl-6 text-xs text-zinc-500">
+      <div className="pl-6 text-xs text-muted-foreground">
         <p>
-          No active approaches for <code className="text-zinc-300">{unitName}</code>. The unit
-          either has no <code className="text-zinc-300">doc/approaches/</code> directory yet, or no
-          record is <code className="text-zinc-300">status: active</code>.
+          No active approaches for <code className="text-foreground">{unitName}</code>. The unit
+          either has no <code className="text-foreground">doc/approaches/</code> directory yet, or
+          no record is <code className="text-foreground">status: active</code>.
         </p>
       </div>
     );
@@ -100,7 +103,7 @@ function Body({ unitName, data, loading, error }: BodyProps) {
       {onlyPrimary && (
         // TODO(tmai-core#340): retire once multi-repo unit support surfaces
         // approaches from every repo (same axis as the decisions side).
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-subtle-foreground">
           Showing this unit's primary repo only — multi-repo approach aggregation isn't wired yet
           (tmai-core#340).
         </p>
@@ -190,26 +193,28 @@ function RepoGroup({ repo, singleRepo }: { repo: RepoApproachesWire; singleRepo:
   return (
     <div className="space-y-2">
       {!singleRepo && (
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-          <code className="font-mono text-zinc-300">{repo.repo_label}</code>
-          {repo.primary && <span className="ml-1 text-cyan-400">(primary)</span>}
-          {repo.repo_head && <span className="ml-2 text-zinc-600">@ {repo.repo_head}</span>}
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <code className="font-mono text-foreground">{repo.repo_label}</code>
+          {repo.primary && <span className="ml-1 text-primary">(primary)</span>}
+          {repo.repo_head && (
+            <span className="ml-2 text-subtle-foreground">@ {repo.repo_head}</span>
+          )}
         </h4>
       )}
 
-      <p className="text-[11px] text-zinc-600">
+      <p className="text-[11px] text-subtle-foreground">
         {`${repo.active.length} active · `}
-        <span className="text-zinc-500">{`⚡ ${verdict.length}  🟡 ${watch.length}  ⚪ ${quiet.length}`}</span>
+        <span className="text-muted-foreground">{`⚡ ${verdict.length}  🟡 ${watch.length}  ⚪ ${quiet.length}`}</span>
       </p>
 
       <VerdictBand items={verdict} />
       <CollapsibleBand label="🟡 Watch" items={watch} />
       <CollapsibleBand label="⚪ Running quietly" items={quiet} muted />
 
-      <p className="text-[10.5px] leading-relaxed text-zinc-600">
+      <p className="text-[10.5px] leading-relaxed text-subtle-foreground">
         ⚡ groups approaches whose review-trigger objectively fired (a date passed). Whether each
-        verdict is <span className="text-zinc-500">yours</span> or Producer-resolvable needs engine
-        eval — tmai-core#381.
+        verdict is <span className="text-muted-foreground">yours</span> or Producer-resolvable needs
+        engine eval — tmai-core#381.
         {coreOnlyCount > 0 && (
           <>
             {" "}
@@ -227,33 +232,33 @@ function RepoGroup({ repo, singleRepo }: { repo: RepoApproachesWire; singleRepo:
 function VerdictBand({ items }: { items: Classified[] }) {
   if (items.length === 0) {
     return (
-      <p className="rounded border border-zinc-700/40 bg-zinc-800/30 px-2 py-1 text-[11px] text-zinc-500">
+      <p className="rounded border border-hairline-strong/40 bg-surface-strong/30 px-2 py-1 text-[11px] text-muted-foreground">
         ⚡ No verdict due — no active approach has a fired date trigger.
       </p>
     );
   }
   return (
-    <div className="rounded border border-amber-500/30 bg-amber-500/[0.05] p-2">
-      <p className="mb-1 text-[11px] font-semibold text-amber-300">
+    <div className="rounded border border-warning/30 bg-warning/[0.05] p-2">
+      <p className="mb-1 text-[11px] font-semibold text-warning">
         ⚡ Your verdict ({items.length})
       </p>
       <ul className="space-y-2 pl-1">
         {items.map((c) => (
           <li key={c.approach.slug} className="text-[11px] leading-snug">
-            <code className="text-zinc-200">{c.approach.slug}</code>
-            <span className="text-zinc-500"> — {c.approach.title}</span>
-            <div className="text-amber-300/90">{c.reason}</div>
-            <div className="text-zinc-500">
-              serves: <span className="text-zinc-400">{c.approach.serves.join(", ")}</span>
+            <code className="text-foreground">{c.approach.slug}</code>
+            <span className="text-muted-foreground"> — {c.approach.title}</span>
+            <div className="text-warning/90">{c.reason}</div>
+            <div className="text-muted-foreground">
+              serves: <span className="text-muted-foreground">{c.approach.serves.join(", ")}</span>
             </div>
-            <div className="text-zinc-500">
-              ✓ <span className="text-zinc-400">{c.approach.success_signal}</span>
+            <div className="text-muted-foreground">
+              ✓ <span className="text-muted-foreground">{c.approach.success_signal}</span>
             </div>
-            <div className="text-zinc-500">
-              ✗ <span className="text-zinc-400">{c.approach.failure_signal}</span>
+            <div className="text-muted-foreground">
+              ✗ <span className="text-muted-foreground">{c.approach.failure_signal}</span>
             </div>
             {c.coreOnly && (
-              <div className="text-[10.5px] text-zinc-600">
+              <div className="text-[10.5px] text-subtle-foreground">
                 also carries an engine-only trigger (tmai-core#381)
               </div>
             )}
@@ -280,19 +285,19 @@ function CollapsibleBand({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center gap-1 text-left text-[11px] ${muted ? "text-zinc-600" : "text-zinc-400"} hover:text-zinc-200`}
+        className={`flex w-full items-center gap-1 text-left text-[11px] ${muted ? "text-subtle-foreground" : "text-muted-foreground"} hover:text-foreground`}
       >
-        <span className="font-mono text-zinc-600">{open ? "▾" : "▸"}</span>
+        <span className="font-mono text-subtle-foreground">{open ? "▾" : "▸"}</span>
         <span className="font-medium">{label}</span>
-        <span className="text-zinc-600">({items.length})</span>
+        <span className="text-subtle-foreground">({items.length})</span>
       </button>
       {open && (
         <ul className="space-y-1 pl-4">
           {items.map((c) => (
-            <li key={c.approach.slug} className="text-[11px] leading-snug text-zinc-400">
-              <code className="text-zinc-300">{c.approach.slug}</code>
-              <span className="text-zinc-500"> — {c.approach.title}</span>
-              <div className="text-[10.5px] text-zinc-600">{c.reason}</div>
+            <li key={c.approach.slug} className="text-[11px] leading-snug text-muted-foreground">
+              <code className="text-foreground">{c.approach.slug}</code>
+              <span className="text-muted-foreground"> — {c.approach.title}</span>
+              <div className="text-[10.5px] text-subtle-foreground">{c.reason}</div>
             </li>
           ))}
         </ul>
