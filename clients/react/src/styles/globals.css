@@ -57,47 +57,69 @@
   --radius-xl: 0.75rem;
 }
 
+/* App-shell vars — the body backdrop and the .glass* panels. The
+   component tree paints with hardcoded palette classes, so without
+   theming these the chrome would not visibly re-skin on a theme switch.
+   Single source is theme.ts (ShellPalette); these are the tokyonight
+   defaults for the first paint, overridden at runtime by
+   applyThemeToDocument. Deliberately NOT under @theme: values include a
+   gradient, and Tailwind must not try to mint colour utilities here. */
+:root {
+  --app-bg: linear-gradient(135deg, #16161e 0%, #1a1b26 50%, #16161e 100%);
+  --glass-bg: rgba(26, 27, 38, 0.6);
+  --glass-border: rgba(192, 202, 245, 0.06);
+  --glass-light-bg: rgba(41, 46, 66, 0.4);
+  --glass-light-border: rgba(192, 202, 245, 0.08);
+  --glass-card-bg: rgba(32, 36, 53, 0.5);
+  --glass-card-border: rgba(192, 202, 245, 0.05);
+  --glass-card-hover-bg: rgba(41, 46, 66, 0.6);
+  --glass-card-hover-border: rgba(192, 202, 245, 0.1);
+  --glass-deep-bg: rgba(22, 22, 30, 0.7);
+  --glass-deep-border: rgba(192, 202, 245, 0.08);
+}
+
 body {
-  background: linear-gradient(135deg, #0a0a12 0%, #0d1117 40%, #0a0f1a 70%, #0f0a18 100%);
+  background: var(--app-bg);
   color: var(--color-foreground);
   font-family: system-ui, -apple-system, sans-serif;
   min-height: 100vh;
 }
 
-/* Glassmorphism utility classes */
+/* Glassmorphism utility classes — colours come from the active theme's
+   ShellPalette (theme.ts); blur radii stay fixed. */
 .glass {
-  background: rgba(15, 15, 25, 0.6);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
 }
 
 .glass-light {
-  background: rgba(25, 25, 40, 0.4);
+  background: var(--glass-light-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-light-border);
 }
 
 .glass-card {
-  background: rgba(20, 20, 35, 0.5);
+  background: var(--glass-card-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-card-border);
   transition: background 0.2s, border-color 0.2s;
 }
 
 .glass-card:hover {
-  background: rgba(30, 30, 50, 0.6);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--glass-card-hover-bg);
+  border-color: var(--glass-card-hover-border);
 }
 
 /* Enhanced glassmorphism with stronger blur for main panels */
 .glass-deep {
-  background: rgba(10, 10, 15, 0.7);
+  background: var(--glass-deep-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-deep-border);
 }
 
 /* Glow effects for status indicators */

@@ -36,6 +36,25 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs().theme).toBe(DEFAULT_UI_PREFS.theme);
   });
 
+  it("defaults the terminal font size to 13 and round-trips a change", () => {
+    expect(loadUIPrefs().terminalFontSize).toBe(13);
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, terminalFontSize: 18 });
+    expect(loadUIPrefs().terminalFontSize).toBe(18);
+  });
+
+  it("clamps an out-of-range / non-numeric terminal font size", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, terminalFontSize: 999 }),
+    );
+    expect(loadUIPrefs().terminalFontSize).toBe(32); // TERMINAL_FONT_SIZE_MAX
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, terminalFontSize: "big" }),
+    );
+    expect(loadUIPrefs().terminalFontSize).toBe(DEFAULT_UI_PREFS.terminalFontSize);
+  });
+
   it("round-trips a saved blob", () => {
     const next: UIPrefs = {
       ...DEFAULT_UI_PREFS,

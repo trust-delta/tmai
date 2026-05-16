@@ -75,6 +75,20 @@ describe("themeCssVars / applyThemeToDocument — the CSS-var surface", () => {
     expect(vars["--color-terminal-background"]).toBe("#09090b");
   });
 
+  it("emits app-shell vars so the chrome (body + glass) re-skins too", () => {
+    const tn = themeCssVars(THEMES.tokyonight);
+    expect(tn["--app-bg"]).toBe(THEMES.tokyonight.palette.shell.appBg);
+    expect(tn["--glass-bg"]).toBe(THEMES.tokyonight.palette.shell.glassBg);
+    expect(tn["--glass-deep-border"]).toBe(THEMES.tokyonight.palette.shell.glassDeepBorder);
+
+    // zinc keeps the exact pre-theme globals.css chrome (pixel-faithful).
+    const z = themeCssVars(THEMES.zinc);
+    expect(z["--app-bg"]).toBe(
+      "linear-gradient(135deg, #0a0a12 0%, #0d1117 40%, #0a0f1a 70%, #0f0a18 100%)",
+    );
+    expect(z["--glass-bg"]).toBe("rgba(15, 15, 25, 0.6)");
+  });
+
   beforeEach(() => {
     document.documentElement.removeAttribute("style");
     document.documentElement.removeAttribute("data-theme");

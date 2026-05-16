@@ -9,23 +9,33 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const constructed: Array<{ theme: unknown }> = [];
+interface FakeTerm {
+  options: { fontSize: number };
+}
+const constructed: Array<{ theme: unknown; fontSize: number }> = [];
+let lastInstance: FakeTerm | null = null;
 
 vi.mock("@/lib/api", () => ({
   api: { resizeAgentTerminal: vi.fn().mockResolvedValue(undefined) },
 }));
 
-vi.mock("../useAgentTerminalStream", () => ({
-  useAgentTerminalStream: () => ({ sendKeys: vi.fn() }),
-}));
+// Stable `sendKeys` identity, mirroring the real hook (it's a
+// `useCallback`). Without this the create-effect's `sendKeys` dep would
+// change every render and rebuild the terminal, masking the live
+// font-size update path.
+vi.mock("../useAgentTerminalStream", () => {
+  const sendKeys = vi.fn();
+  return { useAgentTerminalStream: () => ({ sendKeys }) };
+});
 
 vi.mock("@xterm/xterm", () => {
   const disposable = () => ({ dispose: vi.fn() });
-  function Terminal(opts: { theme: unknown }) {
-    constructed.push({ theme: opts.theme });
-    return {
+  function Terminal(opts: { theme: unknown; fontSize: number }) {
+    constructed.push({ theme: opts.theme, fontSize: opts.fontSize });
+    const instance = {
       rows: 30,
       cols: 120,
+      options: { fontSize: opts.fontSize },
       loadAddon: vi.fn(),
       open: vi.fn(),
       focus: vi.fn(),
@@ -38,6 +48,8 @@ vi.mock("@xterm/xterm", () => {
       onResize: vi.fn(disposable),
       onWriteParsed: vi.fn(disposable),
     };
+    lastInstance = instance;
+    return instance;
   }
   return { Terminal };
 });
@@ -63,11 +75,15 @@ function Harness() {
   useApplyTheme(); // CSS-var surface (rest of the UI)
   useTerminal({ agentId: "claude:x", containerRef }); // terminal surface
   const [, setTheme] = useUIPref("theme");
+  const [, setFont] = useUIPref("terminalFontSize");
   return (
     <div>
       <div ref={containerRef} />
       <button type="button" onClick={() => setTheme("zinc")}>
         to-zinc
+      </button>
+      <button type="button" onClick={() => setFont(20)}>
+        font-20
       </button>
     </div>
   );
@@ -81,6 +97,7 @@ describe("theme drives both surfaces (single source)", () => {
   beforeEach(() => {
     localStorage.clear();
     constructed.length = 0;
+    lastInstance = null;
     document.documentElement.removeAttribute("style");
     document.documentElement.removeAttribute("data-theme");
   });
@@ -119,5 +136,24 @@ describe("theme drives both surfaces (single source)", () => {
       "oklch(0.145 0 0)",
     );
     expect(document.documentElement.dataset.theme).toBe("zinc");
+  });
+
+  it("uses the ui-prefs terminal font size and updates it live without a rebuild", () => {
+    render(
+      <UIPrefsProvider>
+        <Harness />
+      </UIPrefsProvider>,
+    );
+
+    // Constructed with the default size (was a hardcoded 13).
+    expect(constructed[0]?.fontSize).toBe(13);
+    const builtCount = constructed.length;
+
+    fireEvent.click(screen.getByText("font-20"));
+
+    // Applied via term.options (live) — NOT by tearing down + rebuilding
+    // the terminal (which would drop the PTY stream).
+    expect(lastInstance?.options.fontSize).toBe(20);
+    expect(constructed.length).toBe(builtCount);
   });
 });

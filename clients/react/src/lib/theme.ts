@@ -90,6 +90,28 @@ export interface AnsiPalette {
   brightWhite: string;
 }
 
+// The hand-written app shell — the `body` backdrop and the `.glass*`
+// translucent panels in globals.css. These are NOT Tailwind `@theme`
+// tokens (the component tree doesn't consume the semantic tokens; the
+// chrome is painted by these classes), so without theming them a theme
+// switch would leave the whole UI looking unchanged. Emitted as plain
+// `--<name>` css vars (no `--color-` prefix on purpose, so Tailwind does
+// not try to generate colour utilities from gradient values).
+export interface ShellPalette {
+  // `body` background. May be a gradient string.
+  appBg: string;
+  glassBg: string;
+  glassBorder: string;
+  glassLightBg: string;
+  glassLightBorder: string;
+  glassCardBg: string;
+  glassCardBorder: string;
+  glassCardHoverBg: string;
+  glassCardHoverBorder: string;
+  glassDeepBg: string;
+  glassDeepBorder: string;
+}
+
 export interface ThemePalette {
   // ── Terminal canvas ── these feed the xterm `ITheme`. They must be
   // hex / rgb(a): xterm's colour parser does not understand `oklch()`.
@@ -105,6 +127,8 @@ export interface ThemePalette {
   scrollbarHover: string;
   scrollbarActive: string;
   ansi?: AnsiPalette;
+  // ── App shell ── body backdrop + glass panels (see ShellPalette).
+  shell: ShellPalette;
   // ── Tailwind semantic tokens ── any valid CSS colour. `zinc` keeps the
   // original OKLch strings verbatim (zero-risk faithful snapshot);
   // `tokyonight` uses hex.
@@ -154,6 +178,19 @@ const TOKYONIGHT: Theme = {
       brightMagenta: "#bb9af7",
       brightCyan: "#7dcfff",
       brightWhite: "#c0caf5",
+    },
+    shell: {
+      appBg: "linear-gradient(135deg, #16161e 0%, #1a1b26 50%, #16161e 100%)",
+      glassBg: "rgba(26, 27, 38, 0.6)",
+      glassBorder: "rgba(192, 202, 245, 0.06)",
+      glassLightBg: "rgba(41, 46, 66, 0.4)",
+      glassLightBorder: "rgba(192, 202, 245, 0.08)",
+      glassCardBg: "rgba(32, 36, 53, 0.5)",
+      glassCardBorder: "rgba(192, 202, 245, 0.05)",
+      glassCardHoverBg: "rgba(41, 46, 66, 0.6)",
+      glassCardHoverBorder: "rgba(192, 202, 245, 0.1)",
+      glassDeepBg: "rgba(22, 22, 30, 0.7)",
+      glassDeepBorder: "rgba(192, 202, 245, 0.08)",
     },
     tokens: {
       background: "#1a1b26",
@@ -206,6 +243,21 @@ const ZINC: Theme = {
     scrollbarActive: SCROLLBAR_ACTIVE,
     // ansi intentionally omitted — preserves xterm's built-in palette,
     // exactly as the previous hardcode (which set no ANSI colours) did.
+    // Shell values copied verbatim from the pre-theme globals.css so the
+    // `zinc` chrome is pixel-identical to what shipped before.
+    shell: {
+      appBg: "linear-gradient(135deg, #0a0a12 0%, #0d1117 40%, #0a0f1a 70%, #0f0a18 100%)",
+      glassBg: "rgba(15, 15, 25, 0.6)",
+      glassBorder: "rgba(255, 255, 255, 0.06)",
+      glassLightBg: "rgba(25, 25, 40, 0.4)",
+      glassLightBorder: "rgba(255, 255, 255, 0.08)",
+      glassCardBg: "rgba(20, 20, 35, 0.5)",
+      glassCardBorder: "rgba(255, 255, 255, 0.05)",
+      glassCardHoverBg: "rgba(30, 30, 50, 0.6)",
+      glassCardHoverBorder: "rgba(255, 255, 255, 0.1)",
+      glassDeepBg: "rgba(10, 10, 15, 0.7)",
+      glassDeepBorder: "rgba(255, 255, 255, 0.08)",
+    },
     tokens: {
       background: "oklch(0.145 0 0)",
       foreground: "oklch(0.985 0 0)",
@@ -299,6 +351,22 @@ export function themeCssVars(theme: Theme): Record<string, string> {
     vars[`--color-${token}`] = theme.palette.tokens[token];
   }
   vars["--color-terminal-background"] = theme.palette.terminalBackground;
+
+  // App-shell vars (no `--color-` prefix — see ShellPalette). globals.css
+  // `body` and `.glass*` read these, so the chrome re-skins too instead
+  // of staying frozen on the old hardcoded gradient / rgba.
+  const s = theme.palette.shell;
+  vars["--app-bg"] = s.appBg;
+  vars["--glass-bg"] = s.glassBg;
+  vars["--glass-border"] = s.glassBorder;
+  vars["--glass-light-bg"] = s.glassLightBg;
+  vars["--glass-light-border"] = s.glassLightBorder;
+  vars["--glass-card-bg"] = s.glassCardBg;
+  vars["--glass-card-border"] = s.glassCardBorder;
+  vars["--glass-card-hover-bg"] = s.glassCardHoverBg;
+  vars["--glass-card-hover-border"] = s.glassCardHoverBorder;
+  vars["--glass-deep-bg"] = s.glassDeepBg;
+  vars["--glass-deep-border"] = s.glassDeepBorder;
   return vars;
 }
 

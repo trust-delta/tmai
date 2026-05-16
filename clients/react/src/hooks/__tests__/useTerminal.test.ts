@@ -22,6 +22,7 @@ type ResizeCallback = (dims: { rows: number; cols: number }) => void;
 interface FakeTerminalInstance {
   rows: number;
   cols: number;
+  options: Record<string, unknown>;
   loadAddon: ReturnType<typeof vi.fn>;
   open: ReturnType<typeof vi.fn>;
   onData: ReturnType<typeof vi.fn>;
@@ -48,6 +49,7 @@ vi.mock("@xterm/xterm", () => {
     const instance: FakeTerminalInstance = {
       rows: 30,
       cols: 120,
+      options: {},
       loadAddon: vi.fn(),
       open: vi.fn(),
       onData: vi.fn(() => makeDisposable()),

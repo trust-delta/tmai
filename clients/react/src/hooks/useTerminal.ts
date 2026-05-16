@@ -22,7 +22,7 @@ import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toXtermTheme } from "@/lib/theme";
-import { useActiveTheme } from "./useActiveTheme";
+import { useActiveTheme, useTerminalFontSize } from "./useActiveTheme";
 import { type TerminalStreamStatus, useAgentTerminalStream } from "./useAgentTerminalStream";
 
 interface UseTerminalOptions {
@@ -88,13 +88,21 @@ export function useTerminal({
   // palette — a live re-skin with no reload, on both terminal twins.
   const activeTheme = useActiveTheme();
 
+  // Terminal font size is a WebUI pref (was a hardcoded `13`). Read it
+  // without listing it as a dep of the create-effect — resizing the font
+  // must NOT tear down the PTY stream. A dedicated effect below applies
+  // changes live via `term.options`.
+  const terminalFontSize = useTerminalFontSize();
+  const fontSizeRef = useRef(terminalFontSize);
+  fontSizeRef.current = terminalFontSize;
+
   useEffect(() => {
     if (!agentId || !containerRef.current) return;
 
     const container = containerRef.current;
 
     const term = new Terminal({
-      fontSize: 13,
+      fontSize: fontSizeRef.current,
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
       theme: toXtermTheme(activeTheme),
       cursorBlink: true,
@@ -187,6 +195,17 @@ export function useTerminal({
       fitAddonRef.current = null;
     };
   }, [agentId, containerRef, sendKeys, keysHandledExternally, activeTheme]);
+
+  // Apply font-size changes live, without rebuilding the terminal (which
+  // would tear down the stream). `fit()` recomputes rows/cols for the new
+  // glyph metrics and fires `onResize`, which debounce-forwards the new
+  // winsize to the PTY-server via the handler wired in the create-effect.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = terminalFontSize;
+    fitAddonRef.current?.fit();
+  }, [terminalFontSize]);
 
   // Toggle keyboard attachment (input vs select mode).
   const setAttachable = useCallback(
