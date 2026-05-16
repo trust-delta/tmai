@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyThemeToDocument,
   DEFAULT_THEME_NAME,
+  REGISTERED_THEME_NAMES,
   resolveTheme,
   SEMANTIC_TOKENS,
+  THEME_NAMES,
   THEMES,
   themeCssVars,
   toXtermTheme,
@@ -28,6 +30,16 @@ describe("theme registry", () => {
 
   it("defaults to tokyonight", () => {
     expect(DEFAULT_THEME_NAME).toBe("tokyonight");
+  });
+
+  it("resolves the registry-only `light` theme but keeps it un-selectable", () => {
+    // Resolvable now (acceptance-test theme for the token migration)…
+    expect(resolveTheme("light")).toBe(THEMES.light);
+    expect(REGISTERED_THEME_NAMES).toContain("light");
+    // …but NOT user-selectable (Settings switcher + ui-prefs validation
+    // both key off THEME_NAMES) until the component tree consumes tokens.
+    expect(THEME_NAMES as readonly string[]).not.toContain("light");
+    expect(THEME_NAMES as readonly string[]).toEqual(["tokyonight", "zinc"]);
   });
 });
 
@@ -106,5 +118,49 @@ describe("themeCssVars / applyThemeToDocument — the CSS-var surface", () => {
     expect(root.style.getPropertyValue("--color-background")).toBe("oklch(0.145 0 0)");
     expect(root.style.getPropertyValue("--color-terminal-background")).toBe("#09090b");
     expect(root.dataset.theme).toBe("zinc");
+  });
+
+  it("emits the new migration-target tokens (status / surface / dim text)", () => {
+    const vars = themeCssVars(THEMES.tokyonight);
+    // The SEMANTIC_TOKENS loop above already covers all of them; spot
+    // check the new ones are present and themed.
+    const newTokens = [
+      "warning",
+      "success",
+      "info",
+      "surface",
+      "surface-strong",
+      "elevated",
+      "hairline",
+      "hairline-strong",
+      "subtle-foreground",
+    ] as const;
+    for (const t of newTokens) {
+      expect(vars[`--color-${t}`]).toBe(THEMES.tokyonight.palette.tokens[t]);
+    }
+    expect(vars["--color-warning"]).toBe("#e0af68");
+    expect(vars["--color-surface"]).toBe("rgba(192, 202, 245, 0.05)");
+  });
+
+  it("emits glow (rgb channel triple) + brand fx vars", () => {
+    const tn = themeCssVars(THEMES.tokyonight);
+    expect(tn["--glow-accent"]).toBe("34 211 238");
+    expect(tn["--brand-from"]).toBe("#22d3ee");
+    // light retunes the glow for a light backdrop.
+    const lt = themeCssVars(THEMES.light);
+    expect(lt["--glow-accent"]).toBe("46 125 233");
+    expect(lt["--color-background"]).toBe("#e1e2e7");
+  });
+
+  it("PR-A inert invariant: glow vars match the pre-theme literals for the selectable themes", () => {
+    // The globals.css `.glow-*` / glowPulse rewrite only stays visually
+    // identical if every SELECTABLE theme keeps the original cyan/amber/
+    // red literals. (light may differ — it isn't selectable yet.)
+    for (const name of THEME_NAMES) {
+      const v = themeCssVars(THEMES[name]);
+      expect(v["--glow-accent"]).toBe("34 211 238");
+      expect(v["--glow-warning"]).toBe("245 158 11");
+      expect(v["--glow-danger"]).toBe("239 68 68");
+    }
   });
 });
