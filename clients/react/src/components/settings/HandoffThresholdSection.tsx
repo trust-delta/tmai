@@ -16,7 +16,7 @@ import { api, type OrchestratorSettings } from "@/lib/api";
 import { SaveStatus } from "./SaveStatus";
 
 const INPUT_CLS =
-  "w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30";
+  "w-20 rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30";
 
 const MIN_PCT = 0;
 const MAX_PCT = 100;
@@ -84,15 +84,15 @@ export function HandoffThresholdSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Auto-handoff threshold (%)</h3>
+        <h3 className="text-sm font-medium text-foreground">Auto-handoff threshold (%)</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-subtle-foreground">
         Producer ritual auto-fires when context usage crosses this percent. Set to 0 to disable;
-        manual <code className="text-zinc-500">Handoff &amp; restart</code> still works.
+        manual <code className="text-muted-foreground">Handoff &amp; restart</code> still works.
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-2">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-2">
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -115,12 +115,14 @@ export function HandoffThresholdSection() {
             className={INPUT_CLS}
             aria-label="Auto-handoff threshold percent"
           />
-          <span className={`text-xs ${disabled ? "text-zinc-500" : "text-zinc-400"}`}>
+          <span
+            className={`text-xs ${disabled ? "text-subtle-foreground" : "text-muted-foreground"}`}
+          >
             {statusLabel}
           </span>
         </div>
         {localError && (
-          <p role="alert" className="text-[11px] text-red-400">
+          <p role="alert" className="text-[11px] text-destructive">
             {localError}
           </p>
         )}

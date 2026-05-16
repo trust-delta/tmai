@@ -8,7 +8,7 @@ import { PrMonitorSection } from "./PrMonitorSection";
 import { SaveStatus } from "./SaveStatus";
 
 const ROW_INPUT_CLS =
-  "w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30 resize-y";
+  "w-full rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30 resize-y";
 
 const RULE_FIELDS = [
   {
@@ -107,23 +107,23 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Orchestration</h3>
+        <h3 className="text-sm font-medium text-foreground">Orchestration</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-subtle-foreground">
         Configure the orchestrator agent that coordinates sub-agents for parallel development
         workflows.
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-4">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-4">
         {/* Scope selector */}
         <div>
-          <span className="block text-xs text-zinc-400 mb-1">Scope</span>
+          <span className="block text-xs text-muted-foreground mb-1">Scope</span>
           <div className="flex gap-1.5">
             <select
               value={orchScope}
               onChange={(e) => setOrchScope(e.target.value)}
-              className="flex-1 min-w-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              className="flex-1 min-w-0 rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/30"
               aria-label="Orchestration scope"
             >
               <option value="global">Global (default)</option>
@@ -142,14 +142,14 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
                 refreshDefaultRoot();
                 setBrowsing(true);
               }}
-              className="shrink-0 rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+              className="shrink-0 rounded-md border border-hairline-strong px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
               aria-label="Browse for project directory"
             >
               Browse
             </button>
           </div>
           {orchScope !== "global" && (
-            <p className="mt-1 text-[10px] text-zinc-600">
+            <p className="mt-1 text-[10px] text-subtle-foreground">
               {orchestrator.is_project_override
                 ? "Project-level override active"
                 : "Using global settings (no project override)"}
@@ -177,8 +177,8 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
         {/* Enable toggle */}
         <label className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Enabled</span>
-            <p className="text-[11px] text-zinc-600 mt-0.5">
+            <span className="text-sm text-foreground">Enabled</span>
+            <p className="text-[11px] text-subtle-foreground mt-0.5">
               Enable orchestrator workflow features.
             </p>
           </div>
@@ -196,22 +196,22 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
               );
             }}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              orchestrator.enabled ? "bg-cyan-500/40" : "bg-white/10"
+              orchestrator.enabled ? "bg-primary/40" : "bg-surface-strong"
             }`}
             aria-label="Orchestrator enabled"
           >
             <span
               className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
                 orchestrator.enabled
-                  ? "translate-x-[18px] bg-cyan-400"
-                  : "translate-x-0.5 bg-zinc-500"
+                  ? "translate-x-[18px] bg-primary"
+                  : "translate-x-0.5 bg-muted-foreground"
               }`}
             />
           </button>
         </label>
 
         {orchestrator.enabled && (
-          <div className="space-y-3 border-t border-white/5 pt-3">
+          <div className="space-y-3 border-t border-hairline pt-3">
             <OrchestrationRuleTextarea
               label="Role"
               placeholder="Describe the orchestrator's role and persona..."
@@ -222,7 +222,7 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
               onCommit={(role) => api.updateOrchestratorSettings({ role }, orchProject)}
             />
 
-            <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
               Workflow Rules
             </p>
 
@@ -300,7 +300,7 @@ function OrchestrationRuleTextarea({
 }) {
   return (
     <div>
-      <span className="block text-xs text-zinc-400 mb-1">{label}</span>
+      <span className="block text-xs text-muted-foreground mb-1">{label}</span>
       <textarea
         value={value}
         onChange={(e) => {

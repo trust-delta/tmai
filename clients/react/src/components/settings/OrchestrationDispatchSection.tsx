@@ -144,16 +144,16 @@ export function OrchestrationDispatchSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Orchestration dispatch</h3>
+        <h3 className="text-sm font-medium text-foreground">Orchestration dispatch</h3>
         <SaveStatus status={status} error={error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-subtle-foreground">
         Per-role dispatch bundles: vendor, model, permission mode, and effort for each agent role.
         Leave "Use vendor CLI default" checked to launch that role with the vendor CLI's own
         defaults (no <code>--model</code> / <code>--permission-mode</code> flags injected).
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-3">
         {ROLES.map((role) => {
           const handlers = handlersFor(role);
           return (

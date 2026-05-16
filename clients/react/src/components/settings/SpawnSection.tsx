@@ -34,18 +34,20 @@ export function SpawnSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Spawn</h3>
+        <h3 className="text-sm font-medium text-foreground">Spawn</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">How new agents are started from the Web UI.</p>
+      <p className="mt-1 text-xs text-subtle-foreground">
+        How new agents are started from the Web UI.
+      </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-3">
         <SpawnRuntimeSelector settings={spawn} onSettingsChange={setSpawn} save={save} />
 
         {/* Window name field — shown when runtime is tmux */}
         {spawn.runtime === "tmux" && (
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-500">Window name</span>
+            <span className="shrink-0 text-xs text-muted-foreground">Window name</span>
             <input
               type="text"
               value={spawn.tmux_window_name}
@@ -60,7 +62,7 @@ export function SpawnSection() {
                   (e.currentTarget as HTMLInputElement).blur();
                 }
               }}
-              className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              className="flex-1 rounded-md border border-hairline-strong bg-surface px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary/30"
               aria-label="tmux window name"
             />
           </div>

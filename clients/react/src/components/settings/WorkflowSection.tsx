@@ -25,16 +25,16 @@ export function WorkflowSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Workflow</h3>
+        <h3 className="text-sm font-medium text-foreground">Workflow</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">Workflow automation settings.</p>
+      <p className="mt-1 text-xs text-subtle-foreground">Workflow automation settings.</p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3">
         <label className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Auto-rebase on merge</span>
-            <p className="text-[11px] text-zinc-600 mt-0.5">
+            <span className="text-sm text-foreground">Auto-rebase on merge</span>
+            <p className="text-[11px] text-subtle-foreground mt-0.5">
               Automatically rebase open worktree branches onto main after a PR merge.
             </p>
           </div>
@@ -48,15 +48,15 @@ export function WorkflowSection() {
               });
             }}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              workflow.auto_rebase_on_merge ? "bg-cyan-500/40" : "bg-white/10"
+              workflow.auto_rebase_on_merge ? "bg-primary/40" : "bg-surface-strong"
             }`}
             aria-label="Auto-rebase on merge"
           >
             <span
               className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
                 workflow.auto_rebase_on_merge
-                  ? "translate-x-[18px] bg-cyan-400"
-                  : "translate-x-0.5 bg-zinc-500"
+                  ? "translate-x-[18px] bg-primary"
+                  : "translate-x-0.5 bg-muted-foreground"
               }`}
             />
           </button>

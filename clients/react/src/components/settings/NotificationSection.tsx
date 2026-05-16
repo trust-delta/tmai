@@ -31,18 +31,18 @@ export function NotificationSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Notifications</h3>
+        <h3 className="text-sm font-medium text-foreground">Notifications</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-subtle-foreground">
         Browser notifications when agents finish processing and become idle.
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-3">
         <label className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Notify on idle</span>
-            <p className="text-[11px] text-zinc-600 mt-0.5">
+            <span className="text-sm text-foreground">Notify on idle</span>
+            <p className="text-[11px] text-subtle-foreground mt-0.5">
               Send a browser notification when an agent transitions from Processing to Idle.
             </p>
           </div>
@@ -57,13 +57,15 @@ export function NotificationSection() {
               });
             }}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              notifyOnIdle ? "bg-cyan-500/40" : "bg-white/10"
+              notifyOnIdle ? "bg-primary/40" : "bg-surface-strong"
             }`}
             aria-label="Notify on idle"
           >
             <span
               className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
-                notifyOnIdle ? "translate-x-[18px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+                notifyOnIdle
+                  ? "translate-x-[18px] bg-primary"
+                  : "translate-x-0.5 bg-muted-foreground"
               }`}
             />
           </button>
@@ -71,7 +73,7 @@ export function NotificationSection() {
 
         {notifyOnIdle && (
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-500">Idle threshold</span>
+            <span className="shrink-0 text-xs text-muted-foreground">Idle threshold</span>
             <input
               type="number"
               min={MIN_THRESHOLD_SECS}
@@ -90,15 +92,15 @@ export function NotificationSection() {
                   api.updateNotificationSettings({ notify_idle_threshold_secs: val }),
                 );
               }}
-              className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              className="w-20 rounded-md border border-hairline-strong bg-surface px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary/30"
               aria-label="Idle threshold seconds"
             />
-            <span className="text-xs text-zinc-500">seconds</span>
+            <span className="text-xs text-muted-foreground">seconds</span>
           </div>
         )}
 
         {notifyOnIdle && (
-          <p className="text-[10px] text-zinc-600">
+          <p className="text-[10px] text-subtle-foreground">
             Hook-detected (◈) agents notify immediately. Capture-pane (●) agents wait the full
             threshold to filter out transient state flickers.
           </p>

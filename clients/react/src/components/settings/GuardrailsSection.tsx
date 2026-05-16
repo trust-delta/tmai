@@ -49,15 +49,17 @@ export function GuardrailsSection({
 
   return (
     <>
-      <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mt-4 mb-2">
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-4 mb-2">
         Guardrails
       </h4>
       <div className="space-y-2">
         {guardrailFields.map((field) => (
           <div key={field.key} className="flex items-center justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <span className="text-xs text-zinc-300">{field.label}</span>
-              <p className="text-[10px] text-zinc-600 leading-tight">{field.description}</p>
+              <span className="text-xs text-foreground">{field.label}</span>
+              <p className="text-[10px] text-subtle-foreground leading-tight">
+                {field.description}
+              </p>
             </div>
             <input
               type="number"
@@ -79,7 +81,7 @@ export function GuardrailsSection({
                   updateField(field.key, val);
                 }
               }}
-              className="w-16 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 text-center outline-none focus:border-cyan-500/30"
+              className="w-16 rounded-md border border-hairline-strong bg-surface px-2 py-1 text-xs text-foreground text-center outline-none focus:border-primary/30"
             />
           </div>
         ))}
