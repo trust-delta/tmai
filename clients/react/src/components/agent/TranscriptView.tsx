@@ -9,33 +9,33 @@ interface TranscriptViewProps {
 
 // Shared prose class names for markdown rendering (matches MarkdownPanel.tsx)
 const PROSE_CLASSES = `prose prose-invert prose-sm max-w-none
-  prose-headings:text-zinc-100 prose-headings:font-semibold
-  prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:my-1
-  prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-  prose-strong:text-zinc-200
-  prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-  prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg prose-pre:my-1
-  prose-li:text-zinc-300 prose-li:my-0
+  prose-headings:text-foreground prose-headings:font-semibold
+  prose-p:text-foreground prose-p:leading-relaxed prose-p:my-1
+  prose-a:text-info prose-a:no-underline hover:prose-a:underline
+  prose-strong:text-foreground
+  prose-code:text-primary prose-code:bg-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+  prose-pre:bg-surface-strong/50 prose-pre:border prose-pre:border-hairline prose-pre:rounded-lg prose-pre:my-1
+  prose-li:text-foreground prose-li:my-0
   prose-ul:my-1 prose-ol:my-1
-  prose-th:text-zinc-300 prose-th:border-white/10
-  prose-td:text-zinc-400 prose-td:border-white/10
-  prose-hr:border-white/10
-  prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400`;
+  prose-th:text-foreground prose-th:border-hairline-strong
+  prose-td:text-muted-foreground prose-td:border-hairline-strong
+  prose-hr:border-hairline-strong
+  prose-blockquote:border-info/30 prose-blockquote:text-muted-foreground`;
 
 // Tool name color mapping (cyan/teal palette matching Claude Code)
 const TOOL_COLORS: Record<string, string> = {
-  Bash: "text-amber-400",
-  Read: "text-cyan-400",
-  Edit: "text-fuchsia-400",
-  Write: "text-fuchsia-400",
-  Grep: "text-teal-400",
-  Glob: "text-teal-400",
-  Agent: "text-violet-400",
+  Bash: "text-warning",
+  Read: "text-primary",
+  Edit: "text-accent",
+  Write: "text-accent",
+  Grep: "text-success",
+  Glob: "text-success",
+  Agent: "text-accent",
 };
 
 // Get color class for a tool name
 function toolColor(name: string): string {
-  return TOOL_COLORS[name] ?? "text-cyan-400";
+  return TOOL_COLORS[name] ?? "text-primary";
 }
 
 // Truncate a string at a max length
@@ -57,8 +57,8 @@ const UserRecord = memo(function UserRecord({
   const firstLine = record.text.split("\n")[0] ?? record.text;
   return (
     <div className="py-1.5">
-      <span className="text-white font-bold">{"❯ "}</span>
-      <span className="text-white font-semibold">{truncate(firstLine, 200)}</span>
+      <span className="text-foreground font-bold">{"❯ "}</span>
+      <span className="text-foreground font-semibold">{truncate(firstLine, 200)}</span>
     </div>
   );
 });
@@ -88,12 +88,14 @@ const ThinkingRecord = memo(function ThinkingRecord({
   const [open, setOpen] = useState(false);
   return (
     <details className="py-1 group" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className="cursor-pointer text-zinc-500 text-xs select-none hover:text-zinc-400 transition-colors">
+      <summary className="cursor-pointer text-muted-foreground text-xs select-none hover:text-muted-foreground transition-colors">
         <span className="mr-1">{"💭"}</span>
         Thinking ({lineCount} {lineCount === 1 ? "line" : "lines"})
       </summary>
       {open && (
-        <div className={`mt-1 pl-4 border-l border-zinc-700/50 text-zinc-500 ${PROSE_CLASSES}`}>
+        <div
+          className={`mt-1 pl-4 border-l border-hairline-strong/50 text-muted-foreground ${PROSE_CLASSES}`}
+        >
           <Markdown remarkPlugins={[remarkGfm]}>{record.text}</Markdown>
         </div>
       )}
@@ -115,18 +117,18 @@ const ToolUseRecord = memo(function ToolUseRecord({
         {"● "}
         <span className="font-medium">{record.tool_name}</span>
       </span>
-      {summary && <span className="text-zinc-500 text-xs ml-1">({summary})</span>}
+      {summary && <span className="text-muted-foreground text-xs ml-1">({summary})</span>}
       {record.input_full && (
         <button
           type="button"
           onClick={() => setShowFull(!showFull)}
-          className="ml-2 text-zinc-600 text-xs hover:text-zinc-400 transition-colors"
+          className="ml-2 text-subtle-foreground text-xs hover:text-muted-foreground transition-colors"
         >
           {showFull ? "▾ hide" : "▸ details"}
         </button>
       )}
       {showFull && record.input_full && (
-        <pre className="mt-1 ml-4 text-xs text-zinc-500 bg-zinc-900/50 border border-white/5 rounded p-2 overflow-x-auto max-h-40">
+        <pre className="mt-1 ml-4 text-xs text-muted-foreground bg-surface-strong/50 border border-hairline rounded p-2 overflow-x-auto max-h-40">
           {JSON.stringify(record.input_full, null, 2)}
         </pre>
       )}
@@ -156,14 +158,18 @@ const ToolResultRecord = memo(function ToolResultRecord({
   return (
     <div
       className={`py-1 pl-3 ml-2 my-0.5 rounded border-l-2 font-mono text-xs leading-relaxed ${
-        isError ? "border-red-500/40 bg-red-950/20" : "border-zinc-700/50 bg-zinc-900/30"
+        isError
+          ? "border-destructive/40 bg-destructive/20"
+          : "border-hairline-strong/50 bg-surface-strong/30"
       }`}
     >
       <div className="flex items-start gap-1">
-        <span className={`shrink-0 ${isError ? "text-red-500" : "text-zinc-600"}`}>⎿</span>
+        <span className={`shrink-0 ${isError ? "text-destructive" : "text-subtle-foreground"}`}>
+          ⎿
+        </span>
         <pre
           className={`whitespace-pre-wrap break-words ${
-            isError ? "text-red-400/80" : "text-zinc-500"
+            isError ? "text-destructive/80" : "text-muted-foreground"
           }`}
         >
           {truncate(visibleText, 600)}
@@ -173,7 +179,7 @@ const ToolResultRecord = memo(function ToolResultRecord({
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="mt-1 text-zinc-600 text-[10px] hover:text-zinc-400 transition-colors"
+          className="mt-1 text-subtle-foreground text-[10px] hover:text-muted-foreground transition-colors"
         >
           {expanded ? "▾ collapse" : `▸ ${lines.length} lines — show all`}
         </button>
@@ -184,7 +190,7 @@ const ToolResultRecord = memo(function ToolResultRecord({
 
 // Turn separator — subtle divider rendered before each new user turn
 const TurnSeparator = memo(function TurnSeparator() {
-  return <div className="my-2 border-t border-white/5" />;
+  return <div className="my-2 border-t border-hairline" />;
 });
 
 // Render a single transcript record by type, with optional turn separator
@@ -240,7 +246,7 @@ export function TranscriptView({ records }: TranscriptViewProps) {
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="self-start mx-2 my-1 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors rounded border border-white/5 hover:border-white/10"
+          className="self-start mx-2 my-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded border border-hairline hover:border-hairline-strong"
         >
           ▸ Show {hiddenCount} earlier record{hiddenCount === 1 ? "" : "s"}
         </button>

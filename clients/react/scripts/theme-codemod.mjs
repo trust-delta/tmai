@@ -43,7 +43,7 @@ const PREFIX = "(?:text|bg|border|ring|from|via|to|fill|stroke|accent|placeholde
 // shade keeps the mapping consistent and avoids per-area residual
 // whack-a-mole. (The zinc *text* scale is the deliberate exception — it
 // is tiered into foreground/muted/subtle and keeps its own buckets.)
-const SH = "(?:50|100|200|300|400|500|600|700|800|900)";
+const SH = "(?:50|100|200|300|400|500|600|700|800|900|950)";
 
 const RULES = [
   // ── Neutral text scale → foreground / muted / subtle tiers ──
@@ -70,16 +70,24 @@ const RULES = [
   // focus ring is upgraded to ring-primary by hand, matching this
   // codebase's focus convention.)
   [/(?<![\w-])ring-white(?:\/(?:\[[0-9.]+\]|[0-9]{1,3}))?(?![\w-])/g, "ring-hairline-strong"],
+  // Solid white text = emphasised foreground (reads near-white on dark
+  // themes, dark on light — correct contrast either way). Faded white
+  // text (`text-white/70`) = secondary text.
+  [/(?<![\w-])text-white\/(?:\[[0-9.]+\]|[0-9]{1,3})(?![\w-])/g, "text-muted-foreground"],
+  [/(?<![\w-])text-white(?![\w/[-])/g, "text-foreground"],
 
   // ── Neutral fills/borders that aren't white overlays ──
   [/(?<![\w-])bg-zinc-(?:400|500|600)(?![\w-])/g, "bg-muted-foreground"],
   [/(?<![\w-])bg-zinc-(?:700|800|900|950)(?![\w-])/g, "bg-surface-strong"],
-  [/(?<![\w-])border-zinc-(?:600|700|800)(?![\w-])/g, "border-hairline-strong"],
+  [new RegExp(`(?<![\\w-])border-zinc-${SH}(?![\\w-])`, "g"), "border-hairline-strong"],
 
   // ── Accent (cyan is the product accent) → primary ──
   [new RegExp(`(?<![\\w-])(${PREFIX})-cyan-${SH}(?![\\w-])`, "g"), "$1-primary"],
   // ── Status families ──
-  [new RegExp(`(?<![\\w-])(${PREFIX})-red-${SH}(?![\\w-])`, "g"), "$1-destructive"],
+  // red/rose/pink are the destructive/alert family (e.g. AgentCard's
+  // `halted` attention pill used rose, distinct from the cyan/sky/zinc
+  // pills — `destructive` is the right semantic for "blocked / urgent").
+  [new RegExp(`(?<![\\w-])(${PREFIX})-(?:red|rose|pink)-${SH}(?![\\w-])`, "g"), "$1-destructive"],
   [
     new RegExp(`(?<![\\w-])(${PREFIX})-(?:amber|yellow|orange)-${SH}(?![\\w-])`, "g"),
     "$1-warning",
