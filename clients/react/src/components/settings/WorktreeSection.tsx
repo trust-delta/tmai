@@ -68,28 +68,30 @@ export function WorktreeSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Worktree</h3>
+        <h3 className="text-sm font-medium text-foreground">Worktree</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">Git worktree settings for spawned agents.</p>
+      <p className="mt-1 text-xs text-subtle-foreground">
+        Git worktree settings for spawned agents.
+      </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-3">
         {/* Setup commands list */}
         <div>
-          <span className="text-xs text-zinc-500">Setup commands</span>
-          <p className="text-[10px] text-zinc-600 mt-0.5">
+          <span className="text-xs text-muted-foreground">Setup commands</span>
+          <p className="text-[10px] text-subtle-foreground mt-0.5">
             Commands to run after creating a new worktree (e.g., npm install).
           </p>
           <div className="mt-2 space-y-1">
             {worktree.setup_commands.map((cmd) => (
               <div key={cmd} className="flex items-center gap-1.5">
-                <code className="flex-1 rounded bg-white/5 px-2 py-1 text-xs text-zinc-300">
+                <code className="flex-1 rounded bg-surface px-2 py-1 text-xs text-foreground">
                   {cmd}
                 </code>
                 <button
                   type="button"
                   onClick={() => removeCommand(cmd)}
-                  className="rounded px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
+                  className="rounded px-1.5 py-0.5 text-[10px] text-subtle-foreground hover:bg-destructive/10 hover:text-destructive"
                   aria-label={`Remove setup command ${cmd}`}
                 >
                   Remove
@@ -109,13 +111,13 @@ export function WorktreeSection() {
                 }
               }}
               placeholder="e.g., npm install"
-              className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30"
+              className="flex-1 rounded-md border border-hairline-strong bg-surface px-2.5 py-1 text-xs text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30"
               aria-label="Add setup command"
             />
             <button
               type="button"
               onClick={addCommand}
-              className="rounded-md bg-cyan-500/20 px-3 py-1 text-xs text-cyan-400 transition-colors hover:bg-cyan-500/30"
+              className="rounded-md bg-primary/20 px-3 py-1 text-xs text-primary transition-colors hover:bg-primary/30"
             >
               Add
             </button>
@@ -126,7 +128,7 @@ export function WorktreeSection() {
             is one row, not a fork-and-rename of the full block. */}
         {NUMERIC_FIELDS.map(({ key, label, unit, min, max }) => (
           <div key={key} className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-500">{label}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
             <input
               type="number"
               min={min}
@@ -143,10 +145,10 @@ export function WorktreeSection() {
                 const val = Math.max(min, worktree[key]);
                 void save.track(() => api.updateWorktreeSettings({ [key]: val }));
               }}
-              className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              className="w-20 rounded-md border border-hairline-strong bg-surface px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary/30"
               aria-label={label}
             />
-            <span className="text-xs text-zinc-500">{unit}</span>
+            <span className="text-xs text-muted-foreground">{unit}</span>
           </div>
         ))}
       </div>

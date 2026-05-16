@@ -297,9 +297,19 @@ const TOKYONIGHT: Theme = {
 // `zinc` = a faithful, non-destructive snapshot of the look that shipped
 // before the theme system: the exact xterm hardcode (bg #09090b, fg
 // #fafafa, cursor #a1a1aa, selection #3f3f46, NO ANSI overrides) and the
-// exact OKLch `@theme` tokens. Kept verbatim — converting the OKLch
-// values to hex would be lossy, and copying them as-is guarantees zero
-// drift from "today".
+// pre-theme chrome (shell/glow verbatim, above).
+//
+// The semantic `tokens` below are NOT the old shadcn `@theme` OKLch
+// values — those were never actually consumed by the component tree
+// (the whole reason the theme didn't visibly apply). What the components
+// *rendered* was hardcoded Tailwind palette classes (zinc-300, white/10,
+// cyan-400, …). As each area migrates onto the semantic tokens (via
+// scripts/theme-codemod.mjs), `zinc`'s token values are therefore tuned
+// to the *actual* palette colours those classes produced, so the swap is
+// visually near-identical under `zinc`. Where the canonical mapping
+// collapses a shade range into one token (e.g. zinc-200 & zinc-300 →
+// foreground) the value is set to the dominant shade; the off-shade
+// deltas are sub-perceptual and intentional consolidation.
 const ZINC: Theme = {
   name: "zinc",
   label: "Zinc (legacy)",
@@ -337,25 +347,28 @@ const ZINC: Theme = {
       brandFrom: "#22d3ee",
       brandTo: "#60a5fa",
     },
-    // New tokens mirror the Tailwind palette values the components
-    // currently hardcode (amber/emerald/blue, white/N overlays) so the
-    // future per-area migration is a faithful swap, not a re-colour.
+    // Values mirror the Tailwind palette colours the components actually
+    // hardcoded (zinc-200/400/600, cyan-400, red-400, amber/emerald/blue
+    // -500, white/N overlays) so the codemod swap is a faithful re-skin,
+    // not a re-colour, when `zinc` is selected. Tokens the canonical
+    // mapping never emits (card/popover/secondary/accent/border/input/
+    // ring/sidebar-*) keep their original neutral OKLch.
     tokens: {
       background: "oklch(0.145 0 0)",
-      foreground: "oklch(0.985 0 0)",
+      foreground: "#e4e4e7",
       card: "oklch(0.145 0 0)",
       "card-foreground": "oklch(0.985 0 0)",
       popover: "oklch(0.145 0 0)",
       "popover-foreground": "oklch(0.985 0 0)",
-      primary: "oklch(0.985 0 0)",
+      primary: "#22d3ee",
       "primary-foreground": "oklch(0.205 0 0)",
       secondary: "oklch(0.269 0 0)",
       "secondary-foreground": "oklch(0.985 0 0)",
       muted: "oklch(0.269 0 0)",
-      "muted-foreground": "oklch(0.708 0 0)",
+      "muted-foreground": "#a1a1aa",
       accent: "oklch(0.269 0 0)",
       "accent-foreground": "oklch(0.985 0 0)",
-      destructive: "oklch(0.396 0.141 25.723)",
+      destructive: "#f87171",
       "destructive-foreground": "oklch(0.637 0.237 25.331)",
       warning: "#f59e0b",
       "warning-foreground": "#18181b",
@@ -366,9 +379,9 @@ const ZINC: Theme = {
       surface: "rgba(255, 255, 255, 0.05)",
       "surface-strong": "rgba(255, 255, 255, 0.1)",
       elevated: "rgba(255, 255, 255, 0.08)",
-      hairline: "rgba(255, 255, 255, 0.06)",
+      hairline: "rgba(255, 255, 255, 0.05)",
       "hairline-strong": "rgba(255, 255, 255, 0.1)",
-      "subtle-foreground": "oklch(0.556 0 0)",
+      "subtle-foreground": "#52525b",
       border: "oklch(0.269 0 0)",
       input: "oklch(0.269 0 0)",
       ring: "oklch(0.556 0 0)",

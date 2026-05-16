@@ -63,15 +63,15 @@ export function SpawnRuntimeSelector({
 
   return (
     <div className="space-y-1.5">
-      <span className="text-xs text-zinc-400">Spawn runtime</span>
+      <span className="text-xs text-muted-foreground">Spawn runtime</span>
       {RUNTIME_OPTIONS.map((opt) => {
         const isSelected = settings.runtime === opt.value;
         return (
           <label
             key={opt.value}
             className={`flex items-start gap-3 rounded-md border p-2 transition-colors ${
-              opt.disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-white/[0.03]"
-            } ${isSelected ? "border-cyan-500/30 bg-cyan-500/5" : "border-white/5 bg-transparent"}`}
+              opt.disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-surface"
+            } ${isSelected ? "border-primary/30 bg-primary/5" : "border-hairline bg-transparent"}`}
           >
             <input
               type="radio"
@@ -80,25 +80,25 @@ export function SpawnRuntimeSelector({
               checked={isSelected}
               disabled={opt.disabled}
               onChange={() => handleChange(opt.value)}
-              className="mt-0.5 accent-cyan-500"
+              className="mt-0.5 accent-primary"
               aria-label={opt.label}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span
                   className={`text-xs ${
-                    opt.disabled && !isSelected ? "text-zinc-600" : "text-zinc-300"
+                    opt.disabled && !isSelected ? "text-subtle-foreground" : "text-foreground"
                   }`}
                 >
                   {opt.label}
                 </span>
                 {opt.disabled && (
-                  <span className="text-[10px] text-zinc-600 border border-zinc-700 rounded px-1">
+                  <span className="text-[10px] text-subtle-foreground border border-hairline-strong rounded px-1">
                     coming soon
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-zinc-600 mt-0.5">{opt.description}</p>
+              <p className="text-[10px] text-subtle-foreground mt-0.5">{opt.description}</p>
             </div>
           </label>
         );

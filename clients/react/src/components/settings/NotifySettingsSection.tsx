@@ -192,29 +192,29 @@ export function NotifySettingsSection({
 
   return (
     <>
-      <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-1">
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mt-1">
         Notifications
       </p>
-      <p className="text-[10px] text-zinc-500 -mt-1 mb-1">
+      <p className="text-[10px] text-muted-foreground -mt-1 mb-1">
         Decide how tmai handles background events while the orchestrator is working.
       </p>
-      <dl className="text-[10px] text-zinc-500 mb-2 space-y-1">
+      <dl className="text-[10px] text-muted-foreground mb-2 space-y-1">
         <div className="flex gap-2">
-          <dt className="w-[68px] shrink-0 text-zinc-400">Off</dt>
-          <dd className="flex-1 text-zinc-500">
+          <dt className="w-[68px] shrink-0 text-muted-foreground">Off</dt>
+          <dd className="flex-1 text-muted-foreground">
             Silent; only the task log records it. Good for events you don&apos;t want to see at all.
           </dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-[68px] shrink-0 text-zinc-400">Notify</dt>
-          <dd className="flex-1 text-zinc-500">
+          <dt className="w-[68px] shrink-0 text-muted-foreground">Notify</dt>
+          <dd className="flex-1 text-muted-foreground">
             The orchestrator gets a send_prompt. Good when you want to stay in the loop but decide
             yourself. Trade-off: every event interrupts the orchestrator.
           </dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-[68px] shrink-0 text-zinc-400">Auto Action</dt>
-          <dd className="flex-1 text-zinc-500">
+          <dt className="w-[68px] shrink-0 text-muted-foreground">Auto Action</dt>
+          <dd className="flex-1 text-muted-foreground">
             tmai handles it directly without asking — e.g. CI failed → instruct the implementer;
             Review feedback → instruct the implementer; CI passed (no review) → dispatch a reviewer.
             Trade-off: orchestrator only surfaces on guardrail trips (bounded retries, PR-age limit,
@@ -242,9 +242,9 @@ export function NotifySettingsSection({
               <div className="flex items-center justify-between gap-2 py-1">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
-                    <span className="text-xs text-zinc-300">{evt.label}</span>
+                    <span className="text-xs text-foreground">{evt.label}</span>
                     <span
-                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/10 text-[9px] text-zinc-500 cursor-help select-none"
+                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-hairline-strong text-[9px] text-muted-foreground cursor-help select-none"
                       title={buildNotifyEventHelp({
                         label: evt.label,
                         defaultMode: evt.defaultMode,
@@ -257,14 +257,14 @@ export function NotifySettingsSection({
                       ?
                     </span>
                   </div>
-                  <p className="text-[10px] text-zinc-600 truncate">{evt.description}</p>
+                  <p className="text-[10px] text-subtle-foreground truncate">{evt.description}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {current !== "off" && (current === "notify" || evt.autoActionTemplateKey) && (
                     <button
                       type="button"
                       onClick={() => setExpandedTemplate(isExpanded ? null : evt.key)}
-                      className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors px-1"
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1"
                       title="Edit prompt template"
                     >
                       {isExpanded ? "hide" : "template"}
@@ -304,7 +304,7 @@ export function NotifySettingsSection({
                         orchestrator.notify.default_templates[evt.templateKey] ||
                         "Empty = use built-in default"
                       }
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 pr-7 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
+                      className="w-full rounded-md border border-hairline-strong bg-surface px-2 py-1 pr-7 text-[11px] text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30 resize-y font-mono"
                     />
                     {templateValue && (
                       <button
@@ -323,7 +323,7 @@ export function NotifySettingsSection({
                           setOrchestrator(updated);
                           saveTemplate(evt.templateKey, "");
                         }}
-                        className="absolute top-1.5 right-1.5 text-zinc-600 hover:text-zinc-300 transition-colors"
+                        className="absolute top-1.5 right-1.5 text-subtle-foreground hover:text-foreground transition-colors"
                         title="Reset to default template"
                       >
                         <svg
@@ -343,7 +343,7 @@ export function NotifySettingsSection({
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">
+                  <p className="text-[10px] text-subtle-foreground mt-0.5">
                     Variables: {evt.variables.map((v) => `{{${v}}}`).join(", ")}
                   </p>
                 </div>
@@ -382,8 +382,10 @@ export function NotifySettingsSection({
       </div>
 
       {/* #440 Origin-aware filtering for ActionPerformed events */}
-      <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mt-4">Sources</p>
-      <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mt-4">
+        Sources
+      </p>
+      <p className="text-[10px] text-subtle-foreground -mt-1 mb-1">
         Choose which initiators of side-effect actions trigger a notification. Self-suppress hides
         echoes for actions you (an orchestrator) just performed.
       </p>
@@ -432,20 +434,20 @@ function OriginToggleRow({
   return (
     <div className="flex items-center justify-between gap-2 py-1">
       <div className="flex-1 min-w-0">
-        <span className="text-xs text-zinc-300">{label}</span>
-        <p className="text-[10px] text-zinc-600 truncate">{description}</p>
+        <span className="text-xs text-foreground">{label}</span>
+        <p className="text-[10px] text-subtle-foreground truncate">{description}</p>
       </div>
       <button
         type="button"
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-          checked ? "bg-cyan-500/40" : "bg-white/10"
+          checked ? "bg-primary/40" : "bg-surface-strong"
         }`}
       >
         <span
           className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
-            checked ? "translate-x-[18px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+            checked ? "translate-x-[18px] bg-primary" : "translate-x-0.5 bg-muted-foreground"
           }`}
         />
       </button>
@@ -475,9 +477,9 @@ function AutoActionTemplateEditor({
         onBlur={() => onSave(value)}
         rows={2}
         placeholder="Empty = use built-in default"
-        className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 pr-7 text-[11px] text-zinc-300 placeholder-zinc-700 outline-none focus:border-cyan-500/30 resize-y font-mono"
+        className="w-full rounded-md border border-hairline-strong bg-surface px-2 py-1 pr-7 text-[11px] text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30 resize-y font-mono"
       />
-      <p className="text-[10px] text-zinc-600 mt-0.5">
+      <p className="text-[10px] text-subtle-foreground mt-0.5">
         Auto Action prompt — sent directly to the target worker. Variables:{" "}
         {variables.map((v) => `{{${v}}}`).join(", ")}
       </p>
@@ -524,7 +526,7 @@ function HandlingRadioGroup({
   return (
     <div
       title={`Handling for ${name}`}
-      className="inline-flex items-center rounded-md overflow-hidden border border-white/10"
+      className="inline-flex items-center rounded-md overflow-hidden border border-hairline-strong"
     >
       {options.map((opt) => {
         const selected = value === opt.v;
@@ -537,8 +539,8 @@ function HandlingRadioGroup({
             onClick={() => onChange(opt.v)}
             className={`text-[10px] px-1.5 py-0.5 transition-colors ${
               selected
-                ? "bg-cyan-500/30 text-cyan-200"
-                : "bg-transparent text-zinc-500 hover:text-zinc-300"
+                ? "bg-primary/30 text-primary"
+                : "bg-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {opt.label}

@@ -150,25 +150,25 @@ export function DispatchBundleEditor({
   };
 
   const inputCls =
-    "w-full rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-cyan-500/30 disabled:opacity-40 disabled:cursor-not-allowed";
+    "w-full rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed";
 
   return (
-    <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-3">
+    <div className="rounded-md border border-hairline-strong bg-surface p-3 space-y-3">
       {/* Header row */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <span className="text-xs font-medium text-zinc-300">{title}</span>
-          <span className="ml-1 text-xs text-zinc-600">({subtitle})</span>
+          <span className="text-xs font-medium text-foreground">{title}</span>
+          <span className="ml-1 text-xs text-subtle-foreground">({subtitle})</span>
         </div>
         <label className="flex items-center gap-1.5 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={useLegacy}
             onChange={(e) => handleLegacyToggle(e.target.checked)}
-            className="accent-cyan-500"
+            className="accent-primary"
             aria-label={`Use vendor CLI default for ${title}`}
           />
-          <span className="text-xs text-zinc-500">Use vendor CLI default</span>
+          <span className="text-xs text-muted-foreground">Use vendor CLI default</span>
         </label>
       </div>
 
@@ -179,7 +179,7 @@ export function DispatchBundleEditor({
       >
         {/* Vendor */}
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 text-xs text-zinc-500">Vendor</span>
+          <span className="w-24 shrink-0 text-xs text-muted-foreground">Vendor</span>
           <select
             value={active.vendor}
             onChange={(e) => handleVendorChange(e.target.value as Vendor)}
@@ -197,7 +197,7 @@ export function DispatchBundleEditor({
 
         {/* Model */}
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 text-xs text-zinc-500">Model</span>
+          <span className="w-24 shrink-0 text-xs text-muted-foreground">Model</span>
           <input
             type="text"
             value={modelDraft}
@@ -218,7 +218,7 @@ export function DispatchBundleEditor({
 
         {/* Permission mode */}
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 text-xs text-zinc-500">Permission</span>
+          <span className="w-24 shrink-0 text-xs text-muted-foreground">Permission</span>
           <select
             value={active.permission_mode ?? ""}
             onChange={(e) => handlePermissionChange(e.target.value)}
@@ -241,7 +241,7 @@ export function DispatchBundleEditor({
 
         {/* Effort (claude only) */}
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 text-xs text-zinc-500">Effort</span>
+          <span className="w-24 shrink-0 text-xs text-muted-foreground">Effort</span>
           {active.vendor === "claude" ? (
             <select
               value={active.effort ?? ""}
@@ -258,7 +258,7 @@ export function DispatchBundleEditor({
               ))}
             </select>
           ) : (
-            <span className="text-xs text-zinc-600">(n/a — {active.vendor})</span>
+            <span className="text-xs text-subtle-foreground">(n/a — {active.vendor})</span>
           )}
         </div>
       </div>

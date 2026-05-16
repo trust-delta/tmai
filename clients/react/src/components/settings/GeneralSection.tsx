@@ -5,7 +5,7 @@ import { api, type GeneralSettings } from "@/lib/api";
 import { SaveStatus } from "./SaveStatus";
 
 const INPUT_CLS =
-  "flex-1 min-w-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/30";
+  "flex-1 min-w-0 rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground placeholder-subtle-foreground outline-none focus:border-primary/30";
 
 /**
  * General preferences shared across the WebUI. Today this is a single
@@ -54,14 +54,16 @@ export function GeneralSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">General</h3>
+        <h3 className="text-sm font-medium text-foreground">General</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">Workspace-wide preferences for the WebUI.</p>
+      <p className="mt-1 text-xs text-subtle-foreground">
+        Workspace-wide preferences for the WebUI.
+      </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-2">
-        <span className="block text-xs text-zinc-400">Default project root</span>
-        <p className="text-[11px] text-zinc-600">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-2">
+        <span className="block text-xs text-muted-foreground">Default project root</span>
+        <p className="text-[11px] text-subtle-foreground">
           Starting directory used by the project picker. Leave empty to default to your home
           directory.
         </p>
@@ -87,7 +89,7 @@ export function GeneralSection() {
           <button
             type="button"
             onClick={() => setBrowsing(true)}
-            className="shrink-0 rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+            className="shrink-0 rounded-md border border-hairline-strong px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
           >
             Browse
           </button>

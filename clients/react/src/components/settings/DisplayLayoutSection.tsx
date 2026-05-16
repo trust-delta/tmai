@@ -43,29 +43,29 @@ export function DisplayLayoutSection() {
 
   return (
     <section>
-      <h3 className="text-sm font-medium text-zinc-300">Display &amp; Layout</h3>
-      <p className="mt-1 text-xs text-zinc-600">
+      <h3 className="text-sm font-medium text-foreground">Display &amp; Layout</h3>
+      <p className="mt-1 text-xs text-subtle-foreground">
         Layout choices for the agent main panel. Stored per-browser; press{" "}
-        <kbd className="rounded bg-white/5 px-1 text-[10px]">\</kbd> to cycle modes.
+        <kbd className="rounded bg-surface px-1 text-[10px]">\</kbd> to cycle modes.
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Display mode</span>
-            <p className="mt-0.5 text-[11px] text-zinc-600">
-              Currently: <span className="text-zinc-400">{MODE_LABEL[displayMode]}</span>
+            <span className="text-sm text-foreground">Display mode</span>
+            <p className="mt-0.5 text-[11px] text-subtle-foreground">
+              Currently: <span className="text-muted-foreground">{MODE_LABEL[displayMode]}</span>
             </p>
           </div>
           <DisplayModeSelector mode={displayMode} onChange={setDisplayMode} />
         </div>
       </div>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Terminal text size</span>
-            <p className="mt-0.5 text-[11px] text-zinc-600">
+            <span className="text-sm text-foreground">Terminal text size</span>
+            <p className="mt-0.5 text-[11px] text-subtle-foreground">
               Font size of the agent terminal / preview, in pixels. Applies instantly.
             </p>
           </div>
@@ -75,12 +75,12 @@ export function DisplayLayoutSection() {
               onClick={() => stepFontSize(-1)}
               disabled={fontSize <= TERMINAL_FONT_SIZE_MIN}
               aria-label="Decrease terminal text size"
-              className="touch-target-sm flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="touch-target-sm flex h-7 w-7 items-center justify-center rounded-md border border-hairline-strong text-muted-foreground transition-colors hover:border-hairline-strong hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
               −
             </button>
             <span
-              className="w-12 text-center text-sm tabular-nums text-zinc-300"
+              className="w-12 text-center text-sm tabular-nums text-foreground"
               aria-live="polite"
             >
               {fontSize} px
@@ -90,7 +90,7 @@ export function DisplayLayoutSection() {
               onClick={() => stepFontSize(1)}
               disabled={fontSize >= TERMINAL_FONT_SIZE_MAX}
               aria-label="Increase terminal text size"
-              className="touch-target-sm flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="touch-target-sm flex h-7 w-7 items-center justify-center rounded-md border border-hairline-strong text-muted-foreground transition-colors hover:border-hairline-strong hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
               +
             </button>
@@ -102,7 +102,7 @@ export function DisplayLayoutSection() {
         <button
           type="button"
           onClick={handleReset}
-          className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-red-500/40 hover:text-red-400"
+          className="rounded-md border border-hairline-strong px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
         >
           Reset all WebUI prefs
         </button>

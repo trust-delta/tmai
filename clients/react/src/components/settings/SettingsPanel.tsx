@@ -30,11 +30,11 @@ interface SettingsPanelProps {
 // store a setting writes to.
 function GroupHeader({ label, description }: { label: string; description: string }) {
   return (
-    <div className="border-b border-white/10 pb-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80">
+    <div className="border-b border-hairline-strong pb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
         {label}
       </div>
-      <p className="mt-1 text-xs text-zinc-600">{description}</p>
+      <p className="mt-1 text-xs text-subtle-foreground">{description}</p>
     </div>
   );
 }
@@ -66,12 +66,12 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-        <h2 className="text-lg font-semibold text-zinc-200">Settings</h2>
+      <div className="flex items-center justify-between border-b border-hairline px-6 py-4">
+        <h2 className="text-lg font-semibold text-foreground">Settings</h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md px-3 py-1 text-sm text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300"
+          className="rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           Close
         </button>
@@ -93,21 +93,21 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
             the override-deep-link land with the section already
             expanded so the operator doesn't have to click twice. */}
         <details
-          className="rounded-md border border-white/5 bg-white/[0.02]"
+          className="rounded-md border border-hairline bg-surface"
           open={defaultOpenAdvanced}
         >
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm text-zinc-300 hover:bg-white/[0.04]">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm text-foreground hover:bg-surface">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-warning/80">
               Advanced
             </span>{" "}
             — orchestrator-era controls
-            <p className="mt-1 text-xs font-normal normal-case tracking-normal text-zinc-500">
+            <p className="mt-1 text-xs font-normal normal-case tracking-normal text-muted-foreground">
               These bypass the Producer (manual spawn defaults, orchestration rules, dispatch
               bundles, workflow engine, worktree ops). The post-inversion default is to let the
               Producer route work — open this only when you need to override directly.
             </p>
           </summary>
-          <div className="space-y-6 border-t border-white/5 px-4 py-4">
+          <div className="space-y-6 border-t border-hairline px-4 py-4">
             <SpawnSection />
             <OrchestrationSection projects={projects} />
             <OrchestrationDispatchSection />

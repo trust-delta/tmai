@@ -14,8 +14,8 @@ export function ThemeSection() {
 
   return (
     <section>
-      <h3 className="text-sm font-medium text-zinc-300">Theme</h3>
-      <p className="mt-1 text-xs text-zinc-600">
+      <h3 className="text-sm font-medium text-foreground">Theme</h3>
+      <p className="mt-1 text-xs text-subtle-foreground">
         Colours for the whole WebUI, including the terminal palette. Stored per-browser; applies
         instantly.
       </p>
@@ -32,8 +32,8 @@ export function ThemeSection() {
               aria-pressed={active}
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
                 active
-                  ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
-                  : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                  ? "border-primary/50 bg-primary/10 text-primary"
+                  : "border-hairline-strong bg-surface text-muted-foreground hover:border-hairline-strong hover:text-foreground"
               }`}
             >
               {/* Swatch: the theme's terminal bg framed by its accent so

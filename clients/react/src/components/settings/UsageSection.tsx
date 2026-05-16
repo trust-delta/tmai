@@ -25,18 +25,18 @@ export function UsageSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-300">Usage Monitoring</h3>
+        <h3 className="text-sm font-medium text-foreground">Usage Monitoring</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-subtle-foreground">
         Periodically fetch Claude Code subscription usage. Spawns a temporary Claude Code instance
         (Haiku) for each refresh.
       </p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-3">
+      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-3">
         <label className="flex items-center justify-between gap-3">
           <div className="flex-1">
-            <span className="text-sm text-zinc-300">Auto-refresh</span>
+            <span className="text-sm text-foreground">Auto-refresh</span>
           </div>
           <button
             type="button"
@@ -48,13 +48,15 @@ export function UsageSection() {
               });
             }}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              usage.enabled ? "bg-cyan-500/40" : "bg-white/10"
+              usage.enabled ? "bg-primary/40" : "bg-surface-strong"
             }`}
             aria-label="Usage auto-refresh"
           >
             <span
               className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
-                usage.enabled ? "translate-x-[18px] bg-cyan-400" : "translate-x-0.5 bg-zinc-500"
+                usage.enabled
+                  ? "translate-x-[18px] bg-primary"
+                  : "translate-x-0.5 bg-muted-foreground"
               }`}
             />
           </button>
@@ -62,7 +64,7 @@ export function UsageSection() {
 
         {usage.enabled && (
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-500">Interval</span>
+            <span className="shrink-0 text-xs text-muted-foreground">Interval</span>
             <input
               type="number"
               min={MIN_INTERVAL_MIN}
@@ -82,10 +84,10 @@ export function UsageSection() {
                 );
                 void save.track(() => api.updateUsageSettings({ auto_refresh_min: val }));
               }}
-              className="w-20 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-cyan-500/30"
+              className="w-20 rounded-md border border-hairline-strong bg-surface px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary/30"
               aria-label="Usage auto-refresh interval"
             />
-            <span className="text-xs text-zinc-500">minutes</span>
+            <span className="text-xs text-muted-foreground">minutes</span>
           </div>
         )}
       </div>

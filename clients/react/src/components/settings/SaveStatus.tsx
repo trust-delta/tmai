@@ -25,15 +25,15 @@ export function SaveStatus({ status, error, variant = "inline", className = "" }
 
   if (status === "saving") {
     return (
-      <span className={`${root} text-zinc-500`} role="status" aria-live="polite">
-        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500" />
+      <span className={`${root} text-muted-foreground`} role="status" aria-live="polite">
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" />
         Saving…
       </span>
     );
   }
   if (status === "saved") {
     return (
-      <span className={`${root} text-emerald-500/80`} role="status" aria-live="polite">
+      <span className={`${root} text-success/80`} role="status" aria-live="polite">
         <span aria-hidden="true">✓</span>
         Saved
       </span>
@@ -41,7 +41,7 @@ export function SaveStatus({ status, error, variant = "inline", className = "" }
   }
   // error
   return (
-    <span className={`${root} text-red-400`} role="alert">
+    <span className={`${root} text-destructive`} role="alert">
       <span aria-hidden="true">⚠</span>
       <span className="break-words">{error ?? "Save failed"}</span>
     </span>
