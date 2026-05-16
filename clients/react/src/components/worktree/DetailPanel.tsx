@@ -12,17 +12,17 @@ import {
 } from "@/lib/api";
 
 const proseClassName = `prose prose-invert prose-sm max-w-none
-  prose-headings:text-zinc-100 prose-headings:font-semibold
-  prose-p:text-zinc-300 prose-p:leading-relaxed
-  prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-  prose-strong:text-zinc-200
-  prose-code:text-cyan-400 prose-code:bg-white/5 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-  prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-white/5 prose-pre:rounded-lg
-  prose-li:text-zinc-300
-  prose-th:text-zinc-300 prose-th:border-white/10
-  prose-td:text-zinc-400 prose-td:border-white/10
-  prose-hr:border-white/10
-  prose-blockquote:border-blue-500/30 prose-blockquote:text-zinc-400`;
+  prose-headings:text-foreground prose-headings:font-semibold
+  prose-p:text-foreground prose-p:leading-relaxed
+  prose-a:text-info prose-a:no-underline hover:prose-a:underline
+  prose-strong:text-foreground
+  prose-code:text-primary prose-code:bg-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+  prose-pre:bg-surface-strong/50 prose-pre:border prose-pre:border-hairline prose-pre:rounded-lg
+  prose-li:text-foreground
+  prose-th:text-foreground prose-th:border-hairline-strong
+  prose-td:text-muted-foreground prose-td:border-hairline-strong
+  prose-hr:border-hairline-strong
+  prose-blockquote:border-info/30 prose-blockquote:text-muted-foreground`;
 
 import { DiffViewer } from "./DiffViewer";
 import type { BranchNode } from "./graph/types";
@@ -126,9 +126,9 @@ function DiffView({
     return () => clearInterval(interval);
   }, [fetchDiff]);
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading diff...</div>;
-  if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (!diffData?.diff) return <div className="text-sm text-zinc-500">No changes</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading diff...</div>;
+  if (error) return <div className="text-sm text-destructive">{error}</div>;
+  if (!diffData?.diff) return <div className="text-sm text-muted-foreground">No changes</div>;
   return <DiffViewer diff={diffData.diff} />;
 }
 
@@ -160,29 +160,30 @@ function PrCommentsView({ projectPath, prNumber }: { projectPath: string; prNumb
     return () => clearInterval(interval);
   }, [fetchComments]);
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading comments...</div>;
-  if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (comments.length === 0) return <div className="text-sm text-zinc-500">No comments</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading comments...</div>;
+  if (error) return <div className="text-sm text-destructive">{error}</div>;
+  if (comments.length === 0)
+    return <div className="text-sm text-muted-foreground">No comments</div>;
 
   return (
     <div className="flex flex-col gap-4">
       {comments.map((comment) => (
-        <div key={comment.url} className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+        <div key={comment.url} className="rounded-lg border border-hairline bg-surface p-3">
           <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold text-zinc-200">{comment.author}</span>
-            <span className="text-zinc-600">{formatRelative(comment.created_at)}</span>
+            <span className="font-semibold text-foreground">{comment.author}</span>
+            <span className="text-subtle-foreground">{formatRelative(comment.created_at)}</span>
             {comment.comment_type !== "comment" && (
-              <span className="rounded bg-blue-500/15 px-1 py-0.5 text-[10px] text-blue-400">
+              <span className="rounded bg-info/15 px-1 py-0.5 text-[10px] text-info">
                 {comment.comment_type}
               </span>
             )}
           </div>
           {/* Review comment: show file path and diff hunk context */}
           {comment.path && (
-            <div className="mt-2 rounded bg-zinc-800/50 px-2 py-1.5">
-              <div className="text-[11px] font-mono text-zinc-400">{comment.path}</div>
+            <div className="mt-2 rounded bg-surface-strong/50 px-2 py-1.5">
+              <div className="text-[11px] font-mono text-muted-foreground">{comment.path}</div>
               {comment.diff_hunk && (
-                <pre className="mt-1 text-[10px] leading-relaxed text-zinc-600 overflow-x-auto">
+                <pre className="mt-1 text-[10px] leading-relaxed text-subtle-foreground overflow-x-auto">
                   {comment.diff_hunk}
                 </pre>
               )}
@@ -225,9 +226,10 @@ function PrFilesView({ projectPath, prNumber }: { projectPath: string; prNumber:
     return () => clearInterval(interval);
   }, [fetchFiles]);
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading files...</div>;
-  if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (files.length === 0) return <div className="text-sm text-zinc-500">No changed files</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading files...</div>;
+  if (error) return <div className="text-sm text-destructive">{error}</div>;
+  if (files.length === 0)
+    return <div className="text-sm text-muted-foreground">No changed files</div>;
 
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
   const totalAdd = sorted.reduce((sum, f) => sum + f.additions, 0);
@@ -235,20 +237,20 @@ function PrFilesView({ projectPath, prNumber }: { projectPath: string; prNumber:
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-xs text-zinc-400">
+      <div className="text-xs text-muted-foreground">
         {sorted.length} file{sorted.length !== 1 ? "s" : ""} changed:{" "}
-        <span className="text-emerald-400">+{totalAdd}</span>{" "}
-        <span className="text-red-400">-{totalDel}</span>
+        <span className="text-success">+{totalAdd}</span>{" "}
+        <span className="text-destructive">-{totalDel}</span>
       </div>
       <div className="flex flex-col gap-1">
         {sorted.map((file) => (
           <div
             key={file.path}
-            className="flex items-center gap-2 rounded bg-white/[0.03] px-3 py-1.5 text-xs"
+            className="flex items-center gap-2 rounded bg-surface px-3 py-1.5 text-xs"
           >
-            <span className="flex-1 break-all font-mono text-zinc-300">{file.path}</span>
-            <span className="shrink-0 text-emerald-400">+{file.additions}</span>
-            <span className="shrink-0 text-red-400">-{file.deletions}</span>
+            <span className="flex-1 break-all font-mono text-foreground">{file.path}</span>
+            <span className="shrink-0 text-success">+{file.additions}</span>
+            <span className="shrink-0 text-destructive">-{file.deletions}</span>
           </div>
         ))}
       </div>
@@ -284,42 +286,42 @@ function MergeStatusView({ projectPath, prNumber }: { projectPath: string; prNum
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading merge status...</div>;
-  if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (!status) return <div className="text-sm text-zinc-500">No data</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading merge status...</div>;
+  if (error) return <div className="text-sm text-destructive">{error}</div>;
+  if (!status) return <div className="text-sm text-muted-foreground">No data</div>;
 
   // Determine icon and color for each check item
   const mergeableIcon =
     status.mergeable === "MERGEABLE"
-      ? { icon: "\u2713", color: "text-green-400" }
+      ? { icon: "\u2713", color: "text-success" }
       : status.mergeable === "CONFLICTING"
-        ? { icon: "\u2717", color: "text-red-400" }
-        : { icon: "?", color: "text-yellow-400" };
+        ? { icon: "\u2717", color: "text-destructive" }
+        : { icon: "?", color: "text-warning" };
 
   const stateIcon =
     status.merge_state_status === "CLEAN"
-      ? { icon: "\u2713", color: "text-green-400" }
+      ? { icon: "\u2713", color: "text-success" }
       : status.merge_state_status === "BLOCKED"
-        ? { icon: "\u2717", color: "text-red-400" }
+        ? { icon: "\u2717", color: "text-destructive" }
         : status.merge_state_status === "BEHIND"
-          ? { icon: "\u2193", color: "text-yellow-400" }
-          : { icon: "\u2022", color: "text-zinc-400" };
+          ? { icon: "\u2193", color: "text-warning" }
+          : { icon: "\u2022", color: "text-muted-foreground" };
 
   const reviewIcon = !status.review_decision
-    ? { icon: "\u2014", color: "text-zinc-600" }
+    ? { icon: "\u2014", color: "text-subtle-foreground" }
     : status.review_decision === "APPROVED"
-      ? { icon: "\u2713", color: "text-green-400" }
+      ? { icon: "\u2713", color: "text-success" }
       : status.review_decision === "CHANGES_REQUESTED"
-        ? { icon: "\u2717", color: "text-orange-400" }
-        : { icon: "\u25CB", color: "text-yellow-400" };
+        ? { icon: "\u2717", color: "text-warning" }
+        : { icon: "\u25CB", color: "text-warning" };
 
   const ciIcon = !status.check_status
-    ? { icon: "\u2014", color: "text-zinc-600" }
+    ? { icon: "\u2014", color: "text-subtle-foreground" }
     : status.check_status === "SUCCESS"
-      ? { icon: "\u2713", color: "text-green-400" }
+      ? { icon: "\u2713", color: "text-success" }
       : status.check_status === "FAILURE"
-        ? { icon: "\u2717", color: "text-red-400" }
-        : { icon: "\u25CB", color: "text-yellow-400" };
+        ? { icon: "\u2717", color: "text-destructive" }
+        : { icon: "\u25CB", color: "text-warning" };
 
   return (
     <div className="flex flex-col gap-3">
@@ -335,11 +337,11 @@ function MergeStatusView({ projectPath, prNumber }: { projectPath: string; prNum
       ].map((item) => (
         <div
           key={item.label}
-          className="flex items-center gap-3 rounded bg-white/[0.03] px-3 py-2 text-sm"
+          className="flex items-center gap-3 rounded bg-surface px-3 py-2 text-sm"
         >
           <span className={`text-base ${item.color}`}>{item.icon}</span>
-          <span className="text-zinc-400">{item.label}</span>
-          <span className="ml-auto font-mono text-xs text-zinc-300">{item.value}</span>
+          <span className="text-muted-foreground">{item.label}</span>
+          <span className="ml-auto font-mono text-xs text-foreground">{item.value}</span>
         </div>
       ))}
     </div>
@@ -375,14 +377,14 @@ function CiLogView({ projectPath, runId }: { projectPath: string; runId: number 
     return () => clearInterval(interval);
   }, [fetchLog]);
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading CI log...</div>;
-  if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (!logData?.log_text) return <div className="text-sm text-zinc-500">No log output</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading CI log...</div>;
+  if (error) return <div className="text-sm text-destructive">{error}</div>;
+  if (!logData?.log_text) return <div className="text-sm text-muted-foreground">No log output</div>;
 
   return (
     <pre
       ref={preRef}
-      className="max-w-full overflow-auto rounded-lg bg-zinc-900/80 p-4 text-[11px] leading-relaxed font-mono text-zinc-300"
+      className="max-w-full overflow-auto rounded-lg bg-surface-strong/80 p-4 text-[11px] leading-relaxed font-mono text-foreground"
     >
       {stripAnsi(logData.log_text)}
     </pre>
@@ -398,14 +400,14 @@ export function DetailPanel({
   onClose,
 }: DetailPanelProps) {
   return (
-    <div className="min-w-[480px] flex-[2] overflow-hidden flex flex-col border-l border-white/5 bg-black/20">
+    <div className="min-w-[480px] flex-[2] overflow-hidden flex flex-col border-l border-hairline bg-background">
       {/* Header */}
-      <div className="shrink-0 flex items-center gap-2 border-b border-white/5 px-4 py-2">
-        <h3 className="flex-1 text-sm font-semibold text-zinc-100 truncate">{viewTitle(view)}</h3>
+      <div className="shrink-0 flex items-center gap-2 border-b border-hairline px-4 py-2">
+        <h3 className="flex-1 text-sm font-semibold text-foreground truncate">{viewTitle(view)}</h3>
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
           title="Close detail panel"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

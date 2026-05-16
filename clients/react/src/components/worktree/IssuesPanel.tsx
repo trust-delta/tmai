@@ -159,7 +159,7 @@ export function IssuesPanel({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search issues..."
-          className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-white/10 transition-colors focus:ring-white/20"
+          className="w-full rounded-lg bg-surface px-3 py-2 text-sm text-foreground placeholder-subtle-foreground outline-none ring-1 ring-hairline-strong transition-colors focus:ring-primary/40"
         />
         {allLabels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -185,14 +185,14 @@ export function IssuesPanel({
       </div>
 
       {/* Issue count */}
-      <div className="mb-3 text-[11px] text-zinc-500">
+      <div className="mb-3 text-[11px] text-muted-foreground">
         {filteredIssues.length} issue{filteredIssues.length !== 1 ? "s" : ""}
         {filteredIssues.length !== issues.length ? ` (${issues.length} total)` : ""}
       </div>
 
       {/* Issue list */}
       {filteredIssues.length === 0 ? (
-        <div className="flex items-center justify-center py-20 text-sm text-zinc-500">
+        <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
           {issues.length === 0 ? "No open issues" : "No issues match filters"}
         </div>
       ) : (
@@ -209,17 +209,15 @@ export function IssuesPanel({
                 onClick={() => onSelectIssue(isSelected ? null : issue)}
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   isSelected
-                    ? "border-cyan-500/30 bg-cyan-500/[0.06]"
-                    : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+                    ? "border-primary/30 bg-primary/[0.06]"
+                    : "border-hairline bg-surface hover:bg-surface"
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  <span className="shrink-0 text-sm font-medium text-green-400">
-                    #{issue.number}
-                  </span>
+                  <span className="shrink-0 text-sm font-medium text-success">#{issue.number}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-zinc-200">{issue.title}</span>
+                      <span className="text-sm text-foreground">{issue.title}</span>
                       {/* Cross-navigation badges: clickable to jump to branch/PR */}
                       {wtStatus && (
                         <button
@@ -231,8 +229,8 @@ export function IssuesPanel({
                           }}
                           className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                             wtStatus.isAgentActive
-                              ? "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
-                              : "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                              ? "bg-primary/15 text-primary hover:bg-primary/25"
+                              : "bg-warning/15 text-warning hover:bg-warning/25"
                           }`}
                           title={`Go to branch: ${wtStatus.worktree.branch ?? wtStatus.worktree.name}`}
                         >
@@ -257,10 +255,10 @@ export function IssuesPanel({
                           }}
                           className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                             prLink.pr.state === "MERGED"
-                              ? "bg-purple-500/15 text-purple-400 hover:bg-purple-500/25"
+                              ? "bg-accent/15 text-accent hover:bg-accent/25"
                               : prLink.pr.is_draft
-                                ? "bg-zinc-500/15 text-zinc-400 hover:bg-zinc-500/25"
-                                : "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+                                ? "bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25"
+                                : "bg-success/15 text-success hover:bg-success/25"
                           }`}
                           title={`Go to PR #${prLink.pr.number}: ${prLink.pr.title}`}
                         >
@@ -286,7 +284,7 @@ export function IssuesPanel({
                             e.stopPropagation();
                             onNavigateToBranch?.(linkedBranch);
                           }}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-500/25"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted-foreground/25"
                           title={`Go to branch: ${linkedBranch}`}
                         >
                           <svg
@@ -321,7 +319,7 @@ export function IssuesPanel({
                     )}
                     {/* Assignees */}
                     {issue.assignees.length > 0 && (
-                      <div className="mt-1 text-[10px] text-zinc-500">
+                      <div className="mt-1 text-[10px] text-muted-foreground">
                         {issue.assignees.join(", ")}
                       </div>
                     )}

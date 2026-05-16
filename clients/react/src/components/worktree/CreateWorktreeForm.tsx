@@ -47,12 +47,12 @@ export function CreateWorktreeForm({
   }, [name, busy, projectPath, baseBranch, onCreated]);
 
   return (
-    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
-      <div className="mb-1 text-[11px] text-zinc-500">
-        from: <span className="text-emerald-400">{baseBranch}</span>
+    <div className="rounded-lg border border-success/20 bg-success/5 p-2">
+      <div className="mb-1 text-[11px] text-muted-foreground">
+        from: <span className="text-success">{baseBranch}</span>
       </div>
       {depth + 1 >= depthWarning && (
-        <div className="mb-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400">
+        <div className="mb-2 rounded bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
           This will be {depth + 1} levels deep from main. Consider merging the parent branch first.
         </div>
       )}
@@ -70,18 +70,18 @@ export function CreateWorktreeForm({
             if (e.key === "Escape") onCancel();
           }}
           placeholder="worktree name"
-          className="flex-1 rounded bg-black/30 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
+          className="flex-1 rounded bg-background px-2 py-1 text-xs text-foreground placeholder-subtle-foreground outline-none ring-1 ring-success/30 focus:ring-success/60"
         />
         <button
           type="button"
           onClick={handleCreate}
           disabled={!name.trim() || busy}
-          className="rounded px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30"
+          className="rounded px-2 py-1 text-xs text-success hover:bg-success/10 disabled:opacity-30"
         >
           Go
         </button>
       </div>
-      {error && <span className="text-[10px] text-red-400">{error}</span>}
+      {error && <span className="text-[10px] text-destructive">{error}</span>}
     </div>
   );
 }

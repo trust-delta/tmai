@@ -32,8 +32,11 @@
   --color-secondary-foreground: #c0caf5;
   --color-muted: #292e42;
   --color-muted-foreground: #565f89;
-  --color-accent: #292e42;
-  --color-accent-foreground: #c0caf5;
+  /* accent = the WebUI's themed secondary categorical accent (purple/
+     violet migrate here) — repurposed from shadcn's unused muted-surface
+     slot. Mirror THEMES.tokyonight in theme.ts. */
+  --color-accent: #bb9af7;
+  --color-accent-foreground: #15161e;
   --color-destructive: #f7768e;
   --color-destructive-foreground: #15161e;
   /* Status + surface + dim-text tokens (migration targets; no component

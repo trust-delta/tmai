@@ -300,20 +300,20 @@ export const ActionPanel = memo(function ActionPanel({
   }, [ciSummary, rerunBusy, projectPath, activeNode.name]);
 
   return (
-    <div className="w-80 shrink-0 overflow-y-auto border-l border-white/5 bg-black/20">
+    <div className="w-80 shrink-0 overflow-y-auto border-l border-hairline bg-background">
       <div className="p-4">
         {/* Node info header */}
         <div className="mb-4">
           <div className="flex items-center gap-2">
             {activeNode.isWorktree && <span className="text-sm">🌿</span>}
-            <h3 className="text-sm font-semibold text-zinc-100">{activeNode.name}</h3>
+            <h3 className="text-sm font-semibold text-foreground">{activeNode.name}</h3>
             {activeNode.lastCommitTime != null && (
               <span
                 className={`text-[10px] ${(() => {
                   const days = Math.floor((Date.now() / 1000 - activeNode.lastCommitTime) / 86400);
-                  if (days <= 3) return "text-zinc-500";
-                  if (days <= 14) return "text-yellow-500/70";
-                  return "text-red-400/70";
+                  if (days <= 3) return "text-muted-foreground";
+                  if (days <= 14) return "text-warning/70";
+                  return "text-destructive/70";
                 })()}`}
               >
                 {(() => {
@@ -330,25 +330,21 @@ export const ActionPanel = memo(function ActionPanel({
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
             {activeNode.isMain && (
-              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-emerald-400">
-                default
-              </span>
+              <span className="rounded bg-success/15 px-1.5 py-0.5 text-success">default</span>
             )}
             {activeNode.isWorktree && (
-              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-emerald-400">
-                worktree
-              </span>
+              <span className="rounded bg-success/15 px-1.5 py-0.5 text-success">worktree</span>
             )}
             {activeNode.isCurrent && (
-              <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-cyan-400">HEAD</span>
+              <span className="rounded bg-primary/15 px-1.5 py-0.5 text-primary">HEAD</span>
             )}
             {activeNode.hasAgent && (
-              <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-cyan-400">
+              <span className="rounded bg-primary/15 px-1.5 py-0.5 text-primary">
                 {activeNode.agentStatus || "active"}
               </span>
             )}
             {activeNode.isDirty && (
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">modified</span>
+              <span className="rounded bg-warning/15 px-1.5 py-0.5 text-warning">modified</span>
             )}
             {/* Branch lifecycle state badge */}
             {(() => {
@@ -366,9 +362,9 @@ export const ActionPanel = memo(function ActionPanel({
             const ds = activeNode.diffSummary ?? branchDiffStat;
             if (!ds) return null;
             return (
-              <div className="mt-2 text-xs text-zinc-500">
-                <span className="text-emerald-400">+{ds.insertions}</span>{" "}
-                <span className="text-red-400">-{ds.deletions}</span>
+              <div className="mt-2 text-xs text-muted-foreground">
+                <span className="text-success">+{ds.insertions}</span>{" "}
+                <span className="text-destructive">-{ds.deletions}</span>
                 {" \u00B7 "}
                 {ds.files_changed} file{ds.files_changed !== 1 ? "s" : ""}
               </div>
@@ -376,28 +372,30 @@ export const ActionPanel = memo(function ActionPanel({
           })()}
           {/* Remote tracking info */}
           {activeNode.remote ? (
-            <div className="mt-2 rounded bg-white/[0.03] px-2 py-1.5 text-[11px]">
-              <div className="flex items-center gap-1.5 text-zinc-500">
-                <span className="text-zinc-600">remote:</span>
-                <span className="font-mono text-zinc-400">{activeNode.remote.remote_branch}</span>
+            <div className="mt-2 rounded bg-surface px-2 py-1.5 text-[11px]">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <span className="text-subtle-foreground">remote:</span>
+                <span className="font-mono text-muted-foreground">
+                  {activeNode.remote.remote_branch}
+                </span>
               </div>
               <div className="mt-0.5 flex items-center gap-2">
                 {activeNode.remote.ahead === 0 && activeNode.remote.behind === 0 ? (
-                  <span className="text-zinc-500">= up to date</span>
+                  <span className="text-muted-foreground">= up to date</span>
                 ) : (
                   <>
                     {activeNode.remote.ahead > 0 && (
-                      <span className="text-amber-400">{activeNode.remote.ahead} to push</span>
+                      <span className="text-warning">{activeNode.remote.ahead} to push</span>
                     )}
                     {activeNode.remote.behind > 0 && (
-                      <span className="text-cyan-400">{activeNode.remote.behind} to pull</span>
+                      <span className="text-primary">{activeNode.remote.behind} to pull</span>
                     )}
                   </>
                 )}
               </div>
             </div>
           ) : (
-            <div className="mt-2 text-[11px] text-zinc-600">no remote tracking</div>
+            <div className="mt-2 text-[11px] text-subtle-foreground">no remote tracking</div>
           )}
           {/* PR info */}
           {prInfo && (
@@ -411,23 +409,25 @@ export const ActionPanel = memo(function ActionPanel({
             </div>
           )}
           {/* CI checks */}
-          {ciLoading && <div className="mt-2 text-[11px] text-zinc-600">Loading checks...</div>}
+          {ciLoading && (
+            <div className="mt-2 text-[11px] text-subtle-foreground">Loading checks...</div>
+          )}
           {ciSummary && ciSummary.checks.length > 0 && (
             <div className="mt-2">
               <button
                 type="button"
                 onClick={() => setCiExpanded((v) => !v)}
-                className="flex items-center gap-1.5 text-[11px] text-zinc-400 transition-colors hover:text-zinc-200"
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 <span
                   className={`inline-block h-2 w-2 rounded-full ${
                     ciSummary.rollup === "SUCCESS"
-                      ? "bg-green-400"
+                      ? "bg-success"
                       : ciSummary.rollup === "FAILURE"
-                        ? "bg-red-400"
+                        ? "bg-destructive"
                         : ciSummary.rollup === "PENDING"
-                          ? "bg-yellow-400"
-                          : "bg-zinc-600"
+                          ? "bg-warning"
+                          : "bg-muted-foreground"
                   }`}
                 />
                 <span>
@@ -440,7 +440,7 @@ export const ActionPanel = memo(function ActionPanel({
                         ? "running"
                         : "unknown"}
                 </span>
-                <span className="text-[10px] text-zinc-600">
+                <span className="text-[10px] text-subtle-foreground">
                   ({ciSummary.checks.length} check
                   {ciSummary.checks.length !== 1 ? "s" : ""})
                 </span>
@@ -466,34 +466,34 @@ export const ActionPanel = memo(function ActionPanel({
                             window.open(check.url, "_blank", "noopener,noreferrer");
                           }
                         }}
-                        className="flex items-center gap-1.5 rounded bg-white/[0.03] px-2 py-1 text-left text-[11px] transition-colors hover:bg-white/[0.06]"
+                        className="flex items-center gap-1.5 rounded bg-surface px-2 py-1 text-left text-[11px] transition-colors hover:bg-surface"
                       >
                         <span
                           className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
                             check.conclusion === "success"
-                              ? "bg-green-400"
+                              ? "bg-success"
                               : check.conclusion === "failure"
-                                ? "bg-red-400"
+                                ? "bg-destructive"
                                 : check.status === "in_progress" || check.status === "queued"
-                                  ? "bg-yellow-400"
-                                  : "bg-zinc-600"
+                                  ? "bg-warning"
+                                  : "bg-muted-foreground"
                           }`}
                         />
-                        <span className="truncate text-zinc-300">{check.name}</span>
+                        <span className="truncate text-foreground">{check.name}</span>
                         {canViewLog && (
-                          <span className="text-[9px] text-red-400/60" title="View failure log">
+                          <span className="text-[9px] text-destructive/60" title="View failure log">
                             log
                           </span>
                         )}
                         <span
                           className={`ml-auto shrink-0 text-[10px] ${
                             check.conclusion === "success"
-                              ? "text-green-400"
+                              ? "text-success"
                               : check.conclusion === "failure"
-                                ? "text-red-400"
+                                ? "text-destructive"
                                 : check.status === "in_progress"
-                                  ? "text-yellow-400"
-                                  : "text-zinc-600"
+                                  ? "text-warning"
+                                  : "text-subtle-foreground"
                           }`}
                         >
                           {check.conclusion ?? check.status}
@@ -511,7 +511,7 @@ export const ActionPanel = memo(function ActionPanel({
                     type="button"
                     onClick={handleRerunFailed}
                     disabled={rerunBusy}
-                    className="mt-1.5 w-full rounded bg-red-500/10 px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                    className="mt-1.5 w-full rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
                   >
                     {rerunBusy ? "Re-running..." : "Re-run failed checks"}
                   </button>
@@ -519,7 +519,7 @@ export const ActionPanel = memo(function ActionPanel({
             </div>
           )}
           {ciSummary && ciSummary.checks.length === 0 && !ciLoading && !prInfo?.check_status && (
-            <div className="mt-2 text-[11px] text-zinc-600">No CI checks</div>
+            <div className="mt-2 text-[11px] text-subtle-foreground">No CI checks</div>
           )}
           {/* Linked issues — clickable to navigate to Issues tab */}
           {(() => {
@@ -533,14 +533,14 @@ export const ActionPanel = memo(function ActionPanel({
             if (linked.length === 0) return null;
             return (
               <div className="mt-2">
-                <div className="mb-1 text-[11px] text-zinc-500">Linked issues</div>
+                <div className="mb-1 text-[11px] text-muted-foreground">Linked issues</div>
                 <div className="flex flex-col gap-1">
                   {linked.map((issue) => (
                     <button
                       key={issue.number}
                       type="button"
                       onClick={() => onNavigateToIssue?.(issue)}
-                      className="flex items-start gap-1.5 rounded bg-white/[0.03] px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-white/[0.06]"
+                      className="flex items-start gap-1.5 rounded bg-surface px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-surface"
                       title={`Go to issue #${issue.number}`}
                     >
                       <svg
@@ -548,14 +548,14 @@ export const ActionPanel = memo(function ActionPanel({
                         height="10"
                         viewBox="0 0 16 16"
                         fill="currentColor"
-                        className="mt-0.5 shrink-0 text-green-400"
+                        className="mt-0.5 shrink-0 text-success"
                         aria-hidden="true"
                       >
                         <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
                         <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z" />
                       </svg>
-                      <span className="shrink-0 text-green-400">#{issue.number}</span>
-                      <span className="truncate text-zinc-300">{issue.title}</span>
+                      <span className="shrink-0 text-success">#{issue.number}</span>
+                      <span className="truncate text-foreground">{issue.title}</span>
                       {issue.labels.length > 0 && (
                         <div className="ml-auto flex shrink-0 gap-1">
                           {issue.labels.slice(0, 2).map((label) => (
@@ -583,7 +583,7 @@ export const ActionPanel = memo(function ActionPanel({
         {/* Incoming PRs (PRs targeting this branch) */}
         {targetPrs.length > 0 && (
           <div className="mb-4">
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Incoming PRs ({targetPrs.length})
             </div>
             <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto pr-1">
@@ -618,7 +618,7 @@ export const ActionPanel = memo(function ActionPanel({
             <button
               type="button"
               onClick={() => onOpenDetail({ kind: "diff" })}
-              className="w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10"
+              className="w-full rounded-lg bg-surface px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface-strong"
             >
               View Diff
             </button>
@@ -630,7 +630,7 @@ export const ActionPanel = memo(function ActionPanel({
               type="button"
               onClick={handleCheckoutRemote}
               disabled={actionBusy}
-              className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-50"
+              className="w-full rounded-lg bg-accent/15 px-3 py-2 text-left text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
             >
               {actionBusy ? "Checking out..." : "Checkout (Create Local Branch)"}
             </button>
@@ -649,14 +649,14 @@ export const ActionPanel = memo(function ActionPanel({
                 <>
                   {/* Merged branch guidance */}
                   {isMerged && (
-                    <div className="rounded-lg bg-purple-500/10 px-3 py-2 text-xs text-purple-400">
+                    <div className="rounded-lg bg-accent/10 px-3 py-2 text-xs text-accent">
                       This branch has been merged. You can safely delete it.
                     </div>
                   )}
 
                   {/* Stale branch guidance */}
                   {isStale && (
-                    <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                    <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
                       {activeNode.behind} commit
                       {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch} — pull or rebase
                       before resuming work.
@@ -669,7 +669,7 @@ export const ActionPanel = memo(function ActionPanel({
                       href={prInfo.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
+                      className="block w-full rounded-lg bg-info/15 px-3 py-2 text-left text-xs font-medium text-info transition-colors hover:bg-info/25"
                     >
                       View PR #{prInfo.number} on GitHub
                     </a>
@@ -684,7 +684,7 @@ export const ActionPanel = memo(function ActionPanel({
                           if (activeNode.agentTarget) onFocusAgent(activeNode.agentTarget);
                         }}
                         disabled={isStale}
-                        className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-30"
+                        className="w-full rounded-lg bg-primary/15 px-3 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-30"
                         title={isStale ? "Pull from main before focusing agent" : undefined}
                       >
                         Focus Agent
@@ -696,7 +696,7 @@ export const ActionPanel = memo(function ActionPanel({
                           type="button"
                           onClick={() => confirmIfAgentActive("Launch agent", handleLaunchAgent)}
                           disabled={actionBusy || isStale}
-                          className="w-full rounded-lg bg-cyan-500/15 px-3 py-2 text-left text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/25 disabled:opacity-30"
+                          className="w-full rounded-lg bg-primary/15 px-3 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-30"
                           title={isStale ? "Pull from main before launching agent" : undefined}
                         >
                           {actionBusy ? "Launching..." : "Launch Agent"}
@@ -719,7 +719,7 @@ export const ActionPanel = memo(function ActionPanel({
                           )
                         }
                         disabled={actionBusy || isStale}
-                        className="w-full rounded-lg bg-purple-500/15 px-3 py-2 text-left text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/25 disabled:opacity-30"
+                        className="w-full rounded-lg bg-accent/15 px-3 py-2 text-left text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-30"
                         title={isStale ? "Pull from main before merging" : undefined}
                       >
                         {prInfo
@@ -734,7 +734,7 @@ export const ActionPanel = memo(function ActionPanel({
                           )
                         }
                         disabled={actionBusy || isStale}
-                        className="w-full rounded-lg bg-blue-500/15 px-3 py-2 text-left text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/25 disabled:opacity-30"
+                        className="w-full rounded-lg bg-info/15 px-3 py-2 text-left text-xs font-medium text-info transition-colors hover:bg-info/25 disabled:opacity-30"
                         title={isStale ? "Pull from main before creating PR" : undefined}
                       >
                         AI Create PR → {baseBranch}
@@ -744,7 +744,7 @@ export const ActionPanel = memo(function ActionPanel({
 
                   {/* Behind warning — shown for non-merged branches (prominent in stale already handled above) */}
                   {!isMerged && !isStale && activeNode.behind > 0 && (
-                    <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                    <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
                       {activeNode.behind} commit
                       {activeNode.behind !== 1 ? "s" : ""} behind {baseBranch}
                     </div>
@@ -756,7 +756,7 @@ export const ActionPanel = memo(function ActionPanel({
                       type="button"
                       onClick={() => confirmIfAgentActive("Move", handleMoveToWorktree)}
                       disabled={actionBusy}
-                      className="w-full rounded-lg bg-amber-500/15 px-3 py-2 text-left text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/25 disabled:opacity-50"
+                      className="w-full rounded-lg bg-warning/15 px-3 py-2 text-left text-xs font-medium text-warning transition-colors hover:bg-warning/25 disabled:opacity-50"
                     >
                       {actionBusy ? "Moving..." : "Move to Worktree"}
                     </button>
@@ -769,7 +769,7 @@ export const ActionPanel = memo(function ActionPanel({
                       <button
                         type="button"
                         onClick={() => setShowNewWorktree(true)}
-                        className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+                        className="w-full rounded-lg bg-success/15 px-3 py-2 text-left text-xs font-medium text-success transition-colors hover:bg-success/25"
                       >
                         Create Worktree
                       </button>
@@ -785,7 +785,7 @@ export const ActionPanel = memo(function ActionPanel({
                     ))}
 
                   {/* Delete — primary for merged, confirmation-gated for open PR */}
-                  <hr className="border-white/5" />
+                  <hr className="border-hairline" />
                   {!confirmDelete ? (
                     <button
                       type="button"
@@ -799,8 +799,8 @@ export const ActionPanel = memo(function ActionPanel({
                       disabled={!activeNode.isWorktree && activeNode.isCurrent}
                       className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors disabled:opacity-30 ${
                         isMerged
-                          ? "bg-red-500/20 font-medium text-red-400 hover:bg-red-500/30"
-                          : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                          ? "bg-destructive/20 font-medium text-destructive hover:bg-destructive/30"
+                          : "bg-destructive/10 text-destructive hover:bg-destructive/20"
                       }`}
                     >
                       {isMerged
@@ -808,28 +808,28 @@ export const ActionPanel = memo(function ActionPanel({
                         : `Delete ${activeNode.isWorktree ? "Worktree" : "Branch"}`}
                     </button>
                   ) : (
-                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
+                    <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-2">
                       {hasOpenPr && (
-                        <div className="mb-2 text-[11px] text-amber-400">
+                        <div className="mb-2 text-[11px] text-warning">
                           Warning: PR #{prInfo?.number} is still open
                         </div>
                       )}
-                      <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={forceDelete}
                           onChange={(e) => setForceDelete(e.target.checked)}
-                          className="accent-red-500"
+                          className="accent-destructive"
                         />
                         Force delete{!activeNode.isWorktree ? " (unmerged)" : ""}
                       </label>
                       {!activeNode.isWorktree && activeNode.remote && (
-                        <label className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                        <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <input
                             type="checkbox"
                             checked={deleteRemote}
                             onChange={(e) => setDeleteRemote(e.target.checked)}
-                            className="accent-red-500"
+                            className="accent-destructive"
                           />
                           Also delete remote branch
                         </label>
@@ -841,7 +841,7 @@ export const ActionPanel = memo(function ActionPanel({
                             activeNode.isWorktree ? handleDeleteWorktree : handleDeleteBranch
                           }
                           disabled={actionBusy}
-                          className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                          className="rounded bg-destructive/20 px-2 py-1 text-xs text-destructive hover:bg-destructive/30 disabled:opacity-50"
                         >
                           {actionBusy ? "..." : "Confirm"}
                         </button>
@@ -852,7 +852,7 @@ export const ActionPanel = memo(function ActionPanel({
                             setForceDelete(false);
                             setDeleteRemote(true);
                           }}
-                          className="text-xs text-zinc-500 hover:text-zinc-300"
+                          className="text-xs text-muted-foreground hover:text-foreground"
                         >
                           Cancel
                         </button>
@@ -869,7 +869,7 @@ export const ActionPanel = memo(function ActionPanel({
               <button
                 type="button"
                 onClick={() => setShowNewWorktree(true)}
-                className="w-full rounded-lg bg-emerald-500/15 px-3 py-2 text-left text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
+                className="w-full rounded-lg bg-success/15 px-3 py-2 text-left text-xs font-medium text-success transition-colors hover:bg-success/25"
               >
                 Create Worktree
               </button>
@@ -887,7 +887,7 @@ export const ActionPanel = memo(function ActionPanel({
 
         {/* Error display */}
         {actionError && (
-          <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {actionError}
           </div>
         )}

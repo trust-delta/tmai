@@ -45,13 +45,13 @@ export function branchStateLabel(state: BranchState): string {
 export function branchStateBadgeClass(state: BranchState): string {
   switch (state) {
     case "merged":
-      return "bg-purple-500/15 text-purple-400";
+      return "bg-accent/15 text-accent";
     case "has-open-pr":
-      return "bg-blue-500/15 text-blue-400";
+      return "bg-info/15 text-info";
     case "active":
-      return "bg-cyan-500/15 text-cyan-400";
+      return "bg-primary/15 text-primary";
     case "stale":
-      return "bg-amber-500/15 text-amber-400";
+      return "bg-warning/15 text-warning";
     case "default":
       return "";
   }

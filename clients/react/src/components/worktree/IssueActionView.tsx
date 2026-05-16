@@ -106,26 +106,24 @@ export function IssueActionView({
   })();
 
   return (
-    <div className="w-80 shrink-0 overflow-y-auto border-l border-white/5 bg-black/20">
+    <div className="w-80 shrink-0 overflow-y-auto border-l border-hairline bg-background">
       <div className="p-4">
         {selectedIssue ? (
           <>
             {/* Issue header */}
             <div className="mb-4">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-semibold text-green-400">
-                  #{selectedIssue.number}
-                </span>
+                <span className="text-lg font-semibold text-success">#{selectedIssue.number}</span>
                 <a
                   href={selectedIssue.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
                 >
                   open in GitHub
                 </a>
               </div>
-              <h3 className="mt-1 text-sm font-medium text-zinc-100">{selectedIssue.title}</h3>
+              <h3 className="mt-1 text-sm font-medium text-foreground">{selectedIssue.title}</h3>
               {selectedIssue.labels.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {selectedIssue.labels.map((label) => (
@@ -143,7 +141,7 @@ export function IssueActionView({
                 </div>
               )}
               {selectedIssue.assignees.length > 0 && (
-                <div className="mt-2 text-[11px] text-zinc-500">
+                <div className="mt-2 text-[11px] text-muted-foreground">
                   Assigned: {selectedIssue.assignees.join(", ")}
                 </div>
               )}
@@ -151,34 +149,34 @@ export function IssueActionView({
 
             {matchingWorktree ? (
               /* Existing worktree status */
-              <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
-                <div className="mb-2 text-[11px] font-medium text-cyan-400">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <div className="mb-2 text-[11px] font-medium text-primary">
                   {matchingWorktree.agent_status === "in-progress" ||
                   matchingWorktree.agent_status === "waiting"
                     ? "Agent In Progress"
                     : "Worktree Exists"}
                 </div>
-                <div className="mb-1 text-[11px] text-zinc-400">
-                  <span className="text-zinc-500">branch:</span>{" "}
-                  <span className="text-cyan-400">
+                <div className="mb-1 text-[11px] text-muted-foreground">
+                  <span className="text-muted-foreground">branch:</span>{" "}
+                  <span className="text-primary">
                     {matchingWorktree.branch ?? matchingWorktree.name}
                   </span>
                 </div>
                 {matchingWorktree.agent_target && (
-                  <div className="mb-1 text-[11px] text-zinc-400">
-                    <span className="text-zinc-500">agent:</span>{" "}
-                    <span className="text-cyan-400">{matchingWorktree.agent_target}</span>
+                  <div className="mb-1 text-[11px] text-muted-foreground">
+                    <span className="text-muted-foreground">agent:</span>{" "}
+                    <span className="text-primary">{matchingWorktree.agent_target}</span>
                   </div>
                 )}
                 {matchingWorktree.agent_status && (
-                  <div className="mb-2 text-[11px] text-zinc-400">
-                    <span className="text-zinc-500">status:</span>{" "}
+                  <div className="mb-2 text-[11px] text-muted-foreground">
+                    <span className="text-muted-foreground">status:</span>{" "}
                     <span
                       className={
                         matchingWorktree.agent_status === "in-progress" ||
                         matchingWorktree.agent_status === "waiting"
-                          ? "text-cyan-400"
-                          : "text-amber-400"
+                          ? "text-primary"
+                          : "text-warning"
                       }
                     >
                       {matchingWorktree.agent_status}
@@ -191,17 +189,17 @@ export function IssueActionView({
                     const branch = matchingWorktree.branch ?? matchingWorktree.name;
                     onSelectWorktreeBranch?.(branch);
                   }}
-                  className="mt-1 w-full rounded-lg bg-cyan-500/20 px-3 py-2 text-xs font-medium text-cyan-400 transition-colors hover:bg-cyan-500/30"
+                  className="mt-1 w-full rounded-lg bg-primary/20 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/30"
                 >
                   Go to Worktree
                 </button>
               </div>
             ) : (
               /* Start Work form */
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-                <div className="mb-2 text-[11px] font-medium text-emerald-400">Start Work</div>
-                <div className="mb-1.5 text-[11px] text-zinc-500">
-                  base: <span className="text-emerald-400">{defaultBranch ?? "main"}</span>
+              <div className="rounded-lg border border-success/20 bg-success/5 p-3">
+                <div className="mb-2 text-[11px] font-medium text-success">Start Work</div>
+                <div className="mb-1.5 text-[11px] text-muted-foreground">
+                  base: <span className="text-success">{defaultBranch ?? "main"}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <input
@@ -216,21 +214,21 @@ export function IssueActionView({
                       if (e.key === "Enter") handleStartWork();
                     }}
                     placeholder="worktree name"
-                    className="flex-1 rounded bg-black/30 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-500/60"
+                    className="flex-1 rounded bg-background px-2 py-1.5 text-xs text-foreground placeholder-subtle-foreground outline-none ring-1 ring-success/30 focus:ring-success/60"
                   />
                 </div>
-                <div className="mt-1 text-[10px] text-zinc-600">
+                <div className="mt-1 text-[10px] text-subtle-foreground">
                   Creates worktree + launches agent
                 </div>
                 {startWorkError && (
-                  <div className="mt-1 text-[10px] text-red-400">{startWorkError}</div>
+                  <div className="mt-1 text-[10px] text-destructive">{startWorkError}</div>
                 )}
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
                     onClick={() => handleStartWork()}
                     disabled={!startWorkName.trim() || startWorkBusy}
-                    className="flex-1 rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/30 disabled:opacity-40"
+                    className="flex-1 rounded-lg bg-success/20 px-3 py-2 text-xs font-medium text-success transition-colors hover:bg-success/30 disabled:opacity-40"
                   >
                     {startWorkBusy ? "Creating..." : "Launch Agent"}
                   </button>
@@ -240,7 +238,7 @@ export function IssueActionView({
                       selectedIssue && handleStartWork(buildResolvePrompt(selectedIssue))
                     }
                     disabled={!startWorkName.trim() || startWorkBusy}
-                    className="flex-1 rounded-lg bg-amber-500/20 px-3 py-2 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/30 disabled:opacity-40"
+                    className="flex-1 rounded-lg bg-warning/20 px-3 py-2 text-xs font-medium text-warning transition-colors hover:bg-warning/30 disabled:opacity-40"
                     title="Worktree作成 → issue内容を含むプロンプトでエージェント起動 → 実装・テスト・PR作成まで自動実行"
                   >
                     {startWorkBusy ? "Creating..." : "Create & Resolve ▶"}
@@ -250,7 +248,7 @@ export function IssueActionView({
             )}
           </>
         ) : (
-          <div className="text-sm text-zinc-500">Select an issue to start work</div>
+          <div className="text-sm text-muted-foreground">Select an issue to start work</div>
         )}
       </div>
     </div>
