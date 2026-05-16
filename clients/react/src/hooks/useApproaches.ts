@@ -39,6 +39,14 @@ export function useApproaches(unit: string | null): UseApproachesResult {
       return;
     }
     const myGen = ++generationRef.current;
+    // Clear on unit *change* (this effect's only re-trigger — deps are
+    // [unit]) so the previous unit's inbox is never shown under the new
+    // unit's header. The 60s same-unit re-poll goes through fetchOnce,
+    // which intentionally keeps the last response visible (anti-flicker);
+    // that path is untouched. Transparency-over-completeness:
+    // doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md.
+    setData(null);
+    setError(null);
     setLoading(true);
 
     const fetchOnce = async () => {
