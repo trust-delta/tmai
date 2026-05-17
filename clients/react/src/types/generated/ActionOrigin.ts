@@ -15,7 +15,7 @@ interface: string,
  * Working directory of the UI request, used for project-scope routing (#89).
  *
  * The WebUI/TUI passes the cwd from the request body so
- * `OrchestratorNotifier::source_project_scope` can scope notifications
+ * `ProducerKicker::source_project_scope` can scope notifications
  * without needing the caller to be tracked in `state.agents`.
  */
 cwd?: string | null, } | { "kind": "Agent", 
@@ -25,14 +25,23 @@ cwd?: string | null, } | { "kind": "Agent",
  */
 id: string, 
 /**
- * Whether this agent is the orchestrator
+ * Whether this agent is the Producer.
+ *
+ * Wire field name `is_producer` (DR
+ * `2026-05-16-producer-identity-and-operator-addressing` §B —
+ * the deliberate contract-surface change that #402's neutral
+ * `is_orchestrator` rename was holding back). `default` +
+ * `skip_serializing_if` make it optional: an old client that
+ * omits the field still deserializes (→ `false`) and the field
+ * is absent on the wire when `false`, so neither side is forced
+ * into lockstep.
  */
-is_orchestrator: boolean, 
+is_producer?: boolean, 
 /**
  * Caller working directory at origin creation time (MCP loopback only).
  *
  * Set by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so
- * `OrchestratorNotifier::source_project_scope` can resolve the project
+ * `ProducerKicker::source_project_scope` can resolve the project
  * root when the MCP agent ID is not tracked in `state.agents` (#75).
  */
 cwd?: string | null, } | { "kind": "System", 
