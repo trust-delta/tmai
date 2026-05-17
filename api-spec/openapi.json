@@ -102,6 +102,24 @@
         }
       }
     },
+    "/api/github/pr/producer-reviewed": {
+      "post": {
+        "tags": [
+          "prs"
+        ],
+        "summary": "Documentation stub for `POST /api/github/pr/producer-reviewed`.",
+        "description": "dev-loop DR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`): mark the Producer's\ncontract-anchored Δ-brief as *delivered* for a PR. Idempotent. Sets a\ntransient, in-memory delivered-marker only — a **neutral bit, NOT a\nmerge approval** (the Producer's opinion is *content of the brief*,\nnever this flag). Core never blocks a merge on it; the soft-valve\ndialog / colour / dismissible override are the react half's, a separate\ndispatch. Vendor-neutral. The marker surfaces on\n`GET /api/units/{unit}/prs` as `PrSummaryWire.producer_reviewed`.",
+        "operationId": "mark_pr_producer_reviewed_doc",
+        "responses": {
+          "200": {
+            "description": "Δ-brief marked delivered for the PR (idempotent)"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
     "/api/task-meta": {
       "get": {
         "tags": [
@@ -3097,6 +3115,10 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "producer_reviewed": {
+            "type": "boolean",
+            "description": "`true` when the Producer has **delivered** its contract-anchored\nΔ-brief for this PR — the soft-valve unlock condition of dev-loop\nDR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`).\n\n**Delivered, NOT approved.** A neutral delivered-marker: it states\nonly that the brief reached the operator, never that the Producer\napproves/blocks the merge or judges it merge-worthy (§E load-bearing\nboundary — the Producer's opinion is *content of the brief*, never\nthis bit; the merge decision stays wholly the operator's). The react\nhalf consumes this to make the reviewed merge path frictionless\n(dialog / colour / dismissible override) — that button state machine\nis a separate dispatch; core only exposes the bit, it never blocks a\nmerge on it. Not a `PrInfo` field: it is overlaid from the transient\n[`AppState::producer_reviewed_prs`](crate::state::AppState) in\n[`build_unit_prs_response`], so it resets on engine restart (the\nProducer re-briefs).\n\n`default` + `skip_serializing_if` keep it optional with the exact\n#404 `is_producer` discipline: the field is absent on the wire when\n`false`, and a payload omitting it deserializes to `false` — a\nclient omitting it stays lockstep-free."
           },
           "review_decision": {
             "type": [
