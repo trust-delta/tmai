@@ -7,7 +7,7 @@
           "description": "A human interacting through a UI surface",
           "properties": {
             "cwd": {
-              "description": "Working directory of the UI request, used for project-scope routing (#89).\n\nThe WebUI/TUI passes the cwd from the request body so\n`OrchestratorNotifier::source_project_scope` can scope notifications\nwithout needing the caller to be tracked in `state.agents`.",
+              "description": "Working directory of the UI request, used for project-scope routing (#89).\n\nThe WebUI/TUI passes the cwd from the request body so\n`ProducerKicker::source_project_scope` can scope notifications\nwithout needing the caller to be tracked in `state.agents`.",
               "type": [
                 "string",
                 "null"
@@ -34,7 +34,7 @@
           "description": "An AI agent (orchestrator or worker) via MCP tools",
           "properties": {
             "cwd": {
-              "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so\n`OrchestratorNotifier::source_project_scope` can resolve the project\nroot when the MCP agent ID is not tracked in `state.agents` (#75).",
+              "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so\n`ProducerKicker::source_project_scope` can resolve the project\nroot when the MCP agent ID is not tracked in `state.agents` (#75).",
               "type": [
                 "string",
                 "null"
@@ -44,8 +44,8 @@
               "description": "Canonical AgentId in `<scheme>:<id>` form (e.g. `\"claude:ea760770-c137-...\"`),\nmatching `AgentSnapshot.id`.",
               "type": "string"
             },
-            "is_orchestrator": {
-              "description": "Whether this agent is the orchestrator",
+            "is_producer": {
+              "description": "Whether this agent is the Producer.\n\nWire field name `is_producer` (DR\n`2026-05-16-producer-identity-and-operator-addressing` §B —\nthe deliberate contract-surface change that #402's neutral\n`is_orchestrator` rename was holding back). `default` +\n`skip_serializing_if` make it optional: an old client that\nomits the field still deserializes (→ `false`) and the field\nis absent on the wire when `false`, so neither side is forced\ninto lockstep.",
               "type": "boolean"
             },
             "kind": {
@@ -57,7 +57,6 @@
           },
           "required": [
             "id",
-            "is_orchestrator",
             "kind"
           ],
           "type": "object"
