@@ -33,4 +33,29 @@ check_status: string | null, is_draft: boolean, additions: bigint, deletions: bi
  * Set only for merged PRs (the unit list is open-only, so this is
  * `null` in practice — kept for shape parity with `PrInfo`).
  */
-merge_commit_sha: string | null, };
+merge_commit_sha: string | null, 
+/**
+ * `true` when the Producer has **delivered** its contract-anchored
+ * Δ-brief for this PR — the soft-valve unlock condition of dev-loop
+ * DR `2026-05-16-dev-loop-completes-in-tmai` §E (approach
+ * `2026-05-17-producer-review-gated-in-tmai-merge`).
+ *
+ * **Delivered, NOT approved.** A neutral delivered-marker: it states
+ * only that the brief reached the operator, never that the Producer
+ * approves/blocks the merge or judges it merge-worthy (§E load-bearing
+ * boundary — the Producer's opinion is *content of the brief*, never
+ * this bit; the merge decision stays wholly the operator's). The react
+ * half consumes this to make the reviewed merge path frictionless
+ * (dialog / colour / dismissible override) — that button state machine
+ * is a separate dispatch; core only exposes the bit, it never blocks a
+ * merge on it. Not a `PrInfo` field: it is overlaid from the transient
+ * [`AppState::producer_reviewed_prs`](crate::state::AppState) in
+ * [`build_unit_prs_response`], so it resets on engine restart (the
+ * Producer re-briefs).
+ *
+ * `default` + `skip_serializing_if` keep it optional with the exact
+ * #404 `is_producer` discipline: the field is absent on the wire when
+ * `false`, and a payload omitting it deserializes to `false` — a
+ * client omitting it stays lockstep-free.
+ */
+producer_reviewed?: boolean, };

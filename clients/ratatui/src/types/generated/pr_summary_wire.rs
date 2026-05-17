@@ -24,6 +24,8 @@ pub struct PrSummaryWire {
     pub merge_commit_sha: Option<Value>,
     pub number: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_reviewed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub review_decision: Option<Value>,
     pub reviews: i64,
     pub state: String,

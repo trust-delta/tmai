@@ -1592,6 +1592,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "producer_reviewed": {
+          "description": "`true` when the Producer has **delivered** its contract-anchored\nΔ-brief for this PR — the soft-valve unlock condition of dev-loop\nDR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`).\n\n**Delivered, NOT approved.** A neutral delivered-marker: it states\nonly that the brief reached the operator, never that the Producer\napproves/blocks the merge or judges it merge-worthy (§E load-bearing\nboundary — the Producer's opinion is *content of the brief*, never\nthis bit; the merge decision stays wholly the operator's). The react\nhalf consumes this to make the reviewed merge path frictionless\n(dialog / colour / dismissible override) — that button state machine\nis a separate dispatch; core only exposes the bit, it never blocks a\nmerge on it. Not a `PrInfo` field: it is overlaid from the transient\n[`AppState::producer_reviewed_prs`](crate::state::AppState) in\n[`build_unit_prs_response`], so it resets on engine restart (the\nProducer re-briefs).\n\n`default` + `skip_serializing_if` keep it optional with the exact\n#404 `is_producer` discipline: the field is absent on the wire when\n`false`, and a payload omitting it deserializes to `false` — a\nclient omitting it stays lockstep-free.",
+          "type": "boolean"
+        },
         "review_decision": {
           "description": "Raw `gh` review-decision string (`\"APPROVED\"` / `\"CHANGES_REQUESTED\"`\n/ `\"REVIEW_REQUIRED\"`), or `null` when GitHub reports none.",
           "type": [

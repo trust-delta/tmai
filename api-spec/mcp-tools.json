@@ -478,6 +478,34 @@
     }
   },
   {
+    "description": "Mark the Producer's Δ-brief as DELIVERED for a PR (dev-loop soft-valve unlock — a neutral delivered-marker, NOT a merge approval; idempotent)",
+    "name": "mark_pr_reviewed",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number whose Producer Δ-brief has been delivered",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "MarkPrReviewedParams",
+      "type": "object"
+    }
+  },
+  {
     "description": "Merge a pull request (checks CI first, then squash/merge/rebase with optional branch and worktree cleanup)",
     "name": "merge_pr",
     "parameters_schema": {
