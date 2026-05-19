@@ -206,4 +206,65 @@ describe("UnitPrsSection", () => {
       expect(screen.getByText(/Merge failed: not mergeable/)).toBeTruthy();
     });
   });
+
+  // Stage-2 asymmetric-friction valve (approach
+  // `2026-05-17-producer-review-gated-in-tmai-merge`). The unlock is a
+  // *delivered-state fact* (`producer_reviewed === true` — the Δ-brief
+  // reached the operator), NOT a Producer approval. The not-delivered
+  // path is friction + visibility, never a block.
+
+  it("merges a Δ-brief-delivered PR in one click (no confirm) and badges it", async () => {
+    const repo = repoStub();
+    repo.prs[0].producer_reviewed = true;
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [repo] });
+    mergePrMock.mockResolvedValue({ status: "merged" });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    // The asymmetric signal is a *delivered* marker (not "approved").
+    expect(await screen.findByText("Δ-brief ✓")).toBeTruthy();
+
+    const mergeBtn = await screen.findByRole("button", { name: /Merge #707/ });
+    fireEvent.click(mergeBtn);
+    // One click → merges directly, no arm/confirm step is ever shown.
+    await waitFor(() => {
+      expect(screen.getByText(/✓ Merged #707/)).toBeTruthy();
+    });
+    expect(mergePrMock).toHaveBeenCalledWith("/home/u/works/tmai", 707, {
+      method: "squash",
+      deleteBranch: true,
+    });
+    expect(screen.queryByRole("button", { name: /Confirm/ })).toBeNull();
+  });
+
+  it("keeps the un-briefed merge path a dismissible 'not delivered' confirm, never a block", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [repoStub()] });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    const mergeBtn = await screen.findByRole("button", { name: /Merge #707/ });
+    // Absence of the delivered marker is the asymmetric signal — no badge.
+    expect(screen.queryByText("Δ-brief ✓")).toBeNull();
+
+    fireEvent.click(mergeBtn);
+    // Delivered/not-delivered wording — never "approved/blocked".
+    expect(
+      screen.getByText(/Producer review not delivered for this PR/),
+    ).toBeTruthy();
+    expect(mergePrMock).not.toHaveBeenCalled();
+
+    // Always dismissible — the operator stays unconstrained.
+    fireEvent.click(screen.getByRole("button", { name: /Cancel/ }));
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/Producer review not delivered for this PR/),
+      ).toBeNull();
+    });
+
+    // And the operator can ALWAYS go through with it (friction, not a gate).
+    mergePrMock.mockResolvedValue({ status: "merged" });
+    fireEvent.click(await screen.findByRole("button", { name: /Merge #707/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Confirm/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/✓ Merged #707/)).toBeTruthy();
+    });
+  });
 });
