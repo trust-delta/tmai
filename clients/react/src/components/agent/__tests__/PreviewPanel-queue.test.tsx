@@ -56,7 +56,7 @@ const QUEUED: QueuedPrompt[] = [
     id: "q1",
     prompt: "run the tests",
     queued_at: "2026-04-20T10:00:00Z",
-    origin: { kind: "Agent", id: "main:0.0", is_orchestrator: true, cwd: null },
+    origin: { kind: "Agent", id: "main:0.0", is_producer: true, cwd: null },
   },
 ];
 
