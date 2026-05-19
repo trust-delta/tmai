@@ -246,17 +246,13 @@ describe("UnitPrsSection", () => {
 
     fireEvent.click(mergeBtn);
     // Delivered/not-delivered wording — never "approved/blocked".
-    expect(
-      screen.getByText(/Producer review not delivered for this PR/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Producer review not delivered for this PR/)).toBeTruthy();
     expect(mergePrMock).not.toHaveBeenCalled();
 
     // Always dismissible — the operator stays unconstrained.
     fireEvent.click(screen.getByRole("button", { name: /Cancel/ }));
     await waitFor(() => {
-      expect(
-        screen.queryByText(/Producer review not delivered for this PR/),
-      ).toBeNull();
+      expect(screen.queryByText(/Producer review not delivered for this PR/)).toBeNull();
     });
 
     // And the operator can ALWAYS go through with it (friction, not a gate).
