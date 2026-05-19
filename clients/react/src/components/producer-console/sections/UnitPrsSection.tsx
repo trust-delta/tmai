@@ -255,6 +255,17 @@ function PrRow({ repoPath, pr, merge, onMerge, onArmMerge }: PrRowProps) {
   const review = reviewBadge(pr.review_decision);
   const check = checkBadge(pr.check_status);
 
+  // Stage-2 asymmetric-friction valve (approach
+  // `2026-05-17-producer-review-gated-in-tmai-merge`). The unlock
+  // predicate is a *delivered-state fact* — the Producer's Δ-brief
+  // reached the operator — NOT a Producer approval / merge-worthiness
+  // judgment (PrSummaryWire.producer_reviewed §E boundary). `undefined`
+  // and `false` are identical "not delivered" (absent-when-false on the
+  // wire); `=== true` keeps the client lockstep-free and crash-free if
+  // the field is omitted. Transient: reflects the current poll only,
+  // never persisted/cached (it resets on engine restart).
+  const reviewed = pr.producer_reviewed === true;
+
   if (merge.done) {
     return (
       <li className="rounded border border-success/30 bg-success/[0.05] px-2 py-1.5 text-[11px] text-success">
@@ -289,6 +300,14 @@ function PrRow({ repoPath, pr, merge, onMerge, onArmMerge }: PrRowProps) {
         </span>
         {review && <span className={review.cls}>{review.label}</span>}
         {check && <span className={check.cls}>{check.label}</span>}
+        {reviewed && (
+          <span
+            className="text-success"
+            title="Producer's Δ-brief delivered for this PR — delivered, not approved; the merge call is yours"
+          >
+            Δ-brief ✓
+          </span>
+        )}
         <span className="text-subtle-foreground">@{pr.author}</span>
       </div>
 
@@ -301,18 +320,39 @@ function PrRow({ repoPath, pr, merge, onMerge, onArmMerge }: PrRowProps) {
           {diffOpen ? "Hide diff" : "View diff"}
         </button>
 
-        {!merge.confirming ? (
+        {reviewed ? (
+          // Δ-brief delivered → frictionless: one click merges, no
+          // arm/confirm step. Calm/affirmative styling. The delivered
+          // marker is NOT an approval — the merge call is still wholly
+          // the operator's; core never blocks on the bit (§E boundary).
+          <button
+            type="button"
+            onClick={onMerge}
+            disabled={merge.busy}
+            className="rounded bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success transition-colors hover:bg-success/25 disabled:opacity-50"
+          >
+            {merge.busy ? "Merging…" : `Merge #${Number(pr.number)}`}
+          </button>
+        ) : !merge.confirming ? (
+          // No Δ-brief delivered → friction + visibility, never a
+          // gate/block. Cautionary styling; arm → dismissible confirm.
           <button
             type="button"
             onClick={() => onArmMerge(true)}
             disabled={merge.busy}
-            className="rounded bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+            className="rounded bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning transition-colors hover:bg-warning/25 disabled:opacity-50"
           >
             Merge #{Number(pr.number)}
           </button>
         ) : (
+          // Dismissible by construction: Confirm is always enabled
+          // (the busy-disable is only a double-submit guard, not a
+          // gate) and Cancel always exists. The operator can ALWAYS
+          // merge regardless of review state — friction, not a block.
           <span className="inline-flex items-center gap-1">
-            <span className="text-[11px] text-warning">Merge (squash, delete branch)?</span>
+            <span className="text-[11px] text-warning">
+              Producer review not delivered for this PR — merge anyway?
+            </span>
             <button
               type="button"
               onClick={onMerge}
