@@ -1850,6 +1850,10 @@
     "RepoPrsWire": {
       "description": "One repo's slice of the unit-scoped PR list. `repo_label` is the stable\ndirectory basename (e.g. `\"tmai-core\"`) — the same scheme\n[`crate::config::ResolvedUnit::from_dir`] uses for unit names; `repo_path`\nis the absolute path the diff/merge endpoints take as their `repo` param.",
       "properties": {
+        "billing_dead": {
+          "description": "`true` when `[github.<repo>] billing_dead = true` is set for this\nrepo (`Settings::repo_billing_dead`). Surfaced so the react UI can\ndecide *where* to show the billing-dead CI-gate override affordance\n(approach `2026-05-20-billing-dead-ci-safe-override`, O1-b) — the\naffordance belongs only on a repo the operator has flagged. This is\na read-only projection of operator config; the backend\n(`validate_billing_dead_override`) is the enforcing gate, never this\nbit. Overlaid in [`build_unit_prs_response`] from an injected\npredicate, so the function stays pure / IO-free.\n\n`default` + `skip_serializing_if` keep it optional with the exact\n#404 `is_producer` discipline: absent on the wire when `false`, and a\npayload omitting it deserializes to `false` — clients stay lockstep-free.",
+          "type": "boolean"
+        },
         "primary": {
           "description": "`true` for the unit's primary repo (where the Producer is launched).",
           "type": "boolean"
