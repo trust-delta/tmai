@@ -442,6 +442,7 @@ function PrRow({
             value={attestation}
             onChange={(e) => setAttestation(e.target.value)}
             rows={4}
+            aria-label="CI-local attestation for billing-dead override"
             placeholder="Paste the ci-local attestation (e.g. the `bash scripts/ci-local.sh` summary)…"
             className="mt-1.5 w-full rounded border border-hairline-strong/40 bg-surface px-2 py-1 font-mono text-[10.5px] text-foreground placeholder:text-subtle-foreground"
           />
@@ -458,7 +459,10 @@ function PrRow({
             </button>
             <button
               type="button"
-              onClick={() => setOverrideOpen(false)}
+              onClick={() => {
+                setOverrideOpen(false);
+                setAttestation("");
+              }}
               disabled={merge.busy}
               className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
             >
