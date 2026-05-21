@@ -15,4 +15,20 @@ primary: boolean,
 /**
  * Open PRs in this repo, newest first (descending PR number).
  */
-prs: Array<PrSummaryWire>, };
+prs: Array<PrSummaryWire>, 
+/**
+ * `true` when `[github.<repo>] billing_dead = true` is set for this
+ * repo (`Settings::repo_billing_dead`). Surfaced so the react UI can
+ * decide *where* to show the billing-dead CI-gate override affordance
+ * (approach `2026-05-20-billing-dead-ci-safe-override`, O1-b) — the
+ * affordance belongs only on a repo the operator has flagged. This is
+ * a read-only projection of operator config; the backend
+ * (`validate_billing_dead_override`) is the enforcing gate, never this
+ * bit. Overlaid in [`build_unit_prs_response`] from an injected
+ * predicate, so the function stays pure / IO-free.
+ *
+ * `default` + `skip_serializing_if` keep it optional with the exact
+ * #404 `is_producer` discipline: absent on the wire when `false`, and a
+ * payload omitting it deserializes to `false` — clients stay lockstep-free.
+ */
+billing_dead?: boolean, };
