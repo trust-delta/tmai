@@ -350,4 +350,21 @@ describe("UnitPrsSection", () => {
     });
     expect(mergePrMock).not.toHaveBeenCalled();
   });
+
+  it("clears the pasted attestation on Cancel (fresh on reopen) and labels the textarea for a11y", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [failingBillingDeadRepo()] });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    // `getByLabelText` resolves only via the textarea's aria-label.
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+    const ta = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "ci-local summary\n  ✓ all" } });
+    expect(ta.value).toBe("ci-local summary\n  ✓ all");
+
+    // Cancel must clear, so reopening shows a fresh textarea, not the stale paste.
+    fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
+    fireEvent.click(screen.getByRole("button", { name: OVERRIDE_BTN }));
+    const reopened = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+    expect(reopened.value).toBe("");
+  });
 });
