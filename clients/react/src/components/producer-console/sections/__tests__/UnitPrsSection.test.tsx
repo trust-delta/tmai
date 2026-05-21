@@ -263,4 +263,91 @@ describe("UnitPrsSection", () => {
       expect(screen.getByText(/✓ Merged #707/)).toBeTruthy();
     });
   });
+
+  // Phase B billing-dead CI-safe operator override (approach
+  // `2026-05-20-billing-dead-ci-safe-override`). A DISTINCT affordance
+  // from the producer_reviewed valve above: a separate button + panel,
+  // offered ONLY when the repo is flagged billing-dead AND this PR's
+  // GitHub CI is red. The UI just collects + sends the attestation; the
+  // backend (`validate_billing_dead_override`) is the real gate.
+
+  const failingBillingDeadRepo = (): RepoPrsWire => {
+    const repo = repoStub();
+    repo.prs[0].check_status = "FAILURE";
+    repo.billing_dead = true;
+    return repo;
+  };
+
+  const OVERRIDE_BTN = /Override \(ci-local attestation\)/;
+
+  it("does not render the override button when the repo is not billing-dead, even on CI-red", async () => {
+    const repo = repoStub();
+    repo.prs[0].check_status = "FAILURE"; // CI red, but billing_dead absent.
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [repo] });
+    render(<UnitPrsSection unitName="tmai" />);
+    await screen.findByText(/token lock \+ light theme/);
+    expect(screen.queryByRole("button", { name: OVERRIDE_BTN })).toBeNull();
+  });
+
+  it("does not render the override button when CI is not red, even on a billing-dead repo", async () => {
+    const repo = repoStub();
+    repo.billing_dead = true; // billing-dead, but check_status stays SUCCESS.
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [repo] });
+    render(<UnitPrsSection unitName="tmai" />);
+    await screen.findByText(/token lock \+ light theme/);
+    expect(screen.queryByRole("button", { name: OVERRIDE_BTN })).toBeNull();
+  });
+
+  it("renders the override button only when the repo is billing-dead AND CI is red", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [failingBillingDeadRepo()] });
+    render(<UnitPrsSection unitName="tmai" />);
+    expect(await screen.findByRole("button", { name: OVERRIDE_BTN })).toBeTruthy();
+  });
+
+  it("opens the override panel and confirms with the exact override payload", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [failingBillingDeadRepo()] });
+    mergePrMock.mockResolvedValue({ status: "merged" });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+
+    const textarea = screen.getByPlaceholderText(/ci-local attestation/i);
+    fireEvent.change(textarea, { target: { value: "ci-local: all green\n42 passed" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Override-merge #707/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/✓ Merged #707/)).toBeTruthy();
+    });
+    // repo_billing_dead_acknowledged: true + the pasted attestation,
+    // alongside the unchanged squash/delete-branch defaults.
+    expect(mergePrMock).toHaveBeenCalledWith("/home/u/works/tmai", 707, {
+      method: "squash",
+      deleteBranch: true,
+      override: {
+        ci_local_attestation: "ci-local: all green\n42 passed",
+        repo_billing_dead_acknowledged: true,
+      },
+    });
+  });
+
+  it("disables the override Confirm on an empty attestation and Cancel dismisses without calling", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [failingBillingDeadRepo()] });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+
+    const confirm = screen.getByRole("button", {
+      name: /Override-merge #707/,
+    }) as HTMLButtonElement;
+    // Empty textarea ⇒ Confirm disabled (mirrors the backend min-sanity).
+    expect(confirm.disabled).toBe(true);
+
+    // Cancel closes the panel and never touches the API.
+    fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText(/ci-local attestation/i)).toBeNull();
+    });
+    expect(mergePrMock).not.toHaveBeenCalled();
+  });
 });
