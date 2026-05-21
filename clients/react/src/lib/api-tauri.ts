@@ -14,6 +14,7 @@ import type {
   NotifyTemplates,
   OrchestratorRules,
   PrMergeMethod,
+  PrMergeOverride,
   PrMonitorScope,
   SpawnRequest,
   SpawnRuntime,
@@ -155,7 +156,7 @@ export const api = {
   mergePr: (
     repoPath: string,
     prNumber: number,
-    opts?: { method?: PrMergeMethod; deleteBranch?: boolean },
+    opts?: { method?: PrMergeMethod; deleteBranch?: boolean; override?: PrMergeOverride },
   ) => httpApi.mergePr(repoPath, prNumber, opts),
   getCiFailureLog: (repoPath: string, runId: number) => httpApi.getCiFailureLog(repoPath, runId),
   rerunFailedChecks: (repoPath: string, runId: number) =>

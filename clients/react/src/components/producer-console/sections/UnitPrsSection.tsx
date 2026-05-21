@@ -26,7 +26,7 @@
 import { useState } from "react";
 import { DiffViewer } from "@/components/worktree/DiffViewer";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
-import { api, type PrSummaryWire, type RepoPrsWire } from "@/lib/api";
+import { api, type PrMergeOverride, type PrSummaryWire, type RepoPrsWire } from "@/lib/api";
 
 interface UnitPrsSectionProps {
   unitName: string | null;
@@ -128,7 +128,11 @@ function PrList({ repos }: { repos: RepoPrsWire[] }) {
   const multiRepo = repos.length > 1;
   const [merge, setMerge] = useState<Record<string, MergeState>>({});
 
-  const onMerge = async (repoPath: string, pr: PrSummaryWire) => {
+  // `override` (Phase B billing-dead CI-safe path) is threaded straight
+  // through to `api.mergePr` and is sent only when present — the normal
+  // merge call is byte-for-byte unchanged. Both paths share this one
+  // MergeState lifecycle (busy/done/error) per the brief.
+  const onMerge = async (repoPath: string, pr: PrSummaryWire, override?: PrMergeOverride) => {
     const key = prKey(repoPath, pr.number);
     setMerge((m) => ({ ...m, [key]: { ...IDLE_MERGE, busy: true } }));
     try {
@@ -136,6 +140,7 @@ function PrList({ repos }: { repos: RepoPrsWire[] }) {
       await api.mergePr(repoPath, Number(pr.number), {
         method: "squash",
         deleteBranch: true,
+        ...(override ? { override } : {}),
       });
       setMerge((m) => ({ ...m, [key]: { ...IDLE_MERGE, done: true } }));
     } catch (e) {
@@ -166,8 +171,18 @@ function PrList({ repos }: { repos: RepoPrsWire[] }) {
                   key={prKey(repo.repo_path, pr.number)}
                   repoPath={repo.repo_path}
                   pr={pr}
+                  // billing-dead lives on the REPO, not the PR — thread it
+                  // down the same way the rest of the row is mapped from
+                  // `repo.prs`. Absent-when-false ⇒ `=== true`.
+                  billingDead={repo.billing_dead === true}
                   merge={merge[prKey(repo.repo_path, pr.number)] ?? IDLE_MERGE}
                   onMerge={() => onMerge(repo.repo_path, pr)}
+                  onOverrideMerge={(attestation) =>
+                    onMerge(repo.repo_path, pr, {
+                      ci_local_attestation: attestation,
+                      repo_billing_dead_acknowledged: true,
+                    })
+                  }
                   onArmMerge={(armed) =>
                     setMerge((m) => ({
                       ...m,
@@ -221,16 +236,42 @@ function checkBadge(status: string | null): { label: string; cls: string } | nul
 interface PrRowProps {
   repoPath: string;
   pr: PrSummaryWire;
+  /** `repo.billing_dead === true` — the repo (not the PR) is flagged
+   *  billing-dead, so the CI-safe override affordance is offered. */
+  billingDead: boolean;
   merge: MergeState;
   onMerge: () => void;
+  /** Fire the Phase B billing-dead CI-safe override merge with the
+   *  pasted ci-local attestation. */
+  onOverrideMerge: (attestation: string) => void;
   onArmMerge: (armed: boolean) => void;
 }
 
-function PrRow({ repoPath, pr, merge, onMerge, onArmMerge }: PrRowProps) {
+function PrRow({
+  repoPath,
+  pr,
+  billingDead,
+  merge,
+  onMerge,
+  onOverrideMerge,
+  onArmMerge,
+}: PrRowProps) {
   const [diffOpen, setDiffOpen] = useState(false);
   const [patch, setPatch] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
+
+  // Phase B billing-dead CI-safe override (approach
+  // `2026-05-20-billing-dead-ci-safe-override`). Distinct from the
+  // Stage-2 producer_reviewed valve below — that valve only governs the
+  // *normal* merge button's friction; this is a separate button + panel
+  // for the narrow case where GitHub CI is red *only because* the repo's
+  // private Actions billing lapsed. The UI just collects + sends the
+  // attestation; the backend re-validates the per-repo `billing_dead`
+  // flag and is the real gate.
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [attestation, setAttestation] = useState("");
+  const showOverride = billingDead && pr.check_status === "FAILURE";
 
   // Lazy: fetch the patch on the first open and cache it for the row's
   // lifetime (an open PR's diff is stable enough for a review pass).
@@ -371,7 +412,61 @@ function PrRow({ repoPath, pr, merge, onMerge, onArmMerge }: PrRowProps) {
             </button>
           </span>
         )}
+
+        {/* Phase B billing-dead CI-safe override — a DISTINCT affordance
+            from the merge button(s) above (outlined, not filled, so the
+            two are never confused). Offered only when the repo is flagged
+            billing-dead AND this PR's GitHub CI is red. */}
+        {showOverride && (
+          <button
+            type="button"
+            onClick={() => setOverrideOpen((open) => !open)}
+            disabled={merge.busy}
+            title="GitHub CI is red only because this repo's private Actions billing lapsed. Merge with a pasted ci-local attestation — the backend re-validates the per-repo billing_dead flag and is the real gate."
+            className="rounded border border-warning/50 bg-transparent px-2 py-0.5 text-[11px] font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-50"
+          >
+            Override (ci-local attestation)
+          </button>
+        )}
       </div>
+
+      {showOverride && overrideOpen && (
+        <div className="mt-2 rounded border border-warning/40 bg-warning/[0.05] px-2 py-1.5">
+          <p className="text-[10.5px] leading-relaxed text-warning">
+            CI is red only because this repo's private Actions billing is dead. Paste the{" "}
+            <code className="text-foreground">ci-local</code> run summary; the backend re-checks the
+            per-repo <code className="text-foreground">billing_dead</code> flag + attestation before
+            running <code className="text-foreground">gh pr merge --admin</code>.
+          </p>
+          <textarea
+            value={attestation}
+            onChange={(e) => setAttestation(e.target.value)}
+            rows={4}
+            placeholder="Paste the ci-local attestation (e.g. the `bash scripts/ci-local.sh` summary)…"
+            className="mt-1.5 w-full rounded border border-hairline-strong/40 bg-surface px-2 py-1 font-mono text-[10.5px] text-foreground placeholder:text-subtle-foreground"
+          />
+          <div className="mt-1.5 flex items-center gap-1.5">
+            {/* Disabled while empty mirrors the backend min-sanity; the
+                backend stays the real gate (flag + attestation). */}
+            <button
+              type="button"
+              onClick={() => onOverrideMerge(attestation)}
+              disabled={merge.busy || attestation.trim() === ""}
+              className="rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/30 disabled:opacity-50"
+            >
+              {merge.busy ? "Merging…" : `Override-merge #${Number(pr.number)}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverrideOpen(false)}
+              disabled={merge.busy}
+              className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {merge.error && (
         <p className="mt-1 text-[10.5px] text-destructive/80">Merge failed: {merge.error}</p>

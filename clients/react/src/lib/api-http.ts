@@ -656,6 +656,30 @@ export interface PrMergeStatus {
 export type PrMergeMethod = "squash" | "merge" | "rebase";
 
 /**
+ * Operator override for the billing-dead CI-safe merge path (approach
+ * `2026-05-20-billing-dead-ci-safe-override`, Phase B). Lets the operator
+ * merge a PR whose GitHub CI is red **only because** the repo's private
+ * Actions billing has lapsed.
+ *
+ * Hand-typed here rather than imported from `src/types/generated/`: the
+ * backend type is an inline `Deserialize`-only struct on
+ * `POST /api/github/pr/merge` with no `ToSchema` / `ts_rs::TS` derive, so
+ * there is no generated binding to re-export. Field names MUST byte-match
+ * the backend's serde fields (`validate_billing_dead_override`).
+ *
+ * The UI never enforces — it only collects + sends. The backend is the
+ * real gate: it requires `[github.<repo>] billing_dead = true` server-side
+ * AND a valid attestation before doing `gh pr merge --admin`, posting a PR
+ * comment, and baking the attestation into the merge-commit trailer.
+ */
+export interface PrMergeOverride {
+  /** Pasted `ci-local` run summary attesting the change passed locally. */
+  ci_local_attestation: string;
+  /** Operator's explicit acknowledgement the repo is billing-dead. */
+  repo_billing_dead_acknowledged: boolean;
+}
+
+/**
  * Response of `POST /api/github/pr/merge`.
  *
  * WHY permissive: this endpoint predates the Stage-1 doc stubs and is
@@ -1224,10 +1248,16 @@ export const api = {
   // the operator merges directly, not via a spawned agent. Defaults
   // (squash + delete-branch) match the prompt that path used; cleanup
   // of the head worktree stays off (Stage-1 scope is merge only).
+  //
+  // `opts.override` is the Phase B billing-dead CI-safe override (approach
+  // `2026-05-20-billing-dead-ci-safe-override`): sent only when present,
+  // so an ordinary merge body is byte-for-byte unchanged. The backend
+  // re-validates the per-repo `billing_dead` flag + attestation; the UI
+  // only collects + forwards.
   mergePr: (
     repoPath: string,
     prNumber: number,
-    opts?: { method?: PrMergeMethod; deleteBranch?: boolean },
+    opts?: { method?: PrMergeMethod; deleteBranch?: boolean; override?: PrMergeOverride },
   ) =>
     apiFetch<MergePrResponse>("/github/pr/merge", {
       method: "POST",
@@ -1236,6 +1266,7 @@ export const api = {
         pr_number: prNumber,
         method: opts?.method ?? "squash",
         delete_branch: opts?.deleteBranch ?? true,
+        ...(opts?.override ? { override: opts.override } : {}),
       }),
     }),
   getCiFailureLog: (repoPath: string, runId: number) =>
