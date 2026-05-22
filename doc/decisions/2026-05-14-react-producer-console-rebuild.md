@@ -12,7 +12,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-13-tmai-is-a-producer-exoskeleton.md"
   - "tmai-core:doc/decisions/2026-05-13-agent-view-does-not-replace-multiplexer-substrate.md"
   - "tmai-core:doc/decisions/2026-05-13-producer-feedback-loop-and-decision-tiers.md"
-last-verified: 2026-05-22
+last-verified: 2026-05-23
 contract-surface: false
 related:
   - "2026-04-21-monorepo-reconsolidation"
