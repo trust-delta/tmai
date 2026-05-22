@@ -28,6 +28,13 @@ export interface UIPrefs {
   // xterm font size (px). Presentation-only, browser-side; replaces the
   // old hardcoded `fontSize: 13` in useTerminal.
   terminalFontSize: number;
+  // Persistent right-hand attention strip collapse state
+  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
+  // §Refinement 2026-05-22 — L/C/R co-visible layout). Presentation-only,
+  // browser-side: the operator can fold the strip to a rail to reclaim
+  // width when the centre conversation/multipane is busy. Default open so
+  // a clean-state user sees the co-visible attention surface immediately.
+  attentionStripCollapsed: boolean;
 }
 
 export const DEFAULT_UI_PREFS: UIPrefs = {
@@ -40,6 +47,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   tripleInnerRatio: 0.5,
   theme: DEFAULT_THEME_NAME,
   terminalFontSize: 13,
+  attentionStripCollapsed: false,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -89,6 +97,10 @@ function coercePrefs(raw: unknown): UIPrefs {
       ? (r.theme as ThemeName)
       : DEFAULT_UI_PREFS.theme,
     terminalFontSize: clampFontSize(r.terminalFontSize, DEFAULT_UI_PREFS.terminalFontSize),
+    attentionStripCollapsed:
+      typeof r.attentionStripCollapsed === "boolean"
+        ? r.attentionStripCollapsed
+        : DEFAULT_UI_PREFS.attentionStripCollapsed,
   };
 }
 
