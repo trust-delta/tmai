@@ -9,24 +9,15 @@ interface ProjectGroupProps {
   project: ProjectGroupType;
   selection: Selection | null;
   onSelectAgent: (target: string) => void;
-  onSelectProject: (path: string, name: string) => void;
-  onSelectMarkdown: (projectPath: string, projectName: string) => void;
   onSpawned: (sessionId: string) => void;
-  splitPaneProjectPath: string | null;
-  splitPaneTab: "git" | "markdown" | null;
 }
 
-// Collapsible project group containing worktree sub-groups
-export function ProjectGroup({
-  project,
-  selection,
-  onSelectAgent,
-  onSelectProject,
-  onSelectMarkdown,
-  onSpawned,
-  splitPaneProjectPath,
-  splitPaneTab,
-}: ProjectGroupProps) {
+// Collapsible project group containing worktree sub-groups.
+//
+// The per-project branch-graph + markdown-files buttons retired with the
+// git/docs multipane (DR `2026-05-14-react-producer-console-rebuild.md`
+// §Refinement 2026-05-22 Fork B). What's left is agent selection + spawn.
+export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawning, setSpawning] = useState(false);
@@ -62,14 +53,6 @@ export function ProjectGroup({
 
   // Derive selectedTarget for agent card highlighting
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
-  // Icon is active when shown fullscreen OR in split-pane right panel
-  const isSplitForThisProject = splitPaneProjectPath === project.path;
-  const isProjectSelected =
-    (selection?.type === "project" && selection.path === project.path) ||
-    (isSplitForThisProject && splitPaneTab === "git");
-  const isMarkdownSelected =
-    (selection?.type === "markdown" && selection.projectPath === project.path) ||
-    (isSplitForThisProject && splitPaneTab === "markdown");
 
   // Spawn an agent in a specific directory
   const confirm = useConfirm();
@@ -186,82 +169,6 @@ export function ProjectGroup({
               {project.attentionAgents}
             </span>
           )}
-          {/* Branch graph button */}
-          <button
-            type="button"
-            onClick={() => onSelectProject(project.path, project.name)}
-            className={cn(
-              "rounded px-1 py-0.5 transition-colors",
-              isProjectSelected
-                ? "text-success bg-success/10"
-                : "text-subtle-foreground hover:text-success hover:bg-success/10",
-            )}
-            title="Branch graph"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              className="inline-block"
-              role="img"
-              aria-label="Branch graph"
-            >
-              <title>Branch graph</title>
-              <circle cx="4" cy="4" r="2" fill="currentColor" />
-              <circle cx="4" cy="12" r="2" fill="currentColor" />
-              <circle cx="12" cy="8" r="2" fill="currentColor" />
-              <line x1="4" y1="6" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M4 6 C4 8, 8 8, 12 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
-            </svg>
-          </button>
-          {/* Markdown files button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectMarkdown(project.path, project.name);
-            }}
-            className={cn(
-              "rounded px-1 py-0.5 transition-colors",
-              isMarkdownSelected
-                ? "text-info bg-info/10"
-                : "text-subtle-foreground hover:text-info hover:bg-info/10",
-            )}
-            title="Markdown files"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              className="inline-block"
-              role="img"
-              aria-label="Markdown files"
-            >
-              <title>Markdown files</title>
-              <rect
-                x="2"
-                y="1"
-                width="12"
-                height="14"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                fill="none"
-              />
-              <text
-                x="8"
-                y="11"
-                textAnchor="middle"
-                fill="currentColor"
-                fontSize="7"
-                fontWeight="bold"
-              >
-                M
-              </text>
-            </svg>
-          </button>
           {/* Spawn button */}
           <div className="relative" ref={spawnRef}>
             <button

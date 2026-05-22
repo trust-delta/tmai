@@ -13,26 +13,25 @@ interface AgentListProps {
   loading: boolean;
   selection: Selection | null;
   onSelectAgent: (target: string) => void;
-  onSelectProject: (path: string, name: string) => void;
-  onSelectMarkdown: (projectPath: string, projectName: string) => void;
   worktrees: WorktreeSnapshot[];
   onSpawned: (sessionId: string) => void;
-  splitPaneProjectPath: string | null;
-  splitPaneTab: "git" | "markdown" | null;
 }
 
-// Scrollable list of agents grouped by project and worktree
+// Scrollable list of agents grouped by project and worktree.
+//
+// The per-project branch-graph + markdown-files buttons (and their
+// onSelectProject / onSelectMarkdown / splitPane* prop chain) retired with
+// the git/docs multipane (DR `2026-05-14-react-producer-console-rebuild.md`
+// §Refinement 2026-05-22 Fork B). Cross-unit navigation now lives in the
+// ProducerConsole digest / AttentionStrip cross-unit list, not the sidebar;
+// the sidebar is the legacy direct-agent escape hatch only.
 export function AgentList({
   agents,
   loading,
   selection,
   onSelectAgent,
-  onSelectProject,
-  onSelectMarkdown,
   worktrees,
   onSpawned,
-  splitPaneProjectPath,
-  splitPaneTab,
 }: AgentListProps) {
   const projects = useMemo(() => groupByProject(agents, worktrees), [agents, worktrees]);
 
@@ -74,11 +73,7 @@ export function AgentList({
             project={project}
             selection={selection}
             onSelectAgent={onSelectAgent}
-            onSelectProject={onSelectProject}
-            onSelectMarkdown={onSelectMarkdown}
             onSpawned={onSpawned}
-            splitPaneProjectPath={splitPaneProjectPath}
-            splitPaneTab={splitPaneTab}
           />
         ))
       )}

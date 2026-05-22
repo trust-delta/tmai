@@ -176,18 +176,21 @@ describe("useAgentSelectionFallback", () => {
     expect(setSelection).not.toHaveBeenCalled();
   });
 
-  it("does not interfere when the user navigated to a non-agent selection", () => {
-    // User had an agent selected, then clicked a worktree. selectedAgent
-    // becomes undefined because the selection type changed, not because
-    // the agent died. Hook should leave selection alone.
+  it("leaves selection alone when it is cleared while the agent is still present", () => {
+    // User had an agent selected, then returned to the console (selection
+    // cleared to null). selectedAgent becomes undefined because the
+    // selection changed, not because the agent died — the agent is still
+    // in the list, so the hook must not yank focus to a sibling or clear.
+    // (Single-pane Selection: the old worktree/project selection types
+    // retired with the git/docs multipane, DR §Refinement 2026-05-22.)
     const setSelection = vi.fn();
     const a = agent({ target: "a", cwd: "/foo" });
-    type WorktreeNavProps = {
+    type NavProps = {
       selection: Selection | null;
       selectedAgent: AgentSnapshot | undefined;
     };
     const { rerender } = renderHook(
-      ({ selection, selectedAgent }: WorktreeNavProps) =>
+      ({ selection, selectedAgent }: NavProps) =>
         useAgentSelectionFallback({
           selection,
           selectedAgent,
@@ -198,19 +201,11 @@ describe("useAgentSelectionFallback", () => {
         initialProps: {
           selection: { type: "agent", id: "a" },
           selectedAgent: a,
-        } as WorktreeNavProps,
+        } as NavProps,
       },
     );
 
-    rerender({
-      selection: {
-        type: "worktree",
-        repoPath: "/foo",
-        name: "wt",
-        worktreePath: "/foo/wt",
-      } as Selection,
-      selectedAgent: undefined,
-    });
+    rerender({ selection: null, selectedAgent: undefined });
 
     expect(setSelection).not.toHaveBeenCalled();
   });

@@ -76,8 +76,9 @@ export function useAgentSelectionFallback({
     if (sibling) {
       setSelection({ type: "agent", id: sibling.target });
     } else if (selection?.type === "agent") {
-      // Only clear when the dead selection was an agent — if the user
-      // moved on to a worktree/project view themselves, preserve that.
+      // Only clear when the dead selection still pointed at an agent. If
+      // the operator already returned to the console (selection === null),
+      // leave it — re-clearing would be redundant state churn.
       setSelection(null);
     }
   }, [selectedAgent, agents, selection, setSelection]);
