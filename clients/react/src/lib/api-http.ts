@@ -501,12 +501,13 @@ export type TranscriptRecord =
       timestamp?: string;
     };
 
-// Discriminated union for sidebar selection
-export type Selection =
-  | { type: "agent"; id: string }
-  | { type: "worktree"; repoPath: string; name: string; worktreePath: string }
-  | { type: "project"; path: string; name: string }
-  | { type: "markdown"; projectPath: string; projectName: string };
+// Sidebar selection. Single-pane Producer console (DR
+// `2026-05-14-react-producer-console-rebuild.md` §Refinement 2026-05-22
+// Fork B): the git/docs multipane + full-screen project/markdown/worktree
+// views are retired, so the only thing the operator selects is an agent
+// (the Producer conversation). Cross-unit selection re-scopes
+// `currentProject` instead of opening a view.
+export type Selection = { type: "agent"; id: string };
 
 export interface RemoteTrackingInfo {
   remote_branch: string;

@@ -1,24 +1,25 @@
 // @vitest-environment jsdom
 //
-// App layout test for P1 of the L/C/R co-visible re-layout
+// App layout test for the L/C/R co-visible re-layout
 // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-// §Refinement 2026-05-22). This is a *layout* test: it asserts WHERE the
-// AttentionStrip sits in App's flex tree and WHEN it shows — not the
-// strip's internals (those are covered by AttentionStrip.test.tsx). So we
-// stub the strip (and every heavy panel) and drive App's selection /
-// breakpoint state through mocked hooks.
+// §Refinement 2026-05-22 + P2 Fork B single-pane retire). This is a
+// *layout* test: it asserts WHERE the AttentionStrip sits in App's flex
+// tree and WHEN it shows — not the strip's internals (those are covered by
+// AttentionStrip.test.tsx). So we stub the strip (and every heavy panel)
+// and drive App's selection / breakpoint state through mocked hooks.
 //
 // The load-bearing assertions:
 //   1. with no agent selected, the centre shows the digest AND the strip
 //      is present;
-//   2. after selecting an agent the centre swaps to the agent view but the
-//      strip STAYS present — co-visibility kills the digest↔conversation
-//      screen-switch;
-//   3. on a narrow viewport the strip is gone (same threshold as the
-//      centre multipane gate) so it never crowds a small screen.
+//   2. after selecting an agent the centre swaps to the SINGLE-PANE agent
+//      view (no git/docs tabs/split) but the strip STAYS present —
+//      co-visibility kills the digest↔conversation screen-switch;
+//   3. on a narrow viewport the strip is gone — its guard reads
+//      isNarrowScreen off the sole surviving useSplitPane (Catch 1);
+//   4. a cross-unit click re-scopes currentProject instead of opening a
+//      removed full-screen view (Catch 2).
 
 import { fireEvent, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -61,8 +62,25 @@ vi.mock("@/hooks/useKeyboardShortcuts", () => ({ useKeyboardShortcuts: () => und
 vi.mock("@/components/producer-console/AttentionStrip", () => ({
   AttentionStrip: () => <div data-testid="attention-strip-stub">strip</div>,
 }));
+// The console stub surfaces `currentProjectPath` and a button that fires
+// `onSelectProjectByPath`, so the cross-unit re-scope reroute (Catch 2 /
+// DR §Refinement 2026-05-22 Fork B) is observable at the App level without
+// rendering the real digest.
 vi.mock("@/components/producer-console/ProducerConsole", () => ({
-  ProducerConsole: () => <div data-testid="producer-console-stub">digest</div>,
+  ProducerConsole: ({
+    currentProjectPath,
+    onSelectProjectByPath,
+  }: {
+    currentProjectPath: string | null;
+    onSelectProjectByPath: (path: string, name: string) => void;
+  }) => (
+    <div data-testid="producer-console-stub">
+      <span data-testid="console-current-project">{currentProjectPath ?? "none"}</span>
+      <button type="button" onClick={() => onSelectProjectByPath("/p/beta", "beta")}>
+        rescope-beta
+      </button>
+    </div>
+  ),
 }));
 vi.mock("@/components/agent/PreviewPanel", () => ({
   PreviewPanel: () => <div data-testid="preview-stub">preview</div>,
@@ -70,21 +88,6 @@ vi.mock("@/components/agent/PreviewPanel", () => ({
 vi.mock("@/components/agent/AgentActions", () => ({ AgentActions: () => null }));
 vi.mock("@/components/terminal/TerminalPanel", () => ({
   TerminalPanel: () => <div data-testid="terminal-stub">terminal</div>,
-}));
-vi.mock("@/components/worktree/BranchGraph", () => ({ BranchGraph: () => null }));
-vi.mock("@/components/markdown/MarkdownPanel", () => ({ MarkdownPanel: () => null }));
-vi.mock("@/components/worktree/WorktreePanel", () => ({ WorktreePanel: () => null }));
-vi.mock("@/components/layout/SplitPaneLayout", () => ({
-  SplitPaneLayout: ({ left }: { left: ReactNode }) => <div>{left}</div>,
-}));
-vi.mock("@/components/layout/TabbedPaneLayout", () => ({
-  TabbedPaneLayout: ({ preview }: { preview: ReactNode }) => <div>{preview}</div>,
-}));
-vi.mock("@/components/layout/TriplePaneLayout", () => ({
-  TriplePaneLayout: ({ preview }: { preview: ReactNode }) => <div>{preview}</div>,
-}));
-vi.mock("@/components/layout/DisplayModeSelector", () => ({
-  DisplayModeSelector: () => null,
 }));
 vi.mock("@/components/agent/AgentList", () => ({ AgentList: () => null }));
 vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null }));
@@ -185,7 +188,10 @@ describe("App — persistent attention strip layout", () => {
     expect(screen.getByTestId("attention-strip-stub")).toBeTruthy();
   });
 
-  it("hides the strip on a narrow viewport (same threshold as the centre multipane)", () => {
+  it("hides the strip on a narrow viewport (isNarrowScreen from useSplitPane)", () => {
+    // Catch 1: after the multipane retired, isNarrowScreen is sourced from
+    // the sole surviving useSplitPane instance — the strip's narrow-hide
+    // guard must still fire off it.
     useResponsiveLayoutMock.mockReturnValue(responsive({ isNarrowScreen: true }));
     useSplitPaneMock.mockReturnValue(splitPane(true));
 
@@ -200,5 +206,31 @@ describe("App — persistent attention strip layout", () => {
     renderWithProviders(<App />);
 
     expect(screen.queryByTestId("attention-strip-stub")).toBeNull();
+  });
+
+  it("re-scopes the focused unit on a cross-unit click (no full-screen view)", () => {
+    // Catch 2 / DR §Refinement 2026-05-22 Fork B: the full-screen project /
+    // BranchGraph view retired, so a cross-unit click must RE-SCOPE
+    // currentProject rather than open a removed view. Two agents → two
+    // units, so the clicked path differs from the auto-defaulted one yet is
+    // still in projectPaths (the auto-default effect won't reset it).
+    useAgentsMock.mockReturnValue({
+      agents: [agent("claude:abc", "/p/alpha"), agent("claude:def", "/p/beta")],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    renderWithProviders(<App />);
+
+    // Auto-defaults to the first derived project (alpha sorts before beta).
+    expect(screen.getByTestId("console-current-project").textContent).toBe("/p/alpha");
+
+    fireEvent.click(screen.getByText("rescope-beta"));
+
+    // Re-scoped to the clicked unit — and the digest is STILL shown (no
+    // full-screen swap to a removed project view, no dead-end).
+    expect(screen.getByTestId("console-current-project").textContent).toBe("/p/beta");
+    expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
   });
 });

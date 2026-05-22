@@ -5,14 +5,9 @@ import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { CalibrationChip } from "@/components/calibration/CalibrationChip";
 import { CalibrationPanel } from "@/components/calibration/CalibrationPanel";
 import { TripwireBanner } from "@/components/calibration/TripwireBanner";
-import { type DisplayMode, DisplayModeSelector } from "@/components/layout/DisplayModeSelector";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
-import { SplitPaneLayout } from "@/components/layout/SplitPaneLayout";
 import { StatusBar } from "@/components/layout/StatusBar";
-import { TabbedPaneLayout } from "@/components/layout/TabbedPaneLayout";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
-import { TriplePaneLayout } from "@/components/layout/TriplePaneLayout";
-import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
 import { AttentionStrip } from "@/components/producer-console/AttentionStrip";
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
@@ -20,8 +15,6 @@ import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { UsagePanel } from "@/components/usage/UsagePanel";
-import { BranchGraph } from "@/components/worktree/BranchGraph";
-import { WorktreePanel } from "@/components/worktree/WorktreePanel";
 import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
@@ -61,7 +54,10 @@ export function App() {
   useApplyTheme();
 
   const { agents, attentionCount, loading, refresh } = useAgents();
-  const { worktrees, refresh: refreshWorktrees } = useWorktrees();
+  // `worktrees` still feeds project grouping (sidebar agent-less worktrees +
+  // `projectPaths` derivation); the BranchGraph/WorktreePanel views that
+  // mutated worktrees retired with the multipane, so no refresh handle here.
+  const { worktrees } = useWorktrees();
   const toast = useToast();
   const { success: toastSuccess, info: toastInfo } = toast;
 
@@ -97,14 +93,6 @@ export function App() {
     "agents",
   );
   const [showHelp, setShowHelp] = useState(false);
-  // Multi-pane layout choices live in the WebUI prefs store (browser-only,
-  // not in tmai-core's config.toml — these describe how this WebUI shows
-  // the same backend data). The store handles persistence + cross-tab sync.
-  const [rightPanelTab, setRightPanelTab] = useUIPref("rightPanelTab");
-  const [displayMode, setDisplayMode] = useUIPref("displayMode");
-  const [tabsActive, setTabsActive] = useUIPref("tabsActive");
-  const [splitRatioH, setSplitRatioH] = useUIPref("splitRatioH");
-  const [splitRatioV, setSplitRatioV] = useUIPref("splitRatioV");
   // Persistent right attention strip
   // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
   // §Refinement 2026-05-22 — L/C/R co-visible layout). Collapsed state
@@ -255,40 +243,32 @@ export function App() {
     void launchProducerAt(currentProject);
   }, [currentProject, launchProducerAt]);
 
-  // Split-pane drag state — separate instances for horizontal vs vertical
-  // so the user can drag each independently and resume where they left off
-  // when cycling display modes. Persistence flows through useUIPref via
-  // onCommit; the hook stays in-memory so per-frame drag updates don't
-  // hammer localStorage.
-  const horizontalSplit = useSplitPane({
-    orientation: "horizontal",
-    initialRatio: splitRatioH,
-    onCommit: setSplitRatioH,
-  });
-  const verticalSplit = useSplitPane({
-    orientation: "vertical",
-    initialRatio: splitRatioV,
-    onCommit: setSplitRatioV,
-  });
   // Attention-strip resize. Its containerRef is attached to the app-root
   // flex row below; the strip is that row's right-most in-flow child, so a
   // ratio of `clientX / rowWidth` makes the strip occupy `1 − ratio` of the
   // row — i.e. dragging its left-edge handle resizes it. Commit clamps the
   // derived px width to the legal window.
+  //
+  // This is the SOLE surviving `useSplitPane` instance after the git/docs
+  // multipane retired (DR `2026-05-14-react-producer-console-rebuild.md`
+  // §Refinement 2026-05-22 Fork B). It also remains the source of
+  // `isNarrowScreen` (matchMedia(NARROW_BREAKPOINT)), which the strip's
+  // visibility guard below depends on — the hook tracks the breakpoint
+  // independently of its containerRef, so reading it here is exact.
   const attentionStripSplit = useSplitPane({
     orientation: "horizontal",
     initialRatio: attentionWidthToRatio(attentionStripWidth),
     onCommit: (ratio) =>
       setAttentionStripWidth(clampAttentionStripWidth(attentionRatioToWidth(ratio))),
   });
-  const isNarrowScreen = horizontalSplit.isNarrowScreen;
+  const isNarrowScreen = attentionStripSplit.isNarrowScreen;
 
-  // Responsive layout state (sidebar & action panel collapse)
+  // Responsive layout state (sidebar collapse + mobile drawer). The action
+  // panel collapse pair retired with BranchGraph — that fullscreen view
+  // owned the only action panel, so nothing reads the toggle now.
   const {
     sidebarCollapsed,
     toggleSidebar,
-    actionPanelCollapsed,
-    toggleActionPanel,
     isMobileScreen,
     mobileDrawerOpen,
     toggleMobileDrawer,
@@ -355,12 +335,6 @@ export function App() {
   // first, matching the sidebar order); else any agent; else clear.
   useAgentSelectionFallback({ selection, selectedAgent, agents, setSelection });
 
-  // Derive selected worktree from selection
-  const selectedWorktree =
-    selection?.type === "worktree"
-      ? worktrees.find((wt) => wt.repo_path === selection.repoPath && wt.name === selection.name)
-      : undefined;
-
   const handleSpawned = useCallback(
     (target: string) => {
       setSelection({ type: "agent", id: target });
@@ -384,81 +358,21 @@ export function App() {
   // Derive selectedTarget string for components that need it
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
 
-  // Derive project context from selected agent for split view
-  const agentProjectPath = selectedAgent?.git_common_dir ?? selectedAgent?.cwd ?? null;
-  const agentProjectName = agentProjectPath
-    ? (agentProjectPath
-        .replace(/\/\.git\/?$/, "")
-        .replace(/\/+$/, "")
-        .split("/")
-        .pop() ?? agentProjectPath)
-    : null;
-  // Multi-pane (tabs / split / triple) is only available on non-mobile,
-  // non-narrow screens with an agent and project context resolved. Below
-  // that threshold we always fall back to preview-only.
-  const canShowMultiPane =
-    selection?.type === "agent" && agentProjectPath !== null && !isNarrowScreen && !isMobileScreen;
-
-  // Project / markdown sidebar buttons. When the click matches the agent's
-  // own project AND we're already showing a multi-pane layout that contains
-  // that target view, we just route the focus to the relevant tab — no need
-  // to blow away the agent context with a fullscreen swap.
-  const focusMultiPaneTab = useCallback(
-    (tab: "git" | "markdown") => {
-      if (displayMode === "tabs") {
-        setTabsActive(tab);
-        return true;
-      }
-      if (displayMode === "split-h" || displayMode === "split-v") {
-        setRightPanelTab(tab);
-        return true;
-      }
-      // triple already shows both git + markdown — nothing to switch.
-      return displayMode === "triple";
-    },
-    [displayMode, setTabsActive, setRightPanelTab],
-  );
-
+  // Cross-unit re-scope (DR `2026-05-14-react-producer-console-rebuild.md`
+  // §Refinement 2026-05-22 Fork B reroute). The full-screen project /
+  // BranchGraph view is retired, so picking a unit in the cross-unit list
+  // (the ProducerConsole digest or the AttentionStrip) no longer opens a
+  // view — it RE-SCOPES the focused unit, and the strip / digest sections
+  // re-render for that unit. `path` always comes from that list, which is
+  // derived from the same `groupByProject(aiAgents, worktrees)` as
+  // `projectPaths`, so the auto-default effect below never resets it back.
+  // `_name` is unused now (the old `{type:"project"}` selection carried it).
   const handleSelectProject = useCallback(
-    (path: string, name: string) => {
-      if (canShowMultiPane && agentProjectPath && path === agentProjectPath) {
-        if (focusMultiPaneTab("git")) {
-          closeMobileDrawer();
-          return;
-        }
-      }
-      setSelection({ type: "project", path, name });
-      closeMainPanelOverlay();
+    (path: string, _name: string) => {
+      setCurrentProject(path);
       closeMobileDrawer();
     },
-    [
-      canShowMultiPane,
-      agentProjectPath,
-      focusMultiPaneTab,
-      closeMobileDrawer,
-      closeMainPanelOverlay,
-    ],
-  );
-
-  const handleSelectMarkdown = useCallback(
-    (projectPath: string, projectName: string) => {
-      if (canShowMultiPane && agentProjectPath && projectPath === agentProjectPath) {
-        if (focusMultiPaneTab("markdown")) {
-          closeMobileDrawer();
-          return;
-        }
-      }
-      setSelection({ type: "markdown", projectPath, projectName });
-      closeMainPanelOverlay();
-      closeMobileDrawer();
-    },
-    [
-      canShowMultiPane,
-      agentProjectPath,
-      focusMultiPaneTab,
-      closeMobileDrawer,
-      closeMainPanelOverlay,
-    ],
+    [closeMobileDrawer],
   );
 
   // Keyboard shortcuts handlers
@@ -487,25 +401,10 @@ export function App() {
       },
     },
     {
-      keys: ["\\"],
-      description: "Cycle display mode (tabs → split-h → split-v → triple)",
-      handler: () => {
-        const order: DisplayMode[] = ["tabs", "split-h", "split-v", "triple"];
-        const next = order[(order.indexOf(displayMode) + 1) % order.length];
-        setDisplayMode(next);
-      },
-    },
-    {
       keys: ["b"],
       description: "Toggle sidebar",
       requiresCtrl: true,
       handler: toggleSidebar,
-    },
-    {
-      keys: ["."],
-      description: "Toggle action panel",
-      requiresCtrl: true,
-      handler: toggleActionPanel,
     },
     {
       keys: ["]"],
@@ -532,20 +431,6 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showHelp]);
 
-  // Map current displayMode to which sidebar tab badge should be highlighted.
-  // - tabs:    only when the active tab is git/markdown (preview = no badge)
-  // - split-*: the right-pane tab choice
-  // - triple:  no single tab is "active" since both surfaces are visible
-  const sidebarSplitTab: "git" | "markdown" | null = !canShowMultiPane
-    ? null
-    : displayMode === "tabs"
-      ? tabsActive === "preview"
-        ? null
-        : tabsActive
-      : displayMode === "triple"
-        ? null
-        : rightPanelTab;
-
   // Sidebar content shared between desktop sidebar and mobile drawer
   const sidebarContent = (
     <>
@@ -554,12 +439,8 @@ export function App() {
         loading={loading}
         selection={selection}
         onSelectAgent={handleSelectAgent}
-        onSelectProject={handleSelectProject}
-        onSelectMarkdown={handleSelectMarkdown}
         worktrees={worktrees}
         onSpawned={handleSpawned}
-        splitPaneProjectPath={canShowMultiPane ? agentProjectPath : null}
-        splitPaneTab={sidebarSplitTab}
       />
       <TerminalList
         terminals={terminals}
@@ -715,111 +596,15 @@ export function App() {
               defaultOpenAdvanced={settingsOpenedFromOverride}
             />
           </div>
-        ) : selection?.type === "project" ? (
-          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
-            <BranchGraph
-              key={selection.path}
-              projectPath={selection.path}
-              projectName={selection.name}
-              worktrees={worktrees}
-              agents={aiAgents}
-              onFocusAgent={handleSelectAgent}
-              actionPanelCollapsed={actionPanelCollapsed || isMobileScreen}
-              onToggleActionPanel={isMobileScreen ? undefined : toggleActionPanel}
-            />
-          </div>
-        ) : selection?.type === "markdown" ? (
-          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
-            <MarkdownPanel
-              key={selection.projectPath}
-              projectPath={selection.projectPath}
-              projectName={selection.projectName}
-            />
-          </div>
-        ) : selection?.type === "worktree" && selectedWorktree ? (
-          <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
-            <WorktreePanel
-              worktree={selectedWorktree}
-              onLaunched={(target) => {
-                handleSpawned(target);
-                refreshWorktrees();
-              }}
-              onDeleted={() => {
-                setSelection(null);
-                refreshWorktrees();
-                toastSuccess("Worktree deleted");
-              }}
-            />
-          </div>
-        ) : canShowMultiPane && selectedAgent && agentProjectPath && agentProjectName ? (
-          (() => {
-            const previewSlot = sessionId ? (
-              <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
-                <TerminalPanel agentId={selectedAgent.target} />
-              </div>
-            ) : (
-              <div
-                key={selectedAgent.target}
-                className="flex flex-1 flex-col overflow-hidden animate-fade-in"
-              >
-                <PreviewPanel agentId={selectedAgent.target} />
-              </div>
-            );
-            const gitSlot = (
-              <BranchGraph
-                key={agentProjectPath}
-                projectPath={agentProjectPath}
-                projectName={agentProjectName}
-                worktrees={worktrees}
-                agents={aiAgents}
-                onFocusAgent={handleSelectAgent}
-                actionPanelCollapsed={actionPanelCollapsed}
-                onToggleActionPanel={toggleActionPanel}
-              />
-            );
-            const markdownSlot = (
-              <MarkdownPanel
-                key={agentProjectPath}
-                projectPath={agentProjectPath}
-                projectName={agentProjectName}
-              />
-            );
-            const split = displayMode === "split-v" ? verticalSplit : horizontalSplit;
-            return (
-              <div className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-hairline px-3 py-1">
-                  <DisplayModeSelector mode={displayMode} onChange={setDisplayMode} />
-                </div>
-                <AgentActions agent={selectedAgent} passthrough />
-                {displayMode === "tabs" ? (
-                  <TabbedPaneLayout
-                    active={tabsActive}
-                    onTabChange={setTabsActive}
-                    preview={previewSlot}
-                    git={gitSlot}
-                    markdown={markdownSlot}
-                  />
-                ) : displayMode === "triple" ? (
-                  <TriplePaneLayout preview={previewSlot} git={gitSlot} markdown={markdownSlot} />
-                ) : (
-                  <SplitPaneLayout
-                    orientation={displayMode === "split-v" ? "vertical" : "horizontal"}
-                    left={previewSlot}
-                    right={rightPanelTab === "git" ? gitSlot : markdownSlot}
-                    rightTab={rightPanelTab}
-                    onTabChange={setRightPanelTab}
-                    splitRatio={split.splitRatio}
-                    isDragging={split.isDragging}
-                    containerRef={split.containerRef}
-                    onDividerMouseDown={split.onDividerMouseDown}
-                    onDividerDoubleClick={split.onDividerDoubleClick}
-                    onAdjustRatio={split.adjustRatio}
-                  />
-                )}
-              </div>
-            );
-          })()
         ) : (
+          // Single-pane centre (DR `2026-05-14-react-producer-console-
+          // rebuild.md` §Refinement 2026-05-22 Fork B): the git/docs
+          // multipane + the full-screen project/markdown/worktree views
+          // retired, so the centre is just the agent conversation
+          // (TerminalPanel / PreviewPanel) or — between selections — the
+          // ProducerConsole hand-over digest. Selecting an agent in the
+          // sidebar drops into the conversation; clearing the selection
+          // (returnToConsole) returns to the digest.
           <div className="flex flex-1 flex-col overflow-hidden">
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
             {sessionId && selectedAgent ? (
@@ -834,11 +619,6 @@ export function App() {
                 <PreviewPanel agentId={selectedAgent.target} />
               </div>
             ) : (
-              // Decision `doc/decisions/2026-05-14-react-producer-
-              // console-rebuild.md` Phase A: default view becomes the
-              // Producer console (hand-over digest). Selecting an
-              // agent in the sidebar still drops into the agent view
-              // above; this is the empty / between-selections home.
               <ProducerConsole
                 currentProjectPath={currentProject}
                 unitName={unitName}
@@ -859,12 +639,13 @@ export function App() {
 
       {/* Persistent right attention strip — third flex column, sibling of
           <main> and OUTSIDE the selection switch above, so it stays
-          co-visible with whatever the centre shows (Producer conversation,
-          digest, or git/docs multipane). DR
+          co-visible with whatever the centre shows (Producer conversation
+          or hand-over digest — the git/docs multipane retired in P2). DR
           `2026-05-14-react-producer-console-rebuild.md` §Refinement
-          2026-05-22 (Fork A / Fork C P1). Hidden on narrow / mobile —
-          same threshold as `canShowMultiPane` — so it never crowds a small
-          viewport; folds to a thin rail otherwise. */}
+          2026-05-22 (Fork A / Fork C P1). Hidden on narrow / mobile (the
+          narrow guard reads `isNarrowScreen` off the surviving
+          `useSplitPane` instance) so it never crowds a small viewport;
+          folds to a thin rail otherwise. */}
       {!isNarrowScreen && !isMobileScreen && (
         <AttentionStrip
           currentProjectPath={currentProject}

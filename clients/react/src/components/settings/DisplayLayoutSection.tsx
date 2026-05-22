@@ -1,22 +1,17 @@
 import { useCallback } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
-import { type DisplayMode, DisplayModeSelector } from "@/components/layout/DisplayModeSelector";
 import { TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN } from "@/lib/ui-prefs";
 import { useUIPref, useUIPrefs } from "@/lib/ui-prefs-provider";
 
-const MODE_LABEL: Record<DisplayMode, string> = {
-  tabs: "Tabs (single pane)",
-  "split-h": "Split horizontal",
-  "split-v": "Split vertical",
-  triple: "Triple pane",
-};
-
 /**
- * WebUI-only settings: how the agent main panel arranges preview / git / docs.
- * Lives in the unified WebUI prefs blob, not in tmai-core's config.toml.
+ * WebUI-only settings. The display-mode selector retired with the git/docs
+ * multipane (DR `2026-05-14-react-producer-console-rebuild.md` §Refinement
+ * 2026-05-22 Fork B) — the agent view is single-pane now — so this section
+ * keeps the terminal text-size control plus a reset for all WebUI prefs
+ * (theme, font size, attention-strip width/collapse). Lives in the unified
+ * WebUI prefs blob, not in tmai-core's config.toml.
  */
 export function DisplayLayoutSection() {
-  const [displayMode, setDisplayMode] = useUIPref("displayMode");
   const [fontSize, setFontSize] = useUIPref("terminalFontSize");
   const { resetPrefs } = useUIPrefs();
   const confirm = useConfirm();
@@ -34,7 +29,7 @@ export function DisplayLayoutSection() {
     const ok = await confirm({
       title: "Reset all WebUI preferences?",
       message:
-        "Display mode, split ratios, and tab choices will return to defaults. tmai-core settings are not affected.",
+        "Theme, terminal text size, and attention-strip layout will return to defaults. tmai-core settings are not affected.",
       confirmLabel: "Reset",
       variant: "danger",
     });
@@ -45,21 +40,8 @@ export function DisplayLayoutSection() {
     <section>
       <h3 className="text-sm font-medium text-foreground">Display &amp; Layout</h3>
       <p className="mt-1 text-xs text-subtle-foreground">
-        Layout choices for the agent main panel. Stored per-browser; press{" "}
-        <kbd className="rounded bg-surface px-1 text-[10px]">\</kbd> to cycle modes.
+        Presentation choices for this WebUI. Stored per-browser.
       </p>
-
-      <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex-1">
-            <span className="text-sm text-foreground">Display mode</span>
-            <p className="mt-0.5 text-[11px] text-subtle-foreground">
-              Currently: <span className="text-muted-foreground">{MODE_LABEL[displayMode]}</span>
-            </p>
-          </div>
-          <DisplayModeSelector mode={displayMode} onChange={setDisplayMode} />
-        </div>
-      </div>
 
       <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3">
         <div className="flex items-center justify-between gap-3">
