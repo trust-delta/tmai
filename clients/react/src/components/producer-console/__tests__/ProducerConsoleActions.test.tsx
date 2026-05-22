@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot, CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
 
@@ -34,26 +34,21 @@ vi.mock("@/components/project/DirBrowser", () => ({
 }));
 
 // `@/lib/api` exports both runtime helpers and `normalizeGitDir` —
-// the new Handoff & restart filter calls `normalizeGitDir`, so we
-// preserve the actual module and override only the `api` namespace.
+// the shared `findProducerForUnit` resolver (`@/lib/producer`) calls
+// `normalizeGitDir`, so we preserve the actual module and override only
+// the `api` namespace. Only `getGeneralSettings` is exercised here now
+// (the handoff ritual hook was lifted to App level — the button just
+// calls the injected `trigger` prop).
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     api: {
+      ...actual.api,
       getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
-      killAgent: vi.fn().mockResolvedValue(undefined),
-      triggerHandoffRitual: vi.fn().mockResolvedValue({ ritual_id: "r-stub" }),
     },
   };
 });
-
-// `useSSE` would throw because tests don't wrap in SSEProvider — stub
-// it to a no-op. `useHandoffRitual` lives inside ProducerConsoleActions
-// and registers an onEvent handler; we just need it to silently accept.
-vi.mock("@/lib/sse-provider", () => ({
-  useSSE: vi.fn(),
-}));
 
 import type { ComponentProps } from "react";
 
@@ -68,6 +63,7 @@ function makeProps(
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),
+    trigger: vi.fn(),
     onOverrideSpawned: vi.fn(),
     onOpenSidebar: vi.fn(),
     sidebarCollapsed: false,
@@ -318,6 +314,12 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
     vi.clearAllMocks();
   });
 
+  // Restore any `vi.spyOn(window, "confirm")` (and other spies) after each
+  // test so a failing assertion can't leak the confirm stub into later tests.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("is disabled when no Producer agent matches the unit", () => {
     render(<ProducerConsoleActions {...makeProps({ unitName: "tmai", agents: [] })} />);
     const btn = screen.getByRole("button", { name: /Handoff & restart/ });
@@ -391,9 +393,8 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
     expect(btn).toHaveProperty("disabled", true);
   });
 
-  it("calls window.confirm and does NOT POST when confirmation is denied", async () => {
-    const { api } = await import("@/lib/api");
-    vi.mocked(api.triggerHandoffRitual).mockClear();
+  it("calls window.confirm and does NOT fire the trigger when confirmation is denied", () => {
+    const trigger = vi.fn();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const producer = agent({
       id: "claude:abc-123",
@@ -406,21 +407,19 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
           unitName: "proj-a",
           currentProjectPath: "/home/u/proj-a",
           agents: [producer],
+          trigger,
         })}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(api.triggerHandoffRitual)).not.toHaveBeenCalled();
-
-    confirmSpy.mockRestore();
+    expect(trigger).not.toHaveBeenCalled();
   });
 
-  it("fires the ritual when confirmation is accepted", async () => {
-    const { api } = await import("@/lib/api");
-    vi.mocked(api.triggerHandoffRitual).mockClear();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("fires the lifted trigger prop when confirmation is accepted", () => {
+    const trigger = vi.fn();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     const producer = agent({
       id: "claude:abc-123",
       cwd: "/home/u/proj-a",
@@ -432,15 +431,12 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
           unitName: "proj-a",
           currentProjectPath: "/home/u/proj-a",
           agents: [producer],
+          trigger,
         })}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
-    expect(vi.mocked(api.triggerHandoffRitual)).toHaveBeenCalledWith("proj-a", {
-      trigger: "manual",
-    });
-
-    confirmSpy.mockRestore();
+    expect(trigger).toHaveBeenCalledWith("proj-a", { trigger: "manual" });
   });
 });

@@ -82,6 +82,15 @@ vi.mock("@/components/producer-console/ProducerConsole", () => ({
     </div>
   ),
 }));
+// The conversation header mounts above the terminal whenever the
+// selected agent is the unit's Producer; it pulls orchestrator settings
+// through ProducerCtxHeader. Stub it — this is a layout test, the
+// header's content is covered by ProducerConversationHeader.test.tsx.
+vi.mock("@/components/producer-console/ProducerConversationHeader", () => ({
+  ProducerConversationHeader: () => (
+    <div data-testid="conversation-header-stub">conversation-header</div>
+  ),
+}));
 vi.mock("@/components/agent/PreviewPanel", () => ({
   PreviewPanel: () => <div data-testid="preview-stub">preview</div>,
 }));

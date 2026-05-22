@@ -32,10 +32,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
 import { NewAgentLauncher } from "@/components/project/NewAgentLauncher";
-import { useHandoffRitual } from "@/hooks/useHandoffRitual";
-import { type AgentSnapshot, api, type CalibrationResponse, normalizeGitDir } from "@/lib/api";
-import { HandoffRitualFailureDialog } from "./HandoffRitualFailureDialog";
-import { HandoffRitualOverlay } from "./HandoffRitualOverlay";
+import {
+  type AgentSnapshot,
+  api,
+  type CalibrationResponse,
+  type TriggerHandoffRitualRequest,
+} from "@/lib/api";
+import { findProducerForUnit } from "@/lib/producer";
 
 interface ProducerConsoleActionsProps {
   unitName: string | null;
@@ -45,9 +48,8 @@ interface ProducerConsoleActionsProps {
    *  to operate on. */
   currentProjectPath: string | null;
   /** Live agent list (already flowing through SSEProvider). Used by the
-   *  Handoff & restart button to (1) gate enablement on whether a live
-   *  Producer exists for this unit and (2) expose the Producer's
-   *  canonical agent id to the Force-kill / Resume-in-CC paths. */
+   *  Handoff & restart button to gate enablement on whether a single
+   *  live Producer exists for this unit. */
   agents: AgentSnapshot[];
   calibrationData: CalibrationResponse | null;
   /** Spawn the Producer using the already-selected project. */
@@ -56,46 +58,16 @@ interface ProducerConsoleActionsProps {
    *  DirBrowser picks a path. */
   onLaunchProducerAt: (path: string) => void;
   onOpenCalibration: () => void;
+  /** The App-level lifted handoff-ritual trigger. The button does the
+   *  `window.confirm` then calls this; the overlay / failure dialog /
+   *  ready-toast all render at App level off the single `useHandoffRitual`
+   *  instance, so they stay co-visible from any view. */
+  trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
   /** Spawn callback for the operator-override NewAgentLauncher. */
   onOverrideSpawned: (sessionId: string) => void;
   onOpenSidebar: () => void;
   sidebarCollapsed: boolean;
   onOpenSettings: () => void;
-}
-
-// Canonical AgentId scheme that marks a Producer-eligible Claude
-// session. Per DR `2026-05-14-react-producer-console-rebuild.md`
-// polish v4, the Producer is launched as `bash -c "tmai producer
-// <unit>"` so `agent_type` is `Custom("bash")` — but the canonical
-// `id` is still `claude:UUID` once the L2 promotion lands. We pin to
-// the id scheme rather than `agent_type` for the same reason
-// `useHandover` does.
-const PRODUCER_ID_SCHEME = "claude:";
-
-/** Find the single live Producer for this unit, if any.
- *
- *  Filter rules (DR §E + scoping pattern from `useHandover`):
- *   1. `id` starts with `claude:` (canonical scheme)
- *   2. `!is_worktree` — Producer runs at the repo root, not in a
- *      worktree clone (worktree Producers would be Worker agents)
- *   3. cwd / `git_common_dir` resolves to the unit's repo path
- *
- *  If zero or more than one candidate exists, the button stays disabled
- *  — the spec is explicit that the handoff ritual operates on a *single*
- *  Producer; we never guess. */
-function findProducerForUnit(
-  agents: AgentSnapshot[],
-  unitRepoPath: string | null,
-): AgentSnapshot | null {
-  if (unitRepoPath === null) return null;
-  const targetPath = normalizeGitDir(unitRepoPath);
-  const candidates = agents.filter((a) => {
-    if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
-    if (a.is_worktree === true) return false;
-    const agentRepo = a.git_common_dir ? normalizeGitDir(a.git_common_dir) : a.cwd;
-    return agentRepo === targetPath;
-  });
-  return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }
 
 export function ProducerConsoleActions({
@@ -106,6 +78,7 @@ export function ProducerConsoleActions({
   onOpenProducerTerminal,
   onLaunchProducerAt,
   onOpenCalibration,
+  trigger,
   onOverrideSpawned,
   onOpenSidebar,
   sidebarCollapsed,
@@ -114,7 +87,6 @@ export function ProducerConsoleActions({
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
-  const [readyToastVisible, setReadyToastVisible] = useState(false);
   const tripwireCount = calibrationData?.tier1_violations.length ?? 0;
   const calCount = calibrationData?.total_in_window ?? 0;
 
@@ -122,21 +94,6 @@ export function ProducerConsoleActions({
     () => findProducerForUnit(agents, currentProjectPath),
     [agents, currentProjectPath],
   );
-
-  const ritual = useHandoffRitual();
-  const { state: ritualState, trigger, retry, dismiss } = ritual;
-
-  // Auto-dismiss `ready` with a brief success toast — per the issue
-  // body's overlay spec.
-  useEffect(() => {
-    if (ritualState.kind !== "ready") return;
-    setReadyToastVisible(true);
-    const t = setTimeout(() => {
-      setReadyToastVisible(false);
-      dismiss();
-    }, 2500);
-    return () => clearTimeout(t);
-  }, [ritualState.kind, dismiss]);
 
   const handleHandoffClick = useCallback(() => {
     if (producer === null || unitName === null) return;
@@ -146,22 +103,6 @@ export function ProducerConsoleActions({
     if (!ok) return;
     void trigger(unitName, { trigger: "manual" });
   }, [producer, unitName, trigger]);
-
-  const handleRetry = useCallback(() => {
-    if (unitName === null) return;
-    void retry(unitName, { trigger: "manual" });
-  }, [retry, unitName]);
-
-  const handleForceKill = useCallback(async () => {
-    if (producer === null) return;
-    try {
-      await api.killAgent(producer.target);
-    } catch {
-      // Best-effort — if the kill fails (already dead, etc.) we still
-      // dismiss; the dialog already surfaced the upstream failure.
-    }
-    dismiss();
-  }, [producer, dismiss]);
 
   // Same pattern as NewAgentLauncher: pull `[general] default_project_
   // root` lazily on open so an edit in GeneralSection flips the picker
@@ -301,39 +242,6 @@ export function ProducerConsoleActions({
               </span>
             </button>
           </div>
-        </div>
-      )}
-
-      {(ritualState.kind === "dispatching" || ritualState.kind === "in_progress") &&
-        unitName !== null && (
-          <HandoffRitualOverlay
-            unitName={unitName}
-            ritualId={ritualState.kind === "in_progress" ? ritualState.ritualId : null}
-            phases={ritualState.kind === "in_progress" ? ritualState.phases : []}
-          />
-        )}
-
-      {ritualState.kind === "escalated" && unitName !== null && (
-        <HandoffRitualFailureDialog
-          unitName={unitName}
-          reason={ritualState.reason}
-          message={ritualState.message}
-          producerAgentId={producer?.id ?? null}
-          retryCount={ritual.retryCount}
-          retryRefused={ritual.retryRefused}
-          onForceKill={() => void handleForceKill()}
-          onRetry={handleRetry}
-          onDismiss={dismiss}
-        />
-      )}
-
-      {readyToastVisible && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 right-4 z-40 rounded-md border border-success/30 bg-surface-strong px-4 py-2 text-xs text-success shadow-lg"
-        >
-          Handoff complete — fresh Producer is ready.
         </div>
       )}
 

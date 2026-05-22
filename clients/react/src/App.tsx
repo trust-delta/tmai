@@ -9,7 +9,10 @@ import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { AttentionStrip } from "@/components/producer-console/AttentionStrip";
+import { HandoffRitualFailureDialog } from "@/components/producer-console/HandoffRitualFailureDialog";
+import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitualOverlay";
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
+import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -19,6 +22,7 @@ import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
 import { useCalibration } from "@/hooks/useCalibration";
+import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
@@ -26,6 +30,7 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { api, groupByProject, isAiAgentLoose, type Selection, setCallerCwd } from "@/lib/api";
+import { findProducerForUnit } from "@/lib/producer";
 import { useSSE } from "@/lib/sse-provider";
 import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
@@ -162,6 +167,68 @@ export function App() {
     return currentProject.split("/").filter(Boolean).pop() ?? null;
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
+
+  // ── Producer handoff-and-restart ritual (lifted to App level) ──
+  //
+  // Exactly ONE `useHandoffRitual` instance for the whole app. The
+  // trigger flows down to BOTH trigger sites (the digest's `Handoff &
+  // restart` button via ProducerConsole, and the conversation header),
+  // while the in-progress overlay / failure dialog / ready-toast render
+  // HERE as App-level siblings of TripwireBanner / ToastContainer — so
+  // they stay co-visible regardless of which centre view is shown
+  // (digest, Producer conversation, Settings, …). It used to live inside
+  // the digest-only ProducerConsoleActions, which left the trigger
+  // unreachable while conversing with the Producer (lived friction
+  // 2026-05-23). Two hook instances would mean two overlays, so this
+  // MUST remain the only one.
+  const {
+    state: ritualState,
+    trigger: triggerHandoff,
+    retry: retryHandoff,
+    dismiss: dismissHandoff,
+    retryCount: handoffRetryCount,
+    retryRefused: handoffRetryRefused,
+  } = useHandoffRitual();
+
+  // The single live Producer for the focused unit. Drives the
+  // conversation-header gate (only show it when the selected agent IS
+  // this Producer), the failure dialog's Force-kill target, and its
+  // Resume-in-CC id. Shares the `findProducerForUnit` resolver with the
+  // digest button and the ctx readout so all surfaces agree.
+  const producerForUnit = useMemo(
+    () => findProducerForUnit(agents, currentProject),
+    [agents, currentProject],
+  );
+
+  // Auto-dismiss `ready` with a brief success toast (handoff-lifecycle
+  // DR §E overlay spec). Moved up from ProducerConsoleActions with the
+  // rest of the ritual UI.
+  const [handoffReadyToastVisible, setHandoffReadyToastVisible] = useState(false);
+  useEffect(() => {
+    if (ritualState.kind !== "ready") return;
+    setHandoffReadyToastVisible(true);
+    const t = setTimeout(() => {
+      setHandoffReadyToastVisible(false);
+      dismissHandoff();
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [ritualState.kind, dismissHandoff]);
+
+  const handleHandoffRetry = useCallback(() => {
+    if (unitName === null) return;
+    void retryHandoff(unitName, { trigger: "manual" });
+  }, [retryHandoff, unitName]);
+
+  const handleHandoffForceKill = useCallback(async () => {
+    if (producerForUnit === null) return;
+    try {
+      await api.killAgent(producerForUnit.target);
+    } catch {
+      // Best-effort — if the kill fails (already dead, etc.) we still
+      // dismiss; the dialog already surfaced the upstream failure.
+    }
+    dismissHandoff();
+  }, [producerForUnit, dismissHandoff]);
 
   // "Open Producer terminal" affordance from <ProducerConsole>.
   //
@@ -607,6 +674,22 @@ export function App() {
           // (returnToConsole) returns to the digest.
           <div className="flex flex-1 flex-col overflow-hidden">
             {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
+            {/* Conversation-view header: the ctx% readout + Handoff &
+                restart trigger, co-visible ABOVE the terminal so the
+                operator conversing with the Producer can reach the
+                ritual without returning to the digest (fixes the
+                manual-kill trap, lived friction 2026-05-23). Renders
+                ONLY when the selected agent IS this unit's Producer;
+                when talking to a worker it stays hidden. */}
+            {selectedAgent && selectedAgent.id === producerForUnit?.id && (
+              <ProducerConversationHeader
+                agents={agents}
+                currentProjectPath={currentProject}
+                unitName={unitName}
+                trigger={triggerHandoff}
+                onOpenSettings={openSettingsFromOverride}
+              />
+            )}
             {sessionId && selectedAgent ? (
               <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
                 <TerminalPanel agentId={selectedAgent.target} />
@@ -625,6 +708,7 @@ export function App() {
                 calibrationData={calibrationData}
                 onOpenProducerTerminal={openProducerTerminal}
                 onOpenCalibration={openCalibration}
+                trigger={triggerHandoff}
                 onSelectProjectByPath={handleSelectProject}
                 onLaunchProducerAt={launchProducerAt}
                 onOverrideSpawned={handleSpawned}
@@ -672,6 +756,45 @@ export function App() {
 
       {/* Toast notifications */}
       <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
+
+      {/* Handoff-and-restart ritual UI — App-level single instance so it
+          stays co-visible regardless of the active centre view (digest,
+          Producer conversation, Settings, …). The ordered phases, the
+          4-choice failure dialog, the retry budget (max 2, 3rd refused)
+          and the confirm text are the unchanged handoff-lifecycle DR §E
+          contract; this only RELOCATES the surface up from the digest. */}
+      {(ritualState.kind === "dispatching" || ritualState.kind === "in_progress") &&
+        unitName !== null && (
+          <HandoffRitualOverlay
+            unitName={unitName}
+            ritualId={ritualState.kind === "in_progress" ? ritualState.ritualId : null}
+            phases={ritualState.kind === "in_progress" ? ritualState.phases : []}
+          />
+        )}
+
+      {ritualState.kind === "escalated" && unitName !== null && (
+        <HandoffRitualFailureDialog
+          unitName={unitName}
+          reason={ritualState.reason}
+          message={ritualState.message}
+          producerAgentId={producerForUnit?.id ?? null}
+          retryCount={handoffRetryCount}
+          retryRefused={handoffRetryRefused}
+          onForceKill={() => void handleHandoffForceKill()}
+          onRetry={handleHandoffRetry}
+          onDismiss={dismissHandoff}
+        />
+      )}
+
+      {handoffReadyToastVisible && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-40 rounded-md border border-success/30 bg-surface-strong px-4 py-2 text-xs text-success shadow-lg"
+        >
+          Handoff complete — fresh Producer is ready.
+        </div>
+      )}
     </div>
   );
 }
