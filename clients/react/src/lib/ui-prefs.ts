@@ -35,7 +35,24 @@ export interface UIPrefs {
   // width when the centre conversation/multipane is busy. Default open so
   // a clean-state user sees the co-visible attention surface immediately.
   attentionStripCollapsed: boolean;
+  // Persistent right-hand attention strip width in px
+  // (same DR, §"P1.1 — lived-feedback adjustment"). The strip is a
+  // right-docked panel, so unlike the splitRatioH/V *ratios* this is an
+  // absolute pixel width: a docked panel reads naturally in px and should
+  // not reflow when the centre pane's content changes. Drag-resized via
+  // the shared useSplitPane drag engine; persisted here so the operator's
+  // chosen width survives reloads / cross-tab. Mirrors the ratio prefs
+  // structurally (clamped numeric field) — see clampAttentionStripWidth.
+  attentionStripWidth: number;
 }
+
+// Attention-strip width bounds (px). Floor keeps the section content
+// (PR rows, cross-unit list) legible; ceiling stops the strip from
+// starving the centre conversation. Default matches the pre-P1.1 fixed
+// `w-80` (20rem = 320px) so existing users see no jump on upgrade.
+export const ATTENTION_STRIP_WIDTH_MIN = 240;
+export const ATTENTION_STRIP_WIDTH_MAX = 560;
+export const ATTENTION_STRIP_WIDTH_DEFAULT = 320;
 
 export const DEFAULT_UI_PREFS: UIPrefs = {
   displayMode: "split-h",
@@ -48,6 +65,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   theme: DEFAULT_THEME_NAME,
   terminalFontSize: 13,
   attentionStripCollapsed: false,
+  attentionStripWidth: ATTENTION_STRIP_WIDTH_DEFAULT,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -72,6 +90,24 @@ function clampRatio(value: unknown, fallback: number): number {
 function clampFontSize(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.max(TERMINAL_FONT_SIZE_MIN, Math.min(TERMINAL_FONT_SIZE_MAX, Math.round(value)));
+}
+
+// Clamp a candidate strip width to the legal px window, rounding to a whole
+// pixel. Exported so the drag commit path (App.tsx) clamps the committed
+// width with the same rule coercePrefs applies on load — the two guards
+// then compose: the drag can't persist an out-of-range width, and a
+// hand-edited / stale blob is still corrected on read.
+export function clampAttentionStripWidth(value: number): number {
+  if (!Number.isFinite(value)) return ATTENTION_STRIP_WIDTH_DEFAULT;
+  return Math.max(
+    ATTENTION_STRIP_WIDTH_MIN,
+    Math.min(ATTENTION_STRIP_WIDTH_MAX, Math.round(value)),
+  );
+}
+
+function clampStripWidth(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return clampAttentionStripWidth(value);
 }
 
 // Validate each field individually so a partially corrupt blob still
@@ -101,6 +137,10 @@ function coercePrefs(raw: unknown): UIPrefs {
       typeof r.attentionStripCollapsed === "boolean"
         ? r.attentionStripCollapsed
         : DEFAULT_UI_PREFS.attentionStripCollapsed,
+    attentionStripWidth: clampStripWidth(
+      r.attentionStripWidth,
+      DEFAULT_UI_PREFS.attentionStripWidth,
+    ),
   };
 }
 

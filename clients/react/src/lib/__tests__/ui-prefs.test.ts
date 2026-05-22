@@ -55,6 +55,32 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs().terminalFontSize).toBe(DEFAULT_UI_PREFS.terminalFontSize);
   });
 
+  it("defaults the attention-strip width to 320px and round-trips across reload", () => {
+    // Default matches the pre-P1.1 fixed w-80.
+    expect(loadUIPrefs().attentionStripWidth).toBe(320);
+    // The drag commit persists a px width; a fresh load (= reload) reads it back.
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, attentionStripWidth: 440 });
+    expect(loadUIPrefs().attentionStripWidth).toBe(440);
+  });
+
+  it("clamps an out-of-range / non-numeric attention-strip width", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, attentionStripWidth: 9999 }),
+    );
+    expect(loadUIPrefs().attentionStripWidth).toBe(560); // ATTENTION_STRIP_WIDTH_MAX
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, attentionStripWidth: 10 }),
+    );
+    expect(loadUIPrefs().attentionStripWidth).toBe(240); // ATTENTION_STRIP_WIDTH_MIN
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, attentionStripWidth: "wide" }),
+    );
+    expect(loadUIPrefs().attentionStripWidth).toBe(DEFAULT_UI_PREFS.attentionStripWidth);
+  });
+
   it("round-trips a saved blob", () => {
     const next: UIPrefs = {
       ...DEFAULT_UI_PREFS,
