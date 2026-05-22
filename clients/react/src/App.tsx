@@ -13,6 +13,7 @@ import { TabbedPaneLayout } from "@/components/layout/TabbedPaneLayout";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { TriplePaneLayout } from "@/components/layout/TriplePaneLayout";
 import { MarkdownPanel } from "@/components/markdown/MarkdownPanel";
+import { AttentionStrip } from "@/components/producer-console/AttentionStrip";
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -86,6 +87,16 @@ export function App() {
   const [tabsActive, setTabsActive] = useUIPref("tabsActive");
   const [splitRatioH, setSplitRatioH] = useUIPref("splitRatioH");
   const [splitRatioV, setSplitRatioV] = useUIPref("splitRatioV");
+  // Persistent right attention strip
+  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
+  // §Refinement 2026-05-22 — L/C/R co-visible layout). Collapsed state
+  // lives in the WebUI prefs store so it survives reloads / cross-tab.
+  const [attentionStripCollapsed, setAttentionStripCollapsed] =
+    useUIPref("attentionStripCollapsed");
+  const toggleAttentionStrip = useCallback(
+    () => setAttentionStripCollapsed(!attentionStripCollapsed),
+    [attentionStripCollapsed, setAttentionStripCollapsed],
+  );
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
@@ -812,6 +823,24 @@ export function App() {
           </div>
         )}
       </main>
+
+      {/* Persistent right attention strip — third flex column, sibling of
+          <main> and OUTSIDE the selection switch above, so it stays
+          co-visible with whatever the centre shows (Producer conversation,
+          digest, or git/docs multipane). DR
+          `2026-05-14-react-producer-console-rebuild.md` §Refinement
+          2026-05-22 (Fork A / Fork C P1). Hidden on narrow / mobile —
+          same threshold as `canShowMultiPane` — so it never crowds a small
+          viewport; folds to a thin rail otherwise. */}
+      {!isNarrowScreen && !isMobileScreen && (
+        <AttentionStrip
+          currentProjectPath={currentProject}
+          unitName={unitName}
+          onSelectProjectByPath={handleSelectProject}
+          collapsed={attentionStripCollapsed}
+          onToggleCollapsed={toggleAttentionStrip}
+        />
+      )}
 
       {/* Help overlay */}
       <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />

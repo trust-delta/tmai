@@ -9,9 +9,20 @@ import type { AttentionAgentBrief, WhereYouLeftOff, WorktreeBrief } from "@/hook
 
 interface WhereYouLeftOffSectionProps {
   data: WhereYouLeftOff;
+  /** Strip mode (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
+   *  §Refinement 2026-05-22 — Fork A): the persistent right attention strip
+   *  reuses this section but wants only the *attention part* — blocked /
+   *  awaiting agents — not the ambient worktree list. When true, render just
+   *  the attention list (which `useHandover` falls back to *all* AI agents
+   *  for when no project is scoped, so the strip still shows what's blocked).
+   *  Default false keeps the centre digest's full ▶ section unchanged. */
+  attentionOnly?: boolean;
 }
 
-export function WhereYouLeftOffSection({ data }: WhereYouLeftOffSectionProps) {
+export function WhereYouLeftOffSection({
+  data,
+  attentionOnly = false,
+}: WhereYouLeftOffSectionProps) {
   const { activeProjectName, worktrees, attentionAgents } = data;
 
   return (
@@ -26,7 +37,11 @@ export function WhereYouLeftOffSection({ data }: WhereYouLeftOffSectionProps) {
         )}
       </header>
 
-      {!activeProjectName ? (
+      {attentionOnly ? (
+        <div className="pl-6">
+          <AttentionAgentsList agents={attentionAgents} />
+        </div>
+      ) : !activeProjectName ? (
         <EmptyProject />
       ) : (
         <div className="space-y-3 pl-6">
