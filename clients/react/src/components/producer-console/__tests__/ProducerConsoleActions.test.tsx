@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot, CalibrationResponse } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
 
@@ -44,6 +44,7 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     api: {
+      ...actual.api,
       getGeneralSettings: vi.fn().mockResolvedValue({ default_project_root: null }),
     },
   };
@@ -313,6 +314,12 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
     vi.clearAllMocks();
   });
 
+  // Restore any `vi.spyOn(window, "confirm")` (and other spies) after each
+  // test so a failing assertion can't leak the confirm stub into later tests.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("is disabled when no Producer agent matches the unit", () => {
     render(<ProducerConsoleActions {...makeProps({ unitName: "tmai", agents: [] })} />);
     const btn = screen.getByRole("button", { name: /Handoff & restart/ });
@@ -408,13 +415,11 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(trigger).not.toHaveBeenCalled();
-
-    confirmSpy.mockRestore();
   });
 
   it("fires the lifted trigger prop when confirmation is accepted", () => {
     const trigger = vi.fn();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     const producer = agent({
       id: "claude:abc-123",
       cwd: "/home/u/proj-a",
@@ -433,7 +438,5 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(trigger).toHaveBeenCalledWith("proj-a", { trigger: "manual" });
-
-    confirmSpy.mockRestore();
   });
 });

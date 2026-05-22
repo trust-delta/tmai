@@ -7,7 +7,7 @@
 // the App-level lifted `trigger` after a confirm.
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
 import { ProducerConversationHeader } from "../ProducerConversationHeader";
 
@@ -80,6 +80,12 @@ beforeEach(() => {
   getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
 });
 
+// Restore any `vi.spyOn(window, "confirm")` after each test so a failing
+// assertion can't leak the confirm stub into later tests.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("ProducerConversationHeader", () => {
   it("renders the ctx% readout and an enabled Handoff button when a Producer is resolved", () => {
     const producer = agent({
@@ -145,8 +151,6 @@ describe("ProducerConversationHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(trigger).toHaveBeenCalledWith("proj", { trigger: "manual" });
-
-    confirmSpy.mockRestore();
   });
 
   it("does NOT fire the trigger when the confirm is denied", () => {
@@ -170,7 +174,5 @@ describe("ProducerConversationHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(trigger).not.toHaveBeenCalled();
-
-    confirmSpy.mockRestore();
   });
 });

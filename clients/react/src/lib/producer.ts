@@ -37,7 +37,10 @@ export function findProducerForUnit(
   const candidates = agents.filter((a) => {
     if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
     if (a.is_worktree === true) return false;
-    const agentRepo = a.git_common_dir ? normalizeGitDir(a.git_common_dir) : a.cwd;
+    // Normalize both branches: a raw `cwd` fallback would otherwise be
+    // compared against an already-normalized `targetPath` and could miss
+    // (trailing slash / `.git` suffix).
+    const agentRepo = normalizeGitDir(a.git_common_dir ?? a.cwd);
     return agentRepo === targetPath;
   });
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
