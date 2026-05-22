@@ -34,7 +34,25 @@ import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { api, groupByProject, isAiAgentLoose, type Selection, setCallerCwd } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
+import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
+
+// The attention strip is a right-docked panel, but `useSplitPane` speaks in
+// 0–1 ratios of its container (here the app root, full viewport width). We
+// map the persisted px width to/from that ratio at the seams: a stored width
+// W on a viewport V seeds ratio = 1 − W/V (the strip occupies the right
+// `1 − ratio` of the row); on commit we read the ratio back into px. The hook
+// clamps the ratio to [0.2, 0.8] and `clampAttentionStripWidth` clamps the
+// committed px, so the two guards compose.
+function attentionViewportWidth(): number {
+  return typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1440;
+}
+function attentionWidthToRatio(width: number): number {
+  return 1 - width / attentionViewportWidth();
+}
+function attentionRatioToWidth(ratio: number): number {
+  return (1 - ratio) * attentionViewportWidth();
+}
 
 export function App() {
   // Apply the active WebUI theme's css vars to <html> and keep them in
@@ -97,6 +115,10 @@ export function App() {
     () => setAttentionStripCollapsed(!attentionStripCollapsed),
     [attentionStripCollapsed, setAttentionStripCollapsed],
   );
+  // Drag-resizable strip width (P1.1). Persisted in px; the drag itself runs
+  // through the shared useSplitPane engine (ratio-based), so we convert at
+  // the seams. See the attention*Width helpers above.
+  const [attentionStripWidth, setAttentionStripWidth] = useUIPref("attentionStripWidth");
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
@@ -247,6 +269,17 @@ export function App() {
     orientation: "vertical",
     initialRatio: splitRatioV,
     onCommit: setSplitRatioV,
+  });
+  // Attention-strip resize. Its containerRef is attached to the app-root
+  // flex row below; the strip is that row's right-most in-flow child, so a
+  // ratio of `clientX / rowWidth` makes the strip occupy `1 − ratio` of the
+  // row — i.e. dragging its left-edge handle resizes it. Commit clamps the
+  // derived px width to the legal window.
+  const attentionStripSplit = useSplitPane({
+    orientation: "horizontal",
+    initialRatio: attentionWidthToRatio(attentionStripWidth),
+    onCommit: (ratio) =>
+      setAttentionStripWidth(clampAttentionStripWidth(attentionRatioToWidth(ratio))),
   });
   const isNarrowScreen = horizontalSplit.isNarrowScreen;
 
@@ -538,7 +571,7 @@ export function App() {
   );
 
   return (
-    <div className="flex h-screen text-foreground">
+    <div ref={attentionStripSplit.containerRef} className="flex h-screen text-foreground">
       {/* Mobile: overlay backdrop when drawer is open */}
       {isMobileScreen && mobileDrawerOpen && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap to close
@@ -839,6 +872,17 @@ export function App() {
           onSelectProjectByPath={handleSelectProject}
           collapsed={attentionStripCollapsed}
           onToggleCollapsed={toggleAttentionStrip}
+          resize={{
+            width: attentionStripWidth,
+            isResizing: attentionStripSplit.isDragging,
+            ratio: attentionStripSplit.splitRatio,
+            onMouseDown: attentionStripSplit.onDividerMouseDown,
+            // Double-click resets to the default px width (the hook's own
+            // reset snaps the ratio to 0.5 = half the viewport, far too wide
+            // for a strip), then the initialRatio reseed tracks it.
+            onDoubleClick: () => setAttentionStripWidth(ATTENTION_STRIP_WIDTH_DEFAULT),
+            onAdjust: attentionStripSplit.adjustRatio,
+          }}
         />
       )}
 

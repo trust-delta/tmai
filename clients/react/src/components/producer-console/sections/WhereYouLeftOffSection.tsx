@@ -14,7 +14,10 @@ interface WhereYouLeftOffSectionProps {
    *  reuses this section but wants only the *attention part* — blocked /
    *  awaiting agents — not the ambient worktree list. When true, render just
    *  the attention list (which `useHandover` falls back to *all* AI agents
-   *  for when no project is scoped, so the strip still shows what's blocked).
+   *  for when no project is scoped, so the strip still shows what's blocked)
+   *  AND relabel the ▶ header to "Blocked / awaiting" — per P1.1 the strip
+   *  surfaces continuous attention, so its header names that, not the
+   *  start-of-session "where you left off" framing the centre digest keeps.
    *  Default false keeps the centre digest's full ▶ section unchanged. */
   attentionOnly?: boolean;
 }
@@ -29,7 +32,9 @@ export function WhereYouLeftOffSection({
     <section>
       <header className="mb-2 flex items-baseline gap-2">
         <span className="text-base text-primary">▶</span>
-        <h3 className="text-sm font-semibold text-foreground">Where you left off</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {attentionOnly ? "Blocked / awaiting" : "Where you left off"}
+        </h3>
         {activeProjectName && (
           <span className="text-xs text-muted-foreground">
             on <code className="text-foreground">{activeProjectName}</code>
