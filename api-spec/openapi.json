@@ -2142,6 +2142,17 @@
           "last_verified": {
             "type": "string"
           },
+          "pending_projection": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PendingProjectionWire",
+                "description": "`Some` ONLY when this decision is \"accepted (projection: pending)\" — a\nrelay-gated accept-commit for its slug exists in the core-only δ branch\nwhile `status` here (read from main) still says `proposed`. **Derived,\nnever stored** (relay-channel B3.3-a: no hidden second state — the δ\ncommit's existence IS the accept). Absent (skipped from JSON) otherwise,\nso the wire stays lockstep-free and pre-P3 clients are unaffected.\n\nP2 ships the field (wire readiness) but never populates it: the\nderivation is **P3's** (B3 variant / projection) and is *not* an accept\ngate. P2 keeps it `None`."
+              }
+            ]
+          },
           "slug": {
             "type": "string"
           },
@@ -3012,6 +3023,24 @@
           }
         ],
         "description": "An *objective* outcome observed after a triage verdict, used as ground\ntruth for calibration. Per DR §B.2: the human's accept/reject is **not**\nhere — only failure signals the world produces independently.\n\nThe data is structurally complete in stage 1; the *detection* (scanning\ngit log / PR history to populate these) lands in stage 5."
+      },
+      "PendingProjectionWire": {
+        "type": "object",
+        "description": "Evidence that an accepted decision's projection is still pending: the\ncore-only δ branch carrying the attributable accept-commit, and that\ncommit's SHA. The pair is what P3 derives \"accepted (projection: pending)\"\nfrom (a δ accept-commit exists while main still reads `proposed`); it carries\nno stored state of its own.",
+        "required": [
+          "accept_branch",
+          "accept_commit"
+        ],
+        "properties": {
+          "accept_branch": {
+            "type": "string",
+            "description": "The δ branch on which the accept-commit lives (e.g. `tmai-accept`)."
+          },
+          "accept_commit": {
+            "type": "string",
+            "description": "Full SHA of the δ accept-commit whose existence IS the durable accept."
+          }
+        }
       },
       "PermissionMode": {
         "type": "string",

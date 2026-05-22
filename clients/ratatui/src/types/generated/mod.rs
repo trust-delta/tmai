@@ -74,6 +74,8 @@ pub mod notify_mode_summary;
 pub use notify_mode_summary::*;
 pub mod outcome;
 pub use outcome::*;
+pub mod pending_projection_wire;
+pub use pending_projection_wire::*;
 pub mod permission_mode;
 pub use permission_mode::*;
 pub mod pr_diff_response;
