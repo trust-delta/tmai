@@ -91,6 +91,7 @@ function makeProps(
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),
+    trigger: vi.fn(),
     onSelectProjectByPath: vi.fn(),
     onOverrideSpawned: vi.fn(),
     onOpenSidebar: vi.fn(),

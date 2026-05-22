@@ -24,7 +24,7 @@
 
 import { useAgents } from "@/hooks/useAgents";
 import { useHandover } from "@/hooks/useHandover";
-import type { CalibrationResponse } from "@/lib/api";
+import type { CalibrationResponse, TriggerHandoffRitualRequest } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { ActiveApproachesSection } from "./sections/ActiveApproachesSection";
@@ -53,6 +53,11 @@ interface ProducerConsoleProps {
    *  `tmai producer` there. */
   onLaunchProducerAt: (path: string) => void;
   onOpenCalibration: () => void;
+  /** The App-level lifted handoff-ritual trigger, forwarded to the
+   *  digest's `Handoff & restart ▸` button. The ritual hook itself
+   *  lives in App (single instance); the overlay / failure dialog /
+   *  ready-toast render at App level. */
+  trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
   /** Click handler for the cross-unit list — wired to App.tsx's
    *  `handleSelectProject` so unit selection here matches sidebar
    *  selection there. */
@@ -76,6 +81,7 @@ export function ProducerConsole({
   onOpenProducerTerminal,
   onLaunchProducerAt,
   onOpenCalibration,
+  trigger,
   onSelectProjectByPath,
   onOverrideSpawned,
   onOpenSidebar,
@@ -137,6 +143,7 @@ export function ProducerConsole({
         onOpenProducerTerminal={onOpenProducerTerminal}
         onLaunchProducerAt={onLaunchProducerAt}
         onOpenCalibration={onOpenCalibration}
+        trigger={trigger}
         onOverrideSpawned={onOverrideSpawned}
         onOpenSidebar={onOpenSidebar}
         sidebarCollapsed={sidebarCollapsed}

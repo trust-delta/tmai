@@ -10,14 +10,16 @@
 // .auto_handoff_threshold_pct`), so the operator can predict
 // the trigger instead of being surprised by it.
 //
-// Producer scoping matches the `Handoff & restart` button
-// (`ProducerConsoleActions.findProducerForUnit`): `claude:` id-scheme
-// + `!is_worktree` + cwd resolves to the unit's repo path. The header
-// always renders (fixed-height row) so swapping projects / waiting
-// for the first statusline payload doesn't make the layout jump.
+// Producer scoping matches the `Handoff & restart` button via the
+// shared `findProducerForUnit` resolver (`@/lib/producer`): `claude:`
+// id-scheme + `!is_worktree` + cwd resolves to the unit's repo path.
+// The header always renders (fixed-height row) so swapping projects /
+// waiting for the first statusline payload doesn't make the layout jump.
 
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { type AgentSnapshot, api, normalizeGitDir } from "@/lib/api";
+import { type AgentSnapshot, api } from "@/lib/api";
+import { findProducerForUnit } from "@/lib/producer";
 
 interface ProducerCtxHeaderProps {
   agents: AgentSnapshot[];
@@ -25,26 +27,11 @@ interface ProducerCtxHeaderProps {
    *  can be resolved and the row renders its placeholder. */
   currentProjectPath: string | null;
   onOpenSettings: () => void;
-}
-
-const PRODUCER_ID_SCHEME = "claude:";
-
-// Same filter rules as `ProducerConsoleActions.findProducerForUnit`,
-// kept inline to avoid widening that module's export surface for what
-// is essentially a one-call helper.
-function findProducerForUnit(
-  agents: AgentSnapshot[],
-  unitRepoPath: string | null,
-): AgentSnapshot | null {
-  if (unitRepoPath === null) return null;
-  const targetPath = normalizeGitDir(unitRepoPath);
-  const candidates = agents.filter((a) => {
-    if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
-    if (a.is_worktree === true) return false;
-    const agentRepo = a.git_common_dir ? normalizeGitDir(a.git_common_dir) : a.cwd;
-    return agentRepo === targetPath;
-  });
-  return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  /** Optional trailing affordance, right-aligned in the row. The
+   *  conversation header (`ProducerConversationHeader`) passes the
+   *  `Handoff & restart ▸` button here so the ctx% readout and the
+   *  trigger share one strip; the digest passes nothing. */
+  actionSlot?: ReactNode;
 }
 
 // CC's statusline reports `total` and `used` as bigints (200_000-ish);
@@ -89,6 +76,7 @@ export function ProducerCtxHeader({
   agents,
   currentProjectPath,
   onOpenSettings,
+  actionSlot,
 }: ProducerCtxHeaderProps) {
   const producer = findProducerForUnit(agents, currentProjectPath);
   const ctx = producer?.ctx_usage ?? null;
@@ -158,6 +146,7 @@ export function ProducerCtxHeader({
         >
           ⚙
         </button>
+        {actionSlot && <div className="ml-auto flex items-center">{actionSlot}</div>}
       </div>
     </div>
   );
