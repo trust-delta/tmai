@@ -137,8 +137,27 @@ Branch: `feat/react-producer-console`（2026-05-14 切り出し、PR #672）
 6. Lint / typecheck / build (`pnpm` 系) を pass
 7. PR を `fix/...` ではなく `feat/...` で出す（CLAUDE.md の慣行）。本 DR を PR description で参照
 
+## Refinement 2026-05-22 — L/C/R co-visible layout (operator-decided)
+
+**Lived friction:** in-tmai merge が github.com 往復を消した今、次の注意税は digest↔会話の **screen switch**。Phase A の現状は `ProducerConsole` が agent 未選択時だけ `<main>` を占有し、agent（Producer 会話 = `PreviewPanel`）を選ぶと**置き換わる**（`returnToConsole` で復帰）。digest と会話が同時に見えない＝[[2026-05-11-review-attention-budget-principle]] が batch せよと言う per-event switching cost そのもの。
+
+**Decision（operator, 2026-05-22）:** 単一 `<main>` の「digest か会話か」モデルを **3 カラム co-visible** に進化させる:
+- **左** — agent/worker 面（今回不変、改良は後回し）。
+- **中央** — Producer 会話（端末）。単一ペイン。git/docs マルチペインは撤去。
+- **右** — **常設アテンション strip**、中央と常時 co-visible。operator は status を読むのに会話を離れない。`returnToConsole` と `selection===null` の digest 画面は vestigial 化。
+
+**Fork A — 右は薄い dumb strip、重い文脈は on-demand:** 右カラムは attention-grade のみ（open PR + CI / cross-unit needs-you / blocked・awaiting agents / verdict 待ち approach）。重い文脈（`⬡ Settled decisions` 全リスト・`◐ Working with this human`/MEMORY）は on-demand briefing（session-start / expand）へ。これにより右面は [[2026-05-20-provisional-pre-producer-dashboard]] の **dumb status surface 原則**（優先度スカラー・異常ソート・3 帯域 judgment を忍ばせない）に準拠 — 本作業は同 approach の strip surface の WebUI 実現でもある。
+
+**Fork B — git/docs マルチペイン撤去（P2）:** `BranchGraph`（worktree/ ツリー）・`MarkdownPanel`・Tabbed/Split/Triple pane レイアウト・`useSplitPane`・display-mode UI-prefs・`WorktreePanel`/`WorktreeCard` を撤去。**`DiffViewer` は残す**（`UnitPrsSection` の PR inline-diff が live 依存）。`BranchGraph` 内の worktree-delete / issue-start-work **アクションは全撤去**（Producer が reap + dispatch を所有、operator は worktree ボタンでなく Producer に話す）。
+  > **⚠ 本 DR の原 stance を narrow する。** 2026-05-14 の軸「Legacy controls — Advanced 奥に退避して保持・撤去はしない」と 非範囲「Legacy orchestrator-era UI の物理削除…削除はしない」を、worktree-delete / issue-dispatch 管理ボタンについては **部分 supersede**（物理削除、Advanced 保持しない）。これは `feedback_pty_emergency_terminal_access` に**反しない**: 同原則が守るのは緊急時の *worker 直接会話端末* 経路であり（これは保持）、worktree/issue *管理* ボタンの保持は要求しない。**P2 dispatch 時に operator が再確認**。
+
+**Fork C — phasing:** **P1** = アテンション右常設化（摩擦解消・中央会話と右 strip を co-visible・高価値低リスク）。**P2** = git/docs マルチペイン + legacy アクション撤去（cleanup、Fork-B supersession を担う）。各 phase = bounded worker。
+
+**Grounding（2026-05-22 Explore）:** `App.tsx` がレイアウト本体（shell/router なし、flex 2 カラム + state-switched views）。`ProducerConsole`（6 自己完結セクション、各自 data hook）は dock-ready だが幅制約 + 狭カラム用 header/footer 再考が要る。`DiffViewer` は BranchGraph 撤去後も生存必須。第三者 split-pane lib なし（hand-rolled `useSplitPane`）。
+
 ## Update history
 
 - 2026-05-14 (initial): Proposed, Markdown-bold frontmatter
 - 2026-05-14 (PR #672 progress): Phase A + Phase B legacy demote + Phase B Settings reorg + Phase B onboarding polish + Phase B polish v2 (in-tmai spawn) + Phase B polish v3 (DirBrowser flow) + Phase B polish v4 (bash wrap)
 - 2026-05-14 (this revision): frontmatter migrated from Markdown-bold to YAML — `tmai-core/workbench/decision.rs::parse` requires a real YAML frontmatter block delimited by `---` lines (the post-#326 convention), and the hand-over composer was erroring out on the old shape. Status flipped to `accepted` since Phase A+B+polish all landed.
+- 2026-05-22 (refinement): added § "Refinement 2026-05-22 — L/C/R co-visible layout". Operator-decided 3-column layout (L agent / C conversation / R persistent attention dumb-strip) to kill the digest↔conversation screen-switch; phased P1 (attention-right) → P2 (git/docs multipane + legacy-action retire). Fork B partially supersedes the original "legacy controls retained in Advanced, never removed" stance for worktree-delete/issue-dispatch buttons (emergency direct-worker-terminal path retained). Converges with `2026-05-20-provisional-pre-producer-dashboard`.
