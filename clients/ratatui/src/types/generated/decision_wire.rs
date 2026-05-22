@@ -15,6 +15,8 @@ pub struct DecisionWire {
     pub excerpt: String,
     pub governs: Vec<String>,
     pub last_verified: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_projection: Option<PendingProjectionWire>,
     pub slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale_since: Option<StaleSinceWire>,

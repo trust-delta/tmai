@@ -9,11 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RepoPrsWire {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_dead: Option<bool>,
-    pub primary: bool,
-    pub prs: Vec<PrSummaryWire>,
-    pub repo_label: String,
-    pub repo_path: String,
+pub struct PendingProjectionWire {
+    pub accept_branch: String,
+    pub accept_commit: String,
 }

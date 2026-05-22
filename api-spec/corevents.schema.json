@@ -621,6 +621,17 @@
         "last_verified": {
           "type": "string"
         },
+        "pending_projection": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/PendingProjectionWire",
+              "description": "`Some` ONLY when this decision is \"accepted (projection: pending)\" — a\nrelay-gated accept-commit for its slug exists in the core-only δ branch\nwhile `status` here (read from main) still says `proposed`. **Derived,\nnever stored** (relay-channel B3.3-a: no hidden second state — the δ\ncommit's existence IS the accept). Absent (skipped from JSON) otherwise,\nso the wire stays lockstep-free and pre-P3 clients are unaffected.\n\nP2 ships the field (wire readiness) but never populates it: the\nderivation is **P3's** (B3 variant / projection) and is *not* an accept\ngate. P2 keeps it `None`."
+            }
+          ]
+        },
         "slug": {
           "type": "string"
         },
@@ -1504,6 +1515,24 @@
           "type": "object"
         }
       ]
+    },
+    "PendingProjectionWire": {
+      "description": "Evidence that an accepted decision's projection is still pending: the\ncore-only δ branch carrying the attributable accept-commit, and that\ncommit's SHA. The pair is what P3 derives \"accepted (projection: pending)\"\nfrom (a δ accept-commit exists while main still reads `proposed`); it carries\nno stored state of its own.",
+      "properties": {
+        "accept_branch": {
+          "description": "The δ branch on which the accept-commit lives (e.g. `tmai-accept`).",
+          "type": "string"
+        },
+        "accept_commit": {
+          "description": "Full SHA of the δ accept-commit whose existence IS the durable accept.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accept_branch",
+        "accept_commit"
+      ],
+      "type": "object"
     },
     "PermissionMode": {
       "description": "Permission mode reported by Claude Code in hook payloads.\n\nMaps to the session's current permission level (e.g., \"default\", \"plan\",\n\"dontAsk\", \"acceptEdits\").",
