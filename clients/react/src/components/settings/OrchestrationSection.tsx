@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
-import { api, type OrchestratorSettings } from "@/lib/api";
-import { GuardrailsSection } from "./GuardrailsSection";
+import { api, type OrchestratorSettings, withOrchestratorDefaults } from "@/lib/api";
 import { NotifySettingsSection } from "./NotifySettingsSection";
 import { PrMonitorSection } from "./PrMonitorSection";
 import { SaveStatus } from "./SaveStatus";
@@ -85,7 +84,13 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
 
   const orchProject = orchScope === "global" ? undefined : orchScope;
   const refreshOrchestrator = useCallback(() => {
-    api.getOrchestratorSettings(orchProject).then(setOrchestrator).catch(console.error);
+    // Coalesce wire-omitted sub-tables (notify / rules) to their engine
+    // defaults here at the boundary so the sub-sections never deref an
+    // `undefined` object and black out the panel.
+    api
+      .getOrchestratorSettings(orchProject)
+      .then((s) => setOrchestrator(withOrchestratorDefaults(s)))
+      .catch(console.error);
   }, [orchProject]);
 
   useEffect(() => {
@@ -254,13 +259,6 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
             />
 
             <NotifySettingsSection
-              orchestrator={orchestrator}
-              setOrchestrator={setOrchestrator}
-              orchProject={orchProject}
-              save={save}
-            />
-
-            <GuardrailsSection
               orchestrator={orchestrator}
               setOrchestrator={setOrchestrator}
               orchProject={orchProject}

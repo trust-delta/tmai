@@ -64,7 +64,6 @@ function orchestratorFixture(threshold: number) {
     role: "",
     rules: { branch: "", merge: "", review: "", custom: "" },
     notify: {},
-    guardrails: { max_ci_retries: 0, max_review_loops: 0, escalate_to_human_after: 0 },
     auto_action_templates: {},
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 60,

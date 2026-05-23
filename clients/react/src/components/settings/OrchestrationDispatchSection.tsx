@@ -54,7 +54,7 @@ const ROLES: DispatchRole[] = [
  * persists on blur or Enter so we do not flicker validation errors mid-typing.
  *
  * Reads the bundles from `GET /settings/orchestrator` (the global settings
- * endpoint that carries the dispatch fields alongside notify/guardrails/...)
+ * endpoint that carries the dispatch fields alongside notify/rules/...)
  * and saves them via the same endpoint's PUT — server-side `OrchestrationSettings`
  * is the single source of truth, so this component only roundtrips the dispatch
  * subset of fields.

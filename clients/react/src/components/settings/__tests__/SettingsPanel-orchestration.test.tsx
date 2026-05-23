@@ -19,7 +19,7 @@ const { OrchestrationDispatchSection } = await import("../OrchestrationDispatchS
 
 /**
  * Build a minimal OrchestratorSettings for the dispatch-section tests.
- * Other fields (notify, guardrails, role, ...) are filled with default-ish
+ * Other fields (notify, role, ...) are filled with default-ish
  * placeholders since the section under test only reads `orchestrator` /
  * `dispatch`.
  */
@@ -64,11 +64,6 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
       notify_on_human_action: false,
       notify_on_agent_action: false,
       notify_on_system_action: false,
-    },
-    guardrails: {
-      max_ci_retries: 0,
-      max_review_loops: 0,
-      escalate_to_human_after: 0,
     },
     auto_action_templates: {
       ci_failed_implementer: "",

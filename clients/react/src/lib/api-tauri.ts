@@ -9,7 +9,6 @@ import type {
   AgentSnapshot,
   AutoActionTemplates,
   DispatchBundle,
-  GuardrailsSettings,
   NotifySettings,
   NotifyTemplates,
   OrchestratorRules,
@@ -214,7 +213,6 @@ export const api = {
       notify?: Partial<Omit<NotifySettings, "templates">> & {
         templates?: Partial<NotifyTemplates>;
       };
-      guardrails?: Partial<GuardrailsSettings>;
       auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;

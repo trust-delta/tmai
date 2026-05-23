@@ -238,7 +238,7 @@ export function ProducerConsoleActions({
             >
               Open Settings ▸{" "}
               <span className="text-muted-foreground">
-                (orchestration rules, dispatch bundles, guardrails, …)
+                (orchestration rules, dispatch bundles, …)
               </span>
             </button>
           </div>
