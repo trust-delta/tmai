@@ -76,7 +76,11 @@ vi.mock("@/components/producer-console/ProducerConversationHeader", () => ({
 vi.mock("@/components/agent/PreviewPanel", () => ({
   PreviewPanel: () => <div data-testid="preview-stub">preview</div>,
 }));
-vi.mock("@/components/agent/AgentActions", () => ({ AgentActions: () => null }));
+// Observable stub so we can assert the Producer conversation renders the
+// MERGED bar (no separate AgentActions) while a worker still gets one.
+vi.mock("@/components/agent/AgentActions", () => ({
+  AgentActions: () => <div data-testid="agent-actions-stub">actions</div>,
+}));
 vi.mock("@/components/terminal/TerminalPanel", () => ({
   TerminalPanel: () => <div data-testid="terminal-stub">terminal</div>,
 }));
@@ -191,6 +195,9 @@ describe("App — handoff ritual wiring", () => {
 
     expect(screen.getByTestId("preview-stub")).toBeTruthy();
     expect(screen.getByTestId("conversation-header-stub")).toBeTruthy();
+    // The merged bar subsumes AgentActions for the Producer — no separate
+    // AgentActions bar (density refinement 2026-05-23).
+    expect(screen.queryByTestId("agent-actions-stub")).toBeNull();
   });
 
   it("does NOT mount the conversation header when the selected agent is a worker", () => {
@@ -213,6 +220,8 @@ describe("App — handoff ritual wiring", () => {
 
     expect(screen.getByTestId("preview-stub")).toBeTruthy();
     expect(screen.queryByTestId("conversation-header-stub")).toBeNull();
+    // A worker keeps the plain AgentActions bar UNCHANGED.
+    expect(screen.getByTestId("agent-actions-stub")).toBeTruthy();
   });
 
   it("renders the in-progress overlay at App level — co-visible with the conversation view", () => {

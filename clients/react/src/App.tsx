@@ -673,23 +673,28 @@ export function App() {
           // sidebar drops into the conversation; clearing the selection
           // (returnToConsole) returns to the digest.
           <div className="flex flex-1 flex-col overflow-hidden">
-            {selectedAgent && <AgentActions agent={selectedAgent} passthrough />}
-            {/* Conversation-view header: the ctx% readout + Handoff &
-                restart trigger, co-visible ABOVE the terminal so the
-                operator conversing with the Producer can reach the
-                ritual without returning to the digest (fixes the
-                manual-kill trap, lived friction 2026-05-23). Renders
-                ONLY when the selected agent IS this unit's Producer;
-                when talking to a worker it stays hidden. */}
-            {selectedAgent && selectedAgent.id === producerForUnit?.id && (
-              <ProducerConversationHeader
-                agents={agents}
-                currentProjectPath={currentProject}
-                unitName={unitName}
-                trigger={triggerHandoff}
-                onOpenSettings={openSettingsFromOverride}
-              />
-            )}
+            {/* One bar above the conversation. For the Producer it is the
+                merged ProducerConversationHeader — status dot + name +
+                Kill (subsuming AgentActions) PLUS the ctx% readout and
+                the Handoff & restart trigger, co-visible ABOVE the
+                terminal so the operator conversing with the Producer can
+                reach the ritual without returning to the digest (fixes
+                the manual-kill trap, lived friction 2026-05-23) and
+                without three stacked bars eating the conversation height
+                (density refinement 2026-05-23). For a worker we keep the
+                plain AgentActions bar UNCHANGED. */}
+            {selectedAgent &&
+              (selectedAgent.id === producerForUnit?.id ? (
+                <ProducerConversationHeader
+                  agents={agents}
+                  currentProjectPath={currentProject}
+                  unitName={unitName}
+                  trigger={triggerHandoff}
+                  onOpenSettings={openSettingsFromOverride}
+                />
+              ) : (
+                <AgentActions agent={selectedAgent} passthrough />
+              ))}
             {sessionId && selectedAgent ? (
               <div key={sessionId} className="flex-1 overflow-hidden animate-fade-in">
                 <TerminalPanel agentId={selectedAgent.target} />
