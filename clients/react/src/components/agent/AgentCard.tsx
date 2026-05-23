@@ -57,6 +57,18 @@ function attentionPill(state: AgentAttention | null): {
   };
 }
 
+// Status-dot colour for the subordinate worker rows of the Producer-rooted
+// roster (DR `2026-05-23-producer-rooted-left-panel.md`). This is the
+// roster's *own* mapping — deliberately NOT the `attentionPill` palette: a
+// worker row is a status glance, not a blocking-pill, so only `halted`
+// gets the alarming destructive colour; `started`/`completed` read as muted
+// transients; `null` ("running normally") gets the calm primary dot.
+function attentionDotClass(state: AgentAttention | null): string {
+  if (state === "halted") return "bg-destructive";
+  if (state === "started" || state === "completed") return "bg-muted-foreground";
+  return "bg-primary";
+}
+
 // Agent type display: short label + color
 function agentTypeLabel(agentType: AgentType): {
   icon: string;
@@ -140,14 +152,26 @@ function ChannelBadge({
   );
 }
 
+// Visual treatment within the Producer-rooted roster (DR
+// `2026-05-23-producer-rooted-left-panel.md`):
+//   • "headline"  — the unit's single live Producer. First-class, "who am
+//     I talking to" legible (PRODUCER badge + accent). Full card.
+//   • "worker"    — a subordinate worker row of the Producer's roster.
+//     Status-oriented + visually muted/smaller (status dot + branch/task).
+//     Still click-selectable: the emergency direct-worker path §A keeps.
+//   • "default"   — flat card with no Producer relationship asserted; used
+//     by the honest degradation path when no single Producer resolves.
+type AgentCardVariant = "headline" | "worker" | "default";
+
 interface AgentCardProps {
   agent: AgentSnapshot;
   selected?: boolean;
   onClick?: () => void;
+  variant?: AgentCardVariant;
 }
 
 // Card displaying a single agent's status and info
-export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
+export function AgentCard({ agent, selected, onClick, variant = "default" }: AgentCardProps) {
   // Decision tmai-core@2026-05-09 Phase 4: the wire enum collapses the
   // dynamic state to four values. Three flag user-blocked states (each
   // with its own pill); `null`/absent renders a muted "Running" chip
@@ -156,6 +180,48 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
   const hasAttention = attention !== null;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
+
+  // Subordinate worker row of the Producer's roster. Deliberately a thin
+  // status glance — status dot + branch/task label — NOT a second copy of
+  // the right attention strip (role split, DR §役割分担). The row stays a
+  // real <button> so the emergency direct-worker path (§A) survives.
+  if (variant === "worker") {
+    const taskLabel =
+      agent.git_branch ?? (isAi ? typeInfo.label : agent.display_name || typeInfo.label);
+    const dotTitle = `${agent.git_branch ? `${agent.is_worktree ? "worktree: " : "branch: "}${agent.git_branch}` : agent.display_cwd} — ${attentionPill(attention).label}`;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={dotTitle}
+        className={cn(
+          "group flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-subtle",
+          "hover:bg-surface",
+          selected && "bg-primary/10",
+        )}
+      >
+        <span
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full",
+            attentionDotClass(attention),
+            attention === "halted" && "animate-glow-pulse",
+          )}
+          aria-hidden
+        />
+        <span className="truncate text-xs text-subtle-foreground group-hover:text-foreground transition-subtle">
+          {agent.is_worktree && "🌿"}
+          {taskLabel}
+          {agent.git_dirty && <span className="text-warning">*</span>}
+        </span>
+        <span className="flex-1" />
+        {agent.compaction_count > 0 && (
+          <span className="shrink-0 text-[10px] text-subtle-foreground">
+            ♻{agent.compaction_count}
+          </span>
+        )}
+      </button>
+    );
+  }
 
   // Pill info: every agent gets one. Muted "Running" for null.
   const attentionPillInfo = attentionPill(attention);
@@ -186,6 +252,9 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
         "hover:bg-surface hover:border-hairline-strong",
         agent.is_orchestrator && "!border-primary/20 bg-primary/[0.04]",
+        // Producer headline: accent the unit's "who am I talking to" row so
+        // it reads as first-class above its subordinate worker roster.
+        variant === "headline" && "!border-primary/25 bg-primary/[0.05]",
         selected && "!border-primary/30 !bg-primary/10",
         hasAttention && "!border-warning/30 animate-glow-pulse",
         glow && selected && glow,
@@ -194,6 +263,11 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
       {/* Row 1: Agent type + status badge */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 truncate">
+          {variant === "headline" && (
+            <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-primary">
+              Producer
+            </span>
+          )}
           {agent.is_orchestrator && (
             <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 py-px text-[9px] font-semibold text-primary">
               ORCH

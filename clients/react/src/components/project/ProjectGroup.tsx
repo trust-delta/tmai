@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AgentCard } from "@/components/agent/AgentCard";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
+import { ProducerRoster } from "@/components/project/ProducerRoster";
 import type { ProjectGroup as ProjectGroupType, Selection, WorktreeGroup } from "@/lib/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -12,11 +12,14 @@ interface ProjectGroupProps {
   onSpawned: (sessionId: string) => void;
 }
 
-// Collapsible project group containing worktree sub-groups.
-//
-// The per-project branch-graph + markdown-files buttons retired with the
+// Collapsible unit group, rendered as a Producer-rooted addressing surface
+// (DR `2026-05-23-producer-rooted-left-panel.md`): the unit's single live
+// Producer is the headline, its workers hang beneath as a subordinate
+// roster. The body delegates that hierarchy to `ProducerRoster`; this shell
+// keeps the collapsible header + the per-unit emergency spawn `+`. The
+// per-project branch-graph + markdown-files buttons retired earlier with the
 // git/docs multipane (DR `2026-05-14-react-producer-console-rebuild.md`
-// §Refinement 2026-05-22 Fork B). What's left is agent selection + spawn.
+// §Refinement 2026-05-22 Fork B).
 export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
@@ -53,6 +56,15 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
 
   // Derive selectedTarget for agent card highlighting
   const selectedTarget = selection?.type === "agent" ? selection.id : null;
+
+  // Flatten the worktree sub-groups back into one unit agent list for the
+  // Producer-rooted roster. groupByProject already orders these main-first
+  // then worktrees sorted by name, so this preserves a stable structural
+  // order (no judgment sort — DR §No-judgment).
+  const unitAgents = useMemo(
+    () => project.worktrees.flatMap((wt) => wt.agents),
+    [project.worktrees],
+  );
 
   // Spawn an agent in a specific directory
   const confirm = useConfirm();
@@ -259,54 +271,23 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
         </div>
       </div>
 
-      {/* Agent sub-groups */}
+      {/* Producer-rooted roster (Producer headline + subordinate workers) */}
       {!collapsed && (
         <div className="ml-1 border-l border-hairline pl-2">
-          {project.worktrees.map((wt) => (
-            <WorktreeSection
-              key={wt.name}
-              worktree={wt}
-              selectedTarget={selectedTarget}
-              onSelect={onSelectAgent}
-            />
-          ))}
-          {isEmpty && (
+          {isEmpty ? (
             <div className="px-2 py-2 text-[11px] text-subtle-foreground">
               No agents — click + to spawn
             </div>
+          ) : (
+            <ProducerRoster
+              agents={unitAgents}
+              unitPath={project.path}
+              selectedTarget={selectedTarget}
+              onSelect={onSelectAgent}
+            />
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-interface WorktreeSectionProps {
-  worktree: WorktreeGroup;
-  selectedTarget: string | null;
-  onSelect: (target: string) => void;
-}
-
-// Sub-section for a worktree (or main) within a project — orchestrator agents pinned to top
-function WorktreeSection({ worktree, selectedTarget, onSelect }: WorktreeSectionProps) {
-  const sortedAgents = [...worktree.agents].sort((a, b) => {
-    if (a.is_orchestrator && !b.is_orchestrator) return -1;
-    if (!a.is_orchestrator && b.is_orchestrator) return 1;
-    return 0;
-  });
-
-  return (
-    <div className="mb-0.5">
-      <div className="flex flex-col gap-1">
-        {sortedAgents.map((agent) => (
-          <AgentCard
-            key={agent.id}
-            agent={agent}
-            selected={agent.id === selectedTarget}
-            onClick={() => onSelect(agent.id)}
-          />
-        ))}
-      </div>
     </div>
   );
 }
