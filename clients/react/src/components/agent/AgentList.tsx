@@ -17,14 +17,22 @@ interface AgentListProps {
   onSpawned: (sessionId: string) => void;
 }
 
-// Scrollable list of agents grouped by project and worktree.
+// The unit addressing surface (DR `2026-05-23-producer-rooted-left-panel.md`).
 //
-// The per-project branch-graph + markdown-files buttons (and their
-// onSelectProject / onSelectMarkdown / splitPane* prop chain) retired with
-// the git/docs multipane (DR `2026-05-14-react-producer-console-rebuild.md`
-// §Refinement 2026-05-22 Fork B). Cross-unit navigation now lives in the
-// ProducerConsole digest / AttentionStrip cross-unit list, not the sidebar;
-// the sidebar is the legacy direct-agent escape hatch only.
+// This panel re-cast the old flat agent registry into a Producer-rooted
+// hierarchy: one collapsible group per unit, each headed by the unit's live
+// Producer with its workers as a subordinate roster (the per-group structure
+// lives in `ProjectGroup` → `ProducerRoster`). The left answers "who am I
+// talking to / who's under them"; the right AttentionStrip answers "what
+// needs me". The earlier "Operator view (legacy) — bypass the Producer"
+// framing is retired: addressing the Producer IS the primary use here, not a
+// bypass (this DR partially supersedes the console-rebuild's "sidebar =
+// legacy escape hatch" stance — emergency override paths are retained).
+//
+// Direct operator spawn is dispatch's job for the Producer (briefs), so the
+// launcher is folded into the de-emphasized "Advanced / emergency" footer
+// rather than the prominent top slot it used to own. Cross-unit navigation
+// still lives in the ProducerConsole digest / AttentionStrip, not here.
 export function AgentList({
   agents,
   loading,
@@ -45,26 +53,10 @@ export function AgentList({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-2">
-      {/* Phase B of the Producer-console rebuild
-          (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
-          moved the main flow to the Producer console (the empty
-          main-pane view). This sidebar still exists — defaults to
-          collapsed, opt-in via the Operator override panel or the
-          sidebar toggle — so the operator has a direct-agent
-          escape hatch. The label below makes that intent visible. */}
-      <div className="mb-2 border-b border-hairline pb-2">
-        <p className="text-[11px] uppercase tracking-wider text-warning/70">
-          Operator view (legacy)
-        </p>
-        <p className="mt-0.5 text-[10px] leading-tight text-subtle-foreground">
-          Direct agent / project access. The new main flow is the Producer console — use this
-          sidebar only when you need to bypass the Producer.
-        </p>
-      </div>
-      <NewAgentLauncher onSpawned={onSpawned} />
       {projects.length === 0 ? (
         <p className="px-2 py-6 text-center text-xs text-subtle-foreground">
-          No agents — pick a directory above to spawn one.
+          No agents yet — dispatch is the Producer's job. Use Advanced below only for an emergency
+          direct spawn.
         </p>
       ) : (
         projects.map((project) => (
@@ -77,6 +69,19 @@ export function AgentList({
           />
         ))
       )}
+
+      {/* Spawn is an emergency-only affordance: dispatch belongs to the
+          Producer (briefs), so the operator's direct launcher sits behind a
+          de-emphasized, collapsed-by-default disclosure at the bottom rather
+          than the prominent top slot it used to hold. */}
+      <details className="mt-auto border-t border-hairline pt-2">
+        <summary className="cursor-pointer select-none px-2 py-1 text-[10px] uppercase tracking-wider text-subtle-foreground transition-colors hover:text-muted-foreground">
+          Advanced — emergency spawn
+        </summary>
+        <div className="mt-1">
+          <NewAgentLauncher onSpawned={onSpawned} />
+        </div>
+      </details>
     </div>
   );
 }
