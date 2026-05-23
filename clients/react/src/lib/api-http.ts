@@ -770,12 +770,6 @@ export interface NotifySettings {
   notify_on_system_action: boolean;
 }
 
-export interface GuardrailsSettings {
-  max_ci_retries: number;
-  max_review_loops: number;
-  escalate_to_human_after: number;
-}
-
 export type PrMonitorScope = "current_project" | "all";
 
 export interface OrchestratorSettings {
@@ -783,7 +777,6 @@ export interface OrchestratorSettings {
   role: string;
   rules: OrchestratorRules;
   notify: NotifySettings;
-  guardrails: GuardrailsSettings;
   auto_action_templates: AutoActionTemplates;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
@@ -809,6 +802,77 @@ export interface OrchestratorSettings {
    * (`[orchestration.dispatch.<role>]`).
    */
   dispatch: WorkerDispatchMap;
+}
+
+/** Engine defaults for the `[orchestration]` rule textareas (empty = unset). */
+export const DEFAULT_ORCHESTRATOR_RULES: OrchestratorRules = {
+  branch: "",
+  merge: "",
+  review: "",
+  custom: "",
+};
+
+const EMPTY_NOTIFY_TEMPLATES: NotifyTemplates = {
+  agent_stopped: "",
+  agent_error: "",
+  ci_passed: "",
+  ci_failed: "",
+  pr_created: "",
+  pr_comment: "",
+  rebase_conflict: "",
+  pr_closed: "",
+  guardrail_exceeded: "",
+};
+
+/**
+ * Engine defaults for `[orchestration.notify]`. Per-event modes mirror
+ * `OrchestratorNotifySettings::default` in core (everything `notify` except
+ * `ci_passed`, which is `off`); templates are empty (= use the built-in
+ * default). Used when the wire omits the whole `notify` sub-table.
+ */
+export const DEFAULT_NOTIFY_SETTINGS: NotifySettings = {
+  on_agent_stopped: "notify",
+  on_agent_error: "notify",
+  on_rebase_conflict: "notify",
+  on_ci_passed: "off",
+  on_ci_failed: "notify",
+  on_pr_created: "notify",
+  on_pr_comment: "notify",
+  on_pr_closed: "notify",
+  on_guardrail_exceeded: "notify",
+  templates: { ...EMPTY_NOTIFY_TEMPLATES },
+  default_templates: { ...EMPTY_NOTIFY_TEMPLATES },
+  suppress_self: false,
+  notify_on_human_action: false,
+  notify_on_agent_action: false,
+  notify_on_system_action: false,
+};
+
+/**
+ * The orchestrator-settings wire shape as actually served. A tmai-core binary
+ * omits the `[orchestration.*]` object sub-tables (`notify`, `rules`) when they
+ * are absent from config.toml, even though the contract types them as required.
+ * Reading e.g. `settings.notify[event]` on such a response throws `Cannot read
+ * properties of undefined` and — with no error boundary around SettingsPanel —
+ * blacks out the whole panel. Normalize with `withOrchestratorDefaults` at the
+ * fetch boundary.
+ */
+export type WireOrchestratorSettings = Omit<OrchestratorSettings, "notify" | "rules"> &
+  Partial<Pick<OrchestratorSettings, "notify" | "rules">>;
+
+/**
+ * Coalesce a wire orchestrator-settings response into a fully-populated
+ * `OrchestratorSettings` so every downstream consumer (NotifySettingsSection,
+ * the rule textareas) reads a defined sub-object rather than crashing on a
+ * deref of an omitted sub-table. Apply once at the fetch boundary — mirrors the
+ * `?? default` defense PR #684 added for `auto_handoff_threshold_pct`.
+ */
+export function withOrchestratorDefaults(s: WireOrchestratorSettings): OrchestratorSettings {
+  return {
+    ...s,
+    rules: s.rules ?? DEFAULT_ORCHESTRATOR_RULES,
+    notify: s.notify ?? DEFAULT_NOTIFY_SETTINGS,
+  };
 }
 
 export interface SpawnRequest {
@@ -1391,7 +1455,6 @@ export const api = {
       notify?: Partial<Omit<NotifySettings, "templates">> & {
         templates?: Partial<NotifyTemplates>;
       };
-      guardrails?: Partial<GuardrailsSettings>;
       auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;

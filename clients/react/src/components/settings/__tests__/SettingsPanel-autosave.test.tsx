@@ -99,7 +99,6 @@ function makeOrchestrator(): OrchestratorSettings {
       notify_on_agent_action: false,
       notify_on_system_action: false,
     },
-    guardrails: { max_ci_retries: 3, max_review_loops: 3, escalate_to_human_after: 3 },
     auto_action_templates: {
       ci_failed_implementer: "",
       review_feedback_implementer: "",
