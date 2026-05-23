@@ -684,7 +684,7 @@ export function App() {
                 (density refinement 2026-05-23). For a worker we keep the
                 plain AgentActions bar UNCHANGED. */}
             {selectedAgent &&
-              (selectedAgent.id === producerForUnit?.id ? (
+              (selectedAgent.target === producerForUnit?.target ? (
                 <ProducerConversationHeader
                   agents={agents}
                   currentProjectPath={currentProject}

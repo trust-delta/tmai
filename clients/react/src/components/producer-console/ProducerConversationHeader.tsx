@@ -18,9 +18,11 @@
 // the slim `provisional:…` id row beneath belongs to TerminalPanel.
 //
 // It renders ONLY when the selected agent IS this unit's Producer; the
-// gate lives in `App.tsx` (`selectedAgent.id === producerForUnit?.id`),
-// so when the operator is talking to a worker this component is never
-// mounted (workers keep their `<AgentActions>` bar).
+// gate lives in `App.tsx` (`selectedAgent.target === producerForUnit?.target`
+// — compared on the stable PTY `target`, not `id`, since `id` can re-key
+// provisional→canonical and momentarily mis-classify the Producer as a
+// worker at that boundary), so when the operator is talking to a worker
+// this component is never mounted (workers keep their `<AgentActions>` bar).
 //
 // The ctx readout reuses `ProducerCtxHeader`'s exported helpers
 // (`formatThousands` / `renderBar` / `thresholdColorClass`) and the same
@@ -138,7 +140,15 @@ export function ProducerConversationHeader({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-hairline bg-surface px-3 py-1.5 text-xs">
-      <span className={cn("shrink-0 text-sm leading-none", dotColor)} title={statusWord}>
+      <span
+        // `role="img"` so the colour-coded glyph announces its state to
+        // screen readers via `aria-label` (colour + `title` alone aren't
+        // reliably announced).
+        role="img"
+        className={cn("shrink-0 text-sm leading-none", dotColor)}
+        title={statusWord}
+        aria-label={statusWord}
+      >
         ●
       </span>
       <span className="truncate text-sm font-medium text-foreground">
