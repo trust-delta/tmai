@@ -8,7 +8,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-16-producer-identity-and-operator-addressing.md"
   - "tmai-core:doc/decisions/2026-05-18-producer-worker-identity-hierarchy.md"
   - "tmai-core:doc/decisions/2026-05-11-producer-only-operator-interface.md"
-last-verified: 2026-05-23
+last-verified: 2026-05-25
 contract-surface: false
 related:
   - "2026-05-14-react-producer-console-rebuild"
@@ -75,3 +75,4 @@ drafting = agent の act（`doc/decisions/README.md` 準拠）。設計方向と
 ## Update history
 
 - 2026-05-23 (initial): articulated from the 2026-05-23 left-panel purpose discussion (operator: 現状は「worker done→Producer 選択」「緊急 spawn」の2用途に縮退、根本的な用途から詰めたい). Direction = Producer-rooted hierarchy (option B), worker click = emergency direct-address retained, legacy framing retired → addressing surface. Operator-approved in conversation.
+- 2026-05-25 (currency sweep, verified): the serving implementation landed — `ProducerRoster` + Producer-headline/worker-child `AgentList`/`AgentCard`/`ProjectGroup` rework (PR #727, `cf4f65c`) and unit-keyed grouping so a multi-repo unit collapses into ONE Producer-rooted group (PR #729 / #439, `7c548e5`, served by tmai-core #443's `AgentSnapshot.unit`). The within-unit roster structure this DR pins is preserved unchanged. Decision holds; `last-verified` bumped.
