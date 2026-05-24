@@ -197,6 +197,16 @@ export interface AgentSnapshot {
   git_dirty: boolean | null;
   is_worktree: boolean | null;
   git_common_dir: string | null;
+  /** Unit name this agent belongs to (tmai-core #443 — wire half of #439).
+   *  A `[[unit]]` can span several repos, so two agents with *different*
+   *  `git_common_dir` may share one `unit`; that is exactly what the
+   *  unit-grouped left panel collapses into a single Producer-rooted group.
+   *  Optional here not because the contract is loose but because the field
+   *  only appears once the engine is rebuilt to serve it: a not-yet-rebuilt
+   *  engine omits it, and `groupByProject` falls back to `git_common_dir`
+   *  grouping for that transition window. Once the engine serves it the
+   *  field is always present. */
+  unit?: string;
   worktree_name: string | null;
   worktree_base_branch: string | null;
   effort_level: EffortLevel | null;
@@ -279,13 +289,18 @@ export interface WorktreeGroup {
   agents: AgentSnapshot[];
 }
 
-// A project group: one git repository (main + worktrees)
+// A unit group: one `[[unit]]` (which may span several repos), rendered as
+// the Producer-rooted addressing surface. Named `ProjectGroup` for history;
+// the grouping key is the unit (#439), not the repo.
 export interface ProjectGroup {
-  // Display name derived from path (last dir component)
+  // Display name — the unit name when grouped by unit, else the repo's last
+  // path component (the back-compat fallback).
   name: string;
-  // Full path (git_common_dir or cwd)
+  // A real repo path representing the unit (the primary repo, where the
+  // Producer runs). NOT the unit name: App's currentProject / setCallerCwd /
+  // findProducerForUnit / spawn cwd all treat this as a filesystem path.
   path: string;
-  // Worktrees within this project (main first, then worktrees sorted)
+  // Worktrees within this unit (main first, then worktrees sorted)
   worktrees: WorktreeGroup[];
   // Aggregate counts
   totalAgents: number;
@@ -316,8 +331,35 @@ export function normalizeGitDir(dir: string): string {
   return cleaned.slice(0, end);
 }
 
-// Group agents by project (git_common_dir) and worktree.
-// When worktreeSnapshots is provided, agent-less worktrees are also shown.
+// Resolve an agent's normalized repo directory: prefer `git_common_dir`,
+// then a cwd→git_common_dir prefix match, then the cwd itself. Factored
+// out of the grouping loop so unit-grouping (for the representative repo
+// path) and the back-compat git_common_dir grouping share one resolver.
+function resolveRepoDir(agent: AgentSnapshot, cwdToGitDir: Map<string, string>): string {
+  if (agent.git_common_dir) return normalizeGitDir(agent.git_common_dir);
+  // Try to match this cwd to a known git dir via prefix
+  let matched = cwdToGitDir.get(agent.cwd);
+  if (!matched) {
+    for (const [cwd, gitDir] of cwdToGitDir) {
+      if (agent.cwd.startsWith(cwd) || cwd.startsWith(agent.cwd)) {
+        matched = gitDir;
+        break;
+      }
+    }
+  }
+  return matched || agent.cwd;
+}
+
+// Group agents into the left-panel unit groups and their worktree
+// sub-structure. When worktreeSnapshots is provided, agent-less worktrees
+// are also shown.
+//
+// Top-level key (#439, served by tmai-core #443): `agent.unit`. A `[[unit]]`
+// can span several repos, so all agents sharing a `unit` collapse into ONE
+// group even when their `git_common_dir` differs — the whole point of #439.
+// When `unit` is absent/empty (an engine not yet rebuilt to serve the field),
+// each agent falls back to its repo dir, reproducing the pre-#439 grouping so
+// the panel keeps working during the transition window.
 export function groupByProject(
   agents: AgentSnapshot[],
   worktreeSnapshots: WorktreeSnapshot[] = [],
@@ -334,23 +376,13 @@ export function groupByProject(
   }
 
   for (const agent of agents) {
-    // Prefer git_common_dir, then lookup from cwd, then fallback to cwd itself
-    let key: string;
-    if (agent.git_common_dir) {
-      key = normalizeGitDir(agent.git_common_dir);
-    } else {
-      // Try to match this cwd to a known git dir via prefix
-      let matched = cwdToGitDir.get(agent.cwd);
-      if (!matched) {
-        for (const [cwd, gitDir] of cwdToGitDir) {
-          if (agent.cwd.startsWith(cwd) || cwd.startsWith(agent.cwd)) {
-            matched = gitDir;
-            break;
-          }
-        }
-      }
-      key = matched || agent.cwd;
-    }
+    // Group key: the unit identity when the wire serves it, else the repo
+    // dir (back-compat). Unit keys are namespaced (`unit:`) so a bare unit
+    // name can never collide with an absolute repo-dir key.
+    const key =
+      agent.unit && agent.unit.length > 0
+        ? `unit:${agent.unit}`
+        : resolveRepoDir(agent, cwdToGitDir);
 
     const group = projectMap.get(key);
     if (group) {
@@ -362,7 +394,22 @@ export function groupByProject(
 
   const projects: ProjectGroup[] = [];
 
-  for (const [path, groupAgents] of projectMap) {
+  for (const [key, groupAgents] of projectMap) {
+    // A unit group shares one `unit` across all its agents; a fallback group
+    // has none. Either way `path` is a REAL repo dir (never the unit name):
+    // for a multi-repo unit it resolves to the primary repo — the one whose
+    // basename matches the unit name, where the Producer runs — falling back
+    // to the first agent's repo dir. In the back-compat case the key already
+    // IS the repo dir.
+    const unit =
+      groupAgents[0]?.unit && groupAgents[0].unit.length > 0 ? groupAgents[0].unit : null;
+    let path: string;
+    if (unit !== null) {
+      const dirs = groupAgents.map((a) => resolveRepoDir(a, cwdToGitDir));
+      path = dirs.find((d) => projectName(d) === unit) ?? dirs[0] ?? key;
+    } else {
+      path = key;
+    }
     // Sub-group by worktree
     const worktreeMap = new Map<string, AgentSnapshot[]>();
 
@@ -446,7 +493,8 @@ export function groupByProject(
     const attentionCount = groupAgents.filter((a) => a.attention != null).length;
 
     projects.push({
-      name: projectName(path),
+      // Display the unit name when grouped by unit; else the repo basename.
+      name: unit ?? projectName(path),
       path,
       worktrees,
       totalAgents: groupAgents.length,
