@@ -15,6 +15,8 @@ pub struct PrSummaryWire {
     pub base_branch: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_status: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ci_local_attestation: Option<Value>,
     pub comments: i64,
     pub deletions: i64,
     pub head_branch: String,

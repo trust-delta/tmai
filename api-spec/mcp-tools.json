@@ -483,6 +483,14 @@
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "ci_local_attestation": {
+          "default": null,
+          "description": "Optional ci-local attestation: the PASS/FAIL summary from\n`bash scripts/ci-local.sh` the Producer verified at brief time\n(approach `2026-05-26-producer-supplied-override-attestation.md`,\nO2-d). When present it is stored on the delivered marker so a\nbilling-dead override merge can consume it WITHOUT the operator\nhand-pasting. Omitting it keeps the marker a bare neutral\ndelivered-marker (unchanged behavior). Neutral evidence, never an\napproval.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "pr_number": {
           "description": "Pull request number whose Producer Δ-brief has been delivered",
           "format": "uint64",

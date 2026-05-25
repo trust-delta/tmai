@@ -58,4 +58,23 @@ merge_commit_sha: string | null,
  * `false`, and a payload omitting it deserializes to `false` — a
  * client omitting it stays lockstep-free.
  */
-producer_reviewed?: boolean, };
+producer_reviewed?: boolean, 
+/**
+ * The ci-local attestation the Producer stored alongside the delivered
+ * marker, if any (approach `2026-05-26-producer-supplied-override-
+ * attestation.md`, O2-d). `Some` only when `producer_reviewed` is true
+ * AND the Producer supplied an attestation via `mark_pr_reviewed`.
+ *
+ * Neutral evidence-of-verification, **not** an approval — same §E
+ * boundary as `producer_reviewed`. The react half (Phase B) reads it to
+ * pre-fill the billing-dead override textarea so the operator need not
+ * hand-paste the ci-local summary; absence simply means the operator
+ * falls back to the manual paste (the O2-a path). The backend consumes
+ * the *stored* copy directly — this wire field is for the UI, not the
+ * authoritative override input.
+ *
+ * Optional / serde-default with the same lockstep-free discipline as
+ * `producer_reviewed`: absent on the wire when `None`, and a payload
+ * omitting it deserializes to `None`.
+ */
+ci_local_attestation?: string | null, };
