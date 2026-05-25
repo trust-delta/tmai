@@ -1298,7 +1298,7 @@
           "type": "object"
         },
         {
-          "description": "`HANDOFF READY` literal observed + `active.md` validated (§C steps 3-4).",
+          "description": "`active.md` baton landed fresh + validated (§C steps 3-4).",
           "properties": {
             "phase": {
               "enum": [
@@ -1358,7 +1358,7 @@
           "type": "object"
         },
         {
-          "description": "Failure path; `reason` is a machine-readable code per DR §D failure\ninventory (`no_active_producer`, `multiple_producers`, `timeout`,\n`missing_handoff_ready`, `malformed_handoff`, `kill_failed`,\n`spawn_failed`). Consumers route every variant to the same operator\ndialog (§E).",
+          "description": "Failure path; `reason` is a machine-readable code per DR §D failure\ninventory (`no_active_producer`, `multiple_producers`,\n`prompt_send_failed`, `timeout`, `malformed_handoff`, `kill_failed`,\n`spawn_failed`). Consumers route every variant to the same operator\ndialog (§E).",
           "properties": {
             "phase": {
               "enum": [
@@ -1585,6 +1585,13 @@
         },
         "check_status": {
           "description": "Raw rolled-up check status (`\"SUCCESS\"` / `\"FAILURE\"` / `\"PENDING\"`),\nor `null` when there are no checks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ci_local_attestation": {
+          "description": "The ci-local attestation the Producer stored alongside the delivered\nmarker, if any (approach `2026-05-26-producer-supplied-override-\nattestation.md`, O2-d). `Some` only when `producer_reviewed` is true\nAND the Producer supplied an attestation via `mark_pr_reviewed`.\n\nNeutral evidence-of-verification, **not** an approval — same §E\nboundary as `producer_reviewed`. The react half (Phase B) reads it to\npre-fill the billing-dead override textarea so the operator need not\nhand-paste the ci-local summary; absence simply means the operator\nfalls back to the manual paste (the O2-a path). The backend consumes\nthe *stored* copy directly — this wire field is for the UI, not the\nauthoritative override input.\n\nOptional / serde-default with the same lockstep-free discipline as\n`producer_reviewed`: absent on the wire when `None`, and a payload\nomitting it deserializes to `None`.",
           "type": [
             "string",
             "null"
