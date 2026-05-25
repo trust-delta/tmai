@@ -13,7 +13,7 @@
 //   posture: pick-a-project on null unit (no fetch); honest error; no
 //      fabricated empty list.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepoPrsWire } from "@/lib/api";
 
@@ -366,5 +366,116 @@ describe("UnitPrsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: OVERRIDE_BTN }));
     const reopened = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
     expect(reopened.value).toBe("");
+  });
+
+  // Phase B prefill (approach `2026-05-26-producer-supplied-override-
+  // attestation`, O2-d wire `PrSummaryWire.ci_local_attestation`). When
+  // the Producer stored a ci-local attestation alongside the delivered
+  // marker, the override textarea is pre-filled with it (editable) so the
+  // operator need not hand-paste; absence keeps the manual-paste fallback.
+  // It is evidence-of-verification, never an approval — the panel copy
+  // stays at "pre-filled / review/edit", and the backend is still the gate.
+
+  const attestedBillingDeadRepo = (attestation: string): RepoPrsWire => {
+    const repo = failingBillingDeadRepo();
+    repo.prs[0].ci_local_attestation = attestation;
+    return repo;
+  };
+
+  it("pre-fills the override textarea from the Producer's ci-local attestation when present", async () => {
+    unitPrsMock.mockResolvedValue({
+      unit: "tmai",
+      repos: [attestedBillingDeadRepo("ci-local — PASS, all gates green")],
+    });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+    const ta = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+    expect(ta.value).toBe("ci-local — PASS, all gates green");
+    // Pre-fill messaging — review/edit, never "approved".
+    expect(screen.getByText(/pre-filled below/i)).toBeTruthy();
+  });
+
+  it("keeps the empty manual-paste fallback when no attestation is present", async () => {
+    unitPrsMock.mockResolvedValue({ unit: "tmai", repos: [failingBillingDeadRepo()] });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+    const ta = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+    expect(ta.value).toBe("");
+    // The absent path keeps the original "paste the summary" copy.
+    expect(screen.getByText(/Paste the/i)).toBeTruthy();
+    expect(screen.queryByText(/pre-filled below/i)).toBeNull();
+  });
+
+  it("override-merges the pre-filled attestation unchanged when the operator does not edit it", async () => {
+    unitPrsMock.mockResolvedValue({
+      unit: "tmai",
+      repos: [attestedBillingDeadRepo("ci-local — PASS")],
+    });
+    mergePrMock.mockResolvedValue({ status: "merged" });
+    render(<UnitPrsSection unitName="tmai" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
+    // Pre-filled ⇒ non-empty ⇒ Confirm is enabled without any typing.
+    fireEvent.click(screen.getByRole("button", { name: /Override-merge #707/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/✓ Merged #707/)).toBeTruthy();
+    });
+    // The send shape is unchanged: the textarea content (here the
+    // pre-fill) is sent verbatim, same as a hand-paste.
+    expect(mergePrMock).toHaveBeenCalledWith("/home/u/works/tmai", 707, {
+      method: "squash",
+      deleteBranch: true,
+      override: {
+        ci_local_attestation: "ci-local — PASS",
+        repo_billing_dead_acknowledged: true,
+      },
+    });
+  });
+
+  // Prop-update behavior across a 60s poll (the brief's load-bearing
+  // line): a clean textarea adopts a newer attestation, but an operator's
+  // edit is never clobbered. Fake timers drive the real `useUnitPrs`
+  // interval; `findBy`/`waitFor` don't auto-advance vitest fake timers, so
+  // each fetch is flushed manually inside `act`.
+  it("adopts a newer attestation on a clean poll but never clobbers an operator's edit", async () => {
+    vi.useFakeTimers();
+    try {
+      unitPrsMock
+        .mockResolvedValueOnce({ unit: "tmai", repos: [attestedBillingDeadRepo("ci-local v1")] })
+        .mockResolvedValueOnce({
+          unit: "tmai",
+          repos: [attestedBillingDeadRepo("ci-local v2 (newer)")],
+        })
+        .mockResolvedValue({ unit: "tmai", repos: [attestedBillingDeadRepo("ci-local v3")] });
+
+      render(<UnitPrsSection unitName="tmai" />);
+      // Flush the initial (microtask) fetch — advancing 1ms cannot reach
+      // the 60s interval, but drains the pending promise.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: OVERRIDE_BTN }));
+      const ta = () => screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+      expect(ta().value).toBe("ci-local v1");
+
+      // Clean (un-edited) → a later poll adopts the newer attestation.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(ta().value).toBe("ci-local v2 (newer)");
+
+      // Operator edits → subsequent polls must NOT clobber the edit.
+      fireEvent.change(ta(), { target: { value: "operator hand-edit" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(ta().value).toBe("operator hand-edit");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
