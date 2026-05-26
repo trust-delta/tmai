@@ -1633,6 +1633,68 @@
       ],
       "type": "object"
     },
+    "ProducerFeedStatus": {
+      "description": "Per-unit producer-feed status — the **contract-surface** the WebUI polls to\nenable/disable the operator-trigger \"差分確認\" button (2026-05-26 amendment\n§wire). Carries the mechanical delta-gate plus the raw bookkeeping it is\ncomputed from, so the \"tip > last_served\" judgment is directly auditable on\nthe wire (the §2 \"mechanical, observe-substrate zero\" claim made checkable).",
+      "properties": {
+        "has_pending_delta": {
+          "description": "The mechanical gate: `tip > last_served_cursor`. The bit the WebUI\nreads to enable the button. Optional/lockstep-free exactly like the\n`is_producer` contract-surface bool (#404): `default` + `skip` make it\nabsent on the wire when `false`, so a client that omits it reads\n`false` and neither side is forced into lockstep.",
+          "type": "boolean"
+        },
+        "last_served_cursor": {
+          "description": "High-water cursor the engine last *served* for this unit.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "producer_address": {
+          "description": "The unit's Producer address — `<unit>.producer` (pure naming function).",
+          "type": "string"
+        },
+        "tip": {
+          "description": "Engine tip: highest seq ever assigned to this unit's feed (`next_seq`).\n0 ⇒ nothing recorded yet. Engine bookkeeping, not Producer-observed.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unit": {
+          "description": "The unit this status is for.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "producer_address",
+        "tip",
+        "last_served_cursor"
+      ],
+      "type": "object"
+    },
+    "ProducerPullTrigger": {
+      "description": "Result of an operator-triggered delta-pull (2026-05-26 amendment §1).",
+      "properties": {
+        "producer_address": {
+          "description": "The unit's Producer address — `<unit>.producer` (pure naming function).",
+          "type": "string"
+        },
+        "triggered": {
+          "description": "The agent id(s) the payload-zero \"pull pending\" ping was sent to. One\nper resolved Producer seat (normally exactly one — `1 Producer per\nunit`; a multi-repo unit can surface one per repo).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "description": "The unit whose Producer was pinged.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "producer_address",
+        "triggered"
+      ],
+      "type": "object"
+    },
     "QueueAgentEntry": {
       "description": "Per-agent view of the prompt queue.",
       "properties": {

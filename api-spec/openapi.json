@@ -273,6 +273,78 @@
         }
       }
     },
+    "/api/units/{unit}/producer-feed": {
+      "get": {
+        "tags": [
+          "producer-feed"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/producer-feed`.",
+        "description": "Per-unit mechanical \"差分あり\" status (notify rebuild step 2, #452;\n2026-05-26 amendment §2/§wire). The WebUI polls this to enable the\noperator-trigger \"差分確認\" button. Pure engine-side cursor bookkeeping (the\ntip the engine wrote vs the cursor it last served) — **no observe-substrate**;\na Producer pull advances the cursor so it auto-quiesces to \"差分なし\". Real\nhandler: `crate::web::api::get_producer_feed_status`.",
+        "operationId": "get_producer_feed_status_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-unit producer-feed delta-gate status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProducerFeedStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/producer-feed/trigger": {
+      "post": {
+        "tags": [
+          "producer-feed"
+        ],
+        "summary": "Documentation stub for `POST /api/units/{unit}/producer-feed/trigger`.",
+        "description": "The operator-triggered \"差分確認\" pull (2026-05-26 amendment §1). Resolves the\nunit's Producer and fires the **payload/judgment-zero** \"pull pending\" ping\nvia `send_prompt` (write direction). The operator decides *when* to trigger,\nso tmai-core never observes the Producer's terminal to time a wake\n(observe-substrate zero). 404 when no live Producer occupies the unit\n(offline-wake is the deferred Stage-2 problem). Real handler:\n`crate::web::api::post_producer_feed_trigger`.",
+        "operationId": "post_producer_feed_trigger_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payload-zero delta-pull ping fired to the unit's Producer seat(s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProducerPullTrigger"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No live Producer occupies the unit"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/prs": {
       "get": {
         "tags": [
@@ -3141,6 +3213,68 @@
           }
         }
       },
+      "ProducerFeedStatus": {
+        "type": "object",
+        "description": "Per-unit producer-feed status — the **contract-surface** the WebUI polls to\nenable/disable the operator-trigger \"差分確認\" button (2026-05-26 amendment\n§wire). Carries the mechanical delta-gate plus the raw bookkeeping it is\ncomputed from, so the \"tip > last_served\" judgment is directly auditable on\nthe wire (the §2 \"mechanical, observe-substrate zero\" claim made checkable).",
+        "required": [
+          "unit",
+          "producer_address",
+          "tip",
+          "last_served_cursor"
+        ],
+        "properties": {
+          "has_pending_delta": {
+            "type": "boolean",
+            "description": "The mechanical gate: `tip > last_served_cursor`. The bit the WebUI\nreads to enable the button. Optional/lockstep-free exactly like the\n`is_producer` contract-surface bool (#404): `default` + `skip` make it\nabsent on the wire when `false`, so a client that omits it reads\n`false` and neither side is forced into lockstep."
+          },
+          "last_served_cursor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "High-water cursor the engine last *served* for this unit.",
+            "minimum": 0
+          },
+          "producer_address": {
+            "type": "string",
+            "description": "The unit's Producer address — `<unit>.producer` (pure naming function)."
+          },
+          "tip": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Engine tip: highest seq ever assigned to this unit's feed (`next_seq`).\n0 ⇒ nothing recorded yet. Engine bookkeeping, not Producer-observed.",
+            "minimum": 0
+          },
+          "unit": {
+            "type": "string",
+            "description": "The unit this status is for."
+          }
+        }
+      },
+      "ProducerPullTrigger": {
+        "type": "object",
+        "description": "Result of an operator-triggered delta-pull (2026-05-26 amendment §1).",
+        "required": [
+          "unit",
+          "producer_address",
+          "triggered"
+        ],
+        "properties": {
+          "producer_address": {
+            "type": "string",
+            "description": "The unit's Producer address — `<unit>.producer` (pure naming function)."
+          },
+          "triggered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agent id(s) the payload-zero \"pull pending\" ping was sent to. One\nper resolved Producer seat (normally exactly one — `1 Producer per\nunit`; a multi-repo unit can surface one per repo)."
+          },
+          "unit": {
+            "type": "string",
+            "description": "The unit whose Producer was pinged."
+          }
+        }
+      },
       "QueueAgentEntry": {
         "type": "object",
         "description": "Per-agent view of the prompt queue.",
@@ -4358,6 +4492,10 @@
     {
       "name": "prs",
       "description": "Stage-1 in-tmai dev-loop: unit-scoped multi-repo PR list + PR code-diff (DR 2026-05-16-dev-loop-completes-in-tmai §A/§B)"
+    },
+    {
+      "name": "producer-feed",
+      "description": "Per-unit delta-gate status + operator-triggered delta-pull (notify rebuild step 2, #452; approach 2026-05-18-producer-worker-identity-and-unit-delta-feed §wire)"
     }
   ]
 }
