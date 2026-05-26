@@ -55,8 +55,10 @@ interface ProducerConsoleProps {
    *  button on `has_pending_delta`. */
   producerFeedData: ProducerFeedStatus | null;
   /** Operator delta-pull trigger forwarded to the "Check deltas ▸"
-   *  button — pings the unit's live Producer to pull pending deltas. */
-  onTriggerDeltaPull: (unit: string) => Promise<void>;
+   *  button — pings the unit's live Producer to pull pending deltas.
+   *  Arg-free: the App-level handler closes over the unit name and is
+   *  shared with the top-bar ProducerFeedChip. */
+  onTriggerDeltaPull: () => void;
   onOpenProducerTerminal: () => void;
   /** Phase B polish v3: invoked from the DirBrowser path when the
    *  operator hasn't selected a project yet. `path` is a repo root;

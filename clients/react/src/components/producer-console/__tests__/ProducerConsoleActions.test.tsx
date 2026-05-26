@@ -515,8 +515,8 @@ describe("ProducerConsoleActions — Check deltas button", () => {
     expect(btn).toHaveProperty("disabled", true);
   });
 
-  it("calls onTriggerDeltaPull with the unit name when the enabled button is clicked", () => {
-    const onTriggerDeltaPull = vi.fn().mockResolvedValue(undefined);
+  it("calls onTriggerDeltaPull (arg-free; handler closes over the unit) when the enabled button is clicked", () => {
+    const onTriggerDeltaPull = vi.fn();
     render(
       <ProducerConsoleActions
         {...makeProps({
@@ -530,6 +530,6 @@ describe("ProducerConsoleActions — Check deltas button", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Check deltas/ }));
-    expect(onTriggerDeltaPull).toHaveBeenCalledWith("proj-a");
+    expect(onTriggerDeltaPull).toHaveBeenCalledTimes(1);
   });
 });

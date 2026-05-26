@@ -56,10 +56,11 @@ interface ProducerConsoleActionsProps {
   /** Producer-feed status (App.tsx polls it next to calibration). Gates
    *  + badges the "Check deltas ▸" button on `has_pending_delta`. */
   producerFeedData: ProducerFeedStatus | null;
-  /** Operator delta-pull trigger. The button calls this with the unit
-   *  name; it fires a payload-zero "pull pending" ping to the unit's
-   *  live Producer (App.tsx owns the call + error swallow). */
-  onTriggerDeltaPull: (unit: string) => Promise<void>;
+  /** Operator delta-pull trigger. Arg-free — the App-level handler
+   *  closes over the unit name (and is shared with the top-bar
+   *  ProducerFeedChip), firing a payload-zero "pull pending" ping to the
+   *  unit's live Producer (App.tsx owns the call + error swallow). */
+  onTriggerDeltaPull: () => void;
   /** Spawn the Producer using the already-selected project. */
   onOpenProducerTerminal: () => void;
   /** Spawn the Producer at an explicit repo root — used after the
@@ -122,7 +123,7 @@ export function ProducerConsoleActions({
   // means no live Producer occupies the unit), so the row never crashes.
   const handleDeltaCheckClick = useCallback(() => {
     if (unitName === null || producer === null || !hasPendingDelta) return;
-    void onTriggerDeltaPull(unitName);
+    onTriggerDeltaPull();
   }, [unitName, producer, hasPendingDelta, onTriggerDeltaPull]);
 
   // Same pattern as NewAgentLauncher: pull `[general] default_project_
