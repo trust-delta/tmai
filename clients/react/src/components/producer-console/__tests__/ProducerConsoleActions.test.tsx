@@ -9,7 +9,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot, CalibrationResponse } from "@/lib/api";
+import type { AgentSnapshot, CalibrationResponse, ProducerFeedStatus } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
 
 vi.mock("@/components/project/NewAgentLauncher", () => ({
@@ -60,6 +60,8 @@ function makeProps(
     currentProjectPath: null,
     agents: [],
     calibrationData: null,
+    producerFeedData: null,
+    onTriggerDeltaPull: vi.fn(),
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),
@@ -113,6 +115,16 @@ function calibrationFixture(overrides: Partial<CalibrationResponse> = {}): Calib
     tier1_routed: overrides.tier1_routed ?? 0,
     tier1_violations: overrides.tier1_violations ?? [],
     recent_false_negatives: overrides.recent_false_negatives ?? [],
+  };
+}
+
+function producerFeedFixture(overrides: Partial<ProducerFeedStatus> = {}): ProducerFeedStatus {
+  return {
+    unit: overrides.unit ?? "test-unit",
+    producer_address: overrides.producer_address ?? "test-unit.producer",
+    tip: overrides.tip ?? 0n,
+    last_served_cursor: overrides.last_served_cursor ?? 0n,
+    has_pending_delta: overrides.has_pending_delta,
   };
 }
 
@@ -438,5 +450,86 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Handoff & restart/ }));
     expect(trigger).toHaveBeenCalledWith("proj-a", { trigger: "manual" });
+  });
+});
+
+describe("ProducerConsoleActions — Check deltas button", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // A live Producer at the unit's repo root — the gate also requires
+  // this (matches the Handoff button's `findProducerForUnit` precedent).
+  function liveProducer() {
+    return agent({
+      id: "claude:abc-123",
+      cwd: "/home/u/proj-a",
+      git_common_dir: "/home/u/proj-a/.git",
+      is_worktree: false,
+    });
+  }
+
+  it("is disabled when has_pending_delta is false/undefined even with a live Producer", () => {
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [liveProducer()],
+          // `has_pending_delta` left undefined — absent on the wire ⇒ false.
+          producerFeedData: producerFeedFixture(),
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Check deltas/ });
+    expect(btn).toHaveProperty("disabled", true);
+  });
+
+  it("is enabled when a live Producer exists AND has_pending_delta is true", () => {
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [liveProducer()],
+          producerFeedData: producerFeedFixture({ has_pending_delta: true, tip: 3n }),
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Check deltas/ });
+    expect(btn).toHaveProperty("disabled", false);
+  });
+
+  it("stays disabled with a pending delta but no live Producer", () => {
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [],
+          producerFeedData: producerFeedFixture({ has_pending_delta: true }),
+        })}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Check deltas/ });
+    expect(btn).toHaveProperty("disabled", true);
+  });
+
+  it("calls onTriggerDeltaPull with the unit name when the enabled button is clicked", () => {
+    const onTriggerDeltaPull = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProducerConsoleActions
+        {...makeProps({
+          unitName: "proj-a",
+          currentProjectPath: "/home/u/proj-a",
+          agents: [liveProducer()],
+          producerFeedData: producerFeedFixture({ has_pending_delta: true }),
+          onTriggerDeltaPull,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Check deltas/ }));
+    expect(onTriggerDeltaPull).toHaveBeenCalledWith("proj-a");
   });
 });

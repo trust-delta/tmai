@@ -26,6 +26,7 @@ import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
+import { useProducerFeed } from "@/hooks/useProducerFeed";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useWorktrees } from "@/hooks/useWorktrees";
@@ -167,6 +168,20 @@ export function App() {
     return currentProject.split("/").filter(Boolean).pop() ?? null;
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
+  const { data: producerFeedData } = useProducerFeed(unitName);
+
+  // Operator delta-pull trigger forwarded to the Producer console's
+  // "Check deltas ▸" button. Fires a payload-zero "pull pending" ping to
+  // the unit's live Producer; a 404 just means no live Producer occupies
+  // the unit, so we swallow/log rather than crash the action row (the
+  // button gates on a live producer anyway — see ProducerConsoleActions).
+  const triggerProducerFeed = useCallback(async (unit: string) => {
+    try {
+      await api.triggerProducerFeed(unit);
+    } catch (e) {
+      console.warn("producer-feed delta-pull trigger failed", e);
+    }
+  }, []);
 
   // ── Producer handoff-and-restart ritual (lifted to App level) ──
   //
@@ -711,6 +726,8 @@ export function App() {
                 currentProjectPath={currentProject}
                 unitName={unitName}
                 calibrationData={calibrationData}
+                producerFeedData={producerFeedData}
+                onTriggerDeltaPull={triggerProducerFeed}
                 onOpenProducerTerminal={openProducerTerminal}
                 onOpenCalibration={openCalibration}
                 trigger={triggerHandoff}

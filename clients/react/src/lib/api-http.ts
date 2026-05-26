@@ -14,6 +14,8 @@ import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
+import type { ProducerFeedStatus } from "@/types/generated/ProducerFeedStatus";
+import type { ProducerPullTrigger } from "@/types/generated/ProducerPullTrigger";
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
@@ -42,6 +44,8 @@ export type {
   Outcome,
   PermissionMode,
   PrDiffResponse,
+  ProducerFeedStatus,
+  ProducerPullTrigger,
   PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
@@ -1484,6 +1488,19 @@ export const api = {
   // the CLI's default.
   calibration: (unit: string, days = 90) =>
     apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
+
+  // Producer-feed status + operator delta-pull trigger (2026-05-26
+  // amendment §wire / §1). `producerFeed` reads the mechanical delta-gate
+  // (`has_pending_delta = tip > last_served_cursor`) the WebUI's manual
+  // "Check deltas ▸" button enables on; `triggerProducerFeed` fires a
+  // payload-zero "pull pending" ping to the unit's live Producer (404
+  // when no live Producer occupies the unit).
+  producerFeed: (unit: string) =>
+    apiFetch<ProducerFeedStatus>(`/units/${encodeURIComponent(unit)}/producer-feed`),
+  triggerProducerFeed: (unit: string) =>
+    apiFetch<ProducerPullTrigger>(`/units/${encodeURIComponent(unit)}/producer-feed/trigger`, {
+      method: "POST",
+    }),
 
   // Decisions view — bucketed projection of `compose()`'s Settled section
   // per `2026-05-11-producer-conversation-workbench.md` §1. Returns
