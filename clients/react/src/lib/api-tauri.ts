@@ -248,6 +248,11 @@ export const api = {
   // calibration store; no Tauri-specific path needed)
   calibration: (unit: string, days?: number) => httpApi.calibration(unit, days),
 
+  // Producer-feed status + delta-pull trigger (HTTP only — engine-side
+  // feed bookkeeping plus a Producer ping; no Tauri-specific path needed)
+  producerFeed: (unit: string) => httpApi.producerFeed(unit),
+  triggerProducerFeed: (unit: string) => httpApi.triggerProducerFeed(unit),
+
   // Decisions view (HTTP only — on-demand JSON projection of compose()'s
   // Settled section; no Tauri-specific path needed)
   decisions: (unit: string) => httpApi.decisions(unit),
