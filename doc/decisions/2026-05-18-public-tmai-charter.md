@@ -9,7 +9,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-18-design-authority-locus-and-public-charter.md"
   - "tmai-core:doc/decisions/2026-05-13-tmai-is-a-producer-exoskeleton.md"
   - "tmai-core:doc/decisions/2026-05-15-protect-scarce-human-judgment.md"
-last-verified: 2026-05-25
+last-verified: 2026-05-27
 contract-surface: false
 related:
   - "2026-05-14-webui-simulated-onboarded-posture"
