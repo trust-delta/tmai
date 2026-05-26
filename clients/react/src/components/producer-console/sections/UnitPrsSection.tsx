@@ -23,7 +23,7 @@
 // as a failure with a `gh`/github.com fallback hint, never a fabricated
 // empty list.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DiffViewer } from "@/components/worktree/DiffViewer";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import { api, type PrMergeOverride, type PrSummaryWire, type RepoPrsWire } from "@/lib/api";
@@ -242,7 +242,8 @@ interface PrRowProps {
   merge: MergeState;
   onMerge: () => void;
   /** Fire the Phase B billing-dead CI-safe override merge with the
-   *  pasted ci-local attestation. */
+   *  ci-local attestation in the textarea (pre-filled from the Producer's
+   *  stored attestation, or hand-pasted when absent). */
   onOverrideMerge: (attestation: string) => void;
   onArmMerge: (armed: boolean) => void;
 }
@@ -270,7 +271,28 @@ function PrRow({
   // attestation; the backend re-validates the per-repo `billing_dead`
   // flag and is the real gate.
   const [overrideOpen, setOverrideOpen] = useState(false);
-  const [attestation, setAttestation] = useState("");
+  // Pre-fill the override textarea from the Producer's stored ci-local
+  // attestation (`PrSummaryWire.ci_local_attestation`, approach
+  // `2026-05-26-producer-supplied-override-attestation`) so the operator
+  // need not hand-paste it. The field stays editable — what's sent is the
+  // textarea content, pre-filled or typed. `?? ""` because the wire field
+  // is optional/nullable; absent ⇒ "" keeps the manual-paste fallback.
+  const prefill = pr.ci_local_attestation ?? "";
+  const hasPrefill = prefill !== "";
+  const [attestation, setAttestation] = useState(prefill);
+  // Whether the operator has touched the textarea since it was (re)armed.
+  // A later 60s poll can bring a changed `prefill`; we adopt it ONLY while
+  // the field is still clean, never clobbering an operator's edit (the
+  // brief's load-bearing line). Cancel re-arms it so a reopen re-syncs.
+  const [attestationEdited, setAttestationEdited] = useState(false);
+  // Re-sync to a newly-polled attestation while the field is clean. Keyed
+  // on `prefill` so it fires only when the prop value actually changes;
+  // the `attestationEdited` guard makes the operator's edit sticky.
+  useEffect(() => {
+    if (!attestationEdited) {
+      setAttestation(prefill);
+    }
+  }, [prefill, attestationEdited]);
   const showOverride = billingDead && pr.check_status === "FAILURE";
 
   // Lazy: fetch the patch on the first open and cache it for the row's
@@ -432,15 +454,28 @@ function PrRow({
 
       {showOverride && overrideOpen && (
         <div className="mt-2 rounded border border-warning/40 bg-warning/[0.05] px-2 py-1.5">
-          <p className="text-[10.5px] leading-relaxed text-warning">
-            CI is red only because this repo's private Actions billing is dead. Paste the{" "}
-            <code className="text-foreground">ci-local</code> run summary; the backend re-checks the
-            per-repo <code className="text-foreground">billing_dead</code> flag + attestation before
-            running <code className="text-foreground">gh pr merge --admin</code>.
-          </p>
+          {hasPrefill ? (
+            <p className="text-[10.5px] leading-relaxed text-warning">
+              CI is red only because this repo's private Actions billing is dead. The Producer's{" "}
+              <code className="text-foreground">ci-local</code> summary is pre-filled below —
+              review/edit it, then confirm. The backend re-checks the per-repo{" "}
+              <code className="text-foreground">billing_dead</code> flag + attestation before
+              running <code className="text-foreground">gh pr merge --admin</code>.
+            </p>
+          ) : (
+            <p className="text-[10.5px] leading-relaxed text-warning">
+              CI is red only because this repo's private Actions billing is dead. Paste the{" "}
+              <code className="text-foreground">ci-local</code> run summary; the backend re-checks
+              the per-repo <code className="text-foreground">billing_dead</code> flag + attestation
+              before running <code className="text-foreground">gh pr merge --admin</code>.
+            </p>
+          )}
           <textarea
             value={attestation}
-            onChange={(e) => setAttestation(e.target.value)}
+            onChange={(e) => {
+              setAttestation(e.target.value);
+              setAttestationEdited(true);
+            }}
             rows={4}
             aria-label="CI-local attestation for billing-dead override"
             placeholder="Paste the ci-local attestation (e.g. the `bash scripts/ci-local.sh` summary)…"
@@ -460,8 +495,12 @@ function PrRow({
             <button
               type="button"
               onClick={() => {
+                // Discard edits and re-arm the prop sync: reopening shows
+                // the latest Producer prefill (or "" when absent), never a
+                // stale paste.
                 setOverrideOpen(false);
-                setAttestation("");
+                setAttestation(prefill);
+                setAttestationEdited(false);
               }}
               disabled={merge.busy}
               className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
