@@ -70,8 +70,6 @@ pub mod handoff_ritual_phase;
 pub use handoff_ritual_phase::*;
 pub mod milestone;
 pub use milestone::*;
-pub mod notify_mode_summary;
-pub use notify_mode_summary::*;
 pub mod outcome;
 pub use outcome::*;
 pub mod pending_projection_wire;

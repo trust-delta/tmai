@@ -7,7 +7,7 @@
           "description": "A human interacting through a UI surface",
           "properties": {
             "cwd": {
-              "description": "Working directory of the UI request, used for project-scope routing (#89).\n\nThe WebUI/TUI passes the cwd from the request body so\n`ProducerKicker::source_project_scope` can scope notifications\nwithout needing the caller to be tracked in `state.agents`.",
+              "description": "Working directory of the UI request, used for project-scope\nattribution of the action (#89). The WebUI/TUI passes the cwd from\nthe request body so a server-side `ActionPerformed` carries its\noriginating project even when the caller is not tracked in\n`state.agents`.",
               "type": [
                 "string",
                 "null"
@@ -34,7 +34,7 @@
           "description": "An AI agent (orchestrator or worker) via MCP tools",
           "properties": {
             "cwd": {
-              "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so\n`ProducerKicker::source_project_scope` can resolve the project\nroot when the MCP agent ID is not tracked in `state.agents` (#75).",
+              "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()`\nso a server-side `ActionPerformed` carries its originating project\neven when the MCP agent ID is not tracked in `state.agents` (#75).",
               "type": [
                 "string",
                 "null"
@@ -1398,44 +1398,6 @@
       ],
       "type": "object"
     },
-    "NotifyModeSummary": {
-      "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"` or `\"notify\"`.",
-      "properties": {
-        "on_agent_stopped": {
-          "description": "Handling mode for `AgentStopped` events.",
-          "type": "string"
-        },
-        "on_pr_ci_failed": {
-          "description": "Handling mode for `PrCiFailed` events.",
-          "type": "string"
-        },
-        "on_pr_ci_passed": {
-          "description": "Handling mode for `PrCiPassed` events.",
-          "type": "string"
-        },
-        "on_pr_closed": {
-          "description": "Handling mode for `PrClosed` events.",
-          "type": "string"
-        },
-        "on_pr_created": {
-          "description": "Handling mode for `PrCreated` events.",
-          "type": "string"
-        },
-        "on_pr_review_feedback": {
-          "description": "Handling mode for `PrReviewFeedback` events.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "on_agent_stopped",
-        "on_pr_created",
-        "on_pr_ci_failed",
-        "on_pr_ci_passed",
-        "on_pr_review_feedback",
-        "on_pr_closed"
-      ],
-      "type": "object"
-    },
     "Outcome": {
       "description": "An *objective* outcome observed after a triage verdict, used as ground\ntruth for calibration. Per DR §B.2: the human's accept/reject is **not**\nhere — only failure signals the world produces independently.\n\nThe data is structurally complete in stage 1; the *detection* (scanning\ngit log / PR history to populate these) lands in stage 5.",
       "oneOf": [
@@ -2699,30 +2661,16 @@
       "type": "object"
     },
     "WorkflowSnapshot": {
-      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (e.g. NotifySettings).\nInternal layer names must not appear in this type or its nested types.",
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the orchestrator-identity projection.",
       "properties": {
-        "notify_mode_summary": {
-          "$ref": "#/$defs/NotifyModeSummary",
-          "description": "Per-event notification handling modes."
-        },
         "orchestrator_agent_id": {
           "description": "Stable agent id of the active orchestrator, if one is running.",
           "type": [
             "string",
             "null"
           ]
-        },
-        "orchestrator_notify_backlog": {
-          "description": "Number of notifications buffered for the orchestrator but not yet delivered.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
         }
       },
-      "required": [
-        "notify_mode_summary",
-        "orchestrator_notify_backlog"
-      ],
       "type": "object"
     },
     "WorkingWithHumanResponse": {
