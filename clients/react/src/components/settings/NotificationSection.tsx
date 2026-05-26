@@ -9,9 +9,8 @@ const DEFAULT_THRESHOLD_SECS = 10;
 
 /**
  * Browser-notification settings: notify-on-idle toggle + idle threshold
- * (seconds). Distinct from the orchestrator's per-event notification
- * routing (`NotifySettingsSection`) — this controls whether the browser
- * itself raises a notification on the idle transition.
+ * (seconds). This controls whether the browser itself raises a notification
+ * on the idle transition.
  */
 export function NotificationSection() {
   const [notifyOnIdle, setNotifyOnIdle] = useState(true);

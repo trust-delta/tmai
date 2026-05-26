@@ -68,8 +68,6 @@ function orchestratorFixture(threshold: number) {
     enabled: true,
     role: "",
     rules: { branch: "", merge: "", review: "", custom: "" },
-    notify: {},
-    auto_action_templates: {},
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 60,
     pr_monitor_exclude_authors: [],

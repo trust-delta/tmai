@@ -7,10 +7,7 @@ export * from "./teams";
 
 import type {
   AgentSnapshot,
-  AutoActionTemplates,
   DispatchBundle,
-  NotifySettings,
-  NotifyTemplates,
   OrchestratorRules,
   PrMergeMethod,
   PrMergeOverride,
@@ -210,10 +207,6 @@ export const api = {
       enabled?: boolean;
       role?: string;
       rules?: Partial<OrchestratorRules>;
-      notify?: Partial<Omit<NotifySettings, "templates">> & {
-        templates?: Partial<NotifyTemplates>;
-      };
-      auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
