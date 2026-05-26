@@ -10,8 +10,6 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkflowSnapshot {
-    pub notify_mode_summary: NotifyModeSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub orchestrator_agent_id: Option<Value>,
-    pub orchestrator_notify_backlog: i32,
 }

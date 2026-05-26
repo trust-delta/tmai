@@ -366,7 +366,7 @@
                   "string",
                   "null"
                 ],
-                "description": "Working directory of the UI request, used for project-scope routing (#89).\n\nThe WebUI/TUI passes the cwd from the request body so\n`ProducerKicker::source_project_scope` can scope notifications\nwithout needing the caller to be tracked in `state.agents`."
+                "description": "Working directory of the UI request, used for project-scope\nattribution of the action (#89). The WebUI/TUI passes the cwd from\nthe request body so a server-side `ActionPerformed` carries its\noriginating project even when the caller is not tracked in\n`state.agents`."
               },
               "interface": {
                 "type": "string",
@@ -393,7 +393,7 @@
                   "string",
                   "null"
                 ],
-                "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so\n`ProducerKicker::source_project_scope` can resolve the project\nroot when the MCP agent ID is not tracked in `state.agents` (#75)."
+                "description": "Caller working directory at origin creation time (MCP loopback only).\n\nSet by `TmaiHttpClient::from_runtime` via `std::env::current_dir()`\nso a server-side `ActionPerformed` carries its originating project\neven when the MCP agent ID is not tracked in `state.agents` (#75)."
               },
               "id": {
                 "type": "string",
@@ -2906,44 +2906,6 @@
           }
         }
       },
-      "NotifyModeSummary": {
-        "type": "object",
-        "description": "Per-event notification handling modes expressed as wire strings.\n\nValues are one of `\"off\"` or `\"notify\"`.",
-        "required": [
-          "on_agent_stopped",
-          "on_pr_created",
-          "on_pr_ci_failed",
-          "on_pr_ci_passed",
-          "on_pr_review_feedback",
-          "on_pr_closed"
-        ],
-        "properties": {
-          "on_agent_stopped": {
-            "type": "string",
-            "description": "Handling mode for `AgentStopped` events."
-          },
-          "on_pr_ci_failed": {
-            "type": "string",
-            "description": "Handling mode for `PrCiFailed` events."
-          },
-          "on_pr_ci_passed": {
-            "type": "string",
-            "description": "Handling mode for `PrCiPassed` events."
-          },
-          "on_pr_closed": {
-            "type": "string",
-            "description": "Handling mode for `PrClosed` events."
-          },
-          "on_pr_created": {
-            "type": "string",
-            "description": "Handling mode for `PrCreated` events."
-          },
-          "on_pr_review_feedback": {
-            "type": "string",
-            "description": "Handling mode for `PrReviewFeedback` events."
-          }
-        }
-      },
       "Outcome": {
         "oneOf": [
           {
@@ -4208,28 +4170,14 @@
       },
       "WorkflowSnapshot": {
         "type": "object",
-        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nExposes only public concepts from CoreEvent (e.g. NotifySettings).\nInternal layer names must not appear in this type or its nested types.",
-        "required": [
-          "notify_mode_summary",
-          "orchestrator_notify_backlog"
-        ],
+        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the orchestrator-identity projection.",
         "properties": {
-          "notify_mode_summary": {
-            "$ref": "#/components/schemas/NotifyModeSummary",
-            "description": "Per-event notification handling modes."
-          },
           "orchestrator_agent_id": {
             "type": [
               "string",
               "null"
             ],
             "description": "Stable agent id of the active orchestrator, if one is running."
-          },
-          "orchestrator_notify_backlog": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of notifications buffered for the orchestrator but not yet delivered.",
-            "minimum": 0
           }
         }
       },

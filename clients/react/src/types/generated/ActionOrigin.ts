@@ -12,11 +12,11 @@ export type ActionOrigin = { "kind": "Human",
  */
 interface: string, 
 /**
- * Working directory of the UI request, used for project-scope routing (#89).
- *
- * The WebUI/TUI passes the cwd from the request body so
- * `ProducerKicker::source_project_scope` can scope notifications
- * without needing the caller to be tracked in `state.agents`.
+ * Working directory of the UI request, used for project-scope
+ * attribution of the action (#89). The WebUI/TUI passes the cwd from
+ * the request body so a server-side `ActionPerformed` carries its
+ * originating project even when the caller is not tracked in
+ * `state.agents`.
  */
 cwd?: string | null, } | { "kind": "Agent", 
 /**
@@ -40,9 +40,9 @@ is_producer?: boolean,
 /**
  * Caller working directory at origin creation time (MCP loopback only).
  *
- * Set by `TmaiHttpClient::from_runtime` via `std::env::current_dir()` so
- * `ProducerKicker::source_project_scope` can resolve the project
- * root when the MCP agent ID is not tracked in `state.agents` (#75).
+ * Set by `TmaiHttpClient::from_runtime` via `std::env::current_dir()`
+ * so a server-side `ActionPerformed` carries its originating project
+ * even when the MCP agent ID is not tracked in `state.agents` (#75).
  */
 cwd?: string | null, } | { "kind": "System", 
 /**
