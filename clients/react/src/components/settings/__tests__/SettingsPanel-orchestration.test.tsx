@@ -19,7 +19,7 @@ const { OrchestrationDispatchSection } = await import("../OrchestrationDispatchS
 
 /**
  * Build a minimal OrchestratorSettings for the dispatch-section tests.
- * Other fields (notify, role, ...) are filled with default-ish
+ * Other fields (role, rules, ...) are filled with default-ish
  * placeholders since the section under test only reads `orchestrator` /
  * `dispatch`.
  */
@@ -28,47 +28,6 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
     enabled: true,
     role: "",
     rules: { branch: "", merge: "", review: "", custom: "" },
-    notify: {
-      on_agent_stopped: "off",
-      on_agent_error: "off",
-      on_rebase_conflict: "off",
-      on_ci_passed: "off",
-      on_ci_failed: "off",
-      on_pr_created: "off",
-      on_pr_comment: "off",
-      on_pr_closed: "off",
-      on_guardrail_exceeded: "off",
-      templates: {
-        agent_stopped: "",
-        agent_error: "",
-        ci_passed: "",
-        ci_failed: "",
-        pr_created: "",
-        pr_comment: "",
-        rebase_conflict: "",
-        pr_closed: "",
-        guardrail_exceeded: "",
-      },
-      default_templates: {
-        agent_stopped: "",
-        agent_error: "",
-        ci_passed: "",
-        ci_failed: "",
-        pr_created: "",
-        pr_comment: "",
-        rebase_conflict: "",
-        pr_closed: "",
-        guardrail_exceeded: "",
-      },
-      suppress_self: false,
-      notify_on_human_action: false,
-      notify_on_agent_action: false,
-      notify_on_system_action: false,
-    },
-    auto_action_templates: {
-      ci_failed_implementer: "",
-      review_feedback_implementer: "",
-    },
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 0,
     pr_monitor_exclude_authors: [],

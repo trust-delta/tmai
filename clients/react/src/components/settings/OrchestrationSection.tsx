@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
 import { api, type OrchestratorSettings, withOrchestratorDefaults } from "@/lib/api";
-import { NotifySettingsSection } from "./NotifySettingsSection";
 import { PrMonitorSection } from "./PrMonitorSection";
 import { SaveStatus } from "./SaveStatus";
 
@@ -53,8 +52,7 @@ interface OrchestrationSectionProps {
 /**
  * Settings section that hosts the orchestrator agent's full configuration:
  * scope (global vs per-project override), enabled toggle, role + workflow
- * rule textareas, and the three composed sub-sections (PR Monitor, Notify,
- * Guardrails).
+ * rule textareas, and the composed PR Monitor sub-section.
  *
  * Owns its own state (`orchestrator`, `orchScope`, `orchestratorSave`) and
  * load — the parent SettingsPanel does not need to refresh this section.
@@ -252,13 +250,6 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
             ))}
 
             <PrMonitorSection
-              orchestrator={orchestrator}
-              setOrchestrator={setOrchestrator}
-              orchProject={orchProject}
-              save={save}
-            />
-
-            <NotifySettingsSection
               orchestrator={orchestrator}
               setOrchestrator={setOrchestrator}
               orchProject={orchProject}

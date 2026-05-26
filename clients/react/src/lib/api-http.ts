@@ -774,58 +774,12 @@ export interface OrchestratorRules {
   custom: string;
 }
 
-export interface NotifyTemplates {
-  agent_stopped: string;
-  agent_error: string;
-  ci_passed: string;
-  ci_failed: string;
-  pr_created: string;
-  pr_comment: string;
-  rebase_conflict: string;
-  pr_closed: string;
-  guardrail_exceeded: string;
-}
-
-/** Tri-state handling per notification event: off / forward to orchestrator / auto-action. */
-export type EventHandling = "off" | "notify" | "auto_action";
-
-/** AutoAction prompt templates, sent directly to the target worker. */
-export interface AutoActionTemplates {
-  ci_failed_implementer: string;
-  review_feedback_implementer: string;
-}
-
-export interface NotifySettings {
-  on_agent_stopped: EventHandling;
-  on_agent_error: EventHandling;
-  on_rebase_conflict: EventHandling;
-  on_ci_passed: EventHandling;
-  on_ci_failed: EventHandling;
-  on_pr_created: EventHandling;
-  on_pr_comment: EventHandling;
-  on_pr_closed: EventHandling;
-  on_guardrail_exceeded: EventHandling;
-  templates: NotifyTemplates;
-  /** Built-in default templates (for UI placeholder display) */
-  default_templates: NotifyTemplates;
-  /** Skip ActionPerformed echoes for actions initiated by an orchestrator (#440). */
-  suppress_self: boolean;
-  /** Deliver ActionPerformed notifications whose origin is a human (#440). */
-  notify_on_human_action: boolean;
-  /** Deliver ActionPerformed notifications whose origin is a non-orchestrator agent (#440). */
-  notify_on_agent_action: boolean;
-  /** Deliver ActionPerformed notifications whose origin is a system process (#440). */
-  notify_on_system_action: boolean;
-}
-
 export type PrMonitorScope = "current_project" | "all";
 
 export interface OrchestratorSettings {
   enabled: boolean;
   role: string;
   rules: OrchestratorRules;
-  notify: NotifySettings;
-  auto_action_templates: AutoActionTemplates;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
   pr_monitor_exclude_authors: string[];
@@ -860,66 +814,29 @@ export const DEFAULT_ORCHESTRATOR_RULES: OrchestratorRules = {
   custom: "",
 };
 
-const EMPTY_NOTIFY_TEMPLATES: NotifyTemplates = {
-  agent_stopped: "",
-  agent_error: "",
-  ci_passed: "",
-  ci_failed: "",
-  pr_created: "",
-  pr_comment: "",
-  rebase_conflict: "",
-  pr_closed: "",
-  guardrail_exceeded: "",
-};
-
-/**
- * Engine defaults for `[orchestration.notify]`. Per-event modes mirror
- * `OrchestratorNotifySettings::default` in core (everything `notify` except
- * `ci_passed`, which is `off`); templates are empty (= use the built-in
- * default). Used when the wire omits the whole `notify` sub-table.
- */
-export const DEFAULT_NOTIFY_SETTINGS: NotifySettings = {
-  on_agent_stopped: "notify",
-  on_agent_error: "notify",
-  on_rebase_conflict: "notify",
-  on_ci_passed: "off",
-  on_ci_failed: "notify",
-  on_pr_created: "notify",
-  on_pr_comment: "notify",
-  on_pr_closed: "notify",
-  on_guardrail_exceeded: "notify",
-  templates: { ...EMPTY_NOTIFY_TEMPLATES },
-  default_templates: { ...EMPTY_NOTIFY_TEMPLATES },
-  suppress_self: false,
-  notify_on_human_action: false,
-  notify_on_agent_action: false,
-  notify_on_system_action: false,
-};
-
 /**
  * The orchestrator-settings wire shape as actually served. A tmai-core binary
- * omits the `[orchestration.*]` object sub-tables (`notify`, `rules`) when they
- * are absent from config.toml, even though the contract types them as required.
- * Reading e.g. `settings.notify[event]` on such a response throws `Cannot read
+ * omits the `[orchestration.*]` object sub-tables (`rules`) when they are
+ * absent from config.toml, even though the contract types them as required.
+ * Reading e.g. `settings.rules[field]` on such a response throws `Cannot read
  * properties of undefined` and — with no error boundary around SettingsPanel —
  * blacks out the whole panel. Normalize with `withOrchestratorDefaults` at the
  * fetch boundary.
  */
-export type WireOrchestratorSettings = Omit<OrchestratorSettings, "notify" | "rules"> &
-  Partial<Pick<OrchestratorSettings, "notify" | "rules">>;
+export type WireOrchestratorSettings = Omit<OrchestratorSettings, "rules"> &
+  Partial<Pick<OrchestratorSettings, "rules">>;
 
 /**
  * Coalesce a wire orchestrator-settings response into a fully-populated
- * `OrchestratorSettings` so every downstream consumer (NotifySettingsSection,
- * the rule textareas) reads a defined sub-object rather than crashing on a
- * deref of an omitted sub-table. Apply once at the fetch boundary — mirrors the
- * `?? default` defense PR #684 added for `auto_handoff_threshold_pct`.
+ * `OrchestratorSettings` so every downstream consumer (the rule textareas)
+ * reads a defined sub-object rather than crashing on a deref of an omitted
+ * sub-table. Apply once at the fetch boundary — mirrors the `?? default`
+ * defense PR #684 added for `auto_handoff_threshold_pct`.
  */
 export function withOrchestratorDefaults(s: WireOrchestratorSettings): OrchestratorSettings {
   return {
     ...s,
     rules: s.rules ?? DEFAULT_ORCHESTRATOR_RULES,
-    notify: s.notify ?? DEFAULT_NOTIFY_SETTINGS,
   };
 }
 
@@ -1500,10 +1417,6 @@ export const api = {
       enabled?: boolean;
       role?: string;
       rules?: Partial<OrchestratorRules>;
-      notify?: Partial<Omit<NotifySettings, "templates">> & {
-        templates?: Partial<NotifyTemplates>;
-      };
-      auto_action_templates?: Partial<AutoActionTemplates>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
