@@ -3434,6 +3434,10 @@
     {
       "description": "A PR received review feedback (changes requested)",
       "properties": {
+        "branch": {
+          "description": "Head branch name. Carried so the unit-delta-feed writer can run\nthe *same* dispatched-worker gate it runs for `PrCreated`\n(`pr_branch_attribution` + `dispatch_project_root_for_branch`).\n`#[serde(default)]` keeps the field backward-compatible on the\nwire, matching `PrCreated`/`PrClosed` which already carry `branch`.",
+          "type": "string"
+        },
         "comments_summary": {
           "description": "Summary of review comments",
           "type": "string"

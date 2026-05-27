@@ -99,6 +99,8 @@ pub enum CoreEvent {
         title: String,
     },
     PrReviewFeedback {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
         comments_summary: String,
         pr_number: i64,
         #[serde(skip_serializing_if = "Option::is_none")]

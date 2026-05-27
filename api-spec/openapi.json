@@ -1480,6 +1480,10 @@
               "type"
             ],
             "properties": {
+              "branch": {
+                "type": "string",
+                "description": "Head branch name. Carried so the unit-delta-feed writer can run\nthe *same* dispatched-worker gate it runs for `PrCreated`\n(`pr_branch_attribution` + `dispatch_project_root_for_branch`).\n`#[serde(default)]` keeps the field backward-compatible on the\nwire, matching `PrCreated`/`PrClosed` which already carry `branch`."
+              },
               "comments_summary": {
                 "type": "string",
                 "description": "Summary of review comments"
