@@ -10,6 +10,8 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ApproachStatus {
+    planned,
+    partial,
     active,
     validated,
     rejected,

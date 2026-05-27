@@ -4,9 +4,14 @@
  * Lifecycle position of an approach record.
  *
  * Unlike [`super::decision::DecisionStatus`], the approach lifecycle resolves
- * outward (`active → validated / rejected / replaced`) rather than through a
- * supersede chain. A validated / rejected approach is preserved as the
- * audit-trail record of *what we tried and what happened*; a follow-up
+ * outward (`planned → partial → active → validated / rejected / replaced`)
+ * rather than through a supersede chain. The two pre-active states split what
+ * `active` used to overload: the boundary is **whether `success-signal` can
+ * fire yet (is the approach evaluable?)** — a single binary point, not a
+ * percent-complete continuum. A validated / rejected approach is preserved as
+ * the audit-trail record of *what we tried and what happened*; a follow-up
  * decision (if any) is authored separately rather than in-place.
+ *
+ * See `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`.
  */
-export type ApproachStatus = "active" | "validated" | "rejected" | "replaced";
+export type ApproachStatus = "planned" | "partial" | "active" | "validated" | "rejected" | "replaced";

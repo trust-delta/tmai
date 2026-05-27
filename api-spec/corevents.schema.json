@@ -100,8 +100,10 @@
       "type": "string"
     },
     "ApproachStatus": {
-      "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`active → validated / rejected / replaced`) rather than through a\nsupersede chain. A validated / rejected approach is preserved as the\naudit-trail record of *what we tried and what happened*; a follow-up\ndecision (if any) is authored separately rather than in-place.",
+      "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`planned → partial → active → validated / rejected / replaced`)\nrather than through a supersede chain. The two pre-active states split what\n`active` used to overload: the boundary is **whether `success-signal` can\nfire yet (is the approach evaluable?)** — a single binary point, not a\npercent-complete continuum. A validated / rejected approach is preserved as\nthe audit-trail record of *what we tried and what happened*; a follow-up\ndecision (if any) is authored separately rather than in-place.\n\nSee `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`.",
       "enum": [
+        "planned",
+        "partial",
         "active",
         "validated",
         "rejected",
