@@ -235,7 +235,15 @@ comments_summary: string,
  * can dedupe on `(pr_number, review_count)` instead of
  * collapsing distinct rounds into one entry.
  */
-review_count: bigint, } | { "type": "PrClosed", 
+review_count: bigint, 
+/**
+ * Head branch name. Carried so the unit-delta-feed writer can run
+ * the *same* dispatched-worker gate it runs for `PrCreated`
+ * (`pr_branch_attribution` + `dispatch_project_root_for_branch`).
+ * `#[serde(default)]` keeps the field backward-compatible on the
+ * wire, matching `PrCreated`/`PrClosed` which already carry `branch`.
+ */
+branch: string, } | { "type": "PrClosed", 
 /**
  * PR number
  */
