@@ -145,6 +145,64 @@
         }
       }
     },
+    "/api/units": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Documentation stub for `GET /api/units`.",
+        "description": "Unit→repo membership (issue #439 — the Phase C WebUI wire #340 deferred):\nevery configured `[[unit]]` with its resolved repo list (name + repos +\nwhich repo is primary). Membership ONLY — no live agent state / attention /\nPR-CI / server-computed status pill; the client joins this with live agents\nto render one Producer-rooted tree per unit (producer-rooted-left-panel DR).\nReal handler: `crate::web::api::get_units`.",
+        "operationId": "get_units_doc",
+        "responses": {
+          "200": {
+            "description": "Every configured unit's repo membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/units/{unit}": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}`.",
+        "description": "One configured unit's repo membership — the #340 item-4 shape. Resolved by\nname against the configured `[[unit]]`s only (not the cwd/worktree\nfallback the decisions / PR endpoints use), so an unknown unit ⇒ `404`.\nSame membership-only boundary as `GET /api/units`. Real handler:\n`crate::web::api::get_unit`.",
+        "operationId": "get_unit_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The unit's repo membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/approaches": {
       "get": {
         "tags": [
@@ -4205,6 +4263,58 @@
           }
         }
       },
+      "UnitRepoWire": {
+        "type": "object",
+        "description": "One repo of a unit's resolved membership: its absolute path plus whether\nit is the unit's **primary** repo (the one at\n[`ResolvedUnit::repo_root`] / `primary_index`, where the Producer is\nlaunched).\n\n`primary` is a per-repo bool, deliberately **not** a separate\n`primary_index` field on the parent: the client joins these repos with\nlive agents by `path`, so it needs only the per-row \"is this the Producer's\nrepo?\" bit, never an index into a list it never indexes. Keeps the wire\nminimal (issue #439 contract boundary).",
+        "required": [
+          "path",
+          "primary"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute repo root path (the same `repos[]` path the decisions / PR\nendpoints key on, so the client can join membership across surfaces)."
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "`true` for the unit's primary repo (where the Producer is launched)."
+          }
+        }
+      },
+      "UnitResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}` response — one unit's repo membership.\n\n`repos` is ordered **primary first, then declaration order** — the same\nconvention [`unit_repo_order`] gives the cross-repo PR view, so the two\nunit surfaces stay consistent. For a single-repo unit this collapses to\n`repos.len() == 1`.",
+        "required": [
+          "name",
+          "repos"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnitRepoWire"
+            }
+          }
+        }
+      },
+      "UnitsResponse": {
+        "type": "object",
+        "description": "`GET /api/units` response — every configured unit's membership.\n\nEmpty `units` when no `[[unit]]` is configured (the workbench then\noperates on a single cwd-synthesized unit, which is not enumerated here —\nthis surface reflects *configured* membership only).",
+        "required": [
+          "units"
+        ],
+        "properties": {
+          "units": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnitResponse"
+            }
+          }
+        }
+      },
       "Vendor": {
         "type": "string",
         "description": "Vendor CLI identifier for dispatched agents.",
@@ -4482,6 +4592,10 @@
     {
       "name": "calibration",
       "description": "Producer hit-rate / tier-1 tripwire view (DR 2026-05-13-synthesis-processing-and-calibration-schema §B.3)"
+    },
+    {
+      "name": "units",
+      "description": "Unit→repo membership — configured units with their resolved repo list (issue #439, the Phase C wire deferred by #340). Membership only; the client joins with live agents to render one Producer-rooted tree per unit"
     },
     {
       "name": "decisions",
