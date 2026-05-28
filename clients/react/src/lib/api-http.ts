@@ -2,6 +2,9 @@
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
 import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
+import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
+import type { ApproachStatus } from "@/types/generated/ApproachStatus";
+import type { ApproachWire } from "@/types/generated/ApproachWire";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
 import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
@@ -19,7 +22,10 @@ import type { ProducerPullTrigger } from "@/types/generated/ProducerPullTrigger"
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
+import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
+import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
+import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
@@ -36,6 +42,9 @@ import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
   AgentCtxUsage,
+  ApproachesResponse,
+  ApproachStatus,
+  ApproachWire,
   BootstrapRequiredEvent,
   CalibrationCellWire,
   CalibrationEntry,
@@ -52,7 +61,10 @@ export type {
   PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
+  RepoApproachesWire,
   RepoPrsWire,
+  ReviewExtensionWire,
+  ReviewTriggerWire,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
@@ -1041,67 +1053,16 @@ export interface WorkingWithHumanResponse {
   memory_index: string | null;
 }
 
-// ── Active approaches view (tmai-core PR #369) ──
+// ── Approaches view ──
 //
-// Mirror of `tmai-core::api::approaches_view`. `RepoApproachesWire.active`
-// carries `status: active` records only — validated / rejected / replaced
-// are filtered at compose time (audit-trail, not yet on the wire; the
-// console's Verdict-inbox surfaces that gap honestly per
-// `doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md`).
-// Hand-written until `gen-spec-pr` syncs the generated type; A2 fidelity
-// (core-computed trigger firing + verdict authority + settled projection)
-// is tracked in tmai-core#381.
-
-export type ApproachStatusWire = "active" | "validated" | "rejected" | "replaced";
-
-/** One review trigger, tagged on `kind` (mirrors the Rust enum 1:1; the
- *  `Date` value is an ISO-8601 string on the wire). Only `date` is
- *  client-evaluable; the rest need core/gh resolution (tmai-core#381). */
-export type ReviewTriggerWire =
-  | { kind: "date"; value: string }
-  | { kind: "pr-closed"; ref: string }
-  | { kind: "pr-merged"; ref: string }
-  | { kind: "issue-closed"; ref: string }
-  | { kind: "decision-status"; ref: string; "target-status": string }
-  | { kind: "approach-status"; ref: string; "target-status": string }
-  | { kind: "manual"; description: string };
-
-export interface ApproachWire {
-  slug: string;
-  title: string;
-  /** ISO-8601 date from the slug prefix (creation date — approaches have
-   *  no `last_verified`; re-evaluation is signal-driven). */
-  date: string;
-  status: ApproachStatusWire;
-  governs: string[];
-  /** `serves:` — the decision slug(s) this approach's means serve. */
-  serves: string[];
-  success_signal: string;
-  failure_signal: string;
-  review_triggers: ReviewTriggerWire[];
-  /** Producer confidence; `null` when none on record. */
-  confidence: "high" | "low" | null;
-  /** Successor approach slugs — meaningful only when `status: replaced`. */
-  replaced_by: string[];
-  /** First-paragraph summary of the body. */
-  excerpt: string;
-}
-
-export interface RepoApproachesWire {
-  repo_label: string;
-  repo_root: string;
-  primary: boolean;
-  repo_head: string | null;
-  /** `status: active` records only (see module note). */
-  active: ApproachWire[];
-}
-
-export interface ApproachesResponse {
-  unit: string;
-  /** RFC3339 compose timestamp. */
-  composed_at: string;
-  repos: RepoApproachesWire[];
-}
+// Hand-mirror retired in favor of the generated source-of-truth (see the
+// `import type` block at the top of this file). Post tmai-core#463 / tmai#744
+// the wire is `RepoApproachesWire.approaches: ApproachWire[]` carrying ALL
+// statuses — `Planned` / `Partial` / `Ready` / `Running` / `Validated` /
+// `Rejected` / `Replaced` — sorted most-recent-first by slug. The dashboard
+// filters / sorts client-side per tmai-core#462 Amendment 2026-05-28
+// (全件可視化). The verdict-inbox surface in `ActiveApproachesSection`
+// narrows to `status: "running"` only — the dischargeable verification debt.
 
 // ── API wrappers ──
 
@@ -1515,10 +1476,12 @@ export const api = {
   decisions: (unit: string) =>
     apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
 
-  // Active approaches view — `▣ Active approaches` slice of `compose()`
-  // (tmai-core PR #369). `status: active` records only; per-repo groups
-  // (multi-repo follows tmai-core#340, same as decisions). The console
-  // turns this into the Verdict-inbox.
+  // Approaches view — every approach record (all statuses) per repo,
+  // sorted most-recent-first by slug. The console's Verdict-inbox
+  // filters to `status: running` client-side; the dashboard surface
+  // (`AllApproachesSection`) renders all 7 statuses with operator-side
+  // filters per tmai-core#462 Amendment 2026-05-28. Multi-repo follows
+  // tmai-core#340, same as decisions.
   approaches: (unit: string) =>
     apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
 

@@ -32,6 +32,7 @@ import type {
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { ActiveApproachesSection } from "./sections/ActiveApproachesSection";
+import { AllApproachesSection } from "./sections/AllApproachesSection";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
 import { UnitPrsSection } from "./sections/UnitPrsSection";
@@ -146,6 +147,7 @@ export function ProducerConsole({
         />
         <SettledDecisionsSection unitName={unitName} />
         <ActiveApproachesSection unitName={unitName} />
+        <AllApproachesSection unitName={unitName} />
         <UnitPrsSection unitName={unitName} />
         <WorkingWithThisHumanSection unitName={unitName} />
       </div>

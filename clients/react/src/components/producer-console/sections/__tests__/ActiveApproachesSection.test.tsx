@@ -3,7 +3,13 @@
 // ActiveApproachesSection — the Verdict-inbox, wired to
 // `useApproaches(unitName)` against `GET /api/units/{unit}/approaches`
 // (tmai-core #369). We mock `api.approaches` so each test feeds a
-// deterministic active-only payload and asserts on the band routing.
+// deterministic payload and asserts on the band routing.
+//
+// Post tmai-core#463 / tmai#744 / tmai-core#462 Amendment 2026-05-28:
+// the wire is `RepoApproachesWire.approaches: ApproachWire[]` carrying
+// every status; this section filters client-side to `status: "running"`
+// for the verdict-inbox surface. Fixtures use the new shape with mixed
+// statuses; non-running records must not appear in the bands.
 //
 // Per the simulated-onboarded posture DR the section must: pick-a-project
 // notice on null unit; honest error (no fabricated render); honest empty
@@ -34,12 +40,13 @@ function approachStub(overrides: Partial<ApproachWire> = {}): ApproachWire {
     slug: "2026-05-16-some-approach",
     title: "Some approach",
     date: "2026-05-16",
-    status: "active",
+    status: "running",
     governs: [],
     serves: ["2026-05-15-protect-scarce-human-judgment"],
     success_signal: "the thing works",
     failure_signal: "the thing does not work",
     review_triggers: [{ kind: "date", value: "2099-01-01" }],
+    review_history: [],
     confidence: "high",
     replaced_by: [],
     excerpt: "…",
@@ -53,7 +60,7 @@ function repoStub(overrides: Partial<RepoApproachesWire> = {}): RepoApproachesWi
     repo_root: "/home/u/works/tmai-core",
     primary: true,
     repo_head: "abc1234",
-    active: [],
+    approaches: [],
     ...overrides,
   };
 }
@@ -83,7 +90,7 @@ describe("ActiveApproachesSection", () => {
       responseStub({
         repos: [
           repoStub({
-            active: [
+            approaches: [
               approachStub({
                 slug: "2026-05-16-authority-derived-from-act",
                 title: "Authority derived from the act",
@@ -114,7 +121,7 @@ describe("ActiveApproachesSection", () => {
       responseStub({
         repos: [
           repoStub({
-            active: [
+            approaches: [
               approachStub({
                 slug: "2026-05-16-low-conf-thing",
                 confidence: "low",
@@ -143,7 +150,7 @@ describe("ActiveApproachesSection", () => {
       responseStub({
         repos: [
           repoStub({
-            active: [
+            approaches: [
               approachStub({
                 slug: "2026-05-16-manual-only",
                 confidence: "high",
@@ -178,19 +185,19 @@ describe("ActiveApproachesSection", () => {
     expect(screen.queryByText(/Your verdict/)).toBeNull();
   });
 
-  it("renders an empty-state notice when the unit has no active approaches", async () => {
+  it("renders an empty-state notice when the unit has no approaches", async () => {
     approachesMock.mockResolvedValue(responseStub({ repos: [] }));
 
     render(<ActiveApproachesSection unitName="newunit" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No active approaches for/i)).toBeTruthy();
+      expect(screen.getByText(/No running approaches for/i)).toBeTruthy();
     });
   });
 
   it("shows the single-repo caveat (tmai-core#340)", async () => {
     approachesMock.mockResolvedValue(
-      responseStub({ repos: [repoStub({ active: [approachStub()] })] }),
+      responseStub({ repos: [repoStub({ approaches: [approachStub()] })] }),
     );
 
     render(<ActiveApproachesSection unitName="tmai" />);
@@ -199,5 +206,67 @@ describe("ActiveApproachesSection", () => {
       expect(screen.getByText(/primary repo only/i)).toBeTruthy();
     });
     expect(screen.getByText(/tmai-core#340/)).toBeTruthy();
+  });
+
+  it("filters out non-running statuses — verdict-inbox sees only `running`", async () => {
+    // Mixed-status fixture covering every non-running variant. None of
+    // these should land in any band; the verdict-inbox is running-only.
+    approachesMock.mockResolvedValue(
+      responseStub({
+        repos: [
+          repoStub({
+            approaches: [
+              approachStub({
+                slug: "2026-05-27-planned-x",
+                status: "planned",
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+              approachStub({
+                slug: "2026-05-27-partial-x",
+                status: "partial",
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+              approachStub({
+                slug: "2026-05-27-ready-x",
+                status: "ready",
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+              approachStub({
+                slug: "2026-05-27-validated-x",
+                status: "validated",
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+              approachStub({
+                slug: "2026-05-27-rejected-x",
+                status: "rejected",
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+              approachStub({
+                slug: "2026-05-27-replaced-x",
+                status: "replaced",
+                replaced_by: ["2026-05-27-newer-x"],
+                review_triggers: [{ kind: "date", value: "2020-01-01" }],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<ActiveApproachesSection unitName="tmai" />);
+
+    // Initial fetch settles → "loading…" is gone.
+    await waitFor(() => {
+      expect(screen.queryByText("loading…")).toBeNull();
+    });
+    // Verdict-inbox sees zero running approaches — the empty-band notice
+    // appears, and the running count is 0.
+    expect(screen.getByText(/⚡ No verdict due/)).toBeTruthy();
+    expect(screen.getByText(/0 running/)).toBeTruthy();
+    // None of the non-running slugs leak through.
+    expect(screen.queryByText(/2026-05-27-planned-x/)).toBeNull();
+    expect(screen.queryByText(/2026-05-27-validated-x/)).toBeNull();
+    expect(screen.queryByText(/2026-05-27-rejected-x/)).toBeNull();
+    expect(screen.queryByText(/2026-05-27-replaced-x/)).toBeNull();
   });
 });
