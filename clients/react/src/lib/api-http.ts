@@ -27,6 +27,9 @@ import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { TriageVerdict } from "@/types/generated/TriageVerdict";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
+import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
+import type { UnitResponse } from "@/types/generated/UnitResponse";
+import type { UnitsResponse } from "@/types/generated/UnitsResponse";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
@@ -55,6 +58,9 @@ export type {
   TerminalSubscription,
   TriageVerdict,
   UnitPrsResponse,
+  UnitRepoWire,
+  UnitResponse,
+  UnitsResponse,
   Vendor,
   WorkerDispatchMap,
 };
@@ -1523,6 +1529,14 @@ export const api = {
   // list, NOT a per-repo switcher. Single-repo unit collapses to
   // `repos.length === 1`.
   unitPrs: (unit: string) => apiFetch<UnitPrsResponse>(`/units/${encodeURIComponent(unit)}/prs`),
+
+  // Configured-unit membership (tmai-core #460, public mirror tmai#741).
+  // Membership-only — no live agent state is joined server-side; the
+  // WebUI reconciles configured units against the live agent list
+  // client-side to surface dormant units in the cross-unit list with a
+  // client-derived state pill.
+  units: () => apiFetch<UnitsResponse>("/units"),
+  unit: (name: string) => apiFetch<UnitResponse>(`/units/${encodeURIComponent(name)}`),
 
   // Working-with-human view — memory dir + MEMORY.md projection of
   // `compose()`'s ◐ section per the same DR. Surfaces the same content

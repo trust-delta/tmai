@@ -30,6 +30,7 @@ import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useProducerFeed } from "@/hooks/useProducerFeed";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
+import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import { api, groupByProject, isAiAgentLoose, type Selection, setCallerCwd } from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
@@ -170,6 +171,16 @@ export function App() {
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
   const { data: producerFeedData } = useProducerFeed(unitName);
+  // Configured-unit membership (tmai-core #460 — wire half of #439).
+  // Threaded into `findProducerForUnit` below so multi-repo units
+  // resolve their Producer against the primary repo specifically,
+  // not against whichever repo `currentProject` happens to point at.
+  // `useHandover` consumes the same wire for cross-unit reconciliation.
+  const { data: unitsData } = useUnits();
+  const unitReposForCurrent = useMemo(() => {
+    if (unitName === null) return null;
+    return unitsData?.units.find((u) => u.name === unitName)?.repos ?? null;
+  }, [unitsData, unitName]);
 
   // Single operator delta-pull trigger, shared by BOTH surfaces (the
   // top-bar ProducerFeedChip and the Producer console's "Check deltas ▸"
@@ -212,9 +223,16 @@ export function App() {
   // this Producer), the failure dialog's Force-kill target, and its
   // Resume-in-CC id. Shares the `findProducerForUnit` resolver with the
   // digest button and the ctx readout so all surfaces agree.
+  //
+  // Cross-repo aware: when the units wire has resolved this unit's
+  // membership, we pass the full `UnitRepoWire[]` so the resolver can
+  // pin the Producer to the unit's PRIMARY repo even if `currentProject`
+  // happens to point at a non-primary repo. The single-path fallback
+  // keeps the resolver working pre-wire-load and for cwd-synthesized
+  // units that the units endpoint doesn't enumerate.
   const producerForUnit = useMemo(
-    () => findProducerForUnit(agents, currentProject),
-    [agents, currentProject],
+    () => findProducerForUnit(agents, unitReposForCurrent ?? currentProject),
+    [agents, unitReposForCurrent, currentProject],
   );
 
   // Auto-dismiss `ready` with a brief success toast (handoff-lifecycle

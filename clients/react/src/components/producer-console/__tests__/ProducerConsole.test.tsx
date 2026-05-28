@@ -74,7 +74,6 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
     crossUnit: overrides.crossUnit ?? { units: [] },
     missingPreconditions: overrides.missingPreconditions ?? {
       noLiveAgents: true,
-      singleUnitOnly: false,
     },
   };
 }
@@ -222,11 +221,13 @@ describe("ProducerConsole", () => {
     expect(onSelect).toHaveBeenCalledWith("/p/beta", "beta");
   });
 
-  it("shows the singleUnitOnly posture notice when missingPreconditions flags it", () => {
-    // Per the simulated-onboarded posture DR, the WebUI is honest
-    // about the multi-repo / dormant-unit wire gap (tmai-core#340)
-    // by surfacing this notice in the ⬢ Cross-unit status section
-    // whenever only one unit is derivable from live agents.
+  it("does not render the retired singleUnitOnly posture notice", () => {
+    // The dormant-unit gap is now closed by the `api.units()`
+    // reconciliation in `useHandover` (tmai-core #460), so the
+    // "Showing one unit only" apology that used to live in the
+    // ⬢ Cross-unit status section is gone. This test pins that:
+    // even in the single-unit case, the section renders without
+    // the retired posture block.
     useHandoverMock.mockReturnValue(
       digest({
         crossUnit: {
@@ -240,31 +241,13 @@ describe("ProducerConsole", () => {
             },
           ],
         },
-        missingPreconditions: { noLiveAgents: false, singleUnitOnly: true },
+        missingPreconditions: { noLiveAgents: false },
       }),
     );
 
     render(
       <ProducerConsole {...makeProps({ currentProjectPath: "/p/alpha", unitName: "alpha" })} />,
     );
-
-    expect(screen.getByText(/Showing one unit only/i)).toBeTruthy();
-  });
-
-  it("omits the singleUnitOnly notice when more than one unit is derived", () => {
-    useHandoverMock.mockReturnValue(
-      digest({
-        crossUnit: {
-          units: [
-            { path: "/p/a", name: "a", state: "in-progress", agentCount: 1, attentionCount: 0 },
-            { path: "/p/b", name: "b", state: "quiet", agentCount: 0, attentionCount: 0 },
-          ],
-        },
-        missingPreconditions: { noLiveAgents: false, singleUnitOnly: false },
-      }),
-    );
-
-    render(<ProducerConsole {...makeProps()} />);
 
     expect(screen.queryByText(/Showing one unit only/i)).toBeNull();
   });

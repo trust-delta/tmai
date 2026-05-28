@@ -6,42 +6,37 @@
 // composed from four sections — ▶ Where-you-left-off, ⬢ Cross-unit
 // status, ⬡ Settled decisions, ◐ Working-with-this-human.
 //
-// Phase A scope (this file): wire what we already have on the client.
-//
 // - `whereYouLeftOff` — derived from `useAgents` + `useWorktrees`
 //   scoped to `currentProjectPath`. Reuses `groupByProject` so the
 //   sidebar's worktree shape matches the console's worktree shape
 //   exactly (single source of truth for project grouping).
-// - `crossUnit` — every project derived from active agents, with a
-//   state pill (needs-you / in-progress / quiet). The "unit" here is
-//   the *derived* project — not yet read from a `[[unit]]`-config
-//   wire endpoint. Phase C will reconcile against
-//   `GET /api/units` and surface units that have no live agents.
+// - `crossUnit` — reconciles two sources so the section reflects the
+//   FULL configured-unit space, not only what's running:
+//     • configured-unit MEMBERSHIP comes from `api.units()` (tmai-core
+//       #460 wire half of #439, public types mirror tmai#741); membership
+//       only — no server-side state pill, no server-side live-agent join;
+//     • the per-unit STATE PILL (needs-you / in-progress / quiet) is
+//       still derived client-side from the live agent list.
+//   A unit configured but currently dormant (no live agent) shows up
+//   here with state `quiet`. Reconciliation closes the gap the Phase-A
+//   "live-agent derivation only" implementation left behind.
 //
-// Placeholders for Phase C wire:
+// Both compose-driven sections (`⬡ Settled decisions` and `◐ Working
+// with this human`) are wired directly to their own endpoints — the
+// sections own their own polling via `useDecisions(unitName)` /
+// `useWorkingWithHuman(unitName)` rather than receiving data from this
+// hook. The hook keeps only the client-derived signals.
 //
-// - `settledDecisions` — decision records live in this repo's
-//   `doc/decisions/`, but there is no wire endpoint yet to expose
-//   their frontmatter (status / tier / temperature) to the WebUI.
-//   The section renders an explicit "not yet wired" notice so the
-//   operator knows the placeholder is intentional, not a bug.
-// - `workingWithHuman` — same shape, same reason. Composed by the
-//   Producer's `compose()` baseline builder; needs a read endpoint.
-//
-// Both placeholders carry the exact wire-gap reason in the `reason`
-// field — the section components render that text directly so the
-// surface is self-documenting.
-//
-// Posture annotations (DR `doc/decisions/2026-05-14-webui-simulated-
-// onboarded-posture.md`): until tmai-core lands #340 (multi-repo) /
-// #341 (cold-start), this hook degrades gracefully and surfaces a
-// weak `missingPreconditions` signal so sections can render honest
-// notices instead of fabricating data. Anything tagged
-// `TODO(tmai-core#340)` / `TODO(tmai-core#341)` in this file is
-// scheduled for retirement once those ship.
+// Posture annotation (DR `doc/decisions/2026-05-14-webui-simulated-
+// onboarded-posture.md`): the `noLiveAgents` flag survives — that
+// compensation is independent of the units wire and stays useful for
+// the "agents-fetch pre-load" honest-degradation branch. The
+// `singleUnitOnly` companion is gone now that dormant configured units
+// are surfaced via reconciliation.
 
 import { useMemo } from "react";
 import { useAgents } from "@/hooks/useAgents";
+import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import {
   type AgentAttention,
@@ -101,26 +96,17 @@ export interface CrossUnitStatus {
   units: UnitStatus[];
 }
 
-// Both compose-driven sections (`⬡ Settled decisions` and `◐ Working
-// with this human`) are now wired to their respective wire endpoints
-// — the sections own their own polling via `useDecisions(unitName)` /
-// `useWorkingWithHuman(unitName)` rather than receiving placeholder
-// data from this hook. The hook keeps only the client-derived signals:
-// `whereYouLeftOff` (project scoping + attention agents) and
-// `crossUnit` (per-unit hotness).
-
 /**
- * Weak client-side signals that the unit might be incompletely onboarded
- * or that we're only seeing a sliver of its real surface. Per the
- * simulated-onboarded posture DR, the WebUI is not allowed to fabricate
- * data when the underlying wire is absent — it has to be honest about
- * which inferences are based on partial signals.
- *
- * These flags are *weak* by design: they come from the data we already
- * have on the client (agent list, project grouping), not from a
- * dedicated `compose().meta` payload (which is what tmai-core#341 will
- * provide). Section components treat them as "may want to surface a
+ * Weak client-side signals that the live agent observation may be a
+ * sliver of the unit's real surface. Per the simulated-onboarded posture
+ * DR, the WebUI must not fabricate data when the underlying wire is
+ * absent — section components treat this as "may want to surface a
  * notice", not as definitive state.
+ *
+ * The `singleUnitOnly` flag this used to carry is retired: dormant
+ * configured units are now surfaced via the `api.units()` reconciliation
+ * in `crossUnit` (tmai-core #460), so there is no longer a multi-unit
+ * gap for the cross-unit section to apologise for.
  */
 export interface MissingPreconditions {
   /** No live agents have been observed for this client session.
@@ -129,12 +115,6 @@ export interface MissingPreconditions {
    *  endpoint reports actual missing preconditions (no
    *  `doc/decisions/`, no `[[unit]]` config, etc.). */
   noLiveAgents: boolean;
-  /** Only one unit derived from live agents. Because the wire side
-   *  doesn't yet expose dormant `[[unit]]` configs (#340) or a way
-   *  for a unit to span multiple repos (#340), the single-unit
-   *  view here is necessarily partial.
-   *  TODO(tmai-core#340): replace with `GET /api/units` reconciliation. */
-  singleUnitOnly: boolean;
 }
 
 export interface HandoverDigest {
@@ -166,6 +146,7 @@ function deriveUnitState(group: ProjectGroup): UnitState {
 export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
   const { worktrees } = useWorktrees();
+  const { data: unitsData } = useUnits();
 
   const aiAgents = useMemo(() => agents.filter(isAiAgentLoose), [agents]);
 
@@ -204,25 +185,69 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
     };
   }, [currentProjectPath, projectGroups, aiAgents]);
 
-  const crossUnit = useMemo<CrossUnitStatus>(
-    () => ({
-      units: projectGroups.map((g) => ({
-        path: g.path,
-        name: g.name,
-        state: deriveUnitState(g),
-        agentCount: g.totalAgents,
-        attentionCount: g.attentionAgents,
-      })),
-    }),
-    [projectGroups],
-  );
+  const crossUnit = useMemo<CrossUnitStatus>(() => {
+    // Live-agent-derived rows first — these carry real `state` /
+    // `agentCount` / `attentionCount` from the live snapshot.
+    const liveRows: UnitStatus[] = projectGroups.map((g) => ({
+      path: g.path,
+      name: g.name,
+      state: deriveUnitState(g),
+      agentCount: g.totalAgents,
+      attentionCount: g.attentionAgents,
+    }));
 
-  // Weak posture-signal derivation. See `MissingPreconditions` doc for
-  // why these are tagged TODO(tmai-core#NNN) — they get retired once
-  // the wire side surfaces the real precondition data.
+    // Reconcile against the configured-unit membership wire (tmai-core
+    // #460): any configured unit without a corresponding live-agent row
+    // is appended with state `quiet`. The membership row's `path` is the
+    // unit's PRIMARY repo (per `UnitRepoWire.primary`) so selecting a
+    // dormant row sets `currentProject` to the same path a fresh
+    // Producer launch would land at — keeps unit selection / spawn cwd
+    // / `findProducerForUnit` resolution all on the same path key.
+    if (!unitsData) {
+      // Wire not yet loaded — fall back to live-only. Reconciliation
+      // catches up on the next render once `useUnits` resolves.
+      return { units: liveRows };
+    }
+
+    // Match configured units against live rows by unit NAME — the
+    // grouping key in `groupByProject` is the agent's `unit` field
+    // (which is exactly the configured unit name) when present, and the
+    // primary repo's basename (which by convention equals the unit
+    // name) when not. Either way the `name` field on `liveRows`
+    // collides with the configured-unit name in the same-shape unit case.
+    const liveNames = new Set(liveRows.map((r) => r.name));
+
+    const dormantRows: UnitStatus[] = [];
+    for (const unit of unitsData.units) {
+      if (liveNames.has(unit.name)) continue;
+      const primary = unit.repos.find((r) => r.primary);
+      // No primary row on the wire → cannot pin a selection target.
+      // Drop the dormant entry rather than fabricate a path; the
+      // membership view always carries a primary in practice and a
+      // missing primary signals a wire-side bug we shouldn't paper over.
+      if (!primary) continue;
+      dormantRows.push({
+        path: primary.path,
+        name: unit.name,
+        state: "quiet",
+        agentCount: 0,
+        attentionCount: 0,
+      });
+    }
+
+    // Stable order: live rows in their existing order (preserves
+    // `groupByProject`'s name-sort), then dormant rows sorted by name
+    // so the section's reading order stays predictable across renders.
+    dormantRows.sort((a, b) => a.name.localeCompare(b.name));
+    return { units: [...liveRows, ...dormantRows] };
+  }, [projectGroups, unitsData]);
+
+  // Weak posture-signal derivation. `noLiveAgents` survives the units-
+  // wire landing — it's still useful for the agents-fetch pre-load
+  // honest-degradation branch (and for distinguishing "you haven't
+  // spawned anything yet" from "your unit is configured but quiet").
   const missingPreconditions: MissingPreconditions = {
     noLiveAgents: aiAgents.length === 0,
-    singleUnitOnly: projectGroups.length === 1,
   };
 
   return { whereYouLeftOff, crossUnit, missingPreconditions };

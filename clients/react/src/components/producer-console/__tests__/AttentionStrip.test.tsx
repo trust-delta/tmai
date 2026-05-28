@@ -46,7 +46,6 @@ function digest(overrides: Partial<HandoverDigest> = {}): HandoverDigest {
     crossUnit: overrides.crossUnit ?? { units: [] },
     missingPreconditions: overrides.missingPreconditions ?? {
       noLiveAgents: true,
-      singleUnitOnly: false,
     },
   };
 }

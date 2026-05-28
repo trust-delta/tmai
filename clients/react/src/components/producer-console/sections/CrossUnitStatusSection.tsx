@@ -1,23 +1,17 @@
 // ⬢ Cross-unit status — second hand-over section.
 //
-// One line per unit (= project derived from active agents). State pill
-// is read off `useHandover`'s `UnitStatus.state`:
+// One line per unit, reconciled from two sources by `useHandover`:
+// configured membership comes from `GET /api/units` (tmai-core #460,
+// wire half of #439); the state pill is derived client-side from the
+// live agent list. A unit configured but currently dormant (no live
+// agent) renders here with state `quiet`.
+//
+// State pill semantics:
 //
 // - 🔴 needs-you   — at least one agent has non-null `attention`
 // - 🟡 in-progress — agents present, none on the attention axis
-// - ⚪ quiet       — no agents (but the unit is known)
-//
-// Phase A note: the unit list is *derived* from live agents, not read
-// from a `[[unit]]`-config endpoint, so units configured but currently
-// dormant are not visible here. Phase C will reconcile against a
-// `GET /api/units` endpoint and surface those too.
-//
-// TODO(tmai-core#340): when multi-repo / dormant-unit wire lands,
-// replace the live-agent derivation with a proper unit list. The
-// `singleUnitOnly` posture notice below is part of the
-// simulated-onboarded posture DR (`doc/decisions/2026-05-14-webui-
-// simulated-onboarded-posture.md`) and should be removed in the
-// same change.
+// - ⚪ quiet       — no agents (dormant configured unit, or a unit
+//                   whose every live agent has exited)
 
 import type { CrossUnitStatus, MissingPreconditions, UnitState } from "@/hooks/useHandover";
 
@@ -26,8 +20,10 @@ interface CrossUnitStatusSectionProps {
   activePath: string | null;
   onSelectUnit: (path: string, name: string) => void;
   /** Weak posture signals — see `MissingPreconditions` doc.
-   *  When omitted, no notice is rendered (back-compat for existing
-   *  tests / older callers). */
+   *  Currently unused by this section (the `singleUnitOnly` notice
+   *  retired with the units-wire reconciliation); kept on the prop
+   *  surface so callers can continue forwarding `missingPreconditions`
+   *  uniformly across all four sections without conditional plumbing. */
   preconditions?: MissingPreconditions;
 }
 
@@ -35,22 +31,28 @@ export function CrossUnitStatusSection({
   data,
   activePath,
   onSelectUnit,
-  preconditions,
 }: CrossUnitStatusSectionProps) {
+  // Configured vs live split: the count line stays honest about which
+  // half of the reconciled list is reading from where. A dormant
+  // configured unit lands in `data.units` with `agentCount === 0` so
+  // the difference is exactly the dormant-unit count.
+  const total = data.units.length;
+  const live = data.units.filter((u) => u.agentCount > 0).length;
+
   return (
     <section>
       <header className="mb-2 flex items-baseline gap-2">
         <span className="text-base text-primary">⬢</span>
         <h3 className="text-sm font-semibold text-foreground">Cross-unit status</h3>
         <span className="text-xs text-muted-foreground">
-          {data.units.length} unit{data.units.length === 1 ? "" : "s"} derived from live agents
+          {total} configured / {live} live
         </span>
       </header>
 
       {data.units.length === 0 ? (
         <p className="pl-6 text-xs text-muted-foreground">
-          No active units. Spawn an agent on any project to populate this list — dormant configured
-          units aren't surfaced here yet.
+          No configured units yet. Add a <code>[[unit]]</code> in config.toml or spawn an agent on
+          any project to populate this list.
         </p>
       ) : (
         <ul className="space-y-0.5 pl-6 text-xs text-foreground">
@@ -83,15 +85,6 @@ export function CrossUnitStatusSection({
             );
           })}
         </ul>
-      )}
-
-      {preconditions?.singleUnitOnly && (
-        // TODO(tmai-core#340): remove this notice once multi-repo /
-        // dormant-unit reconciliation lands.
-        <p className="mt-2 pl-6 text-[11px] text-subtle-foreground">
-          Showing one unit only — a tmai project can span multiple repos and have dormant configured
-          units, but that view isn't wired yet.
-        </p>
       )}
     </section>
   );
