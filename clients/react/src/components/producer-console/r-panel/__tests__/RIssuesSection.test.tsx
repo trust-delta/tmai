@@ -48,16 +48,21 @@ describe("RIssuesSection", () => {
     expect(screen.getByText("Issue 2")).toBeTruthy();
   });
 
-  it("header `N open` counts only open issues; closed issues hidden from count", async () => {
+  it("header `N open` counts only open issues; closed issues hidden from count AND body", async () => {
     listIssuesMock.mockResolvedValue([
-      issue({ state: "open" }),
-      issue({ number: 2, state: "closed" }),
-      issue({ number: 3, state: "open" }),
+      issue({ state: "open", title: "Open one" }),
+      issue({ number: 2, state: "closed", title: "Closed issue" }),
+      issue({ number: 3, state: "open", title: "Open three" }),
     ]);
-    render(<RIssuesSection currentProjectPath="/p/u" expanded={false} onToggle={vi.fn()} />);
+    render(<RIssuesSection currentProjectPath="/p/u" expanded={true} onToggle={vi.fn()} />);
     await waitFor(() => {
       expect(screen.getByText(/2 open/)).toBeTruthy();
     });
+    // Negative assertion: closed issue must not leak into the body
+    // either (the header/body source-of-truth must agree).
+    expect(screen.queryByText("Closed issue")).toBeNull();
+    expect(screen.getByText("Open one")).toBeTruthy();
+    expect(screen.getByText("Open three")).toBeTruthy();
   });
 
   it("uses no severity colors", async () => {

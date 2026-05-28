@@ -17,18 +17,23 @@ interface RIssuesSectionProps {
 
 export function RIssuesSection({ currentProjectPath, expanded, onToggle }: RIssuesSectionProps) {
   const { data, loading, error } = useIssues(currentProjectPath);
-  const open = data === null ? [] : data.filter((i) => i.state.toLowerCase() === "open");
+  // `open` is the load-bearing list — header count AND body rows both
+  // read off it. Closed items aren't surfaced in R's issue inventory;
+  // the wire only carries open + recent-closed, and "recent closed" is
+  // GitHub's concept, not ours. Keeping `null` distinct from `[]`
+  // preserves the loading/empty branches in Body.
+  const open = data === null ? null : data.filter((i) => i.state.toLowerCase() === "open");
 
   return (
     <Section
       id="issues"
       glyph="📋"
       label="Issues"
-      count={`${open.length} open`}
+      count={`${open?.length ?? 0} open`}
       expanded={expanded}
       onToggle={onToggle}
     >
-      <Body currentProjectPath={currentProjectPath} items={data} loading={loading} error={error} />
+      <Body currentProjectPath={currentProjectPath} items={open} loading={loading} error={error} />
     </Section>
   );
 }

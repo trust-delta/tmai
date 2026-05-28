@@ -29,7 +29,14 @@ export function useIssues(repoPath: string | null): UseIssuesResult {
   const [data, setData] = useState<IssueInfo[] | null>(null);
   const [loading, setLoading] = useState(repoPath !== null);
   const [error, setError] = useState<Error | null>(null);
+  // `generationRef` gates against stale responses across repoPath
+  // *changes* (the effect re-trigger). `requestSeqRef` gates within
+  // the SAME repoPath against overlapping polls: a slow first fetch
+  // returning after a faster second one would otherwise overwrite
+  // the newer data. Both guards compose — either a unit change OR a
+  // newer same-unit request causes earlier responses to be dropped.
   const generationRef = useRef(0);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     if (!repoPath) {
@@ -44,16 +51,17 @@ export function useIssues(repoPath: string | null): UseIssuesResult {
     setLoading(true);
 
     const fetchOnce = async () => {
+      const myReq = ++requestSeqRef.current;
       try {
         const res = await api.listIssues(repoPath);
-        if (myGen !== generationRef.current) return;
+        if (myGen !== generationRef.current || myReq !== requestSeqRef.current) return;
         setData(res);
         setError(null);
       } catch (e) {
-        if (myGen !== generationRef.current) return;
+        if (myGen !== generationRef.current || myReq !== requestSeqRef.current) return;
         setError(e instanceof Error ? e : new Error(String(e)));
       } finally {
-        if (myGen === generationRef.current) {
+        if (myGen === generationRef.current && myReq === requestSeqRef.current) {
           setLoading(false);
         }
       }

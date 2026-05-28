@@ -139,8 +139,23 @@ function DeepLinkGenerator({ repoLinks }: { repoLinks: RepoLink[] }) {
     return null;
   }
   const repo = linkableRepos[Math.min(repoIdx, linkableRepos.length - 1)];
-  const trimmedPath = path.replace(/^\/+/, "");
-  const deepLink = `${repo.githubUrl}/blob/${branch}/${trimmedPath}`;
+  // Defensive sanitization before the deep-link is rendered as an
+  // `href`. React already escapes attribute values so direct XSS is
+  // not possible here; this is belt-and-braces against accidental
+  // whitespace/newlines pasted into the inputs and against `../`
+  // path-traversal segments that would build a misleading-looking
+  // github URL. Allowlist mirrors what github tolerates in branch and
+  // blob path segments: alphanumerics, `_`, `-`, `.`, `/`. Note this
+  // also blocks `..` (a `.` alone is allowed, two consecutive `..`
+  // would survive the char filter but the leading-`../` stripper
+  // above handles the path-traversal shape).
+  const sanitize = (s: string) => s.replace(/[\r\n\s]+/g, "").replace(/[^A-Za-z0-9_\-./]/g, "");
+  const safeBranch = sanitize(branch);
+  const safePath = sanitize(path)
+    .replace(/^(?:\.\.\/)+/, "")
+    .replace(/^\/+/, "");
+  const deepLink = `${repo.githubUrl}/blob/${safeBranch}/${safePath}`;
+  const trimmedPath = safePath;
 
   return (
     <div className="border-t border-hairline pt-2">

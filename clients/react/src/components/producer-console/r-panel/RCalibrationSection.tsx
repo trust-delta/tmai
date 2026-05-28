@@ -65,8 +65,16 @@ function Body({ unitName, data, loading, error }: BodyProps) {
   }
   return (
     <ul className="space-y-1">
-      {entries.map((e) => (
-        <EntryRow key={`${e.recorded_at}-${e.note_source}`} entry={e} />
+      {entries.map((e, idx) => (
+        // `CalibrationEntry` has no id field; `(recorded_at, note_source)`
+        // can collide when one synthesis-pass routes multiple verdicts
+        // off the same note. Compose with idx to disambiguate. Safe
+        // here because `entries` is rebuilt on every render from a
+        // stable sort, and the rows are leaf, stateless presentational
+        // <li>s — there is no per-row state that the index reshuffle
+        // could orphan.
+        // biome-ignore lint/suspicious/noArrayIndexKey: index is the disambiguator on top of a composite natural key, not the sole key — see comment above.
+        <EntryRow key={`${e.recorded_at}-${e.note_source}-${idx}`} entry={e} />
       ))}
     </ul>
   );

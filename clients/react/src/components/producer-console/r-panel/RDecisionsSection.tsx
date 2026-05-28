@@ -55,7 +55,7 @@ function Body({ unitName, repos, loading, error }: BodyProps) {
   if (repos === null && loading) {
     return <p className="text-subtle-foreground">Loading…</p>;
   }
-  if (repos === null || repos.length === 0) {
+  if (repos === null || repos.length === 0 || repos.every((r) => flattenAll(r).length === 0)) {
     return <p className="text-subtle-foreground">No decisions.</p>;
   }
   const multiRepo = repos.length > 1;
