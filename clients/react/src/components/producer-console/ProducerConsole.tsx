@@ -24,15 +24,9 @@
 
 import { useAgents } from "@/hooks/useAgents";
 import { useHandover } from "@/hooks/useHandover";
-import type {
-  CalibrationResponse,
-  ProducerFeedStatus,
-  TriggerHandoffRitualRequest,
-} from "@/lib/api";
+import type { CalibrationResponse, TriggerHandoffRitualRequest } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
-import { ActiveApproachesSection } from "./sections/ActiveApproachesSection";
-import { AllApproachesSection } from "./sections/AllApproachesSection";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
 import { UnitPrsSection } from "./sections/UnitPrsSection";
@@ -51,15 +45,6 @@ interface ProducerConsoleProps {
   /** Calibration response from the parent (App.tsx already polls);
    *  reused here for the footer's calibration-jump badge. */
   calibrationData: CalibrationResponse | null;
-  /** Producer-feed status from the parent (App.tsx polls in lockstep
-   *  with calibration); gates + badges the footer's "Check deltas ▸"
-   *  button on `has_pending_delta`. */
-  producerFeedData: ProducerFeedStatus | null;
-  /** Operator delta-pull trigger forwarded to the "Check deltas ▸"
-   *  button — pings the unit's live Producer to pull pending deltas.
-   *  Arg-free: the App-level handler closes over the unit name and is
-   *  shared with the top-bar ProducerFeedChip. */
-  onTriggerDeltaPull: () => void;
   onOpenProducerTerminal: () => void;
   /** Phase B polish v3: invoked from the DirBrowser path when the
    *  operator hasn't selected a project yet. `path` is a repo root;
@@ -92,8 +77,6 @@ export function ProducerConsole({
   currentProjectPath,
   unitName,
   calibrationData,
-  producerFeedData,
-  onTriggerDeltaPull,
   onOpenProducerTerminal,
   onLaunchProducerAt,
   onOpenCalibration,
@@ -146,8 +129,6 @@ export function ProducerConsole({
           preconditions={missingPreconditions}
         />
         <SettledDecisionsSection unitName={unitName} />
-        <ActiveApproachesSection unitName={unitName} />
-        <AllApproachesSection unitName={unitName} />
         <UnitPrsSection unitName={unitName} />
         <WorkingWithThisHumanSection unitName={unitName} />
       </div>
@@ -157,8 +138,6 @@ export function ProducerConsole({
         currentProjectPath={currentProjectPath}
         agents={agents}
         calibrationData={calibrationData}
-        producerFeedData={producerFeedData}
-        onTriggerDeltaPull={onTriggerDeltaPull}
         onOpenProducerTerminal={onOpenProducerTerminal}
         onLaunchProducerAt={onLaunchProducerAt}
         onOpenCalibration={onOpenCalibration}

@@ -36,7 +36,6 @@ import {
   type AgentSnapshot,
   api,
   type CalibrationResponse,
-  type ProducerFeedStatus,
   type TriggerHandoffRitualRequest,
 } from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
@@ -53,14 +52,6 @@ interface ProducerConsoleActionsProps {
    *  live Producer exists for this unit. */
   agents: AgentSnapshot[];
   calibrationData: CalibrationResponse | null;
-  /** Producer-feed status (App.tsx polls it next to calibration). Gates
-   *  + badges the "Check deltas ▸" button on `has_pending_delta`. */
-  producerFeedData: ProducerFeedStatus | null;
-  /** Operator delta-pull trigger. Arg-free — the App-level handler
-   *  closes over the unit name (and is shared with the top-bar
-   *  ProducerFeedChip), firing a payload-zero "pull pending" ping to the
-   *  unit's live Producer (App.tsx owns the call + error swallow). */
-  onTriggerDeltaPull: () => void;
   /** Spawn the Producer using the already-selected project. */
   onOpenProducerTerminal: () => void;
   /** Spawn the Producer at an explicit repo root — used after the
@@ -84,8 +75,6 @@ export function ProducerConsoleActions({
   currentProjectPath,
   agents,
   calibrationData,
-  producerFeedData,
-  onTriggerDeltaPull,
   onOpenProducerTerminal,
   onLaunchProducerAt,
   onOpenCalibration,
@@ -100,9 +89,6 @@ export function ProducerConsoleActions({
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
   const tripwireCount = calibrationData?.tier1_violations.length ?? 0;
   const calCount = calibrationData?.total_in_window ?? 0;
-  // `has_pending_delta` is optional/absent on the wire when false (#404
-  // lockstep-free bool), so treat `undefined` as `false`.
-  const hasPendingDelta = producerFeedData?.has_pending_delta === true;
 
   const producer = useMemo(
     () => findProducerForUnit(agents, currentProjectPath),
@@ -117,14 +103,6 @@ export function ProducerConsoleActions({
     if (!ok) return;
     void trigger(unitName, { trigger: "manual" });
   }, [producer, unitName, trigger]);
-
-  // Lightweight idempotent ping — unlike Handoff there is no
-  // `window.confirm`. App.tsx owns the call + error swallow (a 404 just
-  // means no live Producer occupies the unit), so the row never crashes.
-  const handleDeltaCheckClick = useCallback(() => {
-    if (unitName === null || producer === null || !hasPendingDelta) return;
-    onTriggerDeltaPull();
-  }, [unitName, producer, hasPendingDelta, onTriggerDeltaPull]);
 
   // Same pattern as NewAgentLauncher: pull `[general] default_project_
   // root` lazily on open so an edit in GeneralSection flips the picker
@@ -209,30 +187,6 @@ export function ProducerConsoleActions({
           )}
           {tripwireCount === 0 && calCount > 0 && (
             <span className="ml-1.5 text-[10px] text-muted-foreground">{calCount}</span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleDeltaCheckClick}
-          disabled={unitName === null || producer === null || !hasPendingDelta}
-          className="rounded-md bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
-          title={
-            unitName === null
-              ? "No unit resolved yet — launch the Producer (or pick a project) first"
-              : producer === null
-                ? "No live Producer for this unit — launch one first via Open Producer terminal"
-                : hasPendingDelta
-                  ? "Ping the Producer to pull pending feed deltas"
-                  : "No pending deltas"
-          }
-        >
-          Check deltas ▸
-          {hasPendingDelta && (
-            <span
-              className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-primary align-middle"
-              aria-hidden="true"
-            />
           )}
         </button>
 

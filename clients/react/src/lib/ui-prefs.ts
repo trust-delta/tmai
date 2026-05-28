@@ -17,21 +17,20 @@ export interface UIPrefs {
   // xterm font size (px). Presentation-only, browser-side; replaces the
   // old hardcoded `fontSize: 13` in useTerminal.
   terminalFontSize: number;
-  // Persistent right-hand attention strip collapse state
-  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-  // §Refinement 2026-05-22 — L/C/R co-visible layout). Presentation-only,
-  // browser-side: the operator can fold the strip to a rail to reclaim
-  // width when the centre conversation is busy. Default open so a
-  // clean-state user sees the co-visible attention surface immediately.
+  // Persistent right-hand R panel (project artifact inventory) collapse
+  // state. Default open so a clean-state user sees the co-visible R
+  // surface immediately. Same pref key kept post-rename for back-compat
+  // (storage migration would be churn for no benefit).
   attentionStripCollapsed: boolean;
-  // Persistent right-hand attention strip width in px
-  // (same DR, §"P1.1 — lived-feedback adjustment"). The strip is a
-  // right-docked panel, so this is an absolute pixel width: a docked panel
-  // reads naturally in px and should not reflow when the centre pane's
-  // content changes. Drag-resized via the shared useSplitPane drag engine;
-  // persisted here so the operator's chosen width survives reloads /
-  // cross-tab. See clampAttentionStripWidth.
+  // Persistent right-hand R panel width in px. Drag-resized via the
+  // shared useSplitPane drag engine; persisted here so the operator's
+  // chosen width survives reloads / cross-tab. See clampAttentionStripWidth.
   attentionStripWidth: number;
+  // Which R-panel accordion sections the operator has expanded. Default
+  // empty (all collapsed) — the R panel is operator-driven; tmai does not
+  // pick a default to expand (approach 2026-05-29 §"tmai は何を絶対しない"
+  // rule 6: no tmai-selected default expand).
+  rPanelExpandedSections: string[];
 }
 
 // Attention-strip width bounds (px). Floor keeps the section content
@@ -47,6 +46,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   terminalFontSize: 13,
   attentionStripCollapsed: false,
   attentionStripWidth: ATTENTION_STRIP_WIDTH_DEFAULT,
+  rPanelExpandedSections: [],
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -98,7 +98,13 @@ function coercePrefs(raw: unknown): UIPrefs {
       r.attentionStripWidth,
       DEFAULT_UI_PREFS.attentionStripWidth,
     ),
+    rPanelExpandedSections: coerceExpandedSections(r.rPanelExpandedSections),
   };
+}
+
+function coerceExpandedSections(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string");
 }
 
 // One-shot sweep of pre-`tmai:ui:` ad-hoc keys, run the first time

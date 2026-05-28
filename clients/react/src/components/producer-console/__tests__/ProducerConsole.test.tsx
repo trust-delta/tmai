@@ -87,8 +87,6 @@ function makeProps(
     currentProjectPath: null,
     unitName: null,
     calibrationData: null,
-    producerFeedData: null,
-    onTriggerDeltaPull: vi.fn(),
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
     onOpenCalibration: vi.fn(),

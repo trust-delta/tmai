@@ -66,7 +66,7 @@ describe("CrossUnitStatusSection", () => {
   });
 
   it("does NOT render the retired singleUnitOnly notice even with preconditions still forwarded", () => {
-    // Callers (`ProducerConsole`, `AttentionStrip`) still forward
+    // Callers (`ProducerConsole`) still forward
     // `preconditions={missingPreconditions}` uniformly across all four
     // sections — the section signature accepts it but must IGNORE the
     // (now retired) `singleUnitOnly` field. We pass a deliberately

@@ -1061,8 +1061,9 @@ export interface WorkingWithHumanResponse {
 // statuses — `Planned` / `Partial` / `Ready` / `Running` / `Validated` /
 // `Rejected` / `Replaced` — sorted most-recent-first by slug. The dashboard
 // filters / sorts client-side per tmai-core#462 Amendment 2026-05-28
-// (全件可視化). The verdict-inbox surface in `ActiveApproachesSection`
-// narrows to `status: "running"` only — the dischargeable verification debt.
+// (全件可視化). The R panel's approach section (approach
+// `2026-05-29-r-panel-as-project-artifact-inventory`) renders all
+// statuses grouped, no client-side filter, no verification-debt gauge.
 
 // ── API wrappers ──
 
@@ -1477,10 +1478,8 @@ export const api = {
     apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
 
   // Approaches view — every approach record (all statuses) per repo,
-  // sorted most-recent-first by slug. The console's Verdict-inbox
-  // filters to `status: running` client-side; the dashboard surface
-  // (`AllApproachesSection`) renders all 7 statuses with operator-side
-  // filters per tmai-core#462 Amendment 2026-05-28. Multi-repo follows
+  // sorted most-recent-first by slug. The R panel renders all statuses
+  // grouped (no filter chips, no gauge). Multi-repo follows
   // tmai-core#340, same as decisions.
   approaches: (unit: string) =>
     apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),

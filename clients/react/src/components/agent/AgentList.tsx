@@ -23,7 +23,7 @@ interface AgentListProps {
 // hierarchy: one collapsible group per unit, each headed by the unit's live
 // Producer with its workers as a subordinate roster (the per-group structure
 // lives in `ProjectGroup` → `ProducerRoster`). The left answers "who am I
-// talking to / who's under them"; the right AttentionStrip answers "what
+// talking to / who's under them"; the right R panel answers "what
 // needs me". The earlier "Operator view (legacy) — bypass the Producer"
 // framing is retired: addressing the Producer IS the primary use here, not a
 // bypass (this DR partially supersedes the console-rebuild's "sidebar =
@@ -32,7 +32,7 @@ interface AgentListProps {
 // Direct operator spawn is dispatch's job for the Producer (briefs), so the
 // launcher is folded into the de-emphasized "Advanced / emergency" footer
 // rather than the prominent top slot it used to own. Cross-unit navigation
-// still lives in the ProducerConsole digest / AttentionStrip, not here.
+// still lives in the ProducerConsole digest / R panel, not here.
 export function AgentList({
   agents,
   loading,
