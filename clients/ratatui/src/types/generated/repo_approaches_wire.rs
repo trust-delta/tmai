@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RepoApproachesWire {
-    pub active: Vec<ApproachWire>,
+    pub approaches: Vec<ApproachWire>,
     pub primary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repo_head: Option<Value>,

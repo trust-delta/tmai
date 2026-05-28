@@ -2,9 +2,20 @@
 import type { ApproachWire } from "./ApproachWire";
 
 /**
- * One repo's projected `▣ Active approaches` slice. The list carries
- * `status: active` records only; validated / rejected / replaced records
- * are filtered out at compose time (preserved in memory as audit-trail
- * context, not surfaced on the wire yet).
+ * One repo's projected approaches slice. The list carries **every**
+ * approach record in `<repo>/doc/approaches/` regardless of status —
+ * `Planned` / `Partial` / `Ready` / `Running` / `Validated` / `Rejected`
+ * / `Replaced` — sorted most-recent-first by slug. Each [`ApproachWire`]
+ * carries its `status` field as the discriminator the operator dashboard
+ * filters / sorts on client-side, per #462 Amendment 2026-05-28's
+ * dashboard 全件可視化 direction. (The Producer-side markdown's
+ * `▣ Running approaches` bucket narrows to `Running` only — a separate
+ * surface served by `compose::RepoSection::running_approaches`.)
  */
-export type RepoApproachesWire = { repo_label: string, repo_root: string, primary: boolean, repo_head: string | null, active: Array<ApproachWire>, };
+export type RepoApproachesWire = { repo_label: string, repo_root: string, primary: boolean, repo_head: string | null, 
+/**
+ * Every approach record in this repo, sorted most-recent-first by
+ * slug — full lifecycle, no filter. The dashboard filters by `status`
+ * client-side.
+ */
+approaches: Array<ApproachWire>, };

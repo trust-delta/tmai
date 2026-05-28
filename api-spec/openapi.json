@@ -209,7 +209,7 @@
           "approaches"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/approaches`.",
-        "description": "JSON projection of the `▣ Active approaches` section of the unit's\nhand-over per `doc/decisions/2026-05-15-records-architecture-two-axes.md`:\nevery `doc/approaches/*.md` record with `status: active`, grouped per\nrepo, with `serves:`, `success-signal`, `failure-signal`, and the\n`review-trigger` list surfaced as static text (mechanical trigger\ndetection lives in a follow-up PR per the trigger-semantics thread on\ntmai-core#361). Validated / rejected / replaced records are parsed\n(audit-trail preservation) but excluded from this view.",
+        "description": "JSON projection of the unit's approach records per\n`doc/decisions/2026-05-15-records-architecture-two-axes.md`: every\n`doc/approaches/*.md` record, grouped per repo, with `status:`,\n`serves:`, `success-signal`, `failure-signal`, and the\n`review-trigger` list surfaced as static text (mechanical trigger\ndetection lives in a follow-up PR per the trigger-semantics thread\non tmai-core#361).\n\nSurface scope: per #462 Amendment 2026-05-28's dashboard 全件可視化,\nthe view emits the **full** approach lifecycle (`Planned` / `Partial`\n/ `Ready` / `Running` / `Validated` / `Rejected` / `Replaced`); the\noperator dashboard filters / sorts client-side by `status`. The\nProducer-side markdown's `▣ Running approaches` bucket — a separate\nsurface — narrows to `Running` only (verification gauge).",
         "operationId": "get_approaches_doc",
         "parameters": [
           {
@@ -224,7 +224,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Active approaches projection — bucketed per repo",
+            "description": "Approaches projection — every record (all statuses), grouped per repo",
             "content": {
               "application/json": {
                 "schema": {
@@ -582,11 +582,12 @@
       },
       "ApproachStatus": {
         "type": "string",
-        "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`planned → partial → active → validated / rejected / replaced`)\nrather than through a supersede chain. The two pre-active states split what\n`active` used to overload: the boundary is **whether `success-signal` can\nfire yet (is the approach evaluable?)** — a single binary point, not a\npercent-complete continuum. A validated / rejected approach is preserved as\nthe audit-trail record of *what we tried and what happened*; a follow-up\ndecision (if any) is authored separately rather than in-place.\n\nSee `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`.",
+        "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`planned → partial → ready → running → validated / rejected /\nreplaced`) rather than through a supersede chain. The old `active` state\nwas found (#462 Amendment 2026-05-28) to smuggle two distinct layers into\none enum value — the intrinsic phase of the approach (`(α)` \"is the\nsuccess-signal armed?\") and the operator's stance (`(β)` \"am I currently\nwatching this?\"). Splitting it into `Ready` and `Running` keeps the enum\nhonest to layer `(α)` only: documents speak about themselves, not about\nwhether they are being observed.\n\nA validated / rejected approach is preserved as the audit-trail record of\n*what we tried and what happened*; a follow-up decision (if any) is\nauthored separately rather than in-place.\n\nSee `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`,\nAmendment 2026-05-28 for the `Ready` / `Running` split and the dashboard\n全件可視化 direction.",
         "enum": [
           "planned",
           "partial",
-          "active",
+          "ready",
+          "running",
           "validated",
           "rejected",
           "replaced"
@@ -594,7 +595,7 @@
       },
       "ApproachWire": {
         "type": "object",
-        "description": "One approach projected to the wire — the human-side complement of the\ninternal [`crate::workbench::compose::ApproachView`].",
+        "description": "One approach projected to the wire — the human-side complement of the\ninternal [`crate::workbench::compose::ApproachView`]. The `status`\nfield is the lifecycle position (`Planned` / `Partial` / `Ready` /\n`Running` / `Validated` / `Rejected` / `Replaced`) the dashboard\nreads to bucket / sort.",
         "required": [
           "slug",
           "title",
@@ -682,7 +683,7 @@
       },
       "ApproachesResponse": {
         "type": "object",
-        "description": "`GET /api/units/{unit}/approaches` response — the `▣ Active approaches`\nsection of the unit's hand-over, per repo, JSON-projected. Composed on\ndemand (no cache).\n\nFor a single-repo unit this collapses to `repos.len() == 1` — the\ncommon case until per-unit `also[]` per-repo `approaches_dir`\noverrides land (tracked in tmai-core#340 for the multi-repo follow-up\nalongside the decisions-side override).",
+        "description": "`GET /api/units/{unit}/approaches` response — the unit's approaches\nsurface, per repo, JSON-projected. Composed on demand (no cache).\nCarries every approach record regardless of status; the dashboard\nfilters / sorts client-side per #462 Amendment 2026-05-28.\n\nFor a single-repo unit this collapses to `repos.len() == 1` — the\ncommon case until per-unit `also[]` per-repo `approaches_dir`\noverrides land (tracked in tmai-core#340 for the multi-repo follow-up\nalongside the decisions-side override).",
         "required": [
           "unit",
           "composed_at",
@@ -3438,19 +3439,20 @@
       },
       "RepoApproachesWire": {
         "type": "object",
-        "description": "One repo's projected `▣ Active approaches` slice. The list carries\n`status: active` records only; validated / rejected / replaced records\nare filtered out at compose time (preserved in memory as audit-trail\ncontext, not surfaced on the wire yet).",
+        "description": "One repo's projected approaches slice. The list carries **every**\napproach record in `<repo>/doc/approaches/` regardless of status —\n`Planned` / `Partial` / `Ready` / `Running` / `Validated` / `Rejected`\n/ `Replaced` — sorted most-recent-first by slug. Each [`ApproachWire`]\ncarries its `status` field as the discriminator the operator dashboard\nfilters / sorts on client-side, per #462 Amendment 2026-05-28's\ndashboard 全件可視化 direction. (The Producer-side markdown's\n`▣ Running approaches` bucket narrows to `Running` only — a separate\nsurface served by `compose::RepoSection::running_approaches`.)",
         "required": [
           "repo_label",
           "repo_root",
           "primary",
-          "active"
+          "approaches"
         ],
         "properties": {
-          "active": {
+          "approaches": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ApproachWire"
-            }
+            },
+            "description": "Every approach record in this repo, sorted most-recent-first by\nslug — full lifecycle, no filter. The dashboard filters by `status`\nclient-side."
           },
           "primary": {
             "type": "boolean"
@@ -4603,7 +4605,7 @@
     },
     {
       "name": "approaches",
-      "description": "Active approaches view — peer of decisions per DR 2026-05-15-records-architecture-two-axes; surfaces status:active records with their serves / signal / review-trigger fields"
+      "description": "Approaches view — peer of decisions per DR 2026-05-15-records-architecture-two-axes; surfaces every approach record (all statuses) with its serves / signal / review-trigger fields. Dashboard filters / sorts client-side by status per #462 Amendment 2026-05-28's dashboard 全件可視化 direction."
     },
     {
       "name": "working-with-human",

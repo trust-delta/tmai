@@ -12,7 +12,8 @@ use std::collections::HashMap;
 pub enum ApproachStatus {
     planned,
     partial,
-    active,
+    ready,
+    running,
     validated,
     rejected,
     replaced,
