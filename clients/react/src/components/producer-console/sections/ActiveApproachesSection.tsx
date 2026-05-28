@@ -1,4 +1,4 @@
-// ▣ Active approaches — the Producer console's Verdict-inbox, wired to
+// ▣ Running approaches — the Producer console's Verdict-inbox, wired to
 // `GET /api/units/{unit}/approaches` (tmai-core PR #369).
 //
 // Essence (deliberately NOT the decisions surface — see
@@ -8,12 +8,20 @@
 // triages by "does this need your verdict now?", not by temperature
 // buckets. Low-priority bands are collapsed; only ⚡ is open.
 //
-// Client-degraded by design (A1). The wire is `status: active` only and
-// carries no resolved trigger/verdict state, so the client can faithfully
-// evaluate only `kind: date` triggers (vs today) + `confidence`. Triggers
-// the engine must resolve (pr-*/issue-closed/decision-status/approach-
-// status/manual) and the human-vs-Producer verdict split are surfaced
-// honestly, never fabricated — per the simulated-onboarded posture
+// The wire (tmai-core#463 / tmai#744) carries ALL statuses; this section
+// narrows to `status: "running"` only — the dischargeable verification
+// debt (formerly `active`'s role, before the lifecycle split into Ready +
+// Running per tmai-core#462 Amendment 2026-05-28). Other statuses
+// (Planned / Partial / Ready / Validated / Rejected / Replaced) surface
+// in `AllApproachesSection` below as the operator dashboard's
+// task-selection axis.
+//
+// Client-degraded by design (A1). The wire carries no resolved
+// trigger/verdict state, so the client can faithfully evaluate only
+// `kind: date` triggers (vs today) + `confidence`. Triggers the engine
+// must resolve (pr-*/issue-closed/decision-status/approach-status/manual)
+// and the human-vs-Producer verdict split are surfaced honestly, never
+// fabricated — per the simulated-onboarded posture
 // (`doc/decisions/2026-05-14-webui-simulated-onboarded-posture.md`):
 // graceful degradation, transparency over completeness, retirable
 // compensation. Full fidelity is tracked in tmai-core#381.
@@ -33,7 +41,7 @@ export function ActiveApproachesSection({ unitName }: ActiveApproachesSectionPro
     <section>
       <header className="mb-2 flex items-baseline gap-2">
         <span className="text-base text-primary">▣</span>
-        <h3 className="text-sm font-semibold text-foreground">Active approaches</h3>
+        <h3 className="text-sm font-semibold text-foreground">Running approaches</h3>
         {loading && data === null && (
           <span className="text-[10px] text-muted-foreground">loading…</span>
         )}
@@ -57,7 +65,7 @@ function Body({ unitName, data, loading, error }: BodyProps) {
         <p>
           Pick a project (a unit chip in{" "}
           <span className="text-muted-foreground">⬢ Cross-unit status</span> above, or the sidebar)
-          to see its active approaches awaiting a verdict.
+          to see its running approaches awaiting a verdict.
         </p>
       </div>
     );
@@ -85,9 +93,9 @@ function Body({ unitName, data, loading, error }: BodyProps) {
     return (
       <div className="pl-6 text-xs text-muted-foreground">
         <p>
-          No active approaches for <code className="text-foreground">{unitName}</code>. The unit
+          No running approaches for <code className="text-foreground">{unitName}</code>. The unit
           either has no <code className="text-foreground">doc/approaches/</code> directory yet, or
-          no record is <code className="text-foreground">status: active</code>.
+          no record is <code className="text-foreground">status: running</code>.
         </p>
       </div>
     );
@@ -184,7 +192,8 @@ function classify(a: ApproachWire): Classified {
 }
 
 function RepoGroup({ repo, singleRepo }: { repo: RepoApproachesWire; singleRepo: boolean }) {
-  const classified = repo.active.map(classify);
+  const running = repo.approaches.filter((a) => a.status === "running");
+  const classified = running.map(classify);
   const verdict = classified.filter((c) => c.band === "verdict");
   const watch = classified.filter((c) => c.band === "watch");
   const quiet = classified.filter((c) => c.band === "quiet");
@@ -203,7 +212,7 @@ function RepoGroup({ repo, singleRepo }: { repo: RepoApproachesWire; singleRepo:
       )}
 
       <p className="text-[11px] text-subtle-foreground">
-        {`${repo.active.length} active · `}
+        {`${running.length} running · `}
         <span className="text-muted-foreground">{`⚡ ${verdict.length}  🟡 ${watch.length}  ⚪ ${quiet.length}`}</span>
       </p>
 
@@ -222,8 +231,8 @@ function RepoGroup({ repo, singleRepo }: { repo: RepoApproachesWire; singleRepo:
             evaluate (shown under Watch until tmai-core#381).
           </>
         )}{" "}
-        Settled (validated / rejected / replaced) approaches are audit-trail and not on the wire yet
-        (tmai-core#381).
+        Other statuses (planned / partial / ready / validated / rejected / replaced) live in the
+        dashboard surface below.
       </p>
     </div>
   );
@@ -233,7 +242,7 @@ function VerdictBand({ items }: { items: Classified[] }) {
   if (items.length === 0) {
     return (
       <p className="rounded border border-hairline-strong/40 bg-surface-strong/30 px-2 py-1 text-[11px] text-muted-foreground">
-        ⚡ No verdict due — no active approach has a fired date trigger.
+        ⚡ No verdict due — no running approach has a fired date trigger.
       </p>
     );
   }
