@@ -4,14 +4,21 @@
  * Lifecycle position of an approach record.
  *
  * Unlike [`super::decision::DecisionStatus`], the approach lifecycle resolves
- * outward (`planned → partial → active → validated / rejected / replaced`)
- * rather than through a supersede chain. The two pre-active states split what
- * `active` used to overload: the boundary is **whether `success-signal` can
- * fire yet (is the approach evaluable?)** — a single binary point, not a
- * percent-complete continuum. A validated / rejected approach is preserved as
- * the audit-trail record of *what we tried and what happened*; a follow-up
- * decision (if any) is authored separately rather than in-place.
+ * outward (`planned → partial → ready → running → validated / rejected /
+ * replaced`) rather than through a supersede chain. The old `active` state
+ * was found (#462 Amendment 2026-05-28) to smuggle two distinct layers into
+ * one enum value — the intrinsic phase of the approach (`(α)` "is the
+ * success-signal armed?") and the operator's stance (`(β)` "am I currently
+ * watching this?"). Splitting it into `Ready` and `Running` keeps the enum
+ * honest to layer `(α)` only: documents speak about themselves, not about
+ * whether they are being observed.
  *
- * See `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`.
+ * A validated / rejected approach is preserved as the audit-trail record of
+ * *what we tried and what happened*; a follow-up decision (if any) is
+ * authored separately rather than in-place.
+ *
+ * See `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`,
+ * Amendment 2026-05-28 for the `Ready` / `Running` split and the dashboard
+ * 全件可視化 direction.
  */
-export type ApproachStatus = "planned" | "partial" | "active" | "validated" | "rejected" | "replaced";
+export type ApproachStatus = "planned" | "partial" | "ready" | "running" | "validated" | "rejected" | "replaced";

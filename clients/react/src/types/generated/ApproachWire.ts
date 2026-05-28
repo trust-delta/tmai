@@ -6,7 +6,10 @@ import type { ReviewTriggerWire } from "./ReviewTriggerWire";
 
 /**
  * One approach projected to the wire — the human-side complement of the
- * internal [`crate::workbench::compose::ApproachView`].
+ * internal [`crate::workbench::compose::ApproachView`]. The `status`
+ * field is the lifecycle position (`Planned` / `Partial` / `Ready` /
+ * `Running` / `Validated` / `Rejected` / `Replaced`) the dashboard
+ * reads to bucket / sort.
  */
 export type ApproachWire = { slug: string, title: string, 
 /**

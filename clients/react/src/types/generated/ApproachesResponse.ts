@@ -2,9 +2,10 @@
 import type { RepoApproachesWire } from "./RepoApproachesWire";
 
 /**
- * `GET /api/units/{unit}/approaches` response — the `▣ Active approaches`
- * section of the unit's hand-over, per repo, JSON-projected. Composed on
- * demand (no cache).
+ * `GET /api/units/{unit}/approaches` response — the unit's approaches
+ * surface, per repo, JSON-projected. Composed on demand (no cache).
+ * Carries every approach record regardless of status; the dashboard
+ * filters / sorts client-side per #462 Amendment 2026-05-28.
  *
  * For a single-repo unit this collapses to `repos.len() == 1` — the
  * common case until per-unit `also[]` per-repo `approaches_dir`
