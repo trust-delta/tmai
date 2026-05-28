@@ -265,6 +265,11 @@ export const api = {
   // fanned out over the unit's repos; no Tauri-specific path needed)
   unitPrs: (unit: string) => httpApi.unitPrs(unit),
 
+  // Configured-unit membership view (HTTP only — membership-only,
+  // no live agent state joined server-side; no Tauri-specific path needed)
+  units: () => httpApi.units(),
+  unit: (name: string) => httpApi.unit(name),
+
   // Working-with-human view (HTTP only — on-demand JSON projection of
   // compose()'s ◐ section; no Tauri-specific path needed)
   workingWithHuman: (unit: string) => httpApi.workingWithHuman(unit),
