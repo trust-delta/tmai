@@ -51,7 +51,11 @@ vi.mock("@/hooks/useIdleNotification", () => ({
 vi.mock("@/hooks/useResponsiveLayout", () => ({
   useResponsiveLayout: () => useResponsiveLayoutMock(),
 }));
-vi.mock("@/hooks/useSplitPane", () => ({ useSplitPane: () => useSplitPaneMock() }));
+vi.mock("@/hooks/useSplitPane", () => ({
+  useSplitPane: () => useSplitPaneMock(),
+  makeSplitKeyHandler: () => () => undefined,
+  RATIO_STEP: 0.025,
+}));
 vi.mock("@/hooks/useAgentSelectionFallback", () => ({
   useAgentSelectionFallback: () => undefined,
 }));
@@ -59,8 +63,11 @@ vi.mock("@/hooks/useKeyboardShortcuts", () => ({ useKeyboardShortcuts: () => und
 vi.mock("@/hooks/useHandoffRitual", () => ({ useHandoffRitual: () => useHandoffRitualMock() }));
 
 // ── component stubs ──
-vi.mock("@/components/producer-console/AttentionStrip", () => ({
-  AttentionStrip: () => <div data-testid="attention-strip-stub">strip</div>,
+vi.mock("@/components/producer-console/r-panel/RPanel", () => ({
+  RPanel: () => <div data-testid="r-panel-stub">r-panel</div>,
+}));
+vi.mock("@/hooks/useProducerFeed", () => ({
+  useProducerFeed: () => ({ data: null, loading: false, error: null }),
 }));
 vi.mock("@/components/producer-console/ProducerConsole", () => ({
   ProducerConsole: () => <div data-testid="producer-console-stub">digest</div>,

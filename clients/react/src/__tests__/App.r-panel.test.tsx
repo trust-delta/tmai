@@ -1,23 +1,23 @@
 // @vitest-environment jsdom
 //
-// App layout test for the L/C/R co-visible re-layout
-// (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-// §Refinement 2026-05-22 + P2 Fork B single-pane retire). This is a
-// *layout* test: it asserts WHERE the AttentionStrip sits in App's flex
-// tree and WHEN it shows — not the strip's internals (those are covered by
-// AttentionStrip.test.tsx). So we stub the strip (and every heavy panel)
-// and drive App's selection / breakpoint state through mocked hooks.
+// App layout test for the R panel (approach
+// `doc/approaches/2026-05-29-r-panel-as-project-artifact-inventory.md`).
+// This is a *layout* test: it asserts WHERE the R panel sits in App's
+// flex tree and WHEN it shows — not the panel's internals (those are
+// covered by RPanel.test.tsx). So we stub the panel (and every heavy
+// other panel) and drive App's selection / breakpoint state through
+// mocked hooks.
 //
 // The load-bearing assertions:
-//   1. with no agent selected, the centre shows the digest AND the strip
-//      is present;
-//   2. after selecting an agent the centre swaps to the SINGLE-PANE agent
-//      view (no git/docs tabs/split) but the strip STAYS present —
-//      co-visibility kills the digest↔conversation screen-switch;
-//   3. on a narrow viewport the strip is gone — its guard reads
-//      isNarrowScreen off the sole surviving useSplitPane (Catch 1);
-//   4. a cross-unit click re-scopes currentProject instead of opening a
-//      removed full-screen view (Catch 2).
+//   1. with no agent selected, the centre shows the digest AND the R
+//      panel is present;
+//   2. after selecting an agent the centre swaps to the SINGLE-PANE
+//      agent view but the R panel STAYS present — co-visibility
+//      kills the digest↔conversation screen-switch;
+//   3. on a narrow viewport the R panel is gone — its guard reads
+//      isNarrowScreen off the sole surviving useSplitPane;
+//   4. a cross-unit click re-scopes currentProject instead of opening
+//      a removed full-screen view.
 
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,20 +52,26 @@ vi.mock("@/hooks/useIdleNotification", () => ({
 vi.mock("@/hooks/useResponsiveLayout", () => ({
   useResponsiveLayout: () => useResponsiveLayoutMock(),
 }));
-vi.mock("@/hooks/useSplitPane", () => ({ useSplitPane: () => useSplitPaneMock() }));
+vi.mock("@/hooks/useSplitPane", () => ({
+  useSplitPane: () => useSplitPaneMock(),
+  makeSplitKeyHandler: () => () => undefined,
+  RATIO_STEP: 0.025,
+}));
 vi.mock("@/hooks/useAgentSelectionFallback", () => ({
   useAgentSelectionFallback: () => undefined,
 }));
 vi.mock("@/hooks/useKeyboardShortcuts", () => ({ useKeyboardShortcuts: () => undefined }));
+vi.mock("@/hooks/useProducerFeed", () => ({
+  useProducerFeed: () => ({ data: null, loading: false, error: null }),
+}));
 
 // ── component stubs (everything heavy / networked) ──
-vi.mock("@/components/producer-console/AttentionStrip", () => ({
-  AttentionStrip: () => <div data-testid="attention-strip-stub">strip</div>,
+vi.mock("@/components/producer-console/r-panel/RPanel", () => ({
+  RPanel: () => <div data-testid="r-panel-stub">r-panel</div>,
 }));
 // The console stub surfaces `currentProjectPath` and a button that fires
-// `onSelectProjectByPath`, so the cross-unit re-scope reroute (Catch 2 /
-// DR §Refinement 2026-05-22 Fork B) is observable at the App level without
-// rendering the real digest.
+// `onSelectProjectByPath`, so the cross-unit re-scope reroute is
+// observable at the App level without rendering the real digest.
 vi.mock("@/components/producer-console/ProducerConsole", () => ({
   ProducerConsole: ({
     currentProjectPath,
@@ -82,10 +88,6 @@ vi.mock("@/components/producer-console/ProducerConsole", () => ({
     </div>
   ),
 }));
-// The conversation header mounts above the terminal whenever the
-// selected agent is the unit's Producer; it pulls orchestrator settings
-// through ProducerCtxHeader. Stub it — this is a layout test, the
-// header's content is covered by ProducerConversationHeader.test.tsx.
 vi.mock("@/components/producer-console/ProducerConversationHeader", () => ({
   ProducerConversationHeader: () => (
     <div data-testid="conversation-header-stub">conversation-header</div>
@@ -176,53 +178,42 @@ beforeEach(() => {
   useSplitPaneMock.mockReturnValue(splitPane(false));
 });
 
-describe("App — persistent attention strip layout", () => {
-  it("shows the digest in the centre AND the strip on the right with no selection", () => {
+describe("App — persistent R panel layout", () => {
+  it("shows the digest in the centre AND the R panel on the right with no selection", () => {
     renderWithProviders(<App />);
     expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
-    expect(screen.getByTestId("attention-strip-stub")).toBeTruthy();
+    expect(screen.getByTestId("r-panel-stub")).toBeTruthy();
   });
 
-  it("keeps the strip co-visible after an agent is selected (centre swaps, strip stays)", () => {
+  it("keeps the R panel co-visible after an agent is selected (centre swaps, R stays)", () => {
     renderWithProviders(<App />);
 
-    // Collapsed sidebar renders one button per AI agent (title = target).
     const agentBtn = screen.getByTitle("claude:abc");
     fireEvent.click(agentBtn);
 
-    // Centre swapped away from the digest to the agent conversation …
     expect(screen.queryByTestId("producer-console-stub")).toBeNull();
     expect(screen.getByTestId("preview-stub")).toBeTruthy();
-    // … and the attention strip is STILL there — no screen-switch.
-    expect(screen.getByTestId("attention-strip-stub")).toBeTruthy();
+    expect(screen.getByTestId("r-panel-stub")).toBeTruthy();
   });
 
-  it("hides the strip on a narrow viewport (isNarrowScreen from useSplitPane)", () => {
-    // Catch 1: after the multipane retired, isNarrowScreen is sourced from
-    // the sole surviving useSplitPane instance — the strip's narrow-hide
-    // guard must still fire off it.
+  it("hides the R panel on a narrow viewport (isNarrowScreen from useSplitPane)", () => {
     useResponsiveLayoutMock.mockReturnValue(responsive({ isNarrowScreen: true }));
     useSplitPaneMock.mockReturnValue(splitPane(true));
 
     renderWithProviders(<App />);
 
-    expect(screen.queryByTestId("attention-strip-stub")).toBeNull();
+    expect(screen.queryByTestId("r-panel-stub")).toBeNull();
   });
 
-  it("hides the strip on mobile", () => {
+  it("hides the R panel on mobile", () => {
     useResponsiveLayoutMock.mockReturnValue(responsive({ isMobileScreen: true }));
 
     renderWithProviders(<App />);
 
-    expect(screen.queryByTestId("attention-strip-stub")).toBeNull();
+    expect(screen.queryByTestId("r-panel-stub")).toBeNull();
   });
 
   it("re-scopes the focused unit on a cross-unit click (no full-screen view)", () => {
-    // Catch 2 / DR §Refinement 2026-05-22 Fork B: the full-screen project /
-    // BranchGraph view retired, so a cross-unit click must RE-SCOPE
-    // currentProject rather than open a removed view. Two agents → two
-    // units, so the clicked path differs from the auto-defaulted one yet is
-    // still in projectPaths (the auto-default effect won't reset it).
     useAgentsMock.mockReturnValue({
       agents: [agent("claude:abc", "/p/alpha"), agent("claude:def", "/p/beta")],
       attentionCount: 0,
@@ -232,13 +223,10 @@ describe("App — persistent attention strip layout", () => {
 
     renderWithProviders(<App />);
 
-    // Auto-defaults to the first derived project (alpha sorts before beta).
     expect(screen.getByTestId("console-current-project").textContent).toBe("/p/alpha");
 
     fireEvent.click(screen.getByText("rescope-beta"));
 
-    // Re-scoped to the clicked unit — and the digest is STILL shown (no
-    // full-screen swap to a removed project view, no dead-end).
     expect(screen.getByTestId("console-current-project").textContent).toBe("/p/beta");
     expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
   });

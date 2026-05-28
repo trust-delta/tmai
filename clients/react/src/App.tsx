@@ -8,11 +8,11 @@ import { TripwireBanner } from "@/components/calibration/TripwireBanner";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
-import { AttentionStrip } from "@/components/producer-console/AttentionStrip";
 import { HandoffRitualFailureDialog } from "@/components/producer-console/HandoffRitualFailureDialog";
 import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitualOverlay";
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
+import { RPanel } from "@/components/producer-console/r-panel/RPanel";
 import { ProducerFeedChip } from "@/components/producer-feed/ProducerFeedChip";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -38,21 +38,23 @@ import { useSSE } from "@/lib/sse-provider";
 import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 
-// The attention strip is a right-docked panel, but `useSplitPane` speaks in
+// The R panel is a right-docked panel, but `useSplitPane` speaks in
 // 0–1 ratios of its container (here the app root, full viewport width). We
 // map the persisted px width to/from that ratio at the seams: a stored width
-// W on a viewport V seeds ratio = 1 − W/V (the strip occupies the right
+// W on a viewport V seeds ratio = 1 − W/V (the panel occupies the right
 // `1 − ratio` of the row); on commit we read the ratio back into px. The hook
 // clamps the ratio to [0.2, 0.8] and `clampAttentionStripWidth` clamps the
-// committed px, so the two guards compose.
-function attentionViewportWidth(): number {
+// committed px, so the two guards compose. The pref key is kept as
+// `attentionStripWidth` post-rename for back-compat (storage migration is
+// churn for no benefit — the field's meaning is unchanged).
+function rPanelViewportWidth(): number {
   return typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1440;
 }
-function attentionWidthToRatio(width: number): number {
-  return 1 - width / attentionViewportWidth();
+function rPanelWidthToRatio(width: number): number {
+  return 1 - width / rPanelViewportWidth();
 }
-function attentionRatioToWidth(ratio: number): number {
-  return (1 - ratio) * attentionViewportWidth();
+function rPanelRatioToWidth(ratio: number): number {
+  return (1 - ratio) * rPanelViewportWidth();
 }
 
 export function App() {
@@ -101,20 +103,20 @@ export function App() {
     "agents",
   );
   const [showHelp, setShowHelp] = useState(false);
-  // Persistent right attention strip
-  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-  // §Refinement 2026-05-22 — L/C/R co-visible layout). Collapsed state
-  // lives in the WebUI prefs store so it survives reloads / cross-tab.
-  const [attentionStripCollapsed, setAttentionStripCollapsed] =
-    useUIPref("attentionStripCollapsed");
-  const toggleAttentionStrip = useCallback(
-    () => setAttentionStripCollapsed(!attentionStripCollapsed),
-    [attentionStripCollapsed, setAttentionStripCollapsed],
+  // Persistent right R panel (project artifact inventory — approach
+  // `doc/approaches/2026-05-29-r-panel-as-project-artifact-inventory.md`).
+  // Collapsed state lives in the WebUI prefs store so it survives
+  // reloads / cross-tab. Pref key reused post-AttentionStrip-retire to
+  // avoid storage migration churn.
+  const [rPanelCollapsed, setRPanelCollapsed] = useUIPref("attentionStripCollapsed");
+  const toggleRPanel = useCallback(
+    () => setRPanelCollapsed(!rPanelCollapsed),
+    [rPanelCollapsed, setRPanelCollapsed],
   );
-  // Drag-resizable strip width (P1.1). Persisted in px; the drag itself runs
-  // through the shared useSplitPane engine (ratio-based), so we convert at
-  // the seams. See the attention*Width helpers above.
-  const [attentionStripWidth, setAttentionStripWidth] = useUIPref("attentionStripWidth");
+  // Drag-resizable panel width. Persisted in px; the drag itself runs
+  // through the shared useSplitPane engine (ratio-based), so we convert
+  // at the seams. See the rPanel*Width helpers above.
+  const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
@@ -345,25 +347,20 @@ export function App() {
     void launchProducerAt(currentProject);
   }, [currentProject, launchProducerAt]);
 
-  // Attention-strip resize. Its containerRef is attached to the app-root
-  // flex row below; the strip is that row's right-most in-flow child, so a
-  // ratio of `clientX / rowWidth` makes the strip occupy `1 − ratio` of the
-  // row — i.e. dragging its left-edge handle resizes it. Commit clamps the
-  // derived px width to the legal window.
+  // R-panel resize. Its containerRef is attached to the app-root flex
+  // row below; the panel is that row's right-most in-flow child, so a
+  // ratio of `clientX / rowWidth` makes the panel occupy `1 − ratio`
+  // of the row — i.e. dragging its left-edge handle resizes it. Commit
+  // clamps the derived px width to the legal window.
   //
-  // This is the SOLE surviving `useSplitPane` instance after the git/docs
-  // multipane retired (DR `2026-05-14-react-producer-console-rebuild.md`
-  // §Refinement 2026-05-22 Fork B). It also remains the source of
-  // `isNarrowScreen` (matchMedia(NARROW_BREAKPOINT)), which the strip's
-  // visibility guard below depends on — the hook tracks the breakpoint
-  // independently of its containerRef, so reading it here is exact.
-  const attentionStripSplit = useSplitPane({
+  // Also remains the source of `isNarrowScreen` (matchMedia(NARROW_
+  // BREAKPOINT)), which the panel's visibility guard below depends on.
+  const rPanelSplit = useSplitPane({
     orientation: "horizontal",
-    initialRatio: attentionWidthToRatio(attentionStripWidth),
-    onCommit: (ratio) =>
-      setAttentionStripWidth(clampAttentionStripWidth(attentionRatioToWidth(ratio))),
+    initialRatio: rPanelWidthToRatio(rPanelWidth),
+    onCommit: (ratio) => setRPanelWidth(clampAttentionStripWidth(rPanelRatioToWidth(ratio))),
   });
-  const isNarrowScreen = attentionStripSplit.isNarrowScreen;
+  const isNarrowScreen = rPanelSplit.isNarrowScreen;
 
   // Responsive layout state (sidebar collapse + mobile drawer). The action
   // panel collapse pair retired with BranchGraph — that fullscreen view
@@ -554,7 +551,7 @@ export function App() {
   );
 
   return (
-    <div ref={attentionStripSplit.containerRef} className="flex h-screen text-foreground">
+    <div ref={rPanelSplit.containerRef} className="flex h-screen text-foreground">
       {/* Mobile: overlay backdrop when drawer is open */}
       {isMobileScreen && mobileDrawerOpen && (
         // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap to close
@@ -751,8 +748,6 @@ export function App() {
                 currentProjectPath={currentProject}
                 unitName={unitName}
                 calibrationData={calibrationData}
-                producerFeedData={producerFeedData}
-                onTriggerDeltaPull={handleTriggerProducerFeed}
                 onOpenProducerTerminal={openProducerTerminal}
                 onOpenCalibration={openCalibration}
                 trigger={triggerHandoff}
@@ -768,32 +763,27 @@ export function App() {
         )}
       </main>
 
-      {/* Persistent right attention strip — third flex column, sibling of
-          <main> and OUTSIDE the selection switch above, so it stays
-          co-visible with whatever the centre shows (Producer conversation
-          or hand-over digest — the git/docs multipane retired in P2). DR
-          `2026-05-14-react-producer-console-rebuild.md` §Refinement
-          2026-05-22 (Fork A / Fork C P1). Hidden on narrow / mobile (the
-          narrow guard reads `isNarrowScreen` off the surviving
-          `useSplitPane` instance) so it never crowds a small viewport;
-          folds to a thin rail otherwise. */}
+      {/* Persistent right R panel — third flex column, sibling of <main>
+          and OUTSIDE the selection switch above, so it stays co-visible
+          with whatever the centre shows (Producer conversation or
+          hand-over digest). Hidden on narrow / mobile so it never
+          crowds a small viewport; folds to a thin rail otherwise. */}
       {!isNarrowScreen && !isMobileScreen && (
-        <AttentionStrip
+        <RPanel
           currentProjectPath={currentProject}
           unitName={unitName}
-          onSelectProjectByPath={handleSelectProject}
-          collapsed={attentionStripCollapsed}
-          onToggleCollapsed={toggleAttentionStrip}
+          producerFeedData={producerFeedData}
+          onTriggerDeltaPull={handleTriggerProducerFeed}
+          producerAvailable={producerForUnit !== null}
+          collapsed={rPanelCollapsed}
+          onToggleCollapsed={toggleRPanel}
           resize={{
-            width: attentionStripWidth,
-            isResizing: attentionStripSplit.isDragging,
-            ratio: attentionStripSplit.splitRatio,
-            onMouseDown: attentionStripSplit.onDividerMouseDown,
-            // Double-click resets to the default px width (the hook's own
-            // reset snaps the ratio to 0.5 = half the viewport, far too wide
-            // for a strip), then the initialRatio reseed tracks it.
-            onDoubleClick: () => setAttentionStripWidth(ATTENTION_STRIP_WIDTH_DEFAULT),
-            onAdjust: attentionStripSplit.adjustRatio,
+            width: rPanelWidth,
+            isResizing: rPanelSplit.isDragging,
+            ratio: rPanelSplit.splitRatio,
+            onMouseDown: rPanelSplit.onDividerMouseDown,
+            onDoubleClick: () => setRPanelWidth(ATTENTION_STRIP_WIDTH_DEFAULT),
+            onAdjust: rPanelSplit.adjustRatio,
           }}
         />
       )}

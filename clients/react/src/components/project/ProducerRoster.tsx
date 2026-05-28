@@ -39,8 +39,8 @@ function isSelected(agent: AgentSnapshot, selectedTarget: string | null): boolea
 //     never fabricate a headline.
 //
 // Role split: this is "who" (structure/identity). It must NOT grow into an
-// attention feed — the blocked/awaiting + PR/CI lists live in the right
-// AttentionStrip. A per-worker status dot is fine; a full attention list is
+// inventory feed — the artifact inventory lives in the right
+// R panel. A per-worker status dot is fine; a full inventory is
 // not. The roster is a dumb structural list (no priority/anomaly re-ranking).
 export function ProducerRoster({
   agents,
