@@ -2621,6 +2621,58 @@
       ],
       "type": "object"
     },
+    "UnitRepoWire": {
+      "description": "One repo of a unit's resolved membership: its absolute path plus whether\nit is the unit's **primary** repo (the one at\n[`ResolvedUnit::repo_root`] / `primary_index`, where the Producer is\nlaunched).\n\n`primary` is a per-repo bool, deliberately **not** a separate\n`primary_index` field on the parent: the client joins these repos with\nlive agents by `path`, so it needs only the per-row \"is this the Producer's\nrepo?\" bit, never an index into a list it never indexes. Keeps the wire\nminimal (issue #439 contract boundary).",
+      "properties": {
+        "path": {
+          "description": "Absolute repo root path (the same `repos[]` path the decisions / PR\nendpoints key on, so the client can join membership across surfaces).",
+          "type": "string"
+        },
+        "primary": {
+          "description": "`true` for the unit's primary repo (where the Producer is launched).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "primary"
+      ],
+      "type": "object"
+    },
+    "UnitResponse": {
+      "description": "`GET /api/units/{unit}` response — one unit's repo membership.\n\n`repos` is ordered **primary first, then declaration order** — the same\nconvention [`unit_repo_order`] gives the cross-repo PR view, so the two\nunit surfaces stay consistent. For a single-repo unit this collapses to\n`repos.len() == 1`.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/UnitRepoWire"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "repos"
+      ],
+      "type": "object"
+    },
+    "UnitsResponse": {
+      "description": "`GET /api/units` response — every configured unit's membership.\n\nEmpty `units` when no `[[unit]]` is configured (the workbench then\noperates on a single cwd-synthesized unit, which is not enumerated here —\nthis surface reflects *configured* membership only).",
+      "properties": {
+        "units": {
+          "items": {
+            "$ref": "#/$defs/UnitResponse"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "units"
+      ],
+      "type": "object"
+    },
     "Vendor": {
       "description": "Vendor CLI identifier for dispatched agents.",
       "enum": [
