@@ -36,6 +36,18 @@ The bet: a strong model doesn't need a tool to *make its decisions* for it — b
 - **Not single-project fan-out.** The rate limiter is your review attention, not agent compute — five agents finishing in an hour just queues five hours of review onto your desk. The parallelism that's real lives *across* projects, not inside one.
 - **Not a substitute for your judgment.** tmai surfaces the decisions that need you and tracks whether the Producer's confidence was calibrated; it doesn't override the model, and it doesn't pretend a glance-and-approve is a real review. (A thin statement of intent — "this is the contract boundary, push back if it doesn't fit" — is a different thing, and a good one.)
 
+## What tmai requires of you
+
+tmai is opinionated, and the opinion *is* the product. Adopt it and you adopt a discipline it won't let you quietly skip:
+
+- **Purpose and means stay apart.** What you commit to — the outcome you bear — is a *decision*. How you're currently chasing it — the mechanism — is an *approach*, kept cheap to change. They're separate records on purpose: a means dressed up as a commitment is the failure mode, not a shortcut.
+- **Only you accept a decision.** The Producer drafts it, argues it, runs the means under it — but it never *accepts* it for you. The one act that binds the project stays a human act, by construction. There is no "the agent decided."
+- **Your attention is rationed, not spent.** tmai brings you the decisions that actually need a human, and refuses to pass a glance-and-approve off as a review.
+
+Why force this instead of just going faster? Because the scarce thing is your judgment, not agent compute — and a tool that makes the *wrong* workflow effortless (approve-all, fan out forever, let the agent bless its own work) burns the scarce thing exactly where it should be guarded. The discipline is the floor that keeps *you* bearing the commitments while the agent carries the mechanism.
+
+This is a worldview, and it's the whole point — not a setting to turn off. If what you want is to maximize how much an agent does while you're not looking, tmai is the wrong tool, deliberately. It keeps a seam where you stay in the loop, because that seam *is* the value: remove it and what's left isn't tmai. Better to know that before you install than to discover it by friction.
+
 ## The shape
 
 - **You** (episodic) — talk to one Producer per project; decide the irreducible.
