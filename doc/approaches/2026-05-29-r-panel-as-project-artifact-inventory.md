@@ -120,3 +120,77 @@ R 設計の core discriminator は negative space:
 ## Update history
 
 - 2026-05-29 (raised): Producer-drafted、原則演習で起票。L attention 系 defer に伴い `structural-gate visibility` amendment は別件で保留。accept は operator merge。
+- 2026-05-29 (Amendment 2026-05-29): negative space 6 項を「tmai-driven 禁止 + operator-controlled 対応 affordance の provide 義務」の対構造として再 articulate。silence-is-not-neutral を R-panel 設計に当てて明示。content access の gap は viewer 層 approach に分離 link。Producer-drafted、accept は operator merge。
+
+---
+
+## Amendment 2026-05-29 — operator-controlled affordance provision 義務、silence-is-not-neutral、viewer 層 link
+
+*Producer-drafted; the `accept` is the operator's — the merge of this change. Surfaced from a 2026-05-29 戦略 session where the original articulation の **二つの欠陥** が surface した: (1) negative space 6 項を「禁止域」だけ articulate し operator-controlled 対応 affordance の provide 義務を flatten していた; (2) 「中身が見えない」lived friction が success-signal の「reach」が path-pointing と content-viewing で曖昧だった事を明示した。本 Amendment は (1) を R-panel 設計内部で補正、(2) は viewer 層 approach に分離 link。*
+
+### 何が surface したか
+
+原 approach の negative space 6 項 (filter "needs you" / severity 配色 / priority sort / count badge urgency / 集約 status pill / default expand を tmai が select) は **「tmai-driven 禁止」だけ articulate し、operator-controlled な対応 affordance の provide 義務を articulate していなかった**。これは [`tmai-core:doc/decisions/2026-05-26-tmai-states-facts-not-appraisals.md`] Amendment 2026-05-29 が name した「手段を用意しないことを『tmai 非関与』と読むのは逃げ、operator の希少 judgment コストをその場で奪う」failure mode の R-panel 内 instance。
+
+加えて、content access の gap が surface: R-panel が path / title 提示のみで中身が見えず、判断材料が in-tmai に揃わない。これは別 approach として起票 ([`tmai-core:doc/approaches/2026-05-29-artifact-content-viewer.md`])。
+
+### 修正された articulation — negative space 6 項の対構造
+
+各 6 項について **tmai-driven は禁止 (現状の articulation 維持)、operator-controlled 対応 affordance は provide 義務 (本 Amendment で追加)**:
+
+| dimension | tmai-driven (禁止、原 articulation) | operator-controlled affordance (provide 義務、本 Amendment 追加) |
+|---|---|---|
+| **filter** | filter "needs you" 等 tmai が "重要" を selection | operator が自身の判断軸で filter 設定 ("今は X tag のみ" 等) |
+| **color** | severity 配色 / 🔴 saliency | operator が "私は X 系を赤" 等の color label を assign |
+| **sort** | priority sort / anomaly sort | operator が "modified desc" "governs scope 順" 等を選択 |
+| **count badge** | urgency 演出 (`5 未読 ⚠`) | operator-configured roll-up view (操作で count を出す) |
+| **集約 pill** | tmai-side aggregated `needs-you/in-progress/quiet` | operator が自身の roll-up rule で aggregate |
+| **default expand** | tmai が select | operator-set persistent expand (last expand / pin / bookmark) |
+
+Amendment 2026-05-28 (`2026-05-27-approach-lifecycle-planned-and-partial-states.md` の dashboard 設計) 「operator が手動で filter / sort できる必要あり」「per-unit favorite filter / sort settings 保持は nice-to-have」は本 Amendment の此処の articulation の partial 表現だった。本 Amendment はそれを **全 6 項に拡張 + provide 義務として明示**。
+
+### silence-is-not-neutral の R-panel 内含意
+
+事実の surface を削る (silence) のは neutral でなく別 appraisal の暗黙稼働。R-panel 設計の含意:
+
+- 各 artifact entry は **plain inline で常時 surface** (count / mtime / status enum 等 mechanical fact)
+- 「modified after last-expand」「last-seen より新しい」等 operator-act anchored event も **plain inline で常時 surface** (色 / badge なしの mechanical text、例: `(modified after last expand)`)
+- operator が highlight / filter / sort で扱う affordance を provide
+- tmai が silence で隠す choice をしない (suppression は人間のみ、`facts-not-appraisals` 3 項目)
+
+**未読 marker の二段構造例**: plain inline fact 常時 surface (event 発生は隠さない) + operator が highlight on/off / threshold / 表示形式 を設定可。tmai が「未読を default で強調」も「未読を default で隠す」も両方やらない (前者は push、後者は silence-による appraisal)。
+
+### 3 layer 構造として再 articulate
+
+approach の核 discriminator を 3 layer で完全形に:
+
+1. **negative space 6 項禁止** (原 articulation、tmai-driven の form)
+2. **operator-controlled 対応 affordance の provide 義務** (本 Amendment 追加)
+3. **silence-is-not-neutral / 事実 surface 保持** (本 Amendment 追加)
+
+3 つを一緒に持って初めて push の禁止 と 律速 行使の保護 が両立する。原 approach の 1 layer 表現 (negative space のみ) は naive 削減側に偏った frame だった。
+
+### viewer 層 link
+
+content access の gap は別 approach [`tmai-core:doc/approaches/2026-05-29-artifact-content-viewer.md`] が means として扱う。本 approach の inventory 層と viewer 層は分離 ── R-panel が **artifact inventory + 各 entry の viewer entry-point** を持ち、viewer 機構の内部 design (α/β/γ/δ) は viewer approach 側で discriminate。
+
+R-panel approach の success-signal の「reach」は **本 Amendment 後** 以下 2 component に分解される:
+
+- **path-pointing reach**: R-panel inventory が担う (原 approach scope、Phase 1 で landed)
+- **content-viewing reach**: viewer approach が担う (別 approach、本 Amendment で link)
+
+### Phase 2 worker dispatch への反映
+
+原 「段階」section の Phase 2 (single atomic PR) には:
+
+- operator-controlled affordance UI 余地の design 上保持 (Phase 2 では具体実装せず base のみ)
+- silence-not-neutral preservation (事実 surface の plain inline、装飾なし)
+- viewer approach への entry-point hook (各 section entry の content fetch 経路を Phase 2 で確保し、viewer 実装は viewer approach 側で landing)
+
+を本 Amendment 後の含意として load する。詳細は worker brief で展開。
+
+### Ratify
+
+drafting = agent の act。本 Amendment の articulation (negative space 6 項の対構造化 / silence-is-not-neutral / 二段構造の未読 marker 例 / viewer 層 link) は 2026-05-29 の operator 主導会話で operator が承認。merge = ratification。
+
+原 `status: planned` は keep。本 Amendment の articulation は Phase 2 worker dispatch の brief に load される含意であり、approach 自体の status 変更は要さない。
