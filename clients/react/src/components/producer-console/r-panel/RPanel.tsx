@@ -36,6 +36,7 @@ import { RFilesSection } from "./RFilesSection";
 import { RHandoverSection } from "./RHandoverSection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
+import type { SelectedPr } from "./r-viewer/RPrViewer";
 
 export interface RPanelResize {
   width: number;
@@ -57,6 +58,13 @@ interface RPanelProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   resize: RPanelResize;
+  /** Open a PR in the independent R₂ viewer column (#749). Threaded to
+   *  the R₁ PR inventory so a row click selects the PR for in-tmai
+   *  viewing instead of linking out to github.com. */
+  onSelectPr?: (sel: SelectedPr) => void;
+  /** `selectedPrKey(...)` of the PR currently open in R₂, so the R₁ row
+   *  marks itself as the one being viewed. */
+  selectedPrKey?: string | null;
 }
 
 const SECTION_IDS = [
@@ -78,6 +86,8 @@ export function RPanel({
   collapsed,
   onToggleCollapsed,
   resize,
+  onSelectPr,
+  selectedPrKey,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
 
@@ -177,6 +187,8 @@ export function RPanel({
           unitName={unitName}
           expanded={isExpanded("prs")}
           onToggle={() => toggle("prs")}
+          onSelectPr={onSelectPr}
+          selectedKey={selectedPrKey}
         />
         <RIssuesSection
           currentProjectPath={currentProjectPath}

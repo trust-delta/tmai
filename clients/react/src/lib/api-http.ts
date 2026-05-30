@@ -1230,6 +1230,18 @@ export const api = {
     apiFetch<PrComment[]>(
       `/github/pr/comments?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
     ),
+  // R₂ in-tmai PR viewer (#749). The PR body / labels endpoints already
+  // exist server-side; these are the missing thin React wrappers. Body is
+  // a JSON string (the PR description markdown), labels a JSON string[] of
+  // label names — both shapes match the rest of the `gh`-backed handlers
+  // that pre-date the codegen spec, so they ride the same `apiFetch` JSON
+  // path as `getPrComments` above rather than a generated binding.
+  prBody: (repoPath: string, prNumber: number) =>
+    apiFetch<string>(`/github/pr/body?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`),
+  prLabels: (repoPath: string, prNumber: number) =>
+    apiFetch<string[]>(
+      `/github/pr/labels?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
+    ),
   getPrFiles: (repoPath: string, prNumber: number) =>
     apiFetch<PrChangedFile[]>(
       `/github/pr/files?repo=${encodeURIComponent(repoPath)}&pr_number=${prNumber}`,
