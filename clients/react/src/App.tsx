@@ -13,6 +13,11 @@ import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitua
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
 import { RPanel } from "@/components/producer-console/r-panel/RPanel";
+import {
+  RPrViewer,
+  type SelectedPr,
+  selectedPrKey,
+} from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
 import { ProducerFeedChip } from "@/components/producer-feed/ProducerFeedChip";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -117,6 +122,12 @@ export function App() {
   // through the shared useSplitPane engine (ratio-based), so we convert
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
+  // The PR open in the independent R₂ viewer column (#749). `null` =
+  // no viewer (it never auto-opens — the operator clicks a row in the
+  // R₁ inventory to select; viewer-approach negative space). Lives at
+  // App level because R₂ renders as a sibling column of <main> / RPanel,
+  // not inside the inventory panel (R₁ stays a pure inventory).
+  const [selectedPr, setSelectedPr] = useState<SelectedPr | null>(null);
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
@@ -173,6 +184,15 @@ export function App() {
   }, [currentProject]);
   const { data: calibrationData } = useCalibration(unitName);
   const { data: producerFeedData } = useProducerFeed(unitName);
+
+  // Close the R₂ PR viewer when the focused unit changes — its open PR
+  // belongs to the previous unit, so it must not linger under a new
+  // unit's inventory (mirrors useUnitPrs clearing its list on unit change).
+  // unitName is the intended trigger even though the body only clears state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional unit-change trigger
+  useEffect(() => {
+    setSelectedPr(null);
+  }, [unitName]);
   // Configured-unit membership (tmai-core #460 — wire half of #439).
   // Threaded into `findProducerForUnit` below so multi-repo units
   // resolve their Producer against the primary repo specifically,
@@ -785,7 +805,21 @@ export function App() {
             onDoubleClick: () => setRPanelWidth(ATTENTION_STRIP_WIDTH_DEFAULT),
             onAdjust: rPanelSplit.adjustRatio,
           }}
+          onSelectPr={setSelectedPr}
+          selectedPrKey={
+            selectedPr ? selectedPrKey(selectedPr.repoPath, selectedPr.pr.number) : null
+          }
         />
+      )}
+
+      {/* R₂ — independent in-tmai PR content viewer column (#749). The
+          spine's γ-lean 4-column shape (L / C / R₁ inventory / R₂ viewer):
+          this is the rightmost column, present ONLY when the operator has
+          selected a PR in the R₁ inventory (never auto-opens). Gated on the
+          same narrow/mobile guard as RPanel so it never crowds a small
+          viewport. */}
+      {!isNarrowScreen && !isMobileScreen && selectedPr && (
+        <RPrViewer selected={selectedPr} onClose={() => setSelectedPr(null)} />
       )}
 
       {/* Help overlay */}

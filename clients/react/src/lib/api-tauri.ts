@@ -143,6 +143,9 @@ export const api = {
   getIssueDetail: (repoPath: string, issueNumber: number) =>
     httpApi.getIssueDetail(repoPath, issueNumber),
   getPrComments: (repoPath: string, prNumber: number) => httpApi.getPrComments(repoPath, prNumber),
+  // R₂ in-tmai PR viewer (#749) — HTTP only, gh-CLI passthrough.
+  prBody: (repoPath: string, prNumber: number) => httpApi.prBody(repoPath, prNumber),
+  prLabels: (repoPath: string, prNumber: number) => httpApi.prLabels(repoPath, prNumber),
   getPrFiles: (repoPath: string, prNumber: number) => httpApi.getPrFiles(repoPath, prNumber),
   getPrMergeStatus: (repoPath: string, prNumber: number) =>
     httpApi.getPrMergeStatus(repoPath, prNumber),

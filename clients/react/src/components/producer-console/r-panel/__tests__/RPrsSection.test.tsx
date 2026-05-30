@@ -5,7 +5,7 @@
 // text-warning/destructive/success classes for state; R intentionally
 // does not.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrSummaryWire, UnitPrsResponse } from "@/lib/api";
 
@@ -85,5 +85,30 @@ describe("RPrsSection", () => {
       expect(screen.getByText(/0 open/)).toBeTruthy();
     });
     expect(screen.getByText(/No open PRs/i)).toBeTruthy();
+  });
+
+  it("has NO github.com link-out — the row is an in-tmai select (#749)", async () => {
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    const { container } = render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText("PR title")).toBeTruthy();
+    });
+    // The PR number used to be an <a href> to github.com; it is now a
+    // button that opens the R₂ viewer in-tmai. No anchor should remain.
+    expect(container.querySelector("a[href*='github.com']")).toBeNull();
+  });
+
+  it("clicking a PR row selects it for the R₂ viewer", async () => {
+    const onSelectPr = vi.fn();
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} onSelectPr={onSelectPr} />);
+    await waitFor(() => {
+      expect(screen.getByText("PR title")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("PR title"));
+    expect(onSelectPr).toHaveBeenCalledTimes(1);
+    const sel = onSelectPr.mock.calls[0][0];
+    expect(sel.repoPath).toBe("/p/u");
+    expect(sel.pr.number).toBe(100n);
   });
 });
