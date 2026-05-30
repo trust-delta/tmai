@@ -1213,6 +1213,68 @@
       ],
       "type": "string"
     },
+    "FileContentResponse": {
+      "description": "`GET /api/units/{unit}/files/content` response — one file's content.",
+      "properties": {
+        "content": {
+          "description": "File content (UTF-8 text; binary content is rejected upstream).",
+          "type": "string"
+        },
+        "editable": {
+          "description": "`true` when the extension is one the markdown panel can open/edit.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The file path (echoed from the request).",
+          "type": "string"
+        },
+        "repo": {
+          "description": "The repo the file was resolved within (echoed from the request).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "path",
+        "content",
+        "editable"
+      ],
+      "type": "object"
+    },
+    "FileTreeEntryWire": {
+      "description": "One node in a unit repo's file tree. Mirrors the binary crate's\n`MdTreeEntry` (the `/api/files/md-tree` walk output) as a wire type that\nlives in `tmai-core` so it can be ts-exported; the handler maps the walk's\nentries into this shape rather than duplicating the walk.\n\n`children` is `Some` for directories (recursively), `None` for files.\n`openable` marks the text extensions the markdown panel can open/edit.",
+      "properties": {
+        "children": {
+          "description": "`no_recursion` breaks utoipa's schema walk on this self-reference —\nwithout it `ApiDoc::openapi()` recurses into the type forever and\noverflows the stack (utoipa 5 emits a `$ref` instead).",
+          "items": {
+            "$ref": "#/$defs/FileTreeEntryWire"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "is_dir": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "openable": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "is_dir",
+        "openable"
+      ],
+      "type": "object"
+    },
     "FoundationalDueWire": {
       "description": "One row of the `⚠ Trajectory check due` callout — a foundational\ndecision whose `last_verified` is older than\n`workbench::FOUNDATIONAL_DUE_DAYS`.",
       "properties": {
@@ -1239,6 +1301,60 @@
         "last_verified",
         "age_days",
         "remedy"
+      ],
+      "type": "object"
+    },
+    "HandoffContentResponse": {
+      "description": "`GET /api/units/{unit}/handoffs/{name}` response — one baton's raw markdown.",
+      "properties": {
+        "content": {
+          "description": "Raw baton markdown (frontmatter + body, verbatim).",
+          "type": "string"
+        },
+        "name": {
+          "description": "`\"active\"` or the requested archive filename.",
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "name",
+        "content"
+      ],
+      "type": "object"
+    },
+    "HandoffEntryWire": {
+      "description": "One hand-off entry in the list: the active baton or an archived one.\n\n`status` distinguishes the active baton (`\"active\"`) from an archived one\n(`\"archived\"`) — i.e. *where the baton lives*, deliberately NOT the\nconsumption lifecycle (`HandoffStatus` Unused/Consumed), which answers a\ndifferent question. `composed_at` / `task` are parsed from the baton's\noptional YAML frontmatter; either is `None` when the frontmatter is absent\nor omits that field (an unparseable archived baton is still listed, bare).",
+      "properties": {
+        "composed_at": {
+          "description": "Frontmatter `composed-at` (informational free-form string), if present.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "`\"active\"` for the active baton, or the archive filename (e.g.\n`2026-05-12T18-30-00.000Z.md`) for an archived one. This is the\n`{name}` the content endpoint keys on.",
+          "type": "string"
+        },
+        "status": {
+          "description": "`\"active\"` or `\"archived\"` — where the baton lives, not its\nconsumption lifecycle.",
+          "type": "string"
+        },
+        "task": {
+          "description": "Frontmatter `task` (one-line description), if present.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "status"
       ],
       "type": "object"
     },
@@ -1381,6 +1497,25 @@
           "type": "object"
         }
       ]
+    },
+    "HandoffsResponse": {
+      "description": "`GET /api/units/{unit}/handoffs` response — the unit's baton list.\n\nThe active baton (if any) sorts first; archived entries follow newest-first\n(the order [`HandoffStore::archived`] yields). Empty `handoffs` when the\nunit has neither an active baton nor any archive.",
+      "properties": {
+        "handoffs": {
+          "items": {
+            "$ref": "#/$defs/HandoffEntryWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "handoffs"
+      ],
+      "type": "object"
     },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
@@ -1908,6 +2043,32 @@
         "warm",
         "cold",
         "superseded"
+      ],
+      "type": "object"
+    },
+    "RepoFilesWire": {
+      "description": "One repo's file listing within a unit (one entry per `unit.repos[]`).",
+      "properties": {
+        "path": {
+          "description": "Absolute repo root path (the same `repos[]` path the decisions / PR /\nunits endpoints key on).",
+          "type": "string"
+        },
+        "primary": {
+          "description": "`true` for the unit's primary repo (where the Producer is launched).",
+          "type": "boolean"
+        },
+        "tree": {
+          "description": "The repo's file tree (empty when the repo path is not a directory).",
+          "items": {
+            "$ref": "#/$defs/FileTreeEntryWire"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "primary",
+        "tree"
       ],
       "type": "object"
     },
@@ -2603,6 +2764,25 @@
         "tradeoff_proposal"
       ],
       "type": "string"
+    },
+    "UnitFilesResponse": {
+      "description": "`GET /api/units/{unit}/files` response — one listing per unit repo,\nprimary-first then declaration order (the `unit_repo_order` convention the\nPR / units views share).",
+      "properties": {
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoFilesWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "repos"
+      ],
+      "type": "object"
     },
     "UnitPrsResponse": {
       "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",

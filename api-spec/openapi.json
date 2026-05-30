@@ -331,6 +331,183 @@
         }
       }
     },
+    "/api/units/{unit}/files": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/files`.",
+        "description": "One file-tree listing per repo in the unit's `repos[]` — the same\ndirectory walk behind `/api/files/md-tree`, scoped per unit repo (issue\n#472, read-only). Unknown unit ⇒ `404`. Real handler:\n`crate::web::api::get_unit_files`.",
+        "operationId": "get_unit_files_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-repo file-tree listing for the unit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitFilesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/files/content": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/files/content`.",
+        "description": "Content of a file, **only** if `repo ∈ unit.repos[]` and `path` resolves\nwithin that repo (then the reused path-traversal protection + 1 MB limit\napply), per issue #472 (read-only). Out-of-scope repo/path ⇒ `403`; missing\nfile ⇒ `404`; oversize ⇒ `400`. Real handler:\n`crate::web::api::get_unit_file_content`.",
+        "operationId": "get_unit_file_content_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Repo root (must be one of the unit's repos)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "File path (must resolve within `repo`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file's content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileContentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "File too large (max 1 MB) or not text"
+          },
+          "403": {
+            "description": "Repo not in unit, or path outside the repo scope"
+          },
+          "404": {
+            "description": "Unit or file not found"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/handoffs": {
+      "get": {
+        "tags": [
+          "handoffs"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/handoffs`.",
+        "description": "List the unit's hand-over batons — the active baton (if any) plus every\narchived one, each with its frontmatter-parsed `composed_at` / `task` when\npresent (issue #472, read-only). Unknown unit ⇒ `404`. Real handler:\n`crate::web::api::get_unit_handoffs`.",
+        "operationId": "get_unit_handoffs_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The unit's hand-off batons (active + archived)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/handoffs/{name}": {
+      "get": {
+        "tags": [
+          "handoffs"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/handoffs/{name}`.",
+        "description": "Raw markdown of the active baton (`name=active`) or a named archive entry\n(issue #472, read-only). Unknown unit or baton ⇒ `404`. Real handler:\n`crate::web::api::get_unit_handoff_content`.",
+        "operationId": "get_unit_handoff_content_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "`active` or an archive filename from the list endpoint",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The baton's raw markdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffContentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit or baton not found"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/producer-feed": {
       "get": {
         "tags": [
@@ -2855,6 +3032,68 @@
           "Internal"
         ]
       },
+      "FileContentResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/files/content` response — one file's content.",
+        "required": [
+          "repo",
+          "path",
+          "content",
+          "editable"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "File content (UTF-8 text; binary content is rejected upstream)."
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "`true` when the extension is one the markdown panel can open/edit."
+          },
+          "path": {
+            "type": "string",
+            "description": "The file path (echoed from the request)."
+          },
+          "repo": {
+            "type": "string",
+            "description": "The repo the file was resolved within (echoed from the request)."
+          }
+        }
+      },
+      "FileTreeEntryWire": {
+        "type": "object",
+        "description": "One node in a unit repo's file tree. Mirrors the binary crate's\n`MdTreeEntry` (the `/api/files/md-tree` walk output) as a wire type that\nlives in `tmai-core` so it can be ts-exported; the handler maps the walk's\nentries into this shape rather than duplicating the walk.\n\n`children` is `Some` for directories (recursively), `None` for files.\n`openable` marks the text extensions the markdown panel can open/edit.",
+        "required": [
+          "name",
+          "path",
+          "is_dir",
+          "openable"
+        ],
+        "properties": {
+          "children": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FileTreeEntryWire"
+            },
+            "description": "`no_recursion` breaks utoipa's schema walk on this self-reference —\nwithout it `ApiDoc::openapi()` recurses into the type forever and\noverflows the stack (utoipa 5 emits a `$ref` instead)."
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "openable": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "FoundationalDueWire": {
         "type": "object",
         "description": "One row of the `⚠ Trajectory check due` callout — a foundational\ndecision whose `last_verified` is older than\n`workbench::FOUNDATIONAL_DUE_DAYS`.",
@@ -2881,6 +3120,60 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "HandoffContentResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/handoffs/{name}` response — one baton's raw markdown.",
+        "required": [
+          "unit",
+          "name",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Raw baton markdown (frontmatter + body, verbatim)."
+          },
+          "name": {
+            "type": "string",
+            "description": "`\"active\"` or the requested archive filename."
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "HandoffEntryWire": {
+        "type": "object",
+        "description": "One hand-off entry in the list: the active baton or an archived one.\n\n`status` distinguishes the active baton (`\"active\"`) from an archived one\n(`\"archived\"`) — i.e. *where the baton lives*, deliberately NOT the\nconsumption lifecycle (`HandoffStatus` Unused/Consumed), which answers a\ndifferent question. `composed_at` / `task` are parsed from the baton's\noptional YAML frontmatter; either is `None` when the frontmatter is absent\nor omits that field (an unparseable archived baton is still listed, bare).",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "composed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Frontmatter `composed-at` (informational free-form string), if present."
+          },
+          "name": {
+            "type": "string",
+            "description": "`\"active\"` for the active baton, or the archive filename (e.g.\n`2026-05-12T18-30-00.000Z.md`) for an archived one. This is the\n`{name}` the content endpoint keys on."
+          },
+          "status": {
+            "type": "string",
+            "description": "`\"active\"` or `\"archived\"` — where the baton lives, not its\nconsumption lifecycle."
+          },
+          "task": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Frontmatter `task` (one-line description), if present."
           }
         }
       },
@@ -3023,6 +3316,25 @@
           }
         ],
         "description": "Phase of the Producer handoff-and-restart ritual (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C).\n\nPhases progress strictly in the order `Prompted → Validated → Killed →\nLaunching → Ready`; any step can short-circuit to `Escalate` with a\nmachine-readable `reason` (§D — uniform tier-1 escalation, no per-mode\npolicy). Consumers driving the WebUI overlay (`§E`) treat all `Escalate`\nvariants as the terminal failure state regardless of reason."
+      },
+      "HandoffsResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/handoffs` response — the unit's baton list.\n\nThe active baton (if any) sorts first; archived entries follow newest-first\n(the order [`HandoffStore::archived`] yields). Empty `handoffs` when the\nunit has neither an active baton nor any archive.",
+        "required": [
+          "unit",
+          "handoffs"
+        ],
+        "properties": {
+          "handoffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoffEntryWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
       },
       "Milestone": {
         "type": "object",
@@ -3550,6 +3862,32 @@
             "items": {
               "$ref": "#/components/schemas/DecisionWire"
             }
+          }
+        }
+      },
+      "RepoFilesWire": {
+        "type": "object",
+        "description": "One repo's file listing within a unit (one entry per `unit.repos[]`).",
+        "required": [
+          "path",
+          "primary",
+          "tree"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute repo root path (the same `repos[]` path the decisions / PR /\nunits endpoints key on)."
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "`true` for the unit's primary repo (where the Producer is launched)."
+          },
+          "tree": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileTreeEntryWire"
+            },
+            "description": "The repo's file tree (empty when the repo path is not a directory)."
           }
         }
       },
@@ -4246,6 +4584,25 @@
           "tradeoff_proposal"
         ]
       },
+      "UnitFilesResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/files` response — one listing per unit repo,\nprimary-first then declaration order (the `unit_repo_order` convention the\nPR / units views share).",
+        "required": [
+          "unit",
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoFilesWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
       "UnitPrsResponse": {
         "type": "object",
         "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
@@ -4618,6 +4975,14 @@
     {
       "name": "producer-feed",
       "description": "Per-unit delta-gate status + operator-triggered delta-pull (notify rebuild step 2, #452; approach 2026-05-18-producer-worker-identity-and-unit-delta-feed §wire)"
+    },
+    {
+      "name": "handoffs",
+      "description": "Operator-side unit-scoped hand-off batons — list (active + archived) + raw content (issue #472, read-only; restore is deferred)"
+    },
+    {
+      "name": "files",
+      "description": "Operator-side unit-scoped repo files — per-repo tree listing + scoped file content (issue #472, read-only)"
     }
   ]
 }
