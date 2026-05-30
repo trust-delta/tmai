@@ -1,12 +1,17 @@
-// 🔀 PRs — R panel's raw PR inventory.
+// 🔀 PRs — R panel's raw PR inventory (R₁).
 //
-// Reuses `useUnitPrs` (the same wire C's `🔀 Unit PRs` reads — one
-// source, two consumers). Shows open PRs grouped by repo, no
+// Reuses `useUnitPrs` (one source). Shows open PRs grouped by repo, no
 // severity-color badges. Mechanical CI / review state is plain text:
-// the R panel intentionally does NOT carry the appraisal-flavoured
-// badges of C's `UnitPrsSection` (no `text-warning` / `text-success`
-// / `text-destructive`) — see the approach's "tmai は何を絶対しない"
-// rules 2 and 4.
+// R₁ intentionally carries NO appraisal-flavoured badges (no
+// `text-warning` / `text-success` / `text-destructive`) — see the
+// approach's "tmai は何を絶対しない" rules 2 and 4. The C-column
+// `UnitPrsSection` that once mirrored this inventory (and held the merge
+// action) is retired; R is now the single PR surface. The merge /
+// override / CI-rerun action layer lives in R₂ (`RPrViewer`), where the
+// soft-valve's severity accents are load-bearing affordances — distinct
+// from this plain inventory. A row click hands R₂ the PR plus the
+// repo-level `billing_dead` flag (which lives on `RepoPrsWire`, not on
+// the PR) so R₂ can offer the billing-dead override.
 
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import type { PrSummaryWire, RepoPrsWire } from "@/lib/api";
@@ -109,6 +114,10 @@ function RepoBlock({
   selectedKey: string | null;
 }) {
   if (repo.prs.length === 0) return null;
+  // billing-dead lives on the REPO, not the PR. Thread it into the R₂
+  // selection so the viewer's override-merge affordance knows whether
+  // this PR's repo is flagged. Absent-when-false ⇒ `=== true`.
+  const billingDead = repo.billing_dead === true;
   return (
     <div>
       {multiRepo && (
@@ -123,6 +132,7 @@ function RepoBlock({
             pr={pr}
             repoPath={repo.repo_path}
             repoLabel={repo.repo_label}
+            billingDead={billingDead}
             onSelectPr={onSelectPr}
             selected={selectedKey === selectedPrKey(repo.repo_path, pr.number)}
           />
@@ -136,12 +146,14 @@ function PrRow({
   pr,
   repoPath,
   repoLabel,
+  billingDead,
   onSelectPr,
   selected,
 }: {
   pr: PrSummaryWire;
   repoPath: string;
   repoLabel: string;
+  billingDead: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selected: boolean;
 }) {
@@ -157,7 +169,7 @@ function PrRow({
     <li className="leading-snug">
       <button
         type="button"
-        onClick={() => onSelectPr?.({ repoPath, repoLabel, pr })}
+        onClick={() => onSelectPr?.({ repoPath, repoLabel, pr, billingDead })}
         aria-current={selected ? "true" : undefined}
         className={`w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
           selected ? "bg-surface-strong/40" : ""
