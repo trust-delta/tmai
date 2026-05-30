@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
-// RPrsSection — open PR list with NO severity-color CI / review
-// badges. Negative-space check: the C-column UnitPrsSection uses
-// text-warning/destructive/success classes for state; R intentionally
-// does not.
+// RPrsSection — open PR list (R₁) with NO severity-color CI / review
+// badges. R₁ is pure inventory; the merge/override action layer (with
+// its load-bearing soft-valve accents) lives in R₂. A row click threads
+// the repo-level `billing_dead` flag into the R₂ selection so the
+// override-merge affordance knows whether the PR's repo is flagged.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -98,7 +99,7 @@ describe("RPrsSection", () => {
     expect(container.querySelector("a[href*='github.com']")).toBeNull();
   });
 
-  it("clicking a PR row selects it for the R₂ viewer", async () => {
+  it("clicking a PR row selects it for the R₂ viewer (billingDead defaults false)", async () => {
     const onSelectPr = vi.fn();
     unitPrsMock.mockResolvedValue(response([pr()]));
     render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} onSelectPr={onSelectPr} />);
@@ -110,5 +111,24 @@ describe("RPrsSection", () => {
     const sel = onSelectPr.mock.calls[0][0];
     expect(sel.repoPath).toBe("/p/u");
     expect(sel.pr.number).toBe(100n);
+    // billing_dead absent on the wire ⇒ threaded as false.
+    expect(sel.billingDead).toBe(false);
+  });
+
+  it("threads the repo-level billing_dead flag into the R₂ selection", async () => {
+    const onSelectPr = vi.fn();
+    unitPrsMock.mockResolvedValue({
+      unit: "u",
+      // billing-dead lives on the REPO, not the PR.
+      repos: [
+        { repo_path: "/p/u", repo_label: "u", primary: true, billing_dead: true, prs: [pr()] },
+      ],
+    });
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} onSelectPr={onSelectPr} />);
+    await waitFor(() => {
+      expect(screen.getByText("PR title")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("PR title"));
+    expect(onSelectPr.mock.calls[0][0].billingDead).toBe(true);
   });
 });

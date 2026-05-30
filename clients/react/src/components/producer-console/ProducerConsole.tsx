@@ -29,7 +29,6 @@ import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
 import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
-import { UnitPrsSection } from "./sections/UnitPrsSection";
 import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
 import { WorkingWithThisHumanSection } from "./sections/WorkingWithThisHumanSection";
 
@@ -129,7 +128,6 @@ export function ProducerConsole({
           preconditions={missingPreconditions}
         />
         <SettledDecisionsSection unitName={unitName} />
-        <UnitPrsSection unitName={unitName} />
         <WorkingWithThisHumanSection unitName={unitName} />
       </div>
 

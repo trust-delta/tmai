@@ -1,4 +1,6 @@
-// R₂ — the in-tmai PR content viewer (#749).
+// R₂ — the in-tmai PR content viewer + action layer (#749 content;
+// action layer per the spine `2026-05-29-c-and-r-as-the-development-
+// substrate` "🔀 PRs (iii)").
 //
 // γ-lean shape (`doc/approaches/2026-05-29-artifact-content-viewer.md`,
 // Phase 1, PR artifact kind): an INDEPENDENT right-side viewer column.
@@ -6,8 +8,11 @@
 // selects it and this column renders that PR's full content — diff,
 // body, comments (incl. CodeRabbit), labels, mergeable / review / check
 // status, CI status + failure-log drill-down — entirely in-tmai, with
-// ZERO github.com round-trip. It serves
-// `2026-05-16-dev-loop-completes-in-tmai`.
+// ZERO github.com round-trip, plus the action layer (merge soft-valve /
+// billing-dead override / CI rerun). It serves
+// `2026-05-16-dev-loop-completes-in-tmai` and makes R the SINGLE PR
+// surface (§C: no two coexisting merge paths — the C-column
+// `UnitPrsSection` is retired).
 //
 // Negative space (the serving `2026-05-26-tmai-states-facts-not-appraisals`
 // posture — tmai states facts, never appraises):
@@ -22,12 +27,16 @@
 //     `text-subtle-foreground`, never the C-column warning / destructive /
 //     success accents.
 //
-// The ONE allowed convention is the standard unified-diff `+`/`-`
-// red/green colouring inside the reused `DiffViewer` — that IS the diff
-// fact's conventional representation, not an appraisal layered on top, so
-// `DiffViewer` is used as-is.
+// The status-fact plainness rule does NOT extend to the action layer:
+// action buttons are affordances, not status facts, so the merge
+// soft-valve's success / warning / destructive accents ARE load-bearing
+// (delivered → frictionless / not-delivered → friction / Confirm /
+// override) — see `ViewerActions`. The other allowed convention is the
+// standard unified-diff `+`/`-` red/green colouring inside the reused
+// `DiffViewer` — that IS the diff fact's conventional representation, not
+// an appraisal layered on top, so `DiffViewer` is used as-is.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DiffViewer } from "@/components/worktree/DiffViewer";
@@ -43,6 +52,7 @@ import {
   api,
   type CiCheck,
   type PrComment,
+  type PrMergeOverride,
   type PrMergeStatus,
   type PrSummaryWire,
 } from "@/lib/api";
@@ -51,10 +61,15 @@ import {
 // so the header renders every inventory fact (CI / review / draft /
 // counts) without re-fetching; `repoPath` + the PR number drive the
 // detail fetches.
+//
+// `billingDead` is the repo-level `[github.<repo>] billing_dead` flag —
+// it lives on `RepoPrsWire`, NOT on `PrSummaryWire`, so R₁ threads it
+// down here for the override-merge affordance (see `ViewerActions`).
 export interface SelectedPr {
   repoPath: string;
   repoLabel: string;
   pr: PrSummaryWire;
+  billingDead: boolean;
 }
 
 export function selectedPrKey(repoPath: string, prNumber: bigint): string {
@@ -83,7 +98,7 @@ interface RPrViewerProps {
 }
 
 export function RPrViewer({ selected, onClose }: RPrViewerProps) {
-  const { repoPath, repoLabel, pr } = selected;
+  const { repoPath, repoLabel, pr, billingDead } = selected;
   const prNumber = Number(pr.number);
 
   return (
@@ -100,7 +115,267 @@ export function RPrViewer({ selected, onClose }: RPrViewerProps) {
         <CommentsSection repoPath={repoPath} prNumber={prNumber} />
         <DiffSection repoPath={repoPath} prNumber={prNumber} />
       </div>
+      {/* Action layer — the SINGLE PR merge surface (dev-loop DR §C: no
+          two coexisting merge paths; the C-column `UnitPrsSection` is
+          retired). Keyed by the PR so a fresh selection resets the merge
+          / override / confirm lifecycle (mirrors `UnitPrsSection`'s
+          per-row keying). */}
+      <ViewerActions
+        key={selectedPrKey(repoPath, pr.number)}
+        repoPath={repoPath}
+        pr={pr}
+        billingDead={billingDead}
+        onMerged={onClose}
+      />
     </aside>
+  );
+}
+
+// ── Actions — merge soft-valve + billing-dead override ──
+//
+// Ported 1:1 from the now-retired C-column `UnitPrsSection` `PrRow`. R₂
+// is the single PR surface, so the action layer sits beside the content
+// the operator just reviewed.
+//
+// Negative-space boundary: the viewer's STATUS facts (header /
+// merge-status / CI) stay plain. These are ACTION affordances, not
+// status facts — the soft-valve's success / warning / destructive
+// accents are LOAD-BEARING (success = Δ-brief delivered → frictionless;
+// warning = not delivered → friction; destructive = Confirm / override)
+// and are preserved exactly as the C surface had them.
+
+interface MergeState {
+  busy: boolean;
+  done: boolean;
+  error: string | null;
+  confirming: boolean;
+}
+
+const IDLE_MERGE: MergeState = { busy: false, done: false, error: null, confirming: false };
+
+function ViewerActions({
+  repoPath,
+  pr,
+  billingDead,
+  onMerged,
+}: {
+  repoPath: string;
+  pr: PrSummaryWire;
+  /** `repo.billing_dead === true` — the repo (not the PR) is flagged
+   *  billing-dead, so the CI-safe override affordance is offered. */
+  billingDead: boolean;
+  /** Called after a successful merge so the parent closes R₂ — the
+   *  (now-merged) PR must not linger stale; R₁ reconciles on its next
+   *  60s poll. */
+  onMerged: () => void;
+}) {
+  const prNumber = Number(pr.number);
+  const [merge, setMerge] = useState<MergeState>(IDLE_MERGE);
+
+  // Phase B billing-dead CI-safe override (approach
+  // `2026-05-20-billing-dead-ci-safe-override`). Distinct from the
+  // producer_reviewed valve below — that valve governs only the *normal*
+  // merge button's friction; this is a separate button + panel for the
+  // narrow case where GitHub CI is red *only because* the repo's private
+  // Actions billing lapsed. The UI just collects + sends the attestation;
+  // the backend re-validates the per-repo `billing_dead` flag and is the
+  // real gate.
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  // Pre-fill the override textarea from the Producer's stored ci-local
+  // attestation (`PrSummaryWire.ci_local_attestation`, approach
+  // `2026-05-26-producer-supplied-override-attestation`) so the operator
+  // need not hand-paste. The field stays editable — what's sent is the
+  // textarea content, pre-filled or typed. `?? ""` because the wire field
+  // is optional/nullable; absent ⇒ "" keeps the manual-paste fallback.
+  const prefill = pr.ci_local_attestation ?? "";
+  const hasPrefill = prefill !== "";
+  const [attestation, setAttestation] = useState(prefill);
+  // Whether the operator has touched the textarea since it was (re)armed.
+  // A later poll (a re-selection of the same PR) can bring a changed
+  // `prefill`; we adopt it ONLY while the field is still clean, never
+  // clobbering an operator's edit (the load-bearing line). Cancel re-arms
+  // it so a reopen re-syncs.
+  const [attestationEdited, setAttestationEdited] = useState(false);
+  useEffect(() => {
+    if (!attestationEdited) {
+      setAttestation(prefill);
+    }
+  }, [prefill, attestationEdited]);
+
+  const showOverride = billingDead && pr.check_status === "FAILURE";
+
+  // Stage-2 asymmetric-friction valve (approach
+  // `2026-05-17-producer-review-gated-in-tmai-merge`). The unlock
+  // predicate is a *delivered-state fact* — the Producer's Δ-brief
+  // reached the operator — NOT a Producer approval / merge-worthiness
+  // judgment (§E boundary). `undefined` and `false` are identical "not
+  // delivered"; `=== true` keeps the client lockstep-free and crash-free
+  // if the field is omitted on the wire. Transient: reflects the current
+  // poll only, never persisted (it resets on engine restart).
+  const reviewed = pr.producer_reviewed === true;
+
+  // `override` is threaded straight through to `api.mergePr` and sent
+  // only when present — the normal merge call is byte-for-byte
+  // unchanged. Both paths share this one MergeState lifecycle.
+  const doMerge = async (override?: PrMergeOverride) => {
+    setMerge({ ...IDLE_MERGE, busy: true });
+    try {
+      // bigint → number: the JSON body cannot serialize a BigInt.
+      await api.mergePr(repoPath, prNumber, {
+        method: "squash",
+        deleteBranch: true,
+        ...(override ? { override } : {}),
+      });
+      setMerge({ ...IDLE_MERGE, done: true });
+      onMerged();
+    } catch (e) {
+      setMerge({ ...IDLE_MERGE, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  return (
+    <footer data-testid="r-pr-actions" className="shrink-0 border-t border-hairline px-4 py-3">
+      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle-foreground">
+        Actions
+      </h3>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {reviewed ? (
+          // Δ-brief delivered → frictionless: one click merges, no
+          // arm/confirm step. Affirmative styling. The delivered marker
+          // is NOT an approval — the merge call is still wholly the
+          // operator's; core never blocks on the bit (§E boundary).
+          <button
+            type="button"
+            onClick={() => void doMerge()}
+            disabled={merge.busy}
+            className="rounded bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success transition-colors hover:bg-success/25 disabled:opacity-50"
+          >
+            {merge.busy ? "Merging…" : `Merge #${prNumber}`}
+          </button>
+        ) : !merge.confirming ? (
+          // No Δ-brief delivered → friction + visibility, never a
+          // gate/block. Cautionary styling; arm → dismissible confirm.
+          <button
+            type="button"
+            onClick={() => setMerge((m) => ({ ...m, confirming: true }))}
+            disabled={merge.busy}
+            className="rounded bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning transition-colors hover:bg-warning/25 disabled:opacity-50"
+          >
+            Merge #{prNumber}
+          </button>
+        ) : (
+          // Dismissible by construction: Confirm is always enabled (the
+          // busy-disable is only a double-submit guard, not a gate) and
+          // Cancel always exists. The operator can ALWAYS merge
+          // regardless of review state — friction, not a block.
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[11px] text-warning">
+              Producer review not delivered for this PR — merge anyway?
+            </span>
+            <button
+              type="button"
+              onClick={() => void doMerge()}
+              disabled={merge.busy}
+              className="rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/30 disabled:opacity-50"
+            >
+              {merge.busy ? "Merging…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMerge((m) => ({ ...m, confirming: false }))}
+              disabled={merge.busy}
+              className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </span>
+        )}
+
+        {/* Phase B billing-dead CI-safe override — a DISTINCT affordance
+            from the merge button(s) above (outlined, not filled, so the
+            two are never confused). Offered only when the repo is flagged
+            billing-dead AND this PR's GitHub CI is red. */}
+        {showOverride && (
+          <button
+            type="button"
+            onClick={() => setOverrideOpen((open) => !open)}
+            disabled={merge.busy}
+            title="GitHub CI is red only because this repo's private Actions billing lapsed. Merge with a ci-local attestation — the backend re-validates the per-repo billing_dead flag and is the real gate."
+            className="rounded border border-warning/50 bg-transparent px-2 py-0.5 text-[11px] font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-50"
+          >
+            Override (ci-local attestation)
+          </button>
+        )}
+      </div>
+
+      {showOverride && overrideOpen && (
+        <div className="mt-2 rounded border border-warning/40 bg-warning/[0.05] px-2 py-1.5">
+          {hasPrefill ? (
+            <p className="text-[10.5px] leading-relaxed text-warning">
+              CI is red only because this repo's private Actions billing is dead. The Producer's{" "}
+              <code className="text-foreground">ci-local</code> summary is pre-filled below —
+              review/edit it, then confirm. The backend re-checks the per-repo{" "}
+              <code className="text-foreground">billing_dead</code> flag + attestation before
+              running <code className="text-foreground">gh pr merge --admin</code>.
+            </p>
+          ) : (
+            <p className="text-[10.5px] leading-relaxed text-warning">
+              CI is red only because this repo's private Actions billing is dead. Paste the{" "}
+              <code className="text-foreground">ci-local</code> run summary; the backend re-checks
+              the per-repo <code className="text-foreground">billing_dead</code> flag + attestation
+              before running <code className="text-foreground">gh pr merge --admin</code>.
+            </p>
+          )}
+          <textarea
+            value={attestation}
+            onChange={(e) => {
+              setAttestation(e.target.value);
+              setAttestationEdited(true);
+            }}
+            rows={4}
+            aria-label="CI-local attestation for billing-dead override"
+            placeholder="Paste the ci-local attestation (e.g. the `bash scripts/ci-local.sh` summary)…"
+            className="mt-1.5 w-full rounded border border-hairline-strong/40 bg-surface px-2 py-1 font-mono text-[10.5px] text-foreground placeholder:text-subtle-foreground"
+          />
+          <div className="mt-1.5 flex items-center gap-1.5">
+            {/* Disabled while empty mirrors the backend min-sanity; the
+                backend stays the real gate (flag + attestation). */}
+            <button
+              type="button"
+              onClick={() =>
+                void doMerge({
+                  ci_local_attestation: attestation,
+                  repo_billing_dead_acknowledged: true,
+                })
+              }
+              disabled={merge.busy || attestation.trim() === ""}
+              className="rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/30 disabled:opacity-50"
+            >
+              {merge.busy ? "Merging…" : `Override-merge #${prNumber}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Discard edits and re-arm the prop sync: reopening shows
+                // the latest Producer prefill (or "" when absent), never a
+                // stale paste.
+                setOverrideOpen(false);
+                setAttestation(prefill);
+                setAttestationEdited(false);
+              }}
+              disabled={merge.busy}
+              className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {merge.error && (
+        <p className="mt-1 text-[10.5px] text-destructive/80">Merge failed: {merge.error}</p>
+      )}
+    </footer>
   );
 }
 
@@ -273,6 +548,15 @@ function CiCheckRow({ repoPath, check }: { repoPath: string; check: CiCheck }) {
   const [logError, setLogError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
+  // CI rerun (`POST /github/ci/rerun`) — a LIGHT/direct operator action,
+  // no soft-valve gate (per the spine's Pattern A calibration: rerun is
+  // direct, only merge/override are brief-gated). Keyed by the failed
+  // check's Actions `run_id`, the same field the failure-log drill-down
+  // uses, so it shares the `canDrill` gate (failed + has a run_id).
+  const [rerunBusy, setRerunBusy] = useState(false);
+  const [rerunDone, setRerunDone] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
+
   // Failure log is a drill-down: fetched on the first operator click and
   // cached for the row's lifetime. Only failed checks carrying a `run_id`
   // can be drilled into (the log is keyed by Actions run).
@@ -289,6 +573,17 @@ function CiCheckRow({ repoPath, check }: { repoPath: string; check: CiCheck }) {
       .then((res) => setLog(res.log_text))
       .catch((e: unknown) => setLogError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLogLoading(false));
+  };
+
+  const doRerun = () => {
+    if (check.run_id === null || rerunBusy) return;
+    setRerunBusy(true);
+    setRerunError(null);
+    api
+      .rerunFailedChecks(repoPath, check.run_id)
+      .then(() => setRerunDone(true))
+      .catch((e: unknown) => setRerunError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setRerunBusy(false));
   };
 
   return (
@@ -308,7 +603,23 @@ function CiCheckRow({ repoPath, check }: { repoPath: string; check: CiCheck }) {
             {open ? "Hide failure log" : "View failure log"}
           </button>
         )}
+        {canDrill && (
+          // Plain/neutral styling — a light direct action, not a
+          // soft-valve affordance, so no severity accent (the rerun's
+          // feedback below stays plain for the same reason).
+          <button
+            type="button"
+            onClick={doRerun}
+            disabled={rerunBusy || rerunDone}
+            className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
+          >
+            {rerunBusy ? "Rerunning…" : rerunDone ? "Rerun queued" : "CI rerun"}
+          </button>
+        )}
       </div>
+      {rerunError && (
+        <p className="mt-0.5 text-[10px] text-muted-foreground">Rerun failed: {rerunError}</p>
+      )}
       {open && (
         <div className="mt-1">
           {logLoading && <Loading />}
