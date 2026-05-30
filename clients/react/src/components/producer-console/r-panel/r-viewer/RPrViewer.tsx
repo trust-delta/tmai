@@ -56,6 +56,7 @@ import {
   type PrMergeStatus,
   type PrSummaryWire,
 } from "@/lib/api";
+import { PROSE_CLASSES } from "./prose";
 
 // What R₁ hands R₂ on a row click. The full `PrSummaryWire` rides along
 // so the header renders every inventory fact (CI / review / draft /
@@ -75,22 +76,6 @@ export interface SelectedPr {
 export function selectedPrKey(repoPath: string, prNumber: bigint): string {
   return `${repoPath}#${prNumber}`;
 }
-
-// Markdown prose classes — same palette the transcript / digest markdown
-// uses so the body and comments read like the rest of the WebUI.
-const PROSE_CLASSES = `prose prose-invert prose-sm max-w-none
-  prose-headings:text-foreground prose-headings:font-semibold
-  prose-p:text-foreground prose-p:leading-relaxed prose-p:my-1
-  prose-a:text-info prose-a:no-underline hover:prose-a:underline
-  prose-strong:text-foreground
-  prose-code:text-primary prose-code:bg-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
-  prose-pre:bg-surface-strong/50 prose-pre:border prose-pre:border-hairline prose-pre:rounded-lg prose-pre:my-1
-  prose-li:text-foreground prose-li:my-0
-  prose-ul:my-1 prose-ol:my-1
-  prose-th:text-foreground prose-th:border-hairline-strong
-  prose-td:text-muted-foreground prose-td:border-hairline-strong
-  prose-hr:border-hairline-strong
-  prose-blockquote:border-info/30 prose-blockquote:text-muted-foreground`;
 
 interface RPrViewerProps {
   selected: SelectedPr;

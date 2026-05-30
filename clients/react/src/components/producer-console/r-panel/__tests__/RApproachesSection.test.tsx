@@ -3,7 +3,7 @@
 // RApproachesSection — status group, date desc within, no
 // verification-debt gauge (that's C's layer), no filter chips.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApproachesResponse, ApproachWire } from "@/lib/api";
 
@@ -21,6 +21,7 @@ vi.mock("@/lib/api", async () => {
 });
 
 import { RApproachesSection } from "../RApproachesSection";
+import { type SelectedRecord, selectedRecordKey } from "../r-viewer/RRecordViewer";
 
 function approachStub(overrides: Partial<ApproachWire> = {}): ApproachWire {
   return {
@@ -121,5 +122,43 @@ describe("RApproachesSection", () => {
       expect(screen.getByText(/2 running/)).toBeTruthy();
     });
     expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+  });
+
+  // ── R₂ selection wiring (mirrors RPrsSection's onSelectPr/aria-current) ──
+
+  it("clicking a row calls onSelect with the approach wire object", async () => {
+    approachesMock.mockResolvedValue(
+      responseStub([approachStub({ slug: "2026-05-01-a", title: "Approach A" })]),
+    );
+    const onSelect = vi.fn();
+    render(
+      <RApproachesSection unitName="u" expanded={true} onToggle={vi.fn()} onSelect={onSelect} />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Approach A/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    const arg = onSelect.mock.calls[0][0] as SelectedRecord;
+    expect(arg.kind).toBe("approach");
+    expect(arg.repoPath).toBe("/p/u");
+    expect(arg.repoLabel).toBe("u");
+    expect(arg.record.slug).toBe("2026-05-01-a");
+  });
+
+  it("marks the focused row with aria-current", async () => {
+    approachesMock.mockResolvedValue(
+      responseStub([approachStub({ slug: "2026-05-01-a", title: "Approach A" })]),
+    );
+    render(
+      <RApproachesSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelect={vi.fn()}
+        selectedKey={selectedRecordKey("/p/u", "2026-05-01-a")}
+      />,
+    );
+
+    const row = await screen.findByRole("button", { name: /Approach A/ });
+    expect(row.getAttribute("aria-current")).toBe("true");
   });
 });

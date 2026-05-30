@@ -13,11 +13,11 @@ import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitua
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
 import { RPanel } from "@/components/producer-console/r-panel/RPanel";
+import { RPrViewer, selectedPrKey } from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
 import {
-  RPrViewer,
-  type SelectedPr,
-  selectedPrKey,
-} from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
+  RRecordViewer,
+  selectedRecordKey,
+} from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
 import { ProducerFeedChip } from "@/components/producer-feed/ProducerFeedChip";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -28,6 +28,7 @@ import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
 import { useCalibration } from "@/hooks/useCalibration";
+import { useFocusedArtifact } from "@/hooks/useFocusedArtifact";
 import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -122,12 +123,23 @@ export function App() {
   // through the shared useSplitPane engine (ratio-based), so we convert
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
-  // The PR open in the independent R₂ viewer column (#749). `null` =
-  // no viewer (it never auto-opens — the operator clicks a row in the
-  // R₁ inventory to select; viewer-approach negative space). Lives at
-  // App level because R₂ renders as a sibling column of <main> / RPanel,
-  // not inside the inventory panel (R₁ stays a pure inventory).
-  const [selectedPr, setSelectedPr] = useState<SelectedPr | null>(null);
+  // The artifact open in the independent R₂ viewer column. R₂ hosts
+  // exactly ONE focused artifact at a time — a PR (#749), a decision, or
+  // an approach — so focusing one kind clears the other (the invariant
+  // lives in `useFocusedArtifact`). `null`/`null` = no viewer (it never
+  // auto-opens — the operator clicks a row in the R₁ inventory to select;
+  // viewer-approach negative space). Lives at App level because R₂
+  // renders as a sibling column of <main> / RPanel, not inside the
+  // inventory panel (R₁ stays a pure inventory).
+  const {
+    selectedPr,
+    selectedRecord,
+    selectPr,
+    selectRecord,
+    clearPr,
+    clearRecord,
+    clearAll: clearFocusedArtifact,
+  } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
   const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
@@ -185,13 +197,14 @@ export function App() {
   const { data: calibrationData } = useCalibration(unitName);
   const { data: producerFeedData } = useProducerFeed(unitName);
 
-  // Close the R₂ PR viewer when the focused unit changes — its open PR
-  // belongs to the previous unit, so it must not linger under a new
-  // unit's inventory (mirrors useUnitPrs clearing its list on unit change).
-  // unitName is the intended trigger even though the body only clears state.
+  // Close the R₂ viewer when the focused unit changes — its open artifact
+  // (PR or record) belongs to the previous unit, so it must not linger
+  // under a new unit's inventory (mirrors useUnitPrs clearing its list on
+  // unit change). unitName is the intended trigger even though the body
+  // only clears state.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional unit-change trigger
   useEffect(() => {
-    setSelectedPr(null);
+    clearFocusedArtifact();
   }, [unitName]);
   // Configured-unit membership (tmai-core #460 — wire half of #439).
   // Threaded into `findProducerForUnit` below so multi-repo units
@@ -805,9 +818,15 @@ export function App() {
             onDoubleClick: () => setRPanelWidth(ATTENTION_STRIP_WIDTH_DEFAULT),
             onAdjust: rPanelSplit.adjustRatio,
           }}
-          onSelectPr={setSelectedPr}
+          onSelectPr={selectPr}
           selectedPrKey={
             selectedPr ? selectedPrKey(selectedPr.repoPath, selectedPr.pr.number) : null
+          }
+          onSelectRecord={selectRecord}
+          selectedRecordKey={
+            selectedRecord
+              ? selectedRecordKey(selectedRecord.repoPath, selectedRecord.record.slug)
+              : null
           }
         />
       )}
@@ -819,7 +838,22 @@ export function App() {
           same narrow/mobile guard as RPanel so it never crowds a small
           viewport. */}
       {!isNarrowScreen && !isMobileScreen && selectedPr && (
-        <RPrViewer selected={selectedPr} onClose={() => setSelectedPr(null)} />
+        <RPrViewer selected={selectedPr} onClose={clearPr} />
+      )}
+
+      {/* R₂ — independent in-tmai record content viewer column (decisions +
+          approaches). Shares the R₂ column with the PR viewer above:
+          `useFocusedArtifact` keeps the two mutually exclusive, so at most
+          one renders. Present ONLY when the operator has selected a record
+          in the R₁ inventory (never auto-opens). Same narrow/mobile guard
+          as RPanel. */}
+      {!isNarrowScreen && !isMobileScreen && selectedRecord && (
+        <RRecordViewer
+          selected={selectedRecord}
+          unitName={unitName}
+          onSelectRecord={selectRecord}
+          onClose={clearRecord}
+        />
       )}
 
       {/* Help overlay */}

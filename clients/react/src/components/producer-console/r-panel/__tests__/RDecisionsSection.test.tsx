@@ -21,6 +21,7 @@ vi.mock("@/lib/api", async () => {
 });
 
 import { RDecisionsSection } from "../RDecisionsSection";
+import { type SelectedRecord, selectedRecordKey } from "../r-viewer/RRecordViewer";
 
 function decisionStub(overrides: Partial<DecisionWire> = {}): DecisionWire {
   return {
@@ -152,5 +153,57 @@ describe("RDecisionsSection", () => {
     render(<RDecisionsSection unitName={null} expanded={true} onToggle={vi.fn()} />);
     expect(screen.getByText(/Pick a project/i)).toBeTruthy();
     expect(decisionsMock).not.toHaveBeenCalled();
+  });
+
+  // ── R₂ selection wiring (mirrors RPrsSection's onSelectPr/aria-current) ──
+
+  it("clicking a row calls onSelect with the decision wire object", async () => {
+    decisionsMock.mockResolvedValue(
+      responseStub({
+        repos: [
+          {
+            ...responseStub().repos[0],
+            in_play: [decisionStub({ slug: "2026-05-01-a", title: "Decision A" })],
+          },
+        ],
+      }),
+    );
+    const onSelect = vi.fn();
+    render(
+      <RDecisionsSection unitName="u" expanded={true} onToggle={vi.fn()} onSelect={onSelect} />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Decision A/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    const arg = onSelect.mock.calls[0][0] as SelectedRecord;
+    expect(arg.kind).toBe("decision");
+    expect(arg.repoPath).toBe("/p/u");
+    expect(arg.repoLabel).toBe("u");
+    expect(arg.record.slug).toBe("2026-05-01-a");
+  });
+
+  it("marks the focused row with aria-current", async () => {
+    decisionsMock.mockResolvedValue(
+      responseStub({
+        repos: [
+          {
+            ...responseStub().repos[0],
+            in_play: [decisionStub({ slug: "2026-05-01-a", title: "Decision A" })],
+          },
+        ],
+      }),
+    );
+    render(
+      <RDecisionsSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelect={vi.fn()}
+        selectedKey={selectedRecordKey("/p/u", "2026-05-01-a")}
+      />,
+    );
+
+    const row = await screen.findByRole("button", { name: /Decision A/ });
+    expect(row.getAttribute("aria-current")).toBe("true");
   });
 });

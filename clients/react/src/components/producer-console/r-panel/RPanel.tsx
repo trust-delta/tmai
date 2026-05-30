@@ -37,6 +37,7 @@ import { RHandoverSection } from "./RHandoverSection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
+import type { SelectedRecord } from "./r-viewer/RRecordViewer";
 
 export interface RPanelResize {
   width: number;
@@ -65,6 +66,13 @@ interface RPanelProps {
   /** `selectedPrKey(...)` of the PR currently open in R₂, so the R₁ row
    *  marks itself as the one being viewed. */
   selectedPrKey?: string | null;
+  /** Open a decision/approach in the R₂ record viewer column. Threaded to
+   *  the R₁ Decisions + Approaches inventories so a row click selects the
+   *  record for in-tmai viewing. */
+  onSelectRecord?: (sel: SelectedRecord) => void;
+  /** `selectedRecordKey(...)` of the record currently open in R₂, so the
+   *  focused R₁ Decisions/Approaches row marks itself. */
+  selectedRecordKey?: string | null;
 }
 
 const SECTION_IDS = [
@@ -88,6 +96,8 @@ export function RPanel({
   resize,
   onSelectPr,
   selectedPrKey,
+  onSelectRecord,
+  selectedRecordKey,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
 
@@ -199,11 +209,15 @@ export function RPanel({
           unitName={unitName}
           expanded={isExpanded("decisions")}
           onToggle={() => toggle("decisions")}
+          onSelect={onSelectRecord}
+          selectedKey={selectedRecordKey}
         />
         <RApproachesSection
           unitName={unitName}
           expanded={isExpanded("approaches")}
           onToggle={() => toggle("approaches")}
+          onSelect={onSelectRecord}
+          selectedKey={selectedRecordKey}
         />
         <RCalibrationSection
           unitName={unitName}

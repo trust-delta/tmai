@@ -8,15 +8,30 @@
 
 import { useDecisions } from "@/hooks/useDecisions";
 import type { DecisionWire, RepoDecisionsWire } from "@/lib/api";
+import { type SelectedRecord, selectedRecordKey } from "./r-viewer/RRecordViewer";
 import { Section } from "./Section";
 
 interface RDecisionsSectionProps {
   unitName: string | null;
   expanded: boolean;
   onToggle: () => void;
+  /** Open a decision in the R₂ record viewer column. Clicking a row
+   *  selects it for in-tmai viewing (mirrors `RPrsSection.onSelectPr`).
+   *  Optional so the section still renders standalone in isolation. */
+  onSelect?: (sel: SelectedRecord) => void;
+  /** `selectedRecordKey(repoPath, slug)` of the record currently open in
+   *  R₂, so the row marks itself as the one being viewed (a mechanical
+   *  "open here" fact, not appraisal). */
+  selectedKey?: string | null;
 }
 
-export function RDecisionsSection({ unitName, expanded, onToggle }: RDecisionsSectionProps) {
+export function RDecisionsSection({
+  unitName,
+  expanded,
+  onToggle,
+  onSelect,
+  selectedKey,
+}: RDecisionsSectionProps) {
   const { data, loading, error } = useDecisions(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + flattenAll(r).length, 0);
 
@@ -29,7 +44,14 @@ export function RDecisionsSection({ unitName, expanded, onToggle }: RDecisionsSe
       expanded={expanded}
       onToggle={onToggle}
     >
-      <Body unitName={unitName} repos={data?.repos ?? null} loading={loading} error={error} />
+      <Body
+        unitName={unitName}
+        repos={data?.repos ?? null}
+        loading={loading}
+        error={error}
+        onSelect={onSelect}
+        selectedKey={selectedKey ?? null}
+      />
     </Section>
   );
 }
@@ -43,9 +65,11 @@ interface BodyProps {
   repos: RepoDecisionsWire[] | null;
   loading: boolean;
   error: Error | null;
+  onSelect?: (sel: SelectedRecord) => void;
+  selectedKey: string | null;
 }
 
-function Body({ unitName, repos, loading, error }: BodyProps) {
+function Body({ unitName, repos, loading, error, onSelect, selectedKey }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see decisions.</p>;
   }
@@ -75,18 +99,56 @@ function Body({ unitName, repos, loading, error }: BodyProps) {
             )}
             <ul className="space-y-0.5">
               {sorted.map((d) => (
-                <li key={d.slug} className="leading-snug">
-                  <span className="font-mono text-subtle-foreground">{d.last_verified}</span>{" "}
-                  <span className="text-foreground">{d.title}</span>
-                  <div className="text-[11px] text-subtle-foreground">
-                    {d.slug} · {d.status}
-                  </div>
-                </li>
+                <DecisionRow
+                  key={d.slug}
+                  decision={d}
+                  repoPath={repo.repo_root}
+                  repoLabel={repo.repo_label}
+                  onSelect={onSelect}
+                  selected={selectedKey === selectedRecordKey(repo.repo_root, d.slug)}
+                />
               ))}
             </ul>
           </div>
         );
       })}
     </div>
+  );
+}
+
+// The whole row is a button that opens the decision in the R₂ record
+// viewer (mirrors `RPrsSection`'s `PrRow`). `aria-current` marks the row
+// whose content is currently open in R₂ — a mechanical "open here" fact,
+// no severity styling.
+function DecisionRow({
+  decision,
+  repoPath,
+  repoLabel,
+  onSelect,
+  selected,
+}: {
+  decision: DecisionWire;
+  repoPath: string;
+  repoLabel: string;
+  onSelect?: (sel: SelectedRecord) => void;
+  selected: boolean;
+}) {
+  return (
+    <li className="leading-snug">
+      <button
+        type="button"
+        onClick={() => onSelect?.({ kind: "decision", repoPath, repoLabel, record: decision })}
+        aria-current={selected ? "true" : undefined}
+        className={`w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
+          selected ? "bg-surface-strong/40" : ""
+        }`}
+      >
+        <span className="font-mono text-subtle-foreground">{decision.last_verified}</span>{" "}
+        <span className="text-foreground">{decision.title}</span>
+        <div className="text-[11px] text-subtle-foreground">
+          {decision.slug} · {decision.status}
+        </div>
+      </button>
+    </li>
   );
 }
