@@ -249,8 +249,176 @@
     }
   },
   {
+    "description": "Get issue body",
+    "name": "get_issue_body",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "issue_number": {
+          "description": "Issue number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "issue_number"
+      ],
+      "title": "IssueNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get issue comments",
+    "name": "get_issue_comments",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "issue_number": {
+          "description": "Issue number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "issue_number"
+      ],
+      "title": "IssueNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get issue labels",
+    "name": "get_issue_labels",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "issue_number": {
+          "description": "Issue number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "issue_number"
+      ],
+      "title": "IssueNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get PR description body",
+    "name": "get_pr_body",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "PrNumberParams",
+      "type": "object"
+    }
+  },
+  {
     "description": "Get PR comments and reviews",
     "name": "get_pr_comments",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "PrNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get PR unified diff",
+    "name": "get_pr_diff",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pr_number": {
+          "description": "Pull request number",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "default": null,
+          "description": "Repository path (optional, defaults to first registered project)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pr_number"
+      ],
+      "title": "PrNumberParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get PR labels",
+    "name": "get_pr_labels",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -328,6 +496,59 @@
         "id"
       ],
       "title": "AgentIdParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get a file's content from a unit repo (repo must be in the unit; path must resolve within it; 1 MB limit). Read-only.",
+    "name": "get_unit_file",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Params for the unit-scoped file content tool (issue #472).",
+      "properties": {
+        "path": {
+          "description": "File path — must resolve within `repo`.",
+          "type": "string"
+        },
+        "repo": {
+          "description": "Repo root — must be one of the unit's `repos[]` (as listed by\n`list_unit_files`).",
+          "type": "string"
+        },
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "repo",
+        "path"
+      ],
+      "title": "UnitFileContentParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the raw markdown of a unit hand-over baton (active or a named archive)",
+    "name": "get_unit_handoff",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Params for the hand-off content tool (issue #472).",
+      "properties": {
+        "name": {
+          "description": "`active` for the live baton, or an archive filename as returned by\n`list_unit_handoffs`.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "name"
+      ],
+      "title": "UnitHandoffContentParams",
       "type": "object"
     }
   },
@@ -465,6 +686,44 @@
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "EmptyParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List files in a unit's repos (one tree per unit repo). Read-only.",
+    "name": "list_unit_files",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
+      "properties": {
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "UnitParams",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List a unit's hand-over batons (active + archived) with parsed composed_at/task. Read-only.",
+    "name": "list_unit_handoffs",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
+      "properties": {
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "UnitParams",
       "type": "object"
     }
   },
