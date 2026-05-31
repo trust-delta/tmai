@@ -14,12 +14,20 @@
 
 import { useApproaches } from "@/hooks/useApproaches";
 import type { ApproachStatus, ApproachWire, RepoApproachesWire } from "@/lib/api";
+import { type SelectedRecord, selectedRecordKey } from "./r-viewer/RRecordViewer";
 import { Section } from "./Section";
 
 interface RApproachesSectionProps {
   unitName: string | null;
   expanded: boolean;
   onToggle: () => void;
+  /** Open an approach in the R₂ record viewer column (mirrors
+   *  `RPrsSection.onSelectPr`). Optional so the section still renders
+   *  standalone in isolation. */
+  onSelect?: (sel: SelectedRecord) => void;
+  /** `selectedRecordKey(repoPath, slug)` of the record currently open in
+   *  R₂, so the row marks itself as the one being viewed. */
+  selectedKey?: string | null;
 }
 
 const STATUS_ORDER: readonly ApproachStatus[] = [
@@ -32,7 +40,13 @@ const STATUS_ORDER: readonly ApproachStatus[] = [
   "replaced",
 ];
 
-export function RApproachesSection({ unitName, expanded, onToggle }: RApproachesSectionProps) {
+export function RApproachesSection({
+  unitName,
+  expanded,
+  onToggle,
+  onSelect,
+  selectedKey,
+}: RApproachesSectionProps) {
   const { data, loading, error } = useApproaches(unitName);
   const running =
     data === null
@@ -51,7 +65,14 @@ export function RApproachesSection({ unitName, expanded, onToggle }: RApproaches
       expanded={expanded}
       onToggle={onToggle}
     >
-      <Body unitName={unitName} repos={data?.repos ?? null} loading={loading} error={error} />
+      <Body
+        unitName={unitName}
+        repos={data?.repos ?? null}
+        loading={loading}
+        error={error}
+        onSelect={onSelect}
+        selectedKey={selectedKey ?? null}
+      />
     </Section>
   );
 }
@@ -61,9 +82,11 @@ interface BodyProps {
   repos: RepoApproachesWire[] | null;
   loading: boolean;
   error: Error | null;
+  onSelect?: (sel: SelectedRecord) => void;
+  selectedKey: string | null;
 }
 
-function Body({ unitName, repos, loading, error }: BodyProps) {
+function Body({ unitName, repos, loading, error, onSelect, selectedKey }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see approaches.</p>;
   }
@@ -80,13 +103,29 @@ function Body({ unitName, repos, loading, error }: BodyProps) {
   return (
     <div className="space-y-2">
       {repos.map((repo) => (
-        <RepoBlock key={repo.repo_root} repo={repo} multiRepo={multiRepo} />
+        <RepoBlock
+          key={repo.repo_root}
+          repo={repo}
+          multiRepo={multiRepo}
+          onSelect={onSelect}
+          selectedKey={selectedKey}
+        />
       ))}
     </div>
   );
 }
 
-function RepoBlock({ repo, multiRepo }: { repo: RepoApproachesWire; multiRepo: boolean }) {
+function RepoBlock({
+  repo,
+  multiRepo,
+  onSelect,
+  selectedKey,
+}: {
+  repo: RepoApproachesWire;
+  multiRepo: boolean;
+  onSelect?: (sel: SelectedRecord) => void;
+  selectedKey: string | null;
+}) {
   // Group by status then sort by date desc within each group. No
   // filter chips — every status is shown, every item is rendered.
   const byStatus = new Map<ApproachStatus, ApproachWire[]>();
@@ -115,16 +154,54 @@ function RepoBlock({ repo, multiRepo }: { repo: RepoApproachesWire; multiRepo: b
             </p>
             <ul className="space-y-0.5">
               {list.map((a) => (
-                <li key={a.slug} className="leading-snug">
-                  <span className="font-mono text-subtle-foreground">{a.date}</span>{" "}
-                  <span className="text-foreground">{a.title}</span>
-                  <div className="text-[11px] text-subtle-foreground">{a.slug}</div>
-                </li>
+                <ApproachRow
+                  key={a.slug}
+                  approach={a}
+                  repoPath={repo.repo_root}
+                  repoLabel={repo.repo_label}
+                  onSelect={onSelect}
+                  selected={selectedKey === selectedRecordKey(repo.repo_root, a.slug)}
+                />
               ))}
             </ul>
           </div>
         );
       })}
     </div>
+  );
+}
+
+// The whole row is a button that opens the approach in the R₂ record
+// viewer (mirrors `RPrsSection`'s `PrRow`). `aria-current` marks the row
+// whose content is currently open in R₂ — a mechanical "open here" fact,
+// no severity styling.
+function ApproachRow({
+  approach,
+  repoPath,
+  repoLabel,
+  onSelect,
+  selected,
+}: {
+  approach: ApproachWire;
+  repoPath: string;
+  repoLabel: string;
+  onSelect?: (sel: SelectedRecord) => void;
+  selected: boolean;
+}) {
+  return (
+    <li className="leading-snug">
+      <button
+        type="button"
+        onClick={() => onSelect?.({ kind: "approach", repoPath, repoLabel, record: approach })}
+        aria-current={selected ? "true" : undefined}
+        className={`w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
+          selected ? "bg-surface-strong/40" : ""
+        }`}
+      >
+        <span className="font-mono text-subtle-foreground">{approach.date}</span>{" "}
+        <span className="text-foreground">{approach.title}</span>
+        <div className="text-[11px] text-subtle-foreground">{approach.slug}</div>
+      </button>
+    </li>
   );
 }
