@@ -18,6 +18,10 @@ import {
   selectedCalibrationKey,
 } from "@/components/producer-console/r-panel/r-viewer/RCalibrationViewer";
 import {
+  RHandoverViewer,
+  selectedHandoffKey,
+} from "@/components/producer-console/r-panel/r-viewer/RHandoverViewer";
+import {
   RIssueViewer,
   selectedIssueKey,
 } from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
@@ -132,9 +136,10 @@ export function App() {
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
   // The artifact in focus in R₂. R₂ hosts exactly ONE focused artifact at
-  // a time — a PR (#749), a record (decision/approach), an issue, or the
-  // unit's calibration — so focusing one kind clears the others (the
-  // invariant lives in `useFocusedArtifact`). All null = no viewer (it
+  // a time — a PR (#749), a record (decision/approach), an issue, the
+  // unit's calibration, or a hand-over baton — so focusing one kind clears
+  // the others (the invariant lives in `useFocusedArtifact`). All null = no
+  // viewer (it
   // never auto-opens — the operator clicks a row in the R₁ inventory to
   // select; viewer-approach negative space). Lives at App level because
   // focus mode (spine
@@ -147,14 +152,17 @@ export function App() {
     selectedRecord,
     selectedIssue,
     selectedCalibration,
+    selectedHandoff,
     selectPr,
     selectRecord,
     selectIssue,
     selectCalibration,
+    selectHandoff,
     clearPr,
     clearRecord,
     clearIssue,
     clearCalibration,
+    clearHandoff,
     clearAll: clearFocusedArtifact,
   } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
@@ -215,8 +223,9 @@ export function App() {
   const { data: producerFeedData } = useProducerFeed(unitName);
 
   // Close the R₂ viewer when the focused unit changes — its open artifact
-  // (PR, record, or issue) belongs to the previous unit, so it must not
-  // linger under a new unit's inventory (mirrors useUnitPrs clearing its
+  // (PR, record, issue, calibration, or hand-over baton) belongs to the
+  // previous unit, so it must not linger under a new unit's inventory
+  // (mirrors useUnitPrs clearing its
   // list on unit change). unitName is the intended trigger even though the
   // body only clears state.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional unit-change trigger
@@ -601,7 +610,7 @@ export function App() {
   );
 
   // Focus-mode viewer node (spine `2026-05-29-c-and-r-as-the-development-
-  // substrate`). At most one of the four is non-null (`useFocusedArtifact`
+  // substrate`). At most one of the five is non-null (`useFocusedArtifact`
   // keeps them mutually exclusive), so this resolves to a single viewer or
   // null. It is handed to RPanel as `viewer`, where it REPLACES the R₁
   // inventory body in the same column — opening/closing it never changes
@@ -620,6 +629,8 @@ export function App() {
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
   ) : selectedCalibration ? (
     <RCalibrationViewer selected={selectedCalibration} onClose={clearCalibration} />
+  ) : selectedHandoff ? (
+    <RHandoverViewer selected={selectedHandoff} onClose={clearHandoff} />
   ) : null;
 
   return (
@@ -884,6 +895,10 @@ export function App() {
           onSelectCalibration={selectCalibration}
           selectedCalibrationKey={
             selectedCalibration ? selectedCalibrationKey(selectedCalibration.unit) : null
+          }
+          onSelectHandoff={selectHandoff}
+          selectedHandoffKey={
+            selectedHandoff ? selectedHandoffKey(selectedHandoff.unit, selectedHandoff.name) : null
           }
           viewer={rViewer}
         />

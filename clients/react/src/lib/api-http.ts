@@ -13,7 +13,10 @@ import type { Confidence } from "@/types/generated/Confidence";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
+import type { HandoffContentResponse } from "@/types/generated/HandoffContentResponse";
+import type { HandoffEntryWire } from "@/types/generated/HandoffEntryWire";
 import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
+import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
@@ -52,7 +55,10 @@ export type {
   Confidence,
   DispatchBundle,
   EntityUpdateEnvelope,
+  HandoffContentResponse,
+  HandoffEntryWire,
   HandoffRitualEvent,
+  HandoffsResponse,
   Outcome,
   PermissionMode,
   PrDiffResponse,
@@ -1519,6 +1525,20 @@ export const api = {
   // without a Producer being attached.
   workingWithHuman: (unit: string) =>
     apiFetch<WorkingWithHumanResponse>(`/units/${encodeURIComponent(unit)}/working-with-human`),
+
+  // Hand-over batons (read-only) — the operator-side half of tmai-core PR
+  // #473's handoffs endpoint. `unitHandoffs` lists the unit's batons
+  // (active first, then archived newest-first — the wire order); each entry
+  // carries the baton name, an active/archived flag, and parsed-frontmatter
+  // `composed_at` / `task`. `unitHandoff` fetches one baton's raw markdown
+  // (frontmatter + body verbatim) by name ("active" or an archive
+  // filename). Thin wrappers, mirroring `calibration` / `decisions`.
+  unitHandoffs: (unit: string) =>
+    apiFetch<HandoffsResponse>(`/units/${encodeURIComponent(unit)}/handoffs`),
+  unitHandoff: (unit: string, name: string) =>
+    apiFetch<HandoffContentResponse>(
+      `/units/${encodeURIComponent(unit)}/handoffs/${encodeURIComponent(name)}`,
+    ),
 
   // Handoff-and-restart ritual (tmai-core PR #352, DR
   // `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C/§F). Kicks off the

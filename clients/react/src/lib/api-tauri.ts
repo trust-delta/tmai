@@ -277,6 +277,11 @@ export const api = {
   // compose()'s ◐ section; no Tauri-specific path needed)
   workingWithHuman: (unit: string) => httpApi.workingWithHuman(unit),
 
+  // Hand-over batons (HTTP only — read-only file-backed baton store, the
+  // operator-side half of tmai-core #473; no Tauri-specific path needed)
+  unitHandoffs: (unit: string) => httpApi.unitHandoffs(unit),
+  unitHandoff: (unit: string, name: string) => httpApi.unitHandoff(unit, name),
+
   // Handoff-and-restart ritual (HTTP only — server-driven multi-step
   // ritual emits its own SSE phase events; no Tauri IPC equivalent).
   triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>
