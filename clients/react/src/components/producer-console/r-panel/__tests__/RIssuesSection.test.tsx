@@ -112,6 +112,26 @@ describe("RIssuesSection", () => {
     expect(sel.issue.number).toBe(1);
   });
 
+  it("derives a non-empty repoLabel even when the project path has a trailing slash", async () => {
+    const onSelectIssue = vi.fn();
+    listIssuesMock.mockResolvedValue([issue()]);
+    render(
+      <RIssuesSection
+        currentProjectPath="/p/u/"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelectIssue={onSelectIssue}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Issue 1")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Issue 1"));
+    // Trailing slash must not blank the label — empty segments are dropped
+    // so the basename still resolves.
+    expect(onSelectIssue.mock.calls[0][0].repoLabel).toBe("u");
+  });
+
   it("marks the focused row with aria-current (and no others)", async () => {
     listIssuesMock.mockResolvedValue([issue(), issue({ number: 2, title: "Issue 2" })]);
     render(

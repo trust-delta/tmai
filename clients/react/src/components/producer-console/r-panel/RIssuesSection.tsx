@@ -33,8 +33,16 @@ interface RIssuesSectionProps {
 // identically to the PR / record viewers. Issues carry no repo_label on
 // the wire (they are per-repo, not unit-scoped), so it is derived from the
 // project path basename — the same derivation App uses for `unitName`.
+//
+// Must NEVER return "" (a blank header reads as broken). `filter(Boolean)`
+// drops empty segments so a trailing slash still yields the basename; when
+// there is no non-empty segment at all (path is "", whitespace, or only
+// slashes) we fall back to the trimmed path, or a non-empty placeholder.
 function repoLabelOf(path: string): string {
-  return path.split("/").filter(Boolean).pop() ?? path;
+  const trimmed = path.trim();
+  const parts = trimmed.split("/").filter(Boolean);
+  if (parts.length > 0) return parts[parts.length - 1];
+  return trimmed || "<unknown>";
 }
 
 export function RIssuesSection({
