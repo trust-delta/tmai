@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 //
 // useFocusedArtifact — the R₂ "exactly one focused artifact" invariant.
-// Focusing a PR clears any focused record and vice versa, so the PR
-// viewer and the record viewer are never both mounted.
+// Focusing any one of a PR / record / issue clears the other two, so the
+// PR viewer, the record viewer, and the issue viewer are never both/all
+// mounted.
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import type { SelectedIssue } from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
 import type { SelectedPr } from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
 import type { SelectedRecord } from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
 import { useFocusedArtifact } from "@/hooks/useFocusedArtifact";
@@ -57,11 +59,27 @@ function recordSelection(): SelectedRecord {
   };
 }
 
+function issueSelection(): SelectedIssue {
+  return {
+    repoPath: "/p/u",
+    repoLabel: "u",
+    issue: {
+      number: 7,
+      title: "Fix the bug",
+      state: "open",
+      url: "https://github.com/o/r/issues/7",
+      labels: [],
+      assignees: [],
+    },
+  };
+}
+
 describe("useFocusedArtifact", () => {
   it("starts with nothing focused", () => {
     const { result } = renderHook(() => useFocusedArtifact());
     expect(result.current.selectedPr).toBeNull();
     expect(result.current.selectedRecord).toBeNull();
+    expect(result.current.selectedIssue).toBeNull();
   });
 
   it("selecting a record clears a selected PR (exactly one focus)", () => {
@@ -87,7 +105,37 @@ describe("useFocusedArtifact", () => {
     expect(result.current.selectedRecord).toBeNull();
   });
 
-  it("clearPr / clearRecord clear only their own kind", () => {
+  it("selecting an issue clears BOTH a selected PR and record (exactly one focus across three)", () => {
+    const { result } = renderHook(() => useFocusedArtifact());
+
+    act(() => result.current.selectPr(prSelection()));
+    act(() => result.current.selectIssue(issueSelection()));
+    expect(result.current.selectedIssue).not.toBeNull();
+    expect(result.current.selectedPr).toBeNull();
+    expect(result.current.selectedRecord).toBeNull();
+
+    // Re-arm from a record and confirm the same clear.
+    act(() => result.current.selectRecord(recordSelection()));
+    act(() => result.current.selectIssue(issueSelection()));
+    expect(result.current.selectedIssue).not.toBeNull();
+    expect(result.current.selectedRecord).toBeNull();
+  });
+
+  it("selecting a PR or a record clears a selected issue (the reverse direction)", () => {
+    const { result } = renderHook(() => useFocusedArtifact());
+
+    act(() => result.current.selectIssue(issueSelection()));
+    act(() => result.current.selectPr(prSelection()));
+    expect(result.current.selectedPr).not.toBeNull();
+    expect(result.current.selectedIssue).toBeNull();
+
+    act(() => result.current.selectIssue(issueSelection()));
+    act(() => result.current.selectRecord(recordSelection()));
+    expect(result.current.selectedRecord).not.toBeNull();
+    expect(result.current.selectedIssue).toBeNull();
+  });
+
+  it("clearPr / clearRecord / clearIssue clear only their own kind", () => {
     const { result } = renderHook(() => useFocusedArtifact());
 
     act(() => result.current.selectPr(prSelection()));
@@ -97,14 +145,19 @@ describe("useFocusedArtifact", () => {
     act(() => result.current.selectRecord(recordSelection()));
     act(() => result.current.clearRecord());
     expect(result.current.selectedRecord).toBeNull();
+
+    act(() => result.current.selectIssue(issueSelection()));
+    act(() => result.current.clearIssue());
+    expect(result.current.selectedIssue).toBeNull();
   });
 
-  it("clearAll clears both (used on a unit change)", () => {
+  it("clearAll clears all three (used on a unit change)", () => {
     const { result } = renderHook(() => useFocusedArtifact());
 
-    act(() => result.current.selectRecord(recordSelection()));
+    act(() => result.current.selectIssue(issueSelection()));
     act(() => result.current.clearAll());
     expect(result.current.selectedPr).toBeNull();
     expect(result.current.selectedRecord).toBeNull();
+    expect(result.current.selectedIssue).toBeNull();
   });
 });

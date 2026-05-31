@@ -36,6 +36,7 @@ import { RFilesSection } from "./RFilesSection";
 import { RHandoverSection } from "./RHandoverSection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
+import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
 import type { SelectedRecord } from "./r-viewer/RRecordViewer";
 
@@ -73,6 +74,13 @@ interface RPanelProps {
   /** `selectedRecordKey(...)` of the record currently open in R₂, so the
    *  focused R₁ Decisions/Approaches row marks itself. */
   selectedRecordKey?: string | null;
+  /** Open an issue in the R₂ issue viewer column. Threaded to the R₁
+   *  Issues inventory so a row click selects the issue for in-tmai
+   *  viewing. */
+  onSelectIssue?: (sel: SelectedIssue) => void;
+  /** `selectedIssueKey(...)` of the issue currently open in R₂, so the
+   *  focused R₁ Issues row marks itself. */
+  selectedIssueKey?: string | null;
 }
 
 const SECTION_IDS = [
@@ -98,6 +106,8 @@ export function RPanel({
   selectedPrKey,
   onSelectRecord,
   selectedRecordKey,
+  onSelectIssue,
+  selectedIssueKey,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
 
@@ -204,6 +214,8 @@ export function RPanel({
           currentProjectPath={currentProjectPath}
           expanded={isExpanded("issues")}
           onToggle={() => toggle("issues")}
+          onSelectIssue={onSelectIssue}
+          selectedKey={selectedIssueKey}
         />
         <RDecisionsSection
           unitName={unitName}
