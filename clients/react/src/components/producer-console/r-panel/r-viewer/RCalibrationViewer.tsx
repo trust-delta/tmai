@@ -288,5 +288,11 @@ function outcomeLabel(outcome: Outcome | null): string {
       return `hotfix ${outcome.commit_sha} (${outcome.date})`;
     case "ci_fail_fix":
       return `ci-fail-fix PR #${outcome.failing_pr} → #${outcome.fix_pr}`;
+    default: {
+      // Exhaustiveness guard: if a future `Outcome` variant is added,
+      // TS fails here (assertNever) rather than silently dropping it.
+      const _exhaustive: never = outcome;
+      return _exhaustive;
+    }
   }
 }
