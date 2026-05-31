@@ -13,6 +13,10 @@ import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitua
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
 import { RPanel } from "@/components/producer-console/r-panel/RPanel";
+import {
+  RIssueViewer,
+  selectedIssueKey,
+} from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
 import { RPrViewer, selectedPrKey } from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
 import {
   RRecordViewer,
@@ -124,9 +128,10 @@ export function App() {
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
   // The artifact open in the independent R₂ viewer column. R₂ hosts
-  // exactly ONE focused artifact at a time — a PR (#749), a decision, or
-  // an approach — so focusing one kind clears the other (the invariant
-  // lives in `useFocusedArtifact`). `null`/`null` = no viewer (it never
+  // exactly ONE focused artifact at a time — a PR (#749), a record
+  // (decision/approach), or an issue — so focusing one kind clears the
+  // others (the invariant lives in `useFocusedArtifact`). All null = no
+  // viewer (it never
   // auto-opens — the operator clicks a row in the R₁ inventory to select;
   // viewer-approach negative space). Lives at App level because R₂
   // renders as a sibling column of <main> / RPanel, not inside the
@@ -134,10 +139,13 @@ export function App() {
   const {
     selectedPr,
     selectedRecord,
+    selectedIssue,
     selectPr,
     selectRecord,
+    selectIssue,
     clearPr,
     clearRecord,
+    clearIssue,
     clearAll: clearFocusedArtifact,
   } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
@@ -198,10 +206,10 @@ export function App() {
   const { data: producerFeedData } = useProducerFeed(unitName);
 
   // Close the R₂ viewer when the focused unit changes — its open artifact
-  // (PR or record) belongs to the previous unit, so it must not linger
-  // under a new unit's inventory (mirrors useUnitPrs clearing its list on
-  // unit change). unitName is the intended trigger even though the body
-  // only clears state.
+  // (PR, record, or issue) belongs to the previous unit, so it must not
+  // linger under a new unit's inventory (mirrors useUnitPrs clearing its
+  // list on unit change). unitName is the intended trigger even though the
+  // body only clears state.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional unit-change trigger
   useEffect(() => {
     clearFocusedArtifact();
@@ -828,6 +836,12 @@ export function App() {
               ? selectedRecordKey(selectedRecord.repoPath, selectedRecord.record.slug)
               : null
           }
+          onSelectIssue={selectIssue}
+          selectedIssueKey={
+            selectedIssue
+              ? selectedIssueKey(selectedIssue.repoPath, selectedIssue.issue.number)
+              : null
+          }
         />
       )}
 
@@ -854,6 +868,16 @@ export function App() {
           onSelectRecord={selectRecord}
           onClose={clearRecord}
         />
+      )}
+
+      {/* R₂ — independent in-tmai issue content viewer column (per-repo,
+          full body + comments, read-only). Shares the R₂ column with the
+          PR + record viewers above: `useFocusedArtifact` keeps all three
+          mutually exclusive, so at most one renders. Present ONLY when the
+          operator has selected an issue in the R₁ inventory (never
+          auto-opens). Same narrow/mobile guard as RPanel. */}
+      {!isNarrowScreen && !isMobileScreen && selectedIssue && (
+        <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
       )}
 
       {/* Help overlay */}
