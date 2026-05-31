@@ -3,9 +3,12 @@
 // substrate` "🔀 PRs (iii)").
 //
 // γ-lean shape (`doc/approaches/2026-05-29-artifact-content-viewer.md`,
-// Phase 1, PR artifact kind): an INDEPENDENT right-side viewer column.
+// Phase 1, PR artifact kind): the R₂ PR viewer. In focus mode (spine
+// `2026-05-29-c-and-r-as-the-development-substrate`) it RIDES the R panel's
+// single column IN PLACE OF the R₁ inventory — same drag-set width, never
+// an additive column that would squeeze the centre conversation.
 // R₁ (`RPrsSection`) stays a pure inventory; clicking a PR row there
-// selects it and this column renders that PR's full content — diff,
+// selects it and this viewer renders that PR's full content — diff,
 // body, comments (incl. CodeRabbit), labels, mergeable / review / check
 // status, CI status + failure-log drill-down — entirely in-tmai, with
 // ZERO github.com round-trip, plus the action layer (merge soft-valve /
@@ -56,6 +59,7 @@ import {
   type PrMergeStatus,
   type PrSummaryWire,
 } from "@/lib/api";
+import { InventoryBackButton } from "./InventoryBackButton";
 import { PROSE_CLASSES } from "./prose";
 
 // What R₁ hands R₂ on a row click. The full `PrSummaryWire` rides along
@@ -86,11 +90,12 @@ export function RPrViewer({ selected, onClose }: RPrViewerProps) {
   const { repoPath, repoLabel, pr, billingDead } = selected;
   const prNumber = Number(pr.number);
 
+  // Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`):
+  // the viewer fills the R panel's single column (`flex-1`) at the
+  // operator's drag-set width — it imposes NO width of its own, so opening
+  // it never adds a column that would squeeze the centre conversation.
   return (
-    <aside
-      data-testid="r-pr-viewer"
-      className="glass flex w-[clamp(22rem,40vw,48rem)] shrink-0 flex-col border-l border-hairline"
-    >
+    <div data-testid="r-pr-viewer" className="flex min-h-0 flex-1 flex-col">
       <ViewerHeader repoLabel={repoLabel} pr={pr} onClose={onClose} />
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-xs">
         <LabelsSection repoPath={repoPath} prNumber={prNumber} />
@@ -112,7 +117,7 @@ export function RPrViewer({ selected, onClose }: RPrViewerProps) {
         billingDead={billingDead}
         onMerged={onClose}
       />
-    </aside>
+    </div>
   );
 }
 
@@ -377,22 +382,12 @@ function ViewerHeader({
 }) {
   return (
     <header className="shrink-0 border-b border-hairline px-4 py-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">{repoLabel}</p>
-          <h2 className="text-sm font-semibold text-foreground">
-            <span className="font-mono text-muted-foreground">#{Number(pr.number)}</span> {pr.title}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close PR viewer"
-          aria-label="Close PR viewer"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-        >
-          ×
-        </button>
+      <InventoryBackButton onClose={onClose} />
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">{repoLabel}</p>
+        <h2 className="text-sm font-semibold text-foreground">
+          <span className="font-mono text-muted-foreground">#{Number(pr.number)}</span> {pr.title}
+        </h2>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle-foreground">
         <span className="font-mono">

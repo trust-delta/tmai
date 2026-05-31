@@ -127,15 +127,16 @@ export function App() {
   // through the shared useSplitPane engine (ratio-based), so we convert
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
-  // The artifact open in the independent R₂ viewer column. R₂ hosts
-  // exactly ONE focused artifact at a time — a PR (#749), a record
-  // (decision/approach), or an issue — so focusing one kind clears the
-  // others (the invariant lives in `useFocusedArtifact`). All null = no
-  // viewer (it never
-  // auto-opens — the operator clicks a row in the R₁ inventory to select;
-  // viewer-approach negative space). Lives at App level because R₂
-  // renders as a sibling column of <main> / RPanel, not inside the
-  // inventory panel (R₁ stays a pure inventory).
+  // The artifact in focus in R₂. R₂ hosts exactly ONE focused artifact at
+  // a time — a PR (#749), a record (decision/approach), or an issue — so
+  // focusing one kind clears the others (the invariant lives in
+  // `useFocusedArtifact`). All null = no viewer (it never auto-opens — the
+  // operator clicks a row in the R₁ inventory to select; viewer-approach
+  // negative space). Lives at App level because focus mode (spine
+  // `2026-05-29-c-and-r-as-the-development-substrate`) RIDES the R panel's
+  // single column: a focus swaps R₁'s inventory body for the R₂ viewer at
+  // the same drag-set width (`viewer` prop below), rather than adding a
+  // fourth column that would steal width from the centre conversation.
   const {
     selectedPr,
     selectedRecord,
@@ -591,6 +592,26 @@ export function App() {
     </>
   );
 
+  // Focus-mode viewer node (spine `2026-05-29-c-and-r-as-the-development-
+  // substrate`). At most one of the three is non-null (`useFocusedArtifact`
+  // keeps them mutually exclusive), so this resolves to a single viewer or
+  // null. It is handed to RPanel as `viewer`, where it REPLACES the R₁
+  // inventory body in the same column — opening/closing it never changes
+  // the centre column's width (only dragging the divider does). Its close
+  // (‹ Inventory) clears the focus and reveals the inventory again.
+  const rViewer = selectedPr ? (
+    <RPrViewer selected={selectedPr} onClose={clearPr} />
+  ) : selectedRecord ? (
+    <RRecordViewer
+      selected={selectedRecord}
+      unitName={unitName}
+      onSelectRecord={selectRecord}
+      onClose={clearRecord}
+    />
+  ) : selectedIssue ? (
+    <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
+  ) : null;
+
   return (
     <div ref={rPanelSplit.containerRef} className="flex h-screen text-foreground">
       {/* Mobile: overlay backdrop when drawer is open */}
@@ -804,11 +825,19 @@ export function App() {
         )}
       </main>
 
-      {/* Persistent right R panel — third flex column, sibling of <main>
-          and OUTSIDE the selection switch above, so it stays co-visible
-          with whatever the centre shows (Producer conversation or
-          hand-over digest). Hidden on narrow / mobile so it never
-          crowds a small viewport; folds to a thin rail otherwise. */}
+      {/* Persistent right R panel — third (and LAST) flex column, sibling
+          of <main> and OUTSIDE the selection switch above, so it stays
+          co-visible with whatever the centre shows (Producer conversation
+          or hand-over digest). Hidden on narrow / mobile so it never
+          crowds a small viewport; folds to a thin rail otherwise.
+
+          Focus mode: when an artifact is focused, `viewer` is the R₂
+          viewer node and RPanel renders it in place of the R₁ inventory
+          body — SAME column, SAME drag-set width. There is deliberately no
+          additional R₂ sibling column here: opening a viewer must not
+          steal width from the centre conversation (the C-width invariant).
+          The single split divider on this column is the only thing that
+          changes C's width. */}
       {!isNarrowScreen && !isMobileScreen && (
         <RPanel
           currentProjectPath={currentProject}
@@ -842,42 +871,8 @@ export function App() {
               ? selectedIssueKey(selectedIssue.repoPath, selectedIssue.issue.number)
               : null
           }
+          viewer={rViewer}
         />
-      )}
-
-      {/* R₂ — independent in-tmai PR content viewer column (#749). The
-          spine's γ-lean 4-column shape (L / C / R₁ inventory / R₂ viewer):
-          this is the rightmost column, present ONLY when the operator has
-          selected a PR in the R₁ inventory (never auto-opens). Gated on the
-          same narrow/mobile guard as RPanel so it never crowds a small
-          viewport. */}
-      {!isNarrowScreen && !isMobileScreen && selectedPr && (
-        <RPrViewer selected={selectedPr} onClose={clearPr} />
-      )}
-
-      {/* R₂ — independent in-tmai record content viewer column (decisions +
-          approaches). Shares the R₂ column with the PR viewer above:
-          `useFocusedArtifact` keeps the two mutually exclusive, so at most
-          one renders. Present ONLY when the operator has selected a record
-          in the R₁ inventory (never auto-opens). Same narrow/mobile guard
-          as RPanel. */}
-      {!isNarrowScreen && !isMobileScreen && selectedRecord && (
-        <RRecordViewer
-          selected={selectedRecord}
-          unitName={unitName}
-          onSelectRecord={selectRecord}
-          onClose={clearRecord}
-        />
-      )}
-
-      {/* R₂ — independent in-tmai issue content viewer column (per-repo,
-          full body + comments, read-only). Shares the R₂ column with the
-          PR + record viewers above: `useFocusedArtifact` keeps all three
-          mutually exclusive, so at most one renders. Present ONLY when the
-          operator has selected an issue in the R₁ inventory (never
-          auto-opens). Same narrow/mobile guard as RPanel. */}
-      {!isNarrowScreen && !isMobileScreen && selectedIssue && (
-        <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
       )}
 
       {/* Help overlay */}

@@ -81,6 +81,16 @@ interface RPanelProps {
   /** `selectedIssueKey(...)` of the issue currently open in R₂, so the
    *  focused R₁ Issues row marks itself. */
   selectedIssueKey?: string | null;
+  /** Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`,
+   *  its deferred "R₁/R₂ visual ratio" point): the R₂ viewer for the
+   *  currently-focused artifact. When non-null it RIDES THIS SAME COLUMN —
+   *  rendered in place of the R₁ inventory body, at the same drag-set
+   *  width, with the same collapse/drag machinery — so opening a viewer
+   *  NEVER adds a width-stealing fourth column (the load-bearing
+   *  C-width invariant). When null, the inventory shows as today. The
+   *  parent (App) composes the node and keeps PR/record/issue mutually
+   *  exclusive via `useFocusedArtifact`. */
+  viewer?: React.ReactNode;
 }
 
 const SECTION_IDS = [
@@ -108,6 +118,7 @@ export function RPanel({
   selectedRecordKey,
   onSelectIssue,
   selectedIssueKey,
+  viewer,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
 
@@ -181,73 +192,83 @@ export function RPanel({
         />
       </div>
 
-      <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">R · Inventory</h2>
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title="Collapse R panel"
-          aria-label="Collapse R panel"
-          aria-expanded={true}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-        >
-          ›
-        </button>
-      </header>
+      {/* Focus mode: when a viewer is handed in, it REPLACES the inventory
+          body in this same column (same width, same drag splitter above),
+          so opening a viewer never adds a fourth column that would steal
+          width from the centre conversation. The viewer fills the column
+          (`flex-1`) and brings its own header + ‹ Inventory back
+          affordance. Otherwise the R₁ inventory renders exactly as before. */}
+      {viewer ?? (
+        <>
+          <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
+            <h2 className="text-sm font-semibold text-foreground">R · Inventory</h2>
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              title="Collapse R panel"
+              aria-label="Collapse R panel"
+              aria-expanded={true}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+            >
+              ›
+            </button>
+          </header>
 
-      <DeltaStream
-        unitName={unitName}
-        data={producerFeedData}
-        onTriggerDeltaPull={onTriggerDeltaPull}
-        producerAvailable={producerAvailable}
-      />
+          <DeltaStream
+            unitName={unitName}
+            data={producerFeedData}
+            onTriggerDeltaPull={onTriggerDeltaPull}
+            producerAvailable={producerAvailable}
+          />
 
-      <div className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
-        <RPrsSection
-          unitName={unitName}
-          expanded={isExpanded("prs")}
-          onToggle={() => toggle("prs")}
-          onSelectPr={onSelectPr}
-          selectedKey={selectedPrKey}
-        />
-        <RIssuesSection
-          currentProjectPath={currentProjectPath}
-          expanded={isExpanded("issues")}
-          onToggle={() => toggle("issues")}
-          onSelectIssue={onSelectIssue}
-          selectedKey={selectedIssueKey}
-        />
-        <RDecisionsSection
-          unitName={unitName}
-          expanded={isExpanded("decisions")}
-          onToggle={() => toggle("decisions")}
-          onSelect={onSelectRecord}
-          selectedKey={selectedRecordKey}
-        />
-        <RApproachesSection
-          unitName={unitName}
-          expanded={isExpanded("approaches")}
-          onToggle={() => toggle("approaches")}
-          onSelect={onSelectRecord}
-          selectedKey={selectedRecordKey}
-        />
-        <RCalibrationSection
-          unitName={unitName}
-          expanded={isExpanded("calibration")}
-          onToggle={() => toggle("calibration")}
-        />
-        <RHandoverSection
-          unitName={unitName}
-          expanded={isExpanded("handover")}
-          onToggle={() => toggle("handover")}
-        />
-        <RFilesSection
-          currentProjectPath={currentProjectPath}
-          unitName={unitName}
-          expanded={isExpanded("files")}
-          onToggle={() => toggle("files")}
-        />
-      </div>
+          <div className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
+            <RPrsSection
+              unitName={unitName}
+              expanded={isExpanded("prs")}
+              onToggle={() => toggle("prs")}
+              onSelectPr={onSelectPr}
+              selectedKey={selectedPrKey}
+            />
+            <RIssuesSection
+              currentProjectPath={currentProjectPath}
+              expanded={isExpanded("issues")}
+              onToggle={() => toggle("issues")}
+              onSelectIssue={onSelectIssue}
+              selectedKey={selectedIssueKey}
+            />
+            <RDecisionsSection
+              unitName={unitName}
+              expanded={isExpanded("decisions")}
+              onToggle={() => toggle("decisions")}
+              onSelect={onSelectRecord}
+              selectedKey={selectedRecordKey}
+            />
+            <RApproachesSection
+              unitName={unitName}
+              expanded={isExpanded("approaches")}
+              onToggle={() => toggle("approaches")}
+              onSelect={onSelectRecord}
+              selectedKey={selectedRecordKey}
+            />
+            <RCalibrationSection
+              unitName={unitName}
+              expanded={isExpanded("calibration")}
+              onToggle={() => toggle("calibration")}
+            />
+            <RHandoverSection
+              unitName={unitName}
+              expanded={isExpanded("handover")}
+              onToggle={() => toggle("handover")}
+            />
+            <RFilesSection
+              currentProjectPath={currentProjectPath}
+              unitName={unitName}
+              expanded={isExpanded("files")}
+              onToggle={() => toggle("files")}
+            />
+          </div>
+        </>
+      )}
     </aside>
   );
 }

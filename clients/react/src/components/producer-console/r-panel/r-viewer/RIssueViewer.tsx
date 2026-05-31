@@ -5,11 +5,13 @@
 // `2026-05-16-dev-loop-completes-in-tmai` (read the project's issues
 // in-tmai, no github.com round-trip).
 //
-// Mirrors `RPrViewer` / `RRecordViewer` posture exactly: an INDEPENDENT
-// right-side column that NEVER auto-opens — it mounts only on an explicit
-// operator row click in the R₁ inventory (the parent gates the mount on a
-// non-null `selectedIssue`). R₁ (`RIssuesSection`) stays a pure
-// inventory; this column renders the clicked issue's full content.
+// Mirrors `RPrViewer` / `RRecordViewer` posture exactly: in focus mode
+// (spine `2026-05-29-c-and-r-as-the-development-substrate`) it RIDES the R
+// panel's single column IN PLACE OF the R₁ inventory — same drag-set
+// width, never an additive column. It NEVER auto-opens — it mounts only on
+// an explicit operator row click in the R₁ inventory (the parent gates the
+// mount on a non-null `selectedIssue`). R₁ (`RIssuesSection`) stays a pure
+// inventory; this viewer renders the clicked issue's full content.
 //
 // SCOPE — read-only, per-repo, NO actions. This is the (ii) judgment-info
 // viewer only. The (iii) lifecycle acts (close / comment / reopen) need
@@ -47,6 +49,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useIssueDetail } from "@/hooks/useIssueDetail";
 import type { IssueComment, IssueDetail, IssueInfo, IssueLabel } from "@/lib/api";
+import { InventoryBackButton } from "./InventoryBackButton";
 import { PROSE_CLASSES } from "./prose";
 
 // What R₁ hands R₂ on an issue row click. The full `IssueInfo` rides
@@ -75,11 +78,12 @@ export function RIssueViewer({ selected, onClose }: RIssueViewerProps) {
   const { repoPath, repoLabel, issue } = selected;
   const { data, loading, error } = useIssueDetail(repoPath, issue.number);
 
+  // Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`):
+  // fills the R panel's single column (`flex-1`) at the operator's
+  // drag-set width — imposes no width of its own, so it never squeezes the
+  // centre conversation.
   return (
-    <aside
-      data-testid="r-issue-viewer"
-      className="glass flex w-[clamp(22rem,40vw,48rem)] shrink-0 flex-col border-l border-hairline"
-    >
+    <div data-testid="r-issue-viewer" className="flex min-h-0 flex-1 flex-col">
       <ViewerHeader repoLabel={repoLabel} issue={issue} detail={data} onClose={onClose} />
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-xs">
         {loading && <Loading />}
@@ -93,7 +97,7 @@ export function RIssueViewer({ selected, onClose }: RIssueViewerProps) {
           </>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -117,24 +121,14 @@ function ViewerHeader({
 }) {
   return (
     <header className="shrink-0 border-b border-hairline px-4 py-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">
-            {repoLabel} · issue
-          </p>
-          <h2 className="text-sm font-semibold text-foreground">
-            <span className="font-mono text-muted-foreground">#{issue.number}</span> {issue.title}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close issue viewer"
-          aria-label="Close issue viewer"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-        >
-          ×
-        </button>
+      <InventoryBackButton onClose={onClose} />
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">
+          {repoLabel} · issue
+        </p>
+        <h2 className="text-sm font-semibold text-foreground">
+          <span className="font-mono text-muted-foreground">#{issue.number}</span> {issue.title}
+        </h2>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle-foreground">
         <span className="text-muted-foreground">{issue.state.toLowerCase()}</span>

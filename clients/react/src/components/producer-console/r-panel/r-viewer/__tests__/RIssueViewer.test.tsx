@@ -141,10 +141,19 @@ describe("RIssueViewer", () => {
     expect(container.querySelector("a[href*='github.com']")).toBeNull();
   });
 
-  it("fires onClose from the close button", () => {
+  it("returns to the inventory via the ‹ Inventory back affordance (clears the focus)", () => {
     const onClose = vi.fn();
     render(<RIssueViewer selected={selected()} onClose={onClose} />);
-    screen.getByRole("button", { name: /Close issue viewer/ }).click();
+    // Focus mode: closing returns to the inventory; still wired to onClose.
+    screen.getByRole("button", { name: /Back to inventory/ }).click();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills the R region — carries no fixed clamp width (focus mode rides the R column)", () => {
+    const { container } = render(<RIssueViewer selected={selected()} onClose={vi.fn()} />);
+    const root = container.querySelector('[data-testid="r-issue-viewer"]');
+    expect(root).not.toBeNull();
+    expect(root?.className ?? "").not.toMatch(/w-\[/);
+    expect(root?.className ?? "").toMatch(/flex-1/);
   });
 });
