@@ -36,6 +36,7 @@ import { RFilesSection } from "./RFilesSection";
 import { RHandoverSection } from "./RHandoverSection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
+import type { SelectedCalibration } from "./r-viewer/RCalibrationViewer";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
 import type { SelectedRecord } from "./r-viewer/RRecordViewer";
@@ -81,6 +82,13 @@ interface RPanelProps {
   /** `selectedIssueKey(...)` of the issue currently open in R₂, so the
    *  focused R₁ Issues row marks itself. */
   selectedIssueKey?: string | null;
+  /** Open the unit's calibration in the R₂ calibration viewer column.
+   *  Threaded to the R₁ Calibration section so its detail affordance
+   *  focuses the calibration for in-tmai viewing. */
+  onSelectCalibration?: (sel: SelectedCalibration) => void;
+  /** `selectedCalibrationKey(unit)` of the calibration currently open in
+   *  R₂, so the focused R₁ Calibration affordance marks itself. */
+  selectedCalibrationKey?: string | null;
   /** Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`,
    *  its deferred "R₁/R₂ visual ratio" point): the R₂ viewer for the
    *  currently-focused artifact. When non-null it RIDES THIS SAME COLUMN —
@@ -118,6 +126,8 @@ export function RPanel({
   selectedRecordKey,
   onSelectIssue,
   selectedIssueKey,
+  onSelectCalibration,
+  selectedCalibrationKey,
   viewer,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
@@ -254,6 +264,8 @@ export function RPanel({
               unitName={unitName}
               expanded={isExpanded("calibration")}
               onToggle={() => toggle("calibration")}
+              onSelectCalibration={onSelectCalibration}
+              selectedKey={selectedCalibrationKey}
             />
             <RHandoverSection
               unitName={unitName}

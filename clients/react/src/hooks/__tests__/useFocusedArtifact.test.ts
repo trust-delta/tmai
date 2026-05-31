@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 //
 // useFocusedArtifact — the R₂ "exactly one focused artifact" invariant.
-// Focusing any one of a PR / record / issue clears the other two, so the
-// PR viewer, the record viewer, and the issue viewer are never both/all
-// mounted.
+// Focusing any one of a PR / record / issue / calibration clears the other
+// three, so the PR viewer, the record viewer, the issue viewer, and the
+// calibration viewer are never both/all mounted.
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import type { SelectedCalibration } from "@/components/producer-console/r-panel/r-viewer/RCalibrationViewer";
 import type { SelectedIssue } from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
 import type { SelectedPr } from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
 import type { SelectedRecord } from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
@@ -74,12 +75,17 @@ function issueSelection(): SelectedIssue {
   };
 }
 
+function calibrationSelection(): SelectedCalibration {
+  return { unit: "u" };
+}
+
 describe("useFocusedArtifact", () => {
   it("starts with nothing focused", () => {
     const { result } = renderHook(() => useFocusedArtifact());
     expect(result.current.selectedPr).toBeNull();
     expect(result.current.selectedRecord).toBeNull();
     expect(result.current.selectedIssue).toBeNull();
+    expect(result.current.selectedCalibration).toBeNull();
   });
 
   it("selecting a record clears a selected PR (exactly one focus)", () => {
@@ -135,7 +141,39 @@ describe("useFocusedArtifact", () => {
     expect(result.current.selectedIssue).toBeNull();
   });
 
-  it("clearPr / clearRecord / clearIssue clear only their own kind", () => {
+  it("selecting calibration clears a PR, record, AND issue (exactly one focus across four)", () => {
+    const { result } = renderHook(() => useFocusedArtifact());
+
+    act(() => result.current.selectPr(prSelection()));
+    act(() => result.current.selectRecord(recordSelection()));
+    act(() => result.current.selectIssue(issueSelection()));
+    act(() => result.current.selectCalibration(calibrationSelection()));
+    expect(result.current.selectedCalibration).not.toBeNull();
+    expect(result.current.selectedPr).toBeNull();
+    expect(result.current.selectedRecord).toBeNull();
+    expect(result.current.selectedIssue).toBeNull();
+  });
+
+  it("selecting a PR / record / issue each clears a selected calibration (the reverse direction)", () => {
+    const { result } = renderHook(() => useFocusedArtifact());
+
+    act(() => result.current.selectCalibration(calibrationSelection()));
+    act(() => result.current.selectPr(prSelection()));
+    expect(result.current.selectedPr).not.toBeNull();
+    expect(result.current.selectedCalibration).toBeNull();
+
+    act(() => result.current.selectCalibration(calibrationSelection()));
+    act(() => result.current.selectRecord(recordSelection()));
+    expect(result.current.selectedRecord).not.toBeNull();
+    expect(result.current.selectedCalibration).toBeNull();
+
+    act(() => result.current.selectCalibration(calibrationSelection()));
+    act(() => result.current.selectIssue(issueSelection()));
+    expect(result.current.selectedIssue).not.toBeNull();
+    expect(result.current.selectedCalibration).toBeNull();
+  });
+
+  it("clearPr / clearRecord / clearIssue / clearCalibration clear only their own kind", () => {
     const { result } = renderHook(() => useFocusedArtifact());
 
     act(() => result.current.selectPr(prSelection()));
@@ -149,15 +187,20 @@ describe("useFocusedArtifact", () => {
     act(() => result.current.selectIssue(issueSelection()));
     act(() => result.current.clearIssue());
     expect(result.current.selectedIssue).toBeNull();
+
+    act(() => result.current.selectCalibration(calibrationSelection()));
+    act(() => result.current.clearCalibration());
+    expect(result.current.selectedCalibration).toBeNull();
   });
 
-  it("clearAll clears all three (used on a unit change)", () => {
+  it("clearAll clears all four (used on a unit change)", () => {
     const { result } = renderHook(() => useFocusedArtifact());
 
-    act(() => result.current.selectIssue(issueSelection()));
+    act(() => result.current.selectCalibration(calibrationSelection()));
     act(() => result.current.clearAll());
     expect(result.current.selectedPr).toBeNull();
     expect(result.current.selectedRecord).toBeNull();
     expect(result.current.selectedIssue).toBeNull();
+    expect(result.current.selectedCalibration).toBeNull();
   });
 });
