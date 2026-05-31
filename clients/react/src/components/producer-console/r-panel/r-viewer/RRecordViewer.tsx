@@ -5,12 +5,14 @@
 // (γ-lean R₂ viewer) + `2026-05-16-dev-loop-completes-in-tmai` (read the
 // project's records in-tmai, no editor round-trip).
 //
-// Mirrors `RPrViewer`'s posture exactly: an INDEPENDENT right-side column
-// that NEVER auto-opens — it mounts only on an explicit operator row
-// click in the R₁ inventory (the parent gates the mount on a non-null
-// `selectedRecord`). R₁ (`RDecisionsSection` / `RApproachesSection`)
-// stays a pure inventory; this column renders the clicked record's
-// content.
+// Mirrors `RPrViewer`'s posture exactly: in focus mode (spine
+// `2026-05-29-c-and-r-as-the-development-substrate`) it RIDES the R
+// panel's single column IN PLACE OF the R₁ inventory — same drag-set
+// width, never an additive column. It NEVER auto-opens — it mounts only
+// on an explicit operator row click in the R₁ inventory (the parent gates
+// the mount on a non-null `selectedRecord`). R₁ (`RDecisionsSection` /
+// `RApproachesSection`) stays a pure inventory; this viewer renders the
+// clicked record's content.
 //
 // SCOPE — read-only, excerpt-level, NO actions. This is the (ii)
 // judgment-info viewer only: it renders the rich frontmatter + the
@@ -45,6 +47,7 @@ import type {
   DecisionWire,
   ReviewTriggerWire,
 } from "@/lib/api";
+import { InventoryBackButton } from "./InventoryBackButton";
 import { PROSE_CLASSES } from "./prose";
 
 // What R₁ hands R₂ on a record row click. The full wire object rides
@@ -79,11 +82,12 @@ export function RRecordViewer({ selected, unitName, onSelectRecord, onClose }: R
   const { data: approaches } = useApproaches(unitName);
   const index = useMemo(() => buildRecordIndex(decisions, approaches), [decisions, approaches]);
 
+  // Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`):
+  // fills the R panel's single column (`flex-1`) at the operator's
+  // drag-set width — imposes no width of its own, so it never squeezes the
+  // centre conversation.
   return (
-    <aside
-      data-testid="r-record-viewer"
-      className="glass flex w-[clamp(22rem,40vw,48rem)] shrink-0 flex-col border-l border-hairline"
-    >
+    <div data-testid="r-record-viewer" className="flex min-h-0 flex-1 flex-col">
       <ViewerHeader selected={selected} onClose={onClose} />
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-xs">
         <FrontmatterTable selected={selected} index={index} onSelectRecord={onSelectRecord} />
@@ -99,7 +103,7 @@ export function RRecordViewer({ selected, unitName, onSelectRecord, onClose }: R
           onSelectRecord={onSelectRecord}
         />
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -163,22 +167,12 @@ function ViewerHeader({ selected, onClose }: { selected: SelectedRecord; onClose
   const kindFact = selected.kind === "decision" ? selected.record.category : selected.record.date;
   return (
     <header className="shrink-0 border-b border-hairline px-4 py-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">
-            {repoLabel} · {selected.kind}
-          </p>
-          <h2 className="text-sm font-semibold text-foreground">{record.title}</h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close record viewer"
-          aria-label="Close record viewer"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-        >
-          ×
-        </button>
+      <InventoryBackButton onClose={onClose} />
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-subtle-foreground">
+          {repoLabel} · {selected.kind}
+        </p>
+        <h2 className="text-sm font-semibold text-foreground">{record.title}</h2>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle-foreground">
         <span className="font-mono">{record.slug}</span>

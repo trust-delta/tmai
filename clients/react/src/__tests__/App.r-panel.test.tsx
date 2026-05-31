@@ -17,9 +17,14 @@
 //   3. on a narrow viewport the R panel is gone — its guard reads
 //      isNarrowScreen off the sole surviving useSplitPane;
 //   4. a cross-unit click re-scopes currentProject instead of opening
-//      a removed full-screen view.
+//      a removed full-screen view;
+//   5. FOCUS MODE: opening a viewer renders it INSIDE the single R panel
+//      column (handed in as RPanel's `viewer` prop), never as an additive
+//      sibling column — protecting the centre's width — and the ‹ Inventory
+//      back affordance clears the focus to reveal the inventory again.
 
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -66,8 +71,51 @@ vi.mock("@/hooks/useProducerFeed", () => ({
 }));
 
 // ── component stubs (everything heavy / networked) ──
+// The R panel stub surfaces TWO focus-mode seams: (a) a `focus-pr` button
+// wired to `onSelectPr` so a test can set the focus from the (stubbed)
+// inventory, and (b) it renders the `viewer` prop in-place — so we can
+// assert the viewer lands INSIDE this single column rather than as an
+// additive sibling.
 vi.mock("@/components/producer-console/r-panel/RPanel", () => ({
-  RPanel: () => <div data-testid="r-panel-stub">r-panel</div>,
+  RPanel: ({ viewer, onSelectPr }: { viewer?: ReactNode; onSelectPr?: (sel: unknown) => void }) => (
+    <div data-testid="r-panel-stub">
+      <button
+        type="button"
+        onClick={() =>
+          onSelectPr?.({
+            repoPath: "/p/alpha",
+            repoLabel: "alpha",
+            pr: { number: 5n },
+            billingDead: false,
+          })
+        }
+      >
+        focus-pr
+      </button>
+      {viewer}
+    </div>
+  ),
+}));
+// The three R₂ viewers are stubbed to lightweight markers (the App test
+// only cares about WHERE they render, not their content). Each module also
+// exports the `selected*Key` helper App imports alongside the component.
+vi.mock("@/components/producer-console/r-panel/r-viewer/RPrViewer", () => ({
+  RPrViewer: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="r-pr-viewer-stub">
+      <button type="button" onClick={onClose}>
+        back-to-inventory
+      </button>
+    </div>
+  ),
+  selectedPrKey: () => "pr-key",
+}));
+vi.mock("@/components/producer-console/r-panel/r-viewer/RRecordViewer", () => ({
+  RRecordViewer: () => <div data-testid="r-record-viewer-stub">record</div>,
+  selectedRecordKey: () => "rec-key",
+}));
+vi.mock("@/components/producer-console/r-panel/r-viewer/RIssueViewer", () => ({
+  RIssueViewer: () => <div data-testid="r-issue-viewer-stub">issue</div>,
+  selectedIssueKey: () => "iss-key",
 }));
 // The console stub surfaces `currentProjectPath` and a button that fires
 // `onSelectProjectByPath`, so the cross-unit re-scope reroute is
@@ -229,5 +277,38 @@ describe("App — persistent R panel layout", () => {
 
     expect(screen.getByTestId("console-current-project").textContent).toBe("/p/beta");
     expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
+  });
+
+  it("focus mode: a focus renders the viewer INSIDE the single R panel column (no additive sibling)", () => {
+    renderWithProviders(<App />);
+
+    // No focus yet → no viewer anywhere.
+    expect(screen.queryByTestId("r-pr-viewer-stub")).toBeNull();
+
+    // Focus a PR from the (stubbed) inventory.
+    fireEvent.click(screen.getByText("focus-pr"));
+
+    // The viewer renders, and it lives INSIDE the single R panel column —
+    // it was handed in as RPanel's `viewer`, not rendered as a separate
+    // fourth column that would steal width from the centre. (C-width
+    // invariant, asserted structurally per the brief.)
+    const panel = screen.getByTestId("r-panel-stub");
+    expect(within(panel).getByTestId("r-pr-viewer-stub")).toBeTruthy();
+    // Exactly one viewer in the whole tree — focus mode toggles, never stacks.
+    expect(screen.getAllByTestId("r-pr-viewer-stub")).toHaveLength(1);
+  });
+
+  it("focus mode: the ‹ Inventory back affordance clears the focus (returns to inventory)", () => {
+    renderWithProviders(<App />);
+
+    fireEvent.click(screen.getByText("focus-pr"));
+    expect(screen.getByTestId("r-pr-viewer-stub")).toBeTruthy();
+
+    // The viewer's close (‹ Inventory) is wired to App's clearPr → focus
+    // clears → the column swaps back to the inventory (viewer unmounts).
+    fireEvent.click(screen.getByText("back-to-inventory"));
+    expect(screen.queryByTestId("r-pr-viewer-stub")).toBeNull();
+    // The R panel column itself is still present (it never left).
+    expect(screen.getByTestId("r-panel-stub")).toBeTruthy();
   });
 });

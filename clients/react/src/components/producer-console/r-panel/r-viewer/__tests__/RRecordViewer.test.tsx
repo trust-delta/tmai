@@ -207,7 +207,7 @@ describe("RRecordViewer — decision", () => {
     expect(screen.queryByText("Drift")).toBeNull();
   });
 
-  it("fires onClose from the close button", () => {
+  it("returns to the inventory via the ‹ Inventory back affordance (clears the focus)", () => {
     const onClose = vi.fn();
     render(
       <RRecordViewer
@@ -217,8 +217,24 @@ describe("RRecordViewer — decision", () => {
         onClose={onClose}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Close record viewer/ }));
+    // Focus mode: closing returns to the inventory; still wired to onClose.
+    fireEvent.click(screen.getByRole("button", { name: /Back to inventory/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills the R region — carries no fixed clamp width (focus mode rides the R column)", () => {
+    const { container } = render(
+      <RRecordViewer
+        selected={decisionSelection(decision())}
+        unitName="u"
+        onSelectRecord={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const root = container.querySelector('[data-testid="r-record-viewer"]');
+    expect(root).not.toBeNull();
+    expect(root?.className ?? "").not.toMatch(/w-\[/);
+    expect(root?.className ?? "").toMatch(/flex-1/);
   });
 
   it("uses NO severity-color classes on facts (negative space)", () => {

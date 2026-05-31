@@ -140,11 +140,23 @@ describe("RPrViewer", () => {
     expect(container.querySelector("a[href*='github.com']")).toBeNull();
   });
 
-  it("fires onClose from the close button", () => {
+  it("returns to the inventory via the ‹ Inventory back affordance (clears the focus)", () => {
     const onClose = vi.fn();
     render(<RPrViewer selected={selected()} onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: /Close PR viewer/ }));
+    // Focus mode: the close is a RETURN to the inventory, not a column
+    // dismiss. It is still wired to `onClose`, which clears the focus.
+    fireEvent.click(screen.getByRole("button", { name: /Back to inventory/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills the R region — carries no fixed clamp width (focus mode rides the R column)", () => {
+    const { container } = render(<RPrViewer selected={selected()} onClose={vi.fn()} />);
+    const root = container.querySelector('[data-testid="r-pr-viewer"]');
+    expect(root).not.toBeNull();
+    // No self-imposed width (the retired `w-[clamp(22rem,40vw,48rem)]`); it
+    // fills the R panel column instead.
+    expect(root?.className ?? "").not.toMatch(/w-\[/);
+    expect(root?.className ?? "").toMatch(/flex-1/);
   });
 
   it("drills into a failed check's failure log only on operator click", async () => {

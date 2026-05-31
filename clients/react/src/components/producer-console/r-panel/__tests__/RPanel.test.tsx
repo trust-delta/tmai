@@ -6,7 +6,7 @@
 // expand, localStorage persistence, no severity colors in rendered
 // output) plus the relocated Δ stream trigger button.
 
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ProducerFeedStatus } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -180,6 +180,25 @@ describe("RPanel — accordion shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Expand R panel/ }));
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("focus mode: renders the viewer in place of the inventory (toggles, never stacks)", () => {
+    // A focus is set → RPanel renders the R₂ viewer node IN the same column
+    // (same drag-set width) instead of the R₁ inventory body. There is no
+    // additive second column — the load-bearing C-width invariant.
+    renderWithProviders(
+      <RPanel {...makeProps({ viewer: <div data-testid="r2-viewer-stub">viewer</div> })} />,
+    );
+
+    const panel = screen.getByTestId("r-panel");
+    // The viewer rides the SAME R panel column slot…
+    expect(within(panel).getByTestId("r2-viewer-stub")).toBeTruthy();
+    // …and the inventory sections are NOT additionally rendered (swap, not stack).
+    expect(screen.queryByTestId("prs-section")).toBeNull();
+    expect(screen.queryByTestId("decisions-section")).toBeNull();
+    expect(screen.queryByTestId("files-section")).toBeNull();
+    // Drag-resize machinery is preserved on the focused column.
+    expect(within(panel).getByRole("separator", { name: /Resize R panel/ })).toBeTruthy();
   });
 
   it("uses NO severity-color classes in the rendered output (negative-space)", () => {
