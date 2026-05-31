@@ -147,6 +147,11 @@ function DecisionRow({
         <span className="text-foreground">{decision.title}</span>
         <div className="text-[11px] text-subtle-foreground">
           {decision.slug} · {decision.status}
+          {/* Drift = a `governs:` path changed after `last_verified`
+              (currency re-verify due). Present-only and PLAIN — surfaced
+              for "should I look?" scanning, never an alarm. The path/date
+              detail stays in R₂'s DriftIndicator. */}
+          {decision.stale_since !== null && <span className="text-foreground"> · drift</span>}
         </div>
       </button>
     </li>

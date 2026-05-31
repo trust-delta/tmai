@@ -49,6 +49,7 @@ import type {
 } from "@/lib/api";
 import { InventoryBackButton } from "./InventoryBackButton";
 import { PROSE_CLASSES } from "./prose";
+import { isDateTriggerReady, todayIso } from "./review-trigger";
 
 // What R₁ hands R₂ on a record row click. The full wire object rides
 // along (like `SelectedPr` carries the full `pr`) so the viewer renders
@@ -350,12 +351,6 @@ function DriftIndicator({ decision }: { decision: DecisionWire }) {
 // without a fired/not-fired claim, because tmai cannot auto-detect their
 // firing.
 
-// `YYYY-MM-DD` for today (UTC day boundary is immaterial for this plain
-// fact). ISO date strings compare correctly lexicographically.
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function formatTrigger(t: ReviewTriggerWire): string {
   switch (t.kind) {
     case "date":
@@ -385,7 +380,7 @@ function ReviewTriggerIndicator({ approach }: { approach: ApproachWire }) {
           // trigger's kind + ref/value, and triggers are parse-validated
           // (no exact duplicates within a record).
           const text = formatTrigger(t);
-          const ready = t.kind === "date" && t.value <= today;
+          const ready = isDateTriggerReady(t, today);
           return (
             <li key={text} className="text-foreground">
               <span className="font-mono text-muted-foreground">{text}</span>

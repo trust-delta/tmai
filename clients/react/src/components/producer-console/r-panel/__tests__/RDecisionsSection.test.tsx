@@ -155,6 +155,46 @@ describe("RDecisionsSection", () => {
     expect(decisionsMock).not.toHaveBeenCalled();
   });
 
+  // ── Inline drift marker (the R₁ "should I look?" attention signal) ──
+
+  it("renders an inline drift marker for a decision with stale_since, none for a clean one", async () => {
+    decisionsMock.mockResolvedValue(
+      responseStub({
+        repos: [
+          {
+            ...responseStub().repos[0],
+            in_play: [
+              decisionStub({
+                slug: "drifted-d",
+                title: "Drifted D",
+                stale_since: {
+                  path: "src/foo.rs",
+                  change_date: "2026-05-20",
+                  change_sha: "abc1234",
+                  change_subject: "touch foo",
+                },
+              }),
+            ],
+            warm: [decisionStub({ slug: "clean-d", title: "Clean D", stale_since: null })],
+          },
+        ],
+      }),
+    );
+
+    const { container } = render(
+      <RDecisionsSection unitName="u" expanded={true} onToggle={vi.fn()} />,
+    );
+
+    // Drift marker present for the drifted decision.
+    const drifted = await screen.findByRole("button", { name: /Drifted D/ });
+    expect(drifted.textContent).toMatch(/drift/);
+    // Absent for the clean one (silence-is-not-neutral: no "no drift" text).
+    const clean = screen.getByRole("button", { name: /Clean D/ });
+    expect(clean.textContent).not.toMatch(/drift/);
+    // The marker is a plain fact, never a severity alarm.
+    expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+  });
+
   // ── R₂ selection wiring (mirrors RPrsSection's onSelectPr/aria-current) ──
 
   it("clicking a row calls onSelect with the decision wire object", async () => {

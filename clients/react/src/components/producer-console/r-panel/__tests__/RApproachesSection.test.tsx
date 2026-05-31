@@ -124,6 +124,55 @@ describe("RApproachesSection", () => {
     expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
   });
 
+  // ── Inline attention signals (status, confidence, review-trigger ready) ──
+
+  it("renders status + confidence inline on the row", async () => {
+    approachesMock.mockResolvedValue(
+      responseStub([
+        approachStub({ slug: "with-conf", title: "With Conf", confidence: "low" }),
+        approachStub({ slug: "no-conf", title: "No Conf", confidence: null }),
+      ]),
+    );
+    render(<RApproachesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+
+    const withConf = await screen.findByRole("button", { name: /With Conf/ });
+    // status ("running") + confidence ("low") both show inline.
+    expect(withConf.textContent).toMatch(/running/);
+    expect(withConf.textContent).toMatch(/low/);
+    // confidence is present-only — a null-confidence approach shows neither
+    // "high" nor "low".
+    const noConf = screen.getByRole("button", { name: /No Conf/ });
+    expect(noConf.textContent).not.toMatch(/\b(high|low)\b/);
+  });
+
+  it("renders the review-trigger-ready marker only when a date trigger is due (plain, no severity)", async () => {
+    approachesMock.mockResolvedValue(
+      responseStub([
+        approachStub({
+          slug: "past-trig",
+          title: "Past Trigger",
+          review_triggers: [{ kind: "date", value: "2020-01-01" }],
+        }),
+        approachStub({
+          slug: "future-trig",
+          title: "Future Trigger",
+          review_triggers: [{ kind: "date", value: "2099-01-01" }],
+        }),
+      ]),
+    );
+    const { container } = render(
+      <RApproachesSection unitName="u" expanded={true} onToggle={vi.fn()} />,
+    );
+
+    const due = await screen.findByRole("button", { name: /Past Trigger/ });
+    expect(due.textContent).toMatch(/review-trigger ready/);
+    // Future-dated trigger: silence (no "not due" / "all clear" reassurance).
+    const notDue = screen.getByRole("button", { name: /Future Trigger/ });
+    expect(notDue.textContent).not.toMatch(/review-trigger ready/);
+    // The marker is a plain fact, never a severity alarm.
+    expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+  });
+
   // ── R₂ selection wiring (mirrors RPrsSection's onSelectPr/aria-current) ──
 
   it("clicking a row calls onSelect with the approach wire object", async () => {

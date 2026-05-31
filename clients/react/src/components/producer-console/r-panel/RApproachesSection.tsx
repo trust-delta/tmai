@@ -15,6 +15,7 @@
 import { useApproaches } from "@/hooks/useApproaches";
 import type { ApproachStatus, ApproachWire, RepoApproachesWire } from "@/lib/api";
 import { type SelectedRecord, selectedRecordKey } from "./r-viewer/RRecordViewer";
+import { isReviewTriggerReady } from "./r-viewer/review-trigger";
 import { Section } from "./Section";
 
 interface RApproachesSectionProps {
@@ -200,7 +201,18 @@ function ApproachRow({
       >
         <span className="font-mono text-subtle-foreground">{approach.date}</span>{" "}
         <span className="text-foreground">{approach.title}</span>
-        <div className="text-[11px] text-subtle-foreground">{approach.slug}</div>
+        <div className="text-[11px] text-subtle-foreground">
+          {approach.slug} · {approach.status}
+          {/* confidence: present-only (`null` = none on record). */}
+          {approach.confidence !== null && <> · {approach.confidence}</>}
+          {/* review-trigger ready = a date trigger is due (verdict due).
+              Present-only and PLAIN — surfaced for "should I look?"
+              scanning, never an alarm. The specific triggers stay in R₂'s
+              ReviewTriggerIndicator. */}
+          {isReviewTriggerReady(approach) && (
+            <span className="text-foreground"> · review-trigger ready</span>
+          )}
+        </div>
       </button>
     </li>
   );
