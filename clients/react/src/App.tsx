@@ -14,6 +14,10 @@ import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
 import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
 import { RPanel } from "@/components/producer-console/r-panel/RPanel";
 import {
+  RCalibrationViewer,
+  selectedCalibrationKey,
+} from "@/components/producer-console/r-panel/r-viewer/RCalibrationViewer";
+import {
   RIssueViewer,
   selectedIssueKey,
 } from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
@@ -128,11 +132,12 @@ export function App() {
   // at the seams. See the rPanel*Width helpers above.
   const [rPanelWidth, setRPanelWidth] = useUIPref("attentionStripWidth");
   // The artifact in focus in R₂. R₂ hosts exactly ONE focused artifact at
-  // a time — a PR (#749), a record (decision/approach), or an issue — so
-  // focusing one kind clears the others (the invariant lives in
-  // `useFocusedArtifact`). All null = no viewer (it never auto-opens — the
-  // operator clicks a row in the R₁ inventory to select; viewer-approach
-  // negative space). Lives at App level because focus mode (spine
+  // a time — a PR (#749), a record (decision/approach), an issue, or the
+  // unit's calibration — so focusing one kind clears the others (the
+  // invariant lives in `useFocusedArtifact`). All null = no viewer (it
+  // never auto-opens — the operator clicks a row in the R₁ inventory to
+  // select; viewer-approach negative space). Lives at App level because
+  // focus mode (spine
   // `2026-05-29-c-and-r-as-the-development-substrate`) RIDES the R panel's
   // single column: a focus swaps R₁'s inventory body for the R₂ viewer at
   // the same drag-set width (`viewer` prop below), rather than adding a
@@ -141,12 +146,15 @@ export function App() {
     selectedPr,
     selectedRecord,
     selectedIssue,
+    selectedCalibration,
     selectPr,
     selectRecord,
     selectIssue,
+    selectCalibration,
     clearPr,
     clearRecord,
     clearIssue,
+    clearCalibration,
     clearAll: clearFocusedArtifact,
   } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
@@ -593,7 +601,7 @@ export function App() {
   );
 
   // Focus-mode viewer node (spine `2026-05-29-c-and-r-as-the-development-
-  // substrate`). At most one of the three is non-null (`useFocusedArtifact`
+  // substrate`). At most one of the four is non-null (`useFocusedArtifact`
   // keeps them mutually exclusive), so this resolves to a single viewer or
   // null. It is handed to RPanel as `viewer`, where it REPLACES the R₁
   // inventory body in the same column — opening/closing it never changes
@@ -610,6 +618,8 @@ export function App() {
     />
   ) : selectedIssue ? (
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
+  ) : selectedCalibration ? (
+    <RCalibrationViewer selected={selectedCalibration} onClose={clearCalibration} />
   ) : null;
 
   return (
@@ -870,6 +880,10 @@ export function App() {
             selectedIssue
               ? selectedIssueKey(selectedIssue.repoPath, selectedIssue.issue.number)
               : null
+          }
+          onSelectCalibration={selectCalibration}
+          selectedCalibrationKey={
+            selectedCalibration ? selectedCalibrationKey(selectedCalibration.unit) : null
           }
           viewer={rViewer}
         />

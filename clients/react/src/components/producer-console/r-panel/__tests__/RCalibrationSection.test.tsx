@@ -68,4 +68,44 @@ describe("RCalibrationSection", () => {
     });
     expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
   });
+
+  it("the detail affordance calls onSelectCalibration with { unit }", async () => {
+    calibrationMock.mockResolvedValue(response());
+    const onSelectCalibration = vi.fn();
+    render(
+      <RCalibrationSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelectCalibration={onSelectCalibration}
+      />,
+    );
+    const button = await screen.findByText(/View calibration detail/);
+    button.click();
+    expect(onSelectCalibration).toHaveBeenCalledWith({ unit: "u" });
+  });
+
+  it("marks the detail affordance aria-current when its unit is the one open in R₂", async () => {
+    calibrationMock.mockResolvedValue(response());
+    render(
+      <RCalibrationSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelectCalibration={vi.fn()}
+        selectedKey="u"
+      />,
+    );
+    const button = await screen.findByText(/View calibration detail/);
+    expect(button.getAttribute("aria-current")).toBe("true");
+  });
+
+  it("omits the detail affordance when no onSelectCalibration is wired", async () => {
+    calibrationMock.mockResolvedValue(response());
+    render(<RCalibrationSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText(/no tripwires or false-negatives/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/View calibration detail/)).toBeNull();
+  });
 });
