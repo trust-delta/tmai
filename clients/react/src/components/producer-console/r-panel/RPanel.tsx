@@ -37,6 +37,7 @@ import { RHandoverSection } from "./RHandoverSection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedCalibration } from "./r-viewer/RCalibrationViewer";
+import type { SelectedHandoff } from "./r-viewer/RHandoverViewer";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
 import type { SelectedRecord } from "./r-viewer/RRecordViewer";
@@ -89,6 +90,13 @@ interface RPanelProps {
   /** `selectedCalibrationKey(unit)` of the calibration currently open in
    *  R₂, so the focused R₁ Calibration affordance marks itself. */
   selectedCalibrationKey?: string | null;
+  /** Open a hand-over baton in the R₂ hand-over viewer column. Threaded to
+   *  the R₁ Hand-over inventory so a row click selects the baton for
+   *  in-tmai viewing. */
+  onSelectHandoff?: (sel: SelectedHandoff) => void;
+  /** `selectedHandoffKey(unit, name)` of the baton currently open in R₂, so
+   *  the focused R₁ Hand-over row marks itself. */
+  selectedHandoffKey?: string | null;
   /** Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`,
    *  its deferred "R₁/R₂ visual ratio" point): the R₂ viewer for the
    *  currently-focused artifact. When non-null it RIDES THIS SAME COLUMN —
@@ -128,6 +136,8 @@ export function RPanel({
   selectedIssueKey,
   onSelectCalibration,
   selectedCalibrationKey,
+  onSelectHandoff,
+  selectedHandoffKey,
   viewer,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
@@ -271,6 +281,8 @@ export function RPanel({
               unitName={unitName}
               expanded={isExpanded("handover")}
               onToggle={() => toggle("handover")}
+              onSelectHandoff={onSelectHandoff}
+              selectedKey={selectedHandoffKey}
             />
             <RFilesSection
               currentProjectPath={currentProjectPath}
