@@ -9,7 +9,7 @@ cross-repo-refs:
   - "tmai-core:issues/341"
   - "tmai-core:doc/decisions/2026-05-13-tmai-is-a-producer-exoskeleton.md"
   - "tmai-core:doc/decisions/2026-05-13-producer-feedback-loop-and-decision-tiers.md"
-last-verified: 2026-05-31
+last-verified: 2026-06-02
 contract-surface: false
 related:
   - "2026-05-14-react-producer-console-rebuild"

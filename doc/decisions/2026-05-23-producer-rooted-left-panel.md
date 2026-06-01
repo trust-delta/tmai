@@ -8,7 +8,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-16-producer-identity-and-operator-addressing.md"
   - "tmai-core:doc/decisions/2026-05-18-producer-worker-identity-hierarchy.md"
   - "tmai-core:doc/decisions/2026-05-11-producer-only-operator-interface.md"
-last-verified: 2026-05-31
+last-verified: 2026-06-02
 contract-surface: false
 related:
   - "2026-05-14-react-producer-console-rebuild"
