@@ -114,6 +114,9 @@
           "200": {
             "description": "Δ-brief marked delivered for the PR (idempotent)"
           },
+          "400": {
+            "description": "`ci_local_attestation` present but malformed — empty after trim, or missing the `ci-local summary` marker (store-time validation, #476). Body: `{\"error\", \"required\"}`. Absent attestation is never rejected here."
+          },
           "404": {
             "description": "Repository not found"
           }
