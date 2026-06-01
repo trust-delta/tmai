@@ -508,6 +508,45 @@
         }
       }
     },
+    "/api/units/{unit}/issues": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/issues`.",
+        "description": "The issues peer of `GET /api/units/{unit}/prs`: one unit-scoped list of the\n*open* issues across every repo in the unit's `repos[]`, each issue tagged\nwith the repo it belongs to (path + stable label + primary flag), grouped\nper repo (primary first, then declaration order) and newest-first within\neach repo. Reuses the single-repo `github::list_issues` gh-CLI path (30s TTL\ncache) fanned out over the unit's repos. Unit resolution goes through the\npost-#387 resolver, so a worktree-name unit still reduces to its owning\nunit. Real handler: `crate::web::api::get_unit_issues`.",
+        "operationId": "get_unit_issues_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open issues across the unit's repos, grouped per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitIssuesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Issue listing failed for a repo (is gh authenticated?)"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/producer-feed": {
       "get": {
         "tags": [
@@ -3336,6 +3375,62 @@
           }
         }
       },
+      "IssueLabelWire": {
+        "type": "object",
+        "description": "One issue label projected to the wire — a TS/utoipa-deriving mirror of\n[`crate::github::IssueLabel`].\n\nWHY this exists rather than re-using the domain `IssueLabel`: the domain\ntype derives only `serde`, NOT `ts_rs::TS` / `utoipa::ToSchema`. Giving the\n`github::` domain types those derives would cascade new generated TS / spec\nschemas whose shape must then be kept in lock-step with `gh`'s JSON — the\nsame downstream `tsc -b` break risk the `pr_view.rs` header comment\ndescribes for the enum-ish PR fields. A thin wire mirror keeps the value\nbyte-identical to what the domain type serializes while leaving the domain\nderive stack untouched.",
+        "required": [
+          "name",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "IssueSummaryWire": {
+        "type": "object",
+        "description": "One issue projected to the wire. Field-for-field parity with\n[`crate::github::IssueInfo`] so the React client renders a cross-repo entry\nwith the exact same component it would use for a per-repo list.",
+        "required": [
+          "number",
+          "title",
+          "state",
+          "url",
+          "labels",
+          "assignees"
+        ],
+        "properties": {
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueLabelWire"
+            }
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "Milestone": {
         "type": "object",
         "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
@@ -3888,6 +3983,35 @@
               "$ref": "#/components/schemas/FileTreeEntryWire"
             },
             "description": "The repo's file tree (empty when the repo path is not a directory)."
+          }
+        }
+      },
+      "RepoIssuesWire": {
+        "type": "object",
+        "description": "One repo's slice of the unit-scoped issue list. `repo_label` is the stable\ndirectory basename (e.g. `\"tmai-core\"`) — the same scheme\n[`crate::config::ResolvedUnit::from_dir`] uses for unit names; `repo_path`\nis the absolute path of the repo the issues belong to.\n\nUnlike [`crate::api::RepoPrsWire`] there is no `billing_dead` flag —\nissues have no merge/CI gate to override.",
+        "required": [
+          "repo_path",
+          "repo_label",
+          "primary",
+          "issues"
+        ],
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueSummaryWire"
+            },
+            "description": "Open issues in this repo, newest first (descending issue number)."
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "`true` for the unit's primary repo (where the Producer is launched)."
+          },
+          "repo_label": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
           }
         }
       },
@@ -4603,6 +4727,25 @@
           }
         }
       },
+      "UnitIssuesResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/issues` response — the unit's open issues across\nevery repo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface, mirroring [`crate::api::UnitPrsResponse`]:\nthe React side renders one flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+        "required": [
+          "unit",
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoIssuesWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
       "UnitPrsResponse": {
         "type": "object",
         "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
@@ -4971,6 +5114,10 @@
     {
       "name": "prs",
       "description": "Stage-1 in-tmai dev-loop: unit-scoped multi-repo PR list + PR code-diff (DR 2026-05-16-dev-loop-completes-in-tmai §A/§B)"
+    },
+    {
+      "name": "issues",
+      "description": "Unit-scoped multi-repo open-issue list — the issues peer of the PR list, grouped per repo (primary first), newest-first within each repo"
     },
     {
       "name": "producer-feed",
