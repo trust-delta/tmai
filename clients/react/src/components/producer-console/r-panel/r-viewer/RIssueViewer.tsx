@@ -13,13 +13,16 @@
 // mount on a non-null `selectedIssue`). R₁ (`RIssuesSection`) stays a pure
 // inventory; this viewer renders the clicked issue's full content.
 //
-// SCOPE — read-only, per-repo, NO actions. This is the (ii) judgment-info
-// viewer only. The (iii) lifecycle acts (close / comment / reopen) need
-// an issue write endpoint that does NOT exist server-side and are
-// explicitly deferred — the viewer mutates nothing, and there is no
-// `[→Producer brief]` button. Issues stay PER-REPO (the existing
-// `useIssues(repoPath)` single-project fetch); cross-repo unit-scoping is
-// a deferred tmai-core follow-up.
+// SCOPE — read-only, NO actions. This is the (ii) judgment-info viewer
+// only. The (iii) lifecycle acts (close / comment / reopen) need an issue
+// write endpoint that does NOT exist server-side and are explicitly
+// deferred — the viewer mutates nothing, and there is no
+// `[→Producer brief]` button. The R₁ inventory (`RIssuesSection`) is now
+// unit-scoped (`useUnitIssues`, the cross-repo issues twin of
+// `useUnitPrs`, #759); each repo's issue carries its own `repo_path`, so
+// this viewer's per-repo issue-DETAIL fetch (`useIssueDetail(repoPath,
+// number)`) is driven by the clicked issue's repo — one coherent issue,
+// not a cross-repo aggregate.
 //
 // Unlike `RPrViewer` (which fans out N section fetches against several
 // `gh`-backed endpoints), there is ONE issue-detail endpoint that returns

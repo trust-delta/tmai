@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 //
-// RIssuesSection — `N open` count from a new fetch (useIssues
-// fans out to api.listIssues for the focused repo).
+// RIssuesSection — open issue inventory (R₁), unit-scoped and grouped by
+// repo (the issues twin of RPrsSection, fed by `useUnitIssues` →
+// `api.unitIssues`). R₁ is pure inventory: no severity-color badges, no
+// github.com link-out — the row is an in-tmai select that opens the R₂
+// viewer with the wire's `repo_path` + `repo_label`. The endpoint returns
+// open issues already, so the header count is just the sum across repos.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { IssueInfo } from "@/lib/api";
+import type { IssueSummaryWire, RepoIssuesWire, UnitIssuesResponse } from "@/lib/api";
 
-const listIssuesMock = vi.fn();
+const unitIssuesMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -15,16 +19,16 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      listIssues: (...args: unknown[]) => listIssuesMock(...args),
+      unitIssues: (...args: unknown[]) => unitIssuesMock(...args),
     },
   };
 });
 
 import { RIssuesSection } from "../RIssuesSection";
 
-function issue(overrides: Partial<IssueInfo> = {}): IssueInfo {
+function issue(overrides: Partial<IssueSummaryWire> = {}): IssueSummaryWire {
   return {
-    number: 1,
+    number: 1n,
     title: "Issue 1",
     state: "open",
     url: "https://github.com/o/r/issues/1",
@@ -34,41 +38,91 @@ function issue(overrides: Partial<IssueInfo> = {}): IssueInfo {
   };
 }
 
+function repo(overrides: Partial<RepoIssuesWire> = {}): RepoIssuesWire {
+  return {
+    repo_path: "/p/u",
+    repo_label: "u",
+    primary: true,
+    issues: [],
+    ...overrides,
+  };
+}
+
+function response(repos: RepoIssuesWire[]): UnitIssuesResponse {
+  return { unit: "u", repos };
+}
+
 beforeEach(() => {
-  listIssuesMock.mockReset();
+  unitIssuesMock.mockReset();
 });
 
 describe("RIssuesSection", () => {
-  it("renders open issues from the focused repo path", async () => {
-    listIssuesMock.mockResolvedValue([issue(), issue({ number: 2, title: "Issue 2" })]);
-    render(<RIssuesSection currentProjectPath="/p/u" expanded={true} onToggle={vi.fn()} />);
+  it("renders open issues from the unit-scoped wire", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([repo({ issues: [issue(), issue({ number: 2n, title: "Issue 2" })] })]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
     await waitFor(() => {
       expect(screen.getByText("Issue 1")).toBeTruthy();
     });
     expect(screen.getByText("Issue 2")).toBeTruthy();
   });
 
-  it("header `N open` counts only open issues; closed issues hidden from count AND body", async () => {
-    listIssuesMock.mockResolvedValue([
-      issue({ state: "open", title: "Open one" }),
-      issue({ number: 2, state: "closed", title: "Closed issue" }),
-      issue({ number: 3, state: "open", title: "Open three" }),
-    ]);
-    render(<RIssuesSection currentProjectPath="/p/u" expanded={true} onToggle={vi.fn()} />);
+  it("header `N open` sums issue counts across repos from the wire (no client-side filter)", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([
+        repo({
+          repo_path: "/p/core",
+          repo_label: "tmai-core",
+          issues: [issue({ number: 1n, title: "Core issue" })],
+        }),
+        repo({
+          repo_path: "/p/ui",
+          repo_label: "tmai-ui",
+          primary: false,
+          issues: [
+            issue({ number: 2n, title: "UI issue" }),
+            issue({ number: 3n, title: "UI issue 2" }),
+          ],
+        }),
+      ]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
     await waitFor(() => {
-      expect(screen.getByText(/2 open/)).toBeTruthy();
+      expect(screen.getByText(/3 open/)).toBeTruthy();
     });
-    // Negative assertion: closed issue must not leak into the body
-    // either (the header/body source-of-truth must agree).
-    expect(screen.queryByText("Closed issue")).toBeNull();
-    expect(screen.getByText("Open one")).toBeTruthy();
-    expect(screen.getByText("Open three")).toBeTruthy();
+    // Grouped by repo: each repo header is the wire `repo_label` (NOT a
+    // path-basename derivation) and every repo's issues render under it.
+    expect(screen.getByText("tmai-core")).toBeTruthy();
+    expect(screen.getByText("tmai-ui")).toBeTruthy();
+    expect(screen.getByText("Core issue")).toBeTruthy();
+    expect(screen.getByText("UI issue")).toBeTruthy();
+    expect(screen.getByText("UI issue 2")).toBeTruthy();
+  });
+
+  it("does not render a repo header for a single-repo unit", async () => {
+    unitIssuesMock.mockResolvedValue(response([repo({ issues: [issue()] })]));
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText("Issue 1")).toBeTruthy();
+    });
+    // Single repo ⇒ no per-repo grouping header (mirrors RPrsSection).
+    expect(screen.queryByText("u")).toBeNull();
+  });
+
+  it("empty state — header shows `0 open`", async () => {
+    unitIssuesMock.mockResolvedValue(response([repo({ issues: [] })]));
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText(/0 open/)).toBeTruthy();
+    });
+    expect(screen.getByText(/No issues/i)).toBeTruthy();
   });
 
   it("uses no severity colors", async () => {
-    listIssuesMock.mockResolvedValue([issue()]);
+    unitIssuesMock.mockResolvedValue(response([repo({ issues: [issue()] })]));
     const { container } = render(
-      <RIssuesSection currentProjectPath="/p/u" expanded={true} onToggle={vi.fn()} />,
+      <RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Issue 1")).toBeTruthy();
@@ -77,9 +131,9 @@ describe("RIssuesSection", () => {
   });
 
   it("has NO github.com link-out — the row is an in-tmai select", async () => {
-    listIssuesMock.mockResolvedValue([issue()]);
+    unitIssuesMock.mockResolvedValue(response([repo({ issues: [issue()] })]));
     const { container } = render(
-      <RIssuesSection currentProjectPath="/p/u" expanded={true} onToggle={vi.fn()} />,
+      <RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Issue 1")).toBeTruthy();
@@ -89,12 +143,14 @@ describe("RIssuesSection", () => {
     expect(container.querySelector("a[href*='github.com']")).toBeNull();
   });
 
-  it("clicking an issue row selects it for the R₂ viewer with the full payload", async () => {
+  it("clicking an issue row selects it for the R₂ viewer with wire repo_path/repo_label", async () => {
     const onSelectIssue = vi.fn();
-    listIssuesMock.mockResolvedValue([issue()]);
+    unitIssuesMock.mockResolvedValue(
+      response([repo({ repo_path: "/p/tmai-core", repo_label: "tmai-core", issues: [issue()] })]),
+    );
     render(
       <RIssuesSection
-        currentProjectPath="/p/u"
+        unitName="u"
         expanded={true}
         onToggle={vi.fn()}
         onSelectIssue={onSelectIssue}
@@ -106,42 +162,20 @@ describe("RIssuesSection", () => {
     fireEvent.click(screen.getByText("Issue 1"));
     expect(onSelectIssue).toHaveBeenCalledTimes(1);
     const sel = onSelectIssue.mock.calls[0][0];
-    expect(sel.repoPath).toBe("/p/u");
-    // repoLabel is derived from the project path basename.
-    expect(sel.repoLabel).toBe("u");
+    // repoPath + repoLabel now come straight from the wire (no path
+    // basename derivation).
+    expect(sel.repoPath).toBe("/p/tmai-core");
+    expect(sel.repoLabel).toBe("tmai-core");
+    // bigint wire number narrows to a plain number for `SelectedIssue`.
     expect(sel.issue.number).toBe(1);
-  });
-
-  it("derives a non-empty repoLabel even when the project path has a trailing slash", async () => {
-    const onSelectIssue = vi.fn();
-    listIssuesMock.mockResolvedValue([issue()]);
-    render(
-      <RIssuesSection
-        currentProjectPath="/p/u/"
-        expanded={true}
-        onToggle={vi.fn()}
-        onSelectIssue={onSelectIssue}
-      />,
-    );
-    await waitFor(() => {
-      expect(screen.getByText("Issue 1")).toBeTruthy();
-    });
-    fireEvent.click(screen.getByText("Issue 1"));
-    // Trailing slash must not blank the label — empty segments are dropped
-    // so the basename still resolves.
-    expect(onSelectIssue.mock.calls[0][0].repoLabel).toBe("u");
+    expect(typeof sel.issue.number).toBe("number");
   });
 
   it("marks the focused row with aria-current (and no others)", async () => {
-    listIssuesMock.mockResolvedValue([issue(), issue({ number: 2, title: "Issue 2" })]);
-    render(
-      <RIssuesSection
-        currentProjectPath="/p/u"
-        expanded={true}
-        onToggle={vi.fn()}
-        selectedKey="/p/u#2"
-      />,
+    unitIssuesMock.mockResolvedValue(
+      response([repo({ issues: [issue(), issue({ number: 2n, title: "Issue 2" })] })]),
     );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} selectedKey="/p/u#2" />);
     await waitFor(() => {
       expect(screen.getByText("Issue 2")).toBeTruthy();
     });
