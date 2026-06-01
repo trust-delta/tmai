@@ -250,7 +250,7 @@ export function RPanel({
               selectedKey={selectedPrKey}
             />
             <RIssuesSection
-              currentProjectPath={currentProjectPath}
+              unitName={unitName}
               expanded={isExpanded("issues")}
               onToggle={() => toggle("issues")}
               onSelectIssue={onSelectIssue}

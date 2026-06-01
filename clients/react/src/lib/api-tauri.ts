@@ -139,7 +139,6 @@ export const api = {
   gitGraph: (repoPath: string, limit?: number) => httpApi.gitGraph(repoPath, limit),
   listPrs: (repoPath: string) => httpApi.listPrs(repoPath),
   listChecks: (repoPath: string, branch: string) => httpApi.listChecks(repoPath, branch),
-  listIssues: (repoPath: string) => httpApi.listIssues(repoPath),
   getIssueDetail: (repoPath: string, issueNumber: number) =>
     httpApi.getIssueDetail(repoPath, issueNumber),
   getPrComments: (repoPath: string, prNumber: number) => httpApi.getPrComments(repoPath, prNumber),
@@ -267,6 +266,10 @@ export const api = {
   // Unit-scoped cross-repo PR list (HTTP only — gh-CLI passthrough
   // fanned out over the unit's repos; no Tauri-specific path needed)
   unitPrs: (unit: string) => httpApi.unitPrs(unit),
+
+  // Unit-scoped cross-repo issue list — the issues peer of `unitPrs`
+  // (HTTP only — gh-CLI passthrough fanned out over the unit's repos)
+  unitIssues: (unit: string) => httpApi.unitIssues(unit),
 
   // Configured-unit membership view (HTTP only — membership-only,
   // no live agent state joined server-side; no Tauri-specific path needed)

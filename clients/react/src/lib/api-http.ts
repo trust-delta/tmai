@@ -17,6 +17,8 @@ import type { HandoffContentResponse } from "@/types/generated/HandoffContentRes
 import type { HandoffEntryWire } from "@/types/generated/HandoffEntryWire";
 import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
+import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
+import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
@@ -26,6 +28,7 @@ import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
+import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
 import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
@@ -35,6 +38,7 @@ import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { TriageVerdict } from "@/types/generated/TriageVerdict";
+import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
 import type { UnitResponse } from "@/types/generated/UnitResponse";
@@ -59,6 +63,8 @@ export type {
   HandoffEntryWire,
   HandoffRitualEvent,
   HandoffsResponse,
+  IssueLabelWire,
+  IssueSummaryWire,
   Outcome,
   PermissionMode,
   PrDiffResponse,
@@ -68,6 +74,7 @@ export type {
   QueueAgentEntry,
   QueueSnapshot,
   RepoApproachesWire,
+  RepoIssuesWire,
   RepoPrsWire,
   ReviewExtensionWire,
   ReviewTriggerWire,
@@ -75,6 +82,7 @@ export type {
   SpawnRuntime,
   TerminalSubscription,
   TriageVerdict,
+  UnitIssuesResponse,
   UnitPrsResponse,
   UnitRepoWire,
   UnitResponse,
@@ -1226,8 +1234,6 @@ export const api = {
     apiFetch<CiSummary>(
       `/github/checks?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`,
     ),
-  listIssues: (repoPath: string) =>
-    apiFetch<IssueInfo[]>(`/github/issues?repo=${encodeURIComponent(repoPath)}`),
   getIssueDetail: (repoPath: string, issueNumber: number) =>
     apiFetch<IssueDetail>(
       `/github/issue/detail?repo=${encodeURIComponent(repoPath)}&issue_number=${issueNumber}`,
@@ -1509,6 +1515,16 @@ export const api = {
   // list, NOT a per-repo switcher. Single-repo unit collapses to
   // `repos.length === 1`.
   unitPrs: (unit: string) => apiFetch<UnitPrsResponse>(`/units/${encodeURIComponent(unit)}/prs`),
+
+  // Unit-scoped cross-repo open-issue list — the issues peer of `unitPrs`
+  // (tmai-core `GET /api/units/{unit}/issues`). One unified list across
+  // every repo in the unit, each issue repo-tagged (path + stable label +
+  // primary flag); the React side renders one grouped-by-repo list, NOT a
+  // per-repo switcher. Single-repo unit collapses to `repos.length === 1`.
+  // Unlike `unitPrs` there is no `billing_dead` flag — issues have no
+  // merge/CI gate to override.
+  unitIssues: (unit: string) =>
+    apiFetch<UnitIssuesResponse>(`/units/${encodeURIComponent(unit)}/issues`),
 
   // Configured-unit membership (tmai-core #460, public mirror tmai#741).
   // Membership-only — no live agent state is joined server-side; the
