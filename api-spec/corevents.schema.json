@@ -1517,6 +1517,62 @@
       ],
       "type": "object"
     },
+    "IssueLabelWire": {
+      "description": "One issue label projected to the wire — a TS/utoipa-deriving mirror of\n[`crate::github::IssueLabel`].\n\nWHY this exists rather than re-using the domain `IssueLabel`: the domain\ntype derives only `serde`, NOT `ts_rs::TS` / `utoipa::ToSchema`. Giving the\n`github::` domain types those derives would cascade new generated TS / spec\nschemas whose shape must then be kept in lock-step with `gh`'s JSON — the\nsame downstream `tsc -b` break risk the `pr_view.rs` header comment\ndescribes for the enum-ish PR fields. A thin wire mirror keeps the value\nbyte-identical to what the domain type serializes while leaving the domain\nderive stack untouched.",
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "color"
+      ],
+      "type": "object"
+    },
+    "IssueSummaryWire": {
+      "description": "One issue projected to the wire. Field-for-field parity with\n[`crate::github::IssueInfo`] so the React client renders a cross-repo entry\nwith the exact same component it would use for a per-repo list.",
+      "properties": {
+        "assignees": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/$defs/IssueLabelWire"
+          },
+          "type": "array"
+        },
+        "number": {
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "state",
+        "url",
+        "labels",
+        "assignees"
+      ],
+      "type": "object"
+    },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
       "properties": {
@@ -2069,6 +2125,35 @@
         "path",
         "primary",
         "tree"
+      ],
+      "type": "object"
+    },
+    "RepoIssuesWire": {
+      "description": "One repo's slice of the unit-scoped issue list. `repo_label` is the stable\ndirectory basename (e.g. `\"tmai-core\"`) — the same scheme\n[`crate::config::ResolvedUnit::from_dir`] uses for unit names; `repo_path`\nis the absolute path of the repo the issues belong to.\n\nUnlike [`crate::api::RepoPrsWire`] there is no `billing_dead` flag —\nissues have no merge/CI gate to override.",
+      "properties": {
+        "issues": {
+          "description": "Open issues in this repo, newest first (descending issue number).",
+          "items": {
+            "$ref": "#/$defs/IssueSummaryWire"
+          },
+          "type": "array"
+        },
+        "primary": {
+          "description": "`true` for the unit's primary repo (where the Producer is launched).",
+          "type": "boolean"
+        },
+        "repo_label": {
+          "type": "string"
+        },
+        "repo_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo_path",
+        "repo_label",
+        "primary",
+        "issues"
       ],
       "type": "object"
     },
@@ -2771,6 +2856,25 @@
         "repos": {
           "items": {
             "$ref": "#/$defs/RepoFilesWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "repos"
+      ],
+      "type": "object"
+    },
+    "UnitIssuesResponse": {
+      "description": "`GET /api/units/{unit}/issues` response — the unit's open issues across\nevery repo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface, mirroring [`crate::api::UnitPrsResponse`]:\nthe React side renders one flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+      "properties": {
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoIssuesWire"
           },
           "type": "array"
         },
