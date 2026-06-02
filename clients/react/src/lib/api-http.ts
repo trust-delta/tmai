@@ -3,6 +3,7 @@
 
 import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
 import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
+import type { ApproachInventoryWire } from "@/types/generated/ApproachInventoryWire";
 import type { ApproachStatus } from "@/types/generated/ApproachStatus";
 import type { ApproachWire } from "@/types/generated/ApproachWire";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
@@ -10,6 +11,7 @@ import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire"
 import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
 import type { CalibrationResponse } from "@/types/generated/CalibrationResponse";
 import type { Confidence } from "@/types/generated/Confidence";
+import type { DecisionInventoryWire } from "@/types/generated/DecisionInventoryWire";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
@@ -38,6 +40,7 @@ import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { TriageVerdict } from "@/types/generated/TriageVerdict";
+import type { UnitInventoryResponse } from "@/types/generated/UnitInventoryResponse";
 import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
@@ -50,6 +53,7 @@ import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 export type {
   AgentCtxUsage,
   ApproachesResponse,
+  ApproachInventoryWire,
   ApproachStatus,
   ApproachWire,
   BootstrapRequiredEvent,
@@ -57,6 +61,7 @@ export type {
   CalibrationEntry,
   CalibrationResponse,
   Confidence,
+  DecisionInventoryWire,
   DispatchBundle,
   EntityUpdateEnvelope,
   HandoffContentResponse,
@@ -82,6 +87,7 @@ export type {
   SpawnRuntime,
   TerminalSubscription,
   TriageVerdict,
+  UnitInventoryResponse,
   UnitIssuesResponse,
   UnitPrsResponse,
   UnitRepoWire,
@@ -1525,6 +1531,15 @@ export const api = {
   // merge/CI gate to override.
   unitIssues: (unit: string) =>
     apiFetch<UnitIssuesResponse>(`/units/${encodeURIComponent(unit)}/issues`),
+
+  // Unit-scoped cross-record in-play inventory (tmai-core #485/#486) — the
+  // nested projection behind the R panel's in-play section: every decision
+  // (serving approaches nested) followed by the unanchored approaches, with
+  // each approach's fact-projected status, work-residual, and liveness. A
+  // pure projection (mechanical facts, no appraisal); the React side renders
+  // it light and plain.
+  unitInventory: (unit: string) =>
+    apiFetch<UnitInventoryResponse>(`/units/${encodeURIComponent(unit)}/inventory`),
 
   // Configured-unit membership (tmai-core #460, public mirror tmai#741).
   // Membership-only — no live agent state is joined server-side; the
