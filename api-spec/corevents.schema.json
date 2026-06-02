@@ -99,6 +99,37 @@
       ],
       "type": "string"
     },
+    "ApproachInventoryWire": {
+      "description": "One approach's projected inventory row, mirroring [`ApproachEntry`]. An\napproach serving N decisions is cloned into each serving decision's nest\n(and into the unanchored list if it serves none in scope) — the same shape\neither way.",
+      "properties": {
+        "display": {
+          "description": "Slug with the `YYYY-MM-DD-` prefix stripped, for compact display.",
+          "type": "string"
+        },
+        "liveness": {
+          "$ref": "#/$defs/LivenessWire"
+        },
+        "projected_status": {
+          "$ref": "#/$defs/ProjectedStatusWire",
+          "description": "Status projected from the approach's fact-log."
+        },
+        "slug": {
+          "description": "Full record slug (`YYYY-MM-DD-…`).",
+          "type": "string"
+        },
+        "work_residual": {
+          "$ref": "#/$defs/WorkResidualWire"
+        }
+      },
+      "required": [
+        "slug",
+        "display",
+        "projected_status",
+        "work_residual",
+        "liveness"
+      ],
+      "type": "object"
+    },
     "ApproachStatus": {
       "description": "Lifecycle position of an approach record.\n\nUnlike [`super::decision::DecisionStatus`], the approach lifecycle resolves\noutward (`planned → partial → ready → running → validated / rejected /\nreplaced`) rather than through a supersede chain. The old `active` state\nwas found (#462 Amendment 2026-05-28) to smuggle two distinct layers into\none enum value — the intrinsic phase of the approach (`(α)` \"is the\nsuccess-signal armed?\") and the operator's stance (`(β)` \"am I currently\nwatching this?\"). Splitting it into `Ready` and `Running` keeps the enum\nhonest to layer `(α)` only: documents speak about themselves, not about\nwhether they are being observed.\n\nA validated / rejected approach is preserved as the audit-trail record of\n*what we tried and what happened*; a follow-up decision (if any) is\nauthored separately rather than in-place.\n\nSee `doc/approaches/2026-05-27-approach-lifecycle-planned-and-partial-states.md`,\nAmendment 2026-05-28 for the `Ready` / `Running` split and the dashboard\n全件可視化 direction.",
       "enum": [
@@ -590,6 +621,49 @@
         "foundational"
       ],
       "type": "string"
+    },
+    "DecisionInventoryWire": {
+      "description": "One decision's projected inventory row with its serving approaches nested,\nmirroring [`DecisionEntry`].\n\n`frontmatter_status` is the decision's *frontmatter* lifecycle status\n(`draft` / `proposed` / `accepted` / …) — orienting context, NOT a fact\nprojection. The #484 engine projects status from facts for *approaches*\nonly; a decision's only status is the asserted frontmatter one, so this\nwire field carries it under its honest name rather than mislabelling it a\nprojection.",
+      "properties": {
+        "display": {
+          "description": "Slug with the `YYYY-MM-DD-` prefix stripped, for compact display.",
+          "type": "string"
+        },
+        "frontmatter_status": {
+          "$ref": "#/$defs/DecisionStatus",
+          "description": "The decision's frontmatter lifecycle status (display context)."
+        },
+        "running_count": {
+          "description": "How many serving approaches project to `running` (feeds the `overflow`\nrender; a mechanical count, not an appraisal).",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "serving": {
+          "description": "Approaches whose `serves:` names this decision, projected + nested.",
+          "items": {
+            "$ref": "#/$defs/ApproachInventoryWire"
+          },
+          "type": "array"
+        },
+        "serving_health": {
+          "$ref": "#/$defs/ServingHealthWire",
+          "description": "Running-means verdict over the serving set."
+        },
+        "slug": {
+          "description": "Full record slug (`YYYY-MM-DD-…`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "display",
+        "frontmatter_status",
+        "serving_health",
+        "running_count",
+        "serving"
+      ],
+      "type": "object"
     },
     "DecisionStatus": {
       "description": "Current standing of a decision.",
@@ -1573,6 +1647,34 @@
       ],
       "type": "object"
     },
+    "LivenessWire": {
+      "description": "Liveness of an approach's latest fact, mirroring [`Liveness`]. `last_fact`\nis an ISO `YYYY-MM-DD` date (or `null` when the record has no facts); both\n`last_fact` and `days_since` are `null` together in that no-facts case.",
+      "properties": {
+        "days_since": {
+          "description": "`today − last_fact` in whole days, or `null` when there are no facts.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_fact": {
+          "description": "ISO date of the most recent fact, or `null` when the record has none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stalled": {
+          "description": "`true` once the latest fact is more than the engine's staleness window\nold. A record with no facts is never stalled.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stalled"
+      ],
+      "type": "object"
+    },
     "Milestone": {
       "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
       "properties": {
@@ -1888,6 +1990,16 @@
         "triggered"
       ],
       "type": "object"
+    },
+    "ProjectedStatusWire": {
+      "description": "A record's fact-projected status, mirroring [`ProjectedStatus`].\n\nkebab-case on the wire (`not-started` / `running` / `accepted` /\n`abandoned`) — byte-identical to [`ProjectedStatus::label`].",
+      "enum": [
+        "not-started",
+        "running",
+        "accepted",
+        "abandoned"
+      ],
+      "type": "string"
     },
     "QueueAgentEntry": {
       "description": "Per-agent view of the prompt queue.",
@@ -2441,6 +2553,16 @@
       ],
       "type": "object"
     },
+    "ServingHealthWire": {
+      "description": "The per-decision running-means verdict over its serving approaches,\nmirroring [`ServingHealth`].\n\nkebab-case on the wire (`orphaned` / `no-running-means` / `healthy` /\n`overflow`). A mechanical classification of `(serving, running)` counts —\nNOT a severity (the UI decides how to render each verdict).",
+      "enum": [
+        "orphaned",
+        "no-running-means",
+        "healthy",
+        "overflow"
+      ],
+      "type": "string"
+    },
     "SpawnRole": {
       "description": "Role of a spawned agent.",
       "enum": [
@@ -2869,6 +2991,49 @@
       ],
       "type": "object"
     },
+    "UnitInventoryResponse": {
+      "description": "`GET /api/units/{unit}/inventory` response — the unit's nested in-play\ninventory, mirroring [`Inventory`].\n\nEvery decision (sorted by slug, serving approaches nested) followed by the\nunanchored approaches. `today` is the ISO reference date liveness was\ncomputed against (so the R-panel can render an \"as of\" without guessing the\nserver clock).",
+      "properties": {
+        "approach_count": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decision_count": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/DecisionInventoryWire"
+          },
+          "type": "array"
+        },
+        "today": {
+          "description": "ISO `YYYY-MM-DD` reference date the liveness was computed against.",
+          "type": "string"
+        },
+        "unanchored_approaches": {
+          "items": {
+            "$ref": "#/$defs/ApproachInventoryWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "today",
+        "decision_count",
+        "approach_count",
+        "decisions",
+        "unanchored_approaches"
+      ],
+      "type": "object"
+    },
     "UnitIssuesResponse": {
       "description": "`GET /api/units/{unit}/issues` response — the unit's open issues across\nevery repo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface, mirroring [`crate::api::UnitPrsResponse`]:\nthe React side renders one flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
       "properties": {
@@ -3059,6 +3224,27 @@
         "vendor",
         "state",
         "last_changed_at"
+      ],
+      "type": "object"
+    },
+    "WorkResidualWire": {
+      "description": "The outstanding work-residual: the unconfirmed/unabandoned id set the #484\n`work_residual` projection yields, plus its `count` so the React side need\nnot recompute `outstanding.len()`. `outstanding` is sorted + de-duplicated\nby the engine.",
+      "properties": {
+        "count": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outstanding": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "outstanding",
+        "count"
       ],
       "type": "object"
     },
