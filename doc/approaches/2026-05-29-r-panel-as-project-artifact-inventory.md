@@ -1,5 +1,7 @@
 ---
-status: planned
+status: replaced
+replaced-by:
+  - 2026-06-04-attention-as-per-artifact-field
 governs:
   - clients/react/src/components/producer-console/
 cross-repo-refs:
@@ -8,6 +10,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-11-review-attention-budget-principle.md"
   - "tmai-core:doc/decisions/2026-05-15-protect-scarce-human-judgment.md"
   - "tmai-core:doc/decisions/2026-05-16-authority-attaches-to-the-act.md"
+  - "tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md"
 serves:
   - 2026-05-14-react-producer-console-rebuild
 success-signal: >
@@ -121,6 +124,7 @@ R 設計の core discriminator は negative space:
 
 - 2026-05-29 (raised): Producer-drafted、原則演習で起票。L attention 系 defer に伴い `structural-gate visibility` amendment は別件で保留。accept は operator merge。
 - 2026-05-29 (Amendment 2026-05-29): negative space 6 項を「tmai-driven 禁止 + operator-controlled 対応 affordance の provide 義務」の対構造として再 articulate。silence-is-not-neutral を R-panel 設計に当てて明示。content access の gap は viewer 層 approach に分離 link。Producer-drafted、accept は operator merge。
+- 2026-06-04 (replaced): superseded by `tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md`（private, planned）。本 approach の thesis（no-machine-appraisal inventory + operator-controlled affordance の provide 義務）は継承され、successor はその **Amendment 2026-05-29 の affordance dual-structure を具体機構として実現**する（per-artifact null/low/high、2-dimension high≤1〔section 横断 bind〕、authorship-scoped coloring、Δ を null に畳む）。ゆえに `rejected` でなく `replaced`。operator の accept act は tmai-core #488 の merge。`status: planned → replaced`。
 
 ---
 
