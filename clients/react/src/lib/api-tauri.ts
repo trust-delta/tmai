@@ -271,6 +271,11 @@ export const api = {
   // (HTTP only — gh-CLI passthrough fanned out over the unit's repos)
   unitIssues: (unit: string) => httpApi.unitIssues(unit),
 
+  // Unit-scoped cross-record in-play inventory (HTTP only — on-demand JSON
+  // projection of the unit's decisions + serving approaches; no
+  // Tauri-specific path needed)
+  unitInventory: (unit: string) => httpApi.unitInventory(unit),
+
   // Configured-unit membership view (HTTP only — membership-only,
   // no live agent state joined server-side; no Tauri-specific path needed)
   units: () => httpApi.units(),

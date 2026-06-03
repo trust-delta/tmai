@@ -40,15 +40,10 @@ import Markdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useApproaches } from "@/hooks/useApproaches";
 import { useDecisions } from "@/hooks/useDecisions";
-import type {
-  ApproachesResponse,
-  ApproachWire,
-  DecisionsResponse,
-  DecisionWire,
-  ReviewTriggerWire,
-} from "@/lib/api";
+import type { ApproachWire, DecisionWire, ReviewTriggerWire } from "@/lib/api";
 import { InventoryBackButton } from "./InventoryBackButton";
 import { PROSE_CLASSES } from "./prose";
+import { buildRecordIndex } from "./record-index";
 import { isDateTriggerReady, todayIso } from "./review-trigger";
 
 // What R₁ hands R₂ on a record row click. The full wire object rides
@@ -106,58 +101,6 @@ export function RRecordViewer({ selected, unitName, onSelectRecord, onClose }: R
       </div>
     </div>
   );
-}
-
-// ── Cross-ref index — slug → the SelectedRecord that owns it ──
-//
-// Decisions are indexed first so a slug colliding across kinds (rare —
-// the two live in different directories) resolves to the decision. A
-// slug absent from the index is a not-yet-existing ref, rendered plain.
-
-function flattenDecisions(decisions: DecisionsResponse | null): {
-  repoPath: string;
-  repoLabel: string;
-  record: DecisionWire;
-}[] {
-  if (decisions === null) return [];
-  return decisions.repos.flatMap((repo) =>
-    [...repo.foundations, ...repo.in_play, ...repo.warm, ...repo.cold, ...repo.superseded].map(
-      (record) => ({ repoPath: repo.repo_root, repoLabel: repo.repo_label, record }),
-    ),
-  );
-}
-
-function flattenApproaches(approaches: ApproachesResponse | null): {
-  repoPath: string;
-  repoLabel: string;
-  record: ApproachWire;
-}[] {
-  if (approaches === null) return [];
-  return approaches.repos.flatMap((repo) =>
-    repo.approaches.map((record) => ({
-      repoPath: repo.repo_root,
-      repoLabel: repo.repo_label,
-      record,
-    })),
-  );
-}
-
-function buildRecordIndex(
-  decisions: DecisionsResponse | null,
-  approaches: ApproachesResponse | null,
-): Map<string, SelectedRecord> {
-  const index = new Map<string, SelectedRecord>();
-  for (const { repoPath, repoLabel, record } of flattenDecisions(decisions)) {
-    if (!index.has(record.slug)) {
-      index.set(record.slug, { kind: "decision", repoPath, repoLabel, record });
-    }
-  }
-  for (const { repoPath, repoLabel, record } of flattenApproaches(approaches)) {
-    if (!index.has(record.slug)) {
-      index.set(record.slug, { kind: "approach", repoPath, repoLabel, record });
-    }
-  }
-  return index;
 }
 
 // ── Header — mechanical identity facts, all plain (no severity tint) ──

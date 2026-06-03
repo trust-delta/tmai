@@ -34,6 +34,7 @@ import { RCalibrationSection } from "./RCalibrationSection";
 import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
 import { RHandoverSection } from "./RHandoverSection";
+import { RInventorySection } from "./RInventorySection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedCalibration } from "./r-viewer/RCalibrationViewer";
@@ -114,6 +115,7 @@ const SECTION_IDS = [
   "issues",
   "decisions",
   "approaches",
+  "inventory",
   "calibration",
   "handover",
   "files",
@@ -267,6 +269,13 @@ export function RPanel({
               unitName={unitName}
               expanded={isExpanded("approaches")}
               onToggle={() => toggle("approaches")}
+              onSelect={onSelectRecord}
+              selectedKey={selectedRecordKey}
+            />
+            <RInventorySection
+              unitName={unitName}
+              expanded={isExpanded("inventory")}
+              onToggle={() => toggle("inventory")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
             />
