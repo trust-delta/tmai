@@ -264,6 +264,10 @@ export const api = {
   // compose()'s ▣ section; no Tauri-specific path needed)
   approaches: (unit: string) => httpApi.approaches(unit),
 
+  // Observations view (HTTP only — on-demand JSON projection of the unit's
+  // doc/observations/ records; no Tauri-specific path needed)
+  observations: (unit: string) => httpApi.observations(unit),
+
   // Unit-scoped cross-repo PR list (HTTP only — gh-CLI passthrough
   // fanned out over the unit's repos; no Tauri-specific path needed)
   unitPrs: (unit: string) => httpApi.unitPrs(unit),
