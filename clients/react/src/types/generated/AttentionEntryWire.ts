@@ -8,7 +8,14 @@ import type { Section } from "./Section";
  * holds the artifact inventory; it infers `null` for any listed artifact that
  * is absent here).
  */
-export type AttentionEntryWire = { section: Section, 
+export type AttentionEntryWire = { 
+/**
+ * The artifact's owning repo (a unit spans multiple repos, so this
+ * discriminates `tmai` PR#5 from `tmai-core` PR#5 — #493). Name matches
+ * [`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads
+ * straight through.
+ */
+repo_path: string, section: Section, 
 /**
  * PR/Issue number rendered as a string, or Decision/Approach/Observation
  * slug.

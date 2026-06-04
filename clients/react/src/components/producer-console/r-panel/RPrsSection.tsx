@@ -186,6 +186,7 @@ function PrRow({
       <span className="pt-0.5">
         <RowAttentionMarker
           attention={attention}
+          repoPath={repoPath}
           section="pr"
           id={String(pr.number)}
           label={`#${Number(pr.number)}`}

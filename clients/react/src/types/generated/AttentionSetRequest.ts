@@ -9,7 +9,14 @@ import type { Section } from "./Section";
  * non-repudiation invariants are enforced by the type itself, before the
  * handler runs.
  */
-export type AttentionSetRequest = { section: Section, 
+export type AttentionSetRequest = { 
+/**
+ * The artifact's owning repo (#493). Carried in the request **body**, not
+ * the URL path, because repo paths contain slashes. Name matches
+ * [`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads
+ * straight through.
+ */
+repo_path: string, section: Section, 
 /**
  * PR/Issue number rendered as a string, or Decision/Approach/Observation
  * slug.

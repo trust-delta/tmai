@@ -189,6 +189,7 @@ function IssueRow({
       <span className="pt-0.5">
         <RowAttentionMarker
           attention={attention}
+          repoPath={repoPath}
           section="issue"
           id={String(issue.number)}
           label={`#${Number(issue.number)}`}

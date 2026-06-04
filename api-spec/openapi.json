@@ -251,7 +251,7 @@
           "attention"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/attention`.",
-        "description": "The full per-unit `(section, id)→level` attention map for the R panel\n(issue #489; approach `2026-06-04-attention-as-per-artifact-field` §2). Only\n`low`/`high` entries are listed — everything else is `null` by absence (the\nmachine pole / unset). Served from `<data_dir>/attention/<unit>.json`\n(crash-resilient atomic file). Real handler:\n`crate::web::api::get_unit_attention`.",
+        "description": "The full per-unit `(repo, section, id)→level` attention map for the R panel\n(issue #489; approach `2026-06-04-attention-as-per-artifact-field` §2; repo\ndiscriminator added in #493). Only `low`/`high` entries are listed —\neverything else is `null` by absence (the machine pole / unset). Served from\n`<data_dir>/attention/<unit>.json`\n(crash-resilient atomic file). Real handler:\n`crate::web::api::get_unit_attention`.",
         "operationId": "get_unit_attention_doc",
         "parameters": [
           {
@@ -288,7 +288,7 @@
           "attention"
         ],
         "summary": "Documentation stub for `POST /api/units/{unit}/attention`.",
-        "description": "The operator's attention write (issue #489 §2). `level` is `low`/`high`\nonly — `null` is the machine pole and is not expressible on the request, so\nthe **monotonic / non-repudiation** invariant (\"the operator can't un-see\")\nis enforced by the type. The handler additionally enforces **`high` ≤ 1 per\ndimension** across sections (`remote` = {PR, Issue} ⊥ `local` = {Decision,\nApproach, Observation}): a new `high` demotes the dimension's prior `high` to\n`low` (never to `null`). Returns the updated map. Real handler:\n`crate::web::api::post_unit_attention`.",
+        "description": "The operator's attention write (issue #489 §2). The artifact is identified\nby `(repo_path, section, id)` in the request **body** — `repo_path`\ndiscriminates artifacts across the unit's repos (#493); it rides the body\n(not the URL path) because repo paths contain slashes. `level` is `low`/`high`\nonly — `null` is the machine pole and is not expressible on the request, so\nthe **monotonic / non-repudiation** invariant (\"the operator can't un-see\")\nis enforced by the type. The handler additionally enforces **`high` ≤ 1 per\ndimension** across sections AND across repos (`remote` = {PR, Issue} ⊥\n`local` = {Decision, Approach, Observation}; one remote + one local high per\n*unit*): a new `high` demotes the dimension's prior `high` to `low` (never to\n`null`). Returns the updated map. Real handler:\n`crate::web::api::post_unit_attention`.",
         "operationId": "post_unit_attention_doc",
         "parameters": [
           {
@@ -1087,6 +1087,7 @@
         "type": "object",
         "description": "One operator-set attention marker in the [`AttentionStateResponse`] map.\n`null` artifacts are **not** emitted — absence = `null` (the R panel already\nholds the artifact inventory; it infers `null` for any listed artifact that\nis absent here).",
         "required": [
+          "repo_path",
           "section",
           "id",
           "level"
@@ -1098,6 +1099,10 @@
           },
           "level": {
             "$ref": "#/components/schemas/Level"
+          },
+          "repo_path": {
+            "type": "string",
+            "description": "The artifact's owning repo (a unit spans multiple repos, so this\ndiscriminates `tmai` PR#5 from `tmai-core` PR#5 — #493). Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through."
           },
           "section": {
             "$ref": "#/components/schemas/Section"
@@ -1108,6 +1113,7 @@
         "type": "object",
         "description": "`POST /api/units/{unit}/attention` request — the operator's attention write.\n`level` is `low`/`high` only ([`Level`] has no `null` variant), so the\noperator can never write `null`: the complementary write-pole and\nnon-repudiation invariants are enforced by the type itself, before the\nhandler runs.",
         "required": [
+          "repo_path",
           "section",
           "id",
           "level"
@@ -1119,6 +1125,10 @@
           },
           "level": {
             "$ref": "#/components/schemas/Level"
+          },
+          "repo_path": {
+            "type": "string",
+            "description": "The artifact's owning repo (#493). Carried in the request **body**, not\nthe URL path, because repo paths contain slashes. Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through."
           },
           "section": {
             "$ref": "#/components/schemas/Section"
@@ -5534,7 +5544,7 @@
     },
     {
       "name": "attention",
-      "description": "Per-artifact attention model (issue #489; approach 2026-06-04-attention-as-per-artifact-field §2). GET serves the per-unit (section,id)→level map for the R panel (only low/high; null = absence). POST is the operator write (low/high only), enforcing monotonic (no write-back to null) + high≤1/dimension (remote {PR,Issue} ⊥ local {Decision,Approach,Observation}) server-side. File is attention-exempt."
+      "description": "Per-artifact attention model (issue #489; approach 2026-06-04-attention-as-per-artifact-field §2). GET serves the per-unit (repo,section,id)→level map for the R panel (only low/high; null = absence; repo_path discriminates artifacts across the unit's repos, #493). POST is the operator write (low/high only), enforcing monotonic (no write-back to null) + high≤1/dimension (remote {PR,Issue} ⊥ local {Decision,Approach,Observation}) unit-wide across repos, server-side. File is attention-exempt."
     }
   ]
 }

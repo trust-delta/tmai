@@ -7,11 +7,13 @@
 //   - the sibling-shaped poll contract (park on null, initial-fetch loading,
 //     error surfaced without fabricating data, the 60s poll keeps the last
 //     response visible);
-//   - `levelFor(section,id)` reads the map and treats absence as `null` (the
-//     machine fact pole — the wire never emits it);
-//   - `setAttention` POSTs `low`/`high` and re-renders from the RETURNED map,
-//     so a server-side demotion (a prior `high` knocked to `low`) lands even
-//     though the caller only wrote one artifact;
+//   - `levelFor(repo_path,section,id)` reads the map and treats absence as
+//     `null` (the machine fact pole — the wire never emits it), keyed by repo
+//     so two same-numbered artifacts in different repos stay independent
+//     (#493/#494 — the exact multi-repo collision this key fixes);
+//   - `setAttention` POSTs `{ repo_path, section, id, level }` and re-renders
+//     from the RETURNED map, so a server-side demotion (a prior `high` knocked
+//     to `low`) lands even though the caller only wrote one artifact;
 //   - `settingKey` reports the in-flight artifact for a busy marker.
 //
 // Timers stay real and the poll is exercised by capturing `window.setInterval`
@@ -32,12 +34,16 @@ import type { AttentionEntryWire, AttentionStateResponse, Level } from "@/lib/ap
 import { api } from "@/lib/api";
 import { attentionKey, useUnitAttention } from "../useUnitAttention";
 
+// repo_path is now part of the wire entry (and the cache key), so the helper
+// threads it as its first argument — mirroring the (repo_path,section,id) key
+// order. Tests that don't care about the repo pass a stable placeholder.
 function entry(
+  repoPath: string,
   section: AttentionEntryWire["section"],
   id: string,
   level: Level,
 ): AttentionEntryWire {
-  return { section, id, level };
+  return { repo_path: repoPath, section, id, level };
 }
 
 function response(unit: string, entries: AttentionEntryWire[]): AttentionStateResponse {
@@ -61,23 +67,42 @@ describe("useUnitAttention", () => {
     expect(result.current.data).toBeNull();
     expect(result.current.error).toBeNull();
     // Absence = null even with no data at all.
-    expect(result.current.levelFor("pr", "1")).toBeNull();
+    expect(result.current.levelFor("tmai", "pr", "1")).toBeNull();
   });
 
   it("fetches on a real unit and levelFor reads the map (absence = null)", async () => {
     vi.mocked(api.unitAttention).mockResolvedValue(
-      response("tmai", [entry("pr", "123", "high"), entry("decision", "d-slug", "low")]),
+      response("tmai", [
+        entry("tmai", "pr", "123", "high"),
+        entry("tmai", "decision", "d-slug", "low"),
+      ]),
     );
     const { result } = renderHook(() => useUnitAttention("tmai"));
     expect(result.current.loading).toBe(true);
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(api.unitAttention).toHaveBeenCalledWith("tmai");
-    expect(result.current.levelFor("pr", "123")).toBe("high");
-    expect(result.current.levelFor("decision", "d-slug")).toBe("low");
+    expect(result.current.levelFor("tmai", "pr", "123")).toBe("high");
+    expect(result.current.levelFor("tmai", "decision", "d-slug")).toBe("low");
     // Not in the map → null (a machine fact, never emitted on the wire).
-    expect(result.current.levelFor("issue", "999")).toBeNull();
+    expect(result.current.levelFor("tmai", "issue", "999")).toBeNull();
     expect(result.current.error).toBeNull();
+  });
+
+  it("keys attention by repo_path: two same-numbered PRs in different repos stay independent", async () => {
+    // THE #493/#494 bug: before repo_path joined the key, `tmai` PR#5 and
+    // `tmai-core` PR#5 collided on `(section,id)` and shared one marker.
+    vi.mocked(api.unitAttention).mockResolvedValue(
+      response("multi", [entry("tmai", "pr", "5", "high"), entry("tmai-core", "pr", "5", "low")]),
+    );
+    const { result } = renderHook(() => useUnitAttention("multi"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Same PR number, different repo → independent levels (no collision).
+    expect(result.current.levelFor("tmai", "pr", "5")).toBe("high");
+    expect(result.current.levelFor("tmai-core", "pr", "5")).toBe("low");
+    // A repo with no entry for this number stays null (absence = null).
+    expect(result.current.levelFor("other", "pr", "5")).toBeNull();
   });
 
   it("surfaces a fetch error without fabricating data", async () => {
@@ -90,23 +115,25 @@ describe("useUnitAttention", () => {
   it("setAttention POSTs low/high and re-renders from the returned map", async () => {
     vi.mocked(api.unitAttention).mockResolvedValue(response("tmai", []));
     vi.mocked(api.setUnitAttention).mockResolvedValue(
-      response("tmai", [entry("pr", "123", "high")]),
+      response("tmai", [entry("tmai", "pr", "123", "high")]),
     );
     const { result } = renderHook(() => useUnitAttention("tmai"));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.levelFor("pr", "123")).toBeNull();
+    expect(result.current.levelFor("tmai", "pr", "123")).toBeNull();
 
     await act(async () => {
-      await result.current.setAttention("pr", "123", "high");
+      await result.current.setAttention("tmai", "pr", "123", "high");
     });
 
+    // The POST body is the typed `AttentionSetRequest`, now carrying repo_path.
     expect(api.setUnitAttention).toHaveBeenCalledWith("tmai", {
+      repo_path: "tmai",
       section: "pr",
       id: "123",
       level: "high",
     });
     // Re-rendered straight from the POST response — no extra GET needed.
-    expect(result.current.levelFor("pr", "123")).toBe("high");
+    expect(result.current.levelFor("tmai", "pr", "123")).toBe("high");
   });
 
   it("reflects a server-side demotion carried on the returned map", async () => {
@@ -114,20 +141,22 @@ describe("useUnitAttention", () => {
     // `high` on a PR makes the backend demote the Issue to `low` to keep
     // `high`≤1/dimension; the POST returns the FULL updated map, so the demoted
     // Issue updates even though the caller only wrote the PR.
-    vi.mocked(api.unitAttention).mockResolvedValue(response("tmai", [entry("issue", "7", "high")]));
+    vi.mocked(api.unitAttention).mockResolvedValue(
+      response("tmai", [entry("tmai", "issue", "7", "high")]),
+    );
     vi.mocked(api.setUnitAttention).mockResolvedValue(
-      response("tmai", [entry("issue", "7", "low"), entry("pr", "123", "high")]),
+      response("tmai", [entry("tmai", "issue", "7", "low"), entry("tmai", "pr", "123", "high")]),
     );
     const { result } = renderHook(() => useUnitAttention("tmai"));
-    await waitFor(() => expect(result.current.levelFor("issue", "7")).toBe("high"));
+    await waitFor(() => expect(result.current.levelFor("tmai", "issue", "7")).toBe("high"));
 
     await act(async () => {
-      await result.current.setAttention("pr", "123", "high");
+      await result.current.setAttention("tmai", "pr", "123", "high");
     });
 
-    expect(result.current.levelFor("pr", "123")).toBe("high");
+    expect(result.current.levelFor("tmai", "pr", "123")).toBe("high");
     // The other artifact in the dimension demoted — never reset to null.
-    expect(result.current.levelFor("issue", "7")).toBe("low");
+    expect(result.current.levelFor("tmai", "issue", "7")).toBe("low");
   });
 
   it("reports settingKey while a POST is in flight and clears it after", async () => {
@@ -143,14 +172,14 @@ describe("useUnitAttention", () => {
 
     let pending: Promise<void> = Promise.resolve();
     act(() => {
-      pending = result.current.setAttention("pr", "123", "low");
+      pending = result.current.setAttention("tmai", "pr", "123", "low");
     });
     // In flight: the busy key matches the artifact (derived via the exported
-    // joiner so this survives any future separator change).
-    await waitFor(() => expect(result.current.settingKey).toBe(attentionKey("pr", "123")));
+    // joiner so this survives any future separator change), now repo-scoped.
+    await waitFor(() => expect(result.current.settingKey).toBe(attentionKey("tmai", "pr", "123")));
 
     await act(async () => {
-      resolvePost(response("tmai", [entry("pr", "123", "low")]));
+      resolvePost(response("tmai", [entry("tmai", "pr", "123", "low")]));
       await pending;
     });
     expect(result.current.settingKey).toBeNull();
@@ -158,26 +187,28 @@ describe("useUnitAttention", () => {
 
   it("re-fetches on unit change and clears the previous unit's attention", async () => {
     vi.mocked(api.unitAttention).mockImplementation((u: string) =>
-      Promise.resolve(response(u, u === "tmai" ? [entry("pr", "1", "high")] : [])),
+      Promise.resolve(response(u, u === "tmai" ? [entry("tmai", "pr", "1", "high")] : [])),
     );
     const { result, rerender } = renderHook(({ u }) => useUnitAttention(u), {
       initialProps: { u: "tmai" },
     });
-    await waitFor(() => expect(result.current.levelFor("pr", "1")).toBe("high"));
+    await waitFor(() => expect(result.current.levelFor("tmai", "pr", "1")).toBe("high"));
 
     rerender({ u: "other" });
     // Cleared synchronously so the old unit's attention is never shown under
     // the new unit's rows.
     expect(result.current.data).toBeNull();
     await waitFor(() => expect(result.current.data?.unit).toBe("other"));
-    expect(result.current.levelFor("pr", "1")).toBeNull();
+    expect(result.current.levelFor("tmai", "pr", "1")).toBeNull();
   });
 
   it("keeps the last response visible across the 60s poll", async () => {
     const setIntervalSpy = vi.spyOn(window, "setInterval");
-    vi.mocked(api.unitAttention).mockResolvedValue(response("tmai", [entry("pr", "1", "high")]));
+    vi.mocked(api.unitAttention).mockResolvedValue(
+      response("tmai", [entry("tmai", "pr", "1", "high")]),
+    );
     const { result } = renderHook(() => useUnitAttention("tmai"));
-    await waitFor(() => expect(result.current.levelFor("pr", "1")).toBe("high"));
+    await waitFor(() => expect(result.current.levelFor("tmai", "pr", "1")).toBe("high"));
 
     const tick = setIntervalSpy.mock.calls[0]?.[0] as (() => void) | undefined;
     expect(typeof tick).toBe("function");
@@ -187,7 +218,7 @@ describe("useUnitAttention", () => {
     });
     await waitFor(() => expect(api.unitAttention).toHaveBeenCalledTimes(2));
     // Last response stays visible (anti-flicker) — never cleared on a poll.
-    expect(result.current.levelFor("pr", "1")).toBe("high");
+    expect(result.current.levelFor("tmai", "pr", "1")).toBe("high");
   });
 
   it("a GET that resolves after parking (unit→null) does not revive stale data", async () => {
@@ -212,10 +243,10 @@ describe("useUnitAttention", () => {
 
     // The previous unit's GET now resolves — it must be dropped, not stamped.
     await act(async () => {
-      resolveGet(response("tmai", [entry("pr", "1", "high")]));
+      resolveGet(response("tmai", [entry("tmai", "pr", "1", "high")]));
     });
     expect(result.current.data).toBeNull();
-    expect(result.current.levelFor("pr", "1")).toBeNull();
+    expect(result.current.levelFor("tmai", "pr", "1")).toBeNull();
   });
 
   it("concurrent same-unit writes: a late older response does not overwrite the newer one", async () => {
@@ -235,26 +266,26 @@ describe("useUnitAttention", () => {
     let older: Promise<void> = Promise.resolve();
     let newer: Promise<void> = Promise.resolve();
     act(() => {
-      older = result.current.setAttention("pr", "1", "low"); // write seq 1
-      newer = result.current.setAttention("pr", "1", "high"); // write seq 2
+      older = result.current.setAttention("tmai", "pr", "1", "low"); // write seq 1
+      newer = result.current.setAttention("tmai", "pr", "1", "high"); // write seq 2
     });
     await waitFor(() => expect(deferred).toHaveLength(2));
 
     // The NEWER write (seq 2) resolves first and wins.
     await act(async () => {
-      deferred[1](response("tmai", [entry("pr", "1", "high")]));
+      deferred[1](response("tmai", [entry("tmai", "pr", "1", "high")]));
       await newer;
     });
-    expect(result.current.levelFor("pr", "1")).toBe("high");
+    expect(result.current.levelFor("tmai", "pr", "1")).toBe("high");
     expect(result.current.settingKey).toBeNull();
 
     // The OLDER write (seq 1) resolves LATE — it is stale and must be dropped,
     // never rolling the display back to `low`.
     await act(async () => {
-      deferred[0](response("tmai", [entry("pr", "1", "low")]));
+      deferred[0](response("tmai", [entry("tmai", "pr", "1", "low")]));
       await older;
     });
-    expect(result.current.levelFor("pr", "1")).toBe("high");
+    expect(result.current.levelFor("tmai", "pr", "1")).toBe("high");
     expect(result.current.settingKey).toBeNull();
   });
 });
