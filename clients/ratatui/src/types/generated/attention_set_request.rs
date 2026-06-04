@@ -12,5 +12,6 @@ use std::collections::HashMap;
 pub struct AttentionSetRequest {
     pub id: String,
     pub level: Level,
+    pub repo_path: String,
     pub section: Section,
 }

@@ -265,11 +265,16 @@
         "level": {
           "$ref": "#/$defs/Level"
         },
+        "repo_path": {
+          "description": "The artifact's owning repo (a unit spans multiple repos, so this\ndiscriminates `tmai` PR#5 from `tmai-core` PR#5 — #493). Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through.",
+          "type": "string"
+        },
         "section": {
           "$ref": "#/$defs/Section"
         }
       },
       "required": [
+        "repo_path",
         "section",
         "id",
         "level"
@@ -286,11 +291,16 @@
         "level": {
           "$ref": "#/$defs/Level"
         },
+        "repo_path": {
+          "description": "The artifact's owning repo (#493). Carried in the request **body**, not\nthe URL path, because repo paths contain slashes. Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through.",
+          "type": "string"
+        },
         "section": {
           "$ref": "#/$defs/Section"
         }
       },
       "required": [
+        "repo_path",
         "section",
         "id",
         "level"
