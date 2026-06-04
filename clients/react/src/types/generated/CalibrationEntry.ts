@@ -20,8 +20,13 @@ synthesis_pass_id: string,
  */
 note_source: string, verdict: TriageVerdict, confidence: Confidence, 
 /**
- * Tier the verdict was routed to (`1` = human-gated tripwire, `2` =
- * Producer may handle). Matches `DecisionFrontmatter::tier`.
+ * Which authority the friction was routed to, encoded as a `u8` so the
+ * dormant on-disk store and the ts-rs/openapi wire stay byte-stable:
+ * `1` = the friction implies a *decision-act* → human-gated tripwire
+ * (the Producer flags, never decides); `2` = *approach-execution* → the
+ * Producer may handle. The `DecisionFrontmatter::tier` field this once
+ * mirrored has been removed — authority now derives from slot + category
+ * + act, per `doc/decisions/2026-05-16-authority-attaches-to-the-act.md`.
  */
 tier_routed: number, 
 /**
