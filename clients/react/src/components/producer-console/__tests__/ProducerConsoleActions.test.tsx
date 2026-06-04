@@ -441,14 +441,15 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
   });
 });
 
-// The "Check deltas" button moved out of ProducerConsoleActions and
-// became the Δ stream's `[→Producer ⚡]` button in RPanel/DeltaStream
-// (approach `doc/approaches/2026-05-29-r-panel-as-project-artifact-
-// inventory.md`). The trigger contract is now covered by
-// DeltaStream.test.tsx; the relocation is the negative assertion below.
+// The "Check deltas" button left ProducerConsoleActions and briefly lived
+// on the R panel's Δ stream, which itself retired in §3-2b (#772 — Δ
+// dissolved into each artifact's per-row attention marker). The operator's
+// delta-pull trigger now survives only on the top-bar ProducerFeedChip.
+// The negative assertion below pins that ProducerConsoleActions still does
+// not render the button.
 
-describe("ProducerConsoleActions — no Check deltas button (relocated to R panel)", () => {
-  it("does not render a Check deltas button — moved to the R panel's Δ stream", () => {
+describe("ProducerConsoleActions — no Check deltas button (relocated off the digest)", () => {
+  it("does not render a Check deltas button", () => {
     render(<ProducerConsoleActions {...makeProps({ unitName: "proj-a" })} />);
     expect(screen.queryByRole("button", { name: /Check deltas/ })).toBeNull();
   });

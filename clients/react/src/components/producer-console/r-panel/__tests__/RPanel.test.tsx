@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 //
 // RPanel — accordion shell + section persistence + collapsed rail.
-// The seven section bodies are mocked so this test only proves the
+// The artifact-section bodies are mocked so this test only proves the
 // container behaviour (default-collapsed accordion, operator-toggled
 // expand, localStorage persistence, no severity colors in rendered
-// output) plus the relocated Δ stream trigger button.
+// output). The Δ-stream / Calibration / Hand-over sections retired in
+// §3-2b (#772), so they are no longer wired or mocked here.
 
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ProducerFeedStatus } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 
 // The panel owns one `useUnitAttention` instance (threaded to the four
@@ -63,30 +63,6 @@ vi.mock("../RApproachesSection", () => ({
     </button>
   ),
 }));
-vi.mock("../RCalibrationSection", () => ({
-  RCalibrationSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      data-testid="calibration-section"
-      data-expanded={expanded}
-      onClick={onToggle}
-    >
-      Calibration
-    </button>
-  ),
-}));
-vi.mock("../RHandoverSection", () => ({
-  RHandoverSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      data-testid="handover-section"
-      data-expanded={expanded}
-      onClick={onToggle}
-    >
-      Handover
-    </button>
-  ),
-}));
 vi.mock("../RFilesSection", () => ({
   RFilesSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="files-section" data-expanded={expanded} onClick={onToggle}>
@@ -96,17 +72,6 @@ vi.mock("../RFilesSection", () => ({
 }));
 
 import { RPanel, type RPanelResize } from "../RPanel";
-
-function feedFixture(overrides: Partial<ProducerFeedStatus> = {}): ProducerFeedStatus {
-  return {
-    unit: "u",
-    producer_address: "u.producer",
-    tip: 0n,
-    last_served_cursor: 0n,
-    has_pending_delta: undefined,
-    ...overrides,
-  };
-}
 
 function makeResize(overrides: Partial<RPanelResize> = {}): RPanelResize {
   return {
@@ -124,9 +89,6 @@ function makeProps(overrides: Partial<Parameters<typeof RPanel>[0]> = {}) {
   return {
     currentProjectPath: "/p/u",
     unitName: "u",
-    producerFeedData: feedFixture(),
-    onTriggerDeltaPull: vi.fn(),
-    producerAvailable: true,
     collapsed: false,
     onToggleCollapsed: vi.fn(),
     resize: makeResize(),
@@ -135,7 +97,7 @@ function makeProps(overrides: Partial<Parameters<typeof RPanel>[0]> = {}) {
 }
 
 describe("RPanel — accordion shell", () => {
-  it("renders all seven sections, all collapsed by default (no tmai-side expand pick)", () => {
+  it("renders the artifact sections, all collapsed by default (no tmai-side expand pick)", () => {
     // Use a fresh localStorage by setting the key to empty before mount.
     localStorage.setItem("tmai:ui:prefs", JSON.stringify({ rPanelExpandedSections: [] }));
 
@@ -146,8 +108,6 @@ describe("RPanel — accordion shell", () => {
       "issues-section",
       "decisions-section",
       "approaches-section",
-      "calibration-section",
-      "handover-section",
       "files-section",
     ];
     for (const id of ids) {
@@ -172,13 +132,13 @@ describe("RPanel — accordion shell", () => {
   it("restores expanded sections from persisted prefs on mount", () => {
     localStorage.setItem(
       "tmai:ui:prefs",
-      JSON.stringify({ rPanelExpandedSections: ["prs", "handover"] }),
+      JSON.stringify({ rPanelExpandedSections: ["prs", "files"] }),
     );
 
     renderWithProviders(<RPanel {...makeProps()} />);
 
     expect(screen.getByTestId("prs-section").getAttribute("data-expanded")).toBe("true");
-    expect(screen.getByTestId("handover-section").getAttribute("data-expanded")).toBe("true");
+    expect(screen.getByTestId("files-section").getAttribute("data-expanded")).toBe("true");
     expect(screen.getByTestId("decisions-section").getAttribute("data-expanded")).toBe("false");
   });
 
