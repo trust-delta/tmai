@@ -11,16 +11,16 @@
 // the initial fetch; `unit = null` parks the hook). It adds two
 // attention-specific affordances the inventory siblings do not need:
 //
-//   - `levelFor(section, id)` — the per-artifact lookup the R-panel rows
-//     render. Absence = `null` (the wire only emits `low`/`high`; `null` is a
-//     machine fact represented by absence, never sent).
-//   - `setAttention(section, id, level)` — the operator write. `level` is
-//     `Level` (`low`/`high`) — the operator can never set `null` (the type
-//     itself forbids it). The POST returns the full updated map, which we
-//     stamp over `data` so a server-side demotion (a prior `high` knocked to
-//     `low` to keep `high`≤1/dimension) is reflected across every section at
-//     once — the reason this hook is lifted to one instance in `RPanel`
-//     rather than one per section.
+//   - `levelFor(repo_path, section, id)` — the per-artifact lookup the R-panel
+//     rows render. Absence = `null` (the wire only emits `low`/`high`; `null`
+//     is a machine fact represented by absence, never sent).
+//   - `setAttention(repo_path, section, id, level)` — the operator write.
+//     `level` is `Level` (`low`/`high`) — the operator can never set `null`
+//     (the type itself forbids it). The POST returns the full updated map,
+//     which we stamp over `data` so a server-side demotion (a prior `high`
+//     knocked to `low` to keep `high`≤1/dimension) is reflected across every
+//     section at once — the reason this hook is lifted to one instance in
+//     `RPanel` rather than one per section.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -33,11 +33,15 @@ import {
 
 const POLL_INTERVAL_MS = 60_000;
 
-// Map key for the (section,id) composite. `Section` is a closed enum whose
-// variants contain no whitespace, so a space joiner is unambiguous (no id can
-// straddle the boundary).
-function attentionKey(section: Section, id: string): string {
-  return `${section} ${id}`;
+// Map key for the (repo_path,section,id) composite. `repo_path` is prepended
+// so two same-numbered artifacts in different repos (`tmai` PR#5 vs
+// `tmai-core` PR#5 — #493/#494) stay distinct. `Section` is a closed enum
+// whose variants contain no whitespace, so the space joiner is unambiguous
+// even if a repo path contained a space: the section token is always a fixed,
+// non-empty enum value flanked by spaces, so no other (repo_path,section,id)
+// split reproduces the same string.
+function attentionKey(repoPath: string, section: Section, id: string): string {
+  return `${repoPath} ${section} ${id}`;
 }
 
 export interface UseUnitAttentionResult {
@@ -45,13 +49,15 @@ export interface UseUnitAttentionResult {
   loading: boolean;
   error: Error | null;
   /** Operator-set attention for one artifact, or `null` (machine fact: the
-   *  wire emits only `low`/`high`, so absence = `null`). */
-  levelFor: (section: Section, id: string) => Level | null;
+   *  wire emits only `low`/`high`, so absence = `null`). Keyed by repo so two
+   *  same-numbered artifacts in different repos stay independent. */
+  levelFor: (repoPath: string, section: Section, id: string) => Level | null;
   /** Write `low`/`high` for one artifact (POST) and re-render from the
    *  returned map. No `null` pole — the operator cannot disclaim. */
-  setAttention: (section: Section, id: string, level: Level) => Promise<void>;
-  /** `attentionKey(section,id)` of the artifact whose POST is in flight, so a
-   *  row can show a busy/disabled marker; `null` when none is pending. */
+  setAttention: (repoPath: string, section: Section, id: string, level: Level) => Promise<void>;
+  /** `attentionKey(repoPath,section,id)` of the artifact whose POST is in
+   *  flight, so a row can show a busy/disabled marker; `null` when none is
+   *  pending. */
   settingKey: string | null;
 }
 
@@ -135,28 +141,29 @@ export function useUnitAttention(unit: string | null): UseUnitAttentionResult {
     const map = new Map<string, Level>();
     if (data !== null) {
       for (const entry of data.entries) {
-        map.set(attentionKey(entry.section, entry.id), entry.level);
+        map.set(attentionKey(entry.repo_path, entry.section, entry.id), entry.level);
       }
     }
     return map;
   }, [data]);
 
   const levelFor = useCallback(
-    (section: Section, id: string): Level | null => levelMap.get(attentionKey(section, id)) ?? null,
+    (repoPath: string, section: Section, id: string): Level | null =>
+      levelMap.get(attentionKey(repoPath, section, id)) ?? null,
     [levelMap],
   );
 
   const setAttention = useCallback(
-    async (section: Section, id: string, level: Level): Promise<void> => {
+    async (repoPath: string, section: Section, id: string, level: Level): Promise<void> => {
       if (!unit) return;
       const myGen = generationRef.current;
       const myWriteSeq = ++writeSeqRef.current;
       // Stale iff the unit changed (myGen) OR a newer write superseded this one
       // (myWriteSeq). Either invalidates this response.
       const isStale = () => myGen !== generationRef.current || myWriteSeq !== writeSeqRef.current;
-      const key = attentionKey(section, id);
+      const key = attentionKey(repoPath, section, id);
       setSettingKey(key);
-      const body: AttentionSetRequest = { section, id, level };
+      const body: AttentionSetRequest = { repo_path: repoPath, section, id, level };
       try {
         const res = await api.setUnitAttention(unit, body);
         if (isStale()) return;

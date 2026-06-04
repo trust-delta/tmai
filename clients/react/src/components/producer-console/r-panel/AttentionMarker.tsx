@@ -144,18 +144,22 @@ export function AttentionMarker({ level, onSet, busy = false, label }: Attention
   );
 }
 
-// Row binding — maps a (section,id) artifact onto its attention marker,
-// deriving the busy state from the shared `settingKey`. Renders nothing when
-// no attention controls are threaded (e.g. a section mounted in isolation),
-// so the marker is opt-in: `RPanel` threads the controls, so the live panel
-// always shows markers; standalone renders stay marker-free.
+// Row binding — maps a (repo_path,section,id) artifact onto its attention
+// marker, deriving the busy state from the shared `settingKey`. `repoPath`
+// scopes the key so two same-numbered artifacts in different repos (`tmai`
+// PR#5 vs `tmai-core` PR#5 — #493/#494) drive independent markers. Renders
+// nothing when no attention controls are threaded (e.g. a section mounted in
+// isolation), so the marker is opt-in: `RPanel` threads the controls, so the
+// live panel always shows markers; standalone renders stay marker-free.
 export function RowAttentionMarker({
   attention,
+  repoPath,
   section,
   id,
   label,
 }: {
   attention?: AttentionControls;
+  repoPath: string;
   section: Section;
   id: string;
   label: string;
@@ -163,9 +167,9 @@ export function RowAttentionMarker({
   if (!attention) return null;
   return (
     <AttentionMarker
-      level={attention.levelFor(section, id)}
-      onSet={(level) => attention.setAttention(section, id, level)}
-      busy={attention.settingKey === attentionKey(section, id)}
+      level={attention.levelFor(repoPath, section, id)}
+      onSet={(level) => attention.setAttention(repoPath, section, id, level)}
+      busy={attention.settingKey === attentionKey(repoPath, section, id)}
       label={label}
     />
   );

@@ -13,7 +13,9 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { AttentionMarker } from "../AttentionMarker";
+import { type AttentionControls, attentionKey } from "@/hooks/useUnitAttention";
+import type { Level } from "@/lib/api";
+import { AttentionMarker, RowAttentionMarker } from "../AttentionMarker";
 
 describe("AttentionMarker — authorship-scoped coloring", () => {
   it("null renders a neutral pending marker (machine fact — no heat)", () => {
@@ -95,5 +97,81 @@ describe("AttentionMarker — operator set (low/high only, never null)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(onSet).not.toHaveBeenCalled();
+  });
+});
+
+// RowAttentionMarker — the row binding. It threads its row's owning `repoPath`
+// into every hook call so two same-numbered artifacts in different repos
+// (`tmai` PR#5 vs `tmai-core` PR#5 — #493/#494) drive independent markers.
+describe("RowAttentionMarker — threads repoPath to the hook", () => {
+  function controls(overrides: Partial<AttentionControls> = {}): AttentionControls {
+    return {
+      levelFor: () => null,
+      setAttention: vi.fn(),
+      settingKey: null,
+      ...overrides,
+    };
+  }
+
+  it("passes repoPath through to levelFor and renders the returned level", () => {
+    const levelFor = vi.fn((): Level | null => "high");
+    render(
+      <RowAttentionMarker
+        attention={controls({ levelFor })}
+        repoPath="tmai-core"
+        section="pr"
+        id="5"
+        label="#5"
+      />,
+    );
+    expect(levelFor).toHaveBeenCalledWith("tmai-core", "pr", "5");
+    expect(screen.getByTestId("attention-marker").getAttribute("data-level")).toBe("high");
+  });
+
+  it("passes repoPath through to setAttention on a write", () => {
+    const setAttention = vi.fn();
+    render(
+      <RowAttentionMarker
+        attention={controls({ setAttention })}
+        repoPath="tmai-core"
+        section="pr"
+        id="5"
+        label="#5"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("attention-marker"));
+    fireEvent.click(screen.getByTestId("attention-set-high"));
+    expect(setAttention).toHaveBeenCalledWith("tmai-core", "pr", "5", "high");
+  });
+
+  it("derives busy from the repo-scoped key — same number, different repo is NOT busy", () => {
+    // `settingKey` points at `tmai-core` PR#5; this marker is `tmai` PR#5.
+    // Pre-fix (key = section+id) they collided and this row would falsely show
+    // busy. Now the repo scopes the key, so it stays enabled.
+    const marker = (repoPath: string) =>
+      render(
+        <RowAttentionMarker
+          attention={controls({ settingKey: attentionKey("tmai-core", "pr", "5") })}
+          repoPath={repoPath}
+          section="pr"
+          id="5"
+          label="#5"
+        />,
+      );
+
+    const other = marker("tmai");
+    expect((other.getByTestId("attention-marker") as HTMLButtonElement).disabled).toBe(false);
+    other.unmount();
+
+    // The actually-pending repo's marker IS busy.
+    const self = marker("tmai-core");
+    expect((self.getByTestId("attention-marker") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders nothing when no attention controls are threaded (opt-in)", () => {
+    const { container } = render(
+      <RowAttentionMarker repoPath="tmai" section="pr" id="5" label="#5" />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

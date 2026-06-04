@@ -151,6 +151,7 @@ function DecisionRow({
       <span className="pt-0.5">
         <RowAttentionMarker
           attention={attention}
+          repoPath={repoPath}
           section="decision"
           id={decision.slug}
           label={decision.slug}

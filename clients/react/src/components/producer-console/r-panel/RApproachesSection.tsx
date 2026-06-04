@@ -210,6 +210,7 @@ function ApproachRow({
       <span className="pt-0.5">
         <RowAttentionMarker
           attention={attention}
+          repoPath={repoPath}
           section="approach"
           id={approach.slug}
           label={approach.slug}

@@ -185,7 +185,7 @@ describe("RPrsSection — per-artifact attention markers", () => {
     expect(screen.queryByTestId("attention-marker")).toBeNull();
   });
 
-  it("setting high on a row calls setAttention('pr', <number>, 'high')", async () => {
+  it("setting high on a row calls setAttention(<repoPath>, 'pr', <number>, 'high')", async () => {
     const setAttention = vi.fn();
     unitPrsMock.mockResolvedValue(response([pr()]));
     render(
@@ -200,7 +200,9 @@ describe("RPrsSection — per-artifact attention markers", () => {
 
     fireEvent.click(screen.getByTestId("attention-marker"));
     fireEvent.click(screen.getByTestId("attention-set-high"));
-    expect(setAttention).toHaveBeenCalledWith("pr", "100", "high");
+    // The marker threads its row's owning repo (`RepoPrsWire.repo_path`, here
+    // `/p/u`) so two same-numbered PRs in different repos stay independent.
+    expect(setAttention).toHaveBeenCalledWith("/p/u", "pr", "100", "high");
   });
 
   it("clicking the marker does NOT also open the row's R₂ viewer (stopPropagation)", async () => {
