@@ -1251,7 +1251,7 @@
           "tier_routed": {
             "type": "integer",
             "format": "int32",
-            "description": "Tier the verdict was routed to (`1` = human-gated tripwire, `2` =\nProducer may handle). Matches `DecisionFrontmatter::tier`.",
+            "description": "Which authority the friction was routed to, encoded as a `u8` so the\ndormant on-disk store and the ts-rs/openapi wire stay byte-stable:\n`1` = the friction implies a *decision-act* → human-gated tripwire\n(the Producer flags, never decides); `2` = *approach-execution* → the\nProducer may handle. The `DecisionFrontmatter::tier` field this once\nmirrored has been removed — authority now derives from slot + category\n+ act, per `doc/decisions/2026-05-16-authority-attaches-to-the-act.md`.",
             "minimum": 0
           },
           "verdict": {
