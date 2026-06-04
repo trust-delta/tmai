@@ -1,4 +1,5 @@
-// R panel — project artifact inventory (approach
+// R panel — project-artifact inventory (= Artifact panel, the
+// git/remote-resident project substance; approach
 // `doc/approaches/2026-05-29-r-panel-as-project-artifact-inventory.md`).
 //
 // Replaces the retired Fork-A "attention-grade only" strip. That
@@ -11,14 +12,19 @@
 //     `text-muted-foreground` / `text-subtle-foreground` here;
 //   - no priority sort, no filter "needs you", no aggregate status
 //     pill, no count-badge urgency styling;
-//   - all 7 sections collapsed by default (operator-driven expand
+//   - all sections collapsed by default (operator-driven expand
 //     persisted via `rPanelExpandedSections`).
 //
-// Δ stream at the top is the one moving surface, fed by the
-// existing producer-feed cursor (the same the Producer pull reads).
-// `[→Producer ⚡]` was the C-column "Check deltas ▸" button, moved
-// here so the operator's "deltas exist" awareness and the trigger
-// live next to one another.
+// Attention model §3 (contract
+// `tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md`):
+// attention is a per-artifact field surfaced as a per-row marker
+// (§3-core, #769). §3-2b removed the three agent-operation surfaces
+// that were NOT project artifacts and have no live referent here —
+// the Δ-stream (Δ dissolved into each artifact's `null`-state marker),
+// the Calibration section (a stranded Phase-1 detector), and the
+// Hand-over section (a session-boundary baton, agent-operation
+// runtime). They live on the data-dir side, off this Artifact panel
+// (cut: `tmai-core:doc/observations/2026-06-03-artifact-panel-vs-producer-panel-cut.md`).
 //
 // The collapsed rail behaviour and drag-resize wiring mirror the
 // retired strip 1:1 so App.tsx layout stays unchanged.
@@ -26,20 +32,14 @@
 import { useCallback } from "react";
 import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
-import type { ProducerFeedStatus } from "@/lib/api";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
-import { DeltaStream } from "./DeltaStream";
 import { RApproachesSection } from "./RApproachesSection";
-import { RCalibrationSection } from "./RCalibrationSection";
 import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
-import { RHandoverSection } from "./RHandoverSection";
 import { RInventorySection } from "./RInventorySection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
-import type { SelectedCalibration } from "./r-viewer/RCalibrationViewer";
-import type { SelectedHandoff } from "./r-viewer/RHandoverViewer";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
 import type { SelectedRecord } from "./r-viewer/RRecordViewer";
@@ -56,11 +56,6 @@ export interface RPanelResize {
 interface RPanelProps {
   currentProjectPath: string | null;
   unitName: string | null;
-  producerFeedData: ProducerFeedStatus | null;
-  onTriggerDeltaPull: () => void;
-  /** Whether a live Producer exists for the unit (`findProducerForUnit`
-   *  result from App.tsx). Gates the Δ stream's trigger button. */
-  producerAvailable: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   resize: RPanelResize;
@@ -85,20 +80,6 @@ interface RPanelProps {
   /** `selectedIssueKey(...)` of the issue currently open in R₂, so the
    *  focused R₁ Issues row marks itself. */
   selectedIssueKey?: string | null;
-  /** Open the unit's calibration in the R₂ calibration viewer column.
-   *  Threaded to the R₁ Calibration section so its detail affordance
-   *  focuses the calibration for in-tmai viewing. */
-  onSelectCalibration?: (sel: SelectedCalibration) => void;
-  /** `selectedCalibrationKey(unit)` of the calibration currently open in
-   *  R₂, so the focused R₁ Calibration affordance marks itself. */
-  selectedCalibrationKey?: string | null;
-  /** Open a hand-over baton in the R₂ hand-over viewer column. Threaded to
-   *  the R₁ Hand-over inventory so a row click selects the baton for
-   *  in-tmai viewing. */
-  onSelectHandoff?: (sel: SelectedHandoff) => void;
-  /** `selectedHandoffKey(unit, name)` of the baton currently open in R₂, so
-   *  the focused R₁ Hand-over row marks itself. */
-  selectedHandoffKey?: string | null;
   /** Focus mode (spine `2026-05-29-c-and-r-as-the-development-substrate`,
    *  its deferred "R₁/R₂ visual ratio" point): the R₂ viewer for the
    *  currently-focused artifact. When non-null it RIDES THIS SAME COLUMN —
@@ -111,23 +92,11 @@ interface RPanelProps {
   viewer?: React.ReactNode;
 }
 
-const SECTION_IDS = [
-  "prs",
-  "issues",
-  "decisions",
-  "approaches",
-  "inventory",
-  "calibration",
-  "handover",
-  "files",
-] as const;
+const SECTION_IDS = ["prs", "issues", "decisions", "approaches", "inventory", "files"] as const;
 
 export function RPanel({
   currentProjectPath,
   unitName,
-  producerFeedData,
-  onTriggerDeltaPull,
-  producerAvailable,
   collapsed,
   onToggleCollapsed,
   resize,
@@ -137,10 +106,6 @@ export function RPanel({
   selectedRecordKey,
   onSelectIssue,
   selectedIssueKey,
-  onSelectCalibration,
-  selectedCalibrationKey,
-  onSelectHandoff,
-  selectedHandoffKey,
   viewer,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
@@ -244,13 +209,6 @@ export function RPanel({
             </button>
           </header>
 
-          <DeltaStream
-            unitName={unitName}
-            data={producerFeedData}
-            onTriggerDeltaPull={onTriggerDeltaPull}
-            producerAvailable={producerAvailable}
-          />
-
           <div className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
             <RPrsSection
               unitName={unitName}
@@ -290,20 +248,6 @@ export function RPanel({
               onToggle={() => toggle("inventory")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
-            />
-            <RCalibrationSection
-              unitName={unitName}
-              expanded={isExpanded("calibration")}
-              onToggle={() => toggle("calibration")}
-              onSelectCalibration={onSelectCalibration}
-              selectedKey={selectedCalibrationKey}
-            />
-            <RHandoverSection
-              unitName={unitName}
-              expanded={isExpanded("handover")}
-              onToggle={() => toggle("handover")}
-              onSelectHandoff={onSelectHandoff}
-              selectedKey={selectedHandoffKey}
             />
             <RFilesSection
               currentProjectPath={currentProjectPath}
