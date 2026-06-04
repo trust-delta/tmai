@@ -6,6 +6,9 @@ import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
 import type { ApproachInventoryWire } from "@/types/generated/ApproachInventoryWire";
 import type { ApproachStatus } from "@/types/generated/ApproachStatus";
 import type { ApproachWire } from "@/types/generated/ApproachWire";
+import type { AttentionEntryWire } from "@/types/generated/AttentionEntryWire";
+import type { AttentionSetRequest } from "@/types/generated/AttentionSetRequest";
+import type { AttentionStateResponse } from "@/types/generated/AttentionStateResponse";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
 import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
@@ -21,6 +24,7 @@ import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
 import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
 import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
+import type { Level } from "@/types/generated/Level";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
@@ -35,6 +39,7 @@ import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
 import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
+import type { Section } from "@/types/generated/Section";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
@@ -56,6 +61,9 @@ export type {
   ApproachInventoryWire,
   ApproachStatus,
   ApproachWire,
+  AttentionEntryWire,
+  AttentionSetRequest,
+  AttentionStateResponse,
   BootstrapRequiredEvent,
   CalibrationCellWire,
   CalibrationEntry,
@@ -70,6 +78,7 @@ export type {
   HandoffsResponse,
   IssueLabelWire,
   IssueSummaryWire,
+  Level,
   Outcome,
   PermissionMode,
   PrDiffResponse,
@@ -83,6 +92,7 @@ export type {
   RepoPrsWire,
   ReviewExtensionWire,
   ReviewTriggerWire,
+  Section,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
@@ -1540,6 +1550,27 @@ export const api = {
   // it light and plain.
   unitInventory: (unit: string) =>
     apiFetch<UnitInventoryResponse>(`/units/${encodeURIComponent(unit)}/inventory`),
+
+  // Per-artifact attention map (contract
+  // `tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md`).
+  // The (section,id)→level map for the unit. Only `low`/`high` entries are
+  // emitted — `null` is absence (the R panel infers `null` for any listed
+  // artifact missing from the map). File is unrepresentable (`Section` has no
+  // File variant): File is attention-exempt.
+  unitAttention: (unit: string) =>
+    apiFetch<AttentionStateResponse>(`/units/${encodeURIComponent(unit)}/attention`),
+
+  // Operator attention write — sets `low`/`high` on one artifact and returns
+  // the updated map. `AttentionSetRequest.level` has no `null` variant, so the
+  // operator can never write `null` (non-repudiation by type); only the
+  // machine writes `null` (by absence). The backend enforces the monotonic
+  // `null`→not-null transition and the `high`≤1/dimension cardinality, and may
+  // demote a prior `high` to `low` — callers re-render from the returned map.
+  setUnitAttention: (unit: string, body: AttentionSetRequest) =>
+    apiFetch<AttentionStateResponse>(`/units/${encodeURIComponent(unit)}/attention`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Configured-unit membership (tmai-core #460, public mirror tmai#741).
   // Membership-only — no live agent state is joined server-side; the

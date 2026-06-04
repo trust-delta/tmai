@@ -7,6 +7,7 @@ export * from "./teams";
 
 import type {
   AgentSnapshot,
+  AttentionSetRequest,
   DispatchBundle,
   OrchestratorRules,
   PrMergeMethod,
@@ -275,6 +276,12 @@ export const api = {
   // projection of the unit's decisions + serving approaches; no
   // Tauri-specific path needed)
   unitInventory: (unit: string) => httpApi.unitInventory(unit),
+
+  // Per-artifact attention map + operator write (HTTP only — file-backed
+  // attention store served over the web API; no Tauri-specific path needed)
+  unitAttention: (unit: string) => httpApi.unitAttention(unit),
+  setUnitAttention: (unit: string, body: AttentionSetRequest) =>
+    httpApi.setUnitAttention(unit, body),
 
   // Configured-unit membership view (HTTP only — membership-only,
   // no live agent state joined server-side; no Tauri-specific path needed)

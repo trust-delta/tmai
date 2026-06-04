@@ -25,6 +25,7 @@
 
 import { useCallback } from "react";
 import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
+import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { ProducerFeedStatus } from "@/lib/api";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
@@ -144,6 +145,13 @@ export function RPanel({
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
 
+  // One attention hook for the whole panel (not one per section): the POST
+  // returns the full updated map, so a server-side demotion (a prior `high`
+  // knocked to `low` to keep `high`≤1/dimension) lands on the PR + Issue
+  // sections at once. Threaded down to the four attention-artifact sections;
+  // File is attention-exempt and is NOT given the controls.
+  const attention = useUnitAttention(unitName);
+
   const toggle = useCallback(
     (id: string) => {
       setExpanded(expanded.includes(id) ? expanded.filter((x) => x !== id) : [...expanded, id]);
@@ -250,6 +258,7 @@ export function RPanel({
               onToggle={() => toggle("prs")}
               onSelectPr={onSelectPr}
               selectedKey={selectedPrKey}
+              attention={attention}
             />
             <RIssuesSection
               unitName={unitName}
@@ -257,6 +266,7 @@ export function RPanel({
               onToggle={() => toggle("issues")}
               onSelectIssue={onSelectIssue}
               selectedKey={selectedIssueKey}
+              attention={attention}
             />
             <RDecisionsSection
               unitName={unitName}
@@ -264,6 +274,7 @@ export function RPanel({
               onToggle={() => toggle("decisions")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
+              attention={attention}
             />
             <RApproachesSection
               unitName={unitName}
@@ -271,6 +282,7 @@ export function RPanel({
               onToggle={() => toggle("approaches")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
+              attention={attention}
             />
             <RInventorySection
               unitName={unitName}

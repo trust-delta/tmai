@@ -14,8 +14,10 @@
 // the issue number is gone; the issue's full content is reviewed in-tmai
 // with no round-trip. R₁ stays a pure inventory; the row is just a select.
 
+import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitIssues } from "@/hooks/useUnitIssues";
 import type { IssueInfo, IssueSummaryWire, RepoIssuesWire } from "@/lib/api";
+import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedIssue, selectedIssueKey } from "./r-viewer/RIssueViewer";
 import { Section } from "./Section";
 
@@ -30,6 +32,10 @@ interface RIssuesSectionProps {
    *  R₂, so the row marks itself as the one being viewed (a mechanical
    *  "open here" fact, not appraisal). */
   selectedKey?: string | null;
+  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
+   *  When present each issue row shows its attention marker; absent (e.g. in
+   *  isolation tests) the rows render marker-free. */
+  attention?: AttentionControls;
 }
 
 export function RIssuesSection({
@@ -38,6 +44,7 @@ export function RIssuesSection({
   onToggle,
   onSelectIssue,
   selectedKey,
+  attention,
 }: RIssuesSectionProps) {
   const { data, loading, error } = useUnitIssues(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + r.issues.length, 0);
@@ -58,6 +65,7 @@ export function RIssuesSection({
         error={error}
         onSelectIssue={onSelectIssue}
         selectedKey={selectedKey ?? null}
+        attention={attention}
       />
     </Section>
   );
@@ -70,9 +78,18 @@ interface BodyProps {
   error: Error | null;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
+  attention?: AttentionControls;
 }
 
-function Body({ unitName, repos, loading, error, onSelectIssue, selectedKey }: BodyProps) {
+function Body({
+  unitName,
+  repos,
+  loading,
+  error,
+  onSelectIssue,
+  selectedKey,
+  attention,
+}: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see issues.</p>;
   }
@@ -95,6 +112,7 @@ function Body({ unitName, repos, loading, error, onSelectIssue, selectedKey }: B
           multiRepo={multiRepo}
           onSelectIssue={onSelectIssue}
           selectedKey={selectedKey}
+          attention={attention}
         />
       ))}
     </div>
@@ -106,11 +124,13 @@ function RepoBlock({
   multiRepo,
   onSelectIssue,
   selectedKey,
+  attention,
 }: {
   repo: RepoIssuesWire;
   multiRepo: boolean;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
+  attention?: AttentionControls;
 }) {
   if (repo.issues.length === 0) return null;
   return (
@@ -129,6 +149,7 @@ function RepoBlock({
             repoLabel={repo.repo_label}
             onSelectIssue={onSelectIssue}
             selected={selectedKey === selectedIssueKey(repo.repo_path, Number(issue.number))}
+            attention={attention}
           />
         ))}
       </ul>
@@ -142,12 +163,14 @@ function IssueRow({
   repoLabel,
   onSelectIssue,
   selected,
+  attention,
 }: {
   issue: IssueSummaryWire;
   repoPath: string;
   repoLabel: string;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selected: boolean;
+  attention?: AttentionControls;
 }) {
   // The whole row is a button that opens the issue in the R₂ viewer —
   // there is NO github.com link-out anymore; the issue's full content is
@@ -161,12 +184,21 @@ function IssueRow({
   // spread narrows just the number and leaves the rest byte-identical.
   const selectedIssue: IssueInfo = { ...issue, number: Number(issue.number) };
   return (
-    <li className="leading-snug">
+    <li className="flex items-start gap-1.5 leading-snug">
+      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
+      <span className="pt-0.5">
+        <RowAttentionMarker
+          attention={attention}
+          section="issue"
+          id={String(issue.number)}
+          label={`#${Number(issue.number)}`}
+        />
+      </span>
       <button
         type="button"
         onClick={() => onSelectIssue?.({ repoPath, repoLabel, issue: selectedIssue })}
         aria-current={selected ? "true" : undefined}
-        className={`w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
+        className={`min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
           selected ? "bg-surface-strong/40" : ""
         }`}
       >
