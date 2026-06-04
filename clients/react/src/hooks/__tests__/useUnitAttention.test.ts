@@ -189,4 +189,72 @@ describe("useUnitAttention", () => {
     // Last response stays visible (anti-flicker) — never cleared on a poll.
     expect(result.current.levelFor("pr", "1")).toBe("high");
   });
+
+  it("a GET that resolves after parking (unit→null) does not revive stale data", async () => {
+    // The park branch must bump the generation so the previous unit's in-flight
+    // GET is invalidated; otherwise it passes its `myGen === generationRef`
+    // guard and stamps stale data over the cleared (parked) state.
+    let resolveGet: (v: AttentionStateResponse) => void = () => {};
+    vi.mocked(api.unitAttention).mockReturnValueOnce(
+      new Promise<AttentionStateResponse>((res) => {
+        resolveGet = res;
+      }),
+    );
+    const { result, rerender } = renderHook(({ u }) => useUnitAttention(u), {
+      initialProps: { u: "tmai" as string | null },
+    });
+    expect(result.current.loading).toBe(true);
+
+    // Park before the GET resolves.
+    rerender({ u: null });
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+
+    // The previous unit's GET now resolves — it must be dropped, not stamped.
+    await act(async () => {
+      resolveGet(response("tmai", [entry("pr", "1", "high")]));
+    });
+    expect(result.current.data).toBeNull();
+    expect(result.current.levelFor("pr", "1")).toBeNull();
+  });
+
+  it("concurrent same-unit writes: a late older response does not overwrite the newer one", async () => {
+    vi.mocked(api.unitAttention).mockResolvedValue(response("tmai", []));
+    // Two POSTs in flight at once; capture each resolver so we can answer them
+    // OUT OF ORDER (the older one last).
+    const deferred: Array<(v: AttentionStateResponse) => void> = [];
+    vi.mocked(api.setUnitAttention).mockImplementation(
+      () =>
+        new Promise<AttentionStateResponse>((res) => {
+          deferred.push(res);
+        }),
+    );
+    const { result } = renderHook(() => useUnitAttention("tmai"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let older: Promise<void> = Promise.resolve();
+    let newer: Promise<void> = Promise.resolve();
+    act(() => {
+      older = result.current.setAttention("pr", "1", "low"); // write seq 1
+      newer = result.current.setAttention("pr", "1", "high"); // write seq 2
+    });
+    await waitFor(() => expect(deferred).toHaveLength(2));
+
+    // The NEWER write (seq 2) resolves first and wins.
+    await act(async () => {
+      deferred[1](response("tmai", [entry("pr", "1", "high")]));
+      await newer;
+    });
+    expect(result.current.levelFor("pr", "1")).toBe("high");
+    expect(result.current.settingKey).toBeNull();
+
+    // The OLDER write (seq 1) resolves LATE — it is stale and must be dropped,
+    // never rolling the display back to `low`.
+    await act(async () => {
+      deferred[0](response("tmai", [entry("pr", "1", "low")]));
+      await older;
+    });
+    expect(result.current.levelFor("pr", "1")).toBe("high");
+    expect(result.current.settingKey).toBeNull();
+  });
 });

@@ -74,9 +74,21 @@ export function useUnitAttention(unit: string | null): UseUnitAttentionResult {
   // path reads it too, so a write that resolves after a unit switch is
   // dropped rather than written under the wrong unit.
   const generationRef = useRef(0);
+  // Per-write sequence — `generationRef` only changes per unit, so two
+  // concurrent SAME-unit POSTs would both pass that guard and a slower (older)
+  // response could overwrite a newer one. Each write claims a monotonically
+  // increasing seq; only the latest seq's response is allowed to stamp `data`
+  // / clear `settingKey`. (Last-write-wins regardless of resolution order.)
+  const writeSeqRef = useRef(0);
 
   useEffect(() => {
     if (!unit) {
+      // Bump the generation here too: parking must invalidate any in-flight
+      // GET/POST from the previous unit, or a late response would pass its
+      // `myGen === generationRef.current` guard and revive stale data after
+      // we cleared it. (The non-null branch below bumps on every unit change;
+      // the null branch was the hole.)
+      ++generationRef.current;
       setData(null);
       setLoading(false);
       setError(null);
@@ -138,21 +150,25 @@ export function useUnitAttention(unit: string | null): UseUnitAttentionResult {
     async (section: Section, id: string, level: Level): Promise<void> => {
       if (!unit) return;
       const myGen = generationRef.current;
+      const myWriteSeq = ++writeSeqRef.current;
+      // Stale iff the unit changed (myGen) OR a newer write superseded this one
+      // (myWriteSeq). Either invalidates this response.
+      const isStale = () => myGen !== generationRef.current || myWriteSeq !== writeSeqRef.current;
       const key = attentionKey(section, id);
       setSettingKey(key);
       const body: AttentionSetRequest = { section, id, level };
       try {
         const res = await api.setUnitAttention(unit, body);
-        if (myGen !== generationRef.current) return;
+        if (isStale()) return;
         // Stamp the full returned map so a server-side demotion (prior `high`
         // → `low`) lands across every section at once.
         setData(res);
         setError(null);
       } catch (e) {
-        if (myGen !== generationRef.current) return;
+        if (isStale()) return;
         setError(e instanceof Error ? e : new Error(String(e)));
       } finally {
-        if (myGen === generationRef.current) {
+        if (!isStale()) {
           setSettingKey(null);
         }
       }

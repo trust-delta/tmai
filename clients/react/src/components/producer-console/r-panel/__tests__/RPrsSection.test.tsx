@@ -223,14 +223,32 @@ describe("RPrsSection — per-artifact attention markers", () => {
 });
 
 // `Section` has no File variant by construction, so a File row can never carry
-// an attention marker (File is attention-exempt, contract §3). A static guard
-// that the enum stays File-free protects that invariant at the type boundary.
+// an attention marker (File is attention-exempt, contract §3). These are
+// COMPILE-TIME exact-union assertions, not runtime containment checks: a
+// `Record<Section, true>` literal must name every member, so adding a variant
+// (e.g. `file`) drops a required key and FAILS THE BUILD, and naming one the
+// union lacks is an excess-property error. The boundary itself is the test —
+// no `as unknown as` escape hatches (rules/typescript.md).
 describe("attention is File-exempt by construction", () => {
-  it("the Section enum has no `file` variant", () => {
-    const sections: Section[] = ["pr", "issue", "decision", "approach", "observation"];
-    expect(sections).not.toContain("file" as unknown as Section);
-    // A `Level` is only ever low/high — null is unrepresentable as a set value.
-    const levels: Level[] = ["low", "high"];
-    expect(levels).not.toContain("null" as unknown as Level);
+  it("Section is exactly {pr, issue, decision, approach, observation} — no file", () => {
+    const sectionMembers: Record<Section, true> = {
+      pr: true,
+      issue: true,
+      decision: true,
+      approach: true,
+      observation: true,
+    };
+    expect(Object.keys(sectionMembers).sort()).toEqual([
+      "approach",
+      "decision",
+      "issue",
+      "observation",
+      "pr",
+    ]);
+  });
+
+  it("Level is exactly {low, high} — null is never a settable value", () => {
+    const levelMembers: Record<Level, true> = { low: true, high: true };
+    expect(Object.keys(levelMembers).sort()).toEqual(["high", "low"]);
   });
 });
