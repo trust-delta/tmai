@@ -1773,6 +1773,62 @@
       ],
       "type": "object"
     },
+    "ObservationStatus": {
+      "description": "How much the author cares about an observation — its *appraisal*.\n\nDistinct from [`super::approach::ApproachStatus`] and\n[`super::decision::DecisionStatus`]: an observation has no lifecycle, only\nan attention weight. Per `doc/observations/README.md` this is a **human\ngate** — the machine never projects it\n(`doc/decisions/2026-05-26-tmai-states-facts-not-appraisals.md`).",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "ObservationWire": {
+      "description": "One observation projected to the wire — the human-side complement of the\ninternal [`crate::workbench::observation::ObservationRecord`]. Carries only\nthe R-panel row + attention-marker fields; the body is not surfaced.",
+      "properties": {
+        "slug": {
+          "description": "Filename stem — the attention key's `id` (section = `observation`).",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ObservationStatus",
+          "description": "Frontmatter `status` — the appraisal `high | medium | low`."
+        },
+        "summary": {
+          "description": "Frontmatter `summary` — the scan index.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "summary",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ObservationsResponse": {
+      "description": "`GET /api/units/{unit}/observations` response — the unit's observations\nsurface, per repo, JSON-projected. Composed on demand (no cache). Carries\nevery observation record regardless of `status`; the R panel filters /\nsorts client-side, mirroring the approaches / decisions dashboards.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+      "properties": {
+        "composed_at": {
+          "description": "RFC3339 compose timestamp.",
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoObservationsWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "composed_at",
+        "repos"
+      ],
+      "type": "object"
+    },
     "Outcome": {
       "description": "An *objective* outcome observed after a triage verdict, used as ground\ntruth for calibration. Per DR §B.2: the human's accept/reject is **not**\nhere — only failure signals the world produces independently.\n\nThe data is structurally complete in stage 1; the *detection* (scanning\ngit log / PR history to populate these) lands in stage 5.",
       "oneOf": [
@@ -2345,6 +2401,40 @@
         "repo_label",
         "primary",
         "issues"
+      ],
+      "type": "object"
+    },
+    "RepoObservationsWire": {
+      "description": "One repo's projected observations slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the React\nsection passes `repo_root` as the marker `repoPath` (same as decisions /\napproaches, #493). The list carries **every** observation record in\n`<repo>/doc/observations/`, sorted most-recent-first by slug.",
+      "properties": {
+        "observations": {
+          "description": "Every observation record in this repo, sorted most-recent-first by slug.",
+          "items": {
+            "$ref": "#/$defs/ObservationWire"
+          },
+          "type": "array"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "repo_head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo_label": {
+          "type": "string"
+        },
+        "repo_root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo_label",
+        "repo_root",
+        "primary",
+        "observations"
       ],
       "type": "object"
     },
