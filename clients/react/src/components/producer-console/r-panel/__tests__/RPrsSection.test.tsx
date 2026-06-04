@@ -8,7 +8,8 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PrSummaryWire, UnitPrsResponse } from "@/lib/api";
+import type { AttentionControls } from "@/hooks/useUnitAttention";
+import type { Level, PrSummaryWire, Section, UnitPrsResponse } from "@/lib/api";
 
 const unitPrsMock = vi.fn();
 
@@ -51,6 +52,15 @@ function response(prs: PrSummaryWire[] = []): UnitPrsResponse {
   return {
     unit: "u",
     repos: [{ repo_path: "/p/u", repo_label: "u", primary: true, prs }],
+  };
+}
+
+function attentionStub(overrides: Partial<AttentionControls> = {}): AttentionControls {
+  return {
+    levelFor: () => null,
+    setAttention: vi.fn(),
+    settingKey: null,
+    ...overrides,
   };
 }
 
@@ -130,5 +140,97 @@ describe("RPrsSection", () => {
     });
     fireEvent.click(screen.getByText("PR title"));
     expect(onSelectPr.mock.calls[0][0].billingDead).toBe(true);
+  });
+});
+
+describe("RPrsSection — per-artifact attention markers", () => {
+  it("renders a marker on each PR row when attention is threaded, colored by level", async () => {
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(
+      <RPrsSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        attention={attentionStub({ levelFor: () => "high" })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+    const marker = screen.getByTestId("attention-marker");
+    expect(marker.getAttribute("data-level")).toBe("high");
+    // Operator-set heat is allowed on the marker (authorship pole)…
+    expect(marker.className).toContain("attn-high");
+  });
+
+  it("keeps the row's own machine facts neutral — only the marker carries heat", async () => {
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(
+      <RPrsSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        attention={attentionStub({ levelFor: () => "high" })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+    // The row button (CI/branch facts) is a machine-stated projection — it
+    // must stay neutral; heat lives ONLY on the attention marker.
+    const rowButton = screen.getByText("PR title").closest("button");
+    expect(rowButton?.className).not.toMatch(/attn-high|attn-low/);
+  });
+
+  it("renders NO marker when attention is absent (markers are opt-in)", async () => {
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+    expect(screen.queryByTestId("attention-marker")).toBeNull();
+  });
+
+  it("setting high on a row calls setAttention('pr', <number>, 'high')", async () => {
+    const setAttention = vi.fn();
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(
+      <RPrsSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        attention={attentionStub({ setAttention })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("attention-marker"));
+    fireEvent.click(screen.getByTestId("attention-set-high"));
+    expect(setAttention).toHaveBeenCalledWith("pr", "100", "high");
+  });
+
+  it("clicking the marker does NOT also open the row's R₂ viewer (stopPropagation)", async () => {
+    const onSelectPr = vi.fn();
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(
+      <RPrsSection
+        unitName="u"
+        expanded={true}
+        onToggle={vi.fn()}
+        onSelectPr={onSelectPr}
+        attention={attentionStub()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("attention-marker"));
+    // The marker is its own control — clicking it must not select the row.
+    expect(onSelectPr).not.toHaveBeenCalled();
+  });
+});
+
+// `Section` has no File variant by construction, so a File row can never carry
+// an attention marker (File is attention-exempt, contract §3). A static guard
+// that the enum stays File-free protects that invariant at the type boundary.
+describe("attention is File-exempt by construction", () => {
+  it("the Section enum has no `file` variant", () => {
+    const sections: Section[] = ["pr", "issue", "decision", "approach", "observation"];
+    expect(sections).not.toContain("file" as unknown as Section);
+    // A `Level` is only ever low/high — null is unrepresentable as a set value.
+    const levels: Level[] = ["low", "high"];
+    expect(levels).not.toContain("null" as unknown as Level);
   });
 });

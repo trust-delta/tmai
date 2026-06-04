@@ -13,8 +13,10 @@
 // repo-level `billing_dead` flag (which lives on `RepoPrsWire`, not on
 // the PR) so R₂ can offer the billing-dead override.
 
+import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import type { PrSummaryWire, RepoPrsWire } from "@/lib/api";
+import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedPr, selectedPrKey } from "./r-viewer/RPrViewer";
 import { Section } from "./Section";
 
@@ -31,6 +33,10 @@ interface RPrsSectionProps {
    *  so the row marks itself as the one being viewed (a mechanical
    *  "open here" fact, not appraisal). */
   selectedKey?: string | null;
+  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
+   *  When present each PR row shows its attention marker; absent (e.g. in
+   *  isolation tests) the rows render marker-free. */
+  attention?: AttentionControls;
 }
 
 export function RPrsSection({
@@ -39,6 +45,7 @@ export function RPrsSection({
   onToggle,
   onSelectPr,
   selectedKey,
+  attention,
 }: RPrsSectionProps) {
   const { data, loading, error } = useUnitPrs(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + r.prs.length, 0);
@@ -59,6 +66,7 @@ export function RPrsSection({
         error={error}
         onSelectPr={onSelectPr}
         selectedKey={selectedKey ?? null}
+        attention={attention}
       />
     </Section>
   );
@@ -71,9 +79,10 @@ interface BodyProps {
   error: Error | null;
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
+  attention?: AttentionControls;
 }
 
-function Body({ unitName, repos, loading, error, onSelectPr, selectedKey }: BodyProps) {
+function Body({ unitName, repos, loading, error, onSelectPr, selectedKey, attention }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see open PRs.</p>;
   }
@@ -96,6 +105,7 @@ function Body({ unitName, repos, loading, error, onSelectPr, selectedKey }: Body
           multiRepo={multiRepo}
           onSelectPr={onSelectPr}
           selectedKey={selectedKey}
+          attention={attention}
         />
       ))}
     </div>
@@ -107,11 +117,13 @@ function RepoBlock({
   multiRepo,
   onSelectPr,
   selectedKey,
+  attention,
 }: {
   repo: RepoPrsWire;
   multiRepo: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
+  attention?: AttentionControls;
 }) {
   if (repo.prs.length === 0) return null;
   // billing-dead lives on the REPO, not the PR. Thread it into the R₂
@@ -135,6 +147,7 @@ function RepoBlock({
             billingDead={billingDead}
             onSelectPr={onSelectPr}
             selected={selectedKey === selectedPrKey(repo.repo_path, pr.number)}
+            attention={attention}
           />
         ))}
       </ul>
@@ -149,6 +162,7 @@ function PrRow({
   billingDead,
   onSelectPr,
   selected,
+  attention,
 }: {
   pr: PrSummaryWire;
   repoPath: string;
@@ -156,6 +170,7 @@ function PrRow({
   billingDead: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selected: boolean;
+  attention?: AttentionControls;
 }) {
   // Plain-text status — no severity-color CI / review badges. The
   // operator can read "CI SUCCESS" / "CI FAILURE" identically; R is
@@ -166,12 +181,21 @@ function PrRow({
   // content is reviewed in-tmai. `aria-current` marks the row whose
   // content is currently open in R₂ (a mechanical "open here" fact).
   return (
-    <li className="leading-snug">
+    <li className="flex items-start gap-1.5 leading-snug">
+      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
+      <span className="pt-0.5">
+        <RowAttentionMarker
+          attention={attention}
+          section="pr"
+          id={String(pr.number)}
+          label={`#${Number(pr.number)}`}
+        />
+      </span>
       <button
         type="button"
         onClick={() => onSelectPr?.({ repoPath, repoLabel, pr, billingDead })}
         aria-current={selected ? "true" : undefined}
-        className={`w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
+        className={`min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors hover:bg-surface-strong/40 ${
           selected ? "bg-surface-strong/40" : ""
         }`}
       >

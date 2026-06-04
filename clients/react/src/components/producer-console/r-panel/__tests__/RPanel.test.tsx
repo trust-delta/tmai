@@ -11,6 +11,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProducerFeedStatus } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 
+// The panel owns one `useUnitAttention` instance (threaded to the four
+// attention-artifact sections). The section bodies are stubbed below, so this
+// container test only needs an inert hook — mock it to avoid a real fetch.
+vi.mock("@/hooks/useUnitAttention", () => ({
+  useUnitAttention: () => ({
+    data: null,
+    loading: false,
+    error: null,
+    levelFor: () => null,
+    setAttention: vi.fn(),
+    settingKey: null,
+  }),
+}));
+
 vi.mock("../RPrsSection", () => ({
   RPrsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="prs-section" data-expanded={expanded} onClick={onToggle}>

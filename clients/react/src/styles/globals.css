@@ -327,6 +327,31 @@ html {
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
+/* ── R-panel attention markers ────────────────────────────────────────────
+   Authorship-scoped coloring (contract
+   tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md,
+   §"rendering = authorship-scoped coloring"). Heat applies ONLY to the
+   operator-set appraisal poles — `low` (muted) and `high` (bright, THE thing
+   in its dimension) — so each section reads as a focus map. `null` is a
+   machine fact and stays neutral (it uses `text-subtle-foreground` in the
+   TSX, never these classes).
+
+   These are deliberately NOT the CI-severity utilities
+   (`text-warning`/`text-destructive`/`text-success`): authorship heat is the
+   operator's own appraisal mirrored, not a machine severity judgment, and the
+   R panel's negative-space tests blocklist the severity classes. The hue
+   tracks the themed `--color-warning` channel so it re-skins with the theme,
+   but the meaning here is "attention", not "warning". */
+.attn-high {
+  color: var(--color-warning);
+  font-weight: 600;
+  text-shadow: 0 0 6px rgb(var(--glow-warning) / 0.45);
+}
+.attn-low {
+  color: var(--color-warning);
+  opacity: 0.5;
+}
+
 /* xterm v6 paints its own VSCode-derived scrollbar (`.xterm-scrollable-element
    > .scrollbar`) instead of the native browser scrollbar, and JS pins both the
    bar and the inner slider to an inline `width: 14px`. The native viewport
