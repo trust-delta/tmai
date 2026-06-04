@@ -245,6 +245,95 @@
         }
       }
     },
+    "/api/units/{unit}/attention": {
+      "get": {
+        "tags": [
+          "attention"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/attention`.",
+        "description": "The full per-unit `(section, id)→level` attention map for the R panel\n(issue #489; approach `2026-06-04-attention-as-per-artifact-field` §2). Only\n`low`/`high` entries are listed — everything else is `null` by absence (the\nmachine pole / unset). Served from `<data_dir>/attention/<unit>.json`\n(crash-resilient atomic file). Real handler:\n`crate::web::api::get_unit_attention`.",
+        "operationId": "get_unit_attention_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-unit attention map (low/high entries; null by absence)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionStateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Attention store load failed (corrupt ledger)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "attention"
+        ],
+        "summary": "Documentation stub for `POST /api/units/{unit}/attention`.",
+        "description": "The operator's attention write (issue #489 §2). `level` is `low`/`high`\nonly — `null` is the machine pole and is not expressible on the request, so\nthe **monotonic / non-repudiation** invariant (\"the operator can't un-see\")\nis enforced by the type. The handler additionally enforces **`high` ≤ 1 per\ndimension** across sections (`remote` = {PR, Issue} ⊥ `local` = {Decision,\nApproach, Observation}): a new `high` demotes the dimension's prior `high` to\n`low` (never to `null`). Returns the updated map. Real handler:\n`crate::web::api::post_unit_attention`.",
+        "operationId": "post_unit_attention_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttentionSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated per-unit attention map after the write (incl. any high≤1 demotion)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty artifact id"
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Attention store load/save failed"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/calibration": {
       "get": {
         "tags": [
@@ -987,6 +1076,67 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RepoApproachesWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "AttentionEntryWire": {
+        "type": "object",
+        "description": "One operator-set attention marker in the [`AttentionStateResponse`] map.\n`null` artifacts are **not** emitted — absence = `null` (the R panel already\nholds the artifact inventory; it infers `null` for any listed artifact that\nis absent here).",
+        "required": [
+          "section",
+          "id",
+          "level"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug."
+          },
+          "level": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "section": {
+            "$ref": "#/components/schemas/Section"
+          }
+        }
+      },
+      "AttentionSetRequest": {
+        "type": "object",
+        "description": "`POST /api/units/{unit}/attention` request — the operator's attention write.\n`level` is `low`/`high` only ([`Level`] has no `null` variant), so the\noperator can never write `null`: the complementary write-pole and\nnon-repudiation invariants are enforced by the type itself, before the\nhandler runs.",
+        "required": [
+          "section",
+          "id",
+          "level"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug."
+          },
+          "level": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "section": {
+            "$ref": "#/components/schemas/Section"
+          }
+        }
+      },
+      "AttentionStateResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/attention` response — the full per-unit attention map\n(only `low`/`high` entries; the rest is `null` by absence), in deterministic\nkey order.",
+        "required": [
+          "unit",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionEntryWire"
             }
           },
           "unit": {
@@ -3547,6 +3697,14 @@
           }
         }
       },
+      "Level": {
+        "type": "string",
+        "description": "Operator-set attention level. Two poles; `null` is **not** a variant — it is\nrepresented as absence (no entry / no level) and only the machine may write\nit. So this type structurally enforces the operator's write-pole: an\noperator request can never express `null` (non-repudiation by type).",
+        "enum": [
+          "low",
+          "high"
+        ]
+      },
       "LivenessWire": {
         "type": "object",
         "description": "Liveness of an approach's latest fact, mirroring [`Liveness`]. `last_fact`\nis an ISO `YYYY-MM-DD` date (or `null` when the record has no facts); both\n`last_fact` and `days_since` are `null` together in that no-facts case.",
@@ -4452,6 +4610,17 @@
             "description": "Availability state of each tracked AI vendor."
           }
         }
+      },
+      "Section": {
+        "type": "string",
+        "description": "The attention-bearing artifact sections (contract §1). Five kinds;\n**File is intentionally absent** — File is attention-exempt (it does not\ngate progression), so by construction it is unrepresentable here.",
+        "enum": [
+          "pr",
+          "issue",
+          "decision",
+          "approach",
+          "observation"
+        ]
       },
       "ServingHealthWire": {
         "type": "string",
@@ -5362,6 +5531,10 @@
     {
       "name": "files",
       "description": "Operator-side unit-scoped repo files — per-repo tree listing + scoped file content (issue #472, read-only)"
+    },
+    {
+      "name": "attention",
+      "description": "Per-artifact attention model (issue #489; approach 2026-06-04-attention-as-per-artifact-field §2). GET serves the per-unit (section,id)→level map for the R panel (only low/high; null = absence). POST is the operator write (low/high only), enforcing monotonic (no write-back to null) + high≤1/dimension (remote {PR,Issue} ⊥ local {Decision,Approach,Observation}) server-side. File is attention-exempt."
     }
   ]
 }

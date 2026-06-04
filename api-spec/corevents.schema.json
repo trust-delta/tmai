@@ -255,6 +255,67 @@
       ],
       "type": "object"
     },
+    "AttentionEntryWire": {
+      "description": "One operator-set attention marker in the [`AttentionStateResponse`] map.\n`null` artifacts are **not** emitted — absence = `null` (the R panel already\nholds the artifact inventory; it infers `null` for any listed artifact that\nis absent here).",
+      "properties": {
+        "id": {
+          "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug.",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "section": {
+          "$ref": "#/$defs/Section"
+        }
+      },
+      "required": [
+        "section",
+        "id",
+        "level"
+      ],
+      "type": "object"
+    },
+    "AttentionSetRequest": {
+      "description": "`POST /api/units/{unit}/attention` request — the operator's attention write.\n`level` is `low`/`high` only ([`Level`] has no `null` variant), so the\noperator can never write `null`: the complementary write-pole and\nnon-repudiation invariants are enforced by the type itself, before the\nhandler runs.",
+      "properties": {
+        "id": {
+          "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug.",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "section": {
+          "$ref": "#/$defs/Section"
+        }
+      },
+      "required": [
+        "section",
+        "id",
+        "level"
+      ],
+      "type": "object"
+    },
+    "AttentionStateResponse": {
+      "description": "`GET /api/units/{unit}/attention` response — the full per-unit attention map\n(only `low`/`high` entries; the rest is `null` by absence), in deterministic\nkey order.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/AttentionEntryWire"
+          },
+          "type": "array"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "entries"
+      ],
+      "type": "object"
+    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -1647,6 +1708,14 @@
       ],
       "type": "object"
     },
+    "Level": {
+      "description": "Operator-set attention level. Two poles; `null` is **not** a variant — it is\nrepresented as absence (no entry / no level) and only the machine may write\nit. So this type structurally enforces the operator's write-pole: an\noperator request can never express `null` (non-repudiation by type).",
+      "enum": [
+        "low",
+        "high"
+      ],
+      "type": "string"
+    },
     "LivenessWire": {
       "description": "Liveness of an approach's latest fact, mirroring [`Liveness`]. `last_fact`\nis an ISO `YYYY-MM-DD` date (or `null` when the record has no facts); both\n`last_fact` and `days_since` are `null` together in that no-facts case.",
       "properties": {
@@ -2552,6 +2621,17 @@
         "vendors"
       ],
       "type": "object"
+    },
+    "Section": {
+      "description": "The attention-bearing artifact sections (contract §1). Five kinds;\n**File is intentionally absent** — File is attention-exempt (it does not\ngate progression), so by construction it is unrepresentable here.",
+      "enum": [
+        "pr",
+        "issue",
+        "decision",
+        "approach",
+        "observation"
+      ],
+      "type": "string"
     },
     "ServingHealthWire": {
       "description": "The per-decision running-means verdict over its serving approaches,\nmirroring [`ServingHealth`].\n\nkebab-case on the wire (`orphaned` / `no-running-means` / `healthy` /\n`overflow`). A mechanical classification of `(serving, running)` counts —\nNOT a severity (the UI decides how to render each verdict).",
