@@ -25,6 +25,9 @@ import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
 import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
 import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
 import type { Level } from "@/types/generated/Level";
+import type { ObservationStatus } from "@/types/generated/ObservationStatus";
+import type { ObservationsResponse } from "@/types/generated/ObservationsResponse";
+import type { ObservationWire } from "@/types/generated/ObservationWire";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
@@ -35,6 +38,7 @@ import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
+import type { RepoObservationsWire } from "@/types/generated/RepoObservationsWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
 import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
@@ -79,6 +83,9 @@ export type {
   IssueLabelWire,
   IssueSummaryWire,
   Level,
+  ObservationStatus,
+  ObservationsResponse,
+  ObservationWire,
   Outcome,
   PermissionMode,
   PrDiffResponse,
@@ -89,6 +96,7 @@ export type {
   QueueSnapshot,
   RepoApproachesWire,
   RepoIssuesWire,
+  RepoObservationsWire,
   RepoPrsWire,
   ReviewExtensionWire,
   ReviewTriggerWire,
@@ -1523,6 +1531,14 @@ export const api = {
   // tmai-core#340, same as decisions.
   approaches: (unit: string) =>
     apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
+
+  // Observations view (tmai-core #498) — every observation record per repo,
+  // sorted most-recent-first by slug. The R panel renders one row per
+  // observation (summary + status badge); there is no record viewer —
+  // `ObservationWire` carries only `slug` / `summary` / `status`, nothing
+  // rich to open in R₂. Multi-repo follows tmai-core#340, same as approaches.
+  observations: (unit: string) =>
+    apiFetch<ObservationsResponse>(`/units/${encodeURIComponent(unit)}/observations`),
 
   // Unit-scoped cross-repo open-PR list — Stage-1 in-tmai dev-loop
   // (DR `2026-05-16-dev-loop-completes-in-tmai.md` §A). One unified

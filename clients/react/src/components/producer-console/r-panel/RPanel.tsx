@@ -39,6 +39,7 @@ import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
 import { RInventorySection } from "./RInventorySection";
 import { RIssuesSection } from "./RIssuesSection";
+import { RObservationsSection } from "./RObservationsSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
@@ -92,7 +93,15 @@ interface RPanelProps {
   viewer?: React.ReactNode;
 }
 
-const SECTION_IDS = ["prs", "issues", "decisions", "approaches", "inventory", "files"] as const;
+const SECTION_IDS = [
+  "prs",
+  "issues",
+  "decisions",
+  "approaches",
+  "observations",
+  "inventory",
+  "files",
+] as const;
 
 export function RPanel({
   currentProjectPath,
@@ -113,8 +122,9 @@ export function RPanel({
   // One attention hook for the whole panel (not one per section): the POST
   // returns the full updated map, so a server-side demotion (a prior `high`
   // knocked to `low` to keep `high`≤1/dimension) lands on the PR + Issue
-  // sections at once. Threaded down to the four attention-artifact sections;
-  // File is attention-exempt and is NOT given the controls.
+  // sections at once. Threaded down to the five attention-artifact sections
+  // (pr / issue / decision / approach / observation); File is attention-exempt
+  // and is NOT given the controls.
   const attention = useUnitAttention(unitName);
 
   const toggle = useCallback(
@@ -240,6 +250,12 @@ export function RPanel({
               onToggle={() => toggle("approaches")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
+              attention={attention}
+            />
+            <RObservationsSection
+              unitName={unitName}
+              expanded={isExpanded("observations")}
+              onToggle={() => toggle("observations")}
               attention={attention}
             />
             <RInventorySection
