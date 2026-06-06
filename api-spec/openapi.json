@@ -206,6 +206,45 @@
         }
       }
     },
+    "/api/units/{unit}/aims": {
+      "get": {
+        "tags": [
+          "aims"
+        ],
+        "summary": "Documentation stub for `GET /api/units/{unit}/aims`.",
+        "description": "JSON projection of the unit's aim-tree records (`doc/aims/`) — the aim-tree\nread surface (graduation Stage 1; observation\n`2026-06-05-aim-tree-write-first-record-structure.md`). Every\n`doc/aims/<slug>.md` record, grouped per repo, surfacing the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`\n(`open | done | dead`), the DAG cross-edges (`depends_on` / `serves` /\n`related`, slugs), and the agent-authored interior (`body`, the R-panel\ndetail pane). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). Aim slugs are NON-dated stable identities (re-parenting\nedits `parent:`, never the filename). Read-only — write/persist + drift-marks\nare later graduation stages.",
+        "operationId": "get_aims_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aim-tree projection — every record, grouped per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AimsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Aim parse failed"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/approaches": {
       "get": {
         "tags": [
@@ -965,6 +1004,98 @@
           "halted",
           "completed"
         ]
+      },
+      "AimState": {
+        "type": "string",
+        "description": "Lifecycle state of an aim node.\n\nPer `doc/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =\nself-death (the means failed; the lineage stays, the parent is untouched).\nUnlike a decision's `status`, this is a node-local fact, not an authority\ngate — the machine marks, it never appraises.",
+        "enum": [
+          "open",
+          "done",
+          "dead"
+        ]
+      },
+      "AimWire": {
+        "type": "object",
+        "description": "One aim node projected to the wire — the human-side complement of the\ninternal [`crate::workbench::aim::AimRecord`]. Carries the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the DAG cross-edges\n(`depends_on` / `serves` / `related`, slugs), the lifecycle `state`, and the\nagent-authored interior (`body`).\n\nField names are snake_case on the wire (mirroring the sibling views'\n`repo_root` etc.); the cross-edge keys (`depends_on`) match the corpus\nfrontmatter spelling, so the wire and the records stay one-to-one.",
+        "required": [
+          "slug",
+          "aim",
+          "state",
+          "depends_on",
+          "serves",
+          "related",
+          "body"
+        ],
+        "properties": {
+          "aim": {
+            "type": "string",
+            "description": "The human-authored 1-line anchor / bearing."
+          },
+          "body": {
+            "type": "string",
+            "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node)."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DAG cross-edges (slugs): \"depends on\". Empty when absent."
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent node slug (tree skeleton); `null` for a root node."
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DAG cross-edges (slugs): loose relations. Empty when absent."
+          },
+          "serves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DAG cross-edges (slugs): \"serves\". Empty when absent."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Filename stem — the stable, NON-dated node identity (e.g. `aim-system`)."
+          },
+          "state": {
+            "$ref": "#/components/schemas/AimState",
+            "description": "Lifecycle state — `open` / `done` / `dead`."
+          }
+        }
+      },
+      "AimsResponse": {
+        "type": "object",
+        "description": "`GET /api/units/{unit}/aims` response — the unit's aim-tree surface, per\nrepo, JSON-projected. Composed on demand (no cache). Carries every aim\nrecord regardless of `state`; the R panel builds / filters the tree\nclient-side, mirroring the approaches / decisions / observations dashboards.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+        "required": [
+          "unit",
+          "composed_at",
+          "repos"
+        ],
+        "properties": {
+          "composed_at": {
+            "type": "string",
+            "description": "RFC3339 compose timestamp."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoAimsWire"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
       },
       "ApproachInventoryWire": {
         "type": "object",
@@ -4261,6 +4392,40 @@
           }
         }
       },
+      "RepoAimsWire": {
+        "type": "object",
+        "description": "One repo's projected aim-tree slice. Mirrors\n[`super::observations_view::RepoObservationsWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches / observations, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
+        "required": [
+          "repo_label",
+          "repo_root",
+          "primary",
+          "aims"
+        ],
+        "properties": {
+          "aims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AimWire"
+            },
+            "description": "Every aim record in this repo, sorted ascending by slug. The tree shape\nlives in the per-node `parent:` links; the client reconstructs it."
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "repo_head": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo_label": {
+            "type": "string"
+          },
+          "repo_root": {
+            "type": "string"
+          }
+        }
+      },
       "RepoApproachesWire": {
         "type": "object",
         "description": "One repo's projected approaches slice. The list carries **every**\napproach record in `<repo>/doc/approaches/` regardless of status —\n`Planned` / `Partial` / `Ready` / `Running` / `Validated` / `Rejected`\n/ `Replaced` — sorted most-recent-first by slug. Each [`ApproachWire`]\ncarries its `status` field as the discriminator the operator dashboard\nfilters / sorts on client-side, per #462 Amendment 2026-05-28's\ndashboard 全件可視化 direction. (The Producer-side markdown's\n`▣ Running approaches` bucket narrows to `Running` only — a separate\nsurface served by `compose::RepoSection::running_approaches`.)",
@@ -5646,6 +5811,10 @@
     {
       "name": "observations",
       "description": "Observations view — the 5th attention-artifact per approach 2026-06-04-attention-as-per-artifact-field §key (observation, a local-dimension peer of decision / approach). Surfaces every doc/observations/*.md record (slug / summary / status: high|medium|low) grouped per repo, carrying repo_root as the marker repoPath."
+    },
+    {
+      "name": "aims",
+      "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (doc/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
     },
     {
       "name": "working-with-human",
