@@ -2,6 +2,9 @@
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
 import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
+import type { AimState } from "@/types/generated/AimState";
+import type { AimsResponse } from "@/types/generated/AimsResponse";
+import type { AimWire } from "@/types/generated/AimWire";
 import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
 import type { ApproachInventoryWire } from "@/types/generated/ApproachInventoryWire";
 import type { ApproachStatus } from "@/types/generated/ApproachStatus";
@@ -36,6 +39,7 @@ import type { ProducerPullTrigger } from "@/types/generated/ProducerPullTrigger"
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
+import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
 import type { RepoObservationsWire } from "@/types/generated/RepoObservationsWire";
@@ -61,6 +65,9 @@ import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
   AgentCtxUsage,
+  AimState,
+  AimsResponse,
+  AimWire,
   ApproachesResponse,
   ApproachInventoryWire,
   ApproachStatus,
@@ -94,6 +101,7 @@ export type {
   PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
+  RepoAimsWire,
   RepoApproachesWire,
   RepoIssuesWire,
   RepoObservationsWire,
@@ -1539,6 +1547,14 @@ export const api = {
   // rich to open in R₂. Multi-repo follows tmai-core#340, same as approaches.
   observations: (unit: string) =>
     apiFetch<ObservationsResponse>(`/units/${encodeURIComponent(unit)}/observations`),
+
+  // Aims view (tmai-core #500) — every aim record per repo, the full node
+  // (slug / aim / parent / state / depends_on / serves / related / body).
+  // The R panel reconstructs the purpose=means tree client-side (by
+  // parent/slug) and renders the aim-tree read view. Aims currently live
+  // only in the `tmai-core` repo, but the wire is already multi-repo
+  // (`AimsResponse.repos[]`), same as decisions / approaches / observations.
+  aims: (unit: string) => apiFetch<AimsResponse>(`/units/${encodeURIComponent(unit)}/aims`),
 
   // Unit-scoped cross-repo open-PR list — Stage-1 in-tmai dev-loop
   // (DR `2026-05-16-dev-loop-completes-in-tmai.md` §A). One unified
