@@ -34,6 +34,7 @@ import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
+import { RAimsSection } from "./RAimsSection";
 import { RApproachesSection } from "./RApproachesSection";
 import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
@@ -99,6 +100,7 @@ const SECTION_IDS = [
   "decisions",
   "approaches",
   "observations",
+  "aims",
   "inventory",
   "files",
 ] as const;
@@ -257,6 +259,14 @@ export function RPanel({
               expanded={isExpanded("observations")}
               onToggle={() => toggle("observations")}
               attention={attention}
+            />
+            {/* Aims — the aim-tree read view (#780). Not an attention-artifact
+                section (the 5 are pr / issue / decision / approach /
+                observation), so it is NOT given the attention controls. */}
+            <RAimsSection
+              unitName={unitName}
+              expanded={isExpanded("aims")}
+              onToggle={() => toggle("aims")}
             />
             <RInventorySection
               unitName={unitName}

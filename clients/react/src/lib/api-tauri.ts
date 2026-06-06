@@ -268,6 +268,10 @@ export const api = {
   // doc/observations/ records; no Tauri-specific path needed)
   observations: (unit: string) => httpApi.observations(unit),
 
+  // Aims view (HTTP only — on-demand JSON projection of the unit's
+  // doc/aims/ records; no Tauri-specific path needed)
+  aims: (unit: string) => httpApi.aims(unit),
+
   // Unit-scoped cross-repo PR list (HTTP only — gh-CLI passthrough
   // fanned out over the unit's repos; no Tauri-specific path needed)
   unitPrs: (unit: string) => httpApi.unitPrs(unit),

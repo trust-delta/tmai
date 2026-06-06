@@ -75,6 +75,13 @@ vi.mock("../RObservationsSection", () => ({
     </button>
   ),
 }));
+vi.mock("../RAimsSection", () => ({
+  RAimsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
+    <button type="button" data-testid="aims-section" data-expanded={expanded} onClick={onToggle}>
+      Aims
+    </button>
+  ),
+}));
 vi.mock("../RFilesSection", () => ({
   RFilesSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="files-section" data-expanded={expanded} onClick={onToggle}>
@@ -121,6 +128,7 @@ describe("RPanel — accordion shell", () => {
       "decisions-section",
       "approaches-section",
       "observations-section",
+      "aims-section",
       "files-section",
     ];
     for (const id of ids) {
