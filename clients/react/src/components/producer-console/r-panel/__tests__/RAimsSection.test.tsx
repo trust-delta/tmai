@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 //
-// RAimsSection — the aim-tree read view (graduation Stage 1-B, #780). Covers
-// the wire-backed states (render / loading / empty / error / parked) and the
+// RAimsSection — the aim-tree read view (graduation Stage 1-B, #780 + #782).
+// The section is now a THIN entry (summary + glyph legend + an ⤢ open
+// affordance); the actual 2D tree lives in a maximized overlay opened from it.
+// Covers the wire-backed states (render / loading / empty / error / parked),
+// the thin-entry summary, the overlay open / close (✕) / dismiss (Esc), and the
 // view machinery carried from prototype #778: body-on-select detail pane,
 // blast-radius highlight, the distinct dashed `depends_on` cross-edge, and the
 // neutral `dead` glyph with no severity color. Read-only — there is NO write
@@ -87,18 +90,30 @@ beforeEach(() => {
   aimsMock.mockReset();
 });
 
-describe("RAimsSection", () => {
-  it("renders each aim node (anchor + slug)", async () => {
-    aimsMock.mockResolvedValue(responseStub(TREE));
+// Open the maximized overlay from the thin entry, returning the dialog element.
+async function openOverlay() {
+  const openBtn = await screen.findByRole("button", { name: /Open aim-tree/ });
+  fireEvent.click(openBtn);
+  return screen.findByRole("dialog", { name: "Aim-tree" });
+}
 
+describe("RAimsSection — thin entry", () => {
+  it("shows a compact summary (aim + root count) and an open affordance, not the canvas", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
 
+    // Summary: 6 aims across 2 roots (amplify-human-judgment + aim-system).
+    // The root count sits in its own foreground span, so assert on the full
+    // summary text rather than a single contiguous text node.
     await waitFor(() => {
-      expect(screen.getByText("人間の判断を増幅する")).toBeTruthy();
+      expect(screen.getByText(/6 aims/)).toBeTruthy();
     });
-    expect(screen.getByText("records を書く構造に")).toBeTruthy();
-    // The slug shows under the anchor inside the node box.
-    expect(screen.getByText("attention-per-artifact")).toBeTruthy();
+    expect(screen.getByText(/6 aims/).textContent).toContain("2 root");
+    // The open affordance is present…
+    expect(screen.getByRole("button", { name: /Open aim-tree/ })).toBeTruthy();
+    // …but the maximized tree is NOT mounted until it is clicked.
+    expect(screen.queryByRole("dialog", { name: "Aim-tree" })).toBeNull();
+    expect(screen.queryByText("人間の判断を増幅する")).toBeNull();
   });
 
   it("header count is the plain total node count (no severity styling)", async () => {
@@ -138,10 +153,47 @@ describe("RAimsSection", () => {
     expect(screen.getByText(/Pick a project to see aims\./)).toBeTruthy();
     expect(aimsMock).not.toHaveBeenCalled();
   });
+});
+
+describe("RAimsSection — maximized overlay", () => {
+  it("opens the overlay on ⤢ click, rendering every aim node (anchor + slug)", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+
+    await openOverlay();
+
+    expect(screen.getByText("人間の判断を増幅する")).toBeTruthy();
+    expect(screen.getByText("records を書く構造に")).toBeTruthy();
+    // The slug shows under the anchor inside the node box.
+    expect(screen.getByText("attention-per-artifact")).toBeTruthy();
+  });
+
+  it("dismisses via the ✕ close button", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+
+    await openOverlay();
+    fireEvent.click(screen.getByRole("button", { name: /Close aim-tree/ }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Aim-tree" })).toBeNull();
+    });
+  });
+
+  it("dismisses via Esc", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+
+    await openOverlay();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Aim-tree" })).toBeNull();
+    });
+  });
 
   it("selecting a node opens its body in the detail pane and reports the blast radius", async () => {
     aimsMock.mockResolvedValue(responseStub(TREE));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
 
     const node = await screen.findByRole("button", {
       name: /attention-per-artifact/,
@@ -160,6 +212,7 @@ describe("RAimsSection", () => {
   it("lists depends_on / serves / related as slug text in the detail pane", async () => {
     aimsMock.mockResolvedValue(responseStub(TREE));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
 
     const node = await screen.findByRole("button", { name: /aim-authority/ });
     fireEvent.click(node);
@@ -173,11 +226,13 @@ describe("RAimsSection", () => {
 
   it("draws depends_on as a distinct dashed cross-edge path", async () => {
     aimsMock.mockResolvedValue(responseStub(TREE));
-    const { container } = render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
     await screen.findByText("authority = event-driven amendment");
     // The cross-edge is a <path> with a dasharray (the legend uses a <line>,
     // so querying for path[stroke-dasharray] targets the edge specifically).
-    const dashed = container.querySelector('path[stroke-dasharray="4 3"]');
+    // The overlay is portalled to document.body, so query the document.
+    const dashed = document.querySelector('path[stroke-dasharray="4 3"]');
     expect(dashed).not.toBeNull();
   });
 
@@ -185,16 +240,18 @@ describe("RAimsSection", () => {
     aimsMock.mockResolvedValue(
       responseStub([aimStub({ slug: "x", aim: "dead aim", state: "dead" })]),
     );
-    const { container } = render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
     await screen.findByText("dead aim");
     // Neutral shape glyph for dead — no heat / severity color anywhere.
     expect(screen.getAllByText("⊘").length).toBeGreaterThan(0);
-    expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+    expect(document.body.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
   });
 
   it("does NOT render a write affordance (Stage 2 is out of scope)", async () => {
     aimsMock.mockResolvedValue(responseStub(TREE));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
     await screen.findByText("records を書く構造に");
     // No "New node" / "Add child" / "Create" affordance carried from the
     // prototype — this is the read-only view.

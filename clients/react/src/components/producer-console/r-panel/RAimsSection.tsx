@@ -1,5 +1,5 @@
-// ◎ Aims — R panel's aim-tree read view (graduation Stage 1-B, #780). The
-// read-view validated in throwaway prototype #778 (`RAimTreePrototype`),
+// ◎ Aims — R panel's aim-tree read view (graduation Stage 1-B, #780 + #782).
+// The read-view validated in throwaway prototype #778 (`RAimTreePrototype`),
 // graduated into a real R-panel section backed by the live
 // `GET /api/units/{unit}/aims` endpoint (tmai-core #500).
 //
@@ -8,15 +8,23 @@
 // `patchNode` / `commitCreate` / in-memory mutation are deliberately NOT
 // carried.
 //
-// The view machinery carried intact from the prototype: the tidy-tree layout,
-// the blast-radius highlight (select a node → light its whole descendant
-// subtree, the set that would become drift-possible if that aim changed),
-// `depends_on` drawn as a visually distinct dashed cross-edge (NOT part of any
-// blast radius), the per-node state glyph, and the body-on-select detail pane.
-// The pure layout / traversal lives in `./aim-tree` (unit-tested separately);
-// this file is the React rendering, adapted from the prototype's full-screen
-// 2-pane layout to STACK (canvas above, detail below) so it fits the narrow
-// R-panel section column.
+// CONTAINER (#782): a 2D spatial tree of long-text nodes does not fit the
+// narrow R-panel accordion column, and widening the column would fight the
+// console-rebuild "central conversation primary" constraint. So the section
+// itself stays a thin accordion entry — a compact `N aims · M roots` summary +
+// the glyph legend + an ⤢ "open" affordance — and the actual tree lives in a
+// DEDICATED FULL-WINDOW OVERLAY (`AimTreeOverlay`, mounted via `createPortal`,
+// dismissible by ✕ and Esc). The overlay uses the prototype's SIDE-BY-SIDE
+// 2-pane layout (wide canvas + side detail), with the room to let the variable-
+// height tidy-tree (`computeLayout`, the #782 overlap fix) breathe.
+//
+// The view machinery carried intact from the prototype: the variable-height
+// tidy-tree layout, the blast-radius highlight (select a node → light its whole
+// descendant subtree, the set that would become drift-possible if that aim
+// changed), `depends_on` drawn as a visually distinct dashed cross-edge (NOT
+// part of any blast radius), the per-node state glyph, and the body-on-select
+// detail pane. The pure layout / traversal lives in `./aim-tree` (unit-tested
+// separately); this file is the React rendering.
 //
 // `body` is rendered as raw markdown, read-only: line breaks preserved,
 // monospace so inline refs / markers stay legible. There is intentionally no
@@ -24,7 +32,8 @@
 // prose in the wire body, not a structured field (the prototype's `BodyLine`
 // was a fixture invention).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useUnitAims } from "@/hooks/useUnitAims";
 import type { AimWire } from "@/lib/api";
 import {
@@ -35,6 +44,7 @@ import {
   computeLayout,
   dependsEdgePath,
   descendantsOf,
+  findRoots,
   flattenRepos,
   NODE_W,
   type NodePos,
@@ -87,13 +97,62 @@ function Body({ unitName, nodes, loading, error }: BodyProps) {
   if (nodes.length === 0) {
     return <p className="text-subtle-foreground">No aims.</p>;
   }
-  return <AimTree nodes={nodes} />;
+  return <AimsEntry nodes={nodes} />;
 }
 
-function AimTree({ nodes }: { nodes: AimWire[] }) {
+// The thin R-panel entry: a compact summary + the glyph legend + an ⤢ open
+// affordance. Clicking open launches the maximized overlay; the open-state is
+// local and the overlay is portalled, so the section stays self-contained and
+// the narrow column is never widened.
+function AimsEntry({ nodes }: { nodes: AimWire[] }) {
+  const [open, setOpen] = useState(false);
+  const rootCount = useMemo(() => findRoots(nodes).length, [nodes]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-subtle-foreground">
+          {nodes.length} aim{nodes.length === 1 ? "" : "s"} ·{" "}
+          <span className="text-foreground">{rootCount}</span> root{rootCount === 1 ? "" : "s"}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Open aim-tree (maximized)"
+          aria-label="Open aim-tree"
+          className="flex shrink-0 items-center gap-1 rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+        >
+          <span aria-hidden="true">⤢</span> Open
+        </button>
+      </div>
+      <GlyphLegend />
+      {open && <AimTreeOverlay nodes={nodes} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+// The maximized aim-tree overlay — a full-window surface modelled on
+// `HelpOverlay` / `HandoffRitualOverlay`, mounted via `createPortal` so it
+// escapes the R-panel column's clipping/stacking. Dismissible by ✕ and Esc
+// (the Esc convention reused from `AttentionMarker` / `ConfirmDialog`).
+// Layout: the prototype's side-by-side 2-pane — a wide scrollable tree canvas
+// on the left, the body-on-select detail pane on the right.
+function AimTreeOverlay({ nodes, onClose }: { nodes: AimWire[]; onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const childrenOf = useMemo(() => buildChildren(nodes), [nodes]);
   const layout = useMemo(() => computeLayout(nodes), [nodes]);
+  const rootCount = layout.roots.length;
+
+  // Esc dismisses the whole overlay (the detail pane's ✕ / the legend's clear
+  // handle deselect). Listener is document-level so it fires regardless of
+  // focus, mirroring AttentionMarker's popover.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   // Resolve the selection against the CURRENT node set: if a poll / unit
   // change dropped the selected slug, the detail pane and highlight fall back
@@ -115,58 +174,98 @@ function AimTree({ nodes }: { nodes: AimWire[] }) {
   }, [selectedNode, blast]);
   const hasSelection = selectedNode !== null;
 
-  return (
-    <div className="space-y-2">
-      <Legend
-        selectedSlug={selectedNode?.slug ?? null}
-        blastCount={blast.size}
-        onClear={() => setSelected(null)}
-      />
-      {/* The tree canvas. The tidy-tree lays out horizontally by depth, so in
-          the narrow R-panel column it overflows into this scroller rather than
-          cramping. SVG edges sit underneath; clickable node boxes on top. */}
-      <div className="max-h-[420px] overflow-auto rounded border border-hairline bg-surface/30">
-        <div className="relative" style={{ width: layout.width, height: layout.height }}>
-          <Edges
-            nodes={nodes}
-            layout={layout}
-            highlighted={highlighted}
-            hasSelection={hasSelection}
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Aim-tree"
+      className="fixed inset-0 z-50 flex flex-col bg-background"
+    >
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-3">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h2 className="text-sm font-semibold text-foreground">◎ Aims · aim-tree</h2>
+          <span className="text-[11px] text-subtle-foreground">
+            {nodes.length} aim{nodes.length === 1 ? "" : "s"} · {rootCount} root
+            {rootCount === 1 ? "" : "s"}
+          </span>
+          <SelectionStatus
+            selectedSlug={selectedNode?.slug ?? null}
+            blastCount={blast.size}
+            onClear={() => setSelected(null)}
           />
-          {nodes.map((node) => {
-            const pos = layout.positions.get(node.slug);
-            if (!pos) return null;
-            const lit = highlighted.has(node.slug);
-            return (
-              <NodeBox
-                key={node.slug}
-                node={node}
-                pos={pos}
-                isSelected={selectedNode?.slug === node.slug}
-                lit={lit}
-                dimmed={hasSelection && !lit}
-                onSelect={() => setSelected(node.slug)}
-              />
-            );
-          })}
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close aim-tree (Esc)"
+          aria-label="Close aim-tree"
+          className="shrink-0 rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+        >
+          ✕
+        </button>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        {/* Left: the tree canvas. The tidy-tree lays out horizontally by depth
+            and variable-height vertically (the #782 overlap fix); SVG edges sit
+            underneath, clickable node boxes on top. The wide window lets it
+            overflow into this scroller without cramping. */}
+        <div className="min-w-0 flex-1 overflow-auto p-4">
+          <div className="relative" style={{ width: layout.width, height: layout.height }}>
+            <Edges
+              nodes={nodes}
+              layout={layout}
+              highlighted={highlighted}
+              hasSelection={hasSelection}
+            />
+            {nodes.map((node) => {
+              const pos = layout.positions.get(node.slug);
+              if (!pos) return null;
+              const lit = highlighted.has(node.slug);
+              return (
+                <NodeBox
+                  key={node.slug}
+                  node={node}
+                  pos={pos}
+                  isSelected={selectedNode?.slug === node.slug}
+                  lit={lit}
+                  dimmed={hasSelection && !lit}
+                  onSelect={() => setSelected(node.slug)}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right: the body-on-select detail pane (read-only). */}
+        <aside className="flex w-[360px] shrink-0 flex-col overflow-y-auto border-l border-hairline">
+          {selectedNode !== null ? (
+            <DetailPane
+              node={selectedNode}
+              blastCount={blast.size}
+              onClose={() => setSelected(null)}
+            />
+          ) : (
+            <p className="p-6 text-xs text-subtle-foreground">
+              Click a node to read its body and light its{" "}
+              <span className="text-foreground">blast radius</span> — the descendant subtree that
+              would become drift-possible if that aim changed.
+            </p>
+          )}
+        </aside>
       </div>
-      {selectedNode !== null && (
-        <DetailPane node={selectedNode} blastCount={blast.size} onClose={() => setSelected(null)} />
-      )}
-    </div>
+
+      <footer className="shrink-0 border-t border-hairline px-4 py-2">
+        <GlyphLegend />
+      </footer>
+    </div>,
+    document.body,
   );
 }
 
-function Legend({
-  selectedSlug,
-  blastCount,
-  onClear,
-}: {
-  selectedSlug: string | null;
-  blastCount: number;
-  onClear: () => void;
-}) {
+// The static glyph key — open / done / dead state glyphs + the dashed
+// `depends_on` swatch. Shown in both the thin entry and the overlay footer.
+function GlyphLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-subtle-foreground">
       <span className="flex items-center gap-1">
@@ -193,24 +292,42 @@ function Legend({
         </svg>
         depends_on
       </span>
-      {selectedSlug !== null ? (
-        <span className="flex items-center gap-2 text-muted-foreground">
-          <span>
-            blast radius: <span className="text-foreground">{blastCount}</span> descendant
-            {blastCount === 1 ? "" : "s"}
-          </span>
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded border border-hairline px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-          >
-            clear
-          </button>
-        </span>
-      ) : (
-        <span>click a node to light its blast radius</span>
-      )}
     </div>
+  );
+}
+
+// The selection status — blast-radius count + a clear button when a node is
+// selected, or a hint to click otherwise. Lives in the overlay header.
+function SelectionStatus({
+  selectedSlug,
+  blastCount,
+  onClear,
+}: {
+  selectedSlug: string | null;
+  blastCount: number;
+  onClear: () => void;
+}) {
+  if (selectedSlug === null) {
+    return (
+      <span className="text-[11px] text-subtle-foreground">
+        click a node to light its blast radius
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <span>
+        blast radius: <span className="text-foreground">{blastCount}</span> descendant
+        {blastCount === 1 ? "" : "s"}
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        className="rounded border border-hairline px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+      >
+        clear
+      </button>
+    </span>
   );
 }
 
@@ -356,10 +473,7 @@ function DetailPane({
   onClose: () => void;
 }) {
   return (
-    <div
-      data-testid="aim-detail"
-      className="space-y-3 rounded border border-hairline bg-surface/30 p-3"
-    >
+    <div data-testid="aim-detail" className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <span className="flex items-baseline gap-1.5">
@@ -436,7 +550,7 @@ function AimBody({ body }: { body: string }) {
     );
   }
   return (
-    <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface/40 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
+    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded bg-surface/40 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
       {body}
     </pre>
   );
