@@ -8,7 +8,7 @@ cross-repo-refs:
   - "tmai-core:doc/decisions/2026-05-16-producer-identity-and-operator-addressing.md"
   - "tmai-core:doc/decisions/2026-05-18-producer-worker-identity-hierarchy.md"
   - "tmai-core:doc/decisions/2026-05-11-producer-only-operator-interface.md"
-last-verified: 2026-06-05
+last-verified: 2026-06-07
 contract-surface: false
 related:
   - "2026-05-14-react-producer-console-rebuild"
@@ -78,3 +78,4 @@ drafting = agent の act（`doc/decisions/README.md` 準拠）。設計方向と
 - 2026-05-25 (currency sweep, verified): the serving implementation landed — `ProducerRoster` + Producer-headline/worker-child `AgentList`/`AgentCard`/`ProjectGroup` rework (PR #727, `cf4f65c`) and unit-keyed grouping so a multi-repo unit collapses into ONE Producer-rooted group (PR #729 / #439, `7c548e5`, served by tmai-core #443's `AgentSnapshot.unit`). The within-unit roster structure this DR pins is preserved unchanged. Decision holds; `last-verified` bumped.
 - 2026-05-29 (currency sweep, verified): PR #746 (`f32aeba`) reshaped the right column to a project-artifact inventory ([[2026-05-29-r-panel-as-project-artifact-inventory]]). **Left panel structure unchanged** — `clients/react/src/components/agent/` implementation is untouched (only stale-comment renames `AttentionStrip` → `R panel` in `AgentList.tsx` / `ProducerRoster.tsx`). The §役割分担 "右 = 何があなたを要するか (attention)" framing was contextual to this DR; right's evolution is explicitly out of scope per §非範囲 ("本 DR は左面のみ"). This DR's left-side commitment holds; `last-verified` bumped.
 - 2026-06-05 (currency sweep, verified): the attention-model §3 work (#768/#769 `58b8ec0` per-artifact markers, #772/#773 `4d37a4e` §3-2b section reshape) touched `clients/react/` but is **entirely R-panel** (right/artifact surface) — the left panel `clients/react/src/components/agent/` is untouched. Right's evolution stays out of scope per §非範囲 ("本 DR は左面のみ"). This DR's left-side Producer-rooted addressing commitment holds; `last-verified` bumped.
+- 2026-06-07 (currency sweep, verified): the aim-tree graduation work (#782/#783 `f279828` maximized canvas, #785 `3934664` Stage 2-B write affordances) touched `clients/react/` but is **entirely R-panel** (right/artifact surface — the aim-tree section) — the left panel `clients/react/src/components/agent/` is untouched. Right's evolution stays out of scope per §非範囲 ("本 DR は左面のみ"). This DR's left-side Producer-rooted addressing commitment holds; `last-verified` bumped.
