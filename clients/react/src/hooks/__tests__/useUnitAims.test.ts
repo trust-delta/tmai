@@ -106,6 +106,29 @@ describe("useUnitAims", () => {
     expect(result.current.data?.repos[0]?.aims).toHaveLength(1);
   });
 
+  it("refresh() re-fetches the current unit without clearing (anti-flicker)", async () => {
+    vi.mocked(api.aims)
+      .mockResolvedValueOnce(response("tmai", 2))
+      .mockResolvedValue(response("tmai", 5));
+    const { result } = renderHook(() => useUnitAims("tmai"));
+    await waitFor(() => expect(result.current.data?.repos[0]?.aims).toHaveLength(2));
+
+    await act(async () => {
+      result.current.refresh();
+    });
+    await waitFor(() => expect(api.aims).toHaveBeenCalledTimes(2));
+    // The new response replaces the old in place — never cleared to null mid-refresh.
+    expect(result.current.data?.repos[0]?.aims).toHaveLength(5);
+  });
+
+  it("refresh() is a no-op while parked (unit=null)", async () => {
+    const { result } = renderHook(() => useUnitAims(null));
+    await act(async () => {
+      result.current.refresh();
+    });
+    expect(api.aims).not.toHaveBeenCalled();
+  });
+
   it("keeps the last response visible across the 60s poll", async () => {
     const setIntervalSpy = vi.spyOn(window, "setInterval");
 

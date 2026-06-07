@@ -1,20 +1,24 @@
 // @vitest-environment jsdom
 //
-// RAimsSection — the aim-tree read view (graduation Stage 1-B, #780 + #782).
-// The section is now a THIN entry (summary + glyph legend + an ⤢ open
-// affordance); the actual 2D tree lives in a maximized overlay opened from it.
-// Covers the wire-backed states (render / loading / empty / error / parked),
-// the thin-entry summary, the overlay open / close (✕) / dismiss (Esc), and the
-// view machinery carried from prototype #778: body-on-select detail pane,
-// blast-radius highlight, the distinct dashed `depends_on` cross-edge, and the
-// neutral `dead` glyph with no severity color. Read-only — there is NO write
-// affordance (frontmatter edit / new node are Stage 2).
+// RAimsSection — the aim-tree read view (Stage 1-B, #780 + #782) PLUS the
+// write affordances (graduation Stage 2-B): create a node + edit a node's
+// frontmatter (aim/parent/state only), backed by tmai-core's #501 endpoints.
+// The section is a THIN entry (summary + glyph legend + an ⤢ open affordance);
+// the actual 2D tree + the write forms live in a maximized overlay opened from
+// it. Covers the wire-backed states (render / loading / empty / error / parked),
+// the thin-entry summary, the overlay open / close (✕) / dismiss (Esc), the
+// view machinery carried from prototype #778 (body-on-select detail pane,
+// blast-radius highlight, the distinct dashed `depends_on` cross-edge, the
+// neutral `dead` glyph), and the Stage 2-B write flows (create success +
+// client/backend validation, edit save / cancel).
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AimsResponse, AimWire } from "@/lib/api";
 
 const aimsMock = vi.fn();
+const createAimMock = vi.fn();
+const editAimMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -23,6 +27,8 @@ vi.mock("@/lib/api", async () => {
     api: {
       ...actual.api,
       aims: (...args: unknown[]) => aimsMock(...args),
+      createAim: (...args: unknown[]) => createAimMock(...args),
+      editAim: (...args: unknown[]) => editAimMock(...args),
     },
   };
 });
@@ -88,6 +94,8 @@ const TREE: AimWire[] = [
 
 beforeEach(() => {
   aimsMock.mockReset();
+  createAimMock.mockReset();
+  editAimMock.mockReset();
 });
 
 // Open the maximized overlay from the thin entry, returning the dialog element.
@@ -132,12 +140,19 @@ describe("RAimsSection — thin entry", () => {
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
-  it("shows a placeholder when there are no aims", async () => {
+  it("stays actionable at zero aims (summary + open, so the first node can be authored)", async () => {
+    // Stage 2-B: unlike the read-only Stage 1-B's terminal "No aims."
+    // placeholder, an empty tree must still expose the create path so the
+    // operator can author the first node.
     aimsMock.mockResolvedValue(responseStub([]));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
     await waitFor(() => {
-      expect(screen.getByText("No aims.")).toBeTruthy();
+      expect(screen.getByText(/0 aims/)).toBeTruthy();
     });
+    expect(screen.getByRole("button", { name: /Open aim-tree/ })).toBeTruthy();
+    // The overlay opens and exposes the create affordance even with no nodes.
+    await openOverlay();
+    expect(screen.getByRole("button", { name: /New aim node/ })).toBeTruthy();
   });
 
   it("surfaces a fetch error", async () => {
@@ -247,16 +262,161 @@ describe("RAimsSection — maximized overlay", () => {
     expect(screen.getAllByText("⊘").length).toBeGreaterThan(0);
     expect(document.body.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
   });
+});
 
-  it("does NOT render a write affordance (Stage 2 is out of scope)", async () => {
+describe("RAimsSection — Stage 2-B create", () => {
+  it("creates a node from the form and reflects it after the refresh", async () => {
+    const created = aimStub({ slug: "new-node", aim: "the new bearing" });
+    // Initial fetch is the base tree; the post-create refresh includes the new
+    // node so it lands in the canvas.
+    aimsMock.mockResolvedValueOnce(responseStub(TREE));
+    aimsMock.mockResolvedValue(responseStub([...TREE, created]));
+    createAimMock.mockResolvedValue(created);
+
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
+
+    fireEvent.click(screen.getByRole("button", { name: /New aim node/ }));
+    fireEvent.change(screen.getByLabelText("slug"), { target: { value: "new-node" } });
+    fireEvent.change(screen.getByLabelText("aim"), { target: { value: "the new bearing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(createAimMock).toHaveBeenCalledWith("u", {
+        slug: "new-node",
+        aim: "the new bearing",
+        parent: null,
+      });
+    });
+    // The refresh re-fetch surfaces the new node (in the canvas node box, and
+    // — since create selects it — the detail pane too, hence getAllByText).
+    await waitFor(() => {
+      expect(screen.getAllByText("the new bearing").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("passes the selected parent through on create", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    createAimMock.mockResolvedValue(aimStub({ slug: "child", aim: "c", parent: "aim-system" }));
+
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
+    fireEvent.click(screen.getByRole("button", { name: /New aim node/ }));
+    fireEvent.change(screen.getByLabelText("slug"), { target: { value: "child" } });
+    fireEvent.change(screen.getByLabelText("aim"), { target: { value: "c" } });
+    fireEvent.change(screen.getByLabelText("parent"), { target: { value: "aim-system" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(createAimMock).toHaveBeenCalledWith("u", {
+        slug: "child",
+        aim: "c",
+        parent: "aim-system",
+      });
+    });
+  });
+
+  it("blocks create on a client-invalid slug (dated) without calling the API", async () => {
     aimsMock.mockResolvedValue(responseStub(TREE));
     render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
     await openOverlay();
-    await screen.findByText("records を書く構造に");
-    // No "New node" / "Add child" / "Create" affordance carried from the
-    // prototype — this is the read-only view.
-    expect(screen.queryByText(/New node/i)).toBeNull();
-    expect(screen.queryByText(/Add child/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Create/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /New aim node/ }));
+    fireEvent.change(screen.getByLabelText("slug"), { target: { value: "2026-01-02-x" } });
+    fireEvent.change(screen.getByLabelText("aim"), { target: { value: "a" } });
+
+    expect(screen.getByText(/NON-dated/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create" })).toHaveProperty("disabled", true);
+    expect(createAimMock).not.toHaveBeenCalled();
+  });
+
+  it("flags a duplicate slug client-side before the API", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
+    fireEvent.click(screen.getByRole("button", { name: /New aim node/ }));
+    // `aim-system` already exists in TREE.
+    fireEvent.change(screen.getByLabelText("slug"), { target: { value: "aim-system" } });
+    fireEvent.change(screen.getByLabelText("aim"), { target: { value: "a" } });
+
+    expect(screen.getByText(/already exists/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create" })).toHaveProperty("disabled", true);
+    expect(createAimMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a backend rejection (409/422) inline", async () => {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    // Client-valid, non-duplicate slug that the backend nonetheless rejects
+    // (e.g. a race, or a rule the client mirror does not enforce).
+    createAimMock.mockRejectedValue(new Error("aim 'racy-node' already exists"));
+
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
+    fireEvent.click(screen.getByRole("button", { name: /New aim node/ }));
+    fireEvent.change(screen.getByLabelText("slug"), { target: { value: "racy-node" } });
+    fireEvent.change(screen.getByLabelText("aim"), { target: { value: "a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("already exists");
+    });
+  });
+});
+
+describe("RAimsSection — Stage 2-B edit", () => {
+  async function selectAndEdit(slug: string) {
+    aimsMock.mockResolvedValue(responseStub(TREE));
+    render(<RAimsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await openOverlay();
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(slug) }));
+    const detail = await screen.findByTestId("aim-detail");
+    fireEvent.click(within(detail).getByRole("button", { name: /Edit frontmatter/ }));
+    return detail;
+  }
+
+  it("saves an edited aim / parent / state and re-fetches", async () => {
+    editAimMock.mockResolvedValue(aimStub({ slug: "aim-system", aim: "edited bearing" }));
+    const detail = await selectAndEdit("aim-system");
+
+    fireEvent.change(within(detail).getByLabelText("aim"), {
+      target: { value: "edited bearing" },
+    });
+    fireEvent.change(within(detail).getByLabelText("state"), { target: { value: "done" } });
+    fireEvent.click(within(detail).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(editAimMock).toHaveBeenCalledWith("u", "aim-system", {
+        aim: "edited bearing",
+        parent: null,
+        state: "done",
+      });
+    });
+    // refresh() re-invokes the aims fetch after the write.
+    await waitFor(() => {
+      expect(aimsMock.mock.calls.length).toBeGreaterThan(1);
+    });
+  });
+
+  it("cancel leaves the node untouched (no API call)", async () => {
+    const detail = await selectAndEdit("aim-system");
+    fireEvent.change(within(detail).getByLabelText("aim"), { target: { value: "scrapped" } });
+    fireEvent.click(within(detail).getByRole("button", { name: "Cancel" }));
+
+    // Back to the read-only facts; no edit was sent.
+    expect(within(detail).getByText(/Edit frontmatter/)).toBeTruthy();
+    expect(editAimMock).not.toHaveBeenCalled();
+  });
+
+  it("excludes the node itself and its descendants from the parent options (no cycles)", async () => {
+    // Select amplify-human-judgment (root): its descendants are
+    // attention-per-artifact + attention-backend; none — nor itself — may
+    // become its parent.
+    const detail = await selectAndEdit("amplify-human-judgment");
+    const parentSelect = within(detail).getByLabelText("parent") as HTMLSelectElement;
+    const options = Array.from(parentSelect.options).map((o) => o.value);
+    expect(options).not.toContain("amplify-human-judgment");
+    expect(options).not.toContain("attention-per-artifact");
+    expect(options).not.toContain("attention-backend");
+    // A node outside the subtree is still a valid parent.
+    expect(options).toContain("aim-system");
   });
 });
