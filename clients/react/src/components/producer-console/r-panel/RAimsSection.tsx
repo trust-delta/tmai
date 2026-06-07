@@ -32,10 +32,10 @@
 // prose in the wire body, not a structured field (the prototype's `BodyLine`
 // was a fixture invention).
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useUnitAims } from "@/hooks/useUnitAims";
-import type { AimWire } from "@/lib/api";
+import { type AimState, type AimWire, api } from "@/lib/api";
 import {
   AIM_GLYPH,
   AIM_STATE_LABEL,
@@ -52,6 +52,38 @@ import {
 } from "./aim-tree";
 import { Section } from "./Section";
 
+// Lifecycle states the operator can set, in glyph-legend order. Drives the
+// edit + create `state` selects. `AimState` is the generated wire enum.
+const AIM_STATES: readonly AimState[] = ["open", "done", "dead"];
+
+// Client-side slug validation for the create form — a fast-feedback MIRROR of
+// the backend's `validate_new_aim_slug` (tmai-core #501): non-empty, lowercase
+// kebab / filename-safe (`[a-z0-9-]`, no leading/trailing/doubled `-`), and
+// NON-dated (a `YYYY-MM-DD-` prefix is the decision/approach convention; aim
+// slugs are dateless stable identities). Returns an error string, or `null`
+// when valid. The backend stays authoritative (it owns the `409`/`422`); this
+// only spares the operator a round-trip on the obvious cases.
+export function validateAimSlug(slug: string): string | null {
+  if (slug === "") return "slug must not be empty";
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return "lowercase kebab-case only ([a-z0-9-])";
+  }
+  if (slug.startsWith("-") || slug.endsWith("-") || slug.includes("--")) {
+    return "no leading / trailing / doubled '-'";
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(slug)) {
+    return "must be NON-dated (no YYYY-MM-DD prefix)";
+  }
+  return null;
+}
+
+// Normalize a thrown API error into a short, operator-readable message. The
+// HTTP client throws `Error` whose message carries the backend's `409` / `422`
+// / `404` text; surface it verbatim, trimmed.
+function writeErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 interface RAimsSectionProps {
   unitName: string | null;
   expanded: boolean;
@@ -59,7 +91,7 @@ interface RAimsSectionProps {
 }
 
 export function RAimsSection({ unitName, expanded, onToggle }: RAimsSectionProps) {
-  const { data, loading, error } = useUnitAims(unitName);
+  const { data, loading, error, refresh } = useUnitAims(unitName);
   // Flattened node set drives both the header count and the tree body.
   const nodes = useMemo(() => flattenRepos(data), [data]);
 
@@ -72,7 +104,7 @@ export function RAimsSection({ unitName, expanded, onToggle }: RAimsSectionProps
       expanded={expanded}
       onToggle={onToggle}
     >
-      <Body unitName={unitName} nodes={nodes} loading={loading} error={error} />
+      <Body unitName={unitName} nodes={nodes} loading={loading} error={error} refresh={refresh} />
     </Section>
   );
 }
@@ -82,29 +114,40 @@ interface BodyProps {
   nodes: AimWire[];
   loading: boolean;
   error: Error | null;
+  refresh: () => void;
 }
 
-function Body({ unitName, nodes, loading, error }: BodyProps) {
+function Body({ unitName, nodes, loading, error, refresh }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see aims.</p>;
   }
   if (error !== null) {
     return <p className="text-muted-foreground">Failed to load aims: {error.message}</p>;
   }
+  // Unlike the read-only Stage 1-B, an empty tree is still actionable: the
+  // operator can author the first node. So the overlay (with its create
+  // affordance) is reachable even at zero aims — the thin entry shows the
+  // count and the ⤢ open, and the loading state only gates the very first
+  // fetch (nodes empty AND loading).
   if (nodes.length === 0 && loading) {
     return <p className="text-subtle-foreground">Loading…</p>;
   }
-  if (nodes.length === 0) {
-    return <p className="text-subtle-foreground">No aims.</p>;
-  }
-  return <AimsEntry nodes={nodes} />;
+  return <AimsEntry unitName={unitName} nodes={nodes} refresh={refresh} />;
 }
 
 // The thin R-panel entry: a compact summary + the glyph legend + an ⤢ open
 // affordance. Clicking open launches the maximized overlay; the open-state is
 // local and the overlay is portalled, so the section stays self-contained and
 // the narrow column is never widened.
-function AimsEntry({ nodes }: { nodes: AimWire[] }) {
+function AimsEntry({
+  unitName,
+  nodes,
+  refresh,
+}: {
+  unitName: string;
+  nodes: AimWire[];
+  refresh: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const rootCount = useMemo(() => findRoots(nodes).length, [nodes]);
 
@@ -126,7 +169,14 @@ function AimsEntry({ nodes }: { nodes: AimWire[] }) {
         </button>
       </div>
       <GlyphLegend />
-      {open && <AimTreeOverlay nodes={nodes} onClose={() => setOpen(false)} />}
+      {open && (
+        <AimTreeOverlay
+          unitName={unitName}
+          nodes={nodes}
+          refresh={refresh}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -137,11 +187,26 @@ function AimsEntry({ nodes }: { nodes: AimWire[] }) {
 // (the Esc convention reused from `AttentionMarker` / `ConfirmDialog`).
 // Layout: the prototype's side-by-side 2-pane — a wide scrollable tree canvas
 // on the left, the body-on-select detail pane on the right.
-function AimTreeOverlay({ nodes, onClose }: { nodes: AimWire[]; onClose: () => void }) {
+function AimTreeOverlay({
+  unitName,
+  nodes,
+  refresh,
+  onClose,
+}: {
+  unitName: string;
+  nodes: AimWire[];
+  refresh: () => void;
+  onClose: () => void;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
+  // Stage 2-B: the create form. Mutually exclusive with the detail pane (both
+  // live in the right aside) — opening it deselects so the operator authors a
+  // fresh node rather than reading one.
+  const [creating, setCreating] = useState(false);
   const childrenOf = useMemo(() => buildChildren(nodes), [nodes]);
   const layout = useMemo(() => computeLayout(nodes), [nodes]);
   const rootCount = layout.roots.length;
+  const allSlugs = useMemo(() => nodes.map((n) => n.slug), [nodes]);
 
   // Esc dismisses the whole overlay (the detail pane's ✕ / the legend's clear
   // handle deselect). Listener is document-level so it fires regardless of
@@ -194,15 +259,31 @@ function AimTreeOverlay({ nodes, onClose }: { nodes: AimWire[]; onClose: () => v
             onClear={() => setSelected(null)}
           />
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close aim-tree (Esc)"
-          aria-label="Close aim-tree"
-          className="shrink-0 rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-        >
-          ✕
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Stage 2-B create affordance. Opening the form clears any selection
+              so the right pane shows the form, not a node's body. */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(null);
+              setCreating(true);
+            }}
+            title="Create a new aim node"
+            aria-label="New aim node"
+            className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+          >
+            <span aria-hidden="true">＋</span> New node
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close aim-tree (Esc)"
+            aria-label="Close aim-tree"
+            className="rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -237,19 +318,38 @@ function AimTreeOverlay({ nodes, onClose }: { nodes: AimWire[]; onClose: () => v
           </div>
         </div>
 
-        {/* Right: the body-on-select detail pane (read-only). */}
+        {/* Right: the create form (Stage 2-B), the body-on-select detail pane
+            (with the inline edit affordance), or the click hint — in that
+            precedence. */}
         <aside className="flex w-[360px] shrink-0 flex-col overflow-y-auto border-l border-hairline">
-          {selectedNode !== null ? (
+          {creating ? (
+            <CreateForm
+              unitName={unitName}
+              existingSlugs={allSlugs}
+              refresh={refresh}
+              onClose={() => setCreating(false)}
+              onCreated={(slug) => {
+                setCreating(false);
+                setSelected(slug);
+              }}
+            />
+          ) : selectedNode !== null ? (
             <DetailPane
+              key={selectedNode.slug}
+              unitName={unitName}
               node={selectedNode}
               blastCount={blast.size}
+              parentOptions={allSlugs}
+              forbiddenParents={highlighted}
+              refresh={refresh}
               onClose={() => setSelected(null)}
             />
           ) : (
             <p className="p-6 text-xs text-subtle-foreground">
               Click a node to read its body and light its{" "}
               <span className="text-foreground">blast radius</span> — the descendant subtree that
-              would become drift-possible if that aim changed.
+              would become drift-possible if that aim changed. Or{" "}
+              <span className="text-foreground">＋ New node</span> to author one.
             </p>
           )}
         </aside>
@@ -459,19 +559,31 @@ function NodeBox({
   );
 }
 
-// Body-on-select detail pane — READ-ONLY. The prototype's editable frontmatter
-// inputs + create form are dropped (write is Stage 2). Frontmatter facts show
-// as a plain definition list; cross-edges (`depends_on` / `serves` / `related`)
-// list as slug text; the body renders raw.
+// Body-on-select detail pane. Stage 2-B adds an inline frontmatter EDIT
+// affordance (aim / parent / state only — cross-edges + body are preserved
+// server-side). When not editing, the frontmatter facts show as a plain
+// definition list (cross-edges as slug text) with an ✎ Edit button; the body
+// always renders raw, read-only (editing it is out of scope — the Producer
+// writes the body via normal file editing).
 function DetailPane({
+  unitName,
   node,
   blastCount,
+  parentOptions,
+  forbiddenParents,
+  refresh,
   onClose,
 }: {
+  unitName: string;
   node: AimWire;
   blastCount: number;
+  parentOptions: readonly string[];
+  forbiddenParents: ReadonlySet<string>;
+  refresh: () => void;
   onClose: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+
   return (
     <div data-testid="aim-detail" className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-2">
@@ -497,31 +609,53 @@ function DetailPane({
         </button>
       </div>
 
-      {/* Frontmatter facts — read-only (the write affordance is Stage 2). */}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
-        <dt className="text-subtle-foreground">state</dt>
-        <dd className="text-foreground">{AIM_STATE_LABEL[node.state]}</dd>
-        <dt className="text-subtle-foreground">parent</dt>
-        <dd className="font-mono text-muted-foreground">{node.parent ?? "(root)"}</dd>
-        {node.depends_on.length > 0 && (
-          <>
-            <dt className="text-subtle-foreground">depends_on</dt>
-            <dd className="font-mono text-muted-foreground">{node.depends_on.join(", ")}</dd>
-          </>
-        )}
-        {node.serves.length > 0 && (
-          <>
-            <dt className="text-subtle-foreground">serves</dt>
-            <dd className="font-mono text-muted-foreground">{node.serves.join(", ")}</dd>
-          </>
-        )}
-        {node.related.length > 0 && (
-          <>
-            <dt className="text-subtle-foreground">related</dt>
-            <dd className="font-mono text-muted-foreground">{node.related.join(", ")}</dd>
-          </>
-        )}
-      </dl>
+      {editing ? (
+        // Remount per node (`key`) so the draft always seeds from the current
+        // node, never a stale prior selection.
+        <AimEditForm
+          key={node.slug}
+          unitName={unitName}
+          node={node}
+          parentOptions={parentOptions}
+          forbiddenParents={forbiddenParents}
+          refresh={refresh}
+          onDone={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+            <dt className="text-subtle-foreground">state</dt>
+            <dd className="text-foreground">{AIM_STATE_LABEL[node.state]}</dd>
+            <dt className="text-subtle-foreground">parent</dt>
+            <dd className="font-mono text-muted-foreground">{node.parent ?? "(root)"}</dd>
+            {node.depends_on.length > 0 && (
+              <>
+                <dt className="text-subtle-foreground">depends_on</dt>
+                <dd className="font-mono text-muted-foreground">{node.depends_on.join(", ")}</dd>
+              </>
+            )}
+            {node.serves.length > 0 && (
+              <>
+                <dt className="text-subtle-foreground">serves</dt>
+                <dd className="font-mono text-muted-foreground">{node.serves.join(", ")}</dd>
+              </>
+            )}
+            {node.related.length > 0 && (
+              <>
+                <dt className="text-subtle-foreground">related</dt>
+                <dd className="font-mono text-muted-foreground">{node.related.join(", ")}</dd>
+              </>
+            )}
+          </dl>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+          >
+            <span aria-hidden="true">✎</span> Edit frontmatter
+          </button>
+        </>
+      )}
 
       <section className="space-y-1">
         <h4 className="text-[10px] uppercase tracking-wide text-subtle-foreground">Body</h4>
@@ -533,6 +667,332 @@ function DetailPane({
         {blastCount === 1 ? "" : "s"} drift-possible
       </p>
     </div>
+  );
+}
+
+// The inline frontmatter edit form (Stage 2-B): aim / parent / state ONLY. The
+// body and the cross-edges (`depends_on` / `serves` / `related`) are NOT touched
+// here — the backend preserves them byte-for-byte. Authority is operator-only,
+// soft: a plain Save, no draft/accept gate. The `parent` select excludes the
+// node itself and its descendants (`forbiddenParents`) so the operator can't
+// form a trivial cycle.
+function AimEditForm({
+  unitName,
+  node,
+  parentOptions,
+  forbiddenParents,
+  refresh,
+  onDone,
+}: {
+  unitName: string;
+  node: AimWire;
+  parentOptions: readonly string[];
+  forbiddenParents: ReadonlySet<string>;
+  refresh: () => void;
+  onDone: () => void;
+}) {
+  const [aim, setAim] = useState(node.aim);
+  const [parent, setParent] = useState<string>(node.parent ?? "");
+  const [state, setState] = useState<AimState>(node.state);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmedAim = aim.trim();
+  const canSave = trimmedAim !== "" && !submitting;
+
+  async function onSave() {
+    if (!canSave) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.editAim(unitName, node.slug, {
+        aim: trimmedAim,
+        parent: parent === "" ? null : parent,
+        state,
+      });
+      refresh();
+      onDone();
+    } catch (e) {
+      setError(writeErrorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onSave();
+      }}
+    >
+      <AimField label="aim" htmlFor="aim-edit-aim">
+        <textarea
+          id="aim-edit-aim"
+          value={aim}
+          onChange={(e) => setAim(e.target.value)}
+          rows={2}
+          className="w-full resize-y rounded border border-hairline bg-surface px-2 py-1 text-xs text-foreground"
+        />
+      </AimField>
+      <AimField label="parent" htmlFor="aim-edit-parent">
+        <ParentSelect
+          id="aim-edit-parent"
+          value={parent}
+          onChange={setParent}
+          options={parentOptions}
+          forbidden={forbiddenParents}
+        />
+      </AimField>
+      <AimField label="state" htmlFor="aim-edit-state">
+        <StateSelect id="aim-edit-state" value={state} onChange={setState} />
+      </AimField>
+
+      {error !== null && (
+        <p role="alert" className="text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={!canSave}
+          className="rounded border border-primary bg-primary/15 px-2 py-0.5 text-[11px] text-foreground transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {submitting ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          disabled={submitting}
+          className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// The create form (Stage 2-B): author a new node — slug / aim / parent. `state`
+// starts `open`, the body starts empty, no cross-edges (the backend default).
+// Client-side slug validation gives fast feedback; the backend stays
+// authoritative (it owns the `409` duplicate / `422` dangling-parent verdicts,
+// surfaced inline). On success the parent re-fetches and selects the new node.
+function CreateForm({
+  unitName,
+  existingSlugs,
+  refresh,
+  onClose,
+  onCreated,
+}: {
+  unitName: string;
+  existingSlugs: readonly string[];
+  refresh: () => void;
+  onClose: () => void;
+  onCreated: (slug: string) => void;
+}) {
+  const [slug, setSlug] = useState("");
+  const [aim, setAim] = useState("");
+  const [parent, setParent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmedSlug = slug.trim();
+  const trimmedAim = aim.trim();
+  const slugError = trimmedSlug === "" ? null : validateAimSlug(trimmedSlug);
+  const duplicate = existingSlugs.includes(trimmedSlug);
+  const canCreate =
+    trimmedSlug !== "" && trimmedAim !== "" && slugError === null && !duplicate && !submitting;
+
+  async function onCreate() {
+    if (!canCreate) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const created = await api.createAim(unitName, {
+        slug: trimmedSlug,
+        aim: trimmedAim,
+        parent: parent === "" ? null : parent,
+      });
+      refresh();
+      onCreated(created.slug);
+    } catch (e) {
+      setError(writeErrorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      data-testid="aim-create"
+      className="space-y-2 p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onCreate();
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold text-foreground">＋ New aim node</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Cancel create"
+          aria-label="Cancel create"
+          className="shrink-0 rounded px-1.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+        >
+          ✕
+        </button>
+      </div>
+
+      <AimField label="slug" htmlFor="aim-create-slug">
+        <input
+          id="aim-create-slug"
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="kebab-case-identity"
+          className="w-full rounded border border-hairline bg-surface px-2 py-1 font-mono text-xs text-foreground"
+        />
+        {slugError !== null && <p className="mt-0.5 text-[10px] text-destructive">{slugError}</p>}
+        {slugError === null && duplicate && (
+          <p className="mt-0.5 text-[10px] text-destructive">slug already exists</p>
+        )}
+      </AimField>
+      <AimField label="aim" htmlFor="aim-create-aim">
+        <textarea
+          id="aim-create-aim"
+          value={aim}
+          onChange={(e) => setAim(e.target.value)}
+          rows={2}
+          placeholder="the human bearing, one line."
+          className="w-full resize-y rounded border border-hairline bg-surface px-2 py-1 text-xs text-foreground"
+        />
+      </AimField>
+      <AimField label="parent" htmlFor="aim-create-parent">
+        <ParentSelect
+          id="aim-create-parent"
+          value={parent}
+          onChange={setParent}
+          options={existingSlugs}
+          forbidden={EMPTY_FORBIDDEN}
+        />
+      </AimField>
+
+      {error !== null && (
+        <p role="alert" className="text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={!canCreate}
+          className="rounded border border-primary bg-primary/15 px-2 py-0.5 text-[11px] text-foreground transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {submitting ? "Creating…" : "Create"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// A stable empty set for the create form's parent select (no node to forbid —
+// a brand-new slug can't be its own ancestor). Module-level so it keeps a
+// constant identity across renders.
+const EMPTY_FORBIDDEN: ReadonlySet<string> = new Set<string>();
+
+// A labelled field row shared by the edit + create forms.
+function AimField({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <label
+        htmlFor={htmlFor}
+        className="block text-[10px] uppercase tracking-wide text-subtle-foreground"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// Parent slug select: "(root)" + every existing slug except those in
+// `forbidden` (self + descendants, for the edit form). A `value` not present in
+// the options still renders (the current parent is shown even if it were, in
+// some edge case, filtered) — but normal parents are always selectable.
+function ParentSelect({
+  id,
+  value,
+  onChange,
+  options,
+  forbidden,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: readonly string[];
+  forbidden: ReadonlySet<string>;
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded border border-hairline bg-surface px-2 py-1 font-mono text-xs text-foreground"
+    >
+      <option value="">(root)</option>
+      {options
+        .filter((slug) => !forbidden.has(slug))
+        .map((slug) => (
+          <option key={slug} value={slug}>
+            {slug}
+          </option>
+        ))}
+    </select>
+  );
+}
+
+// State select — the three lifecycle states, labelled.
+function StateSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: AimState;
+  onChange: (next: AimState) => void;
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value as AimState)}
+      className="w-full rounded border border-hairline bg-surface px-2 py-1 text-xs text-foreground"
+    >
+      {AIM_STATES.map((s) => (
+        <option key={s} value={s}>
+          {AIM_STATE_LABEL[s]}
+        </option>
+      ))}
+    </select>
   );
 }
 

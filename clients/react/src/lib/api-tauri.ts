@@ -7,6 +7,8 @@ export * from "./teams";
 
 import type {
   AgentSnapshot,
+  AimCreateRequest,
+  AimEditRequest,
   AttentionSetRequest,
   DispatchBundle,
   OrchestratorRules,
@@ -271,6 +273,11 @@ export const api = {
   // Aims view (HTTP only — on-demand JSON projection of the unit's
   // doc/aims/ records; no Tauri-specific path needed)
   aims: (unit: string) => httpApi.aims(unit),
+
+  // Aim-tree write surface (tmai-core #501; HTTP only — file-backed
+  // doc/aims/ records served over the web API, no Tauri-specific path needed)
+  createAim: (unit: string, body: AimCreateRequest) => httpApi.createAim(unit, body),
+  editAim: (unit: string, slug: string, body: AimEditRequest) => httpApi.editAim(unit, slug, body),
 
   // Unit-scoped cross-repo PR list (HTTP only — gh-CLI passthrough
   // fanned out over the unit's repos; no Tauri-specific path needed)

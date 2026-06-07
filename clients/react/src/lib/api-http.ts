@@ -2,6 +2,8 @@
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
 import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
+import type { AimCreateRequest } from "@/types/generated/AimCreateRequest";
+import type { AimEditRequest } from "@/types/generated/AimEditRequest";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimsResponse } from "@/types/generated/AimsResponse";
 import type { AimWire } from "@/types/generated/AimWire";
@@ -65,6 +67,8 @@ import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
 
 export type {
   AgentCtxUsage,
+  AimCreateRequest,
+  AimEditRequest,
   AimState,
   AimsResponse,
   AimWire,
@@ -1555,6 +1559,30 @@ export const api = {
   // only in the `tmai-core` repo, but the wire is already multi-repo
   // (`AimsResponse.repos[]`), same as decisions / approaches / observations.
   aims: (unit: string) => apiFetch<AimsResponse>(`/units/${encodeURIComponent(unit)}/aims`),
+
+  // Aim-tree write surface (tmai-core #501, graduation Stage 2-A). Operator-only,
+  // soft authority (like the in-tmai merge button — no draft/accept gate). Both
+  // return the persisted `AimWire`, re-parsed server-side, so callers re-render
+  // from the authoritative record.
+  //
+  // Create a node — `state` defaults to `open`, empty body, no cross-edges.
+  // `409` if the slug already exists; `422` for a dated/bad slug or a dangling
+  // parent (the backend stays authoritative over the client-side slug check).
+  createAim: (unit: string, body: AimCreateRequest) =>
+    apiFetch<AimWire>(`/units/${encodeURIComponent(unit)}/aims`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // Edit a node's frontmatter — `aim` / `parent` / `state` ONLY. The backend
+  // preserves the body and the cross-edges (`depends_on` / `serves` / `related`)
+  // byte-for-byte (cross-edge editing is a deferred increment). `404` if the
+  // slug is absent.
+  editAim: (unit: string, slug: string, body: AimEditRequest) =>
+    apiFetch<AimWire>(`/units/${encodeURIComponent(unit)}/aims/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 
   // Unit-scoped cross-repo open-PR list — Stage-1 in-tmai dev-loop
   // (DR `2026-05-16-dev-loop-completes-in-tmai.md` §A). One unified
