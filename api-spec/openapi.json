@@ -243,6 +243,117 @@
             "description": "Aim parse failed"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "aims"
+        ],
+        "summary": "Documentation stub for `POST /api/units/{unit}/aims`.",
+        "description": "Create a new aim node (aim-tree graduation Stage 2-A; issue #501). `state`\ndefaults to `open`, the body starts empty, and no cross-edges are written.\nThe operator-chosen `slug` is validated NON-dated + kebab / filename-safe;\na duplicate is `409`, a dangling `parent` is `422` (write hygiene — the read\nside tolerates orphans, but a write must not introduce a dangling edge).\nAuthority is operator-only, *soft* (like the in-tmai merge button — no\ndraft/accept gate). Single-repo aim write today. Real handler:\n`crate::web::api::create_aim`.",
+        "operationId": "create_aim_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AimCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The created aim node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AimWire"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "409": {
+            "description": "An aim with this slug already exists"
+          },
+          "422": {
+            "description": "Invalid slug (dated / bad chars) or dangling parent"
+          },
+          "500": {
+            "description": "Serialize / write / re-parse failed"
+          }
+        }
+      }
+    },
+    "/api/units/{unit}/aims/{slug}": {
+      "put": {
+        "tags": [
+          "aims"
+        ],
+        "summary": "Documentation stub for `PUT /api/units/{unit}/aims/{slug}`.",
+        "description": "Edit an existing aim node's frontmatter — **aim / parent / state only**\n(aim-tree graduation Stage 2-A; issue #501). The existing cross-edges\n(`depends_on` / `serves` / `related`) and the body are preserved\nbyte-for-byte; cross-edge editing is a deferred increment. Authority is\noperator-only, *soft* (no draft/accept gate beyond the endpoint auth).\nAbsent slug ⇒ `404`. Returns the updated node. Real handler:\n`crate::web::api::edit_aim`.",
+        "operationId": "edit_aim_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Aim node slug (the `doc/aims/<slug>.md` filename stem)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AimEditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated aim node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AimWire"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unit or aim not found"
+          },
+          "500": {
+            "description": "Read / edit / write / re-parse failed"
+          }
+        }
       }
     },
     "/api/units/{unit}/approaches": {
@@ -1004,6 +1115,56 @@
           "halted",
           "completed"
         ]
+      },
+      "AimCreateRequest": {
+        "type": "object",
+        "description": "`POST /api/units/{unit}/aims` request — create a new aim node (graduation\nStage 2-A). `state` defaults to `open` server-side (not on the wire), the\nbody starts empty, and no cross-edges are written. `slug` is the\noperator-chosen, NON-dated, kebab / filename-safe, **unique** node identity\n(`doc/aims/<slug>.md`).",
+        "required": [
+          "slug",
+          "aim"
+        ],
+        "properties": {
+          "aim": {
+            "type": "string",
+            "description": "The human-authored 1-line bearing."
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent node slug; `null` for a root node. If set, must be an existing slug."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Filename stem — the stable, NON-dated node identity."
+          }
+        }
+      },
+      "AimEditRequest": {
+        "type": "object",
+        "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe cross-edges (`depends_on` / `serves` / `related`) and the body are\npreserved server-side (cross-edge editing is a deferred increment). Authority\nis operator-only, *soft* — like the in-tmai merge button, there is no\ndraft/accept gate beyond the normal endpoint auth.",
+        "required": [
+          "aim",
+          "state"
+        ],
+        "properties": {
+          "aim": {
+            "type": "string",
+            "description": "The human-authored 1-line bearing."
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent node slug (tree skeleton); `null` re-roots the node."
+          },
+          "state": {
+            "$ref": "#/components/schemas/AimState",
+            "description": "Lifecycle state — `open` / `done` / `dead`."
+          }
+        }
       },
       "AimState": {
         "type": "string",

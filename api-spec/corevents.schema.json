@@ -99,6 +99,56 @@
       ],
       "type": "string"
     },
+    "AimCreateRequest": {
+      "description": "`POST /api/units/{unit}/aims` request — create a new aim node (graduation\nStage 2-A). `state` defaults to `open` server-side (not on the wire), the\nbody starts empty, and no cross-edges are written. `slug` is the\noperator-chosen, NON-dated, kebab / filename-safe, **unique** node identity\n(`doc/aims/<slug>.md`).",
+      "properties": {
+        "aim": {
+          "description": "The human-authored 1-line bearing.",
+          "type": "string"
+        },
+        "parent": {
+          "description": "Parent node slug; `null` for a root node. If set, must be an existing slug.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slug": {
+          "description": "Filename stem — the stable, NON-dated node identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "aim"
+      ],
+      "type": "object"
+    },
+    "AimEditRequest": {
+      "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe cross-edges (`depends_on` / `serves` / `related`) and the body are\npreserved server-side (cross-edge editing is a deferred increment). Authority\nis operator-only, *soft* — like the in-tmai merge button, there is no\ndraft/accept gate beyond the normal endpoint auth.",
+      "properties": {
+        "aim": {
+          "description": "The human-authored 1-line bearing.",
+          "type": "string"
+        },
+        "parent": {
+          "description": "Parent node slug (tree skeleton); `null` re-roots the node.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/AimState",
+          "description": "Lifecycle state — `open` / `done` / `dead`."
+        }
+      },
+      "required": [
+        "aim",
+        "state"
+      ],
+      "type": "object"
+    },
     "AimState": {
       "description": "Lifecycle state of an aim node.\n\nPer `doc/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =\nself-death (the means failed; the lineage stays, the parent is untouched).\nUnlike a decision's `status`, this is a node-local fact, not an authority\ngate — the machine marks, it never appraises.",
       "enum": [
