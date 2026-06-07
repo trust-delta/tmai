@@ -10,8 +10,10 @@ import {
   computeLayout,
   dependsEdgePath,
   descendantsOf,
+  findRoots,
   flattenRepos,
   NODE_W,
+  nodeHeight,
   parentEdgePath,
 } from "../aim-tree";
 
@@ -108,6 +110,94 @@ describe("computeLayout", () => {
     const layout = computeLayout([]);
     expect(layout.roots).toEqual([]);
     expect(layout.positions.size).toBe(0);
+  });
+
+  it("gives every node a positive estimated height", () => {
+    const layout = computeLayout(NODES);
+    for (const n of NODES) {
+      expect((layout.positions.get(n.slug)?.height ?? 0) > 0).toBe(true);
+    }
+  });
+});
+
+describe("findRoots", () => {
+  it("returns explicit roots (parent === null)", () => {
+    expect(findRoots(NODES).map((r) => r.slug)).toEqual(["root-a", "root-b"]);
+  });
+
+  it("treats an orphan with a missing parent as a root", () => {
+    const orphan = aim({ slug: "lonely", parent: "ghost" });
+    expect(findRoots([aim({ slug: "root-a" }), orphan]).map((r) => r.slug)).toContain("lonely");
+  });
+});
+
+describe("nodeHeight (the variable-height estimate)", () => {
+  it("is taller for a longer label (more wrapped lines)", () => {
+    const short = nodeHeight("短い");
+    const long = nodeHeight("あ".repeat(130));
+    expect(long).toBeGreaterThan(short);
+  });
+
+  it("floors a 1-line label at a comfortable minimum", () => {
+    // A short label must still get a readable box, not collapse to one line of
+    // text height.
+    expect(nodeHeight("x")).toBeGreaterThanOrEqual(40);
+  });
+});
+
+// THE #782 overlap fix. Adjacent depth columns are >NODE_W apart horizontally
+// (COL_W > NODE_W), so two boxes can only share screen space when they share a
+// depth. Assert that within every depth column, the `[cy ± height/2]` vertical
+// ranges never overlap — for any node set, including long-label and tall-
+// internal-node fixtures that broke the old fixed-ROW_H layout.
+function assertNoColumnOverlap(layout: ReturnType<typeof computeLayout>) {
+  const byDepth = new Map<number, { cy: number; height: number; slug: string }[]>();
+  for (const pos of layout.positions.values()) {
+    const list = byDepth.get(pos.depth) ?? [];
+    list.push(pos);
+    byDepth.set(pos.depth, list);
+  }
+  for (const list of byDepth.values()) {
+    const sorted = [...list].sort((a, b) => a.cy - b.cy);
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      const prevBottom = prev.cy + prev.height / 2;
+      const curTop = cur.cy - cur.height / 2;
+      // curTop must sit at or below prevBottom — no vertical overlap.
+      expect(curTop).toBeGreaterThanOrEqual(prevBottom);
+    }
+  }
+}
+
+describe("computeLayout — variable-height no-overlap invariant (#782)", () => {
+  it("never overlaps nodes in a depth column for the canonical tree", () => {
+    assertNoColumnOverlap(computeLayout(NODES));
+  });
+
+  it("never overlaps leaf siblings even with a 130+ char label", () => {
+    const longLabel = "あ".repeat(135); // 135 full-width chars — wraps to many lines
+    expect(longLabel.length).toBeGreaterThanOrEqual(130);
+    const set: AimWire[] = [
+      aim({ slug: "root" }),
+      aim({ slug: "leaf-long", parent: "root", aim: longLabel }),
+      aim({ slug: "leaf-short", parent: "root", aim: "x" }),
+      aim({ slug: "leaf-mid", parent: "root", aim: "あ".repeat(40) }),
+      aim({ slug: "leaf-long2", parent: "root", aim: "drift-possible ".repeat(9) }),
+    ];
+    assertNoColumnOverlap(computeLayout(set));
+  });
+
+  it("keeps a tall internal node (long label, one short child) clear of its sibling", () => {
+    // The overhang case: an internal node whose OWN box is taller than its
+    // single child's span must not bleed into the adjacent depth-1 sibling.
+    const set: AimWire[] = [
+      aim({ slug: "root" }),
+      aim({ slug: "tall-internal", parent: "root", aim: "あ".repeat(135) }),
+      aim({ slug: "tiny-child", parent: "tall-internal", aim: "x" }),
+      aim({ slug: "sibling-leaf", parent: "root", aim: "あ".repeat(50) }),
+    ];
+    assertNoColumnOverlap(computeLayout(set));
   });
 });
 
