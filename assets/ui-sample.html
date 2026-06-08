@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>tmai — aim console · dev-tool / scale (mock, 2026-06-08)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter+Tight:wght@400;500;600&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ════════════════════════════════════════════════════════════
+     tmai aim console — DEV-TOOL / SCALE variant.
+     Tone: sober, high-density, low-chroma — a tool you stare at for
+     hours (k9s / lazygit / profiler). Same thesis (light = owed
+     attention) but expressed as a quiet GUTTER + small glyph, not a
+     glow. Scale answer: you do NOT render the whole tree — you work
+     the OWED FRONTIER (worklist); the Tree is a collapsed navigator
+     with branch-level attention ROLLUPS + an overview ruler.
+     ════════════════════════════════════════════════════════════ */
+  :root{
+    --bg:#0b0e0f; --panel:#0d1112; --panel-2:#11171800; --elev:#121819;
+    --line:#1b2122; --line-2:#161b1c;
+    --txt:#c2cbc8; --dim:#7b8784; --faint:#4d5856;
+    --amber:#cf9b46; --amber-d:#241c0e;   /* drift / owed-strong */
+    --ochre:#b1894f; --ochre-d:#1f1810;   /* claimed */
+    --green:#4a9476; --green-d:#10211a;    /* confirmed / calm */
+    --cyan:#4aa39d;  --cyan-d:#102423;     /* structure / select / root */
+    --violet:#8f7ad6;--violet-d:#171428;   /* worker */
+    --danger:#d96a6a;
+    --sans:"Inter Tight","Noto Sans JP",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --rh:27px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:12.5px;
+    line-height:1.5; display:grid; grid-template-rows:auto 1fr; height:100vh; overflow:hidden;
+    -webkit-font-smoothing:antialiased; }
+  .mono{font-family:var(--mono);} .dim{color:var(--dim);} .faint{color:var(--faint);}
+  ::selection{ background:rgba(74,163,157,.22); }
+  ::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-thumb{background:#19201f;border-radius:0;border:2px solid var(--bg);}
+  ::-webkit-scrollbar-track{background:transparent;}
+  button{font-family:inherit;}
+
+  /* ── top bar (sober) ─────────────────────────── */
+  .top{ display:flex; align-items:center; gap:2px; height:40px; padding:0 10px;
+    background:var(--panel); border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--mono); font-size:12px; letter-spacing:1.5px; color:var(--dim); margin-right:14px; }
+  .brand b{ color:var(--txt); font-weight:600; }
+  .utab{ display:flex; align-items:center; gap:7px; height:40px; padding:0 13px; cursor:pointer;
+    color:var(--dim); font-size:12px; border-bottom:2px solid transparent; user-select:none; }
+  .utab:hover{ color:var(--txt); background:var(--line-2); }
+  .utab.on{ color:var(--txt); border-bottom-color:var(--cyan); }
+  .utab .d{ width:5px;height:5px;border-radius:50%; background:var(--faint); }
+  .utab.on .d{ background:var(--cyan); }
+  .um{ font-family:var(--mono); font-size:9.5px; padding:1px 5px; border-radius:3px;
+    color:var(--amber); background:var(--amber-d); border:1px solid #3a2e14; }
+  .um.call{ color:var(--danger); background:#221111; border-color:#3a1d1d; }
+  .rp{ font-family:var(--mono); font-size:9px; padding:1px 5px; border:1px solid var(--line); border-radius:3px; color:var(--dim); letter-spacing:.3px; }
+  .rp.pri{ color:var(--cyan); border-color:var(--cyan-d); background:var(--cyan-d); }   /* primary repo of the unit */
+  .uadd{ width:26px;height:26px; display:flex;align-items:center;justify-content:center; margin-left:5px;
+    border:1px solid var(--line); color:var(--dim); cursor:pointer; font-size:14px; border-radius:4px; }
+  .uadd:hover{ color:var(--cyan); }
+  .sp{flex:1;} .meta{ font-family:var(--mono); font-size:10.5px; color:var(--faint); letter-spacing:.5px; }
+
+  .main{ display:grid; grid-template-columns:var(--aim,1.18fr) var(--sess,1fr) var(--pr,46px);
+    min-height:0; transition:grid-template-columns .2s ease; }
+  body.pr-open{ --pr:320px; }
+  .col{ min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border-right:1px solid var(--line); }
+  .col:last-child{border-right:none;}
+
+  /* ════ AIM (dev-tool) ═══════════════════════════ */
+  .aim{ background:var(--panel); }
+  .ahead{ flex:none; border-bottom:1px solid var(--line); }
+  .arow1{ display:flex; align-items:center; gap:10px; padding:9px 12px 7px; }
+  .arow1 h1{ margin:0; font-size:13px; font-weight:600; letter-spacing:.3px; }
+  .arow1 .scale{ font-family:var(--mono); font-size:10.5px; color:var(--faint); }
+  .arow1 .premise{ margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--cyan);
+    border:1px solid var(--cyan-d); border-radius:3px; padding:2px 7px; letter-spacing:.5px; }
+  /* ledger (quiet) */
+  .ledger{ display:flex; align-items:center; gap:14px; padding:0 12px 9px; }
+  .lg{ display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; cursor:pointer; }
+  .lg .sw{ width:9px;height:9px;border-radius:2px; }
+  .lg.dr .sw{ background:var(--amber); } .lg.dr{ color:var(--amber); }
+  .lg.cl .sw{ background:var(--ochre); } .lg.cl{ color:var(--ochre); }
+  .lg.cf .sw{ background:var(--green); } .lg.cf{ color:var(--dim); }
+  .lg b{ font-weight:600; }
+  .lbar{ flex:1; height:4px; background:#0c1110; border:1px solid var(--line-2); display:flex; overflow:hidden; }
+  .lbar .o{ background:var(--amber); } .lbar .c{ background:var(--green-d); }
+  /* controls */
+  .actl{ display:flex; align-items:center; gap:8px; padding:7px 12px; border-top:1px solid var(--line-2); background:var(--panel); }
+  .seg{ display:flex; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+  .seg button{ background:transparent; color:var(--dim); border:none; padding:5px 11px;
+    font:500 11px var(--sans); cursor:pointer; border-right:1px solid var(--line); }
+  .seg button:last-child{border-right:none;}
+  .seg button.on{ background:var(--elev); color:var(--txt); }
+  .seg button.on.owed{ color:var(--amber); }
+  .search{ flex:1; display:flex; align-items:center; gap:7px; border:1px solid var(--line);
+    border-radius:4px; padding:4px 9px; }
+  .search input{ flex:1; background:transparent; border:none; outline:none; color:var(--txt);
+    font-family:var(--mono); font-size:11.5px; }
+  .search input::placeholder{ color:var(--faint); }
+  .search .k{ font-family:var(--mono); font-size:9.5px; color:var(--faint); border:1px solid var(--line); border-radius:3px; padding:1px 4px; }
+
+  .alist-wrap{ position:relative; flex:1; min-height:0; display:flex; }
+  .alist{ flex:1; overflow:auto; }
+  /* overview ruler */
+  /* overview ruler = whole-forest minimap: every node a faint mark, owed ones lit */
+  .ruler{ width:14px; flex:none; position:relative; background:#090d0e; border-left:1px solid var(--line); overflow:hidden; }
+  .ruler::before{ content:'OWED'; position:absolute; bottom:6px; left:0; right:0; text-align:center;
+    writing-mode:vertical-rl; transform:rotate(180deg); font:8px var(--mono); letter-spacing:1px; color:#313c3b; }
+  .ruler .tick{ position:absolute; left:3px; right:3px; height:1px; background:var(--faint); opacity:.18; }  /* calm = forest texture */
+  .ruler .tick.dr{ height:3px; border-radius:1px; background:var(--amber); opacity:.8; cursor:pointer; }
+  .ruler .tick.cl{ height:2px; border-radius:1px; background:var(--ochre); opacity:.55; cursor:pointer; }
+  .ruler .tick.dr:hover,.ruler .tick.cl:hover{ left:1px; right:1px; height:5px; opacity:1; box-shadow:0 0 6px currentColor; }
+
+  /* shared row */
+  .r{ display:flex; align-items:center; height:var(--rh); padding-right:8px; cursor:pointer;
+    border-left:2px solid transparent; position:relative; }
+  .r:hover{ background:var(--line-2); }
+  .r.sel{ background:#0f1818; border-left-color:var(--cyan); }
+  .r .gut{ width:2px; align-self:stretch; margin-right:7px; background:transparent; flex:none; }
+  .r.dr .gut{ background:var(--amber); } .r.cl .gut{ background:var(--ochre); }
+  .r.cf .gut{ background:var(--green); opacity:.5; } .r.ne .gut{ background:#283635; }
+  .r.rt .gut{ background:var(--cyan); }
+  .tx{ width:16px; text-align:center; color:var(--faint); font-size:9px; flex:none; }
+  .tx.has{ cursor:pointer; } .tx.has:hover{ color:var(--txt); }
+  .gly{ width:14px; text-align:center; flex:none; font-size:10px; }
+  .gly.dr{ color:var(--amber); animation:pulse 2.8s ease-in-out infinite; }
+  .gly.cl{ color:var(--ochre); }
+  .gly.dn{ color:var(--green); } .gly.dd{ color:var(--faint); }
+  .r.done .ought{ color:var(--faint); } .r.done .gut{ background:var(--green); opacity:.4; }
+  .r.dead{ opacity:.5; } .r.dead .ought{ text-decoration:line-through; color:var(--faint); } .r.dead .gut{ background:#3a2a30; }
+  .ought{ flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
+  .r.cf .ought{ color:var(--dim); } .r.dr .ought{ color:#e9d3a4; }
+  .crumb-i{ font-family:var(--mono); font-size:9.5px; color:var(--faint); margin-right:10px; white-space:nowrap;
+    max-width:34%; overflow:hidden; text-overflow:ellipsis; }
+  .roll{ font-family:var(--mono); font-size:9.5px; color:var(--faint); margin-right:9px; flex:none; }
+  .roll .w{ color:var(--amber); } .roll .k{ color:var(--ochre); }
+  .ism{ display:flex; gap:2px; flex:none; margin-right:9px; }
+  .ism i{ width:5px;height:5px;border-radius:1px; } .ism i.c{background:var(--green);} .ism i.k{background:var(--ochre);}
+  .slug{ font-family:var(--mono); font-size:9.5px; color:var(--faint); flex:none; white-space:nowrap; }
+  .ghead{ display:flex; align-items:center; gap:8px; padding:9px 12px 5px; font-family:var(--mono);
+    font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--faint); position:sticky; top:0;
+    background:var(--panel); z-index:2; }
+  .ghead .c{ color:var(--amber); } .ghead.k .c{color:var(--ochre);} .ghead.calm .c{color:var(--green);}
+  /* per-repo group header (aims live per repo: tmai=UI ⊥ tmai-core=backend) */
+  .repohead{ display:flex; align-items:center; gap:8px; height:26px; padding:0 9px; cursor:pointer;
+    background:#0c1314; border-top:1px solid var(--line); border-bottom:1px solid var(--line-2);
+    position:sticky; top:0; z-index:3; }
+  .repohead:hover{ background:#0f1617; } .repohead.frontier{ cursor:default; }
+  .repohead.pri{ box-shadow:inset 2px 0 0 var(--cyan); }
+  .repohead .rh-tw{ width:12px; text-align:center; color:var(--faint); font-size:9px; }
+  .repohead .rh-name{ font-family:var(--mono); font-size:11px; font-weight:600; color:var(--dim); letter-spacing:.5px; }
+  .repohead.pri .rh-name{ color:var(--cyan); }
+  .repohead .rh-sub{ font-size:9.5px; color:var(--faint); }
+  .repohead .rh-stat{ margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--faint); }
+  .repohead .rh-stat .w{ color:var(--amber); } .repohead .rh-stat .k{ color:var(--ochre); }
+  .ruler .rdiv{ position:absolute; left:0; right:0; height:1px; background:var(--cyan); opacity:.4; }
+
+  /* inspector */
+  .insp{ flex:none; max-height:0; overflow:hidden; border-top:1px solid var(--line);
+    background:var(--panel); transition:max-height .22s ease; }
+  body.insp-on .insp{ max-height:400px; }
+  .insp-in{ padding:12px 14px 14px; overflow:auto; max-height:400px; position:relative; }
+  .insp-x{ position:absolute; top:9px; right:12px; color:var(--faint); cursor:pointer; }
+  .insp-x:hover{color:var(--txt);}
+  .icrumb{ display:flex; flex-wrap:wrap; gap:5px; font-family:var(--mono); font-size:10px; color:var(--faint); margin-bottom:8px; }
+  .icrumb span{cursor:pointer;} .icrumb span:hover{color:var(--cyan);} .icrumb .s{color:#2c3a39;}
+  .iought{ font-size:14px; color:#dfe9e6; line-height:1.45; }
+  .iought b{ font-family:var(--mono); font-size:10.5px; color:var(--cyan); }
+  .imeta{ display:flex; gap:8px; flex-wrap:wrap; margin:9px 0 11px; }
+  .pill{ font-family:var(--mono); font-size:9.5px; padding:2px 7px; border-radius:3px; border:1px solid var(--line); color:var(--dim); }
+  .pill.dr{ color:var(--amber); border-color:#3a2e14; background:var(--amber-d); }
+  .pill.op{ color:var(--cyan); border-color:var(--cyan-d); }
+  .isec{ font-family:var(--mono); font-size:9.5px; letter-spacing:1px; text-transform:uppercase; color:var(--faint); margin:10px 0 5px; }
+  .il{ display:flex; gap:8px; padding:3px 0; align-items:baseline; font-size:12px; color:var(--dim); }
+  .il .tg{ font-family:var(--mono); font-size:9px; padding:1px 5px; border-radius:3px; flex:none; }
+  .tg.c{ color:var(--green); border:1px solid var(--green-d); } .tg.k{ color:var(--ochre); border:1px dashed #3a2e1a; }
+  .il .ref{ font-family:var(--mono); font-size:9.5px; color:var(--cyan); }
+
+  /* ════ SESSION (raw CC) ═══════════════════════════ */
+  .session{ background:var(--bg); }
+  .stabs{ display:flex; gap:2px; height:35px; padding:6px 8px 0; background:var(--panel); border-bottom:1px solid var(--line-2); }
+  .stab{ display:flex; align-items:center; gap:6px; padding:0 11px; height:29px; cursor:pointer; color:var(--dim);
+    font-size:11.5px; border:1px solid transparent; border-bottom:none; border-radius:3px 3px 0 0; position:relative; top:1px; }
+  .stab:hover{ background:var(--line-2); color:var(--txt); } .stab.on{ background:var(--bg); color:var(--txt); border-color:var(--line-2); }
+  .ro{ font-family:var(--mono); font-size:8px; padding:1px 4px; border-radius:3px; }
+  .ro.p{color:var(--cyan);border:1px solid var(--cyan-d);} .ro.w{color:var(--violet);border:1px solid var(--violet-d);}
+  .sadd{ width:26px;height:29px; display:flex;align-items:center;justify-content:center; color:var(--faint); cursor:pointer; }
+  .sadd:hover{color:var(--violet);}
+  .shead{ display:flex; align-items:center; gap:9px; padding:7px 12px; border-bottom:1px solid var(--line-2);
+    background:var(--panel); font-size:11px; color:var(--dim); }
+  .shead .m{font-family:var(--mono);color:var(--txt);} .shead .w{font-family:var(--mono);color:var(--faint);}
+  .ho{ margin-left:auto; background:var(--cyan-d); color:var(--cyan); border:1px solid #194240; border-radius:3px;
+    padding:4px 10px; font:500 10.5px var(--sans); cursor:pointer; }
+  .ho:hover{ background:#163a38; }
+  .term{ flex:1; overflow:auto; background:#070a0b; padding:11px 13px; font-family:var(--mono); font-size:11px; line-height:1.6; color:#94a4a1; }
+  .term .s{display:none;} .term .s.on{display:block;}
+  .ta{color:var(--cyan);} .tp{color:var(--violet);} .tk{color:var(--green);} .tw{color:var(--amber);} .td{color:var(--faint);}
+  .tbox{ border:1px solid var(--line); padding:5px 8px; margin:7px 0; color:var(--dim); }
+  .tin{ border:1px solid var(--cyan); padding:6px 9px; margin-top:9px; display:flex; gap:7px; align-items:center; }
+  .tin .c{ width:6px;height:13px;background:var(--cyan); animation:blink 1.1s steps(1) infinite; }
+
+  /* PR rail */
+  .pr{ background:var(--panel); }
+  .prrail{ display:flex; flex-direction:column; align-items:center; gap:9px; padding-top:12px; cursor:pointer; height:100%; }
+  body.pr-open .prrail{display:none;}
+  .prrail .v{ writing-mode:vertical-rl; font-family:var(--mono); font-size:10.5px; color:var(--dim);
+    border:1px solid var(--line-2); padding:8px 3px; letter-spacing:1px; }
+  .prrail .v.w{ color:var(--amber); border-color:#3a2e14; background:var(--amber-d); }
+  .prrail .g{ writing-mode:vertical-rl; color:var(--faint); font-size:9px; margin-top:auto; padding-bottom:12px; letter-spacing:2px; }
+  .prfull{display:none;flex-direction:column;height:100%;} body.pr-open .prfull{display:flex;}
+  .prh{ display:flex; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line-2);
+    font-family:var(--mono); font-size:10.5px; color:var(--dim); }
+  .prh .x{margin-left:auto;cursor:pointer;} .prh .x:hover{color:var(--txt);}
+  .prb{ overflow:auto; padding:5px 7px; }
+  .prg h4{ margin:8px 5px 3px; font:600 9.5px/1 var(--mono); letter-spacing:.6px; text-transform:uppercase; color:var(--faint); }
+  .pi{ display:flex; gap:7px; align-items:baseline; padding:6px 7px; cursor:pointer; } .pi:hover{background:var(--line-2);}
+  .pi .n{font-family:var(--mono);font-size:10px;color:var(--faint);} .pi .t{flex:1;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .repo{ font-family:var(--mono); font-size:8px; padding:1px 4px; border:1px solid var(--line); border-radius:2px; color:var(--faint); flex:none; }
+  .repo.pri{ color:var(--cyan); border-color:var(--cyan-d); }
+  .pst{font-family:var(--mono);font-size:8.5px;padding:1px 5px;border-radius:3px;flex:none;}
+  .pst.o{color:var(--green);border:1px solid var(--green-d);} .pst.r{color:var(--amber);background:var(--amber-d);border:1px solid #3a2e14;}
+  .pst.d{color:var(--dim);border:1px solid var(--line);} .pst.m{color:var(--violet);border:1px solid var(--violet-d);}
+
+  /* footer */
+  /* ── bash: tabbed footer (one terminal per repo + ad-hoc; mirrors session tabs) ── */
+  .footer{ flex:none; height:33px; overflow:hidden; background:var(--panel); border-top:1px solid var(--line); transition:height .2s ease; display:flex; flex-direction:column; }
+  body.bash-on .footer{ height:210px; }
+  .fbar{ display:flex; align-items:stretch; height:33px; flex:none; padding:0 4px; }
+  .ftabs{ display:flex; align-items:stretch; }
+  .ftab{ display:flex; align-items:center; gap:6px; padding:0 11px; height:33px; cursor:pointer; color:var(--dim); font-family:var(--mono); font-size:11px; border-bottom:2px solid transparent; user-select:none; }
+  .ftab:hover{ color:var(--txt); background:var(--line-2); }
+  .ftab.on{ color:var(--txt); border-bottom-color:var(--cyan); }
+  .ftab .rdot{ width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); flex:none; }
+  .ftab .fclose{ color:var(--faint); font-size:13px; margin-left:2px; } .ftab .fclose:hover{ color:var(--danger); }
+  .fadd{ display:flex; align-items:center; justify-content:center; width:26px; cursor:pointer; color:var(--faint); font-size:14px; }
+  .fadd:hover{ color:var(--cyan); }
+  .fsp{ flex:1; }
+  .fsplit{ display:flex; align-items:center; padding:0 9px; cursor:pointer; color:var(--faint); font-size:13px; } .fsplit:hover{ color:var(--cyan); } .fsplit.on{ color:var(--cyan); }
+  .fcar{ display:flex; align-items:center; padding:0 9px; cursor:pointer; color:var(--faint); font-size:10px; } .fcar:hover{ color:var(--txt); }
+  .ftwrap{ flex:1; overflow:hidden; display:flex; }
+  .ftwrap .ft{ flex:1; overflow:auto; font-family:var(--mono); font-size:11px; padding:8px 14px 12px; color:#94a4a1; }
+  .ftwrap.split .ftpane{ flex:1; display:flex; flex-direction:column; min-width:0; border-right:1px solid var(--line-2); }
+  .ftwrap.split .ftpane:last-child{ border-right:none; }
+  .ftpane-h{ font-family:var(--mono); font-size:9.5px; color:var(--faint); padding:5px 12px 3px; }
+  .footer .p{ color:var(--green); }
+  .cur2{ display:inline-block; width:6px; height:12px; background:var(--cyan); vertical-align:middle; animation:blink 1.1s steps(1) infinite; }
+
+  /* ── create-aim: affordances + modal ── */
+  .newbtn{ background:var(--cyan-d); color:var(--cyan); border:1px solid #1f4541; border-radius:4px; padding:5px 10px; font:500 11px var(--sans); cursor:pointer; flex:none; }
+  .newbtn:hover{ background:#163a38; }
+  .addbtn{ width:16px; height:16px; line-height:13px; text-align:center; border:1px solid var(--line); border-radius:3px; color:var(--dim); font-size:12px; cursor:pointer; flex:none; }
+  .addbtn:hover{ color:var(--cyan); border-color:var(--cyan-d); background:var(--cyan-d); }
+  .repohead .addbtn{ margin-left:8px; }
+  .r .addbtn.row{ opacity:0; margin-left:6px; }
+  .r:hover .addbtn.row{ opacity:.8; } .r .addbtn.row:hover{ opacity:1; }
+  .insp-actions{ margin-top:12px; }
+  .btn{ padding:6px 12px; border-radius:6px; font:500 11.5px var(--sans); cursor:pointer; border:1px solid var(--line); background:transparent; color:var(--dim); }
+  .btn:hover{ color:var(--txt); border-color:#2c3a39; }
+  .btn.small{ padding:5px 10px; font-size:11px; }
+  .btn.primary{ background:var(--cyan-d); color:var(--cyan); border-color:#1f4541; }
+  .btn.primary:hover{ background:#163a38; color:var(--cyan); }
+  .btn.primary:disabled{ opacity:.38; cursor:not-allowed; }
+  .modal-bg{ position:fixed; inset:0; background:rgba(4,7,8,.62); display:none; align-items:center; justify-content:center; z-index:100; }
+  body.create-on .modal-bg{ display:flex; }
+  .modal{ width:460px; max-width:92vw; background:var(--panel); border:1px solid var(--line); border-radius:9px; box-shadow:0 24px 70px -22px #000; overflow:hidden; }
+  .modal h3{ margin:0; padding:13px 16px; font-size:13px; font-weight:600; border-bottom:1px solid var(--line-2); }
+  .modal h3 .ctx{ font-family:var(--mono); font-size:10.5px; color:var(--faint); font-weight:400; margin-left:6px; }
+  .modal-body{ padding:15px 16px; display:flex; flex-direction:column; gap:14px; }
+  .frow{ display:flex; gap:12px; }
+  .fld{ display:flex; flex-direction:column; gap:5px; }
+  .fld label{ font-family:var(--mono); font-size:9.5px; letter-spacing:.5px; color:var(--dim); text-transform:uppercase; }
+  .fld label .req{ color:var(--amber); }
+  .fld input,.fld textarea,.fld select{ background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:8px 10px; color:var(--txt); font-family:var(--sans); font-size:13px; outline:none; }
+  .fld textarea{ resize:vertical; min-height:40px; line-height:1.5; }
+  .fld select{ font-family:var(--mono); font-size:12px; }
+  .fld input:focus,.fld textarea:focus,.fld select:focus{ border-color:var(--cyan); }
+  .slugrow{ display:flex; gap:9px; align-items:center; }
+  .slugrow input{ flex:1; font-family:var(--mono); font-size:12px; }
+  .hint2{ font-size:10.5px; color:var(--faint); }
+  .hint2.err{ color:var(--danger); } .hint2.ok{ color:var(--green); }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:9px; padding:12px 16px; border-top:1px solid var(--line-2); }
+
+  .stamp{ position:fixed; bottom:6px; right:10px; z-index:60; font:9px/1 var(--mono); color:var(--faint);
+    border:1px dashed var(--line); padding:3px 7px; background:rgba(11,14,15,.8); letter-spacing:.3px; pointer-events:none; }
+  .hint{ font-family:var(--mono); font-size:9.5px; color:var(--faint); padding:5px 12px; border-top:1px solid var(--line-2); }
+  .hint b{color:var(--dim);}
+
+  @keyframes pulse{ 0%,100%{opacity:.55;} 50%{opacity:1;} }
+  @keyframes blink{ 0%,50%{opacity:1;} 51%,100%{opacity:0;} }
+  @media (prefers-reduced-motion:reduce){ *{animation-duration:.01ms!important;} }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand"><b>tmai</b> console</div>
+    <div class="utab on" title="unit: tmai — 2 repos(tmai primary + tmai-core)">
+      <span class="d"></span><span class="rp pri">tmai</span><span class="rp">core</span><span class="um">⚠2</span></div>
+    <div class="utab" title="unit: infra — 1 repo"><span class="d"></span><span class="rp">infra</span><span class="um call">CALL</span></div>
+    <div class="uadd" title="ユニット追加 = Producer 起動">+</div>
+    <div class="sp"></div>
+    <div class="meta" id="clock">unit tmai · opus-4.8 · max</div>
+  </div>
+
+  <div class="main">
+    <!-- AIM -->
+    <section class="col aim">
+      <div class="ahead">
+        <div class="arow1">
+          <h1>Aim</h1>
+          <span class="scale" id="scale"></span>
+          <span class="premise">AIM-PREMISE</span>
+        </div>
+        <div class="ledger">
+          <div class="lg dr" onclick="setMode('owed')"><span class="sw"></span><b id="g-dr">0</b> drift</div>
+          <div class="lg cl" onclick="setMode('owed')"><span class="sw"></span><b id="g-cl">0</b> claimed</div>
+          <div class="lg cf"><span class="sw"></span><b id="g-cf">0</b> confirmed</div>
+          <div class="lbar"><div class="o" id="l-o"></div><div class="c" id="l-c"></div></div>
+        </div>
+        <div class="actl">
+          <div class="seg">
+            <button id="b-owed" class="on owed" onclick="setMode('owed')">Frontier ⚠</button>
+            <button id="b-tree" onclick="setMode('tree')">Tree</button>
+          </div>
+          <div class="search"><span class="faint">⌕</span>
+            <input id="q" placeholder="slug / ought を filter…" oninput="onSearch()">
+            <span class="k">/</span>
+          </div>
+          <button class="newbtn" onclick="openCreate('tmai',null)" title="新規 aim(root / 既存の子）">+ aim</button>
+        </div>
+      </div>
+
+      <div class="alist-wrap">
+        <div class="alist" id="alist"></div>
+        <div class="ruler" id="ruler"></div>
+      </div>
+
+      <div class="insp">
+        <div class="insp-in" id="insp">
+          <div class="insp-x" onclick="document.body.classList.remove('insp-on')">✕</div>
+          <div class="icrumb" id="i-cr"></div>
+          <div class="iought" id="i-ou"></div>
+          <div class="imeta" id="i-me"></div>
+          <div id="i-is"></div>
+          <div class="insp-actions"><button class="btn small" id="i-edit">✎ 編集</button> <button class="btn small" id="i-addchild">+ 子 aim を作成</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SESSION -->
+    <section class="col session">
+      <div class="stabs">
+        <div class="stab on" data-s="prod"><span class="ro p">PROD</span> Producer</div>
+        <div class="stab" data-s="w1"><span class="ro w">WRK</span> attention-ui</div>
+        <div class="stab" data-s="w2"><span class="ro w">WRK</span> drift-cycle <span class="tw" style="font-size:9px">⚠</span></div>
+        <div class="sadd" title="worker dispatch">+</div>
+      </div>
+      <div class="shead"><span class="m" id="sm">opus-4.8</span><span class="w" id="sw">unit tmai · cwd ~/tmai</span>
+        <button class="ho" id="ho" title="hook 排除で running 不可 → context 充満時: 要約→新セッション継続">⤺ Handoff &amp; Restart</button></div>
+      <div class="term" id="term">
+        <div class="s on" data-s="prod">
+          <div class="ta">✻ Claude Code</div><div class="td">  unit tmai · Producer · opus-4.8 · cross-repo</div>
+          <div class="td">  ───────────────────────────────────────</div><br>
+          <div>&gt; attention §3 React UI、次どこから?</div><br>
+          <div><span class="tp">●</span> 親 <span class="ta">attention-per-artifact</span>、backend <span class="tk">confirmed</span>(PR#490)。</div>
+          <div>&nbsp;&nbsp;残る is は <span class="ta">attention-ui</span> が <span class="tw">claimed</span> — frontier。</div><br>
+          <div>&gt; attention-ui を進めて。confirm は実 PR 後。</div><br>
+          <div><span class="tp">●</span> Dispatch worker → <span class="td">repo tmai · ../tmai-wt-attn-ui</span></div>
+          <div class="tbox">⎿ worker:attention-ui <span class="tk">running</span></div>
+          <div class="tin"><span class="td">&gt;</span><span class="c"></span></div>
+        </div>
+        <div class="s" data-s="w1">
+          <div class="tp">✻ Claude Code — worker</div><div class="td">  attention-ui · sonnet-4.6 · repo tmai · ../tmai-wt-attn-ui</div>
+          <div class="td">  ───────────────────────────────────────</div><br>
+          <div class="td">brief ⎿ attention level を左 icon で。operator-null なし。</div><br>
+          <div><span class="tp">●</span> Edit AttentionMarker.tsx <span class="tk">(+34 −2)</span></div>
+          <div><span class="tp">●</span> npm test attention <span class="tk">⎿ 8 passed</span></div>
+          <div class="tin"><span class="td">&gt;</span><span class="c"></span></div>
+        </div>
+        <div class="s" data-s="w2">
+          <div class="tp">✻ Claude Code — worker</div><div class="td">  drift-cycle · opus-4.8 · repo tmai-core · ../tmai-core-wt-drift-cycle</div>
+          <div class="td">  ───────────────────────────────────────</div><br>
+          <div><span class="tp">●</span> git log -G'^aim:' 確認 … <span class="tk">done</span></div>
+          <div class="tw">⚠ context 78% — handoff 検討</div>
+          <div class="tbox td">アイドル: 確認待ち</div>
+          <div class="tin"><span class="td">&gt;</span><span class="c"></span></div>
+        </div>
+      </div>
+      <!-- bash docked at the bottom of the conversation panel (this unit) -->
+      <div class="footer">
+        <div class="fbar">
+          <div class="ftabs" id="ftabs"></div>
+          <span class="fadd" id="fadd" title="terminal を追加（ad-hoc / worktree）">+</span>
+          <span class="fsp"></span>
+          <span class="fsplit" id="fsplit" title="split 表示（2画面同時）">⊟</span>
+          <span class="fcar" id="fcar" title="bash 開閉">▴</span>
+        </div>
+        <div class="ftwrap" id="ftwrap"></div>
+      </div>
+    </section>
+
+    <!-- PR rail -->
+    <section class="col pr">
+      <div class="prrail" onclick="document.body.classList.add('pr-open')">
+        <div class="v w">PR ⚠1</div><div class="v">Issue 5</div><div class="g">‹ EXTERNAL</div>
+      </div>
+      <div class="prfull">
+        <div class="prh">PR / ISSUE — unit tmai · 2 repos <span class="x" onclick="document.body.classList.remove('pr-open')">✕</span></div>
+        <div class="prb">
+          <div class="prg"><h4>Pull Requests · 3</h4>
+            <div class="pi"><span class="repo pri">tmai</span><span class="n">#790</span><span class="t">aim inline surfacing</span><span class="pst r">review</span></div>
+            <div class="pi"><span class="repo">core</span><span class="n">#502</span><span class="t">aim write endpoints</span><span class="pst m">merged</span></div>
+            <div class="pi"><span class="repo pri">tmai</span><span class="n">#788</span><span class="t">gen: sync spec ← core</span><span class="pst d">draft</span></div></div>
+          <div class="prg"><h4>Issues · 5</h4>
+            <div class="pi"><span class="repo">core</span><span class="n">#512</span><span class="t">cross-edge 伝搬</span><span class="pst o">open</span></div>
+            <div class="pi"><span class="repo pri">tmai</span><span class="n">#509</span><span class="t">destination layout</span><span class="pst o">open</span></div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="stamp">dev-tool / scale MOCK · throwaway · 2026-06-08</div>
+
+  <!-- create-aim modal (root or child of an existing node) -->
+  <div class="modal-bg" id="modalbg">
+    <div class="modal">
+      <h3><span id="m-title">新規 aim</span> <span class="ctx" id="m-ctx"></span></h3>
+      <div class="modal-body">
+        <div class="fld">
+          <label>aim — 人間が書く1文の ought <span class="req">*</span></label>
+          <textarea id="m-aim" placeholder="その高度の不可分な選択(bearing)を1文で…"></textarea>
+          <div class="hint2">body(is)は Producer が後で filing。ここは operator の bearing のみ。</div>
+        </div>
+        <div class="frow">
+          <div class="fld" style="flex:1"><label>repo</label><select id="m-repo"></select></div>
+          <div class="fld" style="flex:2"><label>parent</label><select id="m-parent"></select></div>
+        </div>
+        <div class="fld">
+          <label>slug — 安定 identity（日付なし kebab）</label>
+          <div class="slugrow"><input id="m-slug" placeholder="例: attention-icon-row"><span class="hint2" id="m-slugmsg"></span></div>
+          <div class="hint2">Producer が aim から派生 → operator が確認/訂正。rename=identity 死なので誕生時のみ。</div>
+        </div>
+        <div class="fld" id="m-state-wrap" style="display:none"><label>state</label>
+          <select id="m-state"><option value="open">open</option><option value="done">done — aim 到達 / confirmed</option><option value="dead">dead — self-death（系譜は残す・親無傷）</option></select></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" onclick="closeCreate()">cancel</button>
+        <button class="btn primary" id="m-create" onclick="submitCreate()">作成</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  /* ── seeded generation of a LARGE aim forest (to prove scale) ── */
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  const rng=mulberry32(20260608); const pick=a=>a[Math.floor(rng()*a.length)];
+  const NN=['drift','fence','wire','panel','ledger','worktree','handoff','compose','inventory','attention','projection','brief','dispatch','viewer','marker','rollup','frontier','tether','anchor','interior','spine','radar','gauge','seam','feed','permission','vendor','capability','pty','contract','observation','currency','graduation','breadcrumb'];
+  const VV=['surface','compose','project','dispatch','confirm','collapse','serve','render','fence','tether','graduate','sync','factor','rollup','isolate','mirror','gate','normalize'];
+  const QQ=['store しない','compute-at-compose','projection','operator-gated','可逆','sparse','radar のみ','lived 弁別','by construction','単一 source'];
+  const FR=['未検証','frontier','設計中','PR 待ち','再確認 owed','dogfood 中','spec 待ち'];
+  // aims live PER REPO (tmai=UI ⊥ tmai-core=backend), each repo has its own doc/aims/ forest
+  const REPOS=[
+    {id:'tmai',      label:'tmai',      sub:'UI',      pri:true},
+    {id:'tmai-core', label:'tmai-core', sub:'backend', pri:false},
+  ];
+  const SEEDS={
+    'tmai':[
+      {slug:'inverted-ui',         aim:'root を会話に、artifact を Δ で surface'},
+      {slug:'destination-console', aim:'unit=tab / aim=本丸 / 会話=raw CC の卓に'},
+      {slug:'attention-ui',        aim:'attention level を operator の注意 surface として描く'},
+    ],
+    'tmai-core':[
+      {slug:'amplify-human-judgment', aim:'人間の判断を増幅する — 代替しない'},
+      {slug:'aim-system',             aim:'records を書く構造(aim-tree)で write を低摩擦に'},
+      {slug:'review-attention-budget',aim:'律速は人間のレビュー注意予算'},
+      {slug:'attention-backend',      aim:'per-artifact attention を core で算出し serve'},
+    ],
+  };
+  const all=[]; const used=new Set();
+  function mkslug(){ let s; do{ s=pick(NN)+'-'+pick(VV); }while(used.has(s)); used.add(s); return s; }
+  const mkought=()=>`${pick(NN)} を ${pick(VV)}（${pick(QQ)}）`;
+  REPOS.forEach(r=>SEEDS[r.id].forEach(s=>{ used.add(s.slug); all.push({slug:s.slug,parent:null,kind:'root',depth:0,repo:r.id,aim:s.aim}); }));
+  let budget=300;
+  function grow(parent,depth,repo){ if(budget<=0) return;
+    const maxk = depth===0?5:Math.max(0,5-depth);
+    const k=Math.floor(rng()*(maxk+1));
+    for(let i=0;i<k&&budget>0;i++){ const slug=mkslug(); budget--;
+      all.push({slug,parent,aim:mkought(),depth:depth+1,repo}); grow(slug,depth+1,repo); }
+  }
+  REPOS.forEach(r=>SEEDS[r.id].forEach(s=>grow(s.slug,0,r.id)));
+
+  const by={}; all.forEach(n=>by[n.slug]=n);
+  const ch={}; all.forEach(n=>{ if(n.parent)(ch[n.parent]=ch[n.parent]||[]).push(n.slug); });
+  // order = repo-grouped DFS (tmai forest, then tmai-core) — matches grouped display + ruler
+  const order=[];
+  function rebuildOrder(){ order.length=0; REPOS.forEach(r=>all.filter(n=>!n.parent&&n.repo===r.id).forEach(root=>{ (function d(s){ order.push(s); (ch[s]||[]).forEach(d); })(root.slug); })); }
+  rebuildOrder();
+
+  // assign state (mostly confirmed/calm, sparse owed)
+  const anc=s=>{ const a=[]; let p=by[s].parent; while(p){a.push(p);p=by[p].parent;} return a; };
+  let prc=470;
+  all.forEach(n=>{ const leaf=!(ch[n.slug]); const roll=rng(); n.state='open';
+    if(n.kind==='root'){ n.is=[{t:'claimed',txt:'進行中 — lived 弁別'}]; return; }
+    if(roll<0.035){ const a=anc(n.slug); n.drift={staleFrom:a[Math.min(a.length-1,1+Math.floor(rng()*a.length))]||a[0]};
+      n.is=[{t:'confirmed',txt:'実装済',ref:'PR#'+(prc++)},{t:'claimed',txt:'祖先 ought 移動で再確認 owed'}]; }
+    else if(roll<0.115){ n.is=[{t:'claimed',txt:pick(FR)}]; }
+    else if(leaf||roll<0.9){ n.is=[{t:'confirmed',txt:'ground-truth 照合済',ref:'PR#'+(prc++)}]; if(leaf&&rng()<0.35) n.state='done'; }
+    else { n.is=[]; }
+  });
+
+  const owed=n=> n.state!=='done' && n.state!=='dead' && (!!n.drift||(n.is||[]).some(x=>x.t==='claimed'));
+  function subStats(slug){ let n=0,d=0,k=0; (function r(s){ (ch[s]||[]).forEach(c=>{ n++; const x=by[c];
+    if(x.state!=='done'&&x.state!=='dead'){ if(x.drift)d++; else if((x.is||[]).some(y=>y.t==='claimed'))k++; } r(c); }); })(slug); return {n,d,k}; }
+  function repoStats(rid){ let n=0,d=0,k=0; all.forEach(x=>{ if(x.repo!==rid) return; n++;
+    if(x.state==='done'||x.state==='dead') return; if(x.drift)d++; else if((x.is||[]).some(y=>y.t==='claimed'))k++; }); return {n,d,k}; }
+
+  // ── ledger ──
+  function recomputeLedger(){
+    let D=0,K=0,C=0; all.forEach(n=>{ const act=n.state!=='done'&&n.state!=='dead'; if(n.drift&&act)D++; (n.is||[]).forEach(x=>{ if(x.t==='confirmed')C++; else if(act)K++; }); });
+    document.getElementById('g-dr').textContent=D;
+    document.getElementById('g-cl').textContent=K;
+    document.getElementById('g-cf').textContent=C;
+    document.getElementById('scale').textContent=all.length+' aims · '+REPOS.length+' repos (per-repo)';
+    const ow=D+K, tot=ow+C||1; document.getElementById('l-o').style.width=(100*ow/tot)+'%';
+    document.getElementById('l-c').style.width=(100*C/tot)+'%';
+  }
+  recomputeLedger();
+
+  // ── row helpers ──
+  function cls(n){ if(n.state==='dead') return 'dead'; if(n.state==='done') return 'done';
+    if(n.kind==='root') return 'rt'; if(n.drift) return 'dr';
+    if((n.is||[]).some(x=>x.t==='claimed')) return 'cl';
+    if((n.is||[]).some(x=>x.t==='confirmed')) return 'cf'; return 'ne'; }
+  function gly(n){ if(n.state==='done') return '<span class="gly dn">✓</span>'; if(n.state==='dead') return '<span class="gly dd">✕</span>';
+    if(n.drift) return '<span class="gly dr">⚠</span>'; if((n.is||[]).some(x=>x.t==='claimed')) return '<span class="gly cl">◌</span>'; return '<span class="gly"></span>'; }
+  function ism(n){ return '<span class="ism">'+(n.is||[]).map(x=>`<i class="${x.t==='confirmed'?'c':'k'}"></i>`).join('')+'</span>'; }
+  const esc=s=>s.replace(/</g,'&lt;');
+
+  // ── TREE mode (repo groups → collapsible navigator + rollups) ──
+  const expanded=new Set([...REPOS.map(r=>'repo:'+r.id), ...all.filter(n=>!n.parent).map(n=>n.slug)]); // repo groups + roots open
+  function renderTree(){
+    const rows=[];
+    function walk(slug,depth){
+      const n=by[slug]; const kids=ch[slug]||[]; const isOpen=expanded.has(slug);
+      const st=subStats(slug);
+      const tw = kids.length ? `<span class="tx has" data-tw="${slug}">${isOpen?'▾':'▸'}</span>` : `<span class="tx">·</span>`;
+      let roll='';
+      if(kids.length && !isOpen){ roll=`<span class="roll">${st.n}`+
+        (st.d?` <span class="w">⚠${st.d}</span>`:'')+(st.k?` <span class="k">◌${st.k}</span>`:'')+`</span>`; }
+      rows.push(`<div class="r ${cls(n)}" data-slug="${slug}" style="padding-left:${12+depth*15}px">`+
+        `<span class="gut"></span>${tw}${gly(n)}<span class="ought">${esc(n.aim)}</span>${roll}${ism(n)}<span class="slug">${slug}</span>`+
+        `<span class="addbtn row" data-add-child="${slug}" title="子 aim を作成">+</span></div>`);
+      if(isOpen) kids.forEach(c=>walk(c,depth+1));
+    }
+    REPOS.forEach(r=>{
+      const open=expanded.has('repo:'+r.id); const rs=repoStats(r.id);
+      rows.push(`<div class="repohead${r.pri?' pri':''}" data-tw="repo:${r.id}">`+
+        `<span class="rh-tw">${open?'▾':'▸'}</span><span class="rh-name">${r.label}</span><span class="rh-sub">${r.sub}</span>`+
+        `<span class="rh-stat">${rs.n}`+(rs.d?` <span class="w">⚠${rs.d}</span>`:'')+(rs.k?` <span class="k">◌${rs.k}</span>`:'')+`</span>`+
+        `<span class="addbtn" data-add-root="${r.id}" title="${r.label} に root aim を作成">+</span></div>`);
+      if(open) all.filter(n=>!n.parent&&n.repo===r.id).forEach(root=>walk(root.slug,0));
+    });
+    document.getElementById('alist').innerHTML=rows.join('');
+  }
+
+  // ── FRONTIER mode (worklist of owed, ranked, breadcrumbed) ──
+  function crumbText(slug){ return anc(slug).reverse().map(s=>by[s].kind==='root'?by[s].slug:s).join(' › '); }
+  function renderFrontier(q){
+    const row=n=>`<div class="r ${cls(n)}" data-slug="${n.slug}">`+
+      `<span class="gut"></span>${gly(n)}<span class="ought">${esc(n.aim)}</span>`+
+      `<span class="crumb-i">${crumbText(n.slug)||'root'}</span>${ism(n)}<span class="slug">${n.slug}</span></div>`;
+    let h='', total=0;
+    REPOS.forEach(r=>{
+      let list=all.filter(n=>n.repo===r.id&&owed(n));
+      if(q) list=list.filter(n=>n.slug.includes(q)||n.aim.includes(q));
+      if(!list.length) return;
+      list.sort((a,b)=>(b.drift?1:0)-(a.drift?1:0));  // drift first within the repo
+      const d=list.filter(n=>n.drift).length, k=list.length-d; total+=list.length;
+      h+=`<div class="repohead frontier${r.pri?' pri':''}"><span class="rh-name">${r.label}</span><span class="rh-sub">${r.sub}</span>`+
+         `<span class="rh-stat">${d?`<span class="w">⚠${d}</span> `:''}${k?`<span class="k">◌${k}</span>`:''}</span></div>`+list.map(row).join('');
+    });
+    if(!total) h=`<div class="hint" style="padding:20px 14px">owed なし — 盤面は calm。${q?'(filter 一致なし)':''}</div>`;
+    document.getElementById('alist').innerHTML=h;
+  }
+
+  // ── overview ruler (owed density over full DFS order) ──
+  function renderRuler(){
+    const r=document.getElementById('ruler'); let html='', prev=null;
+    order.forEach((s,i)=>{ const n=by[s]; if(!n) return; const top=(i/order.length*100).toFixed(2)+'%';  /* % = clientHeight 非依存 */
+      if(prev!==null && n.repo!==prev) html+=`<div class="rdiv" style="top:${top}"></div>`;  /* repo 境界 */
+      prev=n.repo;
+      if(n.drift) html+=`<div class="tick dr" style="top:${top}" data-slug="${s}" title="⚠ drift · ${n.repo} · ${s}"></div>`;
+      else if((n.is||[]).some(x=>x.t==='claimed')) html+=`<div class="tick cl" style="top:${top}" data-slug="${s}" title="◌ claimed · ${n.repo} · ${s}"></div>`;
+      else html+=`<div class="tick" style="top:${top}"></div>`;   /* calm — faint, non-interactive */
+    });
+    r.innerHTML=html;
+  }
+
+  // ── mode / search ──
+  let mode='owed', selectedSlug=null, modalMode='create', editSlug=null;
+  function setMode(m){ mode=m;
+    const bo=document.getElementById('b-owed'), bt=document.getElementById('b-tree');
+    bo.classList.toggle('on',m==='owed'); bo.classList.toggle('owed',m==='owed');
+    bt.classList.toggle('on',m==='tree');
+    render();
+  }
+  function onSearch(){ render(); }
+  function render(){ const q=document.getElementById('q').value.trim();
+    if(mode==='tree' && !q) renderTree();
+    else if(mode==='tree' && q){ // flat search results within tree mode (repo tag per row)
+      const list=all.filter(n=>n.slug.includes(q)||n.aim.includes(q));
+      document.getElementById('alist').innerHTML = list.length? list.map(n=>
+        `<div class="r ${cls(n)}" data-slug="${n.slug}"><span class="gut"></span>${gly(n)}`+
+        `<span class="ought">${esc(n.aim)}</span><span class="repo${n.repo==='tmai'?' pri':''}">${n.repo}</span>${ism(n)}<span class="slug">${n.slug}</span></div>`).join('')
+        : `<div class="hint" style="padding:20px 14px">一致なし</div>`;
+    }
+    else renderFrontier(q);
+    renderRuler();
+  }
+
+  // ── inspector ──
+  function chainArr(slug){ const o=[]; let s=slug; while(s){o.unshift(by[s]);s=by[s].parent;} return o; }
+  function select(slug){
+    selectedSlug=slug;
+    document.querySelectorAll('.r.sel').forEach(x=>x.classList.remove('sel'));
+    document.querySelector(`.r[data-slug="${slug}"]`)?.classList.add('sel');
+    const n=by[slug]; const ar=chainArr(slug);
+    document.getElementById('i-cr').innerHTML=ar.map((a,i)=> i<ar.length-1?
+      `<span onclick="select('${a.slug}')">${esc(a.aim.slice(0,18))}…</span><span class="s">›</span>`:`<span style="color:var(--cyan)">${a.slug}</span>`).join('');
+    document.getElementById('i-ou').innerHTML=`<b>aim:</b> ${esc(n.aim)}`;
+    const m=[`<span class="pill${n.repo==='tmai'?' op':''}">repo: ${n.repo}</span>`,`<span class="pill op">state: ${n.kind==='root'?'open · root':'open'}</span>`];
+    if(n.drift) m.push(`<span class="pill dr">⚠ drift ← 祖先 ${n.drift.staleFrom}</span>`);
+    document.getElementById('i-me').innerHTML=m.join('');
+    const is=n.is||[];
+    document.getElementById('i-is').innerHTML=`<div class="isec">interior — is</div>`+(is.length?is.map(x=>
+      `<div class="il"><span class="tg ${x.t==='confirmed'?'c':'k'}">${x.t==='confirmed'?'✓ confirmed':'◌ claimed'}</span><span>${esc(x.txt)}${x.ref?` <span class="ref">[${x.ref}]</span>`:''}</span></div>`).join('')
+      :`<div class="il dim">— 純粋な ought —</div>`);
+    document.body.classList.add('insp-on');
+  }
+  function reveal(slug){ expanded.add('repo:'+by[slug].repo); let s=by[slug].parent; while(s){expanded.add(s);s=by[s].parent;} if(mode!=='tree') setMode('tree'); else render();
+    document.querySelector(`.r[data-slug="${slug}"]`)?.scrollIntoView({block:'center'}); select(slug); }
+
+  // ── create aim (root or child of an existing node) ──
+  // operator authors `aim`(ought); slug is Producer-derived but operator-confirmed (rename=identity death → birth-time only); body(is) is filed later by the Producer.
+  function suggestSlug(aim){ const a=(aim.toLowerCase().match(/[a-z0-9]+/g)||[]).join('-').slice(0,40);
+    let base=a||'new-aim', s=base, i=2; while(used.has(s)){ s=base+'-'+i; i++; } return s; }
+  function descendantsOf(slug){ const set=new Set(); (function r(s){ (ch[s]||[]).forEach(c=>{ set.add(c); r(c); }); })(slug); return set; }
+  function recomputeDepths(){ all.forEach(n=>{ let d=0,p=n.parent; while(p){d++;p=by[p].parent;} n.depth=d; }); }
+  function populateParents(repo,parent,exclude){
+    const ex = exclude? new Set([exclude, ...descendantsOf(exclude)]) : new Set();   // re-parent: 自分と子孫を親候補から除く(循環防止)
+    const ps=document.getElementById('m-parent');
+    ps.innerHTML=['<option value="">（root — '+repo+' の最上位）</option>']
+      .concat(all.filter(n=>n.repo===repo&&!ex.has(n.slug)).map(n=>`<option value="${n.slug}">${'· '.repeat(n.depth)}${esc(n.aim.slice(0,32))}</option>`)).join('');
+    ps.value=parent||'';
+  }
+  function ctxLabel(){ const p=document.getElementById('m-parent').value, repo=document.getElementById('m-repo').value;
+    document.getElementById('m-ctx').textContent = p? '— child of '+p+'（'+repo+'）' : '— '+repo+' の root'; }
+  function validateSlug(){
+    const btn=document.getElementById('m-create');
+    if(modalMode==='edit'){ btn.disabled=document.getElementById('m-aim').value.trim().length===0; return; }  // edit: slug 不変, aim のみ必須
+    const el=document.getElementById('m-slug'), msg=document.getElementById('m-slugmsg');
+    const slug=el.value.trim(); let err='';
+    if(slug){ if(!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) err='lowercase kebab のみ（[a-z0-9-]）';
+      else if(/^\d{4}-\d{2}-\d{2}/.test(slug)) err='日付 prefix 不可';
+      else if(used.has(slug)) err='slug 重複'; }
+    const aimOk=document.getElementById('m-aim').value.trim().length>0, slugOk=slug&&!err;
+    msg.textContent= err || (slug?'✓ ok':''); msg.className='hint2'+(err?' err':(slug?' ok':''));
+    btn.disabled=!(aimOk&&slugOk);
+  }
+  function openCreate(repo,parent){
+    modalMode='create';
+    document.getElementById('m-title').textContent='新規 aim'; document.getElementById('m-create').textContent='作成';
+    document.getElementById('m-state-wrap').style.display='none';
+    const rs=document.getElementById('m-repo'); rs.disabled=false; document.getElementById('m-slug').disabled=false;
+    rs.innerHTML=REPOS.map(r=>`<option value="${r.id}">${r.label} · ${r.sub}</option>`).join(''); rs.value=repo;
+    populateParents(repo,parent);
+    document.getElementById('m-aim').value=''; const sl=document.getElementById('m-slug'); sl.value=''; sl.dataset.touched='';
+    ctxLabel(); validateSlug();
+    document.body.classList.add('create-on'); setTimeout(()=>document.getElementById('m-aim').focus(),30);
+  }
+  function openEdit(slug){
+    modalMode='edit'; editSlug=slug; const n=by[slug];
+    document.getElementById('m-title').textContent='aim を編集'; const cb=document.getElementById('m-create'); cb.textContent='保存'; cb.disabled=false;
+    const rs=document.getElementById('m-repo'); rs.innerHTML=`<option value="${n.repo}">${n.repo}</option>`; rs.value=n.repo; rs.disabled=true;
+    populateParents(n.repo, n.parent, slug);
+    document.getElementById('m-aim').value=n.aim;
+    const sl=document.getElementById('m-slug'); sl.value=slug; sl.disabled=true; sl.dataset.touched='1';
+    document.getElementById('m-slugmsg').textContent='(slug は不変)'; document.getElementById('m-slugmsg').className='hint2';
+    document.getElementById('m-state-wrap').style.display=''; document.getElementById('m-state').value=n.state||'open';
+    ctxLabel();
+    document.body.classList.add('create-on'); setTimeout(()=>document.getElementById('m-aim').focus(),30);
+  }
+  function closeCreate(){ document.body.classList.remove('create-on'); }
+  function submitCreate(){
+    if(modalMode==='edit'){ doEdit(); return; }
+    validateSlug(); if(document.getElementById('m-create').disabled) return;
+    const repo=document.getElementById('m-repo').value, parent=document.getElementById('m-parent').value||null;
+    const aim=document.getElementById('m-aim').value.trim(), slug=document.getElementById('m-slug').value.trim();
+    const depth=parent?by[parent].depth+1:0;
+    const node={slug,parent,aim,repo,depth,is:[{t:'claimed',txt:'新規 — interior 未記入（Producer 待ち）'}]};
+    if(!parent) node.kind='root';
+    all.push(node); by[slug]=node; used.add(slug); if(parent)(ch[parent]=ch[parent]||[]).push(slug);
+    rebuildOrder(); recomputeLedger();
+    expanded.add('repo:'+repo); let s=parent; while(s){expanded.add(s);s=by[s].parent;}
+    closeCreate(); if(mode!=='tree') setMode('tree'); else render();
+    select(slug); document.querySelector(`.r[data-slug="${slug}"]`)?.scrollIntoView({block:'center'});
+  }
+  function doEdit(){
+    const n=by[editSlug]; const oldAim=n.aim;
+    const aim=document.getElementById('m-aim').value.trim(); if(!aim) return;
+    const newParent=document.getElementById('m-parent').value||null, state=document.getElementById('m-state').value;
+    if(newParent!==n.parent){   // re-parent = parent 編集のみ(slug 不変=identity 生存=可逆 reorg)
+      if(n.parent){ const arr=ch[n.parent]||[]; const i=arr.indexOf(n.slug); if(i>=0)arr.splice(i,1); }
+      n.parent=newParent; if(newParent)(ch[newParent]=ch[newParent]||[]).push(n.slug);
+      if(newParent) delete n.kind; else n.kind='root';
+      recomputeDepths();
+    }
+    n.state=state;
+    if(aim!==oldAim){   // ought 編集 → 配下を drift(stale-from-ancestor)= drift-cycle
+      n.aim=aim;
+      descendantsOf(n.slug).forEach(d=>{ const x=by[d]; if(x.state!=='dead'){ if(x.state==='done') x.state='open'; x.drift={staleFrom:n.slug};
+        if(!(x.is||[]).some(y=>y.t==='claimed'))(x.is=x.is||[]).push({t:'claimed',txt:'祖先 ought 編集で再確認 owed'}); } });
+    }
+    rebuildOrder(); recomputeLedger();
+    expanded.add('repo:'+n.repo); let s=n.parent; while(s){expanded.add(s);s=by[s].parent;}
+    closeCreate(); if(mode!=='tree') setMode('tree'); else render(); select(n.slug);
+    document.querySelector(`.r[data-slug="${n.slug}"]`)?.scrollIntoView({block:'center'});
+  }
+  document.getElementById('m-aim').addEventListener('input',()=>{ const sl=document.getElementById('m-slug');
+    if(!sl.dataset.touched) sl.value=suggestSlug(document.getElementById('m-aim').value); validateSlug(); });
+  document.getElementById('m-slug').addEventListener('input',()=>{ document.getElementById('m-slug').dataset.touched='1'; validateSlug(); });
+  document.getElementById('m-repo').addEventListener('change',()=>{ populateParents(document.getElementById('m-repo').value,''); ctxLabel(); });
+  document.getElementById('m-parent').addEventListener('change',ctxLabel);
+  document.getElementById('modalbg').addEventListener('click',e=>{ if(e.target.id==='modalbg') closeCreate(); });
+  document.getElementById('i-edit').onclick=()=>{ if(selectedSlug) openEdit(selectedSlug); };
+  document.getElementById('i-addchild').onclick=()=>{ if(selectedSlug) openCreate(by[selectedSlug].repo, selectedSlug); };
+
+  // ── events (delegation) ──
+  document.getElementById('alist').addEventListener('click',e=>{
+    const addr=e.target.closest('[data-add-root]'); if(addr){ openCreate(addr.dataset.addRoot, null); return; }
+    const addc=e.target.closest('[data-add-child]'); if(addc){ const p=by[addc.dataset.addChild]; openCreate(p.repo, p.slug); return; }
+    const tw=e.target.closest('[data-tw]'); if(tw){ const s=tw.dataset.tw; expanded.has(s)?expanded.delete(s):expanded.add(s); renderTree(); renderRuler(); return; }
+    const r=e.target.closest('.r[data-slug]'); if(r) select(r.dataset.slug);
+  });
+  document.getElementById('ruler').addEventListener('click',e=>{ const t=e.target.closest('[data-slug]'); if(t) reveal(t.dataset.slug); });
+
+  const SS={prod:{m:'opus-4.8',w:'unit tmai · cwd ~/tmai'},w1:{m:'sonnet-4.6',w:'repo tmai · ../tmai-wt-attn-ui'},w2:{m:'opus-4.8',w:'repo tmai-core · ../tmai-core-wt-drift-cycle'}};
+  document.querySelectorAll('.stab').forEach(s=>s.onclick=()=>{ const id=s.dataset.s;
+    document.querySelectorAll('.stab').forEach(x=>x.classList.remove('on')); s.classList.add('on');
+    document.querySelectorAll('.term .s').forEach(x=>x.classList.remove('on'));
+    document.querySelector(`.term .s[data-s="${id}"]`).classList.add('on');
+    sm.textContent=SS[id].m; sw.textContent=SS[id].w; });
+  document.getElementById('ho').onclick=()=>{ const a=document.querySelector('.term .s.on'); const l=document.createElement('div');
+    l.className='ta'; l.style.marginTop='8px'; l.textContent='⤺ handoff: 要約 → 新セッション継続 (episodic)'; a.appendChild(l);
+    const t=document.getElementById('term'); t.scrollTop=t.scrollHeight; };
+  document.querySelectorAll('.utab').forEach(t=>t.onclick=()=>{ document.querySelectorAll('.utab').forEach(x=>x.classList.remove('on')); t.classList.add('on'); });
+  // ── bash: tabbed terminals (one per repo, persistent PTYs; + ad-hoc; optional split) ──
+  const terms=[
+    {id:'term-tmai', label:'tmai', cwd:'~/tmai', running:true, lines:[
+      '<div><span class="p">umu@wsl ~/tmai $</span> npm run dev</div>',
+      '<div class="faint">  VITE v5  ready in 412 ms</div>',
+      '<div>  ➜ Local: <span style="color:var(--cyan)">http://localhost:5173/</span></div>',
+      '<div class="faint">  watching for changes…</div>',
+    ]},
+    {id:'term-core', label:'tmai-core', cwd:'~/tmai-core', running:true, lines:[
+      '<div><span class="p">umu@wsl ~/tmai-core $</span> cargo watch -x "test aims"</div>',
+      '<div class="faint">  [Running: cargo test aims]</div>',
+      '<div><span style="color:var(--green)">  test result: ok.</span> 14 passed</div>',
+      '<div class="faint">  watching…</div>',
+    ]},
+  ];
+  let activeTerm=terms[0].id, splitOn=false, termSeq=0;
+  function renderFtabs(){ document.getElementById('ftabs').innerHTML=terms.map(t=>
+    `<span class="ftab${t.id===activeTerm?' on':''}" data-term="${t.id}">${t.running?'<span class="rdot" title="常駐プロセス稼働中"></span>':''}${t.label}${t.closeable?`<span class="fclose" data-close="${t.id}" title="閉じる">×</span>`:''}</span>`).join(''); }
+  function paneHTML(t){ return `<div class="ft">${t.lines.join('')}</div>`; }
+  function renderFt(){ const wrap=document.getElementById('ftwrap'); const a=terms.find(t=>t.id===activeTerm)||terms[0]; if(!a){ wrap.innerHTML=''; return; }
+    if(splitOn && terms.length>=2){ const b=terms.find(t=>t.id!==a.id)||a; wrap.className='ftwrap split';
+      wrap.innerHTML=`<div class="ftpane"><div class="ftpane-h">${a.label} · ${a.cwd}</div>${paneHTML(a)}</div><div class="ftpane"><div class="ftpane-h">${b.label} · ${b.cwd}</div>${paneHTML(b)}</div>`; }
+    else { wrap.className='ftwrap'; wrap.innerHTML=paneHTML(a); } }
+  function bashOpen(){ document.body.classList.add('bash-on'); document.getElementById('fcar').textContent='▾'; }
+  function switchTerm(id){ activeTerm=id; bashOpen(); renderFtabs(); renderFt(); }
+  function addTerm(){ termSeq++; const t={id:'term-sh'+termSeq, label:'sh-'+termSeq, cwd:'~/tmai', running:false, closeable:true,
+    lines:['<div><span class="p">umu@wsl ~/tmai $</span> <span class="cur2"></span></div>']}; terms.push(t); activeTerm=t.id; bashOpen(); renderFtabs(); renderFt(); }
+  function closeTerm(id){ const i=terms.findIndex(t=>t.id===id); if(i<0)return; terms.splice(i,1); if(activeTerm===id) activeTerm=(terms[0]||{}).id; renderFtabs(); renderFt(); }
+  document.getElementById('ftabs').addEventListener('click',e=>{ const cl=e.target.closest('[data-close]'); if(cl){ e.stopPropagation(); closeTerm(cl.dataset.close); return; }
+    const tb=e.target.closest('[data-term]'); if(tb) switchTerm(tb.dataset.term); });
+  document.getElementById('fadd').onclick=addTerm;
+  document.getElementById('fsplit').onclick=()=>{ splitOn=!splitOn; document.getElementById('fsplit').classList.toggle('on',splitOn); bashOpen(); renderFt(); };
+  document.getElementById('fcar').onclick=()=>{ document.body.classList.toggle('bash-on'); document.getElementById('fcar').textContent=document.body.classList.contains('bash-on')?'▾':'▴'; };
+  renderFtabs(); renderFt();
+  window.addEventListener('resize',renderRuler);
+
+  // boot
+  render();
+  requestAnimationFrame(renderRuler);   // re-place ticks once layout height is final
+  setTimeout(()=>{ const f=all.find(n=>n.drift); if(f) select(f.slug); },300);
+</script>
+</body>
+</html>
