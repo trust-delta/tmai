@@ -28,9 +28,23 @@ interface SectionProps {
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
+  /** Optional trailing note rendered in the header, right of the count
+   *  (the badge supplies its own `ml-auto`). Used by the PR / Issue
+   *  sections to carry the "EXTERNAL · github = source of truth" framing
+   *  (C2) — those are the github-resident artifacts on this panel. */
+  headerNote?: ReactNode;
 }
 
-export function Section({ id, glyph, label, count, expanded, onToggle, children }: SectionProps) {
+export function Section({
+  id,
+  glyph,
+  label,
+  count,
+  expanded,
+  onToggle,
+  children,
+  headerNote,
+}: SectionProps) {
   return (
     <section data-testid={`r-section-${id}`} data-expanded={expanded ? "true" : "false"}>
       <button
@@ -48,6 +62,7 @@ export function Section({ id, glyph, label, count, expanded, onToggle, children 
         </span>
         <h3 className="text-sm font-semibold text-foreground">{label}</h3>
         <span className="text-[11px] text-subtle-foreground">{count}</span>
+        {headerNote}
       </button>
       {expanded && (
         <div id={`r-section-body-${id}`} className="mt-1 pl-6 text-xs text-muted-foreground">
