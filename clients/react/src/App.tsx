@@ -8,6 +8,7 @@ import { TripwireBanner } from "@/components/calibration/TripwireBanner";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
+import { UnitTabs } from "@/components/layout/UnitTabs";
 import { HandoffRitualFailureDialog } from "@/components/producer-console/HandoffRitualFailureDialog";
 import { HandoffRitualOverlay } from "@/components/producer-console/HandoffRitualOverlay";
 import { ProducerConsole } from "@/components/producer-console/ProducerConsole";
@@ -42,7 +43,14 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
-import { api, groupByProject, isAiAgentLoose, type Selection, setCallerCwd } from "@/lib/api";
+import {
+  api,
+  groupByProject,
+  isAiAgentLoose,
+  type Selection,
+  setCallerCwd,
+  type UnitResponse,
+} from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
 import { useSSE } from "@/lib/sse-provider";
 import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
@@ -517,6 +525,31 @@ export function App() {
     [closeMobileDrawer],
   );
 
+  // C1 unit-tab click → re-scope the focused unit. A unit is addressed by
+  // its PRIMARY repo path (where the Producer runs) — the same path
+  // `currentProject` carries — so we resolve that and reuse the existing
+  // project re-scope. Falls back to the first repo if no `primary` flag.
+  const handleSelectUnit = useCallback(
+    (unit: UnitResponse) => {
+      const repo = unit.repos.find((r) => r.primary) ?? unit.repos[0];
+      if (!repo) return;
+      handleSelectProject(repo.path, unit.name);
+    },
+    [handleSelectProject],
+  );
+
+  // C1 `+` affordance — "add unit = launch Producer". v1 placeholder: copy
+  // the canonical launch command to the clipboard (secure-context only;
+  // localhost qualifies) and toast it, mirroring the Phase-A "Open Producer
+  // terminal" clipboard fallback. NO new launch endpoint (issue #788 scope).
+  const handleAddUnit = useCallback(() => {
+    const cmd = "tmai producer <path-to-unit-primary-repo>";
+    navigator.clipboard
+      ?.writeText(cmd)
+      .then(() => toastSuccess(`Copied: ${cmd} — run it in a repo to add a unit`))
+      .catch(() => toastInfo(`Add a unit by launching a Producer: ${cmd}`));
+  }, [toastSuccess, toastInfo]);
+
   // Keyboard shortcuts handlers
   useKeyboardShortcuts([
     {
@@ -592,6 +625,20 @@ export function App() {
       <UsagePanel />
     </>
   );
+
+  // C1 unit-tab strip — rendered in the StatusBar (top bar) when the engine
+  // reports configured `[[unit]]` membership. A single configured unit
+  // collapses to one tab; the component renders N. Omitted when the units
+  // wire is empty (cwd-synthesized units aren't enumerated there).
+  const unitTabsNode =
+    (unitsData?.units.length ?? 0) > 0 ? (
+      <UnitTabs
+        units={unitsData?.units ?? []}
+        activeUnitName={unitName}
+        onSelectUnit={handleSelectUnit}
+        onAddUnit={handleAddUnit}
+      />
+    ) : null;
 
   // Focus-mode viewer node (spine `2026-05-29-c-and-r-as-the-development-
   // substrate`). At most one of the three is non-null (`useFocusedArtifact`
@@ -687,6 +734,7 @@ export function App() {
             onReturnToConsole={
               selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
             }
+            unitTabs={sidebarCollapsed ? undefined : unitTabsNode}
           />
           {!sidebarCollapsed && (
             <div className="flex flex-1 flex-col overflow-y-auto">{sidebarContent}</div>
@@ -739,6 +787,7 @@ export function App() {
             onReturnToConsole={
               selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
             }
+            unitTabs={unitTabsNode}
           />
         )}
 

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 //
-// RPrsSection — open PR list (R₁) with NO severity-color CI / review
-// badges. R₁ is pure inventory; the merge/override action layer (with
-// its load-bearing soft-valve accents) lives in R₂. A row click threads
-// the repo-level `billing_dead` flag into the R₂ selection so the
+// RPrsSection — open PR list (R₁) with colour-coded lifecycle / review /
+// CI status pills (C2, Stage C). Those pill colours are CATEGORICAL (which
+// state), NOT severity appraisal — see `status-pills.tsx`. A row click
+// threads the repo-level `billing_dead` flag into the R₂ selection so the
 // override-merge affordance knows whether the PR's repo is flagged.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -69,16 +69,50 @@ beforeEach(() => {
 });
 
 describe("RPrsSection", () => {
-  it("renders open PRs with plain (no-severity) CI / review status text", async () => {
+  it("renders colour-coded lifecycle / review / CI status pills (C2)", async () => {
+    // Fixture pr() is OPEN + APPROVED + SUCCESS → open / approved / CI pass
+    // pills, all categorical-`ok` (success) toned.
     unitPrsMock.mockResolvedValue(response([pr()]));
-    const { container } = render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("PR title")).toBeTruthy();
     });
-    // Plain text: "CI SUCCESS · APPROVED" — no severity badge classes.
-    expect(screen.getByText(/CI SUCCESS/)).toBeTruthy();
-    expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+    expect(screen.getByText("open")).toBeTruthy();
+    expect(screen.getByText("approved")).toBeTruthy();
+    expect(screen.getByText("CI pass")).toBeTruthy();
+    // Categorical colour IS allowed on these state pills (Stage C).
+    for (const pill of screen.getAllByTestId("status-pill")) {
+      expect(pill.getAttribute("data-tone")).toBe("ok");
+    }
+  });
+
+  it("maps draft / changes-requested / CI-failure to the right pill tones", async () => {
+    unitPrsMock.mockResolvedValue(
+      response([
+        pr({
+          number: 200n,
+          title: "draft PR",
+          is_draft: true,
+          review_decision: "CHANGES_REQUESTED",
+          check_status: "FAILURE",
+        }),
+      ]),
+    );
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("draft PR")).toBeTruthy());
+    const tones = screen.getAllByTestId("status-pill").map((p) => p.getAttribute("data-tone"));
+    // draft → muted, changes requested → warn, CI fail → danger.
+    expect(tones).toEqual(["muted", "warn", "danger"]);
+    expect(screen.getByText("changes requested")).toBeTruthy();
+    expect(screen.getByText("CI fail")).toBeTruthy();
+  });
+
+  it("renders the EXTERNAL · github framing badge on the section header", async () => {
+    unitPrsMock.mockResolvedValue(response([pr()]));
+    render(<RPrsSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
+    expect(screen.getByTestId("external-source-badge")).toBeTruthy();
   });
 
   it("header count shows `N open` from the wire (no aggregation)", async () => {
@@ -161,7 +195,7 @@ describe("RPrsSection — per-artifact attention markers", () => {
     expect(marker.className).toContain("attn-high");
   });
 
-  it("keeps the row's own machine facts neutral — only the marker carries heat", async () => {
+  it("keeps the operator attention-heat OFF the row button (orthogonal to status pills)", async () => {
     unitPrsMock.mockResolvedValue(response([pr()]));
     render(
       <RPrsSection
@@ -172,8 +206,9 @@ describe("RPrsSection — per-artifact attention markers", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("PR title")).toBeTruthy());
-    // The row button (CI/branch facts) is a machine-stated projection — it
-    // must stay neutral; heat lives ONLY on the attention marker.
+    // Operator-authored attention heat (`attn-high`/`attn-low`) is a
+    // separate axis from the C2 categorical status pills — it lives ONLY on
+    // the attention marker, never on the row button.
     const rowButton = screen.getByText("PR title").closest("button");
     expect(rowButton?.className).not.toMatch(/attn-high|attn-low/);
   });

@@ -24,6 +24,10 @@ interface StatusBarProps {
   /** Mobile: show hamburger button instead of collapse arrow */
   isMobile?: boolean;
   onMobileMenuClick?: () => void;
+  /** Unit-tab strip (C1) rendered as a second row below the brand row in
+   *  the desktop (expanded) and mobile variants. Omitted in the collapsed
+   *  sidebar (too narrow). Composed by App from `useUnits`. */
+  unitTabs?: ReactNode;
 }
 
 // Top status bar with glassmorphism
@@ -38,69 +42,73 @@ export function StatusBar({
   onReturnToConsole,
   isMobile,
   onMobileMenuClick,
+  unitTabs,
 }: StatusBarProps) {
   if (isMobile) {
     return (
-      <div className="flex items-center justify-between border-b border-hairline px-3 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onMobileMenuClick}
-            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Open navigation"
-            aria-label="Open navigation menu"
-          >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            >
-              <title>Menu</title>
-              <path d="M3 5h14M3 10h14M3 15h14" />
-            </svg>
-          </button>
-          <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
-            tmai
-          </span>
-          {attentionCount > 0 && (
-            <span className="glow-amber rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning">
-              {attentionCount}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {onReturnToConsole && (
+      <div className="border-b border-hairline">
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onReturnToConsole}
+              onClick={onMobileMenuClick}
               className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-              title="Return to Producer console"
-              aria-label="Return to Producer console"
+              title="Open navigation"
+              aria-label="Open navigation menu"
             >
-              🏠
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <title>Menu</title>
+                <path d="M3 5h14M3 10h14M3 15h14" />
+              </svg>
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onSecurityClick}
-            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Config Audit"
-          >
-            🛡
-          </button>
-          <button
-            type="button"
-            onClick={onSettingsClick}
-            className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Settings"
-          >
-            ⚙
-          </button>
+            <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
+              tmai
+            </span>
+            {attentionCount > 0 && (
+              <span className="glow-amber rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning">
+                {attentionCount}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {onReturnToConsole && (
+              <button
+                type="button"
+                onClick={onReturnToConsole}
+                className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+                title="Return to Producer console"
+                aria-label="Return to Producer console"
+              >
+                🏠
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSecurityClick}
+              className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+              title="Config Audit"
+            >
+              🛡
+            </button>
+            <button
+              type="button"
+              onClick={onSettingsClick}
+              className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+              title="Settings"
+            >
+              ⚙
+            </button>
+          </div>
         </div>
+        {unitTabs && <div className="overflow-x-auto px-2 pb-2">{unitTabs}</div>}
       </div>
     );
   }
@@ -150,68 +158,71 @@ export function StatusBar({
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
-      <div className="flex items-center gap-2">
-        {onToggleCollapse && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Collapse sidebar"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
+    <div className="border-b border-hairline">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+              title="Collapse sidebar"
             >
-              <title>Collapse sidebar</title>
-              <path d="M10 3l-5 5 5 5" />
-            </svg>
-          </button>
-        )}
-        <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
-          tmai
-        </span>
-      </div>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground">{agentCount} agents</span>
-        {attentionCount > 0 && (
-          <span className="glow-amber rounded-full bg-warning/15 px-2.5 py-0.5 text-warning">
-            {attentionCount}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <title>Collapse sidebar</title>
+                <path d="M10 3l-5 5 5 5" />
+              </svg>
+            </button>
+          )}
+          <span className="bg-gradient-to-r from-[var(--brand-from)] to-[var(--brand-to)] bg-clip-text text-sm font-bold tracking-wide text-transparent">
+            tmai
           </span>
-        )}
-        {indicatorSlot}
-        {onReturnToConsole && (
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">{agentCount} agents</span>
+          {attentionCount > 0 && (
+            <span className="glow-amber rounded-full bg-warning/15 px-2.5 py-0.5 text-warning">
+              {attentionCount}
+            </span>
+          )}
+          {indicatorSlot}
+          {onReturnToConsole && (
+            <button
+              type="button"
+              onClick={onReturnToConsole}
+              className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+              title="Return to Producer console"
+              aria-label="Return to Producer console"
+            >
+              🏠
+            </button>
+          )}
           <button
             type="button"
-            onClick={onReturnToConsole}
+            onClick={onSecurityClick}
             className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Return to Producer console"
-            aria-label="Return to Producer console"
+            title="Config Audit"
           >
-            🏠
+            🛡
           </button>
-        )}
-        <button
-          type="button"
-          onClick={onSecurityClick}
-          className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-          title="Config Audit"
-        >
-          🛡
-        </button>
-        <button
-          type="button"
-          onClick={onSettingsClick}
-          className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-          title="Settings"
-        >
-          ⚙
-        </button>
+          <button
+            type="button"
+            onClick={onSettingsClick}
+            className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+            title="Settings"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
+      {unitTabs && <div className="overflow-x-auto px-2 pb-2">{unitTabs}</div>}
     </div>
   );
 }

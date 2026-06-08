@@ -1,10 +1,10 @@
 // 📋 Issues — R panel's raw issue inventory (R₁).
 //
 // Reuses `useUnitIssues` (one source — the issues twin of `useUnitPrs`).
-// Shows open issues grouped by repo across the whole unit, no
-// severity-color badges. R₁ intentionally carries NO appraisal-flavoured
-// badges (no `text-warning` / `text-success` / `text-destructive`) — an
-// issue's state / labels are facts, not triage. The unit-scoped endpoint
+// Shows open issues grouped by repo across the whole unit. Each row carries
+// a colour-coded lifecycle status pill (open / closed) from the wire
+// `state` (C2, Stage C aim-console convergence) — categorical state colour,
+// NOT severity appraisal (see `status-pills.tsx`). The unit-scoped endpoint
 // returns OPEN issues already, so there is no client-side `state` filter
 // (matching `RPrsSection`); the header count is the sum across repos.
 //
@@ -12,7 +12,7 @@
 // mirroring `RPrsSection`'s `onSelectIssue` / `selectedKey` /
 // `aria-current` exactly — the github.com link-out that used to live on
 // the issue number is gone; the issue's full content is reviewed in-tmai
-// with no round-trip. R₁ stays a pure inventory; the row is just a select.
+// with no round-trip.
 
 import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitIssues } from "@/hooks/useUnitIssues";
@@ -20,6 +20,7 @@ import type { IssueInfo, IssueSummaryWire, RepoIssuesWire } from "@/lib/api";
 import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedIssue, selectedIssueKey } from "./r-viewer/RIssueViewer";
 import { Section } from "./Section";
+import { ExternalSourceBadge, issueStatusPills, StatusPills } from "./status-pills";
 
 interface RIssuesSectionProps {
   unitName: string | null;
@@ -57,6 +58,7 @@ export function RIssuesSection({
       count={`${total} open`}
       expanded={expanded}
       onToggle={onToggle}
+      headerNote={<ExternalSourceBadge />}
     >
       <Body
         unitName={unitName}
@@ -207,9 +209,11 @@ function IssueRow({
           <span className="font-mono text-foreground">#{Number(issue.number)}</span>{" "}
           <span className="text-foreground">{issue.title}</span>
         </span>
-        <div className="text-[11px] text-subtle-foreground">
-          {issue.state.toLowerCase()}
-          {issue.labels.length > 0 && ` · ${issue.labels.map((l) => l.name).join(", ")}`}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle-foreground">
+          <StatusPills pills={issueStatusPills(issue)} />
+          {issue.labels.length > 0 && (
+            <span className="font-mono">{issue.labels.map((l) => l.name).join(", ")}</span>
+          )}
         </div>
       </button>
     </li>

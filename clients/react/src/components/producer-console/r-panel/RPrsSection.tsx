@@ -1,17 +1,22 @@
 // 🔀 PRs — R panel's raw PR inventory (R₁).
 //
-// Reuses `useUnitPrs` (one source). Shows open PRs grouped by repo, no
-// severity-color badges. Mechanical CI / review state is plain text:
-// R₁ intentionally carries NO appraisal-flavoured badges (no
-// `text-warning` / `text-success` / `text-destructive`) — see the
-// approach's "tmai は何を絶対しない" rules 2 and 4. The C-column
-// `UnitPrsSection` that once mirrored this inventory (and held the merge
-// action) is retired; R is now the single PR surface. The merge /
-// override / CI-rerun action layer lives in R₂ (`RPrViewer`), where the
-// soft-valve's severity accents are load-bearing affordances — distinct
-// from this plain inventory. A row click hands R₂ the PR plus the
-// repo-level `billing_dead` flag (which lives on `RepoPrsWire`, not on
-// the PR) so R₂ can offer the billing-dead override.
+// Reuses `useUnitPrs` (one source). Shows open PRs grouped by repo. Each
+// row carries colour-coded lifecycle / review / CI status pills (C2, Stage
+// C aim-console convergence) so the operator scans the inventory's shape
+// without opening every R₂ viewer (where these facts used to live only).
+//
+// Those pill colours are CATEGORICAL (which state), NOT appraisal — see
+// `status-pills.tsx`'s header for why this is consistent with the R₁
+// "tmai states facts, not appraisals" posture
+// (`2026-05-26-tmai-states-facts-not-appraisals`): the colour names a
+// lifecycle state, it never ranks urgency/importance. The operator's own
+// attention heat stays a separate axis (the `RowAttentionMarker`).
+//
+// The C-column `UnitPrsSection` that once mirrored this inventory (and held
+// the merge action) is retired; R is now the single PR surface. The merge /
+// override / CI-rerun action layer lives in R₂ (`RPrViewer`). A row click
+// hands R₂ the PR plus the repo-level `billing_dead` flag (which lives on
+// `RepoPrsWire`, not on the PR) so R₂ can offer the billing-dead override.
 
 import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
@@ -19,6 +24,7 @@ import type { PrSummaryWire, RepoPrsWire } from "@/lib/api";
 import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedPr, selectedPrKey } from "./r-viewer/RPrViewer";
 import { Section } from "./Section";
+import { ExternalSourceBadge, prStatusPills, StatusPills } from "./status-pills";
 
 interface RPrsSectionProps {
   unitName: string | null;
@@ -58,6 +64,7 @@ export function RPrsSection({
       count={`${total} open`}
       expanded={expanded}
       onToggle={onToggle}
+      headerNote={<ExternalSourceBadge />}
     >
       <Body
         unitName={unitName}
@@ -172,14 +179,12 @@ function PrRow({
   selected: boolean;
   attention?: AttentionControls;
 }) {
-  // Plain-text status — no severity-color CI / review badges. The
-  // operator can read "CI SUCCESS" / "CI FAILURE" identically; R is
-  // inventory, not triage.
-  //
-  // The whole row is a button that opens the PR in the R₂ viewer
-  // (#749) — there is NO github.com link-out anymore; the PR's full
-  // content is reviewed in-tmai. `aria-current` marks the row whose
-  // content is currently open in R₂ (a mechanical "open here" fact).
+  // Colour-coded status pills (C2) — categorical lifecycle / review / CI
+  // state, NOT severity appraisal (see `status-pills.tsx`). The whole row
+  // is a button that opens the PR in the R₂ viewer (#749) — there is NO
+  // github.com link-out anymore; the PR's full content is reviewed
+  // in-tmai. `aria-current` marks the row whose content is currently open
+  // in R₂ (a mechanical "open here" fact).
   return (
     <li className="flex items-start gap-1.5 leading-snug">
       {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
@@ -204,11 +209,11 @@ function PrRow({
           <span className="font-mono text-foreground">#{Number(pr.number)}</span>{" "}
           <span className="text-foreground">{pr.title}</span>
         </span>
-        <div className="text-[11px] text-subtle-foreground">
-          {pr.head_branch} → {pr.base_branch}
-          {pr.check_status !== null && ` · CI ${pr.check_status}`}
-          {pr.review_decision !== null && ` · ${pr.review_decision}`}
-          {pr.is_draft && " · draft"}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle-foreground">
+          <span className="font-mono">
+            {pr.head_branch} → {pr.base_branch}
+          </span>
+          <StatusPills pills={prStatusPills(pr)} />
         </div>
       </button>
     </li>

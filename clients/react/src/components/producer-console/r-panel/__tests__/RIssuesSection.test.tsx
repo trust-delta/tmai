@@ -2,10 +2,12 @@
 //
 // RIssuesSection — open issue inventory (R₁), unit-scoped and grouped by
 // repo (the issues twin of RPrsSection, fed by `useUnitIssues` →
-// `api.unitIssues`). R₁ is pure inventory: no severity-color badges, no
-// github.com link-out — the row is an in-tmai select that opens the R₂
-// viewer with the wire's `repo_path` + `repo_label`. The endpoint returns
-// open issues already, so the header count is just the sum across repos.
+// `api.unitIssues`). Each row carries a colour-coded lifecycle status pill
+// (open / closed) from the wire `state` (C2, Stage C) — categorical state
+// colour, NOT severity appraisal. No github.com link-out — the row is an
+// in-tmai select that opens the R₂ viewer with the wire's `repo_path` +
+// `repo_label`. The endpoint returns open issues already, so the header
+// count is just the sum across repos.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -119,15 +121,26 @@ describe("RIssuesSection", () => {
     expect(screen.getByText(/No issues/i)).toBeTruthy();
   });
 
-  it("uses no severity colors", async () => {
-    unitIssuesMock.mockResolvedValue(response([repo({ issues: [issue()] })]));
-    const { container } = render(
-      <RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />,
+  it("renders a colour-coded lifecycle status pill from the wire state (C2)", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([
+        repo({ issues: [issue(), issue({ number: 2n, title: "Closed", state: "closed" })] }),
+      ]),
     );
-    await waitFor(() => {
-      expect(screen.getByText("Issue 1")).toBeTruthy();
-    });
-    expect(container.innerHTML).not.toMatch(/text-warning|text-destructive|text-success/);
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Issue 1")).toBeTruthy());
+    // open issue → `open` pill (categorical-`ok`); closed → `closed` (muted).
+    const open = screen.getByText("open").closest("[data-testid='status-pill']");
+    expect(open?.getAttribute("data-tone")).toBe("ok");
+    const closed = screen.getByText("closed").closest("[data-testid='status-pill']");
+    expect(closed?.getAttribute("data-tone")).toBe("muted");
+  });
+
+  it("renders the EXTERNAL · github framing badge on the section header", async () => {
+    unitIssuesMock.mockResolvedValue(response([repo({ issues: [issue()] })]));
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Issue 1")).toBeTruthy());
+    expect(screen.getByTestId("external-source-badge")).toBeTruthy();
   });
 
   it("has NO github.com link-out — the row is an in-tmai select", async () => {

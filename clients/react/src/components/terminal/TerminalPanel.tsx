@@ -1,17 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAgents } from "@/hooks/useAgents";
 import { useAutoScrollPerAgent } from "@/hooks/useAutoScrollPerAgent";
 import { useTerminal } from "@/hooks/useTerminal";
 import "@xterm/xterm/css/xterm.css";
 import { AutoScrollToggleButton, ModeHint, ModeToggleButton } from "./controls";
-
-// Trim the canonical id (`<scheme>:<id>`) to `<scheme>:<first-8-chars>`
-// for the panel header. `provisional:abcd1234` is more useful than the
-// raw 8-char prefix of the whole string ("provisi…").
-function agentIdShort(agentId: string): string {
-  const colon = agentId.indexOf(":");
-  if (colon < 0) return agentId.slice(0, 8);
-  return `${agentId.slice(0, colon)}:${agentId.slice(colon + 1, colon + 9)}`;
-}
+import { TerminalSessionHeader } from "./TerminalSessionHeader";
 
 interface TerminalPanelProps {
   /** Canonical agent id (`<scheme>:<id>`). The terminal-plane stream
@@ -28,6 +21,16 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
   const [inputMode, setInputMode] = useState(true);
   const [hasFocus, setHasFocus] = useState(false);
   const [autoScroll, setAutoScroll] = useAutoScrollPerAgent(agentId);
+
+  // C3: resolve this session's snapshot from the shared SSE agent cache so
+  // the header can show model + cwd + ctx% (mirrors ProducerConversationHeader
+  // for worker sessions). `target` is the stable key across the
+  // provisional→canonical id re-key; fall back to matching `id` too.
+  const { agents } = useAgents();
+  const agent = useMemo(
+    () => agents.find((a) => a.target === agentId || a.id === agentId),
+    [agents, agentId],
+  );
 
   const { setAttachable } = useTerminal({ agentId, containerRef, autoScroll });
 
@@ -88,9 +91,7 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
           : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
       }`}
     >
-      <div className="flex items-center justify-between border-b border-hairline-strong px-3 py-1.5">
-        <span className="text-xs text-muted-foreground">{agentIdShort(agentId)}</span>
-      </div>
+      <TerminalSessionHeader agentId={agentId} agent={agent} />
       {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
       <div
         ref={containerRef}
