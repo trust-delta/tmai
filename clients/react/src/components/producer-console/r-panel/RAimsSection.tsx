@@ -1,60 +1,79 @@
-// ◎ Aims — R panel's aim-tree read view (graduation Stage 1-B, #780 + #782).
-// The read-view validated in throwaway prototype #778 (`RAimTreePrototype`),
-// graduated into a real R-panel section backed by the live
-// `GET /api/units/{unit}/aims` endpoint (tmai-core #500).
+// ◎ Aims — the destination Aim panel (Stage B convergence, #791). Rebuilt from
+// the read-only tidy-tree view into the attention-economical WRITE surface the
+// mock (`origin/mock/aim-ui-sample`) compose: a segmented Frontier⊥Tree panel
+// with a ledger strip, a per-repo collapsible navigator + branch rollups, an
+// overview ruler, and an inspector that carries drift + the interior `is[]`.
 //
-// ONE job, READ-ONLY. No write affordance (frontmatter edit / new node —
-// Stage 2), no drift-mark (Stage 3). The prototype's `CreateForm` /
-// `patchNode` / `commitCreate` / in-memory mutation are deliberately NOT
-// carried.
+// LOAD-BEARING THESIS (do not lose this): the panel does NOT render the whole
+// tree. Default = the owed FRONTIER worklist (drifted OR carrying a `claimed`
+// mark, drift-first, breadcrumbed); the full tree is a collapsed Tree
+// navigator with branch-level rollups + an overview ruler. This is the "scale
+// answer" — the panel stays a write surface, never a passive full-tree dump
+// (the approach's named failure-signal). Pure model in `./aim-tree`.
 //
-// CONTAINER (#782): a 2D spatial tree of long-text nodes does not fit the
-// narrow R-panel accordion column, and widening the column would fight the
-// console-rebuild "central conversation primary" constraint. So the section
-// itself stays a thin accordion entry — a compact `N aims · M roots` summary +
-// the glyph legend + an ⤢ "open" affordance — and the actual tree lives in a
-// DEDICATED FULL-WINDOW OVERLAY (`AimTreeOverlay`, mounted via `createPortal`,
-// dismissible by ✕ and Esc). The overlay uses the prototype's SIDE-BY-SIDE
-// 2-pane layout (wide canvas + side detail), with the room to let the variable-
-// height tidy-tree (`computeLayout`, the #782 overlap fix) breathe.
+// Design pins honoured:
+//   #1 mark-only — the `is[]` marks (confirmed / claimed) render as the author
+//      wrote them; we never re-judge / re-order / appraise (only the wire's
+//      `kind` drives styling).
+//   #2 done+drift distinct — a `state: done` node that is ALSO drifted gets the
+//      `done-drift` tone (a done ✓ AND a drift ⚠ badge), surfaced in its own
+//      Frontier cluster + the Tree, never suppressed or folded into plain owed.
+//   #3 drift mirrors the engine — after an ought edit we REFETCH the forest and
+//      render whatever drift the wire reports; there is NO client-side
+//      transitive cascade (the engine is the single source of truth).
 //
-// The view machinery carried intact from the prototype: the variable-height
-// tidy-tree layout, the blast-radius highlight (select a node → light its whole
-// descendant subtree, the set that would become drift-possible if that aim
-// changed), `depends_on` drawn as a visually distinct dashed cross-edge (NOT
-// part of any blast radius), the per-node state glyph, and the body-on-select
-// detail pane. The pure layout / traversal lives in `./aim-tree` (unit-tested
-// separately); this file is the React rendering.
+// Theme: the mock is the STRUCTURE/BEHAVIOUR reference, not its raw CSS. The
+// panel speaks the app's design tokens — drift = `warning`, claimed = `warning`
+// hollow (◌ vs ⚠ + gutter weight distinguish the two owed kinds), confirmed /
+// done = `success` (calm), root / selection = `info` / `primary`.
 //
-// `body` is rendered as raw markdown, read-only: line breaks preserved,
-// monospace so inline refs / markers stay legible. There is intentionally no
-// `[confirmed]` / `[claimed]` honesty-tag parser — those markers are free-form
-// prose in the wire body, not a structured field (the prototype's `BodyLine`
-// was a fixture invention).
+// UI-only state: the mode (Frontier/Tree) persists in `ui-prefs` (browser-side,
+// not tmai-core config). The expanded-branch set + the search filter stay
+// component-local — a persisted filter would silently hide rows on next open,
+// and the branch set re-seeds to the mock's default (repos + roots open) each
+// session.
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useUnitAims } from "@/hooks/useUnitAims";
-import { type AimState, type AimWire, api } from "@/lib/api";
+import { type AimsResponse, api } from "@/lib/api";
+import { useUIPref } from "@/lib/ui-prefs-provider";
+import type { AimDriftWire } from "@/types/generated/AimDriftWire";
+import type { AimInteriorKind } from "@/types/generated/AimInteriorKind";
+import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
+import type { AimState } from "@/types/generated/AimState";
+import type { AimWire } from "@/types/generated/AimWire";
+import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 import {
-  AIM_GLYPH,
   AIM_STATE_LABEL,
-  type AimLayout,
+  type AimTone,
+  aimTone,
+  ancestry,
+  breadcrumbText,
   buildChildren,
-  computeLayout,
-  dependsEdgePath,
+  bySlugMap,
   descendantsOf,
+  doneDriftedRows,
   findRoots,
   flattenRepos,
-  NODE_W,
-  type NodePos,
-  parentEdgePath,
+  frontierRows,
+  type LedgerCounts,
+  ledgerCounts,
+  type RollupStats,
+  type RulerTick,
+  repoForests,
+  repoStats,
+  rulerOrder,
+  subtreeStats,
 } from "./aim-tree";
 import { Section } from "./Section";
 
 // Lifecycle states the operator can set, in glyph-legend order. Drives the
 // edit + create `state` selects. `AimState` is the generated wire enum.
 const AIM_STATES: readonly AimState[] = ["open", "done", "dead"];
+
+// Stable identity key for a repo group (root is unique per unit).
+const repoKey = (r: RepoAimsWire): string => `repo:${r.repo_root}`;
 
 // Client-side slug validation for the create form — a fast-feedback MIRROR of
 // the backend's `validate_new_aim_slug` (tmai-core #501): non-empty, lowercase
@@ -84,6 +103,56 @@ function writeErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// ── tone → presentation (mark-only: only the wire-derived tone drives this) ──
+
+const TONE_GLYPH: Record<AimTone, string> = {
+  "done-drift": "✓",
+  done: "✓",
+  dead: "⊘",
+  drift: "⚠",
+  claimed: "◌",
+  confirmed: "○",
+  root: "○",
+  neutral: "○",
+};
+
+const TONE_GLYPH_CLASS: Record<AimTone, string> = {
+  "done-drift": "text-success",
+  done: "text-success",
+  dead: "text-subtle-foreground",
+  drift: "text-warning",
+  claimed: "text-warning",
+  confirmed: "text-subtle-foreground",
+  root: "text-info",
+  neutral: "text-subtle-foreground",
+};
+
+// Left gutter colour. done-drift uses the warning gutter (surfacing the owed
+// drift) even though its glyph is the done ✓ — together with the trailing ⚠
+// badge that is what makes done+drift read DISTINCTLY from plain done (pin #2).
+const TONE_GUTTER: Record<AimTone, string> = {
+  "done-drift": "bg-warning",
+  done: "bg-success/40",
+  dead: "bg-subtle-foreground/40",
+  drift: "bg-warning",
+  claimed: "bg-warning/55",
+  confirmed: "bg-success/30",
+  root: "bg-info/60",
+  neutral: "bg-hairline-strong",
+};
+
+// Ought-text styling per tone — calm for resolved/abandoned, lit for drift.
+const TONE_OUGHT_CLASS: Record<AimTone, string> = {
+  "done-drift": "text-warning/90",
+  done: "text-subtle-foreground",
+  dead: "text-subtle-foreground line-through",
+  drift: "text-warning/90",
+  claimed: "text-foreground",
+  confirmed: "text-muted-foreground",
+  root: "text-foreground",
+  neutral: "text-foreground",
+};
+
 interface RAimsSectionProps {
   unitName: string | null;
   expanded: boolean;
@@ -92,7 +161,6 @@ interface RAimsSectionProps {
 
 export function RAimsSection({ unitName, expanded, onToggle }: RAimsSectionProps) {
   const { data, loading, error, refresh } = useUnitAims(unitName);
-  // Flattened node set drives both the header count and the tree body.
   const nodes = useMemo(() => flattenRepos(data), [data]);
 
   return (
@@ -104,75 +172,107 @@ export function RAimsSection({ unitName, expanded, onToggle }: RAimsSectionProps
       expanded={expanded}
       onToggle={onToggle}
     >
-      <Body unitName={unitName} nodes={nodes} loading={loading} error={error} refresh={refresh} />
+      <Body
+        unitName={unitName}
+        data={data}
+        nodes={nodes}
+        loading={loading}
+        error={error}
+        refresh={refresh}
+      />
     </Section>
   );
 }
 
 interface BodyProps {
   unitName: string | null;
+  data: AimsResponse | null;
   nodes: AimWire[];
   loading: boolean;
   error: Error | null;
   refresh: () => void;
 }
 
-function Body({ unitName, nodes, loading, error, refresh }: BodyProps) {
+function Body({ unitName, data, nodes, loading, error, refresh }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see aims.</p>;
   }
   if (error !== null) {
     return <p className="text-muted-foreground">Failed to load aims: {error.message}</p>;
   }
-  // Unlike the read-only Stage 1-B, an empty tree is still actionable: the
-  // operator can author the first node. So the overlay (with its create
-  // affordance) is reachable even at zero aims — the thin entry shows the
-  // count and the ⤢ open, and the loading state only gates the very first
-  // fetch (nodes empty AND loading).
+  // An empty tree is still actionable (the operator can author the first node),
+  // so the panel is reachable at zero aims; only the very first fetch gates.
   if (nodes.length === 0 && loading) {
     return <p className="text-subtle-foreground">Loading…</p>;
   }
-  return <AimsEntry unitName={unitName} nodes={nodes} refresh={refresh} />;
+  return <AimsEntry unitName={unitName} data={data} nodes={nodes} refresh={refresh} />;
 }
 
-// The thin R-panel entry: a compact summary + the glyph legend + an ⤢ open
-// affordance. Clicking open launches the maximized overlay; the open-state is
-// local and the overlay is portalled, so the section stays self-contained and
+// The thin R-panel entry: a compact summary with an at-a-glance owed badge +
+// an ⤢ open affordance. Opening launches the maximized panel; the open-state
+// is local and the panel is portalled, so the section stays self-contained and
 // the narrow column is never widened.
 function AimsEntry({
   unitName,
+  data,
   nodes,
   refresh,
 }: {
   unitName: string;
+  data: AimsResponse | null;
   nodes: AimWire[];
   refresh: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const rootCount = useMemo(() => findRoots(nodes).length, [nodes]);
+  const repoCount = useMemo(() => repoForests(data).length, [data]);
+  const ledger = useMemo(() => ledgerCounts(nodes), [nodes]);
+  const owed = ledger.drift + ledger.claimed;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-subtle-foreground">
-          {nodes.length} aim{nodes.length === 1 ? "" : "s"} ·{" "}
-          <span className="text-foreground">{rootCount}</span> root{rootCount === 1 ? "" : "s"}
+          {nodes.length} aim{nodes.length === 1 ? "" : "s"}
+          {repoCount > 0 && (
+            <>
+              {" · "}
+              <span className="text-foreground">{repoCount}</span> repo{repoCount === 1 ? "" : "s"}
+            </>
+          )}
         </span>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          title="Open aim-tree (maximized)"
-          aria-label="Open aim-tree"
+          title="Open the Aim panel (maximized)"
+          aria-label="Open aim panel"
           className="flex shrink-0 items-center gap-1 rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           <span aria-hidden="true">⤢</span> Open
         </button>
       </div>
-      <GlyphLegend />
+      {/* At-a-glance owed badge so the entry surfaces attention without opening. */}
+      {owed > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          {ledger.drift > 0 && (
+            <span className="flex items-center gap-1 text-warning">
+              <span aria-hidden="true">⚠</span>
+              {ledger.drift} drift
+            </span>
+          )}
+          {ledger.claimed > 0 && (
+            <span className="flex items-center gap-1 text-warning/80">
+              <span aria-hidden="true">◌</span>
+              {ledger.claimed} claimed
+            </span>
+          )}
+        </div>
+      ) : (
+        <span className="text-[11px] text-subtle-foreground">calm — nothing owed</span>
+      )}
       {open && (
-        <AimTreeOverlay
+        <AimPanelOverlay
           unitName={unitName}
-          nodes={nodes}
+          data={data}
           refresh={refresh}
           onClose={() => setOpen(false)}
         />
@@ -181,36 +281,45 @@ function AimsEntry({
   );
 }
 
-// The maximized aim-tree overlay — a full-window surface modelled on
-// `HelpOverlay` / `HandoffRitualOverlay`, mounted via `createPortal` so it
-// escapes the R-panel column's clipping/stacking. Dismissible by ✕ and Esc
-// (the Esc convention reused from `AttentionMarker` / `ConfirmDialog`).
-// Layout: the prototype's side-by-side 2-pane — a wide scrollable tree canvas
-// on the left, the body-on-select detail pane on the right.
-function AimTreeOverlay({
+// What the create flow is creating — a root in `repoRoot`, optionally under
+// `initialParent`. (`repoRoot` scopes the parent options / slug uniqueness; the
+// #501 create endpoint resolves the write repo from the unit + parent, so it
+// is not on the wire — see the friction note re: a per-repo create wire gap.)
+interface Creating {
+  repoRoot: string;
+  initialParent: string;
+}
+
+// The maximized Aim panel — a full-window surface (portalled past the R-panel
+// column's clipping, dismissible by ✕ / Esc) holding the destination layout.
+function AimPanelOverlay({
   unitName,
-  nodes,
+  data,
   refresh,
   onClose,
 }: {
   unitName: string;
-  nodes: AimWire[];
+  data: AimsResponse | null;
   refresh: () => void;
   onClose: () => void;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  // Stage 2-B: the create form. Mutually exclusive with the detail pane (both
-  // live in the right aside) — opening it deselects so the operator authors a
-  // fresh node rather than reading one.
-  const [creating, setCreating] = useState(false);
-  const childrenOf = useMemo(() => buildChildren(nodes), [nodes]);
-  const layout = useMemo(() => computeLayout(nodes), [nodes]);
-  const rootCount = layout.roots.length;
-  const allSlugs = useMemo(() => nodes.map((n) => n.slug), [nodes]);
+  const repos = useMemo(() => repoForests(data), [data]);
+  const allNodes = useMemo(() => flattenRepos(data), [data]);
+  const ledger = useMemo(() => ledgerCounts(allNodes), [allNodes]);
+  const ticks = useMemo(() => rulerOrder(repos), [repos]);
 
-  // Esc dismisses the whole overlay (the detail pane's ✕ / the legend's clear
-  // handle deselect). Listener is document-level so it fires regardless of
-  // focus, mirroring AttentionMarker's popover.
+  const [mode, setMode] = useUIPref("aimMode");
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [creating, setCreating] = useState<Creating | null>(null);
+
+  // Branch-expansion state, seeded once to the mock's default (every repo group
+  // + every root open; deeper branches collapsed behind a rollup). Survives
+  // polls; new nodes get expanded explicitly on create / reveal.
+  const [expanded, setExpanded] = useState<Set<string>>(() => seedExpanded(repos));
+
+  // Esc dismisses the whole panel. Document-level so it fires regardless of
+  // focus (mirrors the prior overlay / AttentionMarker popover).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -219,399 +328,883 @@ function AimTreeOverlay({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  // Resolve the selection against the CURRENT node set: if a poll / unit
-  // change dropped the selected slug, the detail pane and highlight fall back
-  // to "nothing selected" rather than dangling on a vanished node.
-  const selectedNode = useMemo(
-    () => nodes.find((n) => n.slug === selected) ?? null,
-    [nodes, selected],
+  // Resolve the selection against the CURRENT forest, with its repo context, so
+  // a poll / unit change that drops the slug falls back to "nothing selected"
+  // rather than dangling on a vanished node.
+  const sel = useMemo(() => resolveSelection(selected, repos), [selected, repos]);
+
+  const toggleExpanded = useCallback((key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Reveal a node in Tree mode: open its repo group + every ancestor, switch to
+  // Tree, select it. (The ruler / cross-mode jumps land here.) When the slug is
+  // not yet in the loaded forest — e.g. a node just created, before the refetch
+  // lands — we still switch to Tree and select it; the selection resolves once
+  // the refreshed wire arrives (no ancestor-expansion then, since the chain
+  // isn't known yet).
+  const reveal = useCallback(
+    (slug: string) => {
+      const found = resolveSelection(slug, repos);
+      if (found) {
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(repoKey(found.repo));
+          for (const a of ancestry(slug, found.bySlug)) next.add(a.slug);
+          return next;
+        });
+      }
+      setMode("tree");
+      setSelected(slug);
+    },
+    [repos, setMode],
   );
 
-  // Highlight set = the selected node plus its whole descendant subtree.
-  const blast = useMemo(
-    () =>
-      selectedNode === null ? new Set<string>() : descendantsOf(selectedNode.slug, childrenOf),
-    [selectedNode, childrenOf],
-  );
-  const highlighted = useMemo(() => {
-    if (selectedNode === null) return new Set<string>();
-    return new Set<string>([selectedNode.slug, ...blast]);
-  }, [selectedNode, blast]);
-  const hasSelection = selectedNode !== null;
+  const select = useCallback((slug: string) => {
+    setCreating(null);
+    setSelected(slug);
+  }, []);
+
+  const openCreate = useCallback((repoRoot: string, initialParent: string) => {
+    setSelected(null);
+    setCreating({ repoRoot, initialParent });
+  }, []);
+
+  const primaryRepo = repos.find((r) => r.primary) ?? repos[0] ?? null;
 
   return createPortal(
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Aim-tree"
+      aria-label="Aim panel"
       className="fixed inset-0 z-50 flex flex-col bg-background"
     >
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-3">
         <div className="flex min-w-0 items-baseline gap-3">
-          <h2 className="text-sm font-semibold text-foreground">◎ Aims · aim-tree</h2>
-          <span className="text-[11px] text-subtle-foreground">
-            {nodes.length} aim{nodes.length === 1 ? "" : "s"} · {rootCount} root
-            {rootCount === 1 ? "" : "s"}
+          <h2 className="text-sm font-semibold text-foreground">◎ Aim</h2>
+          <span className="font-mono text-[11px] text-subtle-foreground">
+            {allNodes.length} aim{allNodes.length === 1 ? "" : "s"} · {repos.length} repo
+            {repos.length === 1 ? "" : "s"}
           </span>
-          <SelectionStatus
-            selectedSlug={selectedNode?.slug ?? null}
-            blastCount={blast.size}
-            onClear={() => setSelected(null)}
-          />
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Stage 2-B create affordance. Opening the form clears any selection
-              so the right pane shows the form, not a node's body. */}
-          <button
-            type="button"
-            onClick={() => {
-              setSelected(null);
-              setCreating(true);
-            }}
-            title="Create a new aim node"
-            aria-label="New aim node"
-            className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+          <span
+            className="rounded border border-info/40 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-info"
+            title="The owed frontier is the panel's premise — not a full-tree dump"
           >
-            <span aria-hidden="true">＋</span> New node
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close aim-tree (Esc)"
-            aria-label="Close aim-tree"
-            className="rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-          >
-            ✕
-          </button>
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        {/* Left: the tree canvas. The tidy-tree lays out horizontally by depth
-            and variable-height vertically (the #782 overlap fix); SVG edges sit
-            underneath, clickable node boxes on top. The wide window lets it
-            overflow into this scroller without cramping. */}
-        <div className="min-w-0 flex-1 overflow-auto p-4">
-          <div className="relative" style={{ width: layout.width, height: layout.height }}>
-            <Edges
-              nodes={nodes}
-              layout={layout}
-              highlighted={highlighted}
-              hasSelection={hasSelection}
-            />
-            {nodes.map((node) => {
-              const pos = layout.positions.get(node.slug);
-              if (!pos) return null;
-              const lit = highlighted.has(node.slug);
-              return (
-                <NodeBox
-                  key={node.slug}
-                  node={node}
-                  pos={pos}
-                  isSelected={selectedNode?.slug === node.slug}
-                  lit={lit}
-                  dimmed={hasSelection && !lit}
-                  onSelect={() => setSelected(node.slug)}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: the create form (Stage 2-B), the body-on-select detail pane
-            (with the inline edit affordance), or the click hint — in that
-            precedence. */}
-        <aside className="flex w-[360px] shrink-0 flex-col overflow-y-auto border-l border-hairline">
-          {creating ? (
-            <CreateForm
-              unitName={unitName}
-              existingSlugs={allSlugs}
-              refresh={refresh}
-              onClose={() => setCreating(false)}
-              onCreated={(slug) => {
-                setCreating(false);
-                setSelected(slug);
-              }}
-            />
-          ) : selectedNode !== null ? (
-            <DetailPane
-              key={selectedNode.slug}
-              unitName={unitName}
-              node={selectedNode}
-              blastCount={blast.size}
-              parentOptions={allSlugs}
-              forbiddenParents={highlighted}
-              refresh={refresh}
-              onClose={() => setSelected(null)}
-            />
-          ) : (
-            <p className="p-6 text-xs text-subtle-foreground">
-              Click a node to read its body and light its{" "}
-              <span className="text-foreground">blast radius</span> — the descendant subtree that
-              would become drift-possible if that aim changed. Or{" "}
-              <span className="text-foreground">＋ New node</span> to author one.
-            </p>
-          )}
-        </aside>
-      </div>
-
-      <footer className="shrink-0 border-t border-hairline px-4 py-2">
-        <GlyphLegend />
-      </footer>
-    </div>,
-    document.body,
-  );
-}
-
-// The static glyph key — open / done / dead state glyphs + the dashed
-// `depends_on` swatch. Shown in both the thin entry and the overlay footer.
-function GlyphLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-subtle-foreground">
-      <span className="flex items-center gap-1">
-        <span className="font-mono text-foreground">{AIM_GLYPH.open}</span> open
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="font-mono text-foreground">{AIM_GLYPH.done}</span> done
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="font-mono text-foreground">{AIM_GLYPH.dead}</span> dead
-      </span>
-      <span className="flex items-center gap-1">
-        <svg width="22" height="8" aria-hidden="true">
-          <title>depends_on</title>
-          <line
-            x1="0"
-            y1="4"
-            x2="22"
-            y2="4"
-            stroke="var(--color-info)"
-            strokeWidth="1.5"
-            strokeDasharray="4 3"
-          />
-        </svg>
-        depends_on
-      </span>
-    </div>
-  );
-}
-
-// The selection status — blast-radius count + a clear button when a node is
-// selected, or a hint to click otherwise. Lives in the overlay header.
-function SelectionStatus({
-  selectedSlug,
-  blastCount,
-  onClear,
-}: {
-  selectedSlug: string | null;
-  blastCount: number;
-  onClear: () => void;
-}) {
-  if (selectedSlug === null) {
-    return (
-      <span className="text-[11px] text-subtle-foreground">
-        click a node to light its blast radius
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-      <span>
-        blast radius: <span className="text-foreground">{blastCount}</span> descendant
-        {blastCount === 1 ? "" : "s"}
-      </span>
-      <button
-        type="button"
-        onClick={onClear}
-        className="rounded border border-hairline px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-      >
-        clear
-      </button>
-    </span>
-  );
-}
-
-function Edges({
-  nodes,
-  layout,
-  highlighted,
-  hasSelection,
-}: {
-  nodes: readonly AimWire[];
-  layout: AimLayout;
-  highlighted: Set<string>;
-  hasSelection: boolean;
-}) {
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0"
-      width={layout.width}
-      height={layout.height}
-      aria-hidden="true"
-    >
-      <defs>
-        <marker
-          id="aim-depends-arrow"
-          viewBox="0 0 8 8"
-          refX="7"
-          refY="4"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto-start-reverse"
-        >
-          <path d="M0 0 L8 4 L0 8 z" fill="var(--color-info)" />
-        </marker>
-      </defs>
-
-      {/* Solid parent=means edges. An edge is "in the blast radius" when both
-          endpoints are highlighted — then it shares the accent. */}
-      {nodes.map((node) => {
-        if (node.parent === null) return null;
-        const parent = layout.positions.get(node.parent);
-        const child = layout.positions.get(node.slug);
-        if (!parent || !child) return null;
-        const lit = highlighted.has(node.parent) && highlighted.has(node.slug);
-        const dimmed = hasSelection && !lit;
-        return (
-          <path
-            key={`p-${node.slug}`}
-            d={parentEdgePath(parent, child)}
-            fill="none"
-            stroke={lit ? "var(--color-primary)" : "var(--color-hairline-strong)"}
-            strokeWidth={lit ? 2 : 1.5}
-            opacity={dimmed ? 0.2 : 1}
-          />
-        );
-      })}
-
-      {/* `depends_on` cross-edges (an ARRAY per node on the wire): dashed,
-          info-hued, arrow-headed — deliberately NOT part of any blast radius
-          (kept constant). `serves` / `related` are intentionally NOT drawn
-          (listed as slug text in the detail pane instead). */}
-      {nodes.flatMap((node) => {
-        const src = layout.positions.get(node.slug);
-        if (!src) return [];
-        return node.depends_on.flatMap((targetSlug) => {
-          const tgt = layout.positions.get(targetSlug);
-          if (!tgt) return [];
-          return [
-            <path
-              key={`d-${node.slug}-${targetSlug}`}
-              d={dependsEdgePath(src, tgt)}
-              fill="none"
-              stroke="var(--color-info)"
-              strokeWidth="1.5"
-              strokeDasharray="4 3"
-              markerEnd="url(#aim-depends-arrow)"
-              opacity={hasSelection ? 0.55 : 0.9}
-            />,
-          ];
-        });
-      })}
-    </svg>
-  );
-}
-
-function NodeBox({
-  node,
-  pos,
-  isSelected,
-  lit,
-  dimmed,
-  onSelect,
-}: {
-  node: AimWire;
-  pos: NodePos;
-  isSelected: boolean;
-  lit: boolean;
-  dimmed: boolean;
-  onSelect: () => void;
-}) {
-  // Tier the styling: the selected node gets a solid primary ring; the rest of
-  // its blast radius gets a softer primary tint; everything else dims out when
-  // a selection is active so the highlighted region's size reads at a glance.
-  const tone = isSelected
-    ? "border-primary bg-primary/15 ring-1 ring-primary"
-    : lit
-      ? "border-primary/40 bg-primary/10"
-      : "border-hairline bg-surface";
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={isSelected}
-      title={`${node.slug} · ${AIM_STATE_LABEL[node.state]}`}
-      className={`absolute flex items-start gap-1.5 rounded border px-2 py-1.5 text-left transition-all ${tone} ${
-        dimmed ? "opacity-35" : "opacity-100"
-      }`}
-      style={{ left: pos.x, top: pos.cy, width: NODE_W, transform: "translateY(-50%)" }}
-    >
-      <span aria-hidden="true" className="pt-px font-mono text-sm leading-none text-foreground">
-        {AIM_GLYPH[node.state]}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs leading-snug text-foreground">{node.aim}</span>
-        <span className="mt-0.5 block truncate font-mono text-[10px] text-subtle-foreground">
-          {node.slug}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-// Body-on-select detail pane. Stage 2-B adds an inline frontmatter EDIT
-// affordance (aim / parent / state only — cross-edges + body are preserved
-// server-side). When not editing, the frontmatter facts show as a plain
-// definition list (cross-edges as slug text) with an ✎ Edit button; the body
-// always renders raw, read-only (editing it is out of scope — the Producer
-// writes the body via normal file editing).
-function DetailPane({
-  unitName,
-  node,
-  blastCount,
-  parentOptions,
-  forbiddenParents,
-  refresh,
-  onClose,
-}: {
-  unitName: string;
-  node: AimWire;
-  blastCount: number;
-  parentOptions: readonly string[];
-  forbiddenParents: ReadonlySet<string>;
-  refresh: () => void;
-  onClose: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-
-  return (
-    <div data-testid="aim-detail" className="space-y-3 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <span className="flex items-baseline gap-1.5">
-            <span aria-hidden="true" className="font-mono text-foreground">
-              {AIM_GLYPH[node.state]}
-            </span>
-            <span className="text-foreground">{node.aim}</span>
-          </span>
-          <span className="mt-0.5 block font-mono text-[10px] text-subtle-foreground">
-            {node.slug}
+            owed-frontier
           </span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          title="Close detail"
-          aria-label="Close detail"
+          title="Close the Aim panel (Esc)"
+          aria-label="Close aim panel"
+          className="rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+        >
+          ✕
+        </button>
+      </header>
+
+      <Ledger counts={ledger} />
+
+      <Controls
+        mode={mode}
+        onMode={setMode}
+        query={query}
+        onQuery={setQuery}
+        onNew={() => primaryRepo && openCreate(primaryRepo.repo_root, "")}
+        canCreate={primaryRepo !== null}
+      />
+
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-auto">
+          {mode === "frontier" ? (
+            <FrontierList
+              repos={repos}
+              query={query}
+              selected={sel?.node.slug ?? null}
+              onSelect={select}
+            />
+          ) : (
+            <TreeNavigator
+              repos={repos}
+              query={query}
+              expanded={expanded}
+              selected={sel?.node.slug ?? null}
+              onToggleExpanded={toggleExpanded}
+              onSelect={select}
+              onAddChild={(repoRoot, parent) => openCreate(repoRoot, parent)}
+              onAddRoot={(repoRoot) => openCreate(repoRoot, "")}
+            />
+          )}
+        </div>
+        <OverviewRuler ticks={ticks} onReveal={reveal} />
+      </div>
+
+      {creating !== null ? (
+        <CreatePanel
+          unitName={unitName}
+          creating={creating}
+          repos={repos}
+          refresh={refresh}
+          onClose={() => setCreating(null)}
+          onCreated={(slug) => {
+            setCreating(null);
+            reveal(slug);
+          }}
+        />
+      ) : sel !== null ? (
+        <Inspector
+          key={sel.node.slug}
+          unitName={unitName}
+          sel={sel}
+          refresh={refresh}
+          onSelect={select}
+          onAddChild={(parent) => openCreate(sel.repo.repo_root, parent)}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
+    </div>,
+    document.body,
+  );
+}
+
+// Default branch-expansion: every repo group + every root open.
+function seedExpanded(repos: readonly RepoAimsWire[]): Set<string> {
+  const s = new Set<string>();
+  for (const r of repos) {
+    s.add(repoKey(r));
+    for (const root of findRoots(r.aims)) s.add(root.slug);
+  }
+  return s;
+}
+
+// A resolved selection: the node + the repo + the repo's index structures, so
+// the inspector / reveal can walk ancestry and forbid re-parent cycles without
+// re-deriving them.
+interface Selection {
+  node: AimWire;
+  repo: RepoAimsWire;
+  bySlug: Map<string, AimWire>;
+  childrenOf: Map<string, AimWire[]>;
+}
+
+function resolveSelection(slug: string | null, repos: readonly RepoAimsWire[]): Selection | null {
+  if (slug === null) return null;
+  for (const repo of repos) {
+    const node = repo.aims.find((n) => n.slug === slug);
+    if (node) {
+      return {
+        node,
+        repo,
+        bySlug: bySlugMap(repo.aims),
+        childrenOf: buildChildren(repo.aims),
+      };
+    }
+  }
+  return null;
+}
+
+// ── Ledger strip ──────────────────────────────────────────────────────
+
+function Ledger({ counts }: { counts: LedgerCounts }) {
+  const owed = counts.drift + counts.claimed;
+  const total = owed + counts.confirmed;
+  const owedPct = total === 0 ? 0 : Math.round((100 * owed) / total);
+  const confirmedPct = total === 0 ? 0 : 100 - owedPct;
+
+  return (
+    <div
+      data-testid="aim-ledger"
+      className="flex shrink-0 items-center gap-4 border-b border-hairline px-4 py-2"
+    >
+      <span className="flex items-center gap-1.5 font-mono text-[11px] text-warning">
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-warning" />
+        <b className="font-semibold">{counts.drift}</b> drift
+      </span>
+      <span className="flex items-center gap-1.5 font-mono text-[11px] text-warning/80">
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] border border-warning/80" />
+        <b className="font-semibold">{counts.claimed}</b> claimed
+      </span>
+      <span className="flex items-center gap-1.5 font-mono text-[11px] text-subtle-foreground">
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-success/70" />
+        <b className="font-semibold text-muted-foreground">{counts.confirmed}</b> confirmed
+      </span>
+      <div className="flex h-1.5 flex-1 overflow-hidden rounded-full border border-hairline">
+        <div className="bg-warning" style={{ width: `${owedPct}%` }} />
+        <div className="bg-success/40" style={{ width: `${confirmedPct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Controls (mode + search + new) ────────────────────────────────────
+
+function Controls({
+  mode,
+  onMode,
+  query,
+  onQuery,
+  onNew,
+  canCreate,
+}: {
+  mode: "frontier" | "tree";
+  onMode: (m: "frontier" | "tree") => void;
+  query: string;
+  onQuery: (q: string) => void;
+  onNew: () => void;
+  canCreate: boolean;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-4 py-2">
+      <div className="flex overflow-hidden rounded border border-hairline">
+        <button
+          type="button"
+          aria-pressed={mode === "frontier"}
+          onClick={() => onMode("frontier")}
+          className={`px-3 py-1 text-[11px] transition-colors ${
+            mode === "frontier"
+              ? "bg-surface-strong text-warning"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Frontier ⚠
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === "tree"}
+          onClick={() => onMode("tree")}
+          className={`border-l border-hairline px-3 py-1 text-[11px] transition-colors ${
+            mode === "tree"
+              ? "bg-surface-strong text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Tree
+        </button>
+      </div>
+      <div className="flex flex-1 items-center gap-2 rounded border border-hairline px-2 py-1">
+        <span aria-hidden="true" className="text-subtle-foreground">
+          ⌕
+        </span>
+        <input
+          aria-label="Filter aims"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="filter by slug / ought…"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground outline-none placeholder:text-subtle-foreground"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onNew}
+        disabled={!canCreate}
+        aria-label="New aim"
+        className="shrink-0 rounded border border-info/40 bg-info/10 px-2 py-1 text-[11px] text-info transition-colors hover:bg-info/20 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ＋ aim
+      </button>
+    </div>
+  );
+}
+
+// ── Frontier mode — the owed worklist ─────────────────────────────────
+
+function FrontierList({
+  repos,
+  query,
+  selected,
+  onSelect,
+}: {
+  repos: readonly RepoAimsWire[];
+  query: string;
+  selected: string | null;
+  onSelect: (slug: string) => void;
+}) {
+  const q = query.trim().toLowerCase();
+  const matches = (n: AimWire) =>
+    q === "" || n.slug.toLowerCase().includes(q) || n.aim.toLowerCase().includes(q);
+
+  const sections = repos
+    .map((repo) => {
+      const bySlug = bySlugMap(repo.aims);
+      const owed = frontierRows(repo.aims).filter(matches);
+      const doneDrift = doneDriftedRows(repo.aims).filter(matches);
+      return { repo, bySlug, owed, doneDrift };
+    })
+    .filter((s) => s.owed.length > 0 || s.doneDrift.length > 0);
+
+  if (sections.length === 0) {
+    return (
+      <p className="px-4 py-6 text-[11px] text-subtle-foreground">
+        {q === "" ? "Nothing owed — the forest is calm." : "No owed aim matches the filter."}
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      {sections.map(({ repo, bySlug, owed, doneDrift }) => {
+        const driftN = owed.filter((n) => aimTone(n) === "drift").length;
+        const claimedN = owed.length - driftN;
+        return (
+          <div key={repo.repo_root}>
+            <RepoBanner repo={repo} drift={driftN} claimed={claimedN} />
+            {owed.map((n) => (
+              <AimRow
+                key={n.slug}
+                node={n}
+                selected={selected === n.slug}
+                crumb={breadcrumbText(n.slug, bySlug) || "root"}
+                onSelect={() => onSelect(n.slug)}
+              />
+            ))}
+            {doneDrift.length > 0 && (
+              <>
+                {/* Pin #2: done-and-drifted, surfaced in its OWN cluster — a
+                    re-confirm is owed, but it is not active worklist. */}
+                <div className="px-4 py-1 font-mono text-[9px] uppercase tracking-wide text-success">
+                  done · drifted — re-confirm?
+                </div>
+                {doneDrift.map((n) => (
+                  <AimRow
+                    key={n.slug}
+                    node={n}
+                    selected={selected === n.slug}
+                    crumb={breadcrumbText(n.slug, bySlug) || "root"}
+                    onSelect={() => onSelect(n.slug)}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// A non-collapsible repo banner used in Frontier sections (the repo is context,
+// not a toggle, here). Primary repo gets the cyan/info accent.
+function RepoBanner({
+  repo,
+  drift,
+  claimed,
+}: {
+  repo: RepoAimsWire;
+  drift: number;
+  claimed: number;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-2 border-y border-hairline bg-surface/40 px-3 py-1 ${
+        repo.primary ? "shadow-[inset_2px_0_0_var(--color-info)]" : ""
+      }`}
+    >
+      <span
+        className={`font-mono text-[11px] font-semibold ${
+          repo.primary ? "text-info" : "text-muted-foreground"
+        }`}
+      >
+        {repo.repo_label}
+      </span>
+      <span className="ml-auto font-mono text-[10px]">
+        {drift > 0 && <span className="text-warning">⚠{drift} </span>}
+        {claimed > 0 && <span className="text-warning/80">◌{claimed}</span>}
+      </span>
+    </div>
+  );
+}
+
+// ── Tree mode — collapsible per-repo navigator with rollups ───────────
+
+function TreeNavigator({
+  repos,
+  query,
+  expanded,
+  selected,
+  onToggleExpanded,
+  onSelect,
+  onAddChild,
+  onAddRoot,
+}: {
+  repos: readonly RepoAimsWire[];
+  query: string;
+  expanded: Set<string>;
+  selected: string | null;
+  onToggleExpanded: (key: string) => void;
+  onSelect: (slug: string) => void;
+  onAddChild: (repoRoot: string, parent: string) => void;
+  onAddRoot: (repoRoot: string) => void;
+}) {
+  const q = query.trim().toLowerCase();
+
+  // A query in Tree mode shows a FLAT, repo-tagged hit list (the tree is a
+  // navigator; a filter wants results, not a pruned tree).
+  if (q !== "") {
+    const hits = repos.flatMap((repo) =>
+      repo.aims
+        .filter((n) => n.slug.toLowerCase().includes(q) || n.aim.toLowerCase().includes(q))
+        .map((n) => ({ repo, node: n })),
+    );
+    if (hits.length === 0) {
+      return (
+        <p className="px-4 py-6 text-[11px] text-subtle-foreground">No aim matches the filter.</p>
+      );
+    }
+    return (
+      <div>
+        {hits.map(({ repo, node }) => (
+          <AimRow
+            key={`${repo.repo_root}:${node.slug}`}
+            node={node}
+            selected={selected === node.slug}
+            repoTag={repo.repo_label}
+            repoPrimary={repo.primary}
+            onSelect={() => onSelect(node.slug)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {repos.map((repo) => {
+        const key = repoKey(repo);
+        const open = expanded.has(key);
+        const stats = repoStats(repo.aims);
+        const childrenOf = buildChildren(repo.aims);
+        const roots = findRoots(repo.aims);
+        return (
+          <div key={repo.repo_root}>
+            <RepoHead
+              repo={repo}
+              open={open}
+              stats={stats}
+              onToggle={() => onToggleExpanded(key)}
+              onAddRoot={() => onAddRoot(repo.repo_root)}
+            />
+            {open &&
+              roots.map((root) => (
+                <TreeBranch
+                  key={root.slug}
+                  node={root}
+                  depth={0}
+                  repo={repo}
+                  childrenOf={childrenOf}
+                  expanded={expanded}
+                  selected={selected}
+                  onToggleExpanded={onToggleExpanded}
+                  onSelect={onSelect}
+                  onAddChild={onAddChild}
+                />
+              ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RepoHead({
+  repo,
+  open,
+  stats,
+  onToggle,
+  onAddRoot,
+}: {
+  repo: RepoAimsWire;
+  open: boolean;
+  stats: RollupStats;
+  onToggle: () => void;
+  onAddRoot: () => void;
+}) {
+  return (
+    <div
+      data-testid="aim-repo-head"
+      data-repo={repo.repo_label}
+      className={`flex items-center gap-2 border-y border-hairline bg-surface/40 px-2 py-1 ${
+        repo.primary ? "shadow-[inset_2px_0_0_var(--color-info)]" : ""
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} repo ${repo.repo_label}`}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span aria-hidden="true" className="w-3 text-subtle-foreground">
+          {open ? "▾" : "▸"}
+        </span>
+        <span
+          className={`font-mono text-[11px] font-semibold ${
+            repo.primary ? "text-info" : "text-muted-foreground"
+          }`}
+        >
+          {repo.repo_label}
+        </span>
+        <span className="font-mono text-[10px] text-subtle-foreground">
+          {stats.count}
+          {stats.drift > 0 && <span className="text-warning"> ⚠{stats.drift}</span>}
+          {stats.claimed > 0 && <span className="text-warning/80"> ◌{stats.claimed}</span>}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onAddRoot}
+        title={`New root aim in ${repo.repo_label}`}
+        aria-label={`New root aim in ${repo.repo_label}`}
+        className="shrink-0 rounded border border-hairline px-1.5 text-[11px] text-muted-foreground transition-colors hover:border-info/40 hover:text-info"
+      >
+        ＋
+      </button>
+    </div>
+  );
+}
+
+function TreeBranch({
+  node,
+  depth,
+  repo,
+  childrenOf,
+  expanded,
+  selected,
+  onToggleExpanded,
+  onSelect,
+  onAddChild,
+}: {
+  node: AimWire;
+  depth: number;
+  repo: RepoAimsWire;
+  childrenOf: Map<string, AimWire[]>;
+  expanded: Set<string>;
+  selected: string | null;
+  onToggleExpanded: (key: string) => void;
+  onSelect: (slug: string) => void;
+  onAddChild: (repoRoot: string, parent: string) => void;
+}) {
+  const kids = childrenOf.get(node.slug) ?? [];
+  const open = expanded.has(node.slug);
+  const rollup = !open && kids.length > 0 ? subtreeStats(node.slug, childrenOf) : null;
+
+  return (
+    <>
+      <AimRow
+        node={node}
+        depth={depth}
+        selected={selected === node.slug}
+        hasChildren={kids.length > 0}
+        open={open}
+        rollup={rollup}
+        onToggle={kids.length > 0 ? () => onToggleExpanded(node.slug) : undefined}
+        onSelect={() => onSelect(node.slug)}
+        onAddChild={() => onAddChild(repo.repo_root, node.slug)}
+      />
+      {open &&
+        kids.map((c) => (
+          <TreeBranch
+            key={c.slug}
+            node={c}
+            depth={depth + 1}
+            repo={repo}
+            childrenOf={childrenOf}
+            expanded={expanded}
+            selected={selected}
+            onToggleExpanded={onToggleExpanded}
+            onSelect={onSelect}
+            onAddChild={onAddChild}
+          />
+        ))}
+    </>
+  );
+}
+
+// ── The shared row ────────────────────────────────────────────────────
+
+function AimRow({
+  node,
+  depth = 0,
+  selected,
+  crumb,
+  repoTag,
+  repoPrimary,
+  hasChildren = false,
+  open = false,
+  rollup,
+  onToggle,
+  onSelect,
+  onAddChild,
+}: {
+  node: AimWire;
+  depth?: number;
+  selected: boolean;
+  crumb?: string;
+  repoTag?: string;
+  repoPrimary?: boolean;
+  hasChildren?: boolean;
+  open?: boolean;
+  rollup?: RollupStats | null;
+  onToggle?: () => void;
+  onSelect: () => void;
+  onAddChild?: () => void;
+}) {
+  const tone = aimTone(node);
+  return (
+    <div
+      data-testid="aim-row"
+      data-slug={node.slug}
+      data-tone={tone}
+      className={`group flex h-7 items-center gap-1.5 pr-2 ${
+        selected ? "bg-surface-strong" : "hover:bg-surface/60"
+      }`}
+      style={{ paddingLeft: depth > 0 ? depth * 14 : undefined }}
+    >
+      <span
+        aria-hidden="true"
+        className={`h-full w-0.5 shrink-0 rounded-full ${TONE_GUTTER[tone]}`}
+      />
+      {/* Tree toggle (only when the node has children) sits OUTSIDE the select
+          button so there is no nested-interactive markup. */}
+      {hasChildren && onToggle ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={`${open ? "Collapse" : "Expand"} ${node.slug}`}
+          className="w-3 shrink-0 text-center text-[9px] text-subtle-foreground hover:text-foreground"
+        >
+          {open ? "▾" : "▸"}
+        </button>
+      ) : depth > 0 || hasChildren ? (
+        <span
+          aria-hidden="true"
+          className="w-3 shrink-0 text-center text-[9px] text-subtle-foreground"
+        >
+          ·
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        title={`${node.slug} · ${AIM_STATE_LABEL[node.state]}`}
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+      >
+        <span
+          aria-hidden="true"
+          className={`shrink-0 font-mono text-[11px] ${TONE_GLYPH_CLASS[tone]}`}
+        >
+          {TONE_GLYPH[tone]}
+        </span>
+        {/* Pin #2 distinct marker: a done node that ALSO drifted shows the done
+            ✓ glyph AND this warning drift badge — so it never reads as plain
+            done, nor as an open drift. */}
+        {tone === "done-drift" && (
+          <span
+            data-testid="aim-drift-badge"
+            aria-hidden="true"
+            title="also drifted"
+            className="shrink-0 font-mono text-[11px] text-warning"
+          >
+            ⚠
+          </span>
+        )}
+        <span className={`truncate text-[12px] ${TONE_OUGHT_CLASS[tone]}`}>{node.aim}</span>
+        {crumb !== undefined && (
+          <span className="ml-1 max-w-[34%] shrink-0 truncate font-mono text-[9px] text-subtle-foreground">
+            {crumb}
+          </span>
+        )}
+        {repoTag !== undefined && (
+          <span
+            className={`shrink-0 rounded border border-hairline px-1 font-mono text-[8px] ${
+              repoPrimary ? "text-info" : "text-subtle-foreground"
+            }`}
+          >
+            {repoTag}
+          </span>
+        )}
+        {rollup && rollup.count > 0 && (
+          <span
+            data-testid="aim-rollup"
+            className="ml-auto shrink-0 font-mono text-[9px] text-subtle-foreground"
+          >
+            {rollup.count}
+            {rollup.drift > 0 && <span className="text-warning"> ⚠{rollup.drift}</span>}
+            {rollup.claimed > 0 && <span className="text-warning/80"> ◌{rollup.claimed}</span>}
+          </span>
+        )}
+        <InteriorDots marks={node.is} />
+        <span className="shrink-0 font-mono text-[9px] text-subtle-foreground">{node.slug}</span>
+      </button>
+      {onAddChild && (
+        <button
+          type="button"
+          onClick={onAddChild}
+          title={`New child aim under ${node.slug}`}
+          aria-label={`Add child aim under ${node.slug}`}
+          className="shrink-0 rounded border border-hairline px-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:border-info/40 hover:text-info group-hover:opacity-100"
+        >
+          ＋
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Tiny per-mark dots beside a row — confirmed = filled success, claimed =
+// filled warning. Mark-only: order + kind are exactly the wire's.
+function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
+  if (marks.length === 0) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      {marks.map((m) => (
+        // Interior lines have no id; key off the prose (mark-only — we never
+        // re-order, so position is the wire's).
+        <span
+          key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
+          aria-hidden="true"
+          className={`h-1 w-1 rounded-[1px] ${m.kind === "confirmed" ? "bg-success" : "bg-warning"}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+// ── Overview ruler ────────────────────────────────────────────────────
+
+function OverviewRuler({
+  ticks,
+  onReveal,
+}: {
+  ticks: readonly RulerTick[];
+  onReveal: (slug: string) => void;
+}) {
+  return (
+    <div
+      data-testid="aim-ruler"
+      className="relative w-3.5 shrink-0 overflow-hidden border-l border-hairline bg-surface/30"
+      title="Overview ruler — every node a tick, owed ones lit; click to reveal"
+    >
+      {ticks.map((t) => {
+        const top = `${(t.pos * 100).toFixed(2)}%`;
+        if (t.owed === null) {
+          return (
+            <span
+              key={t.slug}
+              data-testid="ruler-tick"
+              data-slug={t.slug}
+              data-owed="calm"
+              aria-hidden="true"
+              className="absolute right-[3px] left-[3px] h-px bg-subtle-foreground/30"
+              style={{ top }}
+            />
+          );
+        }
+        const lit = t.owed === "drift" ? "bg-warning" : "bg-warning/60";
+        return (
+          <button
+            key={t.slug}
+            type="button"
+            data-testid="ruler-tick"
+            data-slug={t.slug}
+            data-owed={t.owed}
+            onClick={() => onReveal(t.slug)}
+            title={`${t.owed === "drift" ? "⚠ drift" : "◌ claimed"} · ${t.repoLabel} · ${t.slug}`}
+            aria-label={`Reveal ${t.slug} (${t.owed})`}
+            className={`absolute right-[2px] left-[2px] rounded-[1px] ${lit} ${
+              t.owed === "drift" ? "h-[3px]" : "h-[2px]"
+            }`}
+            style={{ top }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Inspector (replaces the old DetailPane) ───────────────────────────
+
+function Inspector({
+  unitName,
+  sel,
+  refresh,
+  onSelect,
+  onAddChild,
+  onClose,
+}: {
+  unitName: string;
+  sel: Selection;
+  refresh: () => void;
+  onSelect: (slug: string) => void;
+  onAddChild: (parent: string) => void;
+  onClose: () => void;
+}) {
+  const { node, bySlug, childrenOf } = sel;
+  const [editing, setEditing] = useState(false);
+  const chain = useMemo(() => ancestry(node.slug, bySlug), [node.slug, bySlug]);
+  const parentOptions = useMemo(() => sel.repo.aims.map((n) => n.slug), [sel.repo]);
+  // Forbid re-parenting onto self or any descendant (a trivial cycle).
+  const forbiddenParents = useMemo(() => {
+    const set = descendantsOf(node.slug, childrenOf);
+    set.add(node.slug);
+    return set;
+  }, [node.slug, childrenOf]);
+
+  return (
+    <aside
+      data-testid="aim-inspector"
+      className="flex max-h-[42vh] shrink-0 flex-col overflow-y-auto border-t border-hairline bg-surface px-4 py-3"
+    >
+      <div className="flex items-start justify-between gap-2">
+        {/* Ought-ancestry breadcrumb — every ancestor selectable; the node
+            itself is the cyan tail. */}
+        <nav className="flex min-w-0 flex-wrap items-center gap-x-1 font-mono text-[10px] text-subtle-foreground">
+          {chain.map((a, i) =>
+            i < chain.length - 1 ? (
+              <span key={a.slug} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSelect(a.slug)}
+                  className="max-w-[14ch] truncate text-subtle-foreground hover:text-info"
+                  title={a.aim}
+                >
+                  {a.slug}
+                </button>
+                <span aria-hidden="true" className="text-hairline-strong">
+                  ›
+                </span>
+              </span>
+            ) : (
+              <span key={a.slug} className="text-info">
+                {a.slug}
+              </span>
+            ),
+          )}
+        </nav>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close inspector"
+          aria-label="Close inspector"
           className="shrink-0 rounded px-1.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
         >
           ✕
         </button>
       </div>
 
+      <p className="mt-2 text-[14px] leading-snug text-foreground">
+        <span className="font-mono text-[10px] text-info">aim:</span> {node.aim}
+      </p>
+
+      <MetaPills node={node} repoLabel={sel.repo.repo_label} repoPrimary={sel.repo.primary} />
+
       {editing ? (
-        // Remount per node (`key`) so the draft always seeds from the current
-        // node, never a stale prior selection.
         <AimEditForm
           key={node.slug}
           unitName={unitName}
@@ -623,59 +1216,158 @@ function DetailPane({
         />
       ) : (
         <>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
-            <dt className="text-subtle-foreground">state</dt>
-            <dd className="text-foreground">{AIM_STATE_LABEL[node.state]}</dd>
-            <dt className="text-subtle-foreground">parent</dt>
-            <dd className="font-mono text-muted-foreground">{node.parent ?? "(root)"}</dd>
-            {node.depends_on.length > 0 && (
-              <>
-                <dt className="text-subtle-foreground">depends_on</dt>
-                <dd className="font-mono text-muted-foreground">{node.depends_on.join(", ")}</dd>
-              </>
-            )}
-            {node.serves.length > 0 && (
-              <>
-                <dt className="text-subtle-foreground">serves</dt>
-                <dd className="font-mono text-muted-foreground">{node.serves.join(", ")}</dd>
-              </>
-            )}
-            {node.related.length > 0 && (
-              <>
-                <dt className="text-subtle-foreground">related</dt>
-                <dd className="font-mono text-muted-foreground">{node.related.join(", ")}</dd>
-              </>
-            )}
-          </dl>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
-          >
-            <span aria-hidden="true">✎</span> Edit frontmatter
-          </button>
+          <InteriorList marks={node.is} />
+          <CrossEdges node={node} />
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground"
+            >
+              <span aria-hidden="true">✎</span> Edit frontmatter
+            </button>
+            <button
+              type="button"
+              onClick={() => onAddChild(node.slug)}
+              className="rounded border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-info/40 hover:text-info"
+            >
+              <span aria-hidden="true">＋</span> Add child aim
+            </button>
+          </div>
         </>
       )}
+    </aside>
+  );
+}
 
-      <section className="space-y-1">
-        <h4 className="text-[10px] uppercase tracking-wide text-subtle-foreground">Body</h4>
-        <AimBody body={node.body} />
-      </section>
-
-      <p className="border-t border-hairline pt-2 text-[11px] text-subtle-foreground">
-        blast radius from here: <span className="text-foreground">{blastCount}</span> descendant
-        {blastCount === 1 ? "" : "s"} drift-possible
-      </p>
+// The meta pill row — repo / state, plus the drift←ancestor pill when the node
+// drifted (from `drift.stale_from_ancestor_slug`).
+function MetaPills({
+  node,
+  repoLabel,
+  repoPrimary,
+}: {
+  node: AimWire;
+  repoLabel: string;
+  repoPrimary: boolean;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <span
+        className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${
+          repoPrimary ? "border-info/40 text-info" : "border-hairline text-subtle-foreground"
+        }`}
+      >
+        repo: {repoLabel}
+      </span>
+      <span className="rounded border border-hairline px-1.5 py-0.5 font-mono text-[9px] text-subtle-foreground">
+        state: {AIM_STATE_LABEL[node.state]}
+        {node.parent === null ? " · root" : ""}
+      </span>
+      {node.drift !== null && <DriftPill drift={node.drift} done={node.state === "done"} />}
     </div>
   );
 }
 
-// The inline frontmatter edit form (Stage 2-B): aim / parent / state ONLY. The
-// body and the cross-edges (`depends_on` / `serves` / `related`) are NOT touched
-// here — the backend preserves them byte-for-byte. Authority is operator-only,
-// soft: a plain Save, no draft/accept gate. The `parent` select excludes the
-// node itself and its descendants (`forbiddenParents`) so the operator can't
-// form a trivial cycle.
+function DriftPill({ drift, done }: { drift: AimDriftWire; done: boolean }) {
+  return (
+    <span
+      data-testid="aim-drift-pill"
+      title={`ancestor anchor moved ${drift.ancestor_change_date} (${drift.ancestor_change_sha}); this node last changed ${drift.aim_change_date}`}
+      className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 font-mono text-[9px] text-warning"
+    >
+      ⚠ {done ? "done · " : ""}drift ← {drift.stale_from_ancestor_slug}
+    </span>
+  );
+}
+
+// The interior `is[]` list — mark-only: confirmed / claimed exactly as authored
+// (order + kind off the wire), `ref` shown for confirmed marks.
+function InteriorList({ marks }: { marks: readonly AimInteriorWire[] }) {
+  return (
+    <section className="mt-3">
+      <h4 className="font-mono text-[9px] uppercase tracking-wide text-subtle-foreground">
+        interior — is
+      </h4>
+      {marks.length === 0 ? (
+        <p className="mt-1 text-[11px] italic text-subtle-foreground">— a pure ought —</p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {marks.map((m) => (
+            // Interior lines have no id; key off the prose (mark-only — order is
+            // the wire's, never re-sorted).
+            <li
+              key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
+              data-testid="aim-mark"
+              data-kind={m.kind}
+              className="flex items-baseline gap-2 text-[12px]"
+            >
+              <MarkTag kind={m.kind} />
+              <span className="text-muted-foreground">
+                {m.text}
+                {m.kind === "confirmed" && m.ref !== null && (
+                  <span className="ml-1 font-mono text-[9px] text-info">[{m.ref}]</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function MarkTag({ kind }: { kind: AimInteriorKind }) {
+  if (kind === "confirmed") {
+    return (
+      <span className="shrink-0 rounded border border-success/40 px-1 py-px font-mono text-[9px] text-success">
+        ✓ confirmed
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded border border-dashed border-warning/50 px-1 py-px font-mono text-[9px] text-warning">
+      ◌ claimed
+    </span>
+  );
+}
+
+// The DAG cross-edges as slug facts (depends_on / serves / related). They are
+// not drawn as edges in the row-based panel — listed here verbatim.
+function CrossEdges({ node }: { node: AimWire }) {
+  if (node.depends_on.length === 0 && node.serves.length === 0 && node.related.length === 0) {
+    return null;
+  }
+  return (
+    <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+      {node.depends_on.length > 0 && (
+        <>
+          <dt className="text-subtle-foreground">depends_on</dt>
+          <dd className="font-mono text-muted-foreground">{node.depends_on.join(", ")}</dd>
+        </>
+      )}
+      {node.serves.length > 0 && (
+        <>
+          <dt className="text-subtle-foreground">serves</dt>
+          <dd className="font-mono text-muted-foreground">{node.serves.join(", ")}</dd>
+        </>
+      )}
+      {node.related.length > 0 && (
+        <>
+          <dt className="text-subtle-foreground">related</dt>
+          <dd className="font-mono text-muted-foreground">{node.related.join(", ")}</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+// ── Write forms (carried from Stage 2-B, integrated into the inspector) ──
+
+// The inline frontmatter edit form: aim / parent / state ONLY. The body and the
+// cross-edges are preserved server-side. Pin #3: after save we `refresh()` —
+// the wire re-reports drift (the engine's parent-only verdict), and the panel
+// re-renders it. There is NO client-side drift cascade here.
 function AimEditForm({
   unitName,
   node,
@@ -720,7 +1412,7 @@ function AimEditForm({
 
   return (
     <form
-      className="space-y-2"
+      className="mt-3 space-y-2"
       onSubmit={(e) => {
         e.preventDefault();
         void onSave();
@@ -775,27 +1467,31 @@ function AimEditForm({
   );
 }
 
-// The create form (Stage 2-B): author a new node — slug / aim / parent. `state`
-// starts `open`, the body starts empty, no cross-edges (the backend default).
-// Client-side slug validation gives fast feedback; the backend stays
-// authoritative (it owns the `409` duplicate / `422` dangling-parent verdicts,
-// surfaced inline). On success the parent re-fetches and selects the new node.
-function CreateForm({
+// The create surface (root or child of an existing node), mounted in the
+// inspector slot. Author `slug` / `aim` / `parent`; `state` starts `open`, the
+// body starts empty, no cross-edges (the backend default). Client-side slug
+// validation gives fast feedback; the backend stays authoritative.
+function CreatePanel({
   unitName,
-  existingSlugs,
+  creating,
+  repos,
   refresh,
   onClose,
   onCreated,
 }: {
   unitName: string;
-  existingSlugs: readonly string[];
+  creating: Creating;
+  repos: readonly RepoAimsWire[];
   refresh: () => void;
   onClose: () => void;
   onCreated: (slug: string) => void;
 }) {
+  const repo = repos.find((r) => r.repo_root === creating.repoRoot) ?? null;
+  const existingSlugs = useMemo(() => repo?.aims.map((n) => n.slug) ?? [], [repo]);
+
   const [slug, setSlug] = useState("");
   const [aim, setAim] = useState("");
-  const [parent, setParent] = useState("");
+  const [parent, setParent] = useState(creating.initialParent);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -827,14 +1523,21 @@ function CreateForm({
   return (
     <form
       data-testid="aim-create"
-      className="space-y-2 p-4"
+      className="flex max-h-[42vh] shrink-0 flex-col gap-2 overflow-y-auto border-t border-hairline bg-surface px-4 py-3"
       onSubmit={(e) => {
         e.preventDefault();
         void onCreate();
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-foreground">＋ New aim node</h3>
+        <h3 className="text-xs font-semibold text-foreground">
+          ＋ New aim{" "}
+          <span className="font-mono text-[10px] font-normal text-subtle-foreground">
+            {creating.initialParent !== ""
+              ? `child of ${creating.initialParent}`
+              : `${repo?.repo_label ?? "?"} root`}
+          </span>
+        </h3>
         <button
           type="button"
           onClick={onClose}
@@ -846,6 +1549,16 @@ function CreateForm({
         </button>
       </div>
 
+      <AimField label="aim" htmlFor="aim-create-aim">
+        <textarea
+          id="aim-create-aim"
+          value={aim}
+          onChange={(e) => setAim(e.target.value)}
+          rows={2}
+          placeholder="the human bearing, one line."
+          className="w-full resize-y rounded border border-hairline bg-surface px-2 py-1 text-xs text-foreground"
+        />
+      </AimField>
       <AimField label="slug" htmlFor="aim-create-slug">
         <input
           id="aim-create-slug"
@@ -858,16 +1571,6 @@ function CreateForm({
         {slugError === null && duplicate && (
           <p className="mt-0.5 text-[10px] text-destructive">slug already exists</p>
         )}
-      </AimField>
-      <AimField label="aim" htmlFor="aim-create-aim">
-        <textarea
-          id="aim-create-aim"
-          value={aim}
-          onChange={(e) => setAim(e.target.value)}
-          rows={2}
-          placeholder="the human bearing, one line."
-          className="w-full resize-y rounded border border-hairline bg-surface px-2 py-1 text-xs text-foreground"
-        />
       </AimField>
       <AimField label="parent" htmlFor="aim-create-parent">
         <ParentSelect
@@ -906,9 +1609,8 @@ function CreateForm({
   );
 }
 
-// A stable empty set for the create form's parent select (no node to forbid —
-// a brand-new slug can't be its own ancestor). Module-level so it keeps a
-// constant identity across renders.
+// A stable empty set for the create form's parent select (a brand-new slug
+// can't be its own ancestor). Module-level so it keeps a constant identity.
 const EMPTY_FORBIDDEN: ReadonlySet<string> = new Set<string>();
 
 // A labelled field row shared by the edit + create forms.
@@ -935,9 +1637,7 @@ function AimField({
 }
 
 // Parent slug select: "(root)" + every existing slug except those in
-// `forbidden` (self + descendants, for the edit form). A `value` not present in
-// the options still renders (the current parent is shown even if it were, in
-// some edge case, filtered) — but normal parents are always selectable.
+// `forbidden` (self + descendants, for the edit form).
 function ParentSelect({
   id,
   value,
@@ -993,25 +1693,5 @@ function StateSelect({
         </option>
       ))}
     </select>
-  );
-}
-
-// Render the raw markdown body verbatim, read-only: `whitespace-pre-wrap`
-// preserves the authored line breaks and `font-mono` keeps refs / paths /
-// inline `[confirmed: …]` / `[claimed]` markers legible. No markdown→HTML and
-// NO honesty-tag parsing (brief): the body is free-form prose. An empty body
-// is a valid frontmatter-only node.
-function AimBody({ body }: { body: string }) {
-  if (body.trim() === "") {
-    return (
-      <p className="rounded border border-dashed border-hairline px-2 py-3 text-center text-[11px] italic text-subtle-foreground">
-        (frontmatter-only — no body)
-      </p>
-    );
-  }
-  return (
-    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded bg-surface/40 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
-      {body}
-    </pre>
   );
 }
