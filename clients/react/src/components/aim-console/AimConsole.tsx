@@ -23,6 +23,21 @@ import { useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
+// Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
+// <link>) — loads the exact families `aim-console.css` references via --sans /
+// --mono so the dev-tool look matches the mock instead of falling back to
+// system fonts. Loading is document-global, but ONLY `.aim-console` references
+// these families, so the existing console is unaffected. Weights mirror the
+// mock: IBM Plex Mono 400/500/600, Inter Tight 400/500/600, Noto Sans JP
+// 400/500.
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+import "@fontsource/inter-tight/400.css";
+import "@fontsource/inter-tight/500.css";
+import "@fontsource/inter-tight/600.css";
+import "@fontsource/noto-sans-jp/400.css";
+import "@fontsource/noto-sans-jp/500.css";
 import "@/styles/aim-console.css";
 
 function repoBasename(path: string): string {

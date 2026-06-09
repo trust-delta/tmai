@@ -73,7 +73,9 @@ export function StatusBar({
           : "Switch to the aim console (preview)"
       }
       aria-label={
-        consoleMode === "aim" ? "Switch to the Producer console" : "Switch to the aim console"
+        consoleMode === "aim"
+          ? "Switch to the Producer console"
+          : "Switch to the aim console (preview)"
       }
     >
       ◎

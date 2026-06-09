@@ -189,7 +189,7 @@ describe("App — console-mode coexist toggle", () => {
     renderWithProviders(<App />);
 
     // Enter aim-ui via the StatusBar toggle.
-    fireEvent.click(screen.getByLabelText("Switch to the aim console"));
+    fireEvent.click(screen.getByLabelText("Switch to the aim console (preview)"));
     expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
     // The existing shell is replaced — digest AND R panel are gone.
     expect(screen.queryByTestId("producer-console-stub")).toBeNull();
