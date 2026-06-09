@@ -535,3 +535,49 @@ describe("AimPane — mode persistence", () => {
     );
   });
 });
+
+describe("AimPane — unit change", () => {
+  it("resets per-unit view state (selection + forest) when the focused unit changes", async () => {
+    aimsMock.mockImplementation((unit: string) =>
+      Promise.resolve(
+        unit === "a"
+          ? responseStub([
+              {
+                label: "repo-a",
+                primary: true,
+                aims: [aimStub({ slug: "a-root", aim: "A root", is: [claimed("x")] })],
+              },
+            ])
+          : responseStub([
+              {
+                label: "repo-b",
+                primary: true,
+                aims: [aimStub({ slug: "b-root", aim: "B root", is: [claimed("y")] })],
+              },
+            ]),
+      ),
+    );
+
+    const { rerender } = render(
+      <UIPrefsProvider>
+        <AimPane unitName="a" />
+      </UIPrefsProvider>,
+    );
+    await awaitLoaded();
+    selectRow("a-root");
+    await screen.findByTestId("aim-inspector");
+
+    // Switch to unit "b" (a different forest) — same AimPane instance (no key
+    // remount), so the in-component reset must clear the stale state.
+    rerender(
+      <UIPrefsProvider>
+        <AimPane unitName="b" />
+      </UIPrefsProvider>,
+    );
+
+    await waitFor(() => expect(rowEl("b-root")).toBeTruthy());
+    // The previous unit's node is gone and its inspector selection cleared.
+    expect(document.querySelector('[data-testid="aim-row"][data-slug="a-root"]')).toBeNull();
+    expect(screen.queryByTestId("aim-inspector")).toBeNull();
+  });
+});

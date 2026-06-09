@@ -52,4 +52,24 @@ describe("suggestSlug", () => {
     const long = "a".repeat(60);
     expect(suggestSlug(long, new Set())).toHaveLength(40);
   });
+
+  it("never leaves a trailing hyphen when the 40-char cut lands on a separator", () => {
+    // Three 19-char words join to "...(19)-...(19)-...(19)"; slice(0, 40) lands
+    // exactly on the second separator → a naive cut would end in '-'.
+    const aim = `${"a".repeat(19)} ${"b".repeat(19)} ${"c".repeat(19)}`;
+    const s = suggestSlug(aim, new Set());
+    expect(s.endsWith("-")).toBe(false);
+    expect(s.length).toBeLessThanOrEqual(40);
+    // The suggestion itself must pass the slug validator.
+    expect(validateAimSlug(s)).toBeNull();
+  });
+
+  it("keeps the slug ≤40 and valid even after a dedup suffix", () => {
+    const base = "a".repeat(40);
+    const existing = new Set([base]); // forces a -N suffix on the capped base
+    const s = suggestSlug("a".repeat(60), existing);
+    expect(s.length).toBeLessThanOrEqual(40);
+    expect(existing.has(s)).toBe(false);
+    expect(validateAimSlug(s)).toBeNull();
+  });
 });

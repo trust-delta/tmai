@@ -114,10 +114,27 @@ export function AimPane({ unitName }: { unitName: string | null }) {
   const [modal, setModal] = useState<ModalDescriptor | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const seededRef = useRef(false);
+  const prevUnitRef = useRef(unitName);
+
+  // A unit change invalidates the per-unit view state: the previous unit's
+  // selection / open modal / filter are meaningless against the NEW forest, and
+  // the expand set must re-seed to the new unit's roots. Reset them and re-arm
+  // the seed gate, so the seed effect below re-seeds once the new forest lands.
+  // (`useUnitAims` clears + refetches the forest on the same `unitName` change.)
+  // Runs only on an actual change — mount keeps the lazy-init / first-fetch path.
+  useEffect(() => {
+    if (prevUnitRef.current === unitName) return;
+    prevUnitRef.current = unitName;
+    seededRef.current = false;
+    setSelected(null);
+    setModal(null);
+    setQuery("");
+  }, [unitName]);
 
   // Seed the branch-expansion set once the forest first arrives — the lazy
   // init above ran against an empty forest while the first fetch was in flight.
-  // Guarded so an operator's later collapse/expand survives the 60s poll.
+  // Guarded so an operator's later collapse/expand survives the 60s poll; the
+  // gate is re-armed on a unit change (effect above).
   useEffect(() => {
     if (!seededRef.current && repos.length > 0) {
       seededRef.current = true;

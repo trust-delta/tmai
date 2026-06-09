@@ -646,7 +646,7 @@
   right: 1px;
   height: 5px;
   opacity: 1;
-  box-shadow: 0 0 6px currentColor;
+  box-shadow: 0 0 6px currentcolor;
 }
 .aim-console .ac-rdiv {
   position: absolute;
