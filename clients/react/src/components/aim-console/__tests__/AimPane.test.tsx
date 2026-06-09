@@ -152,6 +152,19 @@ function selectRow(slug: string) {
   fireEvent.click(btn);
 }
 
+// "Forest is in" signal. The ledger renders DURING loading, so it is NOT a
+// load gate; the "＋ aim" button, by contrast, enables only once the forest
+// (with a primary repo) has loaded (`primaryRepo !== null`). Any test that
+// interacts with loaded data must await this first — otherwise the interaction
+// can land on the loading-state render and silently no-op (e.g. a disabled
+// "＋ aim" click never opens the modal).
+async function awaitLoaded() {
+  await waitFor(() => {
+    const btn = screen.getByRole("button", { name: "New aim" }) as HTMLButtonElement;
+    if (btn.disabled) throw new Error("forest not loaded yet");
+  });
+}
+
 beforeEach(() => {
   localStorage.clear();
   aimsMock.mockReset();
@@ -229,7 +242,7 @@ describe("AimPane — Tree mode (per-repo navigator + rollups)", () => {
   it("groups by repo (primary highlighted) and rolls up a collapsed branch", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Tree" }));
 
     const heads = await screen.findAllByTestId("aim-repo-head");
@@ -251,7 +264,7 @@ describe("AimPane — Tree mode (per-repo navigator + rollups)", () => {
   it("a search in Tree mode shows a flat, repo-tagged hit list", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Tree" }));
     fireEvent.change(screen.getByLabelText("Filter aims"), { target: { value: "aim-system" } });
     expect(rowEl("aim-system")).toBeTruthy();
@@ -289,7 +302,7 @@ describe("AimPane — inspector", () => {
   it("shows the drift←ancestor pill and the interior is[] (mark-only, ref for confirmed)", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     selectRow("attention-per-artifact");
 
     const insp = await screen.findByTestId("aim-inspector");
@@ -305,7 +318,7 @@ describe("AimPane — inspector", () => {
   it("breadcrumb climbs to an ancestor", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     selectRow("attention-per-artifact");
     const insp = await screen.findByTestId("aim-inspector");
     fireEvent.click(within(insp).getByRole("button", { name: /amplify judgment/ }));
@@ -319,7 +332,7 @@ describe("AimPane — search", () => {
   it("filters the owed worklist by slug / ought", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
 
     fireEvent.change(screen.getByLabelText("Filter aims"), { target: { value: "per-artifact" } });
     expect(rowEl("attention-per-artifact")).toBeTruthy();
@@ -345,7 +358,7 @@ describe("AimPane — create modal", () => {
     createAimMock.mockResolvedValue(created);
 
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "New aim" }));
 
     const modal = await screen.findByTestId("aim-create-modal");
@@ -370,7 +383,7 @@ describe("AimPane — create modal", () => {
   it("auto-derives the slug from the aim until the operator types one", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "New aim" }));
     const modal = await screen.findByTestId("aim-create-modal");
     fireEvent.change(within(modal).getByLabelText(/aim — /), {
@@ -384,7 +397,7 @@ describe("AimPane — create modal", () => {
   it("blocks a dated slug and a duplicate without calling the API", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "New aim" }));
     const modal = await screen.findByTestId("aim-create-modal");
 
@@ -404,7 +417,7 @@ describe("AimPane — create modal", () => {
     aimsMock.mockResolvedValue(responseStub());
     createAimMock.mockRejectedValue(new Error("aim 'racy' already exists"));
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "New aim" }));
     const modal = await screen.findByTestId("aim-create-modal");
     fireEvent.change(within(modal).getByLabelText(/aim — /), { target: { value: "a" } });
@@ -416,7 +429,7 @@ describe("AimPane — create modal", () => {
   it("Esc closes the modal", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "New aim" }));
     await screen.findByTestId("aim-create-modal");
     fireEvent.keyDown(document, { key: "Escape" });
@@ -429,7 +442,7 @@ describe("AimPane — create modal", () => {
       aimStub({ slug: "child", aim: "c", parent: "amplify-human-judgment" }),
     );
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     selectRow("amplify-human-judgment");
     fireEvent.click(await screen.findByRole("button", { name: /子 aim/ }));
 
@@ -458,7 +471,7 @@ describe("AimPane — edit modal (pin #3: drift mirrors the engine on refetch)",
       aimStub({ slug: "aim-system", aim: "edited bearing", state: "done" }),
     );
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     // Edit from Tree mode so the calm (non-owed) aim-system is reachable.
     fireEvent.click(screen.getByRole("button", { name: "Tree" }));
     selectRow("aim-system");
@@ -488,7 +501,7 @@ describe("AimPane — edit modal (pin #3: drift mirrors the engine on refetch)",
   it("excludes the node + its descendants from the edit parent options (no cycles)", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Tree" }));
     selectRow("amplify-human-judgment");
     const insp = await screen.findByTestId("aim-inspector");
@@ -508,13 +521,13 @@ describe("AimPane — mode persistence", () => {
   it("persists the Frontier/Tree mode across remounts (ui-prefs)", async () => {
     aimsMock.mockResolvedValue(responseStub());
     const { unmount } = renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Tree" }));
     expect(screen.getByRole("button", { name: "Tree" }).getAttribute("aria-pressed")).toBe("true");
 
     unmount();
     renderPane();
-    await screen.findByTestId("aim-ledger");
+    await awaitLoaded();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Tree" }).getAttribute("aria-pressed")).toBe(
         "true",
