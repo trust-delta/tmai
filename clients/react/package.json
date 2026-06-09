@@ -16,6 +16,9 @@
     "version": "npm run changelog && git add CHANGELOG.md"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/inter-tight": "^5.2.7",
+    "@fontsource/noto-sans-jp": "^5.2.9",
     "@tailwindcss/typography": "^0.5.20",
     "@tauri-apps/api": "^2.11.0",
     "@xterm/addon-fit": "^0.11.0",

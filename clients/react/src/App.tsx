@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActions } from "@/components/agent/AgentActions";
 import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
+import { AimConsole } from "@/components/aim-console/AimConsole";
+import { type ConsoleMode, DEFAULT_CONSOLE_MODE } from "@/components/aim-console/console-mode";
 import { CalibrationChip } from "@/components/calibration/CalibrationChip";
 import { CalibrationPanel } from "@/components/calibration/CalibrationPanel";
 import { TripwireBanner } from "@/components/calibration/TripwireBanner";
@@ -119,6 +121,20 @@ export function App() {
   // more error-prone; this enum makes the constraint explicit.
   const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security" | "calibration">(
     "agents",
+  );
+  // Coexist console-mode toggle (aim node `tmai-core:doc/aims/aim-ui.md`).
+  // A sibling of `mainPanel`: which TOP-LEVEL console is shown. `producer`
+  // (default) keeps the entire existing shell (sidebar + digest/conversation
+  // + R panel); `aim` swaps the whole window for the new full-screen
+  // <AimConsole>. Aim-ui is opt-in via the StatusBar button and stays opt-in
+  // until the aim mechanism matures — the existing console is never ripped
+  // out. Deliberately NOT persisted to ui-prefs in S1: the aim panes are
+  // stubs, so a reload should land back on the working Producer console
+  // rather than a stub-only screen.
+  const [consoleMode, setConsoleMode] = useState<ConsoleMode>(DEFAULT_CONSOLE_MODE);
+  const toggleConsoleMode = useCallback(
+    () => setConsoleMode((m) => (m === "aim" ? "producer" : "aim")),
+    [],
   );
   const [showHelp, setShowHelp] = useState(false);
   // Persistent right R panel (project artifact inventory — approach
@@ -660,6 +676,24 @@ export function App() {
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
   ) : null;
 
+  // Coexist: when the operator opts into aim-ui, the new full-window aim
+  // console takes over the whole shell (its own top bar + 3-pane grid),
+  // replacing the existing sidebar / digest / R panel. Returned AFTER every
+  // hook above so the rules of hooks hold; the matching EXIT toggle lives in
+  // the aim console's own top bar (the StatusBar that hosts the ENTER toggle
+  // is not rendered in this mode).
+  if (consoleMode === "aim") {
+    return (
+      <AimConsole
+        units={unitsData?.units ?? []}
+        activeUnitName={unitName}
+        onSelectUnit={handleSelectUnit}
+        onAddUnit={handleAddUnit}
+        onExit={toggleConsoleMode}
+      />
+    );
+  }
+
   return (
     <div ref={rPanelSplit.containerRef} className="flex h-screen text-foreground">
       {/* Mobile: overlay backdrop when drawer is open */}
@@ -725,6 +759,8 @@ export function App() {
             onSecurityClick={() => {
               toggleSecurity();
             }}
+            consoleMode={consoleMode}
+            onToggleConsoleMode={toggleConsoleMode}
             indicatorSlot={
               <>
                 <ProducerFeedChip data={producerFeedData} onClick={handleTriggerProducerFeed} />
@@ -784,6 +820,8 @@ export function App() {
             onSecurityClick={() => {
               toggleSecurity();
             }}
+            consoleMode={consoleMode}
+            onToggleConsoleMode={toggleConsoleMode}
             onReturnToConsole={
               selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
             }
