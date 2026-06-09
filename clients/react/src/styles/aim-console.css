@@ -1,0 +1,426 @@
+/* ════════════════════════════════════════════════════════════════════════
+   tmai aim console — DEDICATED, SCOPED design-token + shell stylesheet.
+
+   Faithful port of the destination mock (`origin/mock/aim-ui-sample` →
+   `assets/ui-sample.html`, dev-tool / scale variant). Serves aim node
+   `aim-ui` (`tmai-core:doc/aims/aim-ui.md`).
+
+   COEXIST, DO NOT RIP: the existing console keeps its own
+   tokens/themes (globals.css + lib/theme.ts). EVERYTHING here is scoped
+   under `.aim-console` so the dev-tool palette (low-chroma, k9s/lazygit
+   tone) and the 12.5px/27px density NEVER bleed into the existing
+   console. Custom properties declared on `.aim-console` only inherit
+   DOWN into the aim-console subtree, so the existing UI — which is never
+   a descendant of `.aim-console` — cannot see them.
+
+   This file is NOT processed by Tailwind (it has no `@import "tailwindcss"`)
+   and is NOT linted/formatted by biome (CSS is disabled in biome.json), so
+   the literal hex token values live here the way `lib/theme.ts` legitimately
+   holds colour values — and the repo-wide raw-palette lock only scans
+   `*.tsx?`, never `*.css`.
+
+   S1 reproduces the TOKEN LAYER + the SHELL: top bar, 3-pane grid, and the
+   PR-rail expand/collapse transition. The three panes are placeholders /
+   stubs here — the worklist (S2), session (S3), and PR/Issue lists (S4)
+   fill them in later stages.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.aim-console {
+  /* ── design tokens (mock `:root`, dev-tool / scale) ─────────────────── */
+  --bg: #0b0e0f;
+  --panel: #0d1112;
+  --panel-2: #11171800;
+  --elev: #121819;
+  --line: #1b2122;
+  --line-2: #161b1c;
+  --txt: #c2cbc8;
+  --dim: #7b8784;
+  --faint: #4d5856;
+  --amber: #cf9b46;
+  --amber-d: #241c0e; /* drift / owed-strong */
+  --ochre: #b1894f;
+  --ochre-d: #1f1810; /* claimed */
+  --green: #4a9476;
+  --green-d: #10211a; /* confirmed / calm */
+  --cyan: #4aa39d;
+  --cyan-d: #102423; /* structure / select / root */
+  --violet: #8f7ad6;
+  --violet-d: #171428; /* worker */
+  --danger: #d96a6a;
+  --sans: "Inter Tight", "Noto Sans JP", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --rh: 27px;
+
+  /* 3-pane column track (mock `.main`). The PR-rail collapses to a 46px
+     rail and expands to 320px via the `.pr-open` modifier below. */
+  --aim: 1.18fr;
+  --sess: 1fr;
+  --pr: 46px;
+
+  /* full-window shell (mock `body`) — the aim console is a full-screen
+     takeover, so it owns the viewport while it is shown. */
+  height: 100vh;
+  width: 100%;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.aim-console ::selection {
+  background: rgba(74, 163, 157, 0.22);
+}
+.aim-console ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.aim-console ::-webkit-scrollbar-thumb {
+  background: #19201f;
+  border: 2px solid var(--bg);
+}
+.aim-console ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── top bar (sober) ──────────────────────────────────────────────────── */
+.aim-console .ac-top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.aim-console .ac-brand {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  margin-right: 14px;
+}
+.aim-console .ac-brand b {
+  color: var(--txt);
+  font-weight: 600;
+}
+.aim-console .ac-utab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 13px;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  user-select: none;
+}
+.aim-console .ac-utab:hover {
+  color: var(--txt);
+  background: var(--line-2);
+}
+.aim-console .ac-utab.on {
+  color: var(--txt);
+  border-bottom-color: var(--cyan);
+}
+.aim-console .ac-utab .ac-d {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.aim-console .ac-utab.on .ac-d {
+  background: var(--cyan);
+}
+.aim-console .ac-um {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--amber);
+  background: var(--amber-d);
+  border: 1px solid #3a2e14;
+}
+.aim-console .ac-um.call {
+  color: var(--danger);
+  background: #221111;
+  border-color: #3a1d1d;
+}
+.aim-console .ac-rp {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--dim);
+  letter-spacing: 0.3px;
+}
+.aim-console .ac-rp.pri {
+  color: var(--cyan);
+  border-color: var(--cyan-d);
+  background: var(--cyan-d);
+} /* primary repo of the unit */
+.aim-console .ac-uadd {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+}
+.aim-console .ac-uadd:hover {
+  color: var(--cyan);
+}
+.aim-console .ac-sp {
+  flex: 1;
+}
+.aim-console .ac-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  letter-spacing: 0.5px;
+}
+/* exit back to the existing ProducerConsole (the default view). The
+   ENTER toggle lives in StatusBar; this is its EXIT pair, since the
+   full-window aim console replaces the existing chrome incl. StatusBar. */
+.aim-console .ac-exit {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin-left: 12px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.aim-console .ac-exit:hover {
+  color: var(--cyan);
+  border-color: var(--cyan-d);
+}
+
+/* ── 3-pane grid (mock `.main`) ───────────────────────────────────────── */
+.aim-console .ac-main {
+  display: grid;
+  grid-template-columns: var(--aim, 1.18fr) var(--sess, 1fr) var(--pr, 46px);
+  min-height: 0;
+  transition: grid-template-columns 0.2s ease;
+}
+.aim-console.pr-open {
+  --pr: 320px;
+}
+.aim-console .ac-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+}
+.aim-console .ac-col:last-child {
+  border-right: none;
+}
+
+/* ── AIM pane (header chrome + S2 stub) ───────────────────────────────── */
+.aim-console .ac-aim {
+  background: var(--panel);
+}
+.aim-console .ac-ahead {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+}
+.aim-console .ac-arow1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px 7px;
+}
+.aim-console .ac-arow1 h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--txt);
+}
+.aim-console .ac-scale {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.aim-console .ac-premise {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--cyan);
+  border: 1px solid var(--cyan-d);
+  border-radius: 3px;
+  padding: 2px 7px;
+  letter-spacing: 0.5px;
+}
+
+/* ── SESSION pane (faux tabs row + S3 stub) ───────────────────────────── */
+.aim-console .ac-session {
+  background: var(--bg);
+}
+.aim-console .ac-stabs {
+  display: flex;
+  gap: 2px;
+  height: 35px;
+  padding: 6px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-2);
+}
+.aim-console .ac-stab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  height: 29px;
+  color: var(--dim);
+  font-size: 11.5px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  position: relative;
+  top: 1px;
+}
+.aim-console .ac-stab.on {
+  background: var(--bg);
+  color: var(--txt);
+  border-color: var(--line-2);
+}
+.aim-console .ac-ro {
+  font-family: var(--mono);
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.aim-console .ac-ro.p {
+  color: var(--cyan);
+  border: 1px solid var(--cyan-d);
+}
+
+/* ── PR rail (collapsed rail ⇄ expanded panel — the S1 transition) ─────── */
+.aim-console .ac-pr {
+  background: var(--panel);
+}
+.aim-console .ac-prrail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 100%;
+  padding-top: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.aim-console.pr-open .ac-prrail {
+  display: none;
+}
+.aim-console .ac-prrail .ac-v {
+  writing-mode: vertical-rl;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  border: 1px solid var(--line-2);
+  padding: 8px 3px;
+  letter-spacing: 1px;
+}
+.aim-console .ac-prrail .ac-v.w {
+  color: var(--amber);
+  border-color: #3a2e14;
+  background: var(--amber-d);
+}
+.aim-console .ac-prrail .ac-g {
+  writing-mode: vertical-rl;
+  color: var(--faint);
+  font-size: 9px;
+  margin-top: auto;
+  padding-bottom: 12px;
+  letter-spacing: 2px;
+}
+.aim-console .ac-prfull {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+.aim-console.pr-open .ac-prfull {
+  display: flex;
+}
+.aim-console .ac-prh {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.aim-console .ac-prh .ac-x {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.aim-console .ac-prh .ac-x:hover {
+  color: var(--txt);
+}
+.aim-console .ac-prb {
+  flex: 1;
+  overflow: auto;
+  padding: 5px 7px;
+}
+
+/* ── pane stub (placeholder content — replaced in S2–S4) ──────────────── */
+.aim-console .ac-stub {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--faint);
+}
+.aim-console .ac-stub-stage {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--cyan);
+  border: 1px solid var(--cyan-d);
+  border-radius: 3px;
+  padding: 2px 9px;
+}
+.aim-console .ac-stub-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-width: 36ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aim-console *,
+  .aim-console {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

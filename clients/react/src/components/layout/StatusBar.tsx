@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ConsoleMode } from "@/components/aim-console/console-mode";
 
 interface StatusBarProps {
   agentCount: number;
@@ -7,6 +8,15 @@ interface StatusBarProps {
   onToggleCollapse?: () => void;
   onSettingsClick: () => void;
   onSecurityClick: () => void;
+  /** Coexist toggle (aim node `tmai-core:doc/aims/aim-ui.md`): which
+   *  top-level console is shown. `producer` (default) = the existing
+   *  hand-over digest console; `aim` = the new full-window 3-pane aim
+   *  console. The toggle button below ENTERS aim-ui (its EXIT pair lives
+   *  in the aim console's own top bar, since that console replaces this
+   *  StatusBar while shown). Omitting `onToggleConsoleMode` hides the
+   *  button (e.g. the collapsed sidebar, which has no settings cluster). */
+  consoleMode?: ConsoleMode;
+  onToggleConsoleMode?: () => void;
   /** Optional pre-rendered indicator slot — currently used for the
    *  calibration / tier-1 tripwire chip (DR §B.3/§B.4). Sits between
    *  the attention count and the settings / security buttons. */
@@ -38,12 +48,38 @@ export function StatusBar({
   onToggleCollapse,
   onSettingsClick,
   onSecurityClick,
+  consoleMode = "producer",
+  onToggleConsoleMode,
   indicatorSlot,
   onReturnToConsole,
   isMobile,
   onMobileMenuClick,
   unitTabs,
 }: StatusBarProps) {
+  // Coexist console-mode toggle. Rendered next to the Settings/Security
+  // cluster (the desktop-expanded + mobile chrome where those buttons live).
+  // In practice this StatusBar only renders while `producer` is active — the
+  // aim console takes over the whole shell once entered — so the label is
+  // derived from `consoleMode` purely for correctness.
+  const consoleModeButton = onToggleConsoleMode ? (
+    <button
+      type="button"
+      onClick={onToggleConsoleMode}
+      aria-pressed={consoleMode === "aim"}
+      className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
+      title={
+        consoleMode === "aim"
+          ? "Switch to the Producer console"
+          : "Switch to the aim console (preview)"
+      }
+      aria-label={
+        consoleMode === "aim" ? "Switch to the Producer console" : "Switch to the aim console"
+      }
+    >
+      ◎
+    </button>
+  ) : null;
+
   if (isMobile) {
     return (
       <div className="border-b border-hairline">
@@ -90,6 +126,7 @@ export function StatusBar({
                 🏠
               </button>
             )}
+            {consoleModeButton}
             <button
               type="button"
               onClick={onSecurityClick}
@@ -204,6 +241,7 @@ export function StatusBar({
               🏠
             </button>
           )}
+          {consoleModeButton}
           <button
             type="button"
             onClick={onSecurityClick}
