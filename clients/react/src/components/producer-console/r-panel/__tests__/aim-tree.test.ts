@@ -26,6 +26,8 @@ function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     serves: [],
     related: [],
     body: "",
+    drift: null,
+    is: [],
     ...overrides,
   };
 }

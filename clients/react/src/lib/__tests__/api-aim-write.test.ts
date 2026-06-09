@@ -30,6 +30,8 @@ const NODE: AimWire = {
   serves: [],
   related: [],
   body: "",
+  drift: null,
+  is: [],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
