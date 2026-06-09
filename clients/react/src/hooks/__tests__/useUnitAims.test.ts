@@ -45,6 +45,8 @@ function response(unit: string, count: number): AimsResponse {
           serves: [],
           related: [],
           body: "",
+          drift: null,
+          is: [],
         })),
       },
     ],

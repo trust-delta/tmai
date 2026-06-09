@@ -1141,6 +1141,34 @@
           }
         }
       },
+      "AimDriftWire": {
+        "type": "object",
+        "description": "Stale-from-ancestor drift coordinates for one aim node — the wire projection\nof [`crate::workbench::compose::AimDriftItem`] (parent-only v1). Dates are\nISO-8601 strings (the convention [`super::approaches_view::ApproachWire`]\nset). The ancestor's commit *subject* is intentionally dropped: the panel\nneeds the which-ancestor / when coordinates, not the prose.",
+        "required": [
+          "stale_from_ancestor_slug",
+          "ancestor_change_sha",
+          "ancestor_change_date",
+          "aim_change_date"
+        ],
+        "properties": {
+          "aim_change_date": {
+            "type": "string",
+            "description": "ISO-8601 date this node itself last changed."
+          },
+          "ancestor_change_date": {
+            "type": "string",
+            "description": "ISO-8601 date the ancestor's anchor moved."
+          },
+          "ancestor_change_sha": {
+            "type": "string",
+            "description": "Short sha of the commit that moved the ancestor's `aim:` anchor."
+          },
+          "stale_from_ancestor_slug": {
+            "type": "string",
+            "description": "The ancestor (on the `parent` chain) whose `aim:` anchor moved most\nrecently after this node last changed."
+          }
+        }
+      },
       "AimEditRequest": {
         "type": "object",
         "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe cross-edges (`depends_on` / `serves` / `related`) and the body are\npreserved server-side (cross-edge editing is a deferred increment). Authority\nis operator-only, *soft* — like the in-tmai merge button, there is no\ndraft/accept gate beyond the normal endpoint auth.",
@@ -1163,6 +1191,36 @@
           "state": {
             "$ref": "#/components/schemas/AimState",
             "description": "Lifecycle state — `open` / `done` / `dead`."
+          }
+        }
+      },
+      "AimInteriorKind": {
+        "type": "string",
+        "description": "The kind of an interior mark — mirrors the `doc/aims/README.md` convention:\n`confirmed` = external ground-truth checked (test / PR / git ref), real,\nattention-zero; `claimed` = unverified, an operator confirm is owed. The\nprojection records which kind the author wrote — it never re-judges it.",
+        "enum": [
+          "confirmed",
+          "claimed"
+        ]
+      },
+      "AimInteriorWire": {
+        "type": "object",
+        "description": "One interior mark projected to the wire — a single `[claimed]` /\n`[confirmed: <ref>]` line from the node body. `text` is the line's prose with\nthe marker (and any leading list bullet) stripped; `reference` carries the\nconfirmed ref (the test / PR / git ref after the colon) and is `null` for a\nbare `[claimed]` (or a `[claimed — note]`, whose note is commentary, not a\nref). Wire key for `reference` is `ref` (mirroring\n[`super::approaches_view::ReviewTriggerWire`]).",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AimInteriorKind"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
           }
         }
       },
@@ -1194,7 +1252,7 @@
           },
           "body": {
             "type": "string",
-            "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node)."
+            "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim\n— [`Self::interior`] is an ADDITIVE projection over it, not a replacement."
           },
           "depends_on": {
             "type": "array",
@@ -1202,6 +1260,24 @@
               "type": "string"
             },
             "description": "DAG cross-edges (slugs): \"depends on\". Empty when absent."
+          },
+          "drift": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AimDriftWire",
+                "description": "Stale-from-ancestor drift, if this node drifted (some ancestor's `aim:`\nanchor moved after the node last changed). `null` / absent when current.\nComputed on read by reusing [`crate::workbench::compose::aim_drift`] — the\nsame parent-only (v1) verdict the Producer hand-over's `tmai-aim-drift`\nfence carries (one source of truth). Populated **only** by the read\nendpoint; [`Self::from_record`] leaves it `None`, because the single-record\nwrite endpoints have no corpus context to walk the ancestor chain."
+              }
+            ]
+          },
+          "is": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AimInteriorWire"
+            },
+            "description": "Interior `is[]` — the marked claims parsed from [`Self::body`]: each\n`[claimed]` / `[confirmed: <ref>]` line in the interior prose projected to\none entry. **Mark-only** (design pin #1 / `doc/aims/README.md`): the\nprojection surfaces what the author wrote (confirmed / claimed) and never\nre-judges, re-orders, or de-drifts it. Empty when the interior carries no\nmarkers. Wire key is `is` (the corpus spelling)."
           },
           "parent": {
             "type": [
