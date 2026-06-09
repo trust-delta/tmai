@@ -81,6 +81,22 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs().attentionStripWidth).toBe(DEFAULT_UI_PREFS.attentionStripWidth);
   });
 
+  it("defaults the aim panel to frontier mode and round-trips a switch to tree", () => {
+    // The owed-worklist default is load-bearing (the panel is a write surface,
+    // not a passive full-tree dump).
+    expect(loadUIPrefs().aimMode).toBe("frontier");
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, aimMode: "tree" });
+    expect(loadUIPrefs().aimMode).toBe("tree");
+  });
+
+  it("falls back to the default aim mode for an unknown value", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, aimMode: "galaxy" }),
+    );
+    expect(loadUIPrefs().aimMode).toBe(DEFAULT_UI_PREFS.aimMode);
+  });
+
   it("round-trips a saved blob", () => {
     const next: UIPrefs = {
       ...DEFAULT_UI_PREFS,

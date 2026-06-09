@@ -10,6 +10,15 @@
 
 import { DEFAULT_THEME_NAME, THEME_NAMES, type ThemeName } from "@/lib/theme";
 
+// Which mode the Aim panel (◎ Aims, Stage B convergence) opens in. `frontier`
+// = the owed worklist (default — the load-bearing thesis: the panel is a WRITE
+// surface, not a passive full-tree dump); `tree` = the collapsed per-repo
+// navigator. Durable across sessions, browser-side; the volatile bits (the
+// expanded-branch set, the search filter) stay component-local and are NOT
+// persisted (a stale persisted filter would silently hide rows on next open).
+export type AimMode = "frontier" | "tree";
+export const AIM_MODES: readonly AimMode[] = ["frontier", "tree"];
+
 export interface UIPrefs {
   // WebUI colour theme. Presentation-only; lives here (not in tmai-core
   // config / api-spec) by the same convention as every other field.
@@ -31,6 +40,9 @@ export interface UIPrefs {
   // pick a default to expand (approach 2026-05-29 §"tmai は何を絶対しない"
   // rule 6: no tmai-selected default expand).
   rPanelExpandedSections: string[];
+  // Aim panel mode. Default `frontier` — the owed worklist is the panel's
+  // load-bearing thesis (NOT a passive full-tree dump). See AimMode.
+  aimMode: AimMode;
 }
 
 // Attention-strip width bounds (px). Floor keeps the section content
@@ -47,6 +59,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   attentionStripCollapsed: false,
   attentionStripWidth: ATTENTION_STRIP_WIDTH_DEFAULT,
   rPanelExpandedSections: [],
+  aimMode: "frontier",
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -99,6 +112,9 @@ function coercePrefs(raw: unknown): UIPrefs {
       DEFAULT_UI_PREFS.attentionStripWidth,
     ),
     rPanelExpandedSections: coerceExpandedSections(r.rPanelExpandedSections),
+    aimMode: AIM_MODES.includes(r.aimMode as AimMode)
+      ? (r.aimMode as AimMode)
+      : DEFAULT_UI_PREFS.aimMode,
   };
 }
 
