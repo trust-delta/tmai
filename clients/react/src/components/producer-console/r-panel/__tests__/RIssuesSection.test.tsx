@@ -118,7 +118,9 @@ describe("RIssuesSection", () => {
     await waitFor(() => {
       expect(screen.getByText(/0 open/)).toBeTruthy();
     });
-    expect(screen.getByText(/No issues/i)).toBeTruthy();
+    // findByText (await) not getByText: the header count and the empty-state
+    // body can commit in separate ticks, so a sync read here races (flaked CI).
+    expect(await screen.findByText(/No issues/i)).toBeTruthy();
   });
 
   it("renders a colour-coded lifecycle status pill from the wire state (C2)", async () => {
