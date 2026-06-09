@@ -1,24 +1,39 @@
 // @vitest-environment jsdom
 //
-// AimConsole S1 shell test. The aim console is a faithful reproduction of
-// the destination mock (`origin/mock/aim-ui-sample`): a full-window 3-pane
-// console under a sober top bar. S1 reproduces the SHELL — top bar (real
-// unit tabs), the 3-pane grid, and the PR-rail expand/collapse transition.
-// The pane BODIES are stubs (S2–S4), so this test asserts STRUCTURE +
-// the one live interaction (the rail toggle) + the callbacks, not pane
-// content.
+// AimConsole shell test. The aim console is a faithful reproduction of the
+// destination mock (`origin/mock/aim-ui-sample`): a full-window 3-pane console
+// under a sober top bar. This test covers the SHELL — top bar (real unit
+// tabs), the 3-pane grid, the PR-rail expand/collapse transition, and the
+// callbacks. The Aim (left) pane is now the real S2 worklist (its behaviour is
+// covered in AimPane.test.tsx); the Session / PR-rail bodies remain S3 / S4
+// stubs.
 //
-// `useUnitAttention` is mocked so the per-tab attention rollup never hits
-// the network (mirrors how UnitTabs tabs poll for the ⚠N badge).
+// `useUnitAttention` is mocked so the per-tab attention rollup never hits the
+// network; `api.aims` is mocked to a pending promise so the embedded AimPane
+// parks in its loading state (no network, no act-warning churn) — the shell
+// assertions don't depend on aim data.
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { UnitResponse } from "@/lib/api";
+import type { AimsResponse, UnitResponse } from "@/lib/api";
+import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
 
 vi.mock("@/hooks/useUnitAttention", () => ({
   useUnitAttention: () => ({ data: null, loading: false, error: null }),
 }));
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      // Park the AimPane fetch in flight — the shell tests are data-agnostic.
+      aims: () => new Promise<AimsResponse>(() => {}),
+    },
+  };
+});
 
 const UNITS: UnitResponse[] = [
   {
@@ -39,7 +54,11 @@ function renderConsole(overrides: Partial<Parameters<typeof AimConsole>[0]> = {}
     onExit: vi.fn(),
     ...overrides,
   };
-  render(<AimConsole {...props} />);
+  render(
+    <UIPrefsProvider>
+      <AimConsole {...props} />
+    </UIPrefsProvider>,
+  );
   return props;
 }
 
@@ -55,9 +74,13 @@ describe("AimConsole — S1 shell", () => {
     expect(screen.getByLabelText("PR / Issue rail")).toBeTruthy();
   });
 
-  it("marks the panes as S2–S4 stubs (no worklist/session/PR logic in S1)", () => {
+  it("fills the Aim pane (S2) and leaves Session / PR-rail as S3 / S4 stubs", () => {
     renderConsole();
-    expect(screen.getByTestId("aim-pane-stub-s2")).toBeTruthy();
+    // The Aim pane is now the real worklist: no S2 stub, real chrome present.
+    expect(screen.queryByTestId("aim-pane-stub-s2")).toBeNull();
+    expect(screen.getByTestId("aim-ledger")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Frontier ⚠" })).toBeTruthy();
+    // Session + PR-rail bodies remain stubs.
     expect(screen.getByTestId("aim-pane-stub-s3")).toBeTruthy();
     expect(screen.getByTestId("aim-pane-stub-s4")).toBeTruthy();
   });
