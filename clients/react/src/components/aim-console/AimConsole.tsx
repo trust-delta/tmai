@@ -12,10 +12,12 @@
 // dev-tool tokens are scoped to `.aim-console` in `styles/aim-console.css`
 // so they never bleed into the existing console.
 //
-// S1 SCOPE = the TOKEN LAYER + the SHELL: the top bar (real, data-driven
-// unit tabs) and the 3-pane grid incl. the PR-rail expand/collapse
-// transition. The three pane BODIES are placeholders / stubs here:
-//   - S2 fills the Aim worklist (Frontier⊥Tree, ledger, ruler, inspector);
+// SCOPE so far: the TOKEN LAYER + the SHELL (S1) and the Aim pane (S2). The
+// top bar (real, data-driven unit tabs) and the 3-pane grid incl. the PR-rail
+// expand/collapse transition are S1; the Aim (left) pane is now the real
+// worklist (Frontier⊥Tree, ledger, overview ruler, inspector, create-aim
+// modal — `AimPane`, reusing the Stage B logic layer). The remaining two
+// bodies are still stubs:
 //   - S3 fills the Session conversation (tabs + bash footer);
 //   - S4 fills the PR-rail PR/Issue lists.
 
@@ -23,6 +25,7 @@ import { useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AimPane } from "./AimPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
 // <link>) — loads the exact families `aim-console.css` references via --sans /
 // --mono so the dev-tool look matches the mock instead of falling back to
@@ -114,19 +117,9 @@ export function AimConsole({
 
       {/* ── 3-pane grid ── */}
       <div className="ac-main">
-        {/* AIM — S2 worklist */}
+        {/* AIM — S2 worklist (Frontier⊥Tree, ledger, ruler, inspector, modal) */}
         <section className="ac-col ac-aim" aria-label="Aim">
-          <div className="ac-ahead">
-            <div className="ac-arow1">
-              <h1>Aim</h1>
-              <span className="ac-scale">Frontier ⊥ Tree</span>
-              <span className="ac-premise">AIM-PREMISE</span>
-            </div>
-          </div>
-          <PaneStub
-            stage="S2"
-            note="Aim worklist (Frontier⊥Tree), ledger + bar, overview ruler, and inspector land here."
-          />
+          <AimPane unitName={activeUnitName} />
         </section>
 
         {/* SESSION — S3 conversation */}
