@@ -6,16 +6,18 @@
 // tabs), the 3-pane grid, the PR-rail expand/collapse transition, and the
 // callbacks. The Aim (left) pane is now the real S2 worklist (its behaviour is
 // covered in AimPane.test.tsx); the Session pane is real (tabs + shead + term +
-// the docked S4 bash footer); the PR-rail body remains an S5 stub.
+// the docked S4 bash footer); the PR-rail is now the real S5 PR/Issue rail
+// (its behaviour is covered in PrRail.test.tsx).
 //
 // `useUnitAttention` is mocked so the per-tab attention rollup never hits the
-// network; `api.aims` is mocked to a pending promise so the embedded AimPane
-// parks in its loading state (no network, no act-warning churn) — the shell
-// assertions don't depend on aim data.
+// network; `api.aims` / `api.unitPrs` / `api.unitIssues` are mocked to pending
+// promises so the embedded AimPane + PrRail park in their loading states (no
+// network, no act-warning churn) — the shell assertions don't depend on the
+// data.
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { AimsResponse, UnitResponse } from "@/lib/api";
+import type { AimsResponse, UnitIssuesResponse, UnitPrsResponse, UnitResponse } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
 
@@ -29,8 +31,11 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      // Park the AimPane fetch in flight — the shell tests are data-agnostic.
+      // Park the AimPane + PrRail fetches in flight — the shell tests are
+      // data-agnostic.
       aims: () => new Promise<AimsResponse>(() => {}),
+      unitPrs: () => new Promise<UnitPrsResponse>(() => {}),
+      unitIssues: () => new Promise<UnitIssuesResponse>(() => {}),
     },
   };
 });
@@ -82,7 +87,7 @@ describe("AimConsole — S1 shell", () => {
     expect(screen.getByLabelText("PR / Issue rail")).toBeTruthy();
   });
 
-  it("fills the Aim (S2) and Session (S3+S4) panes, leaves the PR-rail as an S5 stub", () => {
+  it("fills all three panes — Aim (S2), Session (S3+S4), PR-rail (S5) — no stubs", () => {
     renderConsole();
     // The Aim pane is now the real worklist: no S2 stub, real chrome present.
     expect(screen.queryByTestId("aim-pane-stub-s2")).toBeNull();
@@ -93,8 +98,12 @@ describe("AimConsole — S1 shell", () => {
     expect(screen.queryByTestId("aim-pane-stub-s3")).toBeNull();
     expect(screen.getByRole("tablist", { name: "Sessions" })).toBeTruthy();
     expect(screen.getByTestId("aim-bash-footer")).toBeTruthy();
-    // The PR-rail body remains an S5 stub.
-    expect(screen.getByTestId("aim-pane-stub-s5")).toBeTruthy();
+    // The PR-rail is now real (no S5 stub): the collapsed rail + both groups
+    // of the expanded panel render even while the lists are still loading.
+    expect(screen.queryByTestId("aim-pane-stub-s5")).toBeNull();
+    expect(screen.getByText("‹ EXTERNAL")).toBeTruthy();
+    expect(screen.getByTestId("ac-pr-group")).toBeTruthy();
+    expect(screen.getByTestId("ac-issue-group")).toBeTruthy();
   });
 
   it("renders a top-bar unit tab with primary + secondary repo pills", () => {
