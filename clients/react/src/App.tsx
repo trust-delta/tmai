@@ -690,6 +690,10 @@ export function App() {
         onSelectUnit={handleSelectUnit}
         onAddUnit={handleAddUnit}
         onExit={toggleConsoleMode}
+        agents={agents}
+        currentProjectPath={currentProject}
+        trigger={triggerHandoff}
+        onOpenSettings={openSettingsFromOverride}
       />
     );
   }

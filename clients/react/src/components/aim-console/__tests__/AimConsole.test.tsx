@@ -52,6 +52,14 @@ function renderConsole(overrides: Partial<Parameters<typeof AimConsole>[0]> = {}
     onSelectUnit: vi.fn(),
     onAddUnit: vi.fn(),
     onExit: vi.fn(),
+    // S3 Session-pane wiring — empty here so the shell tests stay
+    // data-agnostic (no live sessions → the pane parks in its empty state,
+    // no TerminalPanel / PreviewPanel mount, no SSE). The pane's own
+    // behaviour is covered in SessionPane.test.tsx.
+    agents: [],
+    currentProjectPath: "/home/u/tmai" as string | null,
+    trigger: vi.fn(),
+    onOpenSettings: vi.fn(),
     ...overrides,
   };
   render(
@@ -74,14 +82,18 @@ describe("AimConsole — S1 shell", () => {
     expect(screen.getByLabelText("PR / Issue rail")).toBeTruthy();
   });
 
-  it("fills the Aim pane (S2) and leaves Session / PR-rail as S3 / S4 stubs", () => {
+  it("fills the Aim (S2) and Session (S3) panes, leaves the PR-rail as an S4 stub", () => {
     renderConsole();
     // The Aim pane is now the real worklist: no S2 stub, real chrome present.
     expect(screen.queryByTestId("aim-pane-stub-s2")).toBeNull();
     expect(screen.getByTestId("aim-ledger")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Frontier ⚠" })).toBeTruthy();
-    // Session + PR-rail bodies remain stubs.
-    expect(screen.getByTestId("aim-pane-stub-s3")).toBeTruthy();
+    // The Session pane is real now (no S3 stub): the session tablist + the
+    // S4-footer reservation render even with no live sessions.
+    expect(screen.queryByTestId("aim-pane-stub-s3")).toBeNull();
+    expect(screen.getByRole("tablist", { name: "Sessions" })).toBeTruthy();
+    expect(screen.getByTestId("aim-session-footer-reserve")).toBeTruthy();
+    // The PR-rail body remains an S4 stub.
     expect(screen.getByTestId("aim-pane-stub-s4")).toBeTruthy();
   });
 
