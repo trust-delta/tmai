@@ -20,9 +20,9 @@
    `*.tsx?`, never `*.css`.
 
    S1 reproduces the TOKEN LAYER + the SHELL: top bar, 3-pane grid, and the
-   PR-rail expand/collapse transition. The three panes are placeholders /
-   stubs here — the worklist (S2), session (S3), and PR/Issue lists (S4)
-   fill them in later stages.
+   PR-rail expand/collapse transition. The panes fill in over later stages —
+   the worklist (S2), session (S3) + its docked bash footer (S4), and the
+   PR/Issue lists (S5).
    ════════════════════════════════════════════════════════════════════════ */
 
 .aim-console {
@@ -404,23 +404,180 @@
   color: var(--faint);
 }
 
-/* ── footer reservation ── the docked bash footer is S4; S3 only RESERVES
-   this strip (mock `.footer` collapsed height) so the term doesn't fill the
-   whole pane. Not the footer itself. ────────────────────────────────────── */
-.aim-console .ac-sfoot {
+/* ── docked bash footer (mock `.footer`/`.fbar`/`.ftab`/`.ftwrap`) ────────
+   The Session pane's docked bash terminals (S4): a collapsed 33px tab bar
+   that expands to 210px (mock `body.bash-on .footer`), a tab strip (one per
+   repo + ad-hoc shells), `+` add, split toggle, and the open/close carat.
+   Each surfaced terminal is the reused TerminalPanel filling `.ac-ftbody`. */
+.aim-console .ac-footer {
   flex: none;
   height: 33px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
+  overflow: hidden;
   background: var(--panel);
   border-top: 1px solid var(--line);
+  transition: height 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
-.aim-console .ac-sfoot-hint {
+.aim-console .ac-footer.open {
+  height: 210px;
+}
+.aim-console .ac-fbar {
+  display: flex;
+  align-items: stretch;
+  height: 33px;
+  flex: none;
+  padding: 0 4px;
+}
+.aim-console .ac-ftabs {
+  display: flex;
+  align-items: stretch;
+}
+/* The tab is a flex shell carrying the visual state; the caption is a bare
+   button inside it (so the ad-hoc `×` is a SIBLING button, never nested). */
+.aim-console .ac-ftab {
+  display: flex;
+  align-items: center;
+  height: 33px;
+  border-bottom: 2px solid transparent;
+  user-select: none;
+}
+.aim-console .ac-ftab:hover {
+  background: var(--line-2);
+}
+.aim-console .ac-ftab.on {
+  border-bottom-color: var(--cyan);
+}
+.aim-console .ac-ftab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 6px 0 11px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
+}
+.aim-console .ac-ftab:hover .ac-ftab-btn,
+.aim-console .ac-ftab.on .ac-ftab-btn {
+  color: var(--txt);
+}
+.aim-console .ac-rdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  flex: none;
+}
+.aim-console .ac-fclose {
+  padding: 0 9px 0 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
   color: var(--faint);
-  letter-spacing: 0.5px;
+  font-size: 13px;
+  line-height: 1;
+}
+.aim-console .ac-fclose:hover {
+  color: var(--danger);
+}
+.aim-console .ac-fadd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 14px;
+}
+.aim-console .ac-fadd:hover {
+  color: var(--cyan);
+}
+.aim-console .ac-fadd:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.aim-console .ac-fsp {
+  flex: 1;
+}
+.aim-console .ac-fsplit {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 13px;
+}
+.aim-console .ac-fsplit:hover {
+  color: var(--cyan);
+}
+.aim-console .ac-fsplit.on {
+  color: var(--cyan);
+}
+.aim-console .ac-fsplit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.aim-console .ac-fcar {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 10px;
+}
+.aim-console .ac-fcar:hover {
+  color: var(--txt);
+}
+.aim-console .ac-ftwrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+.aim-console .ac-ftpane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aim-console .ac-ftwrap.split .ac-ftpane {
+  border-right: 1px solid var(--line-2);
+}
+.aim-console .ac-ftwrap.split .ac-ftpane:last-child {
+  border-right: none;
+}
+.aim-console .ac-ftpane-h {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  padding: 5px 12px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aim-console .ac-ftbody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.aim-console .ac-fthint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  padding: 8px 14px;
 }
 
 /* ── PR rail (collapsed rail ⇄ expanded panel — the S1 transition) ─────── */

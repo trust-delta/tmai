@@ -5,8 +5,8 @@
 // (`.stabs`), the `.shead` (model / cwd / Handoff), and the `.term`
 // conversation view — in the aim-console dev-tool tokens (`.ac-stabs` /
 // `.ac-stab` / `.ac-ro`, extended from S1's stub). The mock's docked
-// `.footer` (tabbed bash terminals) is SKIPPED here — that is S4; this pane
-// only RESERVES the strip at the bottom for it (`.ac-sfoot`).
+// `.footer` (tabbed bash terminals) lands at the bottom as `<BashFooter>`
+// (S4) — the strip S3 reserved is now the real docked bash footer.
 //
 // REUSE, DON'T REBUILD (issue #797): the existing console already renders
 // agent conversations. This pane wires the SAME infra into the aim-console:
@@ -36,6 +36,8 @@ import {
 } from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
 import { cn } from "@/lib/utils";
+import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
+import { BashFooter } from "./BashFooter";
 
 interface SessionPaneProps {
   /** Live agent list (App's `useAgents`). The Producer is resolved via
@@ -52,6 +54,11 @@ interface SessionPaneProps {
   trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
   /** ⚙ deep-link into Settings (auto-handoff threshold). */
   onOpenSettings: () => void;
+  /** The focused unit's repos (primary first), threaded from AimConsole's
+   *  membership list — one per-repo bash tab each in the docked footer (S4).
+   *  Empty for a cwd-synthesized unit not in the configured membership; the
+   *  footer then falls back to `currentProjectPath`. */
+  repos: UnitRepoWire[];
 }
 
 function repoBasename(path: string): string {
@@ -97,6 +104,7 @@ export function SessionPane({
   currentProjectPath,
   trigger,
   onOpenSettings,
+  repos,
 }: SessionPaneProps) {
   // Producer + workers for the focused unit. The Producer (if any) leads;
   // workers follow, sorted by name for a stable tab order. Resolution mirrors
@@ -201,11 +209,11 @@ export function SessionPane({
         )}
       </div>
 
-      {/* ── footer reservation ── the docked bash footer is S4; this pane only
-          LEAVES ROOM for it (mock `.footer` collapsed height). Not built. */}
-      <div className="ac-sfoot" aria-hidden="true" data-testid="aim-session-footer-reserve">
-        <span className="ac-sfoot-hint">bash · S4</span>
-      </div>
+      {/* ── docked bash footer (mock `.footer`) ── per-repo + ad-hoc shell
+          terminals, lazy-spawned on first activation and rendered via the
+          reused TerminalPanel. Collapsed by default (S3 reserved this strip;
+          S4 fills it). */}
+      <BashFooter repos={repos} primaryPath={currentProjectPath} agents={agents} />
     </>
   );
 }

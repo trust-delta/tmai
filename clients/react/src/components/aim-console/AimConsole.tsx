@@ -12,16 +12,17 @@
 // dev-tool tokens are scoped to `.aim-console` in `styles/aim-console.css`
 // so they never bleed into the existing console.
 //
-// SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), and the
-// Session pane (S3). The top bar (real, data-driven unit tabs) and the 3-pane
-// grid incl. the PR-rail expand/collapse transition are S1; the Aim (left)
-// pane is the real worklist (Frontier⊥Tree, ledger, overview ruler, inspector,
-// create-aim modal — `AimPane`, reusing the Stage B logic layer); the Session
-// (centre) pane is the real conversation surface (tabs + shead + term —
-// `SessionPane`, reusing the existing console infra). The remaining body is
-// still a stub:
-//   - the Session pane LEAVES ROOM for the S4 bash footer (built later);
-//   - the PR-rail PR/Issue lists are still an S4 stub.
+// SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), the
+// Session pane (S3), and its docked bash footer (S4). The top bar (real,
+// data-driven unit tabs) and the 3-pane grid incl. the PR-rail expand/collapse
+// transition are S1; the Aim (left) pane is the real worklist (Frontier⊥Tree,
+// ledger, overview ruler, inspector, create-aim modal — `AimPane`, reusing the
+// Stage B logic layer); the Session (centre) pane is the real conversation
+// surface (tabs + shead + term — `SessionPane`, reusing the existing console
+// infra) with the real docked bash footer (per-repo + ad-hoc shell terminals,
+// reusing `api.spawnPty` + `TerminalPanel`). The remaining body is still a
+// stub:
+//   - the PR-rail PR/Issue lists are still an S5 stub.
 
 import { useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
@@ -94,9 +95,13 @@ export function AimConsole({
   // PR-rail expand state — the only live interaction in the S1 shell. The
   // collapsed 46px rail expands to a 320px panel via the `.pr-open` modifier
   // on the root (mock `body.pr-open { --pr: 320px }`). The panel CONTENT is
-  // an S4 stub.
+  // an S5 stub.
   const [prOpen, setPrOpen] = useState(false);
   const metaUnit = activeUnitName ?? units[0]?.name ?? "—";
+  // The focused unit's repos drive the Session pane's per-repo bash footer
+  // tabs (S4). A cwd-synthesized unit isn't in the configured membership, so
+  // `repos` is empty there — the footer falls back to `currentProjectPath`.
+  const activeUnit = units.find((u) => u.name === activeUnitName) ?? null;
 
   return (
     <div className={cn("aim-console", prOpen && "pr-open")} data-testid="aim-console">
@@ -142,7 +147,7 @@ export function AimConsole({
           <AimPane unitName={activeUnitName} />
         </section>
 
-        {/* SESSION — S3 conversation (tabs + shead + term; bash footer is S4) */}
+        {/* SESSION — S3 conversation (tabs + shead + term) + S4 bash footer */}
         <section className="ac-col ac-session" aria-label="Session">
           <SessionPane
             agents={agents}
@@ -150,10 +155,11 @@ export function AimConsole({
             currentProjectPath={currentProjectPath}
             trigger={trigger}
             onOpenSettings={onOpenSettings}
+            repos={activeUnit?.repos ?? []}
           />
         </section>
 
-        {/* PR RAIL — collapsed rail ⇄ expanded panel (S1); lists are S4 */}
+        {/* PR RAIL — collapsed rail ⇄ expanded panel (S1); lists are S5 */}
         <section className="ac-col ac-pr" aria-label="PR / Issue rail">
           <button
             type="button"
@@ -182,7 +188,7 @@ export function AimConsole({
             </div>
             <div className="ac-prb">
               <PaneStub
-                stage="S4"
+                stage="S5"
                 note="PR / Issue lists (the rail's expand/collapse content) land here."
               />
             </div>

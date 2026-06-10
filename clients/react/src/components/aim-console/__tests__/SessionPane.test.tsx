@@ -24,6 +24,12 @@ vi.mock("@/components/terminal/TerminalPanel", () => ({
     <div data-testid="ac-term-terminal">{agentId}</div>
   ),
 }));
+// BashFooter (S4) is covered in BashFooter.test.tsx; stub it here so the
+// Session-pane tests stay focused on the tab/shead/term wiring and the docked
+// footer's own spawn/PTY machinery stays out of these assertions.
+vi.mock("../BashFooter", () => ({
+  BashFooter: () => <div data-testid="aim-bash-footer" />,
+}));
 vi.mock("@/components/agent/PreviewPanel", () => ({
   PreviewPanel: ({ agentId }: { agentId: string }) => (
     <div data-testid="ac-term-preview">{agentId}</div>
@@ -127,6 +133,10 @@ function renderPane(overrides: Partial<Parameters<typeof SessionPane>[0]> = {}) 
     currentProjectPath: "/home/u/tmai" as string | null,
     trigger: vi.fn(),
     onOpenSettings: vi.fn(),
+    repos: [
+      { path: "/home/u/tmai", primary: true },
+      { path: "/home/u/tmai-core", primary: false },
+    ],
     ...overrides,
   };
   render(<SessionPane {...props} />);
@@ -181,9 +191,9 @@ describe("SessionPane — S3 Session conversation", () => {
     expect(screen.getByText("sonnet-4.6")).toBeTruthy();
   });
 
-  it("reserves the bottom strip for the S4 bash footer (does not fill the whole pane)", () => {
+  it("docks the S4 bash footer at the bottom of the pane", () => {
     renderPane();
-    expect(screen.getByTestId("aim-session-footer-reserve")).toBeTruthy();
+    expect(screen.getByTestId("aim-bash-footer")).toBeTruthy();
   });
 
   it("renders an empty state when the unit has no live sessions", () => {
