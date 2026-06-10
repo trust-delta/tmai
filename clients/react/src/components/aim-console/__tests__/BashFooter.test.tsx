@@ -140,6 +140,32 @@ describe("BashFooter — S4 docked bash footer", () => {
     expect(spawnPty).not.toHaveBeenCalled();
   });
 
+  it("re-spawns a repo tab whose stored session has DIED (stale id gone from agents)", async () => {
+    const live = bashAgent({
+      id: "bash:core",
+      target: "term-core",
+      cwd: "/home/u/tmai-core",
+      git_common_dir: "/home/u/tmai-core/.git",
+    });
+    const { rerender } = render(
+      <BashFooter repos={REPOS} primaryPath="/home/u/tmai" agents={[live]} />,
+    );
+    // First activation re-attaches to the live shell (no spawn).
+    fireEvent.click(within(screen.getByTestId("aim-bash-tab-tmai-core")).getByRole("tab"));
+    expect((await screen.findByTestId("ac-footer-terminal")).textContent).toBe("term-core");
+    expect(spawnPty).not.toHaveBeenCalled();
+
+    // The bash exits → its agent drops off the live roster.
+    rerender(<BashFooter repos={REPOS} primaryPath="/home/u/tmai" agents={[]} />);
+
+    // Re-activating the (non-closeable) repo tab must NOT stay stuck on the dead
+    // session — it clears the stale id and spawns a fresh bash for that cwd.
+    fireEvent.click(within(screen.getByTestId("aim-bash-tab-tmai-core")).getByRole("tab"));
+    await waitFor(() =>
+      expect(spawnPty).toHaveBeenCalledWith({ command: "bash", cwd: "/home/u/tmai-core" }),
+    );
+  });
+
   it("shows a running dot for a repo that already has a live bash", () => {
     const existing = bashAgent({
       id: "bash:existing",

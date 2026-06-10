@@ -134,6 +134,10 @@ export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
     }));
     return [...repoTabs, ...adhoc];
   }, [footerRepos, adhoc]);
+  // Current tabs for the click handlers (which are []-dep callbacks) — lets a
+  // tab click re-attempt activation by key without re-binding on every render.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   // Highlighted tab — the explicit selection if still present, else the first
   // tab (for the chrome; spawning still waits for an actual activation).
@@ -145,12 +149,32 @@ export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
   const partnerTab =
     splitOn && tabs.length >= 2 ? (tabs.find((t) => t.key !== activeTab?.key) ?? null) : null;
 
-  // Lazily spawn (or re-attach) a tab's PTY. Idempotent: a tab that already
-  // has a session, or one mid-spawn, is a no-op. The guard is set
-  // synchronously BEFORE any await so a re-entrant call (StrictMode's
-  // double-invoked effect) can't race a second spawn.
+  // Lazily spawn (or re-attach) a tab's PTY. Idempotent for a tab that is
+  // mid-spawn or already attached to a LIVE shell; but a stored session whose
+  // bash has DIED (its agent is gone from the list) is treated as stale —
+  // cleared and re-spawned — so a non-closeable repo tab can't get stranded on
+  // a dead terminal until the whole console remounts.
   const activate = useCallback((tab: FooterTab) => {
-    if (spawningRef.current.has(tab.key) || sessionsRef.current[tab.key]) return;
+    // A spawn in flight, OR a spawned session not yet confirmed live on the
+    // wire: `spawningRef` holds the key across that whole window, so this guard
+    // also blocks StrictMode's double-invoked effect AND the brief spawn→wire
+    // gap from racing a second spawn. The key is released only once the session
+    // is observed live (the liveness effect below) or the spawn fails / closes.
+    if (spawningRef.current.has(tab.key)) return;
+    // Already attached to a live shell — nothing to do.
+    const stored = sessionsRef.current[tab.key];
+    if (stored && resolveAgent(stored, agentsRef.current)) return;
+    // A settled-then-DEAD session: drop the stale id and fall through to
+    // re-attach / spawn (the still-in-flight case was caught by the guard
+    // above, so this only fires for a session that was live and has since
+    // exited — e.g. the user ran `exit` in the footer bash).
+    if (stored) {
+      setSessions((cur) => {
+        const next = { ...cur };
+        delete next[tab.key];
+        return next;
+      });
+    }
     spawningRef.current.add(tab.key);
 
     // Re-attach BEFORE spawning — re-use an already-running shell at this
@@ -188,11 +212,33 @@ export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
     if (partnerTab) activate(partnerTab);
   }, [open, activeTab, partnerTab, activate]);
 
+  // Release the in-flight guard once the wire confirms a stored session as a
+  // live agent. Until then `spawningRef` holds the key (covering the spawn→wire
+  // window); releasing it on confirmation is what lets a LATER death of that
+  // shell re-trigger a spawn on the next activation (the `activate` liveness
+  // check). Driven by `agents` / `sessions` so it tracks the live roster.
+  useEffect(() => {
+    for (const [key, id] of Object.entries(sessions)) {
+      if (resolveAgent(id, agents)) {
+        spawningRef.current.delete(key);
+      }
+    }
+  }, [agents, sessions]);
+
   // ── tab-bar actions ──────────────────────────────────────────────────────
-  const openOnto = useCallback((key: string) => {
-    setActiveKey(key);
-    setOpen(true);
-  }, []);
+  const openOnto = useCallback(
+    (key: string) => {
+      setActiveKey(key);
+      setOpen(true);
+      // Re-attempt activation on every click — covers re-clicking the ALREADY-
+      // active tab to revive a dead shell, where no state change would re-run
+      // the spawn effect on its own. `activate` is guarded, so a click on a
+      // live tab is a no-op.
+      const tab = tabsRef.current.find((t) => t.key === key);
+      if (tab) activate(tab);
+    },
+    [activate],
+  );
 
   const toggleOpen = useCallback(() => {
     setOpen((v) => !v);
