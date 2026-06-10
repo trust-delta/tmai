@@ -5,8 +5,8 @@
 // under a sober top bar. This test covers the SHELL — top bar (real unit
 // tabs), the 3-pane grid, the PR-rail expand/collapse transition, and the
 // callbacks. The Aim (left) pane is now the real S2 worklist (its behaviour is
-// covered in AimPane.test.tsx); the Session / PR-rail bodies remain S3 / S4
-// stubs.
+// covered in AimPane.test.tsx); the Session pane is real (tabs + shead + term +
+// the docked S4 bash footer); the PR-rail body remains an S5 stub.
 //
 // `useUnitAttention` is mocked so the per-tab attention rollup never hits the
 // network; `api.aims` is mocked to a pending promise so the embedded AimPane
@@ -82,19 +82,19 @@ describe("AimConsole — S1 shell", () => {
     expect(screen.getByLabelText("PR / Issue rail")).toBeTruthy();
   });
 
-  it("fills the Aim (S2) and Session (S3) panes, leaves the PR-rail as an S4 stub", () => {
+  it("fills the Aim (S2) and Session (S3+S4) panes, leaves the PR-rail as an S5 stub", () => {
     renderConsole();
     // The Aim pane is now the real worklist: no S2 stub, real chrome present.
     expect(screen.queryByTestId("aim-pane-stub-s2")).toBeNull();
     expect(screen.getByTestId("aim-ledger")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Frontier ⚠" })).toBeTruthy();
     // The Session pane is real now (no S3 stub): the session tablist + the
-    // S4-footer reservation render even with no live sessions.
+    // real docked S4 bash footer render even with no live sessions.
     expect(screen.queryByTestId("aim-pane-stub-s3")).toBeNull();
     expect(screen.getByRole("tablist", { name: "Sessions" })).toBeTruthy();
-    expect(screen.getByTestId("aim-session-footer-reserve")).toBeTruthy();
-    // The PR-rail body remains an S4 stub.
-    expect(screen.getByTestId("aim-pane-stub-s4")).toBeTruthy();
+    expect(screen.getByTestId("aim-bash-footer")).toBeTruthy();
+    // The PR-rail body remains an S5 stub.
+    expect(screen.getByTestId("aim-pane-stub-s5")).toBeTruthy();
   });
 
   it("renders a top-bar unit tab with primary + secondary repo pills", () => {
