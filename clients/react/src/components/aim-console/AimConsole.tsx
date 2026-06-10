@@ -13,22 +13,25 @@
 // so they never bleed into the existing console.
 //
 // SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), the
-// Session pane (S3), and its docked bash footer (S4). The top bar (real,
-// data-driven unit tabs) and the 3-pane grid incl. the PR-rail expand/collapse
-// transition are S1; the Aim (left) pane is the real worklist (Frontier⊥Tree,
-// ledger, overview ruler, inspector, create-aim modal — `AimPane`, reusing the
-// Stage B logic layer); the Session (centre) pane is the real conversation
-// surface (tabs + shead + term — `SessionPane`, reusing the existing console
-// infra) with the real docked bash footer (per-repo + ad-hoc shell terminals,
-// reusing `api.spawnPty` + `TerminalPanel`). The remaining body is still a
-// stub:
-//   - the PR-rail PR/Issue lists are still an S5 stub.
+// Session pane (S3), its docked bash footer (S4), and the PR-rail lists (S5).
+// The top bar (real, data-driven unit tabs) and the 3-pane grid incl. the
+// PR-rail expand/collapse transition are S1; the Aim (left) pane is the real
+// worklist (Frontier⊥Tree, ledger, overview ruler, inspector, create-aim
+// modal — `AimPane`, reusing the Stage B logic layer); the Session (centre)
+// pane is the real conversation surface (tabs + shead + term — `SessionPane`,
+// reusing the existing console infra) with the real docked bash footer
+// (per-repo + ad-hoc shell terminals, reusing `api.spawnPty` +
+// `TerminalPanel`); the PR-rail (right) is the real per-repo PR + Issue
+// inventory (`PrRail`, reusing `useUnitPrs` / `useUnitIssues` + the
+// `prStatusPills` / `issueStatusPills` derivation). The shell is now fully
+// filled in.
 
 import { useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
+import { PrRail } from "./PrRail";
 import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
 // <link>) — loads the exact families `aim-console.css` references via --sans /
@@ -92,10 +95,10 @@ export function AimConsole({
   trigger,
   onOpenSettings,
 }: AimConsoleProps) {
-  // PR-rail expand state — the only live interaction in the S1 shell. The
-  // collapsed 46px rail expands to a 320px panel via the `.pr-open` modifier
-  // on the root (mock `body.pr-open { --pr: 320px }`). The panel CONTENT is
-  // an S5 stub.
+  // PR-rail expand state — the S1 shell's mechanism. The collapsed 46px rail
+  // expands to a 320px panel via the `.pr-open` modifier on the root (mock
+  // `body.pr-open { --pr: 320px }`). The state stays HERE; `PrRail` only
+  // renders the rail/panel CONTENT (S5) and calls back to toggle it.
   const [prOpen, setPrOpen] = useState(false);
   const metaUnit = activeUnitName ?? units[0]?.name ?? "—";
   // The focused unit's repos drive the Session pane's per-repo bash footer
@@ -159,40 +162,17 @@ export function AimConsole({
           />
         </section>
 
-        {/* PR RAIL — collapsed rail ⇄ expanded panel (S1); lists are S5 */}
+        {/* PR RAIL — collapsed rail ⇄ expanded panel (S1 mechanism); the
+            per-repo PR + Issue lists + live counts are the real S5 content */}
         <section className="ac-col ac-pr" aria-label="PR / Issue rail">
-          <button
-            type="button"
-            className="ac-prrail"
-            onClick={() => setPrOpen(true)}
-            title="Expand PR / Issue rail"
-            aria-label="Expand PR / Issue rail"
-            aria-expanded={prOpen}
-          >
-            <span className="ac-v w">PR</span>
-            <span className="ac-v">Issue</span>
-            <span className="ac-g">‹ EXTERNAL</span>
-          </button>
-          <div className="ac-prfull">
-            <div className="ac-prh">
-              PR / ISSUE — unit {metaUnit}
-              <button
-                type="button"
-                className="ac-x"
-                onClick={() => setPrOpen(false)}
-                title="Collapse PR / Issue rail"
-                aria-label="Collapse PR / Issue rail"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="ac-prb">
-              <PaneStub
-                stage="S5"
-                note="PR / Issue lists (the rail's expand/collapse content) land here."
-              />
-            </div>
-          </div>
+          <PrRail
+            unitName={activeUnitName}
+            unitLabel={metaUnit}
+            repos={activeUnit?.repos ?? []}
+            open={prOpen}
+            onExpand={() => setPrOpen(true)}
+            onCollapse={() => setPrOpen(false)}
+          />
         </section>
       </div>
     </div>
@@ -242,15 +222,5 @@ function AimUnitTab({
         </span>
       )}
     </button>
-  );
-}
-
-// Placeholder body for a pane whose real content arrives in a later stage.
-function PaneStub({ stage, note }: { stage: string; note: string }) {
-  return (
-    <div className="ac-stub" data-testid={`aim-pane-stub-${stage.toLowerCase()}`}>
-      <span className="ac-stub-stage">{stage}</span>
-      <p className="ac-stub-note">{note}</p>
-    </div>
   );
 }

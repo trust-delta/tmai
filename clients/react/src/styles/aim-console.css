@@ -655,32 +655,85 @@
   padding: 5px 7px;
 }
 
-/* ── pane stub (placeholder content — replaced in S2–S4) ──────────────── */
-.aim-console .ac-stub {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 24px;
-  text-align: center;
+/* ── S5 PR-rail lists (per-repo PR + Issue inventory inside `.ac-prb`) ────
+   A faithful port of the mock's `.prg` / `.pi` / `.pst` into the `.ac-*`
+   family. The `.pst` pill colour is CATEGORICAL (lifecycle / CI state),
+   never appraisal — see `status-pills.tsx`'s header. */
+.aim-console .ac-prg h4 {
+  margin: 8px 5px 3px;
+  font: 600 9.5px/1 var(--mono);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   color: var(--faint);
 }
-.aim-console .ac-stub-stage {
-  font-family: var(--mono);
+.aim-console .ac-prempty {
+  margin: 3px 7px 6px;
   font-size: 11px;
-  letter-spacing: 1px;
-  color: var(--cyan);
-  border: 1px solid var(--cyan-d);
-  border-radius: 3px;
-  padding: 2px 9px;
+  color: var(--faint);
 }
-.aim-console .ac-stub-note {
-  margin: 0;
+.aim-console .ac-pi {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  padding: 6px 7px;
+}
+.aim-console .ac-pi:hover {
+  background: var(--line-2);
+}
+/* The shared `.ac-repo` pill carries a left margin for its S2 (Aim-pane)
+   context; as a PR-row's first child it sits flush after the row padding. */
+.aim-console .ac-pi .ac-repo {
+  margin-left: 0;
+}
+.aim-console .ac-pn {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  flex: none;
+}
+.aim-console .ac-pt {
+  flex: 1;
+  min-width: 0;
   font-size: 11.5px;
-  line-height: 1.5;
-  max-width: 36ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aim-console .ac-psts {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.aim-console .ac-pst {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  flex: none;
+}
+.aim-console .ac-pst.o {
+  color: var(--green);
+  border-color: var(--green-d);
+}
+.aim-console .ac-pst.r {
+  color: var(--amber);
+  background: var(--amber-d);
+  border-color: #3a2e14;
+}
+.aim-console .ac-pst.d {
+  color: var(--dim);
+  border-color: var(--line);
+}
+.aim-console .ac-pst.m {
+  color: var(--violet);
+  border-color: var(--violet-d);
+}
+.aim-console .ac-pst.f {
+  color: var(--danger);
+  background: #221111;
+  border-color: #3a1d1d;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
