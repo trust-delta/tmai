@@ -12,20 +12,23 @@
 // dev-tool tokens are scoped to `.aim-console` in `styles/aim-console.css`
 // so they never bleed into the existing console.
 //
-// SCOPE so far: the TOKEN LAYER + the SHELL (S1) and the Aim pane (S2). The
-// top bar (real, data-driven unit tabs) and the 3-pane grid incl. the PR-rail
-// expand/collapse transition are S1; the Aim (left) pane is now the real
-// worklist (Frontier⊥Tree, ledger, overview ruler, inspector, create-aim
-// modal — `AimPane`, reusing the Stage B logic layer). The remaining two
-// bodies are still stubs:
-//   - S3 fills the Session conversation (tabs + bash footer);
-//   - S4 fills the PR-rail PR/Issue lists.
+// SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), and the
+// Session pane (S3). The top bar (real, data-driven unit tabs) and the 3-pane
+// grid incl. the PR-rail expand/collapse transition are S1; the Aim (left)
+// pane is the real worklist (Frontier⊥Tree, ledger, overview ruler, inspector,
+// create-aim modal — `AimPane`, reusing the Stage B logic layer); the Session
+// (centre) pane is the real conversation surface (tabs + shead + term —
+// `SessionPane`, reusing the existing console infra). The remaining body is
+// still a stub:
+//   - the Session pane LEAVES ROOM for the S4 bash footer (built later);
+//   - the PR-rail PR/Issue lists are still an S4 stub.
 
 import { useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
-import type { UnitResponse } from "@/lib/api";
+import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
+import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
 // <link>) — loads the exact families `aim-console.css` references via --sans /
 // --mono so the dev-tool look matches the mock instead of falling back to
@@ -62,6 +65,19 @@ interface AimConsoleProps {
    *  ENTER toggle lives in StatusBar; this is its EXIT pair, since the
    *  full-window aim console replaces the existing chrome incl. StatusBar. */
   onExit: () => void;
+  /** Live agent list (App's `useAgents`) — drives the Session pane's tabs
+   *  (Producer + workers). Threaded in rather than read here so the existing
+   *  console keeps the single `useAgents` call. */
+  agents: AgentSnapshot[];
+  /** Primary repo path for the focused unit (App's `currentProject`) — the
+   *  Session pane resolves the single Producer and scopes workers from it. */
+  currentProjectPath: string | null;
+  /** App-level lifted handoff ritual trigger (one `useHandoffRitual`
+   *  instance, in App), forwarded to the Producer's shead. */
+  trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
+  /** ⚙ deep-link into Settings (auto-handoff threshold), forwarded to the
+   *  Producer's shead. */
+  onOpenSettings: () => void;
 }
 
 export function AimConsole({
@@ -70,6 +86,10 @@ export function AimConsole({
   onSelectUnit,
   onAddUnit,
   onExit,
+  agents,
+  currentProjectPath,
+  trigger,
+  onOpenSettings,
 }: AimConsoleProps) {
   // PR-rail expand state — the only live interaction in the S1 shell. The
   // collapsed 46px rail expands to a 320px panel via the `.pr-open` modifier
@@ -122,16 +142,14 @@ export function AimConsole({
           <AimPane unitName={activeUnitName} />
         </section>
 
-        {/* SESSION — S3 conversation */}
+        {/* SESSION — S3 conversation (tabs + shead + term; bash footer is S4) */}
         <section className="ac-col ac-session" aria-label="Session">
-          <div className="ac-stabs" aria-hidden="true">
-            <span className="ac-stab on">
-              <span className="ac-ro p">PROD</span> Producer
-            </span>
-          </div>
-          <PaneStub
-            stage="S3"
-            note="Session conversation (raw CC), session tabs, and the bash footer land here."
+          <SessionPane
+            agents={agents}
+            unitName={activeUnitName}
+            currentProjectPath={currentProjectPath}
+            trigger={trigger}
+            onOpenSettings={onOpenSettings}
           />
         </section>
 
