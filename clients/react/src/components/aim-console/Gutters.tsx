@@ -314,9 +314,15 @@ export function FooterGutter({
     if (!session || !footer || !wrap) return false;
     const sessionH = session.getBoundingClientRect().height;
     if (sessionH <= 0) return false;
+    const max = Math.round(sessionH * FOOTER_MAX_SESSION_RATIO);
+    // A ceiling at or below the floor would INVERT onMove's
+    // min(max(v, floor), ceiling) and drive --fh below the 110px minimum —
+    // in that geometry (a very short Session pane) the drag must not start
+    // at all. Same degenerate guard as BashFooter's window-resize re-clamp.
+    if (max <= AIM_CONSOLE_FOOTER_MIN) return false;
     measureRef.current = {
       fh0: wrap.getBoundingClientRect().height,
-      max: Math.round(sessionH * FOOTER_MAX_SESSION_RATIO),
+      max,
       footer,
     };
     valueRef.current = null;

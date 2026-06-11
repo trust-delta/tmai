@@ -270,6 +270,25 @@ describe("FooterGutter — bash-footer height gutter", () => {
     expect(footer.style.getPropertyValue("--fh")).toBe("180px");
   });
 
+  it("refuses to start a drag when the session is so short the clamp would invert", () => {
+    renderFooter();
+    fireEvent.click(screen.getByRole("button", { name: "Expand bash footer" }));
+
+    const session = screen.getByTestId("session-col");
+    // ceiling = round(150 * 0.6) = 90 <= the 110px floor → min/max would
+    // invert and commit a below-min height; onStart must bail instead.
+    stubRect(session, { height: 150 });
+    stubRect(session.querySelector(".ac-ftwrap") as Element, { height: 180 });
+    const footer = screen.getByTestId("aim-bash-footer");
+    const sep = screen.getByRole("separator", { name: "Resize bash footer height" });
+
+    drag(sep, { x: 400, y: 500 }, { x: 400, y: 900 });
+    // The drag never engaged: no live --fh write, no readout, no persistence.
+    expect(footer.style.getPropertyValue("--fh")).toBe("180px");
+    expect(screen.queryByTestId("ac-gutter-readout")).toBeNull();
+    expect(storedLayout()).toBeNull();
+  });
+
   it("re-applies the 60% ceiling on window resize without persisting it", () => {
     seedLayout({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, footer: 300 });
     renderFooter();
