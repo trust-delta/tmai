@@ -10,15 +10,33 @@ interface TerminalPanelProps {
   /** Canonical agent id (`<scheme>:<id>`). The terminal-plane stream
    *  scopes on this; ticket subscription happens inside `useTerminal`. */
   agentId: string;
+  /** Suppress this panel's own chrome — no `TerminalSessionHeader`, no
+   *  footer bar, no focus shadow — for hosts that draw their own (the
+   *  aim-console's spine + status strip, #803). Default `false` keeps the
+   *  existing rendering unchanged. */
+  chromeless?: boolean;
+  /** Controlled Input/Select mode (#803). When provided, the host owns the
+   *  mode value (e.g. the aim-console status strip); the internal semantics
+   *  (mousedown→select, Enter-in-select→input, xterm keyboard attach) stay
+   *  this one implementation and report transitions via `onInputModeChange`.
+   *  When absent, the original internal `useState` behavior is unchanged. */
+  inputMode?: boolean;
+  onInputModeChange?: (v: boolean) => void;
 }
 
 // Single terminal panel connected to a PTY session via the rev3
 // terminal plane (#174 Phase 3a).
 // Shares the same Input/Select + Auto-scroll footer pattern as PreviewPanel.
-export function TerminalPanel({ agentId }: TerminalPanelProps) {
+export function TerminalPanel({
+  agentId,
+  chromeless = false,
+  inputMode: inputModeProp,
+  onInputModeChange,
+}: TerminalPanelProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [inputMode, setInputMode] = useState(true);
+  const [internalInputMode, setInternalInputMode] = useState(true);
+  const inputMode = inputModeProp ?? internalInputMode;
   const [hasFocus, setHasFocus] = useState(false);
   const [autoScroll, setAutoScroll] = useAutoScrollPerAgent(agentId);
 
@@ -57,15 +75,27 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
 
   // Switch to input mode (xterm captures keyboard)
   const enterInputMode = useCallback(() => {
-    setInputMode(true);
+    setInternalInputMode(true);
+    onInputModeChange?.(true);
     setAttachable(true);
-  }, [setAttachable]);
+  }, [setAttachable, onInputModeChange]);
 
   // Switch to select mode (text selection enabled, keyboard capture off)
   const enterSelectMode = useCallback(() => {
-    setInputMode(false);
+    setInternalInputMode(false);
+    onInputModeChange?.(false);
     setAttachable(false);
-  }, [setAttachable]);
+  }, [setAttachable, onInputModeChange]);
+
+  // Controlled mode: the host can flip `inputMode` from its own UI (the
+  // aim-console strip) without going through the handlers above — keep
+  // xterm's keyboard attachment in lock-step with the resolved mode.
+  // `setAttachable` is idempotent (it guards on the live disposables), so
+  // the redundant call after an internal transition is a no-op, as is the
+  // mount-time call (the create-effect already attached).
+  useEffect(() => {
+    setAttachable(inputMode);
+  }, [inputMode, setAttachable]);
 
   // In select mode, listen for Enter key on the container to switch to input mode
   useEffect(() => {
@@ -85,13 +115,17 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
   return (
     <section
       ref={sectionRef}
-      className={`relative flex h-full w-full flex-col transition-shadow ${
-        hasFocus
-          ? "shadow-[inset_0_0_0_2px_rgba(34,211,238,0.55),inset_0_0_24px_rgba(34,211,238,0.06)]"
-          : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
-      }`}
+      className={
+        chromeless
+          ? "relative flex h-full w-full flex-col"
+          : `relative flex h-full w-full flex-col transition-shadow ${
+              hasFocus
+                ? "shadow-[inset_0_0_0_2px_rgba(34,211,238,0.55),inset_0_0_24px_rgba(34,211,238,0.06)]"
+                : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+            }`
+      }
     >
-      <TerminalSessionHeader agentId={agentId} agent={agent} />
+      {!chromeless && <TerminalSessionHeader agentId={agentId} agent={agent} />}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
       <div
         ref={containerRef}
@@ -114,15 +148,20 @@ export function TerminalPanel({ agentId }: TerminalPanelProps) {
       />
 
       {/* Footer status bar */}
-      <div className="flex items-center gap-2 border-t border-hairline px-3 py-1.5">
-        <ModeToggleButton
-          inputMode={inputMode}
-          onToggle={inputMode ? enterSelectMode : enterInputMode}
-        />
-        <AutoScrollToggleButton autoScroll={autoScroll} onToggle={() => setAutoScroll((v) => !v)} />
-        <div className="flex-1" />
-        <ModeHint inputMode={inputMode} />
-      </div>
+      {!chromeless && (
+        <div className="flex items-center gap-2 border-t border-hairline px-3 py-1.5">
+          <ModeToggleButton
+            inputMode={inputMode}
+            onToggle={inputMode ? enterSelectMode : enterInputMode}
+          />
+          <AutoScrollToggleButton
+            autoScroll={autoScroll}
+            onToggle={() => setAutoScroll((v) => !v)}
+          />
+          <div className="flex-1" />
+          <ModeHint inputMode={inputMode} />
+        </div>
+      )}
     </section>
   );
 }

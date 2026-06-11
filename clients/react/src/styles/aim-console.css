@@ -360,29 +360,127 @@
   font-size: 14px;
 }
 
-/* ── shead (mock `.shead`) — the WORKER plain model/cwd bar. The Producer
-   reuses ProducerConversationHeader (its own tokens), not this. ─────────── */
+/* ── who accent (S6 mock `--who`) — the addressee names the accent on every
+   PTY surface: producer cyan / worker violet / shell green. Scoped custom
+   property; the spine, strip and shead resolve against it. ──────────────── */
+.aim-console .ac-who-p {
+  --who: var(--cyan);
+  --who-d: var(--cyan-d);
+}
+.aim-console .ac-who-w {
+  --who: var(--violet);
+  --who-d: var(--violet-d);
+}
+.aim-console .ac-who-sh {
+  --who: var(--green);
+  --who-d: var(--green-d);
+}
+
+/* ── shead (S6 mock `.shead`) — one compact 27px mono-first bar per session:
+   dot · name · model · ctx bar (┊ = auto-handoff threshold) · pct ·
+   unit-or-repo/cwd · actions (handoff/settings/kill). Replaces the borrowed
+   ProducerConversationHeader inside the aim-console. ──────────────────────── */
 .aim-console .ac-shead {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  height: var(--rh);
   flex: none;
-  padding: 7px 12px;
+  padding: 0 11px;
   border-bottom: 1px solid var(--line-2);
   background: var(--panel);
-  font-size: 11px;
-  color: var(--dim);
-}
-.aim-console .ac-shead .m {
   font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.aim-console .ac-shead .dd {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--faint);
+}
+.aim-console .ac-shead .dd.run {
+  background: var(--green);
+  animation: ac-pulse 2.4s ease-in-out infinite;
+}
+.aim-console .ac-shead .dd.wait {
+  background: var(--amber);
+}
+.aim-console .ac-shead .dd.halt {
+  background: var(--danger);
+}
+.aim-console .ac-shead .nm {
+  color: var(--txt);
+  font-weight: 500;
+}
+.aim-console .ac-shead .md {
+  color: var(--faint);
+}
+.aim-console .ac-shead .bar {
+  letter-spacing: 1px;
+  color: var(--faint);
+}
+.aim-console .ac-shead .bar .f {
+  color: var(--who);
+}
+.aim-console .ac-shead .bar .tk {
+  color: var(--amber);
+}
+.aim-console .ac-shead .pct {
   color: var(--txt);
 }
-.aim-console .ac-shead .w {
-  font-family: var(--mono);
+.aim-console .ac-shead .pct.hi {
+  color: var(--amber);
+}
+.aim-console .ac-shead .pct.hot {
+  color: var(--danger);
+}
+.aim-console .ac-shead .cwd {
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.aim-console .ac-shead .acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.aim-console .ac-shead .ho {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  background: none;
+  cursor: pointer;
+  padding: 2.5px 8px;
+  letter-spacing: 0.3px;
+}
+.aim-console .ac-shead .ho:hover {
+  color: var(--amber);
+  border-color: #3a2e14;
+  background: var(--amber-d);
+}
+.aim-console .ac-shead .ho:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.aim-console .ac-shead .ic {
+  color: var(--faint);
+  font-size: 11px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.aim-console .ac-shead .ic:hover {
+  color: var(--txt);
+}
+.aim-console .ac-shead .ic.kill:hover {
+  color: var(--danger);
 }
 
 /* ── term (mock `.term`) — the conversation surface. TerminalPanel /
@@ -402,6 +500,191 @@
   font-family: var(--mono);
   font-size: 11px;
   color: var(--faint);
+}
+
+/* ── hot-wire ⊥ cold-wire (S6 mock `.spine`/`.status`/`.hint`) ────────────
+   WireTerminal: a 3px left spine on the terminal area — INPUT = live wire
+   in the addressee's accent with a slow travelling pulse; SELECT = cold
+   ochre/static, and the terminal's left edge carries the cold marker. The
+   status strip below replaces TerminalPanel's footer inside the aim-console. */
+.aim-console .ac-wire {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aim-console .ac-wire-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+.aim-console .ac-spine {
+  width: 3px;
+  flex: none;
+  background: var(--faint);
+  position: relative;
+  overflow: hidden;
+  transition: background 0.18s;
+}
+.aim-console .ac-wire.input .ac-spine {
+  background: var(--who);
+}
+.aim-console .ac-wire.input .ac-spine::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 46%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: ac-wire-pulse 2.6s ease-in-out infinite;
+}
+.aim-console .ac-wire.select .ac-spine {
+  background: var(--ochre);
+  opacity: 0.65;
+}
+.aim-console .ac-wire-term {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid transparent;
+  transition: border-color 0.18s;
+}
+.aim-console .ac-wire.select .ac-wire-term {
+  border-left-color: rgba(177, 137, 79, 0.55);
+}
+
+/* status strip — [⌁ INPUT | ⌖ SELECT] · follow · → addressee · ctx % */
+.aim-console .ac-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 15px;
+  height: 26px;
+  flex: none;
+  border-top: 1px solid var(--line-2);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+.aim-console .ac-seg2 {
+  display: flex;
+  border: 1px solid var(--line);
+}
+.aim-console .ac-seg2 button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2.5px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.aim-console .ac-seg2 .lead {
+  font-size: 11px;
+}
+.aim-console .ac-wire.input .ac-seg2 button[data-mode="input"] {
+  color: var(--who);
+  background: var(--who-d);
+}
+.aim-console .ac-wire.select .ac-seg2 button[data-mode="select"] {
+  color: var(--ochre);
+  background: var(--ochre-d);
+}
+.aim-console .ac-dv {
+  width: 1px;
+  height: 13px;
+  background: var(--line);
+  flex: none;
+}
+.aim-console .ac-follow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--faint);
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  background: none;
+  border: none;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.aim-console .ac-follow .sw {
+  width: 16px;
+  height: 8px;
+  border: 1px solid var(--line);
+  position: relative;
+}
+.aim-console .ac-follow .sw::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 5px;
+  height: 4px;
+  background: var(--faint);
+  transition:
+    left 0.15s,
+    background 0.15s;
+}
+.aim-console .ac-follow.on {
+  color: var(--txt);
+}
+.aim-console .ac-follow.on .sw {
+  border-color: var(--who-d);
+}
+.aim-console .ac-follow.on .sw::before {
+  left: 8px;
+  background: var(--who);
+}
+.aim-console .ac-addr {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--dim);
+  letter-spacing: 0.4px;
+}
+.aim-console .ac-addr .d {
+  width: 5px;
+  height: 5px;
+  background: var(--who);
+}
+.aim-console .ac-addr b {
+  color: var(--who);
+  font-weight: 500;
+}
+.aim-console .ac-ctxr {
+  margin-left: auto;
+  color: var(--faint);
+}
+.aim-console .ac-ctxr b {
+  color: var(--txt);
+  font-weight: 500;
+}
+.aim-console .ac-hint {
+  padding: 3px 15px 6px;
+  flex: none;
+  font-size: 10px;
+  color: var(--faint);
+  font-family: var(--mono);
+  letter-spacing: 0.2px;
+  background: var(--panel);
+}
+.aim-console .ac-hint .hk {
+  border: 1px solid var(--line);
+  padding: 0 4px;
+  color: var(--dim);
+}
+.aim-console .ac-hint b {
+  color: var(--dim);
+  font-weight: 500;
 }
 
 /* ── docked bash footer (mock `.footer`/`.fbar`/`.ftab`/`.ftwrap`) ────────
@@ -1586,6 +1869,16 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+/* the live wire's slow travelling pulse (S6 mock `@keyframes pulse`) */
+@keyframes ac-wire-pulse {
+  0% {
+    top: -50%;
+  }
+  100% {
+    top: 105%;
   }
 }
 
