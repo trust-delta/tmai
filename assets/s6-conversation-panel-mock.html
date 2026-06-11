@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tmai aim-console — S6 conversation panel re-design + drag-resize (mock)</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  tmai aim-console — S6 EXPANDED re-design mock (throwaway).
+
+  Scope grew from "input control only" (prior approved concept) to:
+    A. the WHOLE conversation panel, one coherent dev-tool control language
+       — stabs / shead / term / input-line / bash footer all native, no
+       borrowed Tailwind pills.
+    B. drag-resizable layout — pane gutters (Aim|Session, Session|PR) and
+       the bash-footer height are live drag targets.
+
+  Carried concept: hot-wire ⊥ cold-wire.
+    · INPUT  → the input line's left spine is a LIVE wire in the addressee's
+      accent (producer cyan / worker violet / shell green), slow travelling
+      pulse, caret blinks. Keystrokes flow to the agent.
+    · SELECT → the wire goes COLD (ochre, static), caret freezes, keyboard
+      is freed — and the cold wire continues up the term's left edge,
+      marking the output as grabbable.
+    · The prompt accent ALWAYS names the addressee. One language for every
+      PTY surface (agent conversation AND bash footer).
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter+Tight:wght@400;500;600&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── tokens (the real aim-console.css set) ─────────────────────────── */
+:root{
+  --bg:#0b0e0f; --panel:#0d1112; --elev:#121819;
+  --line:#1b2122; --line-2:#161b1c;
+  --txt:#c2cbc8; --dim:#7b8784; --faint:#4d5856;
+  --amber:#cf9b46; --amber-d:#241c0e; --ochre:#b1894f;
+  --green:#4a9476; --green-d:#10211a;
+  --cyan:#4aa39d; --cyan-d:#102423;
+  --violet:#8f7ad6; --violet-d:#171428;
+  --danger:#d96a6a;
+  --sans:"Inter Tight","Noto Sans JP",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --rh:27px;
+  /* resizable tracks — the drag gutters write these */
+  --aim:1.18fr; --sess:1fr; --pr:46px;
+  --fh:180px;            /* bash footer expanded height */
+  --who:var(--cyan);     /* addressee accent — follows the active tab */
+  --who-d:var(--cyan-d);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:var(--sans); font-size:12.5px; line-height:1.5;
+  display:grid; grid-template-rows:auto auto 1fr; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+body.dragging{ user-select:none; }
+body.dragging *{ cursor:inherit !important; }
+body.drag-col{ cursor:col-resize; }
+body.drag-row{ cursor:row-resize; }
+
+/* ── top bar ───────────────────────────────────────────────────────── */
+.top{
+  display:flex; align-items:center; gap:14px; height:38px;
+  padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel);
+}
+.brand{ font-family:var(--mono); font-size:12px; color:var(--dim); letter-spacing:.5px; }
+.brand b{ color:var(--txt); font-weight:600; }
+.utab{
+  display:flex; align-items:center; gap:7px; height:24px; padding:0 9px;
+  border:1px solid var(--line); background:var(--elev); font-size:11px; color:var(--dim);
+}
+.utab .d{ width:5px; height:5px; background:var(--green); }
+.utab .rp{ font-family:var(--mono); font-size:10px; padding:0 5px; border:1px solid var(--line-2); color:var(--faint); }
+.utab .rp.pri{ color:var(--cyan); border-color:var(--cyan-d); background:var(--cyan-d); }
+.uadd{ color:var(--faint); font-size:14px; padding:0 4px; } .uadd:hover{ color:var(--txt); }
+.sp{ flex:1; }
+.meta{ font-family:var(--mono); font-size:10.5px; color:var(--faint); letter-spacing:.5px; }
+.exit{ font-family:var(--mono); font-size:10.5px; color:var(--dim); padding:3px 8px; border:1px solid var(--line); }
+.exit:hover{ color:var(--txt); border-color:var(--line); background:var(--elev); }
+
+/* ── mock banner ───────────────────────────────────────────────────── */
+.banner{
+  display:flex; gap:18px; align-items:center; padding:5px 14px;
+  background:var(--amber-d); border-bottom:1px solid #3a2e14;
+  font-family:var(--mono); font-size:10.5px; color:var(--amber); letter-spacing:.3px;
+}
+.banner .k{ color:var(--ochre); }
+
+/* ── 3-pane grid + drag gutters as real 5px tracks ─────────────────── */
+.main{
+  display:grid; min-height:0;
+  grid-template-columns:var(--aim) 5px var(--sess) 5px var(--pr);
+}
+.col{ min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:var(--panel); }
+
+.gut{ position:relative; cursor:col-resize; }
+.gut::before{ /* hairline at rest = the old col border */
+  content:""; position:absolute; top:0; bottom:0; left:2px; width:1px; background:var(--line);
+  transition:background .15s, box-shadow .15s;
+}
+.gut::after{ /* grip glyph */
+  content:"⋮"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:var(--mono); font-size:10px; color:transparent; transition:color .15s;
+}
+.gut:hover::before, .gut.live::before{ background:var(--cyan); box-shadow:0 0 6px rgba(74,163,157,.5); }
+.gut:hover::after{ color:var(--cyan); }
+.gut.off{ cursor:default; pointer-events:none; }
+
+.guth{ position:relative; cursor:row-resize; height:5px; flex:none; }
+.guth::before{
+  content:""; position:absolute; left:0; right:0; top:2px; height:1px; background:var(--line);
+  transition:background .15s, box-shadow .15s;
+}
+.guth::after{
+  content:"⋯"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:var(--mono); font-size:10px; color:transparent; transition:color .15s;
+}
+.guth:hover::before, .guth.live::before{ background:var(--cyan); box-shadow:0 0 6px rgba(74,163,157,.5); }
+.guth:hover::after{ color:var(--cyan); }
+
+/* drag readout chip */
+#readout{
+  position:fixed; z-index:50; display:none; pointer-events:none;
+  font-family:var(--mono); font-size:10px; color:var(--cyan);
+  background:var(--elev); border:1px solid var(--cyan-d); padding:2px 7px;
+}
+
+/* ── AIM pane (context only — S2 is implemented; kept light) ───────── */
+.ah{ display:flex; align-items:center; gap:10px; height:var(--rh); padding:0 11px;
+  border-bottom:1px solid var(--line-2); font-family:var(--mono); font-size:10.5px; color:var(--dim); }
+.ah .seg{ display:flex; border:1px solid var(--line); }
+.ah .seg button{ padding:2px 9px; font-family:var(--mono); font-size:10px; color:var(--faint); letter-spacing:.6px; }
+.ah .seg button.on{ color:var(--cyan); background:var(--cyan-d); }
+.ledger{ display:flex; gap:12px; padding:6px 11px; border-bottom:1px solid var(--line-2);
+  font-family:var(--mono); font-size:10px; color:var(--faint); }
+.ledger b{ color:var(--amber); font-weight:600; }
+.alist{ overflow:auto; flex:1; padding:4px 0; }
+.ar{ display:flex; gap:8px; align-items:center; padding:5px 11px 5px 0; cursor:default; }
+.ar:hover{ background:var(--line-2); }
+.ar .gutbar{ width:3px; align-self:stretch; flex:none; }
+.ar .gly{ font-family:var(--mono); font-size:10px; width:14px; text-align:center; flex:none; }
+.ar .slug{ font-family:var(--mono); font-size:11px; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ar .st{ margin-left:auto; font-family:var(--mono); font-size:9px; padding:1px 5px; border:1px solid var(--line-2); color:var(--dim); flex:none; }
+.ar.cf .gutbar{ background:var(--green-d);} .ar.cf .gly{color:var(--green);}
+.ar.cl .gutbar{ background:var(--ochre);}  .ar.cl .gly{color:var(--ochre);}
+.ar.dr .gutbar{ background:var(--amber);}  .ar.dr .gly{color:var(--amber);}
+.ar.cl .st{ color:var(--ochre); border-color:#2c2212; }
+.ar.dr .st{ color:var(--amber); border-color:#3a2e14; background:var(--amber-d); }
+.ar.cf .st{ color:var(--green); border-color:var(--green-d); }
+.anote{ padding:8px 11px; font-size:10.5px; color:var(--faint); border-top:1px solid var(--line-2); }
+
+/* ── SESSION pane ──────────────────────────────────────────────────── */
+.session{ position:relative; }
+
+/* stabs */
+.stabs{ display:flex; align-items:stretch; height:30px; border-bottom:1px solid var(--line-2); flex:none; }
+.stab{
+  display:flex; align-items:center; gap:7px; padding:0 11px;
+  font-size:11.5px; color:var(--dim); border-right:1px solid var(--line-2);
+  border-bottom:1px solid transparent; margin-bottom:-1px;
+}
+.stab:hover{ color:var(--txt); background:var(--line-2); }
+.stab.on{ color:var(--txt); background:var(--elev); border-bottom-color:var(--who); }
+.ro{ font-family:var(--mono); font-size:9px; padding:1px 5px; letter-spacing:.6px; flex:none; }
+.ro.p{ color:var(--cyan); background:var(--cyan-d); }
+.ro.w{ color:var(--violet); background:var(--violet-d); }
+.sdot{ width:5px; height:5px; flex:none; }
+.sdot.run{ background:var(--green); animation:dotp 2.4s ease-in-out infinite; }
+.sdot.wait{ background:var(--amber); }
+.sdot.halt{ background:var(--danger); }
+@keyframes dotp{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+.stab .tw{ font-size:9px; color:var(--amber); }
+.sadd{ display:flex; align-items:center; padding:0 11px; color:var(--faint); font-size:13px; }
+.sadd:hover{ color:var(--txt); }
+
+/* shead — one compact bar, mono-first */
+.shead{
+  display:flex; align-items:center; gap:10px; height:var(--rh); padding:0 11px;
+  border-bottom:1px solid var(--line-2); font-family:var(--mono); font-size:10.5px;
+  color:var(--dim); flex:none; white-space:nowrap; overflow:hidden;
+}
+.shead .dd{ width:6px; height:6px; flex:none; background:var(--green); animation:dotp 2.4s ease-in-out infinite; }
+.shead .dd.wait{ background:var(--amber); animation:none; }
+.shead .nm{ color:var(--txt); font-weight:500; }
+.shead .md{ color:var(--faint); }
+.shead .bar{ letter-spacing:1px; color:var(--faint); }
+.shead .bar b{ color:var(--who); font-weight:400; }
+.shead .bar .tk{ color:var(--amber); }
+.shead .pct{ color:var(--txt); }
+.shead .pct.hi{ color:var(--amber); }
+.shead .cwd{ color:var(--faint); overflow:hidden; text-overflow:ellipsis; }
+.shead .acts{ margin-left:auto; display:flex; align-items:center; gap:6px; flex:none; }
+.shead .ho{
+  font-family:var(--mono); font-size:10px; color:var(--dim);
+  border:1px solid var(--line); padding:2.5px 8px; letter-spacing:.3px;
+}
+.shead .ho:hover{ color:var(--amber); border-color:#3a2e14; background:var(--amber-d); }
+.shead .ic{ color:var(--faint); font-size:11px; padding:2px 4px; }
+.shead .ic:hover{ color:var(--txt); }
+.shead .ic.kill:hover{ color:var(--danger); }
+
+/* term */
+.term{
+  flex:1; min-height:0; overflow:auto; padding:10px 14px;
+  font-family:var(--mono); font-size:11.5px; line-height:1.65;
+  border-left:1px solid transparent; transition:border-color .18s;
+  user-select:none;
+}
+body.select .term{ user-select:text; border-left-color:rgba(177,137,79,.55); }
+.term .s{ display:none; } .term .s.on{ display:block; }
+.ta{ color:var(--who); } .td{ color:var(--faint); } .tk{ color:var(--green); }
+.twn{ color:var(--amber); } .tp{ color:var(--who); }
+.tbox{ border:1px solid var(--line-2); padding:3px 9px; margin:3px 0; display:inline-block; color:var(--dim); }
+.usr{ color:var(--txt); }
+
+/* ── the hero: input line + status strip ───────────────────────────── */
+.cmd{ flex:none; border-top:1px solid var(--line-2); background:var(--panel); }
+.inrow{ display:flex; align-items:stretch; min-height:34px; }
+.spine{ width:3px; flex:none; background:var(--faint); position:relative; overflow:hidden; transition:background .18s; }
+body.input .spine{ background:var(--who); }
+body.input .spine::before{
+  content:""; position:absolute; left:0; width:100%; height:46%;
+  background:linear-gradient(180deg, transparent, rgba(255,255,255,.75), transparent);
+  animation:pulse 2.6s ease-in-out infinite;
+}
+@keyframes pulse{ 0%{top:-50%;} 100%{top:105%;} }
+body.select .spine{ background:var(--ochre); opacity:.65; }
+.in{ display:flex; align-items:center; gap:9px; flex:1; padding:0 12px; min-width:0; }
+.chev{ font-family:var(--mono); font-size:13px; color:var(--who); transition:color .18s; }
+body.select .chev{ color:var(--ochre); }
+.field{ flex:1; font-family:var(--mono); font-size:12px; color:var(--txt); display:flex; align-items:center; min-width:0; }
+.field .ph{ color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.field .buf{ white-space:pre; }
+.caret{ width:7px; height:15px; background:var(--who); margin-left:1px; animation:blink 1.1s steps(1) infinite; }
+body.select .caret{ animation:none; opacity:.3; background:var(--ochre); }
+@keyframes blink{ 50%{opacity:0;} }
+.send{ font-family:var(--mono); font-size:10px; color:var(--faint); flex:none; }
+.send .kbd{ border:1px solid var(--line); padding:0 4px; }
+body.select .send{ color:var(--ochre); }
+
+.status{
+  display:flex; align-items:center; gap:10px; padding:0 12px 0 15px; height:26px;
+  border-top:1px solid var(--line-2); font-family:var(--mono); font-size:10px;
+}
+.seg2{ display:flex; border:1px solid var(--line); }
+.seg2 button{ display:flex; gap:5px; align-items:center; padding:2.5px 10px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.8px; color:var(--faint); }
+.seg2 .lead{ font-size:11px; }
+body.input .seg2 [data-mode="input"]{ color:var(--who); background:var(--who-d); }
+body.select .seg2 [data-mode="select"]{ color:var(--ochre); background:#1f1810; }
+.dv{ width:1px; height:13px; background:var(--line); }
+.item{ display:flex; gap:6px; align-items:center; color:var(--faint); cursor:pointer; letter-spacing:.5px; }
+.item .sw{ width:16px; height:8px; border:1px solid var(--line); position:relative; }
+.item .sw::before{ content:""; position:absolute; top:1px; left:1px; width:5px; height:4px; background:var(--faint); transition:left .15s, background .15s; }
+.item.on{ color:var(--txt); }
+.item.on .sw{ border-color:var(--who-d); }
+.item.on .sw::before{ left:8px; background:var(--who); }
+.addr{ display:flex; gap:6px; align-items:center; color:var(--dim); letter-spacing:.4px; }
+.addr .d{ width:5px; height:5px; background:var(--who); }
+.addr b{ color:var(--who); font-weight:500; }
+.ctxr{ margin-left:auto; color:var(--faint); }
+.ctxr b{ color:var(--txt); font-weight:500; }
+.ctxr.hi b{ color:var(--amber); }
+
+.hint{ padding:3px 15px 6px; font-size:10px; color:var(--faint); font-family:var(--mono); letter-spacing:.2px; }
+.hint .x{ display:none; } body.input .hint .i{ display:inline; } body.select .hint .s{ display:inline; }
+.hint .hk{ border:1px solid var(--line); padding:0 4px; color:var(--dim); }
+.hint b{ color:var(--dim); font-weight:500; }
+
+/* ── bash footer ───────────────────────────────────────────────────── */
+.footer{ flex:none; border-top:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; }
+.fbar{ display:flex; align-items:center; height:28px; padding:0 8px; gap:2px; flex:none; }
+.ftab{ display:flex; gap:6px; align-items:center; padding:3px 10px; font-family:var(--mono); font-size:10.5px;
+  color:var(--faint); border:1px solid transparent; }
+.ftab .d{ width:4px; height:4px; background:var(--green); }
+.ftab.on{ color:var(--txt); background:var(--elev); border-color:var(--line-2); }
+.ftab:hover{ color:var(--txt); }
+.fadd{ padding:0 7px; color:var(--faint); font-size:12px; } .fadd:hover{ color:var(--txt); }
+.fsplit,.fcar{ padding:0 7px; color:var(--faint); font-family:var(--mono); font-size:11px; }
+.fsplit:hover,.fcar:hover{ color:var(--txt); }
+.fsplit.on{ color:var(--green); }
+.ftwrap{ display:none; height:var(--fh); border-top:1px solid var(--line-2); }
+.footer.open .ftwrap{ display:flex; }
+.footer.open .fcar{ color:var(--green); }
+.fterm{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.fterm + .fterm{ border-left:1px solid var(--line-2); display:none; }
+.ftwrap.split .fterm + .fterm{ display:flex; }
+.fout{ flex:1; overflow:auto; padding:8px 12px; font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--dim); user-select:text; }
+.fout .ok{ color:var(--green); } .fout .pr{ color:var(--txt); }
+.fin{ display:flex; align-items:stretch; border-top:1px solid var(--line-2); min-height:26px; }
+.fin .spine2{ width:3px; flex:none; background:var(--green); position:relative; overflow:hidden; }
+.fin .spine2::before{ content:""; position:absolute; left:0; width:100%; height:46%;
+  background:linear-gradient(180deg, transparent, rgba(255,255,255,.6), transparent);
+  animation:pulse 2.6s ease-in-out infinite; }
+.fin .chev2{ font-family:var(--mono); font-size:11px; color:var(--green); padding:0 0 0 10px; display:flex; align-items:center; }
+.fin .fph{ flex:1; display:flex; align-items:center; padding:0 8px; font-family:var(--mono); font-size:11px; color:var(--faint); }
+.fin .fc{ width:6px; height:12px; background:var(--green); animation:blink 1.1s steps(1) infinite; }
+
+/* ── PR rail (S5 implemented — context) ────────────────────────────── */
+.pr{ background:var(--panel); }
+.prrail{ display:flex; flex-direction:column; align-items:center; gap:9px; padding-top:12px; cursor:pointer; height:100%; width:100%; }
+body.pr-open .prrail{ display:none; }
+.prrail .v{ writing-mode:vertical-rl; font-family:var(--mono); font-size:10.5px; color:var(--dim);
+  border:1px solid var(--line-2); padding:8px 3px; letter-spacing:1px; }
+.prrail .v.w{ color:var(--amber); border-color:#3a2e14; background:var(--amber-d); }
+.prrail .g{ writing-mode:vertical-rl; color:var(--faint); font-size:9px; margin-top:auto; padding-bottom:12px; letter-spacing:2px; }
+.prfull{ display:none; flex-direction:column; height:100%; }
+body.pr-open .prfull{ display:flex; }
+.prh{ display:flex; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line-2);
+  font-family:var(--mono); font-size:10.5px; color:var(--dim); }
+.prh .x{ margin-left:auto; cursor:pointer; } .prh .x:hover{ color:var(--txt); }
+.prb{ overflow:auto; padding:5px 7px; }
+.prg h4{ margin:8px 5px 3px; font:600 9.5px/1 var(--mono); letter-spacing:.6px; text-transform:uppercase; color:var(--faint); }
+.pi{ display:flex; gap:7px; align-items:baseline; padding:6px 7px; }
+.pi:hover{ background:var(--line-2); }
+.pi .repo{ font-family:var(--mono); font-size:9px; padding:1px 5px; border:1px solid var(--line-2); color:var(--faint); flex:none; }
+.pi .repo.pri{ color:var(--cyan); border-color:var(--cyan-d); background:var(--cyan-d); }
+.pi .n{ font-family:var(--mono); font-size:10px; color:var(--faint); flex:none; }
+.pi .t{ flex:1; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pst{ font-family:var(--mono); font-size:8.5px; padding:1px 5px; border:1px solid transparent; flex:none; }
+.pst.o{ color:var(--green); border-color:var(--green-d); }
+.pst.r{ color:var(--amber); background:var(--amber-d); border-color:#3a2e14; }
+.pst.d{ color:var(--dim); border-color:var(--line); }
+
+/* ── legend / stamp ────────────────────────────────────────────────── */
+.legend{
+  position:fixed; right:12px; bottom:10px; z-index:40;
+  display:flex; flex-direction:column; gap:3px; padding:8px 11px;
+  background:var(--elev); border:1px solid var(--line);
+  font-family:var(--mono); font-size:9.5px; color:var(--faint); letter-spacing:.3px;
+}
+.legend b{ color:var(--dim); font-weight:500; }
+.legend .c{ color:var(--cyan); } .legend .o{ color:var(--ochre); }
+</style>
+</head>
+<body class="input">
+
+<!-- ── top bar ── -->
+<div class="top">
+  <div class="brand"><b>tmai</b> console</div>
+  <button class="utab" type="button"><span class="d"></span><span class="rp pri">tmai</span><span class="rp">core</span></button>
+  <button class="uadd" type="button" title="Add unit">+</button>
+  <div class="sp"></div>
+  <div class="meta">unit tmai · opus-4.8 · max</div>
+  <button class="exit" type="button">‹ console</button>
+</div>
+
+<!-- ── mock banner ── -->
+<div class="banner">
+  <span><b>S6 再設計モック</b>（throwaway）</span>
+  <span class="k">A:</span><span>会話パネル全体を dev-tool 言語へ — stabs / shead / term / 入力行(hot⊥cold wire) / bash footer</span>
+  <span class="k">B:</span><span>ペイン境界と footer 高さをドラッグでリサイズ（W クリックでリセット）</span>
+</div>
+
+<!-- ── 3-pane grid ── -->
+<div class="main" id="main">
+
+  <!-- AIM (S2 実装済 — 文脈のみ) -->
+  <section class="col aim">
+    <div class="ah">
+      AIM
+      <div class="seg"><button class="on" type="button">FRONTIER</button><button type="button">TREE</button></div>
+      <span style="margin-left:auto">unit tmai · 2 repos</span>
+    </div>
+    <div class="ledger">OWED <b>3</b><span>frontier 2</span><span>⚠ drift 1</span><span style="margin-left:auto">done 11</span></div>
+    <div class="alist">
+      <div class="ar dr"><span class="gutbar"></span><span class="gly">⚠</span><span class="slug">aim-authority-event-driven-amendment</span><span class="st">drift</span></div>
+      <div class="ar cl"><span class="gutbar"></span><span class="gly">◔</span><span class="slug">aim-ui · S6 conversation-panel</span><span class="st">claimed</span></div>
+      <div class="ar cl"><span class="gutbar"></span><span class="gly">◔</span><span class="slug">aim-shared-means-dag</span><span class="st">claimed</span></div>
+      <div class="ar cf"><span class="gutbar"></span><span class="gly">●</span><span class="slug">aim-ui · S5 PR rail</span><span class="st">PR#802</span></div>
+      <div class="ar cf"><span class="gutbar"></span><span class="gly">●</span><span class="slug">aim-ui · S4 bash footer</span><span class="st">PR#800</span></div>
+      <div class="ar cf"><span class="gutbar"></span><span class="gly">●</span><span class="slug">aim-ui · S3 session pane</span><span class="st">PR#798</span></div>
+      <div class="ar cf"><span class="gutbar"></span><span class="gly">●</span><span class="slug">aim-node-shape</span><span class="st">confirmed</span></div>
+    </div>
+    <div class="anote">（Aim ペインは S2 実装済 — 本モックは Session ペインが主役）</div>
+  </section>
+
+  <!-- gutter A -->
+  <div class="gut" id="gutA" role="separator" aria-orientation="vertical" title="ドラッグでリサイズ / W クリックでリセット"></div>
+
+  <!-- SESSION — the re-designed conversation panel -->
+  <section class="col session" id="session">
+
+    <!-- stabs -->
+    <div class="stabs" role="tablist" aria-label="Sessions">
+      <button class="stab on" type="button" role="tab" data-s="prod" aria-selected="true">
+        <span class="ro p">PROD</span>Producer<span class="sdot run"></span>
+      </button>
+      <button class="stab" type="button" role="tab" data-s="w1" aria-selected="false">
+        <span class="ro w">WRK</span>attention-ui<span class="sdot run"></span>
+      </button>
+      <button class="stab" type="button" role="tab" data-s="w2" aria-selected="false">
+        <span class="ro w">WRK</span>drift-cycle<span class="tw">⚠</span><span class="sdot wait"></span>
+      </button>
+      <span class="sadd" title="worker dispatch">+</span>
+    </div>
+
+    <!-- shead (per-session, swapped by JS) -->
+    <div class="shead" id="shead"></div>
+
+    <!-- term -->
+    <div class="term" id="term">
+      <div class="s on" data-s="prod">
+        <div class="ta">✻ Claude Code</div>
+        <div class="td">  unit tmai · Producer · opus-4.8 · cross-repo</div>
+        <div class="td">  ───────────────────────────────────────────</div><br>
+        <div class="usr">&gt; S6 のスコープを会話パネル全体に広げたい。全体の UI に合うように。</div><br>
+        <div><span class="tp">●</span> 把握しました。借り物のままの要素は 3 つ — <span class="ta">ProducerConversationHeader</span>、</div>
+        <div>  <span class="ta">TerminalPanel</span> footer (⌨ Input / ⇩ Auto pills)、BashFooter 内の各端末。</div>
+        <div>  これらを hot⊥cold wire の言語で統一する拡張モックを起こします。</div><br>
+        <div><span class="tp">●</span> Read SessionPane.tsx <span class="tk">⎿ 219 lines</span></div>
+        <div><span class="tp">●</span> frontend-design → /tmp/s6-conversation-panel-mock.html <span class="tk">⎿ written</span></div>
+        <div class="tbox">⎿ mock presented — operator reaction pending</div>
+      </div>
+      <div class="s" data-s="w1">
+        <div class="ta">✻ Claude Code — worker</div>
+        <div class="td">  attention-ui · sonnet-4.6 · repo tmai · ../tmai-wt-attn-ui</div>
+        <div class="td">  ───────────────────────────────────────────</div><br>
+        <div class="td">brief ⎿ attention level を左 icon で。operator-null なし。</div><br>
+        <div><span class="tp">●</span> Edit AttentionMarker.tsx <span class="tk">(+34 −2)</span></div>
+        <div><span class="tp">●</span> pnpm test attention <span class="tk">⎿ 8 passed</span></div>
+        <div class="tbox">⎿ running</div>
+      </div>
+      <div class="s" data-s="w2">
+        <div class="ta">✻ Claude Code — worker</div>
+        <div class="td">  drift-cycle · opus-4.8 · repo tmai-core · ../tmai-core-wt-drift-cycle</div>
+        <div class="td">  ───────────────────────────────────────────</div><br>
+        <div><span class="tp">●</span> git log -G'^aim:' 確認 … <span class="tk">done</span></div>
+        <div class="twn">⚠ context 78% — handoff 検討</div>
+        <div class="tbox td">アイドル: 確認待ち</div>
+      </div>
+    </div>
+
+    <!-- ════ hero: re-designed input line + status strip ════ -->
+    <div class="cmd">
+      <div class="inrow">
+        <div class="spine" title="hot wire = INPUT(addressee accent) ⊥ cold wire = SELECT(ochre)"></div>
+        <div class="in">
+          <span class="chev">&gt;</span>
+          <div class="field"><span class="ph" id="ph">Producer に送信…</span><span class="buf" id="buf"></span><span class="caret"></span></div>
+          <span class="send" id="send">send <span class="kbd">⏎</span></span>
+        </div>
+      </div>
+      <div class="status">
+        <div class="seg2" id="seg">
+          <button type="button" data-mode="input"><span class="lead">⌁</span>INPUT</button>
+          <button type="button" data-mode="select"><span class="lead">⌖</span>SELECT</button>
+        </div>
+        <span class="dv"></span>
+        <button class="item on" type="button" id="follow" title="auto-scroll / follow tail"><span class="sw"></span>follow</button>
+        <span class="dv"></span>
+        <div class="addr" title="宛先 = アクティブ session（tab に従う）"><span class="d"></span>→ <b id="who">producer</b></div>
+        <span class="ctxr" id="ctxr">ctx <b>57%</b></span>
+      </div>
+      <div class="hint">
+        <span class="x i"><b>INPUT</b> — キーストロークは agent に渡る。<span class="hk">⎋</span> または SELECT でキーボードを解放してコピー可能に。</span>
+        <span class="x s"><b>SELECT</b> — 出力テキストを選択/コピーできる（term 左端も cold wire）。<span class="hk">⏎</span> または INPUT でキャプチャへ戻る。</span>
+      </div>
+    </div>
+
+    <!-- footer height gutter -->
+    <div class="guth" id="gutF" role="separator" aria-orientation="horizontal" title="ドラッグで高さ調整 / W クリックでリセット" style="display:none"></div>
+
+    <!-- bash footer -->
+    <div class="footer" id="footer">
+      <div class="fbar">
+        <button class="ftab on" type="button"><span class="d"></span>tmai</button>
+        <button class="ftab" type="button"><span class="d"></span>tmai-core</button>
+        <button class="fadd" type="button" title="terminal を追加">+</button>
+        <span class="sp"></span>
+        <button class="fsplit" type="button" id="fsplit" title="split 表示">⊟</button>
+        <button class="fcar" type="button" id="fcar" title="bash 開閉">▴</button>
+      </div>
+      <div class="ftwrap" id="ftwrap">
+        <div class="fterm">
+          <div class="fout">
+            <div><span class="pr">~/works/tmai</span> $ git log --oneline -2</div>
+            <div>bac7b5c S5: aim-ui console — PR rail (#801) (#802)</div>
+            <div>80ac65f S4: aim-ui console — docked bash footer (#799) (#800)</div>
+            <div><span class="pr">~/works/tmai</span> $ pnpm -C clients/react test <span class="ok">⎿ 96 passed</span></div>
+          </div>
+          <div class="fin">
+            <div class="spine2" title="shell の hot wire は green（宛先 accent の体系: producer cyan / worker violet / shell green）"></div>
+            <span class="chev2">$</span>
+            <div class="fph">bash — tmai<span class="fc" style="margin-left:8px"></span></div>
+          </div>
+        </div>
+        <div class="fterm">
+          <div class="fout">
+            <div><span class="pr">~/works/tmai-core</span> $ cargo test -p tmai-core --features mcp real <span class="ok">⎿ 10 passed</span></div>
+          </div>
+          <div class="fin">
+            <div class="spine2"></div>
+            <span class="chev2">$</span>
+            <div class="fph">bash — tmai-core<span class="fc" style="margin-left:8px"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- gutter B -->
+  <div class="gut off" id="gutB" role="separator" aria-orientation="vertical" title="ドラッグでリサイズ / W クリックでリセット"></div>
+
+  <!-- PR RAIL (S5 実装済 — 文脈のみ) -->
+  <section class="col pr">
+    <div class="prrail" id="prrail">
+      <span class="v w">PR 2</span><span class="v">Issue 5</span><span class="g">‹ EXTERNAL</span>
+    </div>
+    <div class="prfull">
+      <div class="prh">PR / ISSUE — unit tmai · 2 repos <span class="x" id="prx">✕</span></div>
+      <div class="prb">
+        <div class="prg"><h4>Pull Requests · 2</h4>
+          <div class="pi"><span class="repo pri">tmai</span><span class="n">#803</span><span class="t">S6: conversation panel re-design</span><span class="pst r">review</span></div>
+          <div class="pi"><span class="repo">core</span><span class="n">#514</span><span class="t">aim write endpoints</span><span class="pst d">draft</span></div>
+        </div>
+        <div class="prg"><h4>Issues · 5</h4>
+          <div class="pi"><span class="repo">core</span><span class="n">#512</span><span class="t">cross-edge 伝搬</span><span class="pst o">open</span></div>
+          <div class="pi"><span class="repo pri">tmai</span><span class="n">#509</span><span class="t">destination layout</span><span class="pst o">open</span></div>
+          <div class="pi"><span class="repo pri">tmai</span><span class="n">#166</span><span class="t">post-restart bash 表示</span><span class="pst o">open</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="readout"></div>
+
+<div class="legend">
+  <span><b>ドラッグで体感:</b> ペイン境界(<span class="c">⋮</span>) / footer 高さ(<span class="c">⋯</span>) — W クリックでリセット</span>
+  <span><b>クリック:</b> INPUT⊥SELECT / follow / tabs(宛先が追従) / rail / bash ▴ ⊟</span>
+  <span><b>wire:</b> <span class="c">hot = 生きてる</span>(accent: prod cyan / wrk violet / shell green) ⊥ <span class="o">cold = 凍結(ochre)</span></span>
+</div>
+
+<script>
+/* ── session data ──────────────────────────────────────────────────── */
+const SESS = {
+  prod:{ who:"producer", accent:"var(--cyan)",  accentD:"var(--cyan-d)",  ph:"Producer に送信…",
+    ctx:57, hi:false,
+    shead:`<span class="dd"></span><span class="nm">Producer</span><span class="md">opus-4.8</span>
+      <span class="bar"><b>▰▰▰▰▰▰</b>▱<span class="tk">┊</span>▱▱</span><span class="pct">57%</span>
+      <span class="md">auto 75%</span><span class="cwd">unit tmai · cwd ~/works/tmai-core</span>
+      <span class="acts"><button class="ho" type="button">⤺ handoff &amp; restart</button>
+      <button class="ic" type="button" title="settings">⚙</button>
+      <button class="ic kill" type="button" title="kill">✕</button></span>` },
+  w1:{ who:"attention-ui", accent:"var(--violet)", accentD:"var(--violet-d)", ph:"attention-ui に送信…",
+    ctx:41, hi:false,
+    shead:`<span class="dd"></span><span class="nm">attention-ui</span><span class="md">sonnet-4.6</span>
+      <span class="bar"><b>▰▰▰▰</b>▱▱▱<span class="tk">┊</span>▱▱</span><span class="pct">41%</span>
+      <span class="cwd">repo tmai · ../tmai-wt-attn-ui</span>
+      <span class="acts"><button class="ic kill" type="button" title="kill">✕</button></span>` },
+  w2:{ who:"drift-cycle", accent:"var(--violet)", accentD:"var(--violet-d)", ph:"drift-cycle に送信…",
+    ctx:78, hi:true,
+    shead:`<span class="dd wait"></span><span class="nm">drift-cycle</span><span class="md">opus-4.8</span>
+      <span class="bar"><b>▰▰▰▰▰▰▰</b><span class="tk">┊</span><b>▰</b>▱</span><span class="pct hi">78%</span>
+      <span class="cwd">repo tmai-core · ../tmai-core-wt-drift-cycle</span>
+      <span class="acts"><button class="ic kill" type="button" title="kill">✕</button></span>` },
+};
+const root = document.documentElement, body = document.body;
+const $ = (s)=>document.querySelector(s), $$ = (s)=>[...document.querySelectorAll(s)];
+
+/* tabs — addressee follows the active tab */
+let cur = "prod";
+function setSession(id){
+  cur = id;
+  $$(".stab").forEach(t=>{ const on = t.dataset.s===id; t.classList.toggle("on",on); t.setAttribute("aria-selected",on); });
+  $$(".term .s").forEach(s=>s.classList.toggle("on", s.dataset.s===id));
+  const S = SESS[id];
+  root.style.setProperty("--who", S.accent);
+  root.style.setProperty("--who-d", S.accentD);
+  $("#shead").innerHTML = S.shead;
+  $("#who").textContent = S.who;
+  $("#ph").textContent = S.ph;
+  const c = $("#ctxr"); c.innerHTML = `ctx <b>${S.ctx}%</b>`; c.classList.toggle("hi", S.hi);
+  buf = ""; renderBuf();
+  if(follow) snapTail();
+}
+$$(".stab").forEach(t=>t.addEventListener("click",()=>setSession(t.dataset.s)));
+
+/* INPUT ⊥ SELECT */
+function setMode(m){ body.classList.toggle("input", m==="input"); body.classList.toggle("select", m==="select"); }
+$$("#seg button").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
+addEventListener("keydown",(e)=>{
+  if(e.key==="Escape"){ setMode("select"); return; }
+  if(body.classList.contains("select")){ if(e.key==="Enter") setMode("input"); return; }
+  /* fake input buffer — sells the line as live */
+  if(e.key==="Enter"){ if(buf.trim()){ sendLine(); } e.preventDefault(); return; }
+  if(e.key==="Backspace"){ buf = buf.slice(0,-1); renderBuf(); return; }
+  if(e.key.length===1 && !e.metaKey && !e.ctrlKey && !e.altKey){ buf += e.key; renderBuf(); }
+});
+let buf = "";
+function renderBuf(){ $("#buf").textContent = buf; $("#ph").style.display = buf ? "none" : ""; }
+function sendLine(){
+  const t = $(`.term .s[data-s="${cur}"]`);
+  const d = document.createElement("div"); d.className="usr"; d.textContent = "> "+buf;
+  t.appendChild(document.createElement("br")); t.appendChild(d);
+  buf=""; renderBuf(); if(follow) snapTail();
+}
+
+/* follow */
+let follow = true;
+$("#follow").addEventListener("click",()=>{ follow=!follow; $("#follow").classList.toggle("on",follow); if(follow) snapTail(); });
+function snapTail(){ const tm=$("#term"); tm.scrollTop = tm.scrollHeight; }
+
+/* PR rail */
+$("#prrail").addEventListener("click",()=>{ body.classList.add("pr-open"); root.style.setProperty("--pr","320px"); $("#gutB").classList.remove("off"); });
+$("#prx").addEventListener("click",()=>{ body.classList.remove("pr-open"); root.style.setProperty("--pr","46px"); $("#gutB").classList.add("off"); });
+
+/* bash footer */
+const footer=$("#footer");
+$("#fcar").addEventListener("click",()=>{ footer.classList.toggle("open"); $("#gutF").style.display = footer.classList.contains("open") ? "" : "none"; });
+$("#fsplit").addEventListener("click",()=>{ $("#ftwrap").classList.toggle("split"); $("#fsplit").classList.toggle("on"); });
+
+/* ── drag-resize ───────────────────────────────────────────────────── */
+const readout=$("#readout");
+function showReadout(x,y,txt){ readout.style.display="block"; readout.style.left=(x+14)+"px"; readout.style.top=(y+14)+"px"; readout.textContent=txt; }
+function hideReadout(){ readout.style.display="none"; }
+
+/* gutter A — Aim|Session: rewrite both fr tracks from live px */
+(function(){
+  const g=$("#gutA"); let sx=0, aim0=0, sess0=0;
+  g.addEventListener("pointerdown",(e)=>{
+    sx=e.clientX;
+    aim0=$(".aim").getBoundingClientRect().width;
+    sess0=$("#session").getBoundingClientRect().width;
+    g.setPointerCapture(e.pointerId); g.classList.add("live");
+    body.classList.add("dragging","drag-col");
+  });
+  g.addEventListener("pointermove",(e)=>{
+    if(!g.classList.contains("live")) return;
+    const total=aim0+sess0;
+    const aim=Math.min(Math.max(aim0+(e.clientX-sx),230), total-300);
+    root.style.setProperty("--aim",aim+"fr");
+    root.style.setProperty("--sess",(total-aim)+"fr");
+    showReadout(e.clientX,e.clientY,`aim ${Math.round(aim)}px · sess ${Math.round(total-aim)}px`);
+  });
+  g.addEventListener("pointerup",(e)=>{ g.classList.remove("live"); g.releasePointerCapture(e.pointerId); body.classList.remove("dragging","drag-col"); hideReadout(); });
+  g.addEventListener("dblclick",()=>{ root.style.setProperty("--aim","1.18fr"); root.style.setProperty("--sess","1fr"); });
+})();
+
+/* gutter B — Session|PR rail: adjusts --pr px while open */
+(function(){
+  const g=$("#gutB"); let sx=0, pr0=0;
+  g.addEventListener("pointerdown",(e)=>{
+    if(!body.classList.contains("pr-open")) return;
+    sx=e.clientX; pr0=$(".pr").getBoundingClientRect().width;
+    g.setPointerCapture(e.pointerId); g.classList.add("live");
+    body.classList.add("dragging","drag-col");
+  });
+  g.addEventListener("pointermove",(e)=>{
+    if(!g.classList.contains("live")) return;
+    const pr=Math.min(Math.max(pr0-(e.clientX-sx),240),520);
+    root.style.setProperty("--pr",pr+"px");
+    showReadout(e.clientX,e.clientY,`pr ${Math.round(pr)}px`);
+  });
+  g.addEventListener("pointerup",(e)=>{ g.classList.remove("live"); g.releasePointerCapture(e.pointerId); body.classList.remove("dragging","drag-col"); hideReadout(); });
+  g.addEventListener("dblclick",()=>{ if(body.classList.contains("pr-open")) root.style.setProperty("--pr","320px"); });
+})();
+
+/* gutter F — bash footer height */
+(function(){
+  const g=$("#gutF"); let sy=0, fh0=0;
+  g.addEventListener("pointerdown",(e)=>{
+    sy=e.clientY; fh0=$("#ftwrap").getBoundingClientRect().height;
+    g.setPointerCapture(e.pointerId); g.classList.add("live");
+    body.classList.add("dragging","drag-row");
+  });
+  g.addEventListener("pointermove",(e)=>{
+    if(!g.classList.contains("live")) return;
+    const max=$("#session").getBoundingClientRect().height*0.6;
+    const fh=Math.min(Math.max(fh0-(e.clientY-sy),110),max);
+    root.style.setProperty("--fh",Math.round(fh)+"px");
+    showReadout(e.clientX,e.clientY,`footer ${Math.round(fh)}px`);
+  });
+  g.addEventListener("pointerup",(e)=>{ g.classList.remove("live"); g.releasePointerCapture(e.pointerId); body.classList.remove("dragging","drag-row"); hideReadout(); });
+  g.addEventListener("dblclick",()=>root.style.setProperty("--fh","180px"));
+})();
+
+/* boot */
+setSession("prod");
+</script>
+</body>
+</html>
