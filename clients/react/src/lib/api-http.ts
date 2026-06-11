@@ -46,10 +46,13 @@ import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
 import type { RepoObservationsWire } from "@/types/generated/RepoObservationsWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
+import type { RepoSlackWire } from "@/types/generated/RepoSlackWire";
 import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
 import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { Section } from "@/types/generated/Section";
+import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest";
+import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
@@ -60,6 +63,7 @@ import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
 import type { UnitResponse } from "@/types/generated/UnitResponse";
+import type { UnitSlackResponse } from "@/types/generated/UnitSlackResponse";
 import type { UnitsResponse } from "@/types/generated/UnitsResponse";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
@@ -110,9 +114,12 @@ export type {
   RepoIssuesWire,
   RepoObservationsWire,
   RepoPrsWire,
+  RepoSlackWire,
   ReviewExtensionWire,
   ReviewTriggerWire,
   Section,
+  SlackCaptureRequest,
+  SlackOreWire,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
@@ -122,6 +129,7 @@ export type {
   UnitPrsResponse,
   UnitRepoWire,
   UnitResponse,
+  UnitSlackResponse,
   UnitsResponse,
   Vendor,
   WorkerDispatchMap,
@@ -1601,6 +1609,27 @@ export const api = {
   // merge/CI gate to override.
   unitIssues: (unit: string) =>
     apiFetch<UnitIssuesResponse>(`/units/${encodeURIComponent(unit)}/issues`),
+
+  // Unit-scoped slack-ore terrain (tmai-core
+  // `doc/aims/_incubator/2026-06-11-recoil-loop-handoff.md` §6b–6d) —
+  // pre-crystallization aim ore, grouped per repo (primary first, as the
+  // engine returns them). Terrain, not a queue: the wire carries no
+  // unread/new marker by design, and the UI must not synthesize one.
+  unitSlack: (unit: string) =>
+    apiFetch<UnitSlackResponse>(`/units/${encodeURIComponent(unit)}/slack`),
+
+  // Capture one ore — text only (no category / care-level / importance field
+  // of any kind, operator-ratified). The server derives the ticket from the
+  // capture time and writes `text` verbatim under `<repo_path>/doc/slack/`;
+  // empty / whitespace-only text or a `repo_path` outside the unit is `422`.
+  // Returns the captured ore (201) — callers refresh the list instead of
+  // splicing it in, same re-render-from-authoritative convention as
+  // `createAim`.
+  captureSlack: (unit: string, body: SlackCaptureRequest) =>
+    apiFetch<SlackOreWire>(`/units/${encodeURIComponent(unit)}/slack`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Unit-scoped cross-record in-play inventory (tmai-core #485/#486) — the
   // nested projection behind the R panel's in-play section: every decision

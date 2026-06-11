@@ -1982,6 +1982,157 @@
   border-top: 1px solid var(--line-2);
 }
 
+/* ── AIM pane faces — [AIM | SLACK] switch (Stage B, issue #809) ──────────
+   "木の横、木の中でなく" — one panel, two faces. The strip borrows the
+   session-tab language (mock `.stabs`) at a quieter size. The labels are
+   TEXT ONLY — the slack tab is terrain, not a queue: no counter, no badge,
+   no count ever rides on a face tab. */
+.aim-console .ac-ftabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  height: 30px;
+  padding: 5px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-2);
+}
+.aim-console .ac-ftab {
+  display: flex;
+  align-items: center;
+  padding: 0 13px;
+  height: 25px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  position: relative;
+  top: 1px;
+  cursor: pointer;
+}
+.aim-console .ac-ftab:hover {
+  background: var(--line-2);
+  color: var(--txt);
+}
+.aim-console .ac-ftab.on {
+  background: var(--bg);
+  color: var(--txt);
+  border-color: var(--line-2);
+}
+
+/* A face fills the pane below the strip with the SAME flex-column context
+   `.ac-col` gave the pre-#809 pane children (header flex:none, list flex:1),
+   so the AIM face lays out byte-identically inside the wrapper. `[hidden]`
+   must beat the flex display — switching hides, never unmounts. */
+.aim-console .ac-face {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.aim-console .ac-face[hidden] {
+  display: none;
+}
+
+/* ── SLACK face — capture box + per-repo ore terrain ──────────────────── */
+.aim-console .ac-skcap {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.aim-console .ac-skcap textarea {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px 10px;
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  min-height: 52px;
+}
+.aim-console .ac-skcap textarea:focus {
+  border-color: var(--cyan);
+}
+.aim-console .ac-skcap-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.aim-console .ac-skcap-row select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 8px;
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 11px;
+  outline: none;
+  min-width: 0;
+}
+.aim-console .ac-skcap-row select:focus {
+  border-color: var(--cyan);
+}
+.aim-console .ac-skcap-repo {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.aim-console .ac-skcap-row .ac-btn {
+  margin-left: auto;
+}
+
+.aim-console .ac-sklist {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.aim-console .ac-ore {
+  padding: 8px 14px 9px;
+  border-bottom: 1px solid var(--line-2);
+}
+.aim-console .ac-ore-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+.aim-console .ac-ore-at {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+/* quoted marker — quiet (structure cyan, never an alert tone) */
+.aim-console .ac-ore-q {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--cyan);
+}
+/* unmined — fainter still: a normal resting state, not a todo */
+.aim-console .ac-ore-un {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  opacity: 0.7;
+}
+.aim-console .ac-ore-body {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--txt);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @keyframes ac-pulse {
   0%,
   100% {
