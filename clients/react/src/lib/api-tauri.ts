@@ -15,6 +15,7 @@ import type {
   PrMergeMethod,
   PrMergeOverride,
   PrMonitorScope,
+  SlackCaptureRequest,
   SpawnRequest,
   SpawnRuntime,
   TriggerHandoffRitualRequest,
@@ -286,6 +287,11 @@ export const api = {
   // Unit-scoped cross-repo issue list — the issues peer of `unitPrs`
   // (HTTP only — gh-CLI passthrough fanned out over the unit's repos)
   unitIssues: (unit: string) => httpApi.unitIssues(unit),
+
+  // Unit-scoped slack-ore terrain + operator capture (HTTP only — file-backed
+  // doc/slack/ records served over the web API; no Tauri-specific path needed)
+  unitSlack: (unit: string) => httpApi.unitSlack(unit),
+  captureSlack: (unit: string, body: SlackCaptureRequest) => httpApi.captureSlack(unit, body),
 
   // Unit-scoped cross-record in-play inventory (HTTP only — on-demand JSON
   // projection of the unit's decisions + serving approaches; no
