@@ -11,8 +11,10 @@
 // exist — this footer does NOT add a new PTY layer.
 //   - `api.spawnPty({ command: "bash", cwd })` opens a shell PTY in a repo's
 //     cwd (`bash` is an existing spawn-allow-list runtime);
-//   - `TerminalPanel` renders the live PTY by the resolved agent target
-//     (reused AS-IS — its internals are untouched);
+//   - each pane renders the live PTY via `WireTerminal` (S6) — the SAME
+//     hot/cold-wire surface as the Session conversation, shell-green spine
+//     + its own mini status strip around the reused chromeless
+//     `TerminalPanel`;
 //   - the live agent list (App's `useAgents`, threaded in as `agents`) lets
 //     the footer DISCOVER an already-running bash for a repo's cwd and
 //     RE-ATTACH to it rather than spawn a duplicate.
@@ -25,10 +27,10 @@
 // ad-hoc tab kills its PTY (`api.killAgent`) so we never strand orphan shells.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { type AgentSnapshot, api, isAiAgentLoose, normalizeGitDir } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
+import { WireTerminal } from "./WireTerminal";
 
 interface BashFooterProps {
   /** The focused unit's repos (primary first; the same `repos[]` order the
@@ -294,10 +296,16 @@ export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
         )}
         <div className="ac-ftbody">
           {agent ? (
-            // Reuse TerminalPanel AS-IS, keyed on the resolved target so a
-            // tab switch tears down and re-attaches cleanly (PTY-server
-            // replays scrollback — tmai-core #227).
-            <TerminalPanel key={agent.target} agentId={agent.target} />
+            // The S6 hot/cold-wire surface (shell-green spine + mini strip
+            // around the reused chromeless TerminalPanel), keyed on the
+            // resolved target so a tab switch tears down and re-attaches
+            // cleanly (PTY-server replays scrollback — tmai-core #227).
+            <WireTerminal
+              key={agent.target}
+              agentId={agent.target}
+              who="shell"
+              addressee={tab.label}
+            />
           ) : (
             <div className="ac-fthint">starting bash in {tab.cwd}…</div>
           )}

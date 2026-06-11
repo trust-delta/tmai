@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
 //
-// SessionPane (S3) test. The Session pane is a faithful reproduction of the
-// mock's `.session` section (session tabs + shead + term), wiring the EXISTING
-// console infra into the aim-console:
+// SessionPane (S3 + the S6 control surface) test. The Session pane wires the
+// EXISTING console infra into the aim-console:
 //   - tabs ← the live agent list (Producer via `findProducerForUnit` + the
 //     unit's workers);
-//   - shead ← ProducerConversationHeader for the Producer (the Handoff &
-//     restart ritual), a plain model/cwd bar for a worker;
-//   - term ← TerminalPanel (live PTY) / PreviewPanel (no live PTY).
+//   - shead ← the aim-console's own `Shead` (S6): Producer variant carries
+//     the ctx bar + the Handoff & restart ritual, worker variant the
+//     model/repo/cwd line;
+//   - term ← `WireTerminal` (S6: spine + chromeless TerminalPanel + status
+//     strip; accent = addressee) for a live PTY / PreviewPanel otherwise.
 //
 // TerminalPanel / PreviewPanel are heavy (xterm + the PTY plane), so they are
 // stubbed to the agentId they receive — the pane logic under test is the tab
-// list, the LOCAL session selection, and the shead split. `api` is mocked so
-// ProducerConversationHeader's settings fetch never hits the network.
+// list, the LOCAL session selection, the shead split, and the addressee
+// threading. `api` is mocked so Shead's settings fetch never hits the network.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -179,16 +180,30 @@ describe("SessionPane — S3 Session conversation", () => {
     expect(screen.getByTestId("ac-term-terminal").textContent).toBe("claude:w1");
   });
 
-  it("renders the Handoff & restart shead for the Producer, a plain bar for a worker", () => {
+  it("renders the Producer shead with the handoff ritual, the worker variant without", () => {
     renderPane();
-    // Producer selected by default → the ProducerConversationHeader shead
-    // carries the Handoff & restart ritual.
-    expect(screen.getByRole("button", { name: /Handoff & restart/ })).toBeTruthy();
+    // Producer selected by default → the S6 Producer shead carries the
+    // ⤺ handoff & restart ritual (and the cyan accent).
+    expect(screen.getByTestId("ac-shead-producer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /handoff & restart/i })).toBeTruthy();
 
-    // Switch to a worker → no Handoff ritual; plain model/cwd bar instead.
+    // Switch to a worker → the worker shead: no Handoff ritual, model/cwd line.
     fireEvent.click(screen.getByRole("tab", { name: /attention-ui/ }));
-    expect(screen.queryByRole("button", { name: /Handoff & restart/ })).toBeNull();
+    expect(screen.getByTestId("ac-shead-worker")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /handoff & restart/i })).toBeNull();
     expect(screen.getByText("sonnet-4.6")).toBeTruthy();
+  });
+
+  it("threads the addressee accent into the wire — it follows the selected tab", () => {
+    renderPane();
+    // Producer tab → cyan accent, `→ producer` in the strip.
+    expect(screen.getByTestId("ac-wire").className).toContain("ac-who-p");
+    expect(screen.getByTestId("ac-strip").textContent).toContain("producer");
+
+    // Worker tab → violet accent, the worker's name as addressee.
+    fireEvent.click(screen.getByRole("tab", { name: /attention-ui/ }));
+    expect(screen.getByTestId("ac-wire").className).toContain("ac-who-w");
+    expect(screen.getByTestId("ac-strip").textContent).toContain("attention-ui");
   });
 
   it("docks the S4 bash footer at the bottom of the pane", () => {

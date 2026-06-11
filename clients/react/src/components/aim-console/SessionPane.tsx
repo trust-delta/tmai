@@ -12,11 +12,12 @@
 // agent conversations. This pane wires the SAME infra into the aim-console:
 //   - session tabs ← the live agent list (Producer via `findProducerForUnit`
 //     + the unit's workers);
-//   - shead ← `ProducerConversationHeader` for the Producer (model / cwd /
-//     ctx% + the App-lifted Handoff & restart ritual), a plain model / cwd
-//     bar for a worker;
-//   - term ← `TerminalPanel` (live PTY) / `PreviewPanel` (between selections),
-//     UNCHANGED.
+//   - shead ← the aim-console's own `Shead` (S6) — Producer variant carries
+//     the ctx bar + threshold marker + the App-lifted Handoff & restart
+//     ritual; worker variant the model / repo / cwd line;
+//   - term ← `WireTerminal` (S6: spine + chromeless `TerminalPanel` +
+//     status strip — the hot/cold-wire control surface) for a live PTY /
+//     `PreviewPanel` (between selections), UNCHANGED.
 //
 // The aim console is a full-screen TAKEOVER (App renders ONLY `<AimConsole>`
 // in aim mode), so the selected SESSION is LOCAL state here — NOT App's
@@ -26,8 +27,6 @@
 
 import { useMemo, useState } from "react";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
-import { ProducerConversationHeader } from "@/components/producer-console/ProducerConversationHeader";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import {
   type AgentSnapshot,
   isAiAgentLoose,
@@ -38,6 +37,9 @@ import { findProducerForUnit } from "@/lib/producer";
 import { cn } from "@/lib/utils";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
 import { BashFooter } from "./BashFooter";
+import { Shead } from "./Shead";
+import { statusClass, statusWord } from "./session-status";
+import { WireTerminal } from "./WireTerminal";
 
 interface SessionPaneProps {
   /** Live agent list (App's `useAgents`). The Producer is resolved via
@@ -61,10 +63,6 @@ interface SessionPaneProps {
   repos: UnitRepoWire[];
 }
 
-function repoBasename(path: string): string {
-  return path.split("/").filter(Boolean).pop() ?? path;
-}
-
 // Does this agent belong to the focused unit? Prefer the wire `unit` field
 // (a `[[unit]]` can span several repos, so a worker at a SECONDARY repo still
 // carries the unit's name — #439); fall back to a primary-repo-dir match for
@@ -80,22 +78,6 @@ function agentInUnit(
   }
   if (primaryPath === null) return false;
   return normalizeGitDir(agent.git_common_dir ?? agent.cwd) === normalizeGitDir(primaryPath);
-}
-
-// Tab status dot colour — reuse ProducerConversationHeader's flat `attention`
-// mapping (tmai-core@2026-05-09 Phase 4): `halted` → at a permission prompt,
-// `started` / `completed` → waiting on the operator, `null` → running.
-function statusClass(attention: AgentSnapshot["attention"]): string {
-  if (attention === "halted") return "halt";
-  if (attention === "started" || attention === "completed") return "wait";
-  return "run";
-}
-
-function statusWord(attention: AgentSnapshot["attention"]): string {
-  if (attention === "halted") return "Halted";
-  if (attention === "completed") return "Done";
-  if (attention === "started") return "Started";
-  return "Active";
 }
 
 export function SessionPane({
@@ -168,37 +150,35 @@ export function SessionPane({
         </span>
       </div>
 
-      {/* ── shead (mock `.shead`) ── Producer gets the full
-          ProducerConversationHeader (ctx% + the Handoff & restart ritual);
-          a worker gets a plain model / cwd bar. */}
-      {selectedAgent &&
-        (isProducerSelected ? (
-          <ProducerConversationHeader
-            agents={agents}
-            currentProjectPath={currentProjectPath}
-            unitName={unitName}
-            trigger={trigger}
-            onOpenSettings={onOpenSettings}
-          />
-        ) : (
-          <div className="ac-shead">
-            <span className="m">
-              {selectedAgent.model_display_name ?? selectedAgent.model_id ?? "—"}
-            </span>
-            <span className="w">
-              repo {repoBasename(selectedAgent.git_common_dir ?? selectedAgent.cwd)}
-              {selectedAgent.git_branch ? ` · ${selectedAgent.git_branch}` : ""} ·{" "}
-              {selectedAgent.display_cwd}
-            </span>
-          </div>
-        ))}
+      {/* ── shead (mock `.shead`) ── the aim-console's own S6 bar: Producer
+          variant carries the ctx bar + ┊ threshold marker + the Handoff &
+          restart ritual; worker variant the model / repo / cwd line. */}
+      {selectedAgent && (
+        <Shead
+          agent={selectedAgent}
+          isProducer={isProducerSelected}
+          unitName={unitName}
+          currentProjectPath={currentProjectPath}
+          trigger={trigger}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
 
       {/* ── term (mock `.term`) ── the raw-CC conversation. Live PTY →
-          TerminalPanel; between selections (no live PTY) → PreviewPanel. */}
+          WireTerminal (S6 spine + chromeless TerminalPanel + status strip,
+          accent = addressee); between selections (no live PTY) →
+          PreviewPanel, UNCHANGED. */}
       <div className="ac-term">
         {selectedAgent ? (
           selectedAgent.pty_session_id ? (
-            <TerminalPanel key={selectedAgent.target} agentId={selectedAgent.target} />
+            <WireTerminal
+              key={selectedAgent.target}
+              agentId={selectedAgent.target}
+              who={isProducerSelected ? "producer" : "worker"}
+              addressee={isProducerSelected ? "producer" : selectedAgent.display_name}
+              ctxPct={selectedAgent.ctx_usage?.pct ?? null}
+              hint
+            />
           ) : (
             <PreviewPanel key={selectedAgent.target} agentId={selectedAgent.target} />
           )
