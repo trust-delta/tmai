@@ -19,6 +19,20 @@ import { DEFAULT_THEME_NAME, THEME_NAMES, type ThemeName } from "@/lib/theme";
 export type AimMode = "frontier" | "tree";
 export const AIM_MODES: readonly AimMode[] = ["frontier", "tree"];
 
+// Drag-resized aim-console layout (S7). `aim`/`sess` are the pane fr WEIGHTS
+// (the live px captured at drag end, used as `Nfr` so the panes keep scaling
+// with the window); `pr` the expanded PR-rail width in px; `footer` the bash
+// footer's terminal-area height in px (the mock's `--fh`). `null` = never
+// dragged / reset — the console then uses AIM_CONSOLE_LAYOUT_DEFAULTS, and a
+// double-click reset stores `null` rather than a copy of the defaults so a
+// future default change reaches untouched layouts.
+export interface AimConsoleLayout {
+  aim: number;
+  sess: number;
+  pr: number;
+  footer: number;
+}
+
 export interface UIPrefs {
   // WebUI colour theme. Presentation-only; lives here (not in tmai-core
   // config / api-spec) by the same convention as every other field.
@@ -43,6 +57,9 @@ export interface UIPrefs {
   // Aim panel mode. Default `frontier` — the owed worklist is the panel's
   // load-bearing thesis (NOT a passive full-tree dump). See AimMode.
   aimMode: AimMode;
+  // Drag-resized aim-console layout (S7); `null` until the operator drags a
+  // gutter. WebUI-only by the same convention as every other field here.
+  aimConsoleLayout: AimConsoleLayout | null;
 }
 
 // Attention-strip width bounds (px). Floor keeps the section content
@@ -53,6 +70,23 @@ export const ATTENTION_STRIP_WIDTH_MIN = 240;
 export const ATTENTION_STRIP_WIDTH_MAX = 560;
 export const ATTENTION_STRIP_WIDTH_DEFAULT = 320;
 
+// aim-console layout bounds (issue #805 / the S6 mock's drag clamps). The
+// PR-rail window keeps the rail's lists legible without starving the Session
+// pane; the footer floor keeps at least a couple of terminal rows visible.
+// The footer's UPPER bound is runtime-only (60% of the live Session pane
+// height) so it cannot be enforced here — the console re-applies it on mount,
+// drag and window resize.
+export const AIM_CONSOLE_PR_WIDTH_MIN = 240;
+export const AIM_CONSOLE_PR_WIDTH_MAX = 520;
+export const AIM_CONSOLE_FOOTER_MIN = 110;
+
+export const AIM_CONSOLE_LAYOUT_DEFAULTS: AimConsoleLayout = {
+  aim: 1.18,
+  sess: 1,
+  pr: 320,
+  footer: 180,
+};
+
 export const DEFAULT_UI_PREFS: UIPrefs = {
   theme: DEFAULT_THEME_NAME,
   terminalFontSize: 13,
@@ -60,6 +94,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   attentionStripWidth: ATTENTION_STRIP_WIDTH_DEFAULT,
   rPanelExpandedSections: [],
   aimMode: "frontier",
+  aimConsoleLayout: null,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -93,6 +128,59 @@ function clampStripWidth(value: unknown, fallback: number): number {
   return clampAttentionStripWidth(value);
 }
 
+// Same compose-with-coerce convention as clampAttentionStripWidth: the drag
+// commit path (aim-console Gutters) clamps with the rule coerce applies on
+// load, so neither a drag nor a hand-edited blob can persist out-of-range px.
+export function clampAimConsolePrWidth(value: number): number {
+  if (!Number.isFinite(value)) return AIM_CONSOLE_LAYOUT_DEFAULTS.pr;
+  return Math.max(AIM_CONSOLE_PR_WIDTH_MIN, Math.min(AIM_CONSOLE_PR_WIDTH_MAX, Math.round(value)));
+}
+
+// Floor-only: the footer's ceiling (60% of the Session pane) is a LIVE
+// measurement the storage layer cannot know — the console re-clamps it on
+// mount / drag / window resize.
+export function clampAimConsoleFooterHeight(value: number): number {
+  if (!Number.isFinite(value)) return AIM_CONSOLE_LAYOUT_DEFAULTS.footer;
+  return Math.max(AIM_CONSOLE_FOOTER_MIN, Math.round(value));
+}
+
+// Collapse an all-defaults layout back to `null` so a double-click reset
+// CLEARS the stored layout (the issue's contract) instead of pinning a copy
+// of today's defaults into every blob.
+export function normalizeAimConsoleLayout(layout: AimConsoleLayout): AimConsoleLayout | null {
+  const d = AIM_CONSOLE_LAYOUT_DEFAULTS;
+  if (
+    layout.aim === d.aim &&
+    layout.sess === d.sess &&
+    layout.pr === d.pr &&
+    layout.footer === d.footer
+  ) {
+    return null;
+  }
+  return layout;
+}
+
+// Pane fr weights are free-form positive numbers (1.18 at rest, live px after
+// a drag) — only reject the degenerate ones that would zero out a pane.
+function coerceFrWeight(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return fallback;
+  return value;
+}
+
+function coerceAimConsoleLayout(value: unknown): AimConsoleLayout | null {
+  if (value === null || value === undefined || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  return normalizeAimConsoleLayout({
+    aim: coerceFrWeight(v.aim, AIM_CONSOLE_LAYOUT_DEFAULTS.aim),
+    sess: coerceFrWeight(v.sess, AIM_CONSOLE_LAYOUT_DEFAULTS.sess),
+    pr: typeof v.pr === "number" ? clampAimConsolePrWidth(v.pr) : AIM_CONSOLE_LAYOUT_DEFAULTS.pr,
+    footer:
+      typeof v.footer === "number"
+        ? clampAimConsoleFooterHeight(v.footer)
+        : AIM_CONSOLE_LAYOUT_DEFAULTS.footer,
+  });
+}
+
 // Validate each field individually so a partially corrupt blob still
 // recovers the good fields and only resets the bad ones to default.
 function coercePrefs(raw: unknown): UIPrefs {
@@ -115,6 +203,7 @@ function coercePrefs(raw: unknown): UIPrefs {
     aimMode: AIM_MODES.includes(r.aimMode as AimMode)
       ? (r.aimMode as AimMode)
       : DEFAULT_UI_PREFS.aimMode,
+    aimConsoleLayout: coerceAimConsoleLayout(r.aimConsoleLayout),
   };
 }
 

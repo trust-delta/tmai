@@ -22,7 +22,9 @@
    S1 reproduces the TOKEN LAYER + the SHELL: top bar, 3-pane grid, and the
    PR-rail expand/collapse transition. The panes fill in over later stages —
    the worklist (S2), session (S3) + its docked bash footer (S4), and the
-   PR/Issue lists (S5).
+   PR/Issue lists (S5). S7 (mock `origin/mock/aim-ui-s6`) turns the pane
+   seams into real 5px drag-gutter tracks and the bash footer height into a
+   drag target — see the `ac-vgut` / `ac-hgut` / `ac-readout` block.
    ════════════════════════════════════════════════════════════════════════ */
 
 .aim-console {
@@ -51,8 +53,11 @@
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
   --rh: 27px;
 
-  /* 3-pane column track (mock `.main`). The PR-rail collapses to a 46px
-     rail and expands to 320px via the `.pr-open` modifier below. */
+  /* 3-pane column tracks (mock `.main`) — S7 drag-resizable: the gutters
+     rewrite these (drag) and AimConsole drives them from the persisted
+     `aimConsoleLayout` ui-pref (inline, while the rail is open / after a
+     drag). These declarations are the untouched-layout defaults; the
+     collapsed rail always falls back to the 46px here. */
   --aim: 1.18fr;
   --sess: 1fr;
   --pr: 46px;
@@ -213,15 +218,16 @@
   border-color: var(--cyan-d);
 }
 
-/* ── 3-pane grid (mock `.main`) ───────────────────────────────────────── */
+/* ── 3-pane grid + 5px drag-gutter tracks (mock `.main`, S7) ──────────────
+   The gutters are REAL grid tracks, replacing the old `.ac-col` hairline
+   borders — the seam at rest is the gutter's own centred 1px line, so the
+   resting visual is identical. The PR-rail expand/collapse still animates
+   via the `--pr` change; a live drag suppresses the transition (below). */
 .aim-console .ac-main {
   display: grid;
-  grid-template-columns: var(--aim, 1.18fr) var(--sess, 1fr) var(--pr, 46px);
+  grid-template-columns: var(--aim, 1.18fr) 5px var(--sess, 1fr) 5px var(--pr, 46px);
   min-height: 0;
   transition: grid-template-columns 0.2s ease;
-}
-.aim-console.pr-open {
-  --pr: 320px;
 }
 .aim-console .ac-col {
   min-width: 0;
@@ -229,10 +235,121 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--line);
 }
-.aim-console .ac-col:last-child {
-  border-right: none;
+
+/* vertical pane gutter (mock `.gut`) — hairline at rest, cyan glow + `⋮`
+   grip on hover, solid while dragging (`.live`). `.off` = inert (the
+   Session|PR gutter while the rail is collapsed). */
+.aim-console .ac-vgut {
+  position: relative;
+  cursor: col-resize;
+}
+.aim-console .ac-vgut::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--line);
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.aim-console .ac-vgut::after {
+  content: "⋮";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: transparent;
+  transition: color 0.15s;
+}
+.aim-console .ac-vgut:hover::before,
+.aim-console .ac-vgut.live::before {
+  background: var(--cyan);
+  box-shadow: 0 0 6px rgba(74, 163, 157, 0.5);
+}
+.aim-console .ac-vgut:hover::after {
+  color: var(--cyan);
+}
+.aim-console .ac-vgut.off {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* horizontal footer gutter (mock `.guth`) — same affordance language, `⋯` */
+.aim-console .ac-hgut {
+  position: relative;
+  cursor: row-resize;
+  height: 5px;
+  flex: none;
+}
+.aim-console .ac-hgut::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+  background: var(--line);
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.aim-console .ac-hgut::after {
+  content: "⋯";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: transparent;
+  transition: color 0.15s;
+}
+.aim-console .ac-hgut:hover::before,
+.aim-console .ac-hgut.live::before {
+  background: var(--cyan);
+  box-shadow: 0 0 6px rgba(74, 163, 157, 0.5);
+}
+.aim-console .ac-hgut:hover::after {
+  color: var(--cyan);
+}
+
+/* drag readout chip (mock `#readout`) — follows the pointer with live px */
+.aim-console .ac-readout {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--cyan);
+  background: var(--elev);
+  border: 1px solid var(--cyan-d);
+  padding: 2px 7px;
+}
+
+/* live-drag state (mock `body.dragging`, scoped on the root): suppress text
+   selection, force the resize cursor window-wide, and disable the grid /
+   footer height transitions so the tracks follow the pointer 1:1. */
+.aim-console.ac-dragging {
+  user-select: none;
+}
+.aim-console.ac-dragging * {
+  cursor: inherit !important;
+}
+.aim-console.ac-drag-col {
+  cursor: col-resize;
+}
+.aim-console.ac-drag-row {
+  cursor: row-resize;
+}
+.aim-console.ac-dragging .ac-main,
+.aim-console.ac-dragging .ac-footer {
+  transition: none;
 }
 
 /* ── AIM pane (header chrome + S2 stub) ───────────────────────────────── */
@@ -688,10 +805,13 @@
 }
 
 /* ── docked bash footer (mock `.footer`/`.fbar`/`.ftab`/`.ftwrap`) ────────
-   The Session pane's docked bash terminals (S4): a collapsed 33px tab bar
-   that expands to 210px (mock `body.bash-on .footer`), a tab strip (one per
-   repo + ad-hoc shells), `+` add, split toggle, and the open/close carat.
-   Each surfaced terminal is the reused TerminalPanel filling `.ac-ftbody`. */
+   The Session pane's docked bash terminals (S4): a collapsed 33px tab bar,
+   a tab strip (one per repo + ad-hoc shells), `+` add, split toggle, and the
+   open/close carat. Each surfaced terminal is the reused TerminalPanel
+   filling `.ac-ftbody`. S7 makes the expanded height drag-resizable: `--fh`
+   (the mock's name) is the TERMINAL-AREA height — BashFooter drives it
+   inline from the persisted layout, the footer gutter rewrites it live —
+   and the expanded total adds the 33px tab bar on top. */
 .aim-console .ac-footer {
   flex: none;
   height: 33px;
@@ -703,7 +823,7 @@
   flex-direction: column;
 }
 .aim-console .ac-footer.open {
-  height: 210px;
+  height: calc(var(--fh, 180px) + 33px);
 }
 .aim-console .ac-fbar {
   display: flex;

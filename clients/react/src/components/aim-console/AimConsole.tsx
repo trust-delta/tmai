@@ -24,13 +24,24 @@
 // `TerminalPanel`); the PR-rail (right) is the real per-repo PR + Issue
 // inventory (`PrRail`, reusing `useUnitPrs` / `useUnitIssues` + the
 // `prStatusPills` / `issueStatusPills` derivation). The shell is now fully
-// filled in.
+// filled in. S7 makes the grid drag-resizable: the two pane seams are real
+// 5px gutter tracks (`Gutters`), the layout custom properties are driven
+// from the persisted `aimConsoleLayout` ui-pref, and drag end (not per-move)
+// writes it back.
 
-import { useState } from "react";
+import { type CSSProperties, useCallback, useState } from "react";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
+import {
+  AIM_CONSOLE_LAYOUT_DEFAULTS,
+  type AimConsoleLayout,
+  clampAimConsolePrWidth,
+  normalizeAimConsoleLayout,
+} from "@/lib/ui-prefs";
+import { useUIPref } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
+import { AimSessionGutter, SessionPrGutter } from "./Gutters";
 import { PrRail } from "./PrRail";
 import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
@@ -96,9 +107,10 @@ export function AimConsole({
   onOpenSettings,
 }: AimConsoleProps) {
   // PR-rail expand state — the S1 shell's mechanism. The collapsed 46px rail
-  // expands to a 320px panel via the `.pr-open` modifier on the root (mock
-  // `body.pr-open { --pr: 320px }`). The state stays HERE; `PrRail` only
-  // renders the rail/panel CONTENT (S5) and calls back to toggle it.
+  // expands via the `.pr-open` modifier on the root + the inline `--pr`
+  // (S7: the persisted drag width, 320px default). The state stays HERE;
+  // `PrRail` only renders the rail/panel CONTENT (S5) and calls back to
+  // toggle it.
   const [prOpen, setPrOpen] = useState(false);
   const metaUnit = activeUnitName ?? units[0]?.name ?? "—";
   // The focused unit's repos drive the Session pane's per-repo bash footer
@@ -106,8 +118,63 @@ export function AimConsole({
   // `repos` is empty there — the footer falls back to `currentProjectPath`.
   const activeUnit = units.find((u) => u.name === activeUnitName) ?? null;
 
+  // S7 drag-resizable layout. The persisted pref IS the layout state — a drag
+  // adjusts the custom properties imperatively (no re-render per move, see
+  // `Gutters`) and commits here once on pointerup; the committed values then
+  // render as the same inline custom properties, so React reconciliation and
+  // the imperative drag agree. `null` = untouched → defaults.
+  const [storedLayout, setStoredLayout] = useUIPref("aimConsoleLayout");
+  const layout: AimConsoleLayout = storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS;
+  const layoutStyle = {
+    "--aim": `${layout.aim}fr`,
+    "--sess": `${layout.sess}fr`,
+    // Collapsed rail: leave `--pr` to the stylesheet's 46px so the stored
+    // expanded width survives without driving the collapsed track.
+    "--pr": prOpen ? `${clampAimConsolePrWidth(layout.pr)}px` : undefined,
+  } as CSSProperties;
+
+  const commitPanes = useCallback(
+    (aim: number, sess: number) =>
+      setStoredLayout(
+        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), aim, sess }),
+      ),
+    [storedLayout, setStoredLayout],
+  );
+  const resetPanes = useCallback(
+    () =>
+      setStoredLayout(
+        normalizeAimConsoleLayout({
+          ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS),
+          aim: AIM_CONSOLE_LAYOUT_DEFAULTS.aim,
+          sess: AIM_CONSOLE_LAYOUT_DEFAULTS.sess,
+        }),
+      ),
+    [storedLayout, setStoredLayout],
+  );
+  const commitPr = useCallback(
+    (pr: number) =>
+      setStoredLayout(
+        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), pr }),
+      ),
+    [storedLayout, setStoredLayout],
+  );
+  const resetPr = useCallback(
+    () =>
+      setStoredLayout(
+        normalizeAimConsoleLayout({
+          ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS),
+          pr: AIM_CONSOLE_LAYOUT_DEFAULTS.pr,
+        }),
+      ),
+    [storedLayout, setStoredLayout],
+  );
+
   return (
-    <div className={cn("aim-console", prOpen && "pr-open")} data-testid="aim-console">
+    <div
+      className={cn("aim-console", prOpen && "pr-open")}
+      data-testid="aim-console"
+      style={layoutStyle}
+    >
       {/* ── top bar ── */}
       <div className="ac-top">
         <div className="ac-brand">
@@ -143,12 +210,19 @@ export function AimConsole({
         </button>
       </div>
 
-      {/* ── 3-pane grid ── */}
+      {/* ── 3-pane grid + 5px gutter tracks (S7) ── */}
       <div className="ac-main">
         {/* AIM — S2 worklist (Frontier⊥Tree, ledger, ruler, inspector, modal) */}
         <section className="ac-col ac-aim" aria-label="Aim">
           <AimPane unitName={activeUnitName} />
         </section>
+
+        {/* gutter A — Aim|Session */}
+        <AimSessionGutter
+          aimShare={(layout.aim / (layout.aim + layout.sess)) * 100}
+          onCommit={commitPanes}
+          onReset={resetPanes}
+        />
 
         {/* SESSION — S3 conversation (tabs + shead + term) + S4 bash footer */}
         <section className="ac-col ac-session" aria-label="Session">
@@ -161,6 +235,14 @@ export function AimConsole({
             repos={activeUnit?.repos ?? []}
           />
         </section>
+
+        {/* gutter B — Session|PR (inert while the rail is collapsed) */}
+        <SessionPrGutter
+          open={prOpen}
+          prWidth={clampAimConsolePrWidth(layout.pr)}
+          onCommit={commitPr}
+          onReset={resetPr}
+        />
 
         {/* PR RAIL — collapsed rail ⇄ expanded panel (S1 mechanism); the
             per-repo PR + Issue lists + live counts are the real S5 content */}
