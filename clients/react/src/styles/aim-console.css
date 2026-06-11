@@ -1824,6 +1824,43 @@
   margin-top: 12px;
 }
 
+/* ── resignation inventory (issue #811) ───────────────────────────────────
+   Facts beside the done act — what this done is satisfied with vs what it
+   parks. Categorical tones only (the confirmed/claimed tag tokens above plus
+   a neutral `open` tag); NO severity ramp, no alert styling — this surface
+   must never read as a warning or a gate. */
+.aim-console .ac-resig {
+  margin-top: 10px;
+}
+.aim-console .ac-resig-cap {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  margin: 7px 0 2px;
+}
+.aim-console .ac-tg.o {
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+.aim-console .ac-resig-slug {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+.aim-console .ac-resig-dr {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--amber);
+}
+.aim-console .ac-resig-frontier {
+  font-size: 10.5px;
+  color: var(--faint);
+  border-top: 1px dashed var(--line);
+  margin-top: 8px;
+  padding-top: 7px;
+}
+
 /* ── buttons (inspector + modal) ──────────────────────────────────────── */
 .aim-console .ac-btn {
   padding: 6px 12px;

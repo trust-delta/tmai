@@ -608,6 +608,155 @@ describe("AimPane — unit change", () => {
   });
 });
 
+describe("AimPane — resignation inventory (#811)", () => {
+  // A dedicated forest: a done node carrying both mark kinds, with a
+  // multi-level subtree mixing open (one drifted), open-under-open, and a
+  // done sibling — the buckets the inventory must (and must not) collect.
+  const RESIG: AimWire[] = [
+    aimStub({ slug: "resig-root", aim: "root bearing" }),
+    aimStub({
+      slug: "resig-done",
+      aim: "the parked bearing",
+      parent: "resig-root",
+      state: "done",
+      is: [confirmed("landed", "PR#9"), claimed("tail debt")],
+    }),
+    aimStub({
+      slug: "resig-open-child",
+      aim: "open child",
+      parent: "resig-done",
+      drift: driftFrom("resig-root"),
+    }),
+    aimStub({ slug: "resig-open-grand", aim: "open grandchild", parent: "resig-open-child" }),
+    aimStub({ slug: "resig-done-child", aim: "done child", parent: "resig-done", state: "done" }),
+  ];
+  const resigResponse = () => responseStub([{ label: "tmai-core", primary: true, aims: RESIG }]);
+
+  it("renders the inventory persistently on an already-done node (satisfied ⊥ parked ⊥ frontier)", async () => {
+    aimsMock.mockResolvedValue(resigResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("resig-done");
+
+    const insp = await screen.findByTestId("aim-inspector");
+    const inv = within(insp).getByTestId("resignation-inventory");
+
+    // 満足 — the node's own confirmed marks, ref shown.
+    const sat = within(inv).getAllByTestId("resig-satisfied");
+    expect(sat.map((s) => s.textContent)).toEqual(["✓ confirmedlanded [PR#9]"]);
+
+    // 諦め (a) — the node's own claimed marks, parked not settled.
+    const cl = within(inv).getAllByTestId("resig-claimed");
+    expect(cl).toHaveLength(1);
+    expect(cl[0].textContent).toContain("tail debt");
+
+    // 諦め (b) — open descendants at any depth; the done child is NOT parked.
+    const desc = within(inv).getAllByTestId("resig-open-desc");
+    expect(desc.map((d) => d.dataset.slug)).toEqual(["resig-open-child", "resig-open-grand"]);
+
+    // The drifted open descendant carries its drift badge (existing convention).
+    expect(within(desc[0]).getByTestId("resig-drift-badge").textContent).toContain(
+      "drift ← resig-root",
+    );
+    expect(within(desc[1]).queryByTestId("resig-drift-badge")).toBeNull();
+
+    // The constant frontier line closes the enumerable buckets.
+    expect(within(inv).getByTestId("resig-frontier").textContent).toBe(
+      "この先は書かれていない残余 — 諦めはそこにも届く",
+    );
+  });
+
+  it("renders NO inventory on an open node", async () => {
+    aimsMock.mockResolvedValue(resigResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("resig-root");
+    await screen.findByTestId("aim-inspector");
+    expect(screen.queryByTestId("resignation-inventory")).toBeNull();
+  });
+
+  it("frontier line is constant and unconditional — empty buckets, done-drift tone untouched (pin #2)", async () => {
+    // review-attention-budget: done+drift, no marks, no children — both
+    // enumerable buckets are empty, the frontier still renders.
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    // Pin #2 first: the done-drift row tone keeps reading as done+⚠.
+    const row = rowEl("review-attention-budget");
+    expect(row.dataset.tone).toBe("done-drift");
+    expect(within(row).getByTestId("aim-drift-badge")).toBeTruthy();
+
+    selectRow("review-attention-budget");
+    const insp = await screen.findByTestId("aim-inspector");
+    const inv = within(insp).getByTestId("resignation-inventory");
+    expect(within(inv).queryAllByTestId("resig-satisfied")).toHaveLength(0);
+    expect(within(inv).queryAllByTestId("resig-claimed")).toHaveLength(0);
+    expect(within(inv).queryAllByTestId("resig-open-desc")).toHaveLength(0);
+    expect(within(inv).getByTestId("resig-frontier").textContent).toBe(
+      "この先は書かれていない残余 — 諦めはそこにも届く",
+    );
+  });
+
+  it("at done-set in the edit modal: inventory appears beside the state control, NEVER gates the act", async () => {
+    aimsMock.mockResolvedValue(resigResponse());
+    editAimMock.mockResolvedValue(
+      aimStub({ slug: "resig-root", aim: "root bearing", state: "done" }),
+    );
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("resig-root");
+    const insp = await screen.findByTestId("aim-inspector");
+    fireEvent.click(within(insp).getByRole("button", { name: /編集/ }));
+
+    const modal = await screen.findByTestId("aim-create-modal");
+    // state is open → no inventory yet.
+    expect(within(modal).queryByTestId("resignation-inventory")).toBeNull();
+
+    // Flip TO done → the inventory appears inline (what this done will park):
+    // resig-root's whole open subtree is gone except… resig-done is done, so
+    // parked = the open descendants under it too (subtree at any depth).
+    fireEvent.change(within(modal).getByLabelText("state"), { target: { value: "done" } });
+    const inv = within(modal).getByTestId("resignation-inventory");
+    expect(
+      within(inv)
+        .getAllByTestId("resig-open-desc")
+        .map((d) => d.dataset.slug),
+    ).toEqual(["resig-open-child", "resig-open-grand"]);
+    expect(within(inv).getByTestId("resig-frontier")).toBeTruthy();
+
+    // NOT a gate: submit stays enabled, no confirm step — one click commits.
+    const save = within(modal).getByRole("button", { name: "保存" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(editAimMock).toHaveBeenCalledWith("u", "resig-root", {
+        aim: "root bearing",
+        parent: null,
+        state: "done",
+      }),
+    );
+  });
+
+  it("flipping the state select back to open removes the inventory (reversible)", async () => {
+    aimsMock.mockResolvedValue(resigResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("resig-root");
+    const insp = await screen.findByTestId("aim-inspector");
+    fireEvent.click(within(insp).getByRole("button", { name: /編集/ }));
+
+    const modal = await screen.findByTestId("aim-create-modal");
+    fireEvent.change(within(modal).getByLabelText("state"), { target: { value: "done" } });
+    expect(within(modal).getByTestId("resignation-inventory")).toBeTruthy();
+    fireEvent.change(within(modal).getByLabelText("state"), { target: { value: "open" } });
+    expect(within(modal).queryByTestId("resignation-inventory")).toBeNull();
+  });
+});
+
 describe("AimPane — [AIM | SLACK] faces (#809)", () => {
   function faceEl(face: "aim" | "slack"): HTMLElement {
     return screen.getByTestId(`aim-face-${face}`);

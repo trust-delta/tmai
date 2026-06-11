@@ -75,6 +75,7 @@ import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+import { RESIGNATION_FRONTIER, resignationInventory } from "./resignation";
 import { SlackFace } from "./SlackFace";
 import { suggestSlug, validateAimSlug } from "./slug";
 
@@ -1070,6 +1071,17 @@ function Inspector({
         )}
       </div>
 
+      {/* Resignation inventory (#811) — done is reversible attention-parking,
+          so on an already-done node the parked objects stay visible, quietly.
+          Read-only context for the (reversible) state edit — never a gate. */}
+      {node.state === "done" && (
+        <ResignationInventoryView
+          title="resignation inventory — この done が駐車したもの"
+          node={node}
+          nodes={repo.aims}
+        />
+      )}
+
       <div className="ac-insp-actions">
         <button type="button" className="ac-btn small" onClick={onEdit}>
           ✎ 編集
@@ -1077,6 +1089,93 @@ function Inspector({
         <button type="button" className="ac-btn small" onClick={() => onAddChild(node.slug)}>
           ＋ 子 aim を作成
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── resignation inventory (#811) ──────────────────────────────────────
+//
+// Renders the `resignationInventory` facts beside the done act: 満足 = the
+// node's own confirmed marks; 諦め = its claimed marks (confirm owed, parked
+// not settled) + descendants still open. Categorical tones only — the
+// existing confirmed/claimed tag tokens and the open/drift glyph conventions;
+// no severity ramp, no warning framing, no gate. The frontier line is
+// CONSTANT and unconditional — the unwritten remainder exists whether the
+// enumerable buckets are full or empty.
+function ResignationInventoryView({
+  title,
+  node,
+  nodes,
+}: {
+  title: string;
+  node: AimWire;
+  nodes: readonly AimWire[];
+}) {
+  const inv = useMemo(() => resignationInventory(node, nodes), [node, nodes]);
+  return (
+    <div className="ac-resig" data-testid="resignation-inventory">
+      <div className="ac-isec">{title}</div>
+
+      <div className="ac-resig-cap">満足 — confirmed</div>
+      {inv.satisfied.length === 0 ? (
+        <div className="ac-il dim">— confirmed mark なし —</div>
+      ) : (
+        inv.satisfied.map((m) => (
+          <div
+            className="ac-il"
+            key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
+            data-testid="resig-satisfied"
+          >
+            <span className="ac-tg c">✓ confirmed</span>
+            <span>
+              {m.text}
+              {m.ref !== null && <span className="ac-ref"> [{m.ref}]</span>}
+            </span>
+          </div>
+        ))
+      )}
+
+      <div className="ac-resig-cap">諦め — 駐車されるもの</div>
+      {inv.parkedClaims.length === 0 && inv.parkedOpenDescendants.length === 0 ? (
+        <div className="ac-il dim">— 列挙できる駐車対象なし —</div>
+      ) : (
+        <>
+          {inv.parkedClaims.map((m) => (
+            <div
+              className="ac-il"
+              key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
+              data-testid="resig-claimed"
+            >
+              <span className="ac-tg k">◌ claimed</span>
+              <span>{m.text}（未 confirm のまま駐車）</span>
+            </div>
+          ))}
+          {inv.parkedOpenDescendants.map((d) => (
+            <div className="ac-il" key={d.slug} data-testid="resig-open-desc" data-slug={d.slug}>
+              <span className="ac-tg o">○ open</span>
+              <span>
+                {d.aim} <span className="ac-resig-slug">{d.slug}</span>
+                {/* A drifted descendant is still open+drifted — its drift rides
+                    along with the existing ⚠ convention, untouched. */}
+                {d.drift !== null && (
+                  <span
+                    className="ac-resig-dr"
+                    data-testid="resig-drift-badge"
+                    title={`ancestor anchor moved ${d.drift.ancestor_change_date} (${d.drift.ancestor_change_sha})`}
+                  >
+                    {" "}
+                    ⚠ drift ← {d.drift.stale_from_ancestor_slug}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+
+      <div className="ac-resig-frontier" data-testid="resig-frontier">
+        {RESIGNATION_FRONTIER}
       </div>
     </div>
   );
@@ -1317,6 +1416,18 @@ function CreateEditModal({
                   <option value="done">done — aim 到達 / confirmed</option>
                   <option value="dead">dead — self-death（系譜は残す・親無傷）</option>
                 </select>
+                {/* Resignation inventory at done-set (#811): when the operator
+                    is putting this node TO done, show what this done will park
+                    — inline, beside the state control, BEFORE the commit.
+                    Strictly non-blocking: it never disables submit, never asks
+                    "are you sure" — facts beside the act, not a gate. */}
+                {state === "done" && editSel !== null && (
+                  <ResignationInventoryView
+                    title="resignation inventory — この done が駐車するもの"
+                    node={editSel.node}
+                    nodes={editSel.repo.aims}
+                  />
+                )}
               </div>
             )}
 
