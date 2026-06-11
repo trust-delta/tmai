@@ -26,10 +26,18 @@
 // the partner pane). Ad-hoc shells spawn on the explicit `+`. Closing an
 // ad-hoc tab kills its PTY (`api.killAgent`) so we never strand orphan shells.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AgentSnapshot, api, isAiAgentLoose, normalizeGitDir } from "@/lib/api";
+import {
+  AIM_CONSOLE_FOOTER_MIN,
+  AIM_CONSOLE_LAYOUT_DEFAULTS,
+  clampAimConsoleFooterHeight,
+  normalizeAimConsoleLayout,
+} from "@/lib/ui-prefs";
+import { useUIPrefsOptional } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
+import { FOOTER_MAX_SESSION_RATIO, FooterGutter } from "./Gutters";
 import { WireTerminal } from "./WireTerminal";
 
 interface BashFooterProps {
@@ -91,10 +99,66 @@ function resolveAgent(
 }
 
 export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
-  // Collapsed (33px tab bar) ↔ expanded (210px) — the mock's `body.bash-on`,
-  // local here. Starts COLLAPSED so mount spawns nothing.
+  // Collapsed (33px tab bar) ↔ expanded — the mock's `body.bash-on`, local
+  // here. Starts COLLAPSED so mount spawns nothing.
   const [open, setOpen] = useState(false);
   const [splitOn, setSplitOn] = useState(false);
+
+  // S7 drag-resizable height. `--fh` is the TERMINAL-AREA height (the mock's
+  // `--fh` on `.ftwrap`); the footer's total expanded height is `--fh` + the
+  // 33px tab bar (see `.ac-footer.open`). The persisted pref seeds a LOCAL px
+  // state because the live 60%-of-session ceiling must re-apply on window
+  // resize WITHOUT persisting the transient clamp; only a drag end / reset
+  // writes the pref. Read via the OPTIONAL prefs hook so the footer (rendered
+  // provider-less in unit tests, like `useActiveTheme` deeper down) degrades
+  // to in-memory defaults instead of throwing.
+  const prefsCtx = useUIPrefsOptional();
+  const storedLayout = prefsCtx?.prefs.aimConsoleLayout ?? null;
+  const storedFooter = storedLayout?.footer ?? AIM_CONSOLE_LAYOUT_DEFAULTS.footer;
+  const [footerPx, setFooterPx] = useState(() => clampAimConsoleFooterHeight(storedFooter));
+  const footerRef = useRef<HTMLDivElement | null>(null);
+  // Reseed when the persisted value changes (drag commit, double-click
+  // reset, another tab) — the source of truth is the pref.
+  useEffect(() => {
+    setFooterPx(clampAimConsoleFooterHeight(storedFooter));
+  }, [storedFooter]);
+  // Re-apply the live ceiling (60% of the Session pane) on open + window
+  // resize. Local-only: a transiently small window must not shrink the
+  // PERSISTED height. Degenerate (zero) measurements mid-mount are skipped.
+  useEffect(() => {
+    if (!open) return;
+    const reclamp = () => {
+      const session = footerRef.current?.closest(".ac-session");
+      if (!session) return;
+      const max = Math.round(session.getBoundingClientRect().height * FOOTER_MAX_SESSION_RATIO);
+      // A ceiling below the floor means a degenerate (mid-mount / hidden)
+      // measurement — skip rather than clamp into an unusable height.
+      if (max <= AIM_CONSOLE_FOOTER_MIN) return;
+      setFooterPx((cur) => Math.min(cur, max));
+    };
+    reclamp();
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [open]);
+
+  const persistFooter = useCallback(
+    (footer: number) => {
+      setFooterPx(footer);
+      if (!prefsCtx) return; // provider-less render — in-memory only
+      prefsCtx.setPref(
+        "aimConsoleLayout",
+        normalizeAimConsoleLayout({
+          ...(prefsCtx.prefs.aimConsoleLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS),
+          footer,
+        }),
+      );
+    },
+    [prefsCtx],
+  );
+  const resetFooter = useCallback(
+    () => persistFooter(AIM_CONSOLE_LAYOUT_DEFAULTS.footer),
+    [persistFooter],
+  );
   // Per-repo + ad-hoc tab → its live PTY id (a `spawnPty` session_id or a
   // re-attached agent target). A key is absent until its tab is first
   // surfaced — that absence is the lazy-spawn gate.
@@ -315,107 +379,115 @@ export function BashFooter({ repos, primaryPath, agents }: BashFooterProps) {
   };
 
   return (
-    <div
-      className={cn("ac-footer", open && "open")}
-      data-testid="aim-bash-footer"
-      data-open={open ? "true" : "false"}
-    >
-      <div className="ac-fbar">
-        <div className="ac-ftabs" role="tablist" aria-label="Bash terminals">
-          {tabs.map((tab) => {
-            const selected = tab.key === effectiveActiveKey;
-            const running = tab.closeable
-              ? resolveAgent(sessions[tab.key], agents) !== undefined
-              : resolveAgent(sessions[tab.key], agents) !== undefined ||
-                findExistingBash(tab.cwd, agents) !== undefined;
-            return (
-              <div
-                key={tab.key}
-                className={cn("ac-ftab", selected && "on")}
-                data-testid={`aim-bash-tab-${tab.label}`}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  className="ac-ftab-btn"
-                  onClick={() => openOnto(tab.key)}
-                  title={`${tab.label} — ${tab.cwd}`}
+    <>
+      {/* footer height gutter (S7, mock gutF) — only while expanded */}
+      {open && (
+        <FooterGutter footerHeight={footerPx} onCommit={persistFooter} onReset={resetFooter} />
+      )}
+      <div
+        ref={footerRef}
+        className={cn("ac-footer", open && "open")}
+        data-testid="aim-bash-footer"
+        data-open={open ? "true" : "false"}
+        style={{ "--fh": `${footerPx}px` } as CSSProperties}
+      >
+        <div className="ac-fbar">
+          <div className="ac-ftabs" role="tablist" aria-label="Bash terminals">
+            {tabs.map((tab) => {
+              const selected = tab.key === effectiveActiveKey;
+              const running = tab.closeable
+                ? resolveAgent(sessions[tab.key], agents) !== undefined
+                : resolveAgent(sessions[tab.key], agents) !== undefined ||
+                  findExistingBash(tab.cwd, agents) !== undefined;
+              return (
+                <div
+                  key={tab.key}
+                  className={cn("ac-ftab", selected && "on")}
+                  data-testid={`aim-bash-tab-${tab.label}`}
                 >
-                  {running && (
-                    <span
-                      className="ac-rdot"
-                      aria-hidden="true"
-                      title="bash running in this repo"
-                    />
-                  )}
-                  <span>{tab.label}</span>
-                </button>
-                {tab.closeable && (
                   <button
                     type="button"
-                    className="ac-fclose"
-                    onClick={() => closeTab(tab.key)}
-                    title={`Close ${tab.label}`}
-                    aria-label={`Close ${tab.label}`}
+                    role="tab"
+                    aria-selected={selected}
+                    className="ac-ftab-btn"
+                    onClick={() => openOnto(tab.key)}
+                    title={`${tab.label} — ${tab.cwd}`}
                   >
-                    ×
+                    {running && (
+                      <span
+                        className="ac-rdot"
+                        aria-hidden="true"
+                        title="bash running in this repo"
+                      />
+                    )}
+                    <span>{tab.label}</span>
                   </button>
-                )}
-              </div>
-            );
-          })}
+                  {tab.closeable && (
+                    <button
+                      type="button"
+                      className="ac-fclose"
+                      onClick={() => closeTab(tab.key)}
+                      title={`Close ${tab.label}`}
+                      aria-label={`Close ${tab.label}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="ac-fadd"
+            onClick={addAdhoc}
+            disabled={!primaryPath}
+            title="New ad-hoc terminal in the primary repo"
+            aria-label="New ad-hoc terminal"
+          >
+            +
+          </button>
+          <span className="ac-fsp" />
+          <button
+            type="button"
+            className={cn("ac-fsplit", splitOn && "on")}
+            onClick={toggleSplit}
+            disabled={tabs.length < 2}
+            aria-pressed={splitOn}
+            title="Split view (two terminals side by side)"
+            aria-label="Toggle split view"
+          >
+            ⊟
+          </button>
+          <button
+            type="button"
+            className="ac-fcar"
+            onClick={toggleOpen}
+            aria-expanded={open}
+            title="Open / close bash"
+            aria-label={open ? "Collapse bash footer" : "Expand bash footer"}
+          >
+            {open ? "▾" : "▴"}
+          </button>
         </div>
-        <button
-          type="button"
-          className="ac-fadd"
-          onClick={addAdhoc}
-          disabled={!primaryPath}
-          title="New ad-hoc terminal in the primary repo"
-          aria-label="New ad-hoc terminal"
-        >
-          +
-        </button>
-        <span className="ac-fsp" />
-        <button
-          type="button"
-          className={cn("ac-fsplit", splitOn && "on")}
-          onClick={toggleSplit}
-          disabled={tabs.length < 2}
-          aria-pressed={splitOn}
-          title="Split view (two terminals side by side)"
-          aria-label="Toggle split view"
-        >
-          ⊟
-        </button>
-        <button
-          type="button"
-          className="ac-fcar"
-          onClick={toggleOpen}
-          aria-expanded={open}
-          title="Open / close bash"
-          aria-label={open ? "Collapse bash footer" : "Expand bash footer"}
-        >
-          {open ? "▾" : "▴"}
-        </button>
-      </div>
 
-      {open && (
-        <div className={cn("ac-ftwrap", partnerTab && "split")}>
-          {activeTab ? (
-            partnerTab ? (
-              <>
-                {renderPane(activeTab, true)}
-                {renderPane(partnerTab, true)}
-              </>
+        {open && (
+          <div className={cn("ac-ftwrap", partnerTab && "split")}>
+            {activeTab ? (
+              partnerTab ? (
+                <>
+                  {renderPane(activeTab, true)}
+                  {renderPane(partnerTab, true)}
+                </>
+              ) : (
+                renderPane(activeTab, false)
+              )
             ) : (
-              renderPane(activeTab, false)
-            )
-          ) : (
-            <div className="ac-fthint">No repo to open a shell in — focus a unit first.</div>
-          )}
-        </div>
-      )}
-    </div>
+              <div className="ac-fthint">No repo to open a shell in — focus a unit first.</div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
