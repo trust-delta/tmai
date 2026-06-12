@@ -67,6 +67,10 @@ import {
   repoStats,
   rulerOrder,
   subtreeStats,
+  WORKING_DELTA_FACT,
+  WORKING_DELTA_GLYPH,
+  type WorkingDeltaKind,
+  workingDeltaKind,
 } from "./aim-tree";
 import { Section } from "./Section";
 
@@ -141,6 +145,18 @@ const TONE_GUTTER: Record<AimTone, string> = {
   confirmed: "bg-success/30",
   root: "bg-info/60",
   neutral: "bg-hairline-strong",
+};
+
+// Working-delta presence glyph styling (#817) — a SEPARATE glyph from the
+// drift ⚠ (the two may coexist on one row); neutral-to-info, NEVER the
+// warning family (presence is a fact about the instrument, not owed work).
+// `uncommitted-anchor` gets the info accent (the anchor on screen is not the
+// anchor in HEAD); `untracked` gets a dotted "new" reading.
+const WD_GLYPH_CLASS: Record<WorkingDeltaKind, string> = {
+  uncommitted: "text-subtle-foreground",
+  "uncommitted-anchor": "text-info",
+  untracked:
+    "rounded-[2px] border border-dotted border-subtle-foreground/60 text-subtle-foreground leading-none",
 };
 
 // Ought-text styling per tone — calm for resolved/abandoned, lit for drift.
@@ -957,6 +973,7 @@ function AimRow({
   onAddChild?: () => void;
 }) {
   const tone = aimTone(node);
+  const wd = workingDeltaKind(node);
   return (
     <div
       data-testid="aim-row"
@@ -1014,6 +1031,20 @@ function AimRow({
             className="shrink-0 font-mono text-[11px] text-warning"
           >
             ⚠
+          </span>
+        )}
+        {/* Working-delta presence glyph (#817) — beside, never merged into,
+            the drift ⚠: a node can be both drifted at HEAD and dirty in the
+            working tree, and each fact keeps its own glyph. */}
+        {wd !== null && (
+          <span
+            data-testid="aim-wd-badge"
+            data-wd={wd}
+            aria-hidden="true"
+            title={WORKING_DELTA_FACT[wd]}
+            className={`shrink-0 font-mono text-[11px] ${WD_GLYPH_CLASS[wd]}`}
+          >
+            {WORKING_DELTA_GLYPH}
           </span>
         )}
         <span className={`truncate text-[12px] ${TONE_OUGHT_CLASS[tone]}`}>{node.aim}</span>
@@ -1260,6 +1291,7 @@ function MetaPills({
   repoLabel: string;
   repoPrimary: boolean;
 }) {
+  const wd = workingDeltaKind(node);
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       <span
@@ -1274,6 +1306,17 @@ function MetaPills({
         {node.parent === null ? " · root" : ""}
       </span>
       {node.drift !== null && <DriftPill drift={node.drift} done={node.state === "done"} />}
+      {/* Working-delta fact line (#817) — presence only, beside (never inside)
+          the drift pill; info tone, not the drift amber. */}
+      {wd !== null && (
+        <span
+          data-testid="aim-wd-pill"
+          data-wd={wd}
+          className="rounded border border-dashed border-info/40 px-1.5 py-0.5 font-mono text-[9px] text-info"
+        >
+          {WORKING_DELTA_GLYPH} {WORKING_DELTA_FACT[wd]}
+        </span>
+      )}
     </div>
   );
 }

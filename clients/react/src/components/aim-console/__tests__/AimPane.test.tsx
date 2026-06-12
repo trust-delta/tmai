@@ -19,6 +19,7 @@ import type { AimsResponse, AimWire } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
 import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
+import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 
 const aimsMock = vi.fn();
 const createAimMock = vi.fn();
@@ -59,6 +60,12 @@ const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
   kind: "pruned",
   text,
   ref,
+});
+const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire => ({
+  uncommitted: false,
+  uncommitted_anchor_change: false,
+  untracked: false,
+  ...overrides,
 });
 
 function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
@@ -788,6 +795,131 @@ describe("AimPane — resignation inventory (#811)", () => {
     expect(within(modal).getByTestId("resignation-inventory")).toBeTruthy();
     fireEvent.change(within(modal).getByLabelText("state"), { target: { value: "open" } });
     expect(within(modal).queryByTestId("resignation-inventory")).toBeNull();
+  });
+});
+
+describe("AimPane — working_delta presence facts (#817)", () => {
+  // A dedicated forest under one auto-expanded root: the three presence
+  // shapes, a both-drifted-and-dirty node, and a clean sibling.
+  const WDF: AimWire[] = [
+    aimStub({ slug: "wd-root", aim: "root bearing" }),
+    aimStub({
+      slug: "wd-plain",
+      aim: "dirty body",
+      parent: "wd-root",
+      working_delta: wd({ uncommitted: true }),
+    }),
+    aimStub({
+      slug: "wd-anchor",
+      aim: "dirty anchor",
+      parent: "wd-root",
+      working_delta: wd({ uncommitted: true, uncommitted_anchor_change: true }),
+    }),
+    aimStub({
+      slug: "wd-new",
+      aim: "untracked node",
+      parent: "wd-root",
+      working_delta: wd({ untracked: true }),
+    }),
+    aimStub({
+      slug: "wd-drift",
+      aim: "drifted AND dirty",
+      parent: "wd-root",
+      drift: driftFrom("wd-root"),
+      working_delta: wd({ uncommitted: true }),
+    }),
+    aimStub({ slug: "wd-clean", aim: "clean sibling", parent: "wd-root" }),
+  ];
+  const wdResponse = () => responseStub([{ label: "tmai-core", primary: true, aims: WDF }]);
+
+  function wdBadge(slug: string): HTMLElement | null {
+    return rowEl(slug).querySelector('[data-testid="aim-wd-badge"]');
+  }
+
+  it("each presence shape gets its own △ class; a clean row gets none", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+
+    const plain = wdBadge("wd-plain");
+    expect(plain?.textContent).toBe("△");
+    expect(plain?.dataset.wd).toBe("uncommitted");
+    expect(plain?.classList.contains("ac-wd")).toBe(true);
+    expect(plain?.classList.contains("an")).toBe(false);
+    expect(plain?.classList.contains("nw")).toBe(false);
+
+    const anchor = wdBadge("wd-anchor");
+    expect(anchor?.dataset.wd).toBe("uncommitted-anchor");
+    expect(anchor?.classList.contains("an")).toBe(true);
+
+    const fresh = wdBadge("wd-new");
+    expect(fresh?.dataset.wd).toBe("untracked");
+    expect(fresh?.classList.contains("nw")).toBe(true);
+
+    expect(wdBadge("wd-clean")).toBeNull();
+  });
+
+  it("drift ⚠ and △ coexist on one row — two distinct glyphs, never merged", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+
+    const row = rowEl("wd-drift");
+    // The tone (and its ⚠ glyph) stays pure drift — presence never restyles it.
+    expect(row.dataset.tone).toBe("drift");
+    expect(row.querySelector(".ac-gly.dr")?.textContent).toBe("⚠");
+    const badge = within(row).getByTestId("aim-wd-badge");
+    expect(badge.textContent).toBe("△");
+    expect(badge.classList.contains("ac-wd")).toBe(true);
+    expect(badge.classList.contains("dr")).toBe(false);
+  });
+
+  it("inspector states the presence fact line in the compose register", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("wd-anchor");
+
+    const insp = await screen.findByTestId("aim-inspector");
+    const pill = within(insp).getByTestId("aim-wd-pill");
+    expect(pill.dataset.wd).toBe("uncommitted-anchor");
+    expect(pill.textContent).toContain("uncommitted edits including the `aim:` anchor line");
+    expect(pill.textContent).toContain("the drift verdict is HEAD-based and does not see this yet");
+    // Presence is NOT drift — no drift pill on a merely-dirty node.
+    expect(within(insp).queryByTestId("aim-drift-pill")).toBeNull();
+  });
+
+  it("no fact line on a clean node", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("wd-clean");
+    const insp = await screen.findByTestId("aim-inspector");
+    expect(within(insp).queryByTestId("aim-wd-pill")).toBeNull();
+  });
+
+  it("presence is NEVER owed: not in the Frontier worklist, not in the ledger counts", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPane();
+    await awaitLoaded();
+
+    // Frontier (default mode): only the genuinely drifted node is owed; the
+    // three presence-only nodes are absent.
+    await waitFor(() => expect(rowEl("wd-drift")).toBeTruthy());
+    for (const slug of ["wd-plain", "wd-anchor", "wd-new", "wd-clean"]) {
+      expect(document.querySelector(`[data-testid="aim-row"][data-slug="${slug}"]`)).toBeNull();
+    }
+
+    // Ledger: drift counts ONLY wd-drift's committed-layer verdict; presence
+    // adds nothing to any bucket.
+    const ledger = screen.getByTestId("aim-ledger");
+    expect(ledger.textContent).toMatch(/1\s*drift/);
+    expect(ledger.textContent).toMatch(/0\s*claimed/);
+    expect(ledger.textContent).toMatch(/0\s*confirmed/);
   });
 });
 

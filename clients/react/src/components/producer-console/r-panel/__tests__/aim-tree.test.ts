@@ -9,6 +9,7 @@ import type { AimsResponse } from "@/lib/api";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
 import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimWire } from "@/types/generated/AimWire";
+import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 import {
   aimTone,
   ancestry,
@@ -30,6 +31,7 @@ import {
   repoStats,
   rulerOrder,
   subtreeStats,
+  workingDeltaKind,
 } from "../aim-tree";
 
 const DRIFT: AimDriftWire = {
@@ -47,6 +49,9 @@ function confirmed(text = "done", ref: string | null = "PR#1"): AimInteriorWire 
 }
 function pruned(text = "rejected", ref: string | null = "wrong premise"): AimInteriorWire {
   return { kind: "pruned", text, ref };
+}
+function wd(overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire {
+  return { uncommitted: false, uncommitted_anchor_change: false, untracked: false, ...overrides };
 }
 
 function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
@@ -279,6 +284,74 @@ describe("ledgerCounts — straight off drift + is[]", () => {
   it("counts drift nodes (incl. done+drift, excl. dead) and is[] marks", () => {
     // pruned marks are in NO bucket — not claimed, not confirmed, not owed.
     expect(ledgerCounts(forest)).toEqual({ drift: 2, claimed: 2, confirmed: 3 });
+  });
+});
+
+describe("workingDeltaKind — presence facts, compose precedence (#817)", () => {
+  it("maps each wire shape to its kind (untracked › anchor › plain)", () => {
+    expect(workingDeltaKind(aim({ slug: "x" }))).toBeNull();
+    expect(workingDeltaKind(aim({ slug: "x", working_delta: wd({ uncommitted: true }) }))).toBe(
+      "uncommitted",
+    );
+    expect(
+      workingDeltaKind(
+        aim({
+          slug: "x",
+          working_delta: wd({ uncommitted: true, uncommitted_anchor_change: true }),
+        }),
+      ),
+    ).toBe("uncommitted-anchor");
+    expect(workingDeltaKind(aim({ slug: "x", working_delta: wd({ untracked: true }) }))).toBe(
+      "untracked",
+    );
+    // An all-false struct states no fact — same as a null wire.
+    expect(workingDeltaKind(aim({ slug: "x", working_delta: wd() }))).toBeNull();
+  });
+
+  it("NEVER makes a node owed — isOwed / frontierRows are untouched by presence", () => {
+    const dirty = aim({
+      slug: "dirty",
+      working_delta: wd({ uncommitted: true, uncommitted_anchor_change: true }),
+    });
+    expect(isOwed(dirty)).toBe(false);
+    expect(frontierRows([dirty])).toEqual([]);
+    // Presence beside a real owed fact changes nothing about the worklist.
+    const driftedDirty = aim({
+      slug: "dd",
+      drift: DRIFT,
+      working_delta: wd({ uncommitted: true }),
+    });
+    expect(frontierRows([driftedDirty, dirty]).map((n) => n.slug)).toEqual(["dd"]);
+  });
+
+  it("NEVER counts into the ledger — drift/claimed/confirmed identical with and without presence", () => {
+    const clean: AimWire[] = [
+      aim({ slug: "a", drift: DRIFT, is: [confirmed(), claimed()] }),
+      aim({ slug: "b", is: [claimed()] }),
+    ];
+    const dirty: AimWire[] = [
+      aim({
+        slug: "a",
+        drift: DRIFT,
+        is: [confirmed(), claimed()],
+        working_delta: wd({ uncommitted: true, uncommitted_anchor_change: true }),
+      }),
+      aim({ slug: "b", is: [claimed()], working_delta: wd({ untracked: true }) }),
+    ];
+    expect(ledgerCounts(dirty)).toEqual(ledgerCounts(clean));
+    // The repo/subtree rollups are presence-blind too.
+    expect(repoStats(dirty)).toEqual(repoStats(clean));
+  });
+
+  it("NEVER changes the tone — presence facts ride beside the tone, not into it", () => {
+    const presence = wd({ uncommitted: true, uncommitted_anchor_change: true });
+    expect(aimTone(aim({ slug: "x", parent: "root-a", working_delta: presence }))).toBe("neutral");
+    expect(aimTone(aim({ slug: "x", drift: DRIFT, working_delta: presence }))).toBe("drift");
+    expect(aimTone(aim({ slug: "x", state: "done", working_delta: presence }))).toBe("done");
+    expect(aimTone(aim({ slug: "x", state: "done", drift: DRIFT, working_delta: presence }))).toBe(
+      "done-drift",
+    );
+    expect(aimTone(aim({ slug: "x", working_delta: wd({ untracked: true }) }))).toBe("root");
   });
 });
 

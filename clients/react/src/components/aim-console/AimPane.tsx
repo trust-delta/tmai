@@ -66,6 +66,10 @@ import {
   repoStats,
   rulerOrder,
   subtreeStats,
+  WORKING_DELTA_FACT,
+  WORKING_DELTA_GLYPH,
+  type WorkingDeltaKind,
+  workingDeltaKind,
 } from "@/components/producer-console/r-panel/aim-tree";
 import { useUnitAims } from "@/hooks/useUnitAims";
 import { api } from "@/lib/api";
@@ -775,6 +779,7 @@ function AimRow({
   onAddChild?: () => void;
 }) {
   const tone = aimTone(node);
+  const wd = workingDeltaKind(node);
   return (
     <div
       data-testid="aim-row"
@@ -810,6 +815,7 @@ function AimRow({
         title={`${node.slug} · ${AIM_STATE_LABEL[node.state]}`}
       >
         <ToneGlyph tone={tone} />
+        {wd !== null && <WorkingDeltaGlyph kind={wd} />}
         <span className="ac-ought">{node.aim}</span>
         {crumb !== undefined && <span className="ac-crumb-i">{crumb}</span>}
         {repoTag !== undefined && (
@@ -887,6 +893,32 @@ function ToneGlyph({ tone }: { tone: AimTone }) {
     default:
       return <span className="ac-gly" aria-hidden="true" />;
   }
+}
+
+// Working-delta presence glyph (#817) — a SEPARATE glyph from the drift ⚠;
+// the two may coexist on one row (drifted at HEAD AND dirty in the working
+// tree). Neutral-to-info tone, never the warning family: presence is a fact
+// about the instrument, not owed work. `an` = the uncommitted `aim:`-anchor
+// edit (info accent — the anchor on screen is not the anchor in HEAD), `nw` =
+// an untracked new node (dotted "new" reading).
+const WD_GLYPH_CLASS: Record<WorkingDeltaKind, string> = {
+  uncommitted: "",
+  "uncommitted-anchor": "an",
+  untracked: "nw",
+};
+
+function WorkingDeltaGlyph({ kind }: { kind: WorkingDeltaKind }) {
+  return (
+    <span
+      className={cn("ac-wd", WD_GLYPH_CLASS[kind])}
+      data-testid="aim-wd-badge"
+      data-wd={kind}
+      title={WORKING_DELTA_FACT[kind]}
+      aria-hidden="true"
+    >
+      {WORKING_DELTA_GLYPH}
+    </span>
+  );
 }
 
 // Tiny per-mark dots beside a row — confirmed = green, claimed = ochre,
@@ -985,6 +1017,7 @@ function Inspector({
 }) {
   const { node, repo, bySlug } = sel;
   const chain = useMemo(() => ancestry(node.slug, bySlug), [node.slug, bySlug]);
+  const wd = workingDeltaKind(node);
 
   return (
     <div className="ac-insp-in" data-testid="aim-inspector">
@@ -1042,6 +1075,14 @@ function Inspector({
           >
             ⚠ {node.state === "done" ? "done · " : ""}drift ← 祖先{" "}
             {node.drift.stale_from_ancestor_slug}
+          </span>
+        )}
+        {/* Working-delta fact line (#817) — presence only, beside (never inside)
+            the drift pill: a node can be both drifted at HEAD and dirty in the
+            working tree, and the two facts stay separately stated. */}
+        {wd !== null && (
+          <span className="ac-pill wd" data-testid="aim-wd-pill" data-wd={wd}>
+            {WORKING_DELTA_GLYPH} {WORKING_DELTA_FACT[wd]}
           </span>
         )}
       </div>

@@ -19,6 +19,7 @@
 import type { AimState } from "@/types/generated/AimState";
 import type { AimsResponse } from "@/types/generated/AimsResponse";
 import type { AimWire } from "@/types/generated/AimWire";
+import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 
 // ── Glyphs / labels ───────────────────────────────────────────────────
@@ -116,6 +117,45 @@ export function aimTone(n: AimWire): AimTone {
   if (n.parent === null) return "root";
   return "neutral";
 }
+
+// ── Working-tree presence facts (#817) ────────────────────────────────
+//
+// Design B of tmai-core's `doc/aims/aim-drift-commit-boundary.md`: the
+// committed layer (`drift`) states ORDER judgments; `working_delta` states
+// PRESENCE only. The one fact it surfaces to the operator: "the drift verdict
+// on screen is HEAD-based and does not see your uncommitted edit yet" —
+// honesty-of-the-instrument, NOT owed work. So these helpers feed a SEPARATE
+// glyph (△, never restyled as the drift ⚠) and an inspector fact line, and
+// deliberately touch NOTHING else: not `isOwed`, not `ledgerCounts`, not
+// `aimTone`, not the rollups.
+
+export type WorkingDeltaKind = "untracked" | "uncommitted-anchor" | "uncommitted";
+
+// One kind per node, the compose-prose precedence (tmai-core render.rs):
+// `untracked` is mutually exclusive with `uncommitted` on the wire; an anchor
+// change implies `uncommitted` and is the ratification-relevant presence (the
+// anchor on screen is not the anchor in HEAD), so it outranks the plain edit.
+// An all-false struct states no fact → null, same as a null wire.
+export function workingDeltaKind(n: AimWire): WorkingDeltaKind | null {
+  const wd: AimWorkingDeltaWire | null = n.working_delta;
+  if (wd === null) return null;
+  if (wd.untracked) return "untracked";
+  if (wd.uncommitted_anchor_change) return "uncommitted-anchor";
+  if (wd.uncommitted) return "uncommitted";
+  return null;
+}
+
+export const WORKING_DELTA_GLYPH = "△";
+
+// The inspector fact line / glyph title — same register as the compose prose
+// (`**△ Aim working delta**`): presence facts only, no urgency verbs.
+export const WORKING_DELTA_FACT: Record<WorkingDeltaKind, string> = {
+  untracked: "a new, uncommitted node (no committed history yet)",
+  "uncommitted-anchor":
+    "uncommitted edits including the `aim:` anchor line — the drift verdict is HEAD-based and does not see this yet",
+  uncommitted:
+    "uncommitted edits (anchor line untouched) — the drift verdict is HEAD-based and does not see this yet",
+};
 
 // ── Tree skeleton ─────────────────────────────────────────────────────
 

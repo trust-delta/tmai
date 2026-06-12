@@ -1480,6 +1480,26 @@
 .aim-console .ac-gly.dd {
   color: var(--faint);
 }
+/* working-delta presence glyph (#817) — separate from the drift ⚠ (the two
+   may share a row); neutral-to-info, never the amber owed family. `an` =
+   uncommitted aim-anchor edit (info accent), `nw` = untracked new node
+   (dotted "new" reading). */
+.aim-console .ac-wd {
+  width: 14px;
+  text-align: center;
+  flex: none;
+  font-size: 10px;
+  color: var(--dim);
+}
+.aim-console .ac-wd.an {
+  color: var(--cyan);
+}
+.aim-console .ac-wd.nw {
+  color: var(--dim);
+  border: 1px dotted var(--faint);
+  border-radius: 2px;
+  line-height: 1.2;
+}
 .aim-console .ac-ought {
   flex: 1;
   min-width: 0;
@@ -1784,6 +1804,12 @@
 .aim-console .ac-pill.op {
   color: var(--cyan);
   border-color: var(--cyan-d);
+}
+/* working-delta fact pill (#817) — info tone, NOT the drift amber. */
+.aim-console .ac-pill.wd {
+  color: var(--cyan);
+  border-color: var(--cyan-d);
+  border-style: dashed;
 }
 .aim-console .ac-isec {
   font-family: var(--mono);
