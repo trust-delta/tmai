@@ -17,6 +17,7 @@ import type { AimsResponse, AimWire } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
 import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
+import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 
 const aimsMock = vi.fn();
 const createAimMock = vi.fn();
@@ -55,6 +56,12 @@ const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
   kind: "pruned",
   text,
   ref,
+});
+const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire => ({
+  uncommitted: false,
+  uncommitted_anchor_change: false,
+  untracked: false,
+  ...overrides,
 });
 
 function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
@@ -564,5 +571,117 @@ describe("RAimsSection — edit (pin #3: drift mirrors the engine on refetch)", 
     expect(options).not.toContain("attention-per-artifact"); // descendant
     expect(options).not.toContain("attention-backend"); // deeper descendant
     expect(options).toContain("aim-system"); // outside the subtree → allowed
+  });
+});
+
+describe("RAimsSection — working_delta presence facts (#817)", () => {
+  // The three presence shapes + a both-drifted-and-dirty node + a clean
+  // sibling, under one auto-expanded root (mirrors AimPane.test's forest).
+  const WDF: AimWire[] = [
+    aimStub({ slug: "wd-root", aim: "root bearing" }),
+    aimStub({
+      slug: "wd-plain",
+      aim: "dirty body",
+      parent: "wd-root",
+      working_delta: wd({ uncommitted: true }),
+    }),
+    aimStub({
+      slug: "wd-anchor",
+      aim: "dirty anchor",
+      parent: "wd-root",
+      working_delta: wd({ uncommitted: true, uncommitted_anchor_change: true }),
+    }),
+    aimStub({
+      slug: "wd-new",
+      aim: "untracked node",
+      parent: "wd-root",
+      working_delta: wd({ untracked: true }),
+    }),
+    aimStub({
+      slug: "wd-drift",
+      aim: "drifted AND dirty",
+      parent: "wd-root",
+      drift: driftFrom("wd-root"),
+      working_delta: wd({ uncommitted: true }),
+    }),
+    aimStub({ slug: "wd-clean", aim: "clean sibling", parent: "wd-root" }),
+  ];
+  const wdResponse = () => responseStub([{ label: "tmai-core", primary: true, aims: WDF }]);
+
+  async function openTree() {
+    await openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+  }
+  function wdBadge(slug: string): HTMLElement | null {
+    return rowEl(slug).querySelector('[data-testid="aim-wd-badge"]');
+  }
+
+  it("rows carry the △ glyph per presence kind (info accent for the anchor edit, dotted for untracked); clean rows none", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPanel();
+    await openTree();
+
+    const plain = wdBadge("wd-plain");
+    expect(plain?.textContent).toBe("△");
+    expect(plain?.dataset.wd).toBe("uncommitted");
+    expect(plain?.className).not.toContain("text-info");
+    expect(plain?.className).not.toContain("text-warning");
+
+    const anchor = wdBadge("wd-anchor");
+    expect(anchor?.dataset.wd).toBe("uncommitted-anchor");
+    expect(anchor?.className).toContain("text-info");
+
+    const fresh = wdBadge("wd-new");
+    expect(fresh?.dataset.wd).toBe("untracked");
+    expect(fresh?.className).toContain("border-dotted");
+
+    expect(wdBadge("wd-clean")).toBeNull();
+  });
+
+  it("drift and presence coexist on one row, each with its own glyph; tone stays pure drift", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPanel();
+    await openTree();
+
+    const row = rowEl("wd-drift");
+    expect(row.dataset.tone).toBe("drift");
+    expect(row.textContent).toContain("⚠"); // the drift tone glyph
+    const badge = within(row).getByTestId("aim-wd-badge");
+    expect(badge.textContent).toBe("△");
+    expect(badge.className).not.toContain("text-warning"); // never restyled as drift
+  });
+
+  it("inspector adds the presence fact pill beside (not inside) the drift pill", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPanel();
+    await openTree();
+    selectRow("wd-drift");
+
+    const insp = await screen.findByTestId("aim-inspector");
+    // Both facts, separately stated.
+    expect(within(insp).getByTestId("aim-drift-pill").textContent).toContain("drift ← wd-root");
+    const pill = within(insp).getByTestId("aim-wd-pill");
+    expect(pill.dataset.wd).toBe("uncommitted");
+    expect(pill.textContent).toContain("uncommitted edits (anchor line untouched)");
+    expect(pill.textContent).toContain("the drift verdict is HEAD-based and does not see this yet");
+
+    selectRow("wd-clean");
+    await waitFor(() => expect(screen.queryByTestId("aim-wd-pill")).toBeNull());
+  });
+
+  it("presence is NEVER owed: Frontier and the ledger ignore it", async () => {
+    aimsMock.mockResolvedValue(wdResponse());
+    renderPanel();
+    await openPanel();
+
+    // Frontier (default): only the genuinely drifted node.
+    await waitFor(() => expect(rowEl("wd-drift")).toBeTruthy());
+    for (const slug of ["wd-plain", "wd-anchor", "wd-new", "wd-clean"]) {
+      expect(document.querySelector(`[data-testid="aim-row"][data-slug="${slug}"]`)).toBeNull();
+    }
+    const ledger = screen.getByTestId("aim-ledger");
+    expect(ledger.textContent).toMatch(/1\s*drift/);
+    expect(ledger.textContent).toMatch(/0\s*claimed/);
+    expect(ledger.textContent).toMatch(/0\s*confirmed/);
   });
 });
