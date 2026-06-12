@@ -178,15 +178,16 @@
       "type": "object"
     },
     "AimInteriorKind": {
-      "description": "The kind of an interior mark — mirrors the `doc/aims/README.md` convention:\n`confirmed` = external ground-truth checked (test / PR / git ref), real,\nattention-zero; `claimed` = unverified, an operator confirm is owed. The\nprojection records which kind the author wrote — it never re-judges it.",
+      "description": "The kind of an interior mark — mirrors the `doc/aims/README.md` convention:\n`confirmed` = external ground-truth checked (test / PR / git ref), real,\nattention-zero; `claimed` = unverified, an operator confirm is owed;\n`pruned` = a rejected branch kept in the tree with its rejection reason\n(the recoil-ledger convention, `doc/aims/aim-recoil-ledger.md`). The\nprojection records which kind the author wrote — it never re-judges it.\nIn particular, `pruned` is valid on any node: pairing it with\n`state: dead` is authoring convention, not a parser rule.",
       "enum": [
         "confirmed",
-        "claimed"
+        "claimed",
+        "pruned"
       ],
       "type": "string"
     },
     "AimInteriorWire": {
-      "description": "One interior mark projected to the wire — a single `[claimed]` /\n`[confirmed: <ref>]` line from the node body. `text` is the line's prose with\nthe marker (and any leading list bullet) stripped; `reference` carries the\nconfirmed ref (the test / PR / git ref after the colon) and is `null` for a\nbare `[claimed]` (or a `[claimed — note]`, whose note is commentary, not a\nref). Wire key for `reference` is `ref` (mirroring\n[`super::approaches_view::ReviewTriggerWire`]).",
+      "description": "One interior mark projected to the wire — a single `[claimed]` /\n`[confirmed: <ref>]` / `[pruned: <reason>]` line from the node body. `text`\nis the line's prose with the marker (and any leading list bullet) stripped;\n`reference` carries the colon payload — the confirmed ref (the test / PR /\ngit ref) or the pruned rejection reason — and is `null` for a bare\n`[claimed]` / `[pruned]` (or a `[claimed — note]`, whose note is\ncommentary, not a ref). Wire key for `reference` is `ref` (mirroring\n[`super::approaches_view::ReviewTriggerWire`]).",
       "properties": {
         "kind": {
           "$ref": "#/$defs/AimInteriorKind"
@@ -246,7 +247,7 @@
           ]
         },
         "is": {
-          "description": "Interior `is[]` — the marked claims parsed from [`Self::body`]: each\n`[claimed]` / `[confirmed: <ref>]` line in the interior prose projected to\none entry. **Mark-only** (design pin #1 / `doc/aims/README.md`): the\nprojection surfaces what the author wrote (confirmed / claimed) and never\nre-judges, re-orders, or de-drifts it. Empty when the interior carries no\nmarkers. Wire key is `is` (the corpus spelling).",
+          "description": "Interior `is[]` — the marked claims parsed from [`Self::body`]: each\n`[claimed]` / `[confirmed: <ref>]` / `[pruned: <reason>]` line in the\ninterior prose projected to one entry. **Mark-only** (design pin #1 /\n`doc/aims/README.md`): the projection surfaces what the author wrote\n(confirmed / claimed / pruned) and never re-judges, re-orders, or\nde-drifts it. Empty when the interior carries no markers. Wire key is\n`is` (the corpus spelling).",
           "items": {
             "$ref": "#/$defs/AimInteriorWire"
           },

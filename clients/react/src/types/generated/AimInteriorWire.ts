@@ -3,11 +3,12 @@ import type { AimInteriorKind } from "./AimInteriorKind";
 
 /**
  * One interior mark projected to the wire — a single `[claimed]` /
- * `[confirmed: <ref>]` line from the node body. `text` is the line's prose with
- * the marker (and any leading list bullet) stripped; `reference` carries the
- * confirmed ref (the test / PR / git ref after the colon) and is `null` for a
- * bare `[claimed]` (or a `[claimed — note]`, whose note is commentary, not a
- * ref). Wire key for `reference` is `ref` (mirroring
+ * `[confirmed: <ref>]` / `[pruned: <reason>]` line from the node body. `text`
+ * is the line's prose with the marker (and any leading list bullet) stripped;
+ * `reference` carries the colon payload — the confirmed ref (the test / PR /
+ * git ref) or the pruned rejection reason — and is `null` for a bare
+ * `[claimed]` / `[pruned]` (or a `[claimed — note]`, whose note is
+ * commentary, not a ref). Wire key for `reference` is `ref` (mirroring
  * [`super::approaches_view::ReviewTriggerWire`]).
  */
 export type AimInteriorWire = { kind: AimInteriorKind, text: string, ref: string | null, };
