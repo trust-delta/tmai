@@ -36,6 +36,8 @@ function issue(overrides: Partial<IssueSummaryWire> = {}): IssueSummaryWire {
     url: "https://github.com/o/r/issues/1",
     labels: [],
     assignees: [],
+    created_at: null,
+    closed_at: null,
     ...overrides,
   };
 }
