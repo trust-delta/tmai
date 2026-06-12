@@ -51,6 +51,11 @@ const confirmed = (text: string, ref: string): AimInteriorWire => ({
   text,
   ref,
 });
+const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
+  kind: "pruned",
+  text,
+  ref,
+});
 
 function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
   return {
@@ -70,7 +75,8 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 // Two repos:
 //   tmai-core (primary)
 //     amplify-human-judgment (root, open, claimed)            → owed (claimed)
-//       attention-per-artifact (open, drift←amplify, conf+claim) → owed (drift)
+//       attention-per-artifact (open, drift←amplify,
+//                               conf+claim+pruned)             → owed (drift)
 //         attention-backend (done, confirmed)                 → plain done
 //     aim-system (root, open, confirmed)                      → calm
 //       aim-honesty (dead)                                    → abandoned
@@ -84,7 +90,11 @@ const CORE: AimWire[] = [
     aim: "per-artifact attention",
     parent: "amplify-human-judgment",
     drift: driftFrom("amplify-human-judgment"),
-    is: [confirmed("storage + wire", "PR#490"), claimed("ancestor moved — re-confirm")],
+    is: [
+      confirmed("storage + wire", "PR#490"),
+      claimed("ancestor moved — re-confirm"),
+      pruned("CLI-flag route", "wrong premise — judgment lives in records"),
+    ],
   }),
   aimStub({
     slug: "attention-backend",
@@ -237,10 +247,12 @@ describe("RAimsSection — panel shell", () => {
     await openPanel();
     const ledger = screen.getByTestId("aim-ledger");
     // drift=2 (attention-per-artifact open + review-attention-budget done; dead
-    // excluded), claimed marks=3, confirmed marks=3.
+    // excluded), claimed marks=3, confirmed marks=3. The pruned mark on
+    // attention-per-artifact lands in NO bucket (#814) — counts unchanged.
     expect(ledger.textContent).toMatch(/2\s*drift/);
     expect(ledger.textContent).toMatch(/3\s*claimed/);
     expect(ledger.textContent).toMatch(/3\s*confirmed/);
+    expect(ledger.textContent).not.toContain("pruned");
   });
 });
 
@@ -332,7 +344,7 @@ describe("RAimsSection — Tree mode (per-repo navigator + rollups)", () => {
 });
 
 describe("RAimsSection — inspector", () => {
-  it("shows the drift←ancestor pill and the interior is[] list (mark-only, ref for confirmed)", async () => {
+  it("shows the drift←ancestor pill and the interior is[] list (mark-only, ref for confirmed/pruned)", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPanel();
     await openPanel();
@@ -343,11 +355,28 @@ describe("RAimsSection — inspector", () => {
     expect(within(insp).getByTestId("aim-drift-pill").textContent).toContain(
       "drift ← amplify-human-judgment",
     );
-    // is[] list: a confirmed (with ref) + a claimed, exactly as authored.
+    // is[] list: a confirmed (with ref) + a claimed + a pruned, exactly as authored.
     const marks = within(insp).getAllByTestId("aim-mark");
-    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed"]);
+    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed", "pruned"]);
     expect(marks[0].textContent).toContain("PR#490"); // ref shown for confirmed
     expect(marks[1].textContent).toContain("ancestor moved");
+    // pruned (#814): its own neutral tag — never the warning or success tone —
+    // with the rejection reason riding `ref`, same layout as the confirmed ref.
+    expect(marks[2].textContent).toContain("⊘ pruned");
+    expect(marks[2].textContent).toContain("[wrong premise — judgment lives in records]");
+    expect(marks[2].querySelector(".text-warning")).toBeNull();
+    expect(marks[2].querySelector(".text-success")).toBeNull();
+  });
+
+  it("interior dots are three-way — the pruned dot is neutral, not warning/success (#814)", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPanel();
+    await openPanel();
+    const dots = rowEl("attention-per-artifact").querySelectorAll("span[aria-hidden].h-1.w-1");
+    expect(dots).toHaveLength(3);
+    expect(dots[0].className).toContain("bg-success");
+    expect(dots[1].className).toContain("bg-warning");
+    expect(dots[2].className).toContain("bg-subtle-foreground/40");
   });
 
   it("breadcrumb in the inspector lets you climb to an ancestor", async () => {

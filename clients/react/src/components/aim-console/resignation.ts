@@ -57,6 +57,10 @@ export function resignationInventory(
     .map((slug) => bySlug.get(slug))
     .filter((n): n is AimWire => n !== undefined && n.state === "open")
     .sort((a, b) => a.slug.localeCompare(b.slug));
+  // `pruned` marks land in NEITHER bucket, intentionally: an adjudicated
+  // rejection is not 満足 (nothing was confirmed) and not 諦め (nothing is
+  // parked — the judgment is settled, no confirm is owed). adjudicated ≠
+  // satisfied ≠ parked.
   return {
     satisfied: node.is.filter((m) => m.kind === "confirmed"),
     parkedClaims: node.is.filter((m) => m.kind === "claimed"),

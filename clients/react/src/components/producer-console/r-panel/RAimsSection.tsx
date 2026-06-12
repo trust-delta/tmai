@@ -12,9 +12,9 @@
 // (the approach's named failure-signal). Pure model in `./aim-tree`.
 //
 // Design pins honoured:
-//   #1 mark-only — the `is[]` marks (confirmed / claimed) render as the author
-//      wrote them; we never re-judge / re-order / appraise (only the wire's
-//      `kind` drives styling).
+//   #1 mark-only — the `is[]` marks (confirmed / claimed / pruned) render as
+//      the author wrote them; we never re-judge / re-order / appraise (only the
+//      wire's `kind` drives styling).
 //   #2 done+drift distinct — a `state: done` node that is ALSO drifted gets the
 //      `done-drift` tone (a done ✓ AND a drift ⚠ badge), surfaced in its own
 //      Frontier cluster + the Tree, never suppressed or folded into plain owed.
@@ -25,7 +25,9 @@
 // Theme: the mock is the STRUCTURE/BEHAVIOUR reference, not its raw CSS. The
 // panel speaks the app's design tokens — drift = `warning`, claimed = `warning`
 // hollow (◌ vs ⚠ + gutter weight distinguish the two owed kinds), confirmed /
-// done = `success` (calm), root / selection = `info` / `primary`.
+// done = `success` (calm), root / selection = `info` / `primary`, pruned =
+// neutral/subtle (negative-calm: an adjudicated rejection is never owed and
+// never counted, #814).
 //
 // UI-only state: the mode (Frontier/Tree) persists in `ui-prefs` (browser-side,
 // not tmai-core config). The expanded-branch set + the search filter stay
@@ -1058,7 +1060,8 @@ function AimRow({
 }
 
 // Tiny per-mark dots beside a row — confirmed = filled success, claimed =
-// filled warning. Mark-only: order + kind are exactly the wire's.
+// filled warning, pruned = neutral (adjudicated rejection: attention-zero,
+// never owed). Mark-only: order + kind are exactly the wire's.
 function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
   if (marks.length === 0) return null;
   return (
@@ -1069,7 +1072,13 @@ function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
         <span
           key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
           aria-hidden="true"
-          className={`h-1 w-1 rounded-[1px] ${m.kind === "confirmed" ? "bg-success" : "bg-warning"}`}
+          className={`h-1 w-1 rounded-[1px] ${
+            m.kind === "confirmed"
+              ? "bg-success"
+              : m.kind === "claimed"
+                ? "bg-warning"
+                : "bg-subtle-foreground/40"
+          }`}
         />
       ))}
     </span>
@@ -1281,8 +1290,9 @@ function DriftPill({ drift, done }: { drift: AimDriftWire; done: boolean }) {
   );
 }
 
-// The interior `is[]` list — mark-only: confirmed / claimed exactly as authored
-// (order + kind off the wire), `ref` shown for confirmed marks.
+// The interior `is[]` list — mark-only: confirmed / claimed / pruned exactly as
+// authored (order + kind off the wire), `ref` shown for confirmed (evidence)
+// and pruned (rejection reason) marks.
 function InteriorList({ marks }: { marks: readonly AimInteriorWire[] }) {
   return (
     <section className="mt-3">
@@ -1305,7 +1315,9 @@ function InteriorList({ marks }: { marks: readonly AimInteriorWire[] }) {
               <MarkTag kind={m.kind} />
               <span className="text-muted-foreground">
                 {m.text}
-                {m.kind === "confirmed" && m.ref !== null && (
+                {/* `ref` carries the confirm evidence OR the pruned rejection
+                    reason — same slot on the wire, same layout here. */}
+                {m.kind !== "claimed" && m.ref !== null && (
                   <span className="ml-1 font-mono text-[9px] text-info">[{m.ref}]</span>
                 )}
               </span>
@@ -1325,9 +1337,18 @@ function MarkTag({ kind }: { kind: AimInteriorKind }) {
       </span>
     );
   }
+  if (kind === "claimed") {
+    return (
+      <span className="shrink-0 rounded border border-dashed border-warning/50 px-1 py-px font-mono text-[9px] text-warning">
+        ◌ claimed
+      </span>
+    );
+  }
+  // pruned — negative-calm: neutral tone, never the owed warning or the
+  // success green (an adjudicated rejection is settled, not owed).
   return (
-    <span className="shrink-0 rounded border border-dashed border-warning/50 px-1 py-px font-mono text-[9px] text-warning">
-      ◌ claimed
+    <span className="shrink-0 rounded border border-hairline px-1 py-px font-mono text-[9px] text-subtle-foreground">
+      ⊘ pruned
     </span>
   );
 }
