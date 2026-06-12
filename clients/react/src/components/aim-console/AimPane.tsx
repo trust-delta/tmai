@@ -889,7 +889,8 @@ function ToneGlyph({ tone }: { tone: AimTone }) {
   }
 }
 
-// Tiny per-mark dots beside a row — confirmed = green, claimed = ochre.
+// Tiny per-mark dots beside a row — confirmed = green, claimed = ochre,
+// pruned = neutral (adjudicated rejection: attention-zero, never owed).
 // Mark-only: order + kind are exactly the wire's.
 function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
   if (marks.length === 0) return null;
@@ -899,7 +900,7 @@ function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
         // Interior lines have no id; key off the prose (mark-only — never re-ordered).
         <i
           key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-          className={m.kind === "confirmed" ? "c" : "k"}
+          className={m.kind === "confirmed" ? "c" : m.kind === "claimed" ? "k" : "p"}
           aria-hidden="true"
         />
       ))}
@@ -1057,12 +1058,23 @@ function Inspector({
               data-testid="aim-mark"
               data-kind={m.kind}
             >
-              <span className={cn("ac-tg", m.kind === "confirmed" ? "c" : "k")}>
-                {m.kind === "confirmed" ? "✓ confirmed" : "◌ claimed"}
+              <span
+                className={cn(
+                  "ac-tg",
+                  m.kind === "confirmed" ? "c" : m.kind === "claimed" ? "k" : "p",
+                )}
+              >
+                {m.kind === "confirmed"
+                  ? "✓ confirmed"
+                  : m.kind === "claimed"
+                    ? "◌ claimed"
+                    : "⊘ pruned"}
               </span>
               <span>
                 {m.text}
-                {m.kind === "confirmed" && m.ref !== null && (
+                {/* `ref` carries the confirm evidence OR the pruned rejection
+                    reason — same slot on the wire, same layout here. */}
+                {m.kind !== "claimed" && m.ref !== null && (
                   <span className="ac-ref"> [{m.ref}]</span>
                 )}
               </span>

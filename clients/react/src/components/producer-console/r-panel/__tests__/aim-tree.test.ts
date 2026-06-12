@@ -45,6 +45,9 @@ function claimed(text = "owed"): AimInteriorWire {
 function confirmed(text = "done", ref: string | null = "PR#1"): AimInteriorWire {
   return { kind: "confirmed", text, ref };
 }
+function pruned(text = "rejected", ref: string | null = "wrong premise"): AimInteriorWire {
+  return { kind: "pruned", text, ref };
+}
 
 function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
   return {
@@ -129,6 +132,10 @@ describe("owed-status predicates", () => {
     expect(hasClaimed(n)).toBe(true);
     expect(hasConfirmed(n)).toBe(true);
     expect(hasClaimed(aim({ slug: "y", is: [confirmed()] }))).toBe(false);
+    // pruned (#814) is neither: an adjudicated rejection trips no predicate.
+    const p = aim({ slug: "z", is: [pruned()] });
+    expect(hasClaimed(p)).toBe(false);
+    expect(hasConfirmed(p)).toBe(false);
   });
 
   it("isOwed: an OPEN node that drifted or carries a claimed mark", () => {
@@ -136,6 +143,8 @@ describe("owed-status predicates", () => {
     expect(isOwed(aim({ slug: "k", is: [claimed()] }))).toBe(true);
     // A purely confirmed open node is calm, not owed.
     expect(isOwed(aim({ slug: "c", is: [confirmed()] }))).toBe(false);
+    // A purely pruned open node is negative-calm — NEVER owed (#814).
+    expect(isOwed(aim({ slug: "p", is: [pruned()] }))).toBe(false);
     // done / dead are never owed, even when drifted.
     expect(isOwed(aim({ slug: "dn", drift: DRIFT, state: "done" }))).toBe(false);
     expect(isOwed(aim({ slug: "dd", drift: DRIFT, state: "dead" }))).toBe(false);
@@ -168,6 +177,9 @@ describe("aimTone — pin #2: done+drift is distinct, not suppressed", () => {
     expect(aimTone(aim({ slug: "x", is: [confirmed()] }))).toBe("confirmed");
     expect(aimTone(aim({ slug: "x", parent: null }))).toBe("root");
     expect(aimTone(aim({ slug: "x", parent: "root-a" }))).toBe("neutral");
+    // pruned (#814) contributes NO tone of its own — a pruned-only child reads
+    // neutral, exactly as if unmarked.
+    expect(aimTone(aim({ slug: "x", parent: "root-a", is: [pruned()] }))).toBe("neutral");
   });
 
   it("dead always reads `dead`, even if the wire still carries drift", () => {
@@ -257,13 +269,14 @@ describe("rollups", () => {
 describe("ledgerCounts — straight off drift + is[]", () => {
   const forest: AimWire[] = [
     aim({ slug: "a", drift: DRIFT, is: [confirmed(), claimed()] }),
-    aim({ slug: "b", is: [claimed()] }),
+    aim({ slug: "b", is: [claimed(), pruned()] }), // pruned rides along, uncounted (#814)
     aim({ slug: "c", is: [confirmed()] }),
     aim({ slug: "d", state: "done", drift: DRIFT, is: [confirmed()] }), // pin #2: still drift
     aim({ slug: "e", state: "dead", drift: DRIFT }), // dead drift = noise, excluded
   ];
 
   it("counts drift nodes (incl. done+drift, excl. dead) and is[] marks", () => {
+    // pruned marks are in NO bucket — not claimed, not confirmed, not owed.
     expect(ledgerCounts(forest)).toEqual({ drift: 2, claimed: 2, confirmed: 3 });
   });
 });

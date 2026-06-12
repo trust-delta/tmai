@@ -55,6 +55,11 @@ const confirmed = (text: string, ref: string): AimInteriorWire => ({
   text,
   ref,
 });
+const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
+  kind: "pruned",
+  text,
+  ref,
+});
 
 function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
   return {
@@ -74,7 +79,8 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 // Two repos (same shape as RAimsSection's fixture):
 //   tmai-core (primary)
 //     amplify-human-judgment (root, open, claimed)               → owed (claimed)
-//       attention-per-artifact (open, drift←amplify, conf+claim)  → owed (drift)
+//       attention-per-artifact (open, drift←amplify,
+//                               conf+claim+pruned)                 → owed (drift)
 //         attention-backend (done, confirmed)                     → plain done
 //     aim-system (root, open, confirmed)                          → calm
 //       aim-honesty (dead)                                        → abandoned
@@ -88,7 +94,11 @@ const CORE: AimWire[] = [
     aim: "per-artifact attention",
     parent: "amplify-human-judgment",
     drift: driftFrom("amplify-human-judgment"),
-    is: [confirmed("storage + wire", "PR#490"), claimed("ancestor moved — re-confirm")],
+    is: [
+      confirmed("storage + wire", "PR#490"),
+      claimed("ancestor moved — re-confirm"),
+      pruned("CLI-flag route", "wrong premise — judgment lives in records"),
+    ],
   }),
   aimStub({
     slug: "attention-backend",
@@ -216,10 +226,12 @@ describe("AimPane — load + ledger", () => {
     renderPane();
     const ledger = await screen.findByTestId("aim-ledger");
     // drift=2 (attention-per-artifact open + review-attention-budget done; dead
-    // excluded), claimed marks=3, confirmed marks=3.
+    // excluded), claimed marks=3, confirmed marks=3. The pruned mark on
+    // attention-per-artifact lands in NO bucket (#814) — counts unchanged.
     await waitFor(() => expect(ledger.textContent).toMatch(/2\s*drift/));
     expect(ledger.textContent).toMatch(/3\s*claimed/);
     expect(ledger.textContent).toMatch(/3\s*confirmed/);
+    expect(ledger.textContent).not.toContain("pruned");
   });
 });
 
@@ -325,7 +337,7 @@ describe("AimPane — overview ruler", () => {
 });
 
 describe("AimPane — inspector", () => {
-  it("shows the drift←ancestor pill and the interior is[] (mark-only, ref for confirmed)", async () => {
+  it("shows the drift←ancestor pill and the interior is[] (mark-only, ref for confirmed/pruned)", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
     await awaitLoaded();
@@ -336,9 +348,25 @@ describe("AimPane — inspector", () => {
       "drift ← 祖先 amplify-human-judgment",
     );
     const marks = within(insp).getAllByTestId("aim-mark");
-    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed"]);
+    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed", "pruned"]);
     expect(marks[0].textContent).toContain("PR#490");
     expect(marks[1].textContent).toContain("ancestor moved");
+    // pruned (#814): its own tag (neutral `p` class — not ochre `k`, not green
+    // `c`) and the rejection reason riding `ref`, same layout as confirmed.
+    expect(marks[2].textContent).toContain("⊘ pruned");
+    expect(marks[2].textContent).toContain("[wrong premise — judgment lives in records]");
+    const prunedTag = marks[2].querySelector(".ac-tg");
+    expect(prunedTag?.classList.contains("p")).toBe(true);
+    expect(prunedTag?.classList.contains("k")).toBe(false);
+    expect(prunedTag?.classList.contains("c")).toBe(false);
+  });
+
+  it("interior dots are three-way: confirmed=c, claimed=k, pruned=p (#814)", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    const dots = rowEl("attention-per-artifact").querySelectorAll(".ac-ism i");
+    expect([...dots].map((d) => d.className)).toEqual(["c", "k", "p"]);
   });
 
   it("breadcrumb climbs to an ancestor", async () => {
@@ -619,7 +647,9 @@ describe("AimPane — resignation inventory (#811)", () => {
       aim: "the parked bearing",
       parent: "resig-root",
       state: "done",
-      is: [confirmed("landed", "PR#9"), claimed("tail debt")],
+      // The pruned mark belongs to NEITHER bucket (#814): adjudicated ≠
+      // satisfied ≠ parked.
+      is: [confirmed("landed", "PR#9"), claimed("tail debt"), pruned("dead-end route")],
     }),
     aimStub({
       slug: "resig-open-child",
@@ -642,14 +672,17 @@ describe("AimPane — resignation inventory (#811)", () => {
     const insp = await screen.findByTestId("aim-inspector");
     const inv = within(insp).getByTestId("resignation-inventory");
 
-    // 満足 — the node's own confirmed marks, ref shown.
+    // 満足 — the node's own confirmed marks, ref shown. The pruned mark is
+    // NOT here (adjudicated ≠ satisfied).
     const sat = within(inv).getAllByTestId("resig-satisfied");
     expect(sat.map((s) => s.textContent)).toEqual(["✓ confirmedlanded [PR#9]"]);
 
-    // 諦め (a) — the node's own claimed marks, parked not settled.
+    // 諦め (a) — the node's own claimed marks, parked not settled. The pruned
+    // mark is NOT here either (adjudicated ≠ parked, #814).
     const cl = within(inv).getAllByTestId("resig-claimed");
     expect(cl).toHaveLength(1);
     expect(cl[0].textContent).toContain("tail debt");
+    expect(inv.textContent).not.toContain("dead-end route");
 
     // 諦め (b) — open descendants at any depth; the done child is NOT parked.
     const desc = within(inv).getAllByTestId("resig-open-desc");

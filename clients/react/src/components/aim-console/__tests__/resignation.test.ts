@@ -17,6 +17,11 @@ const confirmed = (text: string, ref: string): AimInteriorWire => ({
   text,
   ref,
 });
+const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
+  kind: "pruned",
+  text,
+  ref,
+});
 
 function driftFrom(slug: string): AimDriftWire {
   return {
@@ -51,7 +56,12 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 const FOREST: AimWire[] = [
   aimStub({
     slug: "node",
-    is: [claimed("unverified tail"), confirmed("core path", "PR#1"), claimed("second debt")],
+    is: [
+      claimed("unverified tail"),
+      confirmed("core path", "PR#1"),
+      claimed("second debt"),
+      pruned("flag route", "wrong premise"),
+    ],
   }),
   aimStub({ slug: "open-child", parent: "node", drift: driftFrom("node") }),
   aimStub({ slug: "open-grandchild", parent: "open-child" }),
@@ -74,6 +84,12 @@ describe("resignationInventory — interior-mark bucketing (mark-only)", () => {
     expect(inv.satisfied[0].ref).toBe("PR#1");
     // The two claimed marks keep the order the author wrote them in.
     expect(inv.parkedClaims.map((m) => m.text)).toEqual(["unverified tail", "second debt"]);
+  });
+
+  it("a pruned mark lands in NEITHER bucket — adjudicated ≠ satisfied ≠ parked (#814)", () => {
+    const inv = resignationInventory(byslug("node"), FOREST);
+    expect(inv.satisfied.map((m) => m.text)).not.toContain("flag route");
+    expect(inv.parkedClaims.map((m) => m.text)).not.toContain("flag route");
   });
 
   it("a markless node yields empty buckets (the inventory is still renderable)", () => {

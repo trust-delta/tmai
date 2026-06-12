@@ -1547,6 +1547,10 @@
 .aim-console .ac-ism i.k {
   background: var(--ochre);
 }
+/* pruned = adjudicated rejection, attention-zero: neutral, NOT ochre/green */
+.aim-console .ac-ism i.p {
+  background: var(--faint);
+}
 .aim-console .ac-slug {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -1814,6 +1818,12 @@
 .aim-console .ac-tg.k {
   color: var(--ochre);
   border: 1px dashed #3a2e1a;
+}
+/* pruned mark tag — negative-calm: neutral tone, never the owed ochre or the
+   success green (an adjudicated rejection is settled, not owed) */
+.aim-console .ac-tg.p {
+  color: var(--dim);
+  border: 1px solid var(--line);
 }
 .aim-console .ac-ref {
   font-family: var(--mono);
