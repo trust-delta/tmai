@@ -1,6 +1,6 @@
 // Polling hook for the unit's SLACK tab — the per-repo slack-ore terrain
 // (`GET /api/units/{unit}/slack`, tmai-core
-// `doc/aims/_incubator/2026-06-11-recoil-loop-handoff.md` §6b–6d):
+// `doc/slack/2026-06-11-230025-2.md` (recoil-loop-handoff) §6b–6d):
 // pre-crystallization aim ore grouped per repo (primary first), each ore
 // carrying its capture ticket, verbatim body, and the edge-derived
 // `quoted_by` slugs.

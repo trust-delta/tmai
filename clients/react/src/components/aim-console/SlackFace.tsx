@@ -1,7 +1,7 @@
 // SlackFace — the AimPane's SLACK face (Stage B, issue #809): the UI half of
 // the slack artifact, pre-crystallization aim ore (結晶化前の aim の原石).
-// Design carrier: tmai-core `doc/aims/_incubator/2026-06-11-recoil-loop-
-// handoff.md` §6b–6d; wire = the generated `UnitSlackResponse` family (#807).
+// Design carrier: tmai-core `doc/slack/2026-06-11-230025-2.md`
+// (recoil-loop-handoff) §6b–6d; wire = the generated `UnitSlackResponse` family (#807).
 //
 // Design invariants (operator-ratified — load-bearing, do not relax):
 //   - TERRAIN, NOT A QUEUE — no unread counters, no badges, no counts, no

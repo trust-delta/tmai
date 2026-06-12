@@ -1611,7 +1611,7 @@ export const api = {
     apiFetch<UnitIssuesResponse>(`/units/${encodeURIComponent(unit)}/issues`),
 
   // Unit-scoped slack-ore terrain (tmai-core
-  // `doc/aims/_incubator/2026-06-11-recoil-loop-handoff.md` §6b–6d) —
+  // `doc/slack/2026-06-11-230025-2.md` (recoil-loop-handoff) §6b–6d) —
   // pre-crystallization aim ore, grouped per repo (primary first, as the
   // engine returns them). Terrain, not a queue: the wire carries no
   // unread/new marker by design, and the UI must not synthesize one.
