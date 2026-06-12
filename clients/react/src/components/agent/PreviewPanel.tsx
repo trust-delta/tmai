@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
+import { CopySourceOverlay } from "@/components/terminal/CopySourceOverlay";
 import { AutoScrollToggleButton, ModeHint, ModeToggleButton } from "@/components/terminal/controls";
 import { QueueBadge } from "@/components/ui/QueueBadge";
 import { QueuePopover } from "@/components/ui/QueuePopover";
@@ -74,7 +75,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
   // not xterm's onData — xterm v5's IME handling still has rough edges
   // on the Live preview surface; Phase 2 evaluates moving fully to
   // xterm-native input.
-  const { sendKeys } = useTerminal({
+  const { sendKeys, terminal } = useTerminal({
     agentId,
     containerRef: xtermContainerRef,
     autoScroll,
@@ -215,7 +216,7 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
           Transcript. */}
       <div
         style={{ display: activeTab === "live" ? undefined : "none" }}
-        className="flex-1 overflow-hidden"
+        className="relative flex-1 overflow-hidden"
       >
         <div
           ref={xtermContainerRef}
@@ -243,6 +244,9 @@ export function PreviewPanel({ agentId }: PreviewPanelProps) {
             }
           }}
         />
+        {/* Copy-source affordance for fenced code blocks (#819) — sibling of
+            the xterm container so its clicks don't toggle Input/Select. */}
+        <CopySourceOverlay terminalRef={terminal} agentId={agentId} />
       </div>
 
       {/* Transcript tab — JSONL records. Mounted only while active to

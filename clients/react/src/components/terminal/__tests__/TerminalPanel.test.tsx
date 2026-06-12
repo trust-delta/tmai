@@ -33,9 +33,11 @@ vi.mock("../TerminalSessionHeader", () => ({
 }));
 
 // The xterm container div (the panel's only direct child div carrying the
-// mouse handlers) — no testid by design (props-only additive change).
+// mouse handlers) — since #819 it sits inside a relative wrapper so the
+// copy-source overlay can float over the canvas; the handler div is the
+// wrapper's `h-full` child.
 function termContainer(container: HTMLElement): HTMLElement {
-  const el = container.querySelector("section > div.flex-1");
+  const el = container.querySelector("section > div.relative > div.h-full");
   if (!el) throw new Error("terminal container not found");
   return el as HTMLElement;
 }
