@@ -3,6 +3,7 @@ import { useAgents } from "@/hooks/useAgents";
 import { useAutoScrollPerAgent } from "@/hooks/useAutoScrollPerAgent";
 import { useTerminal } from "@/hooks/useTerminal";
 import "@xterm/xterm/css/xterm.css";
+import { CopySourceOverlay } from "./CopySourceOverlay";
 import { AutoScrollToggleButton, ModeHint, ModeToggleButton } from "./controls";
 import { TerminalSessionHeader } from "./TerminalSessionHeader";
 
@@ -50,7 +51,7 @@ export function TerminalPanel({
     [agents, agentId],
   );
 
-  const { setAttachable } = useTerminal({ agentId, containerRef, autoScroll });
+  const { setAttachable, terminal } = useTerminal({ agentId, containerRef, autoScroll });
 
   // Surface "this panel is the active surface" — without it, after
   // spawning or switching agents users couldn't tell at a glance whether
@@ -126,26 +127,34 @@ export function TerminalPanel({
       }
     >
       {!chromeless && <TerminalSessionHeader agentId={agentId} agent={agent} />}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-hidden bg-[var(--color-terminal-background)] p-1"
-        onMouseDown={() => {
-          if (inputMode) enterSelectMode();
-        }}
-        onMouseUp={() => {
-          if (!inputMode) {
-            const sel = window.getSelection();
-            if (!sel || sel.toString().length === 0) {
-              enterInputMode();
+      {/* Relative wrapper so the copy-source affordance (#819) can float over
+          the canvas without sitting INSIDE the xterm-owned container div. */}
+      <div className="relative flex-1 overflow-hidden">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal container needs pointer events for selection mode */}
+        <div
+          ref={containerRef}
+          className="h-full w-full bg-[var(--color-terminal-background)] p-1"
+          onMouseDown={() => {
+            if (inputMode) enterSelectMode();
+          }}
+          onMouseUp={() => {
+            if (!inputMode) {
+              const sel = window.getSelection();
+              if (!sel || sel.toString().length === 0) {
+                enterInputMode();
+              }
             }
-          }
-        }}
-        onTouchStart={() => {
-          // On touch, switch to select mode so text is selectable/copyable
-          if (inputMode) enterSelectMode();
-        }}
-      />
+          }}
+          onTouchStart={() => {
+            // On touch, switch to select mode so text is selectable/copyable
+            if (inputMode) enterSelectMode();
+          }}
+        />
+        {/* key: remount on agent switch so the previous session's detected
+            blocks (held in hook state for one render) can never flash or be
+            copied against the new agent's surface. */}
+        <CopySourceOverlay key={agentId} terminalRef={terminal} agentId={agentId} />
+      </div>
 
       {/* Footer status bar */}
       {!chromeless && (
