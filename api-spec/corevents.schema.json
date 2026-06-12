@@ -1940,6 +1940,20 @@
           },
           "type": "array"
         },
+        "closed_at": {
+          "description": "Close time (ISO-8601) — `null` while open. State-transition vocab\nevent (#524).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "description": "Issue creation time (ISO-8601, `gh`'s `createdAt`) — the \"new issue\"\nvocab event of the remote-Δ freshness design (#524). `Option` +\n`serde(default)` with the `AimWire::working_delta` discipline so\nolder payloads (hub fixtures, pre-sync clients) stay deserializable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "labels": {
           "items": {
             "$ref": "#/$defs/IssueLabelWire"
@@ -2236,8 +2250,22 @@
             "null"
           ]
         },
+        "ci_completed_at": {
+          "description": "Max `completedAt` across the status-check rollup once it is terminal\n(SUCCESS / FAILURE); `null` while pending or without checks. The \"CI\nconclusion\" vocab event (#524). Deliberately NOT a raw `updated_at`:\ncomment/label churn must not look like a vocab event.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "ci_local_attestation": {
           "description": "The ci-local attestation the Producer stored alongside the delivered\nmarker, if any (approach `2026-05-26-producer-supplied-override-\nattestation.md`, O2-d). `Some` only when `producer_reviewed` is true\nAND the Producer supplied an attestation via `mark_pr_reviewed`.\n\nNeutral evidence-of-verification, **not** an approval — same §E\nboundary as `producer_reviewed`. The react half (Phase B) reads it to\npre-fill the billing-dead override textarea so the operator need not\nhand-paste the ci-local summary; absence simply means the operator\nfalls back to the manual paste (the O2-a path). The backend consumes\nthe *stored* copy directly — this wire field is for the UI, not the\nauthoritative override input.\n\nOptional / serde-default with the same lockstep-free discipline as\n`producer_reviewed`: absent on the wire when `None`, and a payload\nomitting it deserializes to `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_at": {
+          "description": "Close time (ISO-8601) — `null` while open; set for merged PRs too.\nState-transition vocab event (#524).",
           "type": [
             "string",
             "null"
@@ -2247,6 +2275,13 @@
           "format": "int64",
           "minimum": 0,
           "type": "integer"
+        },
+        "created_at": {
+          "description": "PR creation time (ISO-8601, `gh`'s `createdAt`) — the \"new PR\" vocab\nevent of the remote-Δ freshness design (#524). `Option` +\n`serde(default)` with the `AimWire::working_delta` discipline so\nolder payloads (hub fixtures, pre-sync clients) stay deserializable.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "deletions": {
           "format": "int64",
@@ -2263,7 +2298,14 @@
           "type": "boolean"
         },
         "merge_commit_sha": {
-          "description": "Set only for merged PRs (the unit list is open-only, so this is\n`null` in practice — kept for shape parity with `PrInfo`).",
+          "description": "Kept for shape parity with `PrInfo`. `null` in practice even for the\nmerged rows of the recent-transition window — the unit-list fetch\ndoesn't request `mergeCommit`; the lifecycle fact is `state` +\n`merged_at`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "merged_at": {
+          "description": "Merge time (ISO-8601) — `null` unless merged. State-transition vocab\nevent (#524).",
           "type": [
             "string",
             "null"
@@ -2666,7 +2708,7 @@
       "description": "One repo's slice of the unit-scoped issue list. `repo_label` is the stable\ndirectory basename (e.g. `\"tmai-core\"`) — the same scheme\n[`crate::config::ResolvedUnit::from_dir`] uses for unit names; `repo_path`\nis the absolute path of the repo the issues belong to.\n\nUnlike [`crate::api::RepoPrsWire`] there is no `billing_dead` flag —\nissues have no merge/CI gate to override.",
       "properties": {
         "issues": {
-          "description": "Open issues in this repo, newest first (descending issue number).",
+          "description": "Issues in this repo, newest first (descending issue number): the open\nones plus those closed within the recent-transition window (#524) —\n`state` + `closed_at` distinguish them.",
           "items": {
             "$ref": "#/$defs/IssueSummaryWire"
           },
@@ -2737,7 +2779,7 @@
           "type": "boolean"
         },
         "prs": {
-          "description": "Open PRs in this repo, newest first (descending PR number).",
+          "description": "PRs in this repo, newest first (descending PR number): the open ones\nplus those that left the open state within the recent-transition\nwindow (#524) — `state` + the timestamp fields distinguish them.",
           "items": {
             "$ref": "#/$defs/PrSummaryWire"
           },
@@ -3598,7 +3640,7 @@
       "type": "object"
     },
     "UnitPrsResponse": {
-      "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+      "description": "`GET /api/units/{unit}/prs` response — the unit's open (+ recently\ntransitioned, #524) PRs across every repo in `repos[]`, grouped per repo\n(primary first, then declaration order). A unified cross-repo surface per\nDR §A: the React side renders one flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
       "properties": {
         "repos": {
           "items": {

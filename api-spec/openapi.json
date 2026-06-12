@@ -795,7 +795,7 @@
           "issues"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/issues`.",
-        "description": "The issues peer of `GET /api/units/{unit}/prs`: one unit-scoped list of the\n*open* issues across every repo in the unit's `repos[]`, each issue tagged\nwith the repo it belongs to (path + stable label + primary flag), grouped\nper repo (primary first, then declaration order) and newest-first within\neach repo. Reuses the single-repo `github::list_issues` gh-CLI path (30s TTL\ncache) fanned out over the unit's repos. Unit resolution goes through the\npost-#387 resolver, so a worktree-name unit still reduces to its owning\nunit. Real handler: `crate::web::api::get_unit_issues`.",
+        "description": "The issues peer of `GET /api/units/{unit}/prs`: one unit-scoped list of the\n*open* issues across every repo in the unit's `repos[]`, each issue tagged\nwith the repo it belongs to (path + stable label + primary flag), grouped\nper repo (primary first, then declaration order) and newest-first within\neach repo. Since #524 the list also carries issues closed within the last\n7 days, with vocab-event timestamps (`created_at` / `closed_at`). Fanned\nout per repo via `github::list_issues_with_recent_transitions` (30s TTL\ncache). Unit resolution goes through the post-#387 resolver, so a\nworktree-name unit still reduces to its owning unit. Real handler:\n`crate::web::api::get_unit_issues`.",
         "operationId": "get_unit_issues_doc",
         "parameters": [
           {
@@ -810,7 +810,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Open issues across the unit's repos, grouped per repo",
+            "description": "Open + recently-closed issues across the unit's repos, grouped per repo",
             "content": {
               "application/json": {
                 "schema": {
@@ -945,7 +945,7 @@
           "prs"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/prs`.",
-        "description": "Stage-1 in-tmai dev-loop (DR `2026-05-16-dev-loop-completes-in-tmai.md`\n§A): one unit-scoped list of the *open* PRs across every repo in the\nunit's `repos[]`, each PR tagged with the repo it belongs to (path +\nstable label + primary flag). Reuses the single-repo `GET /api/github/prs`\ngh-CLI path (30s TTL cache) fanned out over the unit's repos. Unit\nresolution goes through the post-#387 resolver, so a worktree-name unit\nstill reduces to its owning unit.",
+        "description": "Stage-1 in-tmai dev-loop (DR `2026-05-16-dev-loop-completes-in-tmai.md`\n§A): one unit-scoped list of the *open* PRs across every repo in the\nunit's `repos[]`, each PR tagged with the repo it belongs to (path +\nstable label + primary flag). Since #524 the list also carries PRs that\nleft the open state within the last 7 days, with vocab-event timestamps\n(`created_at` / `merged_at` / `closed_at` / `ci_completed_at`) — the core\nhalf of the remote-Δ freshness design (ore 2026-06-12-161334 §3). Fanned\nout per repo via `github::list_prs_with_recent_transitions` (30s TTL\ncache). Unit resolution goes through the post-#387 resolver, so a\nworktree-name unit still reduces to its owning unit.",
         "operationId": "get_unit_prs_doc",
         "parameters": [
           {
@@ -960,7 +960,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Open PRs across the unit's repos, grouped per repo",
+            "description": "Open + recently-transitioned PRs across the unit's repos, grouped per repo",
             "content": {
               "application/json": {
                 "schema": {
@@ -4216,6 +4216,20 @@
               "type": "string"
             }
           },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Close time (ISO-8601) — `null` while open. State-transition vocab\nevent (#524)."
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Issue creation time (ISO-8601, `gh`'s `createdAt`) — the \"new issue\"\nvocab event of the remote-Δ freshness design (#524). `Option` +\n`serde(default)` with the `AimWire::working_delta` discipline so\nolder payloads (hub fixtures, pre-sync clients) stay deserializable."
+          },
           "labels": {
             "type": "array",
             "items": {
@@ -4519,6 +4533,13 @@
             ],
             "description": "Raw rolled-up check status (`\"SUCCESS\"` / `\"FAILURE\"` / `\"PENDING\"`),\nor `null` when there are no checks."
           },
+          "ci_completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Max `completedAt` across the status-check rollup once it is terminal\n(SUCCESS / FAILURE); `null` while pending or without checks. The \"CI\nconclusion\" vocab event (#524). Deliberately NOT a raw `updated_at`:\ncomment/label churn must not look like a vocab event."
+          },
           "ci_local_attestation": {
             "type": [
               "string",
@@ -4526,10 +4547,24 @@
             ],
             "description": "The ci-local attestation the Producer stored alongside the delivered\nmarker, if any (approach `2026-05-26-producer-supplied-override-\nattestation.md`, O2-d). `Some` only when `producer_reviewed` is true\nAND the Producer supplied an attestation via `mark_pr_reviewed`.\n\nNeutral evidence-of-verification, **not** an approval — same §E\nboundary as `producer_reviewed`. The react half (Phase B) reads it to\npre-fill the billing-dead override textarea so the operator need not\nhand-paste the ci-local summary; absence simply means the operator\nfalls back to the manual paste (the O2-a path). The backend consumes\nthe *stored* copy directly — this wire field is for the UI, not the\nauthoritative override input.\n\nOptional / serde-default with the same lockstep-free discipline as\n`producer_reviewed`: absent on the wire when `None`, and a payload\nomitting it deserializes to `None`."
           },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Close time (ISO-8601) — `null` while open; set for merged PRs too.\nState-transition vocab event (#524)."
+          },
           "comments": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "PR creation time (ISO-8601, `gh`'s `createdAt`) — the \"new PR\" vocab\nevent of the remote-Δ freshness design (#524). `Option` +\n`serde(default)` with the `AimWire::working_delta` discipline so\nolder payloads (hub fixtures, pre-sync clients) stay deserializable."
           },
           "deletions": {
             "type": "integer",
@@ -4550,7 +4585,14 @@
               "string",
               "null"
             ],
-            "description": "Set only for merged PRs (the unit list is open-only, so this is\n`null` in practice — kept for shape parity with `PrInfo`)."
+            "description": "Kept for shape parity with `PrInfo`. `null` in practice even for the\nmerged rows of the recent-transition window — the unit-list fetch\ndoesn't request `mergeCommit`; the lifecycle fact is `state` +\n`merged_at`."
+          },
+          "merged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Merge time (ISO-8601) — `null` unless merged. State-transition vocab\nevent (#524)."
           },
           "number": {
             "type": "integer",
@@ -4944,7 +4986,7 @@
             "items": {
               "$ref": "#/components/schemas/IssueSummaryWire"
             },
-            "description": "Open issues in this repo, newest first (descending issue number)."
+            "description": "Issues in this repo, newest first (descending issue number): the open\nones plus those closed within the recent-transition window (#524) —\n`state` + `closed_at` distinguish them."
           },
           "primary": {
             "type": "boolean",
@@ -5015,7 +5057,7 @@
             "items": {
               "$ref": "#/components/schemas/PrSummaryWire"
             },
-            "description": "Open PRs in this repo, newest first (descending PR number)."
+            "description": "PRs in this repo, newest first (descending PR number): the open ones\nplus those that left the open state within the recent-transition\nwindow (#524) — `state` + the timestamp fields distinguish them."
           },
           "repo_label": {
             "type": "string"
@@ -5866,7 +5908,7 @@
       },
       "UnitPrsResponse": {
         "type": "object",
-        "description": "`GET /api/units/{unit}/prs` response — the unit's open PRs across every\nrepo in `repos[]`, grouped per repo (primary first, then declaration\norder). A unified cross-repo surface per DR §A: the React side renders\none flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
+        "description": "`GET /api/units/{unit}/prs` response — the unit's open (+ recently\ntransitioned, #524) PRs across every repo in `repos[]`, grouped per repo\n(primary first, then declaration order). A unified cross-repo surface per\nDR §A: the React side renders one flat list, not a per-repo switcher.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
         "required": [
           "unit",
           "repos"

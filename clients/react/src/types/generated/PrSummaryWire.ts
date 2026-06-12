@@ -30,10 +30,36 @@ review_decision: string | null,
  */
 check_status: string | null, is_draft: boolean, additions: bigint, deletions: bigint, comments: bigint, reviews: bigint, author: string, 
 /**
- * Set only for merged PRs (the unit list is open-only, so this is
- * `null` in practice — kept for shape parity with `PrInfo`).
+ * Kept for shape parity with `PrInfo`. `null` in practice even for the
+ * merged rows of the recent-transition window — the unit-list fetch
+ * doesn't request `mergeCommit`; the lifecycle fact is `state` +
+ * `merged_at`.
  */
 merge_commit_sha: string | null, 
+/**
+ * PR creation time (ISO-8601, `gh`'s `createdAt`) — the "new PR" vocab
+ * event of the remote-Δ freshness design (#524). `Option` +
+ * `serde(default)` with the `AimWire::working_delta` discipline so
+ * older payloads (hub fixtures, pre-sync clients) stay deserializable.
+ */
+created_at: string | null, 
+/**
+ * Merge time (ISO-8601) — `null` unless merged. State-transition vocab
+ * event (#524).
+ */
+merged_at: string | null, 
+/**
+ * Close time (ISO-8601) — `null` while open; set for merged PRs too.
+ * State-transition vocab event (#524).
+ */
+closed_at: string | null, 
+/**
+ * Max `completedAt` across the status-check rollup once it is terminal
+ * (SUCCESS / FAILURE); `null` while pending or without checks. The "CI
+ * conclusion" vocab event (#524). Deliberately NOT a raw `updated_at`:
+ * comment/label churn must not look like a vocab event.
+ */
+ci_completed_at: string | null, 
 /**
  * `true` when the Producer has **delivered** its contract-anchored
  * Δ-brief for this PR — the soft-valve unlock condition of dev-loop

@@ -6,4 +6,16 @@ import type { IssueLabelWire } from "./IssueLabelWire";
  * [`crate::github::IssueInfo`] so the React client renders a cross-repo entry
  * with the exact same component it would use for a per-repo list.
  */
-export type IssueSummaryWire = { number: bigint, title: string, state: string, url: string, labels: Array<IssueLabelWire>, assignees: Array<string>, };
+export type IssueSummaryWire = { number: bigint, title: string, state: string, url: string, labels: Array<IssueLabelWire>, assignees: Array<string>, 
+/**
+ * Issue creation time (ISO-8601, `gh`'s `createdAt`) — the "new issue"
+ * vocab event of the remote-Δ freshness design (#524). `Option` +
+ * `serde(default)` with the `AimWire::working_delta` discipline so
+ * older payloads (hub fixtures, pre-sync clients) stay deserializable.
+ */
+created_at: string | null, 
+/**
+ * Close time (ISO-8601) — `null` while open. State-transition vocab
+ * event (#524).
+ */
+closed_at: string | null, };

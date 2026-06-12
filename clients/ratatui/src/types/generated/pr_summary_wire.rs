@@ -16,14 +16,22 @@ pub struct PrSummaryWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_status: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub ci_completed_at: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ci_local_attestation: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<Value>,
     pub comments: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Value>,
     pub deletions: i64,
     pub head_branch: String,
     pub head_sha: String,
     pub is_draft: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_commit_sha: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_at: Option<Value>,
     pub number: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub producer_reviewed: Option<bool>,

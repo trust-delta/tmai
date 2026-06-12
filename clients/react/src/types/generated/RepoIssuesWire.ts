@@ -16,6 +16,8 @@ export type RepoIssuesWire = { repo_path: string, repo_label: string,
  */
 primary: boolean, 
 /**
- * Open issues in this repo, newest first (descending issue number).
+ * Issues in this repo, newest first (descending issue number): the open
+ * ones plus those closed within the recent-transition window (#524) —
+ * `state` + `closed_at` distinguish them.
  */
 issues: Array<IssueSummaryWire>, };
