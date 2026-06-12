@@ -41,6 +41,8 @@ function response(unit: string, issueCount: number): UnitIssuesResponse {
           url: `https://github.com/o/${unit}/issues/${i + 1}`,
           labels: [],
           assignees: [],
+          created_at: null,
+          closed_at: null,
         })),
       },
     ],

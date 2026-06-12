@@ -42,6 +42,10 @@ function pr(url: string): PrSummaryWire {
     reviews: 0n,
     author: "a",
     merge_commit_sha: null,
+    created_at: null,
+    merged_at: null,
+    closed_at: null,
+    ci_completed_at: null,
   };
 }
 

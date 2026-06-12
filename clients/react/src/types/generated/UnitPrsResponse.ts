@@ -2,10 +2,10 @@
 import type { RepoPrsWire } from "./RepoPrsWire";
 
 /**
- * `GET /api/units/{unit}/prs` response — the unit's open PRs across every
- * repo in `repos[]`, grouped per repo (primary first, then declaration
- * order). A unified cross-repo surface per DR §A: the React side renders
- * one flat list, not a per-repo switcher.
+ * `GET /api/units/{unit}/prs` response — the unit's open (+ recently
+ * transitioned, #524) PRs across every repo in `repos[]`, grouped per repo
+ * (primary first, then declaration order). A unified cross-repo surface per
+ * DR §A: the React side renders one flat list, not a per-repo switcher.
  *
  * For a single-repo unit this collapses to `repos.len() == 1`.
  */

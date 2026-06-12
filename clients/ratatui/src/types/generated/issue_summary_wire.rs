@@ -11,6 +11,10 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IssueSummaryWire {
     pub assignees: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Value>,
     pub labels: Vec<IssueLabelWire>,
     pub number: i64,
     pub state: String,

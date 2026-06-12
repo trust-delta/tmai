@@ -13,7 +13,9 @@ export type RepoPrsWire = { repo_path: string, repo_label: string,
  */
 primary: boolean, 
 /**
- * Open PRs in this repo, newest first (descending PR number).
+ * PRs in this repo, newest first (descending PR number): the open ones
+ * plus those that left the open state within the recent-transition
+ * window (#524) — `state` + the timestamp fields distinguish them.
  */
 prs: Array<PrSummaryWire>, 
 /**
