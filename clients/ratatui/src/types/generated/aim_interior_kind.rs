@@ -12,4 +12,5 @@ use std::collections::HashMap;
 pub enum AimInteriorKind {
     confirmed,
     claimed,
+    pruned,
 }

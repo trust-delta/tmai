@@ -61,10 +61,11 @@ body: string,
 drift: AimDriftWire | null, 
 /**
  * Interior `is[]` — the marked claims parsed from [`Self::body`]: each
- * `[claimed]` / `[confirmed: <ref>]` line in the interior prose projected to
- * one entry. **Mark-only** (design pin #1 / `doc/aims/README.md`): the
- * projection surfaces what the author wrote (confirmed / claimed) and never
- * re-judges, re-orders, or de-drifts it. Empty when the interior carries no
- * markers. Wire key is `is` (the corpus spelling).
+ * `[claimed]` / `[confirmed: <ref>]` / `[pruned: <reason>]` line in the
+ * interior prose projected to one entry. **Mark-only** (design pin #1 /
+ * `doc/aims/README.md`): the projection surfaces what the author wrote
+ * (confirmed / claimed / pruned) and never re-judges, re-orders, or
+ * de-drifts it. Empty when the interior carries no markers. Wire key is
+ * `is` (the corpus spelling).
  */
 is: Array<AimInteriorWire>, };

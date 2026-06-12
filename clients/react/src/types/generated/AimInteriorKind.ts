@@ -3,7 +3,11 @@
 /**
  * The kind of an interior mark — mirrors the `doc/aims/README.md` convention:
  * `confirmed` = external ground-truth checked (test / PR / git ref), real,
- * attention-zero; `claimed` = unverified, an operator confirm is owed. The
+ * attention-zero; `claimed` = unverified, an operator confirm is owed;
+ * `pruned` = a rejected branch kept in the tree with its rejection reason
+ * (the recoil-ledger convention, `doc/aims/aim-recoil-ledger.md`). The
  * projection records which kind the author wrote — it never re-judges it.
+ * In particular, `pruned` is valid on any node: pairing it with
+ * `state: dead` is authoring convention, not a parser rule.
  */
-export type AimInteriorKind = "confirmed" | "claimed";
+export type AimInteriorKind = "confirmed" | "claimed" | "pruned";
