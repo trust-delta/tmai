@@ -23,4 +23,6 @@ pub struct AimWire {
     pub serves: Vec<String>,
     pub slug: String,
     pub state: AimState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_delta: Option<AimWorkingDeltaWire>,
 }

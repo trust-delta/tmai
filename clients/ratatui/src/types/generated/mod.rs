@@ -20,6 +20,8 @@ pub mod aim_state;
 pub use aim_state::*;
 pub mod aim_wire;
 pub use aim_wire::*;
+pub mod aim_working_delta_wire;
+pub use aim_working_delta_wire::*;
 pub mod aims_response;
 pub use aims_response::*;
 pub mod approach_inventory_wire;
