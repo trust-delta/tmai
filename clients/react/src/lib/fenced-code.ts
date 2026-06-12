@@ -50,8 +50,9 @@ export interface FencedBlock {
   source: string;
   /** Info string of the opening fence (e.g. `bash`), trimmed. */
   info: string;
-  /** Buffer row index of the opening fence (scan-time; rows shift as the
-   *  scrollback trims, so use only as a per-scan identity/ordering key). */
+  /** Index of the opening fence among the LOGICAL lines of the scan (after
+   *  wrap-joining — NOT a buffer row index). Indices shift as the
+   *  scrollback trims, so use only as a per-scan identity/ordering key. */
   openLine: number;
 }
 
@@ -130,10 +131,14 @@ export function findFencedBlocks(lines: string[]): FencedBlock[] {
     }
     const [, indent, fence, rawInfo] = open;
 
+    // Closing fence: a backtick-only line whose run is at least as long as
+    // the opening run AND whose indent does not exceed the opening fence's
+    // indent — per CommonMark, a backtick line indented DEEPER than the
+    // opening fence is block CONTENT, not a terminator.
     let close = -1;
     for (let j = i + 1; j < lines.length; j++) {
-      const trimmed = lines[j].trim();
-      if (trimmed.length >= fence.length && /^`+$/.test(trimmed)) {
+      const m = /^([ \t]*)(`+)[ \t]*$/.exec(lines[j]);
+      if (m && m[1].length <= indent.length && m[2].length >= fence.length) {
         close = j;
         break;
       }

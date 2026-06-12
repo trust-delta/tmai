@@ -48,6 +48,13 @@ describe("findFencedBlocks — fence detection", () => {
     expect(findFencedBlocks(["```bash", "half-arrived command"])).toEqual([]);
   });
 
+  it("treats a backtick line indented deeper than the opening fence as body, not terminator", () => {
+    // e.g. a block quoting a markdown snippet that itself contains a fence
+    const blocks = findFencedBlocks(["```", "outer", "  ```", "still body", "```", "after"]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].source).toBe("outer\n  ```\nstill body");
+  });
+
   it("strips the rendering gutter (fence indent) but keeps deeper indentation", () => {
     const blocks = findFencedBlocks(["  ```", "  echo hi", "    indented", "  ```"]);
     expect(blocks).toHaveLength(1);

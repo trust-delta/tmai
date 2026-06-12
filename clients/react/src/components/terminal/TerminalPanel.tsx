@@ -150,7 +150,10 @@ export function TerminalPanel({
             if (inputMode) enterSelectMode();
           }}
         />
-        <CopySourceOverlay terminalRef={terminal} agentId={agentId} />
+        {/* key: remount on agent switch so the previous session's detected
+            blocks (held in hook state for one render) can never flash or be
+            copied against the new agent's surface. */}
+        <CopySourceOverlay key={agentId} terminalRef={terminal} agentId={agentId} />
       </div>
 
       {/* Footer status bar */}
