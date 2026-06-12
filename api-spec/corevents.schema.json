@@ -281,6 +281,17 @@
         "state": {
           "$ref": "#/$defs/AimState",
           "description": "Lifecycle state — `open` / `done` / `dead`."
+        },
+        "working_delta": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/AimWorkingDeltaWire",
+              "description": "Working-tree presence facts for this node (Design B of\n`doc/aims/aim-drift-commit-boundary.md`): uncommitted edits / an\nuncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE\nfield and type from [`Self::drift`] on purpose — the committed layer\nstates order judgments, this layer states presence only. `null` /\nabsent when the working tree is clean for this node. Populated **only**\nby the read endpoint; [`Self::from_record`] leaves it `None`."
+            }
+          ]
         }
       },
       "required": [
@@ -291,6 +302,29 @@
         "serves",
         "related",
         "body"
+      ],
+      "type": "object"
+    },
+    "AimWorkingDeltaWire": {
+      "description": "Working-tree presence facts for one aim node — the wire projection of\n[`crate::workbench::compose::AimWorkingDeltaItem`] (Design B of\n`doc/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from\n[`AimDriftWire`]: the committed layer states ORDER judgments (it carries\ncommit coordinates), this layer states PRESENCE only — there is no date /\nsha / ordering field here because a working tree has none to state.",
+      "properties": {
+        "uncommitted": {
+          "description": "The node's file differs from HEAD (uncommitted edits, staged or not).",
+          "type": "boolean"
+        },
+        "uncommitted_anchor_change": {
+          "description": "The uncommitted diff touches the node's `aim:` line. Implies\n`uncommitted`.",
+          "type": "boolean"
+        },
+        "untracked": {
+          "description": "A new node with no committed history. Mutually exclusive with\n`uncommitted`.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "uncommitted",
+        "uncommitted_anchor_change",
+        "untracked"
       ],
       "type": "object"
     },

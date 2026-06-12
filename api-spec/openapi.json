@@ -1397,6 +1397,40 @@
           "state": {
             "$ref": "#/components/schemas/AimState",
             "description": "Lifecycle state — `open` / `done` / `dead`."
+          },
+          "working_delta": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AimWorkingDeltaWire",
+                "description": "Working-tree presence facts for this node (Design B of\n`doc/aims/aim-drift-commit-boundary.md`): uncommitted edits / an\nuncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE\nfield and type from [`Self::drift`] on purpose — the committed layer\nstates order judgments, this layer states presence only. `null` /\nabsent when the working tree is clean for this node. Populated **only**\nby the read endpoint; [`Self::from_record`] leaves it `None`."
+              }
+            ]
+          }
+        }
+      },
+      "AimWorkingDeltaWire": {
+        "type": "object",
+        "description": "Working-tree presence facts for one aim node — the wire projection of\n[`crate::workbench::compose::AimWorkingDeltaItem`] (Design B of\n`doc/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from\n[`AimDriftWire`]: the committed layer states ORDER judgments (it carries\ncommit coordinates), this layer states PRESENCE only — there is no date /\nsha / ordering field here because a working tree has none to state.",
+        "required": [
+          "uncommitted",
+          "uncommitted_anchor_change",
+          "untracked"
+        ],
+        "properties": {
+          "uncommitted": {
+            "type": "boolean",
+            "description": "The node's file differs from HEAD (uncommitted edits, staged or not)."
+          },
+          "uncommitted_anchor_change": {
+            "type": "boolean",
+            "description": "The uncommitted diff touches the node's `aim:` line. Implies\n`uncommitted`."
+          },
+          "untracked": {
+            "type": "boolean",
+            "description": "A new node with no committed history. Mutually exclusive with\n`uncommitted`."
           }
         }
       },

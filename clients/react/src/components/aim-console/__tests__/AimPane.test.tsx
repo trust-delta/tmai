@@ -71,6 +71,7 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     related: [],
     body: "",
     drift: null,
+    working_delta: null,
     is: [],
     ...overrides,
   };

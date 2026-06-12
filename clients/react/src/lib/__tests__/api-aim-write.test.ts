@@ -31,6 +31,7 @@ const NODE: AimWire = {
   related: [],
   body: "",
   drift: null,
+  working_delta: null,
   is: [],
 };
 

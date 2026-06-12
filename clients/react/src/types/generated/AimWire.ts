@@ -2,6 +2,7 @@
 import type { AimDriftWire } from "./AimDriftWire";
 import type { AimInteriorWire } from "./AimInteriorWire";
 import type { AimState } from "./AimState";
+import type { AimWorkingDeltaWire } from "./AimWorkingDeltaWire";
 
 /**
  * One aim node projected to the wire — the human-side complement of the
@@ -59,6 +60,16 @@ body: string,
  * write endpoints have no corpus context to walk the ancestor chain.
  */
 drift: AimDriftWire | null, 
+/**
+ * Working-tree presence facts for this node (Design B of
+ * `doc/aims/aim-drift-commit-boundary.md`): uncommitted edits / an
+ * uncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE
+ * field and type from [`Self::drift`] on purpose — the committed layer
+ * states order judgments, this layer states presence only. `null` /
+ * absent when the working tree is clean for this node. Populated **only**
+ * by the read endpoint; [`Self::from_record`] leaves it `None`.
+ */
+working_delta: AimWorkingDeltaWire | null, 
 /**
  * Interior `is[]` — the marked claims parsed from [`Self::body`]: each
  * `[claimed]` / `[confirmed: <ref>]` / `[pruned: <reason>]` line in the
