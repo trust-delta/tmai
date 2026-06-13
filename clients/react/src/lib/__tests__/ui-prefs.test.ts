@@ -120,6 +120,42 @@ describe("ui-prefs", () => {
     expect(loaded.attentionStripWidth).toBe(440);
   });
 
+  it("defaults remoteDeltaCursors to {} and round-trips a cursor blob (#822)", () => {
+    expect(loadUIPrefs().remoteDeltaCursors).toEqual({});
+    const cursors = {
+      tmai: { panel: "2026-06-13T10:00:00Z", prs: "2026-06-13T11:00:00Z" },
+    };
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, remoteDeltaCursors: cursors });
+    expect(loadUIPrefs().remoteDeltaCursors).toEqual(cursors);
+  });
+
+  it("drops non-ISO cursor fields and all-invalid unit entries on load (#822)", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        ...DEFAULT_UI_PREFS,
+        remoteDeltaCursors: {
+          tmai: { panel: "2026-06-13T10:00:00Z", prs: "not a timestamp", issues: 42 },
+          // An all-invalid entry is dropped entirely — "no cursor" (first
+          // run, every row unobserved) is the honest recovery.
+          broken: { panel: "garbage" },
+          alsoBroken: "not an object",
+        },
+      }),
+    );
+    expect(loadUIPrefs().remoteDeltaCursors).toEqual({
+      tmai: { panel: "2026-06-13T10:00:00Z" },
+    });
+  });
+
+  it("resets remoteDeltaCursors to {} when the field is not an object (#822)", () => {
+    localStorage.setItem(
+      UI_PREFS_STORAGE_KEY,
+      JSON.stringify({ ...DEFAULT_UI_PREFS, remoteDeltaCursors: ["x"] }),
+    );
+    expect(loadUIPrefs().remoteDeltaCursors).toEqual({});
+  });
+
   it("recovers gracefully when the blob is malformed JSON", () => {
     localStorage.setItem(UI_PREFS_STORAGE_KEY, "{not json");
     expect(loadUIPrefs()).toEqual(DEFAULT_UI_PREFS);

@@ -10,7 +10,9 @@
 //   - collapsed by default; only operator-toggled expand;
 //   - count uses `text-subtle-foreground` ONLY — never warning /
 //     destructive / success accents. The R panel's whole job is to
-//     show the inventory without tmai-side appraisal.
+//     show the inventory without tmai-side appraisal. The one trailing
+//     addition is the remote-Δ `unobservedCount` badge (#822): info-tone
+//     because it is a neutral freshness fact, never the owed amber.
 //
 // `id` is the persistence key (string slug) the parent uses to
 // remember which sections the operator has expanded across reloads.
@@ -33,6 +35,15 @@ interface SectionProps {
    *  sections to carry the "EXTERNAL · github = source of truth" framing
    *  (C2) — those are the github-resident artifacts on this panel. */
   headerNote?: ReactNode;
+  /** Remote-Δ freshness (#822): how many of this section's rows are
+   *  UNOBSERVED (vocab timestamp newer than the operator's close-act
+   *  cursor). Shown on the header ONLY while the section is collapsed —
+   *  open sections accent the rows themselves. Info-tone (cyan family),
+   *  never the warning/owed amber: this is a neutral freshness FACT
+   *  ("changed since you last looked"), not a tmai-side appraisal, so it
+   *  does not breach the count rule above. `undefined` = the section has
+   *  no freshness wiring (e.g. isolation tests). */
+  unobservedCount?: number;
 }
 
 export function Section({
@@ -44,6 +55,7 @@ export function Section({
   onToggle,
   children,
   headerNote,
+  unobservedCount,
 }: SectionProps) {
   return (
     <section data-testid={`r-section-${id}`} data-expanded={expanded ? "true" : "false"}>
@@ -62,6 +74,15 @@ export function Section({
         </span>
         <h3 className="text-sm font-semibold text-foreground">{label}</h3>
         <span className="text-[11px] text-subtle-foreground">{count}</span>
+        {!expanded && unobservedCount !== undefined && unobservedCount > 0 && (
+          <span
+            data-testid={`r-section-unobserved-${id}`}
+            title={`${unobservedCount} unobserved remote ${unobservedCount === 1 ? "change" : "changes"} since you last looked`}
+            className="font-mono text-[10px] text-info"
+          >
+            Δ{unobservedCount}
+          </span>
+        )}
         {headerNote}
       </button>
       {expanded && (

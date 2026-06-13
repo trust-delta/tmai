@@ -32,6 +32,8 @@
 import { useCallback } from "react";
 import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
+import { useUnitIssues } from "@/hooks/useUnitIssues";
+import { useUnitPrs } from "@/hooks/useUnitPrs";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { RAimsSection } from "./RAimsSection";
@@ -45,6 +47,12 @@ import { RPrsSection } from "./RPrsSection";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
 import type { SelectedRecord } from "./r-viewer/RRecordViewer";
+import {
+  advanceCursor,
+  effectiveCursor,
+  unobservedIssueCount,
+  unobservedPrCount,
+} from "./remote-delta";
 
 export interface RPanelResize {
   width: number;
@@ -129,12 +137,50 @@ export function RPanel({
   // and is NOT given the controls.
   const attention = useUnitAttention(unitName);
 
+  // Remote-Δ freshness cursors (#822) — client state only (ui-prefs), never
+  // sent to core; the Producer never reads it. Exactly TWO acts advance a
+  // cursor: the panel collapse and a PRs/Issues section collapse, both
+  // below. Nothing else (no visibilitychange / scroll / per-row marking /
+  // timers) may call advanceCursor.
+  const [cursors, setCursors] = useUIPref("remoteDeltaCursors");
+  const prsCursor = unitName === null ? null : effectiveCursor(cursors, unitName, "prs");
+  const issuesCursor = unitName === null ? null : effectiveCursor(cursors, unitName, "issues");
+
+  // Collapsed-rail Δ count: the rail still shows the unit total of
+  // unobserved PR + issue rows, but the section components (which normally
+  // own the fetch) are unmounted while collapsed — so the panel polls in
+  // their stead. Parked (null unit) while expanded so panel and sections
+  // never double-poll the same unit.
+  const railUnit = collapsed ? unitName : null;
+  const railPrs = useUnitPrs(railUnit);
+  const railIssues = useUnitIssues(railUnit);
+  const railUnobserved =
+    unobservedPrCount(railPrs.data?.repos ?? null, prsCursor) +
+    unobservedIssueCount(railIssues.data?.repos ?? null, issuesCursor);
+
   const toggle = useCallback(
     (id: string) => {
-      setExpanded(expanded.includes(id) ? expanded.filter((x) => x !== id) : [...expanded, id]);
+      const closing = expanded.includes(id);
+      // Section-collapse act: stamp that section's cursor. Only the CLOSE
+      // direction advances — expanding is the start of looking, not the end.
+      if (closing && unitName !== null && (id === "prs" || id === "issues")) {
+        setCursors(advanceCursor(cursors, unitName, id, new Date().toISOString()));
+      }
+      setExpanded(closing ? expanded.filter((x) => x !== id) : [...expanded, id]);
     },
-    [expanded, setExpanded],
+    [expanded, setExpanded, cursors, setCursors, unitName],
   );
+
+  // Panel-collapse act: stamp the unit's `panel` cursor (the coarse "when
+  // the operator last stopped looking" timestamp) then collapse. The
+  // expand button on the collapsed rail uses the plain onToggleCollapsed —
+  // opening is not a close act.
+  const collapsePanel = useCallback(() => {
+    if (unitName !== null) {
+      setCursors(advanceCursor(cursors, unitName, "panel", new Date().toISOString()));
+    }
+    onToggleCollapsed();
+  }, [cursors, setCursors, unitName, onToggleCollapsed]);
 
   if (collapsed) {
     return (
@@ -159,6 +205,19 @@ export function RPanel({
         >
           R · Inventory
         </span>
+        {/* Remote-Δ unit total (#822): unobserved PR + issue rows since the
+            close acts. Within-unit count only — info-tone freshness fact,
+            never the owed amber; no cross-unit accent (deferred until a
+            second unit exists). */}
+        {railUnobserved > 0 && (
+          <span
+            data-testid="r-rail-unobserved"
+            title={`${railUnobserved} unobserved remote ${railUnobserved === 1 ? "change" : "changes"} since you last looked`}
+            className="mt-2 select-none font-mono text-[10px] text-info"
+          >
+            Δ{railUnobserved}
+          </span>
+        )}
       </aside>
     );
   }
@@ -211,7 +270,7 @@ export function RPanel({
             <h2 className="text-sm font-semibold text-foreground">R · Inventory</h2>
             <button
               type="button"
-              onClick={onToggleCollapsed}
+              onClick={collapsePanel}
               title="Collapse R panel"
               aria-label="Collapse R panel"
               aria-expanded={true}
@@ -229,6 +288,7 @@ export function RPanel({
               onSelectPr={onSelectPr}
               selectedKey={selectedPrKey}
               attention={attention}
+              deltaCursor={prsCursor}
             />
             <RIssuesSection
               unitName={unitName}
@@ -237,6 +297,7 @@ export function RPanel({
               onSelectIssue={onSelectIssue}
               selectedKey={selectedIssueKey}
               attention={attention}
+              deltaCursor={issuesCursor}
             />
             <RDecisionsSection
               unitName={unitName}

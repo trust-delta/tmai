@@ -202,3 +202,100 @@ describe("RIssuesSection", () => {
     expect(row1?.getAttribute("aria-current")).toBeNull();
   });
 });
+
+// ── Remote-Δ freshness (#822) — issues twin of the RPrsSection cases ──
+//
+// Issue vocab = max(created_at, closed_at). The accent is info-tone (a
+// freshness FACT, never the warning amber); observed rows render unchanged.
+describe("RIssuesSection — remote-Δ freshness accents", () => {
+  const CURSOR = "2026-06-12T00:00:00Z";
+
+  it("accents rows newer than the cursor; observed rows render unchanged", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([
+        repo({
+          issues: [
+            issue({ number: 2n, title: "new issue", created_at: "2026-06-13T00:00:00Z" }),
+            issue({ number: 1n, title: "old issue", created_at: "2026-06-11T00:00:00Z" }),
+          ],
+        }),
+      ]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} deltaCursor={CURSOR} />);
+    await waitFor(() => expect(screen.getByText("new issue")).toBeTruthy());
+
+    const deltas = screen.getAllByTestId("unobserved-delta");
+    expect(deltas).toHaveLength(1);
+    expect(screen.getByText("new issue").closest("button")?.textContent).toContain("Δ");
+    expect(screen.getByText("old issue").closest("button")?.textContent).not.toContain("Δ");
+    expect(deltas[0].className).toContain("text-info");
+    expect(deltas[0].className).not.toMatch(/warning/);
+  });
+
+  it("a close newer than the cursor accents the row (closed_at counts)", async () => {
+    // Recently-transitioned rows from the 7-day window now appear in the
+    // list — a closed issue renders its muted lifecycle pill plus the Δ.
+    unitIssuesMock.mockResolvedValue(
+      response([
+        repo({
+          issues: [
+            issue({
+              number: 1n,
+              title: "closed issue",
+              state: "closed",
+              created_at: "2026-06-01T00:00:00Z",
+              closed_at: "2026-06-13T00:00:00Z",
+            }),
+          ],
+        }),
+      ]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} deltaCursor={CURSOR} />);
+    await waitFor(() => expect(screen.getByText("closed issue")).toBeTruthy());
+    expect(screen.getAllByTestId("unobserved-delta")).toHaveLength(1);
+    const pill = screen.getByText("closed").closest("[data-testid='status-pill']");
+    expect(pill?.getAttribute("data-tone")).toBe("muted");
+  });
+
+  it("first run (deltaCursor null) — every row is unobserved", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([repo({ issues: [issue(), issue({ number: 2n, title: "Issue 2" })] })]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} deltaCursor={null} />);
+    await waitFor(() => expect(screen.getByText("Issue 1")).toBeTruthy());
+    expect(screen.getAllByTestId("unobserved-delta")).toHaveLength(2);
+  });
+
+  it("renders NO accents when deltaCursor is absent (isolation / no wiring)", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([repo({ issues: [issue({ created_at: "2026-06-13T00:00:00Z" })] })]),
+    );
+    render(<RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Issue 1")).toBeTruthy());
+    expect(screen.queryByTestId("unobserved-delta")).toBeNull();
+  });
+
+  it("collapsed header shows the unobserved COUNT; expanded header does not", async () => {
+    unitIssuesMock.mockResolvedValue(
+      response([
+        repo({
+          issues: [
+            issue({ number: 1n, created_at: "2026-06-13T00:00:00Z" }),
+            issue({ number: 2n, created_at: "2026-06-11T00:00:00Z" }),
+          ],
+        }),
+      ]),
+    );
+    const { rerender } = render(
+      <RIssuesSection unitName="u" expanded={false} onToggle={vi.fn()} deltaCursor={CURSOR} />,
+    );
+    await waitFor(() => expect(screen.getByText(/2 open/)).toBeTruthy());
+    expect(screen.getByTestId("r-section-unobserved-issues").textContent).toBe("Δ1");
+
+    rerender(
+      <RIssuesSection unitName="u" expanded={true} onToggle={vi.fn()} deltaCursor={CURSOR} />,
+    );
+    await waitFor(() => expect(screen.getAllByTestId("unobserved-delta")).toHaveLength(1));
+    expect(screen.queryByTestId("r-section-unobserved-issues")).toBeNull();
+  });
+});
