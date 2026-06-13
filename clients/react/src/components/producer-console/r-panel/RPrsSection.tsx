@@ -23,8 +23,10 @@ import { useUnitPrs } from "@/hooks/useUnitPrs";
 import type { PrSummaryWire, RepoPrsWire } from "@/lib/api";
 import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedPr, selectedPrKey } from "./r-viewer/RPrViewer";
+import { isUnobserved, prVocabTimestamp, unobservedPrCount } from "./remote-delta";
 import { Section } from "./Section";
 import { ExternalSourceBadge, prStatusPills, StatusPills } from "./status-pills";
+import { UnobservedDelta } from "./UnobservedDelta";
 
 interface RPrsSectionProps {
   unitName: string | null;
@@ -43,6 +45,12 @@ interface RPrsSectionProps {
    *  When present each PR row shows its attention marker; absent (e.g. in
    *  isolation tests) the rows render marker-free. */
   attention?: AttentionControls;
+  /** Remote-Δ effective cursor for this section (#822) — MAX(panel close,
+   *  PRs-section close), threaded from `RPanel`. `null` = no close act
+   *  recorded yet (first run → every row unobserved); `undefined` = no
+   *  freshness wiring at all (e.g. isolation tests), rows render
+   *  accent-free. */
+  deltaCursor?: string | null;
 }
 
 export function RPrsSection({
@@ -52,9 +60,12 @@ export function RPrsSection({
   onSelectPr,
   selectedKey,
   attention,
+  deltaCursor,
 }: RPrsSectionProps) {
   const { data, loading, error } = useUnitPrs(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + r.prs.length, 0);
+  const unobserved =
+    deltaCursor === undefined ? undefined : unobservedPrCount(data?.repos ?? null, deltaCursor);
 
   return (
     <Section
@@ -65,6 +76,7 @@ export function RPrsSection({
       expanded={expanded}
       onToggle={onToggle}
       headerNote={<ExternalSourceBadge />}
+      unobservedCount={unobserved}
     >
       <Body
         unitName={unitName}
@@ -74,6 +86,7 @@ export function RPrsSection({
         onSelectPr={onSelectPr}
         selectedKey={selectedKey ?? null}
         attention={attention}
+        deltaCursor={deltaCursor}
       />
     </Section>
   );
@@ -87,9 +100,19 @@ interface BodyProps {
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
   attention?: AttentionControls;
+  deltaCursor?: string | null;
 }
 
-function Body({ unitName, repos, loading, error, onSelectPr, selectedKey, attention }: BodyProps) {
+function Body({
+  unitName,
+  repos,
+  loading,
+  error,
+  onSelectPr,
+  selectedKey,
+  attention,
+  deltaCursor,
+}: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see open PRs.</p>;
   }
@@ -113,6 +136,7 @@ function Body({ unitName, repos, loading, error, onSelectPr, selectedKey, attent
           onSelectPr={onSelectPr}
           selectedKey={selectedKey}
           attention={attention}
+          deltaCursor={deltaCursor}
         />
       ))}
     </div>
@@ -125,12 +149,14 @@ function RepoBlock({
   onSelectPr,
   selectedKey,
   attention,
+  deltaCursor,
 }: {
   repo: RepoPrsWire;
   multiRepo: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
   attention?: AttentionControls;
+  deltaCursor?: string | null;
 }) {
   if (repo.prs.length === 0) return null;
   // billing-dead lives on the REPO, not the PR. Thread it into the R₂
@@ -155,6 +181,9 @@ function RepoBlock({
             onSelectPr={onSelectPr}
             selected={selectedKey === selectedPrKey(repo.repo_path, pr.number)}
             attention={attention}
+            unobserved={
+              deltaCursor !== undefined && isUnobserved(prVocabTimestamp(pr), deltaCursor)
+            }
           />
         ))}
       </ul>
@@ -170,6 +199,7 @@ function PrRow({
   onSelectPr,
   selected,
   attention,
+  unobserved,
 }: {
   pr: PrSummaryWire;
   repoPath: string;
@@ -178,6 +208,7 @@ function PrRow({
   onSelectPr?: (sel: SelectedPr) => void;
   selected: boolean;
   attention?: AttentionControls;
+  unobserved?: boolean;
 }) {
   // Colour-coded status pills (C2) — categorical lifecycle / review / CI
   // state, NOT severity appraisal (see `status-pills.tsx`). The whole row
@@ -206,6 +237,9 @@ function PrRow({
         }`}
       >
         <span>
+          {/* Remote-Δ accent (#822): leading Δ when this row's vocab ts is
+              newer than the close-act cursor. Observed rows render unchanged. */}
+          {unobserved === true && <UnobservedDelta />}
           <span className="font-mono text-foreground">#{Number(pr.number)}</span>{" "}
           <span className="text-foreground">{pr.title}</span>
         </span>

@@ -19,8 +19,10 @@ import { useUnitIssues } from "@/hooks/useUnitIssues";
 import type { IssueInfo, IssueSummaryWire, RepoIssuesWire } from "@/lib/api";
 import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedIssue, selectedIssueKey } from "./r-viewer/RIssueViewer";
+import { issueVocabTimestamp, isUnobserved, unobservedIssueCount } from "./remote-delta";
 import { Section } from "./Section";
 import { ExternalSourceBadge, issueStatusPills, StatusPills } from "./status-pills";
+import { UnobservedDelta } from "./UnobservedDelta";
 
 interface RIssuesSectionProps {
   unitName: string | null;
@@ -37,6 +39,12 @@ interface RIssuesSectionProps {
    *  When present each issue row shows its attention marker; absent (e.g. in
    *  isolation tests) the rows render marker-free. */
   attention?: AttentionControls;
+  /** Remote-Δ effective cursor for this section (#822) — MAX(panel close,
+   *  Issues-section close), threaded from `RPanel`. `null` = no close act
+   *  recorded yet (first run → every row unobserved); `undefined` = no
+   *  freshness wiring at all (e.g. isolation tests), rows render
+   *  accent-free. */
+  deltaCursor?: string | null;
 }
 
 export function RIssuesSection({
@@ -46,9 +54,12 @@ export function RIssuesSection({
   onSelectIssue,
   selectedKey,
   attention,
+  deltaCursor,
 }: RIssuesSectionProps) {
   const { data, loading, error } = useUnitIssues(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + r.issues.length, 0);
+  const unobserved =
+    deltaCursor === undefined ? undefined : unobservedIssueCount(data?.repos ?? null, deltaCursor);
 
   return (
     <Section
@@ -59,6 +70,7 @@ export function RIssuesSection({
       expanded={expanded}
       onToggle={onToggle}
       headerNote={<ExternalSourceBadge />}
+      unobservedCount={unobserved}
     >
       <Body
         unitName={unitName}
@@ -68,6 +80,7 @@ export function RIssuesSection({
         onSelectIssue={onSelectIssue}
         selectedKey={selectedKey ?? null}
         attention={attention}
+        deltaCursor={deltaCursor}
       />
     </Section>
   );
@@ -81,6 +94,7 @@ interface BodyProps {
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
   attention?: AttentionControls;
+  deltaCursor?: string | null;
 }
 
 function Body({
@@ -91,6 +105,7 @@ function Body({
   onSelectIssue,
   selectedKey,
   attention,
+  deltaCursor,
 }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see issues.</p>;
@@ -115,6 +130,7 @@ function Body({
           onSelectIssue={onSelectIssue}
           selectedKey={selectedKey}
           attention={attention}
+          deltaCursor={deltaCursor}
         />
       ))}
     </div>
@@ -127,12 +143,14 @@ function RepoBlock({
   onSelectIssue,
   selectedKey,
   attention,
+  deltaCursor,
 }: {
   repo: RepoIssuesWire;
   multiRepo: boolean;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
   attention?: AttentionControls;
+  deltaCursor?: string | null;
 }) {
   if (repo.issues.length === 0) return null;
   return (
@@ -152,6 +170,9 @@ function RepoBlock({
             onSelectIssue={onSelectIssue}
             selected={selectedKey === selectedIssueKey(repo.repo_path, Number(issue.number))}
             attention={attention}
+            unobserved={
+              deltaCursor !== undefined && isUnobserved(issueVocabTimestamp(issue), deltaCursor)
+            }
           />
         ))}
       </ul>
@@ -166,6 +187,7 @@ function IssueRow({
   onSelectIssue,
   selected,
   attention,
+  unobserved,
 }: {
   issue: IssueSummaryWire;
   repoPath: string;
@@ -173,6 +195,7 @@ function IssueRow({
   onSelectIssue?: (sel: SelectedIssue) => void;
   selected: boolean;
   attention?: AttentionControls;
+  unobserved?: boolean;
 }) {
   // The whole row is a button that opens the issue in the R₂ viewer —
   // there is NO github.com link-out anymore; the issue's full content is
@@ -206,6 +229,9 @@ function IssueRow({
         }`}
       >
         <span>
+          {/* Remote-Δ accent (#822): leading Δ when this row's vocab ts is
+              newer than the close-act cursor. Observed rows render unchanged. */}
+          {unobserved === true && <UnobservedDelta />}
           <span className="font-mono text-foreground">#{Number(issue.number)}</span>{" "}
           <span className="text-foreground">{issue.title}</span>
         </span>
