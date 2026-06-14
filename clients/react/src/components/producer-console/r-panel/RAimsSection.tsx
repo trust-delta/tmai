@@ -1257,7 +1257,12 @@ function Inspector({
         />
       ) : (
         <>
-          <AimBody body={node.body} resolves={(slug) => bySlug.has(slug)} onNavigate={onSelect} />
+          <AimBody
+            body={node.body}
+            variant="rpanel"
+            resolves={(slug) => bySlug.has(slug)}
+            onNavigate={onSelect}
+          />
           <InteriorList marks={node.is} />
           <CrossEdges node={node} />
           <div className="mt-3 flex items-center gap-2">

@@ -1090,6 +1090,7 @@ function Inspector({
 
       <AimBody
         body={node.body}
+        variant="console"
         resolves={(slug) => bySlug.has(slug)}
         onNavigate={onSelectAncestor}
       />
