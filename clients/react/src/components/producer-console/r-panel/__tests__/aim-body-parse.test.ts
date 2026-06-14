@@ -24,18 +24,20 @@ describe("parseAimBody", () => {
     expect(sections[1].content).toContain("[[git-local-fact-source]]");
   });
 
-  it("classifies is / obstacle / history / english headings", () => {
+  it("classifies the canonical IS / ESCALATION / PROCESS / HISTORY / DAG labels", () => {
     const body = [
-      "# is — 前提",
-      "premise",
-      "# 障害",
+      "# IS",
+      "interpretation",
+      "# ESCALATION",
       "blocked on X",
-      "# history",
+      "# PROCESS",
+      "- [未実装] do Z",
+      "# HISTORY",
       "rejected Y",
-      "## Means",
-      "do Z",
+      "# DAG",
+      "- [[other]]",
     ].join("\n");
-    expect(kinds(parseAimBody(body))).toEqual(["is", "obstacle", "history", "means"]);
+    expect(kinds(parseAimBody(body))).toEqual(["is", "obstacle", "means", "history", "dag"]);
   });
 
   it("keeps a lead block before the first heading as a prose section", () => {

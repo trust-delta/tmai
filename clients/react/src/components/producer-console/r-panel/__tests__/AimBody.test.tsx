@@ -39,12 +39,12 @@ describe("AimBody", () => {
       "is",
       "obstacle",
       "means",
-      "dag",
       "history",
+      "dag",
     ]);
     // is / means / dag carry content; obstacle + history are empty slots.
     expect(sections[1].getAttribute("data-empty")).toBe("true"); // obstacle
-    expect(sections[4].getAttribute("data-empty")).toBe("true"); // history
+    expect(sections[3].getAttribute("data-empty")).toBe("true"); // history
     expect(sections[0].getAttribute("data-empty")).toBeNull(); // is
     expect(screen.getByText(/git 行レベル履歴/)).toBeTruthy();
   });
@@ -108,7 +108,7 @@ describe("AimBody", () => {
         onNavigate={noop}
       />,
     );
-    expect(screen.queryByText("障害 — escalation")).toBeNull();
+    expect(screen.queryByText("ESCALATION — 障害")).toBeNull();
     expect(screen.getByText(/just a note/)).toBeTruthy();
   });
 

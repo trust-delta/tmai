@@ -36,16 +36,17 @@ import { PROSE_CLASSES } from "./r-viewer/prose";
 
 export type AimBodyVariant = "rpanel" | "console";
 
-// Canonical reading order: is/前提 (the premises you read first) → 障害 (the
-// 律速 escalation) → 手段 (the plan) → DAG → history (settled, append-only).
-const CANONICAL: readonly AimBodySectionKind[] = ["is", "obstacle", "means", "dag", "history"];
+// Canonical reading order (per `doc/aims/aim-body`): IS (the agent's reading
+// you check first) → ESCALATION (the 律速 blockers) → PROCESS (the plan) →
+// HISTORY (rejected means) → DAG (cross-tree dependencies).
+const CANONICAL: readonly AimBodySectionKind[] = ["is", "obstacle", "means", "history", "dag"];
 
 const SECTION_LABEL: Record<AimBodySectionKind, string> = {
-  is: "is — 前提",
-  obstacle: "障害 — escalation",
-  means: "手段 — means",
-  dag: "DAG — cross-edges",
-  history: "history — 却下手段",
+  is: "IS — 解釈",
+  obstacle: "ESCALATION — 障害",
+  means: "PROCESS — 実装手順",
+  history: "HISTORY — 却下手段",
+  dag: "DAG — 依存",
   prose: "",
 };
 

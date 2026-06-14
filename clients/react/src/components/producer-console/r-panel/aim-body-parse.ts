@@ -4,15 +4,16 @@
 //
 // The rebuilt aim form expresses a node's structured-knowing as `#`-headed
 // markdown. The body is the PRODUCER's domain (authored for write ergonomics);
-// this parser turns that into a shape the inspector renders for the operator:
-//   - is (前提)         — premises / assumptions implementation needs that the
-//                         aim (purpose) alone does not convey. Shown at the TOP.
-//   - 障害 (escalation) — the "Go だけで進めない理由" → Producer→operator escalation
-//   - 手段 (means)      — phase/condition-split implementation units, EACH
-//                         carrying progress (実装済 / 未実装) — means is
-//                         progress-bearing by construction
-//   - history (却下手段) — append-only don't-repeat ledger of rejected means
-//   - DAG (cross-edges) — `[[slug]]` dependencies on other aim nodes
+// this parser turns that into a shape the inspector renders for the operator.
+// The canonical sections (see `doc/aims/aim-body`), in reading order:
+//   - IS         — the agent's INTERPRETATION of the aim: how it read the
+//                  purpose, so the human can confirm it read it right. TOP.
+//   - ESCALATION — the "Go だけで進めない理由" → Producer→operator escalation
+//   - PROCESS    — phase/condition-split implementation steps, EACH carrying
+//                  its own progress (実装済 / 未実装) — process is
+//                  progress-bearing by construction
+//   - HISTORY    — append-only don't-repeat ledger of rejected means
+//   - DAG        — `[[slug]]` dependencies on other aim nodes
 //
 // The form is STILL SETTLING (a running dogfood trial), so this parser is
 // deliberately section-level + tolerant: it classifies by heading keyword and
@@ -34,13 +35,15 @@ export interface AimBodySection {
 // A markdown ATX heading (`#`..`###` + text).
 const HEADING = /^#{1,3}\s+(.+?)\s*$/;
 
-// Classify a heading by keyword (JP + EN variants). `is` is tested first so a
-// "# is — 前提" heading reads as premises rather than falling to prose.
+// Classify a heading by keyword. The aim form's canonical section labels are
+// IS / ESCALATION / PROCESS / HISTORY / DAG (see `doc/aims/aim-body`); JP
+// glosses + a few synonyms are accepted too. `is` is tested first so an "# IS"
+// heading reads as the agent's interpretation rather than falling to prose.
 function classify(heading: string): AimBodySectionKind {
   const h = heading.toLowerCase();
-  if (/前提|premise|assumption|interior|\bis\b/.test(h)) return "is";
-  if (/障害|escalation|obstacle|blocker/.test(h)) return "obstacle";
-  if (/手段|means/.test(h)) return "means";
+  if (/\bis\b|前提|premise|assumption|interpretation|解釈|interior/.test(h)) return "is";
+  if (/escalation|障害|obstacle|blocker/.test(h)) return "obstacle";
+  if (/process|手段|means|実装手順|実装工程/.test(h)) return "means";
   if (/history|却下|履歴|recoil/.test(h)) return "history";
   if (/dag|依存|cross.?edge/.test(h)) return "dag";
   return "prose";
