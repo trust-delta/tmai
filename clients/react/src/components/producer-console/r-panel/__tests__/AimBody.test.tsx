@@ -51,7 +51,7 @@ describe("AimBody", () => {
 
   it("renders 手段 as a progress checklist with a done/todo ratio", () => {
     render(<AimBody body={DRIFT_BODY} variant="rpanel" resolves={all} onNavigate={noop} />);
-    expect(screen.getByTestId("aim-means-progress").textContent).toContain("実装 1 / 未実装 1");
+    expect(screen.getByTestId("aim-means-progress").textContent).toContain("done 1 / todo 1");
     const items = screen.getAllByTestId("aim-means-item");
     expect(items.map((i) => i.getAttribute("data-status"))).toEqual(["todo", "done"]);
     expect(screen.getByText(/within-node/)).toBeTruthy();
@@ -69,7 +69,7 @@ describe("AimBody", () => {
     );
     // No marked items → no ratio badge, but the prose 未実装 surfaces as a chip.
     expect(screen.queryByTestId("aim-means-progress")).toBeNull();
-    expect(screen.getByText("◌ 未実装")).toBeTruthy();
+    expect(screen.getByText("◌ todo")).toBeTruthy();
   });
 
   it("renders a resolved [[slug]] cross-edge as a nav button calling onNavigate", () => {
@@ -116,7 +116,7 @@ describe("AimBody", () => {
     render(<AimBody body={DRIFT_BODY} variant="console" resolves={all} onNavigate={noop} />);
     const sections = screen.getAllByTestId("aim-body-section");
     expect(sections.some((s) => s.getAttribute("data-kind") === "means")).toBe(true);
-    expect(screen.getByTestId("aim-means-progress").textContent).toContain("実装 1 / 未実装 1");
+    expect(screen.getByTestId("aim-means-progress").textContent).toContain("done 1 / todo 1");
   });
 
   it("renders nothing for an empty / whitespace-only body", () => {

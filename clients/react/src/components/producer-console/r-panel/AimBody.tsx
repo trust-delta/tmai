@@ -299,7 +299,7 @@ function ProgressBadge({
   if (variant === "console") {
     return (
       <span className="ac-prog" data-testid="aim-means-progress">
-        実装 {done} / 未実装 {todo}
+        done {done} / todo {todo}
         <span className="ac-prog-bar" aria-hidden="true">
           <span className="done" style={{ width: `${donePct}%` }} />
         </span>
@@ -311,7 +311,7 @@ function ProgressBadge({
       data-testid="aim-means-progress"
       className="flex items-center gap-1.5 font-mono text-[9px] normal-case text-muted-foreground"
     >
-      実装 {done} / 未実装 {todo}
+      done {done} / todo {todo}
       <span className="flex h-1 w-10 overflow-hidden rounded-full border border-hairline">
         <span className="bg-success" style={{ width: `${donePct}%` }} />
         <span className="bg-warning/70" style={{ width: `${100 - donePct}%` }} />
@@ -320,17 +320,17 @@ function ProgressBadge({
   );
 }
 
-// A not-yet-converted means body: surface whichever of 実装済/未実装 the prose
-// mentions as a section-level chip. Best-effort — the chips are facts the
-// author wrote, never a re-judgement.
+// A not-yet-converted means body: surface whichever status the prose mentions
+// (done / todo, JP 実装済 / 未実装 too) as a section-level chip. Best-effort —
+// the chips are facts the author wrote, never a re-judgement.
 function FallbackStatusChips({ content, variant }: { content: string; variant: AimBodyVariant }) {
-  const statuses: ("実装済" | "未実装")[] = [];
-  if (content.includes("実装済")) statuses.push("実装済");
-  if (content.includes("未実装")) statuses.push("未実装");
+  const statuses: ("done" | "todo")[] = [];
+  if (/実装済|done/i.test(content)) statuses.push("done");
+  if (/未実装|todo/i.test(content)) statuses.push("todo");
   return (
     <>
       {statuses.map((s) => {
-        const done = s === "実装済";
+        const done = s === "done";
         const glyph = done ? "✓" : "◌";
         if (variant === "console") {
           return <span key={s} className={`ac-tg ${done ? "c" : "k"}`}>{`${glyph} ${s}`}</span>;
