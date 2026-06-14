@@ -1860,6 +1860,132 @@
   margin-top: 12px;
 }
 
+/* ── aim node body — structured-knowing render (#824) ─────────────────────
+   The body's `#`-headed sections (障害 / 手段 / DAG / history) rendered in the
+   inspector's OWN idiom, NOT generic `prose`: section headers reuse `.ac-isec`,
+   the markdown subtree is toned to the dev-tool palette, `[[slug]]` cross-edges
+   are cyan link chips. Means-progress (実装済/未実装) rides as an `.ac-tg` chip
+   beside the section header. */
+.aim-console .ac-body-sections {
+  margin-top: 6px;
+}
+.aim-console .ac-body-sec {
+  margin-bottom: 9px;
+}
+/* the `.ac-isec` header carries an optional trailing status chip */
+.aim-console .ac-body-sec .ac-isec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.aim-console .ac-body {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+.aim-console .ac-body p {
+  margin: 3px 0;
+}
+.aim-console .ac-body ul,
+.aim-console .ac-body ol {
+  margin: 3px 0;
+  padding-left: 16px;
+}
+.aim-console .ac-body li {
+  margin: 2px 0;
+}
+.aim-console .ac-body h1,
+.aim-console .ac-body h2,
+.aim-console .ac-body h3 {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--faint);
+  margin: 6px 0 3px;
+}
+.aim-console .ac-body strong {
+  color: #dfe9e6;
+}
+.aim-console .ac-body code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--cyan);
+}
+/* `[[slug]]` cross-edge → an in-tree nav chip (resolved) or dim text (not). */
+.aim-console .ac-bodylink {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--cyan);
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--cyan-d);
+  padding: 0;
+  cursor: pointer;
+}
+.aim-console .ac-bodylink:hover {
+  border-bottom-style: solid;
+}
+.aim-console .ac-bodylink.dim {
+  color: var(--faint);
+  border-bottom: none;
+  cursor: default;
+}
+/* 手段 (means) — a progress-bearing checklist. Each item carries a status
+   glyph (✓ 実装済 / ◌ 未実装 / · plain); the section header carries a done/todo
+   ratio + a thin bar. done = green (calm), todo = ochre (owed, not alarming). */
+.aim-console .ac-means-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+.aim-console .ac-means-item {
+  margin: 3px 0;
+}
+.aim-console .ac-means-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.aim-console .ac-means-g {
+  font-family: var(--mono);
+  font-size: 11px;
+  flex: none;
+  color: var(--faint);
+}
+.aim-console .ac-means-g.done {
+  color: var(--green);
+}
+.aim-console .ac-means-g.todo {
+  color: var(--ochre);
+}
+.aim-console .ac-means-detail {
+  margin: 1px 0 0 16px;
+  color: var(--faint);
+}
+.aim-console .ac-prog {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+}
+.aim-console .ac-prog-bar {
+  display: inline-block;
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ochre);
+  overflow: hidden;
+}
+.aim-console .ac-prog-bar .done {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
 /* ── resignation inventory (issue #811) ───────────────────────────────────
    Facts beside the done act — what this done is satisfied with vs what it
    parks. Categorical tones only (the confirmed/claimed tag tokens above plus

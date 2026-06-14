@@ -11,16 +11,23 @@
 // `isOwed` / `frontierRows` / `ledgerCounts` — not 2D layout (the prototype's
 // tidy-tree geometry retired with the canvas it served).
 //
-// Mark-only (design pin #1 / `doc/aims/README.md`): the interior `is[]` marks
-// (`confirmed` / `claimed`) are surfaced exactly as the author wrote them. This
-// module never re-judges, re-orders, or de-drifts them — it only counts and
-// filters on the kind the wire already carries.
+// Progress-driven (the formalised body model, `doc/aims/aim-body`): the owed
+// signal comes from the body's `# PROCESS` section — each implementation unit
+// carries a per-unit `[done]` / `[todo]` marker. `meansProgress` parses that
+// (client-side, via `aim-body-parse`) into done/todo counts; the ledger, the
+// Frontier worklist, the tones, and the rollups all derive owed-ness from
+// `todo` (an unfinished unit is owed). This SUPERSEDES the retired `is[]`
+// claimed/confirmed marks: the engine still ships `is[]` for any legacy node
+// that still carries marks, but the new bodies express progress in PROCESS, so
+// this module reads progress, not marks. We never re-judge — `[done]`/`[todo]`
+// are facts the author wrote.
 
 import type { AimState } from "@/types/generated/AimState";
 import type { AimsResponse } from "@/types/generated/AimsResponse";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+import { parseAimBody, parseMeans } from "./aim-body-parse";
 
 // ── Glyphs / labels ───────────────────────────────────────────────────
 //
@@ -66,24 +73,39 @@ export function isDrifted(n: AimWire): boolean {
   return n.drift !== null && n.state !== "dead";
 }
 
-// Has at least one `claimed` interior mark (unverified — an operator confirm is
-// owed). Mark-only: we read the kind the author wrote, never re-judge it.
-export function hasClaimed(n: AimWire): boolean {
-  return n.is.some((m) => m.kind === "claimed");
+// A node's PROCESS progress — the per-unit done / todo counts parsed from its
+// body's `# PROCESS` (means) section. Client-side parse (the body grammar is
+// still settling, so it is not frozen into the wire); a node with no PROCESS
+// section is {0, 0}. This is the owed-signal source that replaced `is[]`.
+export interface MeansProgress {
+  done: number;
+  todo: number;
 }
 
-// Has at least one `confirmed` interior mark (external ground-truth checked —
-// real, attention-zero).
-export function hasConfirmed(n: AimWire): boolean {
-  return n.is.some((m) => m.kind === "confirmed");
+export function meansProgress(n: AimWire): MeansProgress {
+  const section = parseAimBody(n.body).find((s) => s.kind === "means");
+  if (section === undefined) return { done: 0, todo: 0 };
+  const m = parseMeans(section.content);
+  return { done: m.done, todo: m.todo };
 }
 
-// Owed = an OPEN node that drifted or carries a `claimed` mark — the Frontier
-// worklist eligibility. `done` / `dead` are never "owed": a `done` node's drift
-// is surfaced distinctly but NOT folded into the worklist (pin #2: "not folded
-// into plain owed").
+// Has at least one unfinished (`[todo]`) PROCESS unit — an implementation step
+// still owed. Progress-driven: we read the marker the author wrote.
+export function hasTodo(n: AimWire): boolean {
+  return meansProgress(n).todo > 0;
+}
+
+// Has at least one finished (`[done]`) PROCESS unit.
+export function hasDone(n: AimWire): boolean {
+  return meansProgress(n).done > 0;
+}
+
+// Owed = an OPEN node that drifted or carries a `[todo]` PROCESS unit — the
+// Frontier worklist eligibility. `done` / `dead` are never "owed": a `done`
+// node's drift is surfaced distinctly but NOT folded into the worklist (pin #2:
+// "not folded into plain owed").
 export function isOwed(n: AimWire): boolean {
-  return n.state === "open" && (isDrifted(n) || hasClaimed(n));
+  return n.state === "open" && (isDrifted(n) || hasTodo(n));
 }
 
 // Pin #2: a `done` node that is ALSO drifted — reached against an OLD ought,
@@ -103,8 +125,8 @@ export type AimTone =
   | "done"
   | "dead"
   | "drift" // open + drifted
-  | "claimed" // open + a claimed mark
-  | "confirmed" // open + a confirmed mark (calm)
+  | "todo" // open + an unfinished PROCESS unit (owed)
+  | "progress" // open + a finished PROCESS unit, none owed (calm)
   | "root"
   | "neutral";
 
@@ -112,8 +134,8 @@ export function aimTone(n: AimWire): AimTone {
   if (n.state === "dead") return "dead";
   if (n.state === "done") return n.drift !== null ? "done-drift" : "done";
   if (isDrifted(n)) return "drift";
-  if (hasClaimed(n)) return "claimed";
-  if (hasConfirmed(n)) return "confirmed";
+  if (hasTodo(n)) return "todo";
+  if (hasDone(n)) return "progress";
   if (n.parent === null) return "root";
   return "neutral";
 }
@@ -232,13 +254,13 @@ export function breadcrumbText(slug: string, bySlug: ReadonlyMap<string, AimWire
 
 // ── Frontier worklist ─────────────────────────────────────────────────
 
-// Rank for the owed worklist: drift before claimed (the ancestor-moved verdict
-// outranks an unverified self-claim), then stable by slug.
+// Rank for the owed worklist: drift before todo (the ancestor-moved verdict
+// outranks an unfinished unit), then stable by slug.
 function owedRank(n: AimWire): number {
   return isDrifted(n) ? 0 : 1;
 }
 
-// The owed worklist for a node set — drift-first, then claimed, stable by slug.
+// The owed worklist for a node set — drift-first, then todo, stable by slug.
 // done+drift is NOT here (it is surfaced separately by `doneDriftedRows`).
 export function frontierRows(nodes: readonly AimWire[]): AimWire[] {
   return nodes
@@ -260,17 +282,18 @@ export interface RollupStats {
   count: number;
   /** Of those, how many are drifted-and-owed (open + drifted). */
   drift: number;
-  /** Of those, how many are claimed-and-owed (open + claimed, not drifted). */
-  claimed: number;
+  /** Of those, how many are todo-owed (open + an unfinished PROCESS unit, not
+   *  drifted). NODE count, not unit count — mirrors the row glyph. */
+  todo: number;
 }
 
 // Descendant rollup for a collapsed branch — total descendants + the owed
 // breakdown, so a folded branch can show `⚠N ◌M` without expanding. drift and
-// claimed are disjoint (drift wins) to mirror the row glyph.
+// todo are disjoint (drift wins) to mirror the row glyph.
 export function subtreeStats(slug: string, childrenOf: Map<string, AimWire[]>): RollupStats {
   let count = 0;
   let drift = 0;
-  let claimed = 0;
+  let todo = 0;
   const seen = new Set<string>();
   const stack = [...(childrenOf.get(slug) ?? [])];
   while (stack.length > 0) {
@@ -280,52 +303,51 @@ export function subtreeStats(slug: string, childrenOf: Map<string, AimWire[]>): 
     count++;
     if (n.state === "open") {
       if (isDrifted(n)) drift++;
-      else if (hasClaimed(n)) claimed++;
+      else if (hasTodo(n)) todo++;
     }
     for (const c of childrenOf.get(n.slug) ?? []) stack.push(c);
   }
-  return { count, drift, claimed };
+  return { count, drift, todo };
 }
 
 // Repo-wide rollup (every node in the repo) — drives the Tree repo-header
 // badge and the Frontier repo-section badge.
 export function repoStats(aims: readonly AimWire[]): RollupStats {
   let drift = 0;
-  let claimed = 0;
+  let todo = 0;
   for (const n of aims) {
     if (n.state !== "open") continue;
     if (isDrifted(n)) drift++;
-    else if (hasClaimed(n)) claimed++;
+    else if (hasTodo(n)) todo++;
   }
-  return { count: aims.length, drift, claimed };
+  return { count: aims.length, drift, todo };
 }
 
 export interface LedgerCounts {
   /** Drifted nodes across the forest (engine-honest: includes done+drift,
    *  excludes abandoned `dead` — see `isDrifted`). */
   drift: number;
-  /** Total `claimed` interior marks across the forest. */
-  claimed: number;
-  /** Total `confirmed` interior marks across the forest. */
-  confirmed: number;
+  /** Total unfinished (`[todo]`) PROCESS units across the forest. */
+  todo: number;
+  /** Total finished (`[done]`) PROCESS units across the forest. */
+  done: number;
 }
 
-// The ledger strip's three counts, straight off the forest's `drift` + `is[]`.
-// drift counts NODES (a node drifts); claimed/confirmed count MARKS (a node can
-// carry several). Engine-honest per pin #2: a done-and-drifted node still
+// The ledger strip's three counts, from the forest's `drift` + body PROCESS.
+// drift counts NODES (a node drifts); todo/done count UNITS (a node's PROCESS
+// can carry several). Engine-honest per pin #2: a done-and-drifted node still
 // counts as drift — it is surfaced, not suppressed.
 export function ledgerCounts(nodes: readonly AimWire[]): LedgerCounts {
   let drift = 0;
-  let claimed = 0;
-  let confirmed = 0;
+  let todo = 0;
+  let done = 0;
   for (const n of nodes) {
     if (n.drift !== null && n.state !== "dead") drift++;
-    for (const m of n.is) {
-      if (m.kind === "confirmed") confirmed++;
-      else if (m.kind === "claimed") claimed++;
-    }
+    const p = meansProgress(n);
+    todo += p.todo;
+    done += p.done;
   }
-  return { drift, claimed, confirmed };
+  return { drift, todo, done };
 }
 
 // ── Overview ruler ────────────────────────────────────────────────────
@@ -333,8 +355,8 @@ export function ledgerCounts(nodes: readonly AimWire[]): LedgerCounts {
 export interface RulerTick {
   slug: string;
   repoLabel: string;
-  /** `drift` / `claimed` light the tick (owed); `null` is calm forest texture. */
-  owed: "drift" | "claimed" | null;
+  /** `drift` / `todo` light the tick (owed); `null` is calm forest texture. */
+  owed: "drift" | "todo" | null;
   /** Fractional position 0..1 down the whole-forest DFS order. */
   pos: number;
   /** True at the first tick of a repo after the first — a repo boundary line. */
@@ -342,11 +364,11 @@ export interface RulerTick {
 }
 
 // The overview-ruler ticks: a repo-grouped DFS over every forest, each node a
-// tick, owed ones (drift / claimed) lit. The minimap proves "you are not
-// looking at the whole tree" while keeping the whole forest's owed density in
+// tick, owed ones (drift / todo) lit. The minimap proves "you are not looking
+// at the whole tree" while keeping the whole forest's owed density in
 // peripheral view; clicking a lit tick reveals the node in Tree mode.
 export function rulerOrder(repos: readonly RepoAimsWire[]): RulerTick[] {
-  const flat: { slug: string; repoLabel: string; owed: "drift" | "claimed" | null }[] = [];
+  const flat: { slug: string; repoLabel: string; owed: "drift" | "todo" | null }[] = [];
   for (const repo of repos) {
     const childrenOf = buildChildren(repo.aims);
     const bySlug = bySlugMap(repo.aims);
@@ -356,11 +378,7 @@ export function rulerOrder(repos: readonly RepoAimsWire[]): RulerTick[] {
       seen.add(slug);
       const n = bySlug.get(slug);
       if (!n) return;
-      const owed: "drift" | "claimed" | null = isDrifted(n)
-        ? "drift"
-        : isOwed(n)
-          ? "claimed"
-          : null;
+      const owed: "drift" | "todo" | null = isDrifted(n) ? "drift" : isOwed(n) ? "todo" : null;
       flat.push({ slug, repoLabel: repo.repo_label, owed });
       for (const c of childrenOf.get(slug) ?? []) visit(c.slug);
     };

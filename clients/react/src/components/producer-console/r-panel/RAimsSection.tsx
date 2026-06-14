@@ -46,6 +46,7 @@ import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+import { AimBody } from "./AimBody";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -116,8 +117,8 @@ const TONE_GLYPH: Record<AimTone, string> = {
   done: "✓",
   dead: "⊘",
   drift: "⚠",
-  claimed: "◌",
-  confirmed: "○",
+  todo: "◌",
+  progress: "○",
   root: "○",
   neutral: "○",
 };
@@ -127,8 +128,8 @@ const TONE_GLYPH_CLASS: Record<AimTone, string> = {
   done: "text-success",
   dead: "text-subtle-foreground",
   drift: "text-warning",
-  claimed: "text-warning",
-  confirmed: "text-subtle-foreground",
+  todo: "text-warning",
+  progress: "text-subtle-foreground",
   root: "text-info",
   neutral: "text-subtle-foreground",
 };
@@ -141,8 +142,8 @@ const TONE_GUTTER: Record<AimTone, string> = {
   done: "bg-success/40",
   dead: "bg-subtle-foreground/40",
   drift: "bg-warning",
-  claimed: "bg-warning/55",
-  confirmed: "bg-success/30",
+  todo: "bg-warning/55",
+  progress: "bg-success/30",
   root: "bg-info/60",
   neutral: "bg-hairline-strong",
 };
@@ -165,8 +166,8 @@ const TONE_OUGHT_CLASS: Record<AimTone, string> = {
   done: "text-subtle-foreground",
   dead: "text-subtle-foreground line-through",
   drift: "text-warning/90",
-  claimed: "text-foreground",
-  confirmed: "text-muted-foreground",
+  todo: "text-foreground",
+  progress: "text-muted-foreground",
   root: "text-foreground",
   neutral: "text-foreground",
 };
@@ -244,7 +245,7 @@ function AimsEntry({
   const [open, setOpen] = useState(false);
   const repoCount = useMemo(() => repoForests(data).length, [data]);
   const ledger = useMemo(() => ledgerCounts(nodes), [nodes]);
-  const owed = ledger.drift + ledger.claimed;
+  const owed = ledger.drift + ledger.todo;
 
   return (
     <div className="space-y-2">
@@ -277,10 +278,10 @@ function AimsEntry({
               {ledger.drift} drift
             </span>
           )}
-          {ledger.claimed > 0 && (
+          {ledger.todo > 0 && (
             <span className="flex items-center gap-1 text-warning/80">
               <span aria-hidden="true">◌</span>
-              {ledger.claimed} claimed
+              {ledger.todo} todo
             </span>
           )}
         </div>
@@ -530,10 +531,10 @@ function resolveSelection(slug: string | null, repos: readonly RepoAimsWire[]): 
 // ── Ledger strip ──────────────────────────────────────────────────────
 
 function Ledger({ counts }: { counts: LedgerCounts }) {
-  const owed = counts.drift + counts.claimed;
-  const total = owed + counts.confirmed;
+  const owed = counts.drift + counts.todo;
+  const total = owed + counts.done;
   const owedPct = total === 0 ? 0 : Math.round((100 * owed) / total);
-  const confirmedPct = total === 0 ? 0 : 100 - owedPct;
+  const donePct = total === 0 ? 0 : 100 - owedPct;
 
   return (
     <div
@@ -546,15 +547,15 @@ function Ledger({ counts }: { counts: LedgerCounts }) {
       </span>
       <span className="flex items-center gap-1.5 font-mono text-[11px] text-warning/80">
         <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] border border-warning/80" />
-        <b className="font-semibold">{counts.claimed}</b> claimed
+        <b className="font-semibold">{counts.todo}</b> todo
       </span>
       <span className="flex items-center gap-1.5 font-mono text-[11px] text-subtle-foreground">
         <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-success/70" />
-        <b className="font-semibold text-muted-foreground">{counts.confirmed}</b> confirmed
+        <b className="font-semibold text-muted-foreground">{counts.done}</b> done
       </span>
       <div className="flex h-1.5 flex-1 overflow-hidden rounded-full border border-hairline">
         <div className="bg-warning" style={{ width: `${owedPct}%` }} />
-        <div className="bg-success/40" style={{ width: `${confirmedPct}%` }} />
+        <div className="bg-success/40" style={{ width: `${donePct}%` }} />
       </div>
     </div>
   );
@@ -668,10 +669,10 @@ function FrontierList({
     <div>
       {sections.map(({ repo, bySlug, owed, doneDrift }) => {
         const driftN = owed.filter((n) => aimTone(n) === "drift").length;
-        const claimedN = owed.length - driftN;
+        const todoN = owed.length - driftN;
         return (
           <div key={repo.repo_root}>
-            <RepoBanner repo={repo} drift={driftN} claimed={claimedN} />
+            <RepoBanner repo={repo} drift={driftN} todo={todoN} />
             {owed.map((n) => (
               <AimRow
                 key={n.slug}
@@ -708,15 +709,7 @@ function FrontierList({
 
 // A non-collapsible repo banner used in Frontier sections (the repo is context,
 // not a toggle, here). Primary repo gets the cyan/info accent.
-function RepoBanner({
-  repo,
-  drift,
-  claimed,
-}: {
-  repo: RepoAimsWire;
-  drift: number;
-  claimed: number;
-}) {
+function RepoBanner({ repo, drift, todo }: { repo: RepoAimsWire; drift: number; todo: number }) {
   return (
     <div
       className={`flex items-center gap-2 border-y border-hairline bg-surface/40 px-3 py-1 ${
@@ -732,7 +725,7 @@ function RepoBanner({
       </span>
       <span className="ml-auto font-mono text-[10px]">
         {drift > 0 && <span className="text-warning">⚠{drift} </span>}
-        {claimed > 0 && <span className="text-warning/80">◌{claimed}</span>}
+        {todo > 0 && <span className="text-warning/80">◌{todo}</span>}
       </span>
     </div>
   );
@@ -870,7 +863,7 @@ function RepoHead({
         <span className="font-mono text-[10px] text-subtle-foreground">
           {stats.count}
           {stats.drift > 0 && <span className="text-warning"> ⚠{stats.drift}</span>}
-          {stats.claimed > 0 && <span className="text-warning/80"> ◌{stats.claimed}</span>}
+          {stats.todo > 0 && <span className="text-warning/80"> ◌{stats.todo}</span>}
         </span>
       </button>
       <button
@@ -1069,7 +1062,7 @@ function AimRow({
           >
             {rollup.count}
             {rollup.drift > 0 && <span className="text-warning"> ⚠{rollup.drift}</span>}
-            {rollup.claimed > 0 && <span className="text-warning/80"> ◌{rollup.claimed}</span>}
+            {rollup.todo > 0 && <span className="text-warning/80"> ◌{rollup.todo}</span>}
           </span>
         )}
         <InteriorDots marks={node.is} />
@@ -1155,7 +1148,7 @@ function OverviewRuler({
             data-slug={t.slug}
             data-owed={t.owed}
             onClick={() => onReveal(t.slug)}
-            title={`${t.owed === "drift" ? "⚠ drift" : "◌ claimed"} · ${t.repoLabel} · ${t.slug}`}
+            title={`${t.owed === "drift" ? "⚠ drift" : "◌ todo"} · ${t.repoLabel} · ${t.slug}`}
             aria-label={`Reveal ${t.slug} (${t.owed})`}
             className={`absolute right-[2px] left-[2px] rounded-[1px] ${lit} ${
               t.owed === "drift" ? "h-[3px]" : "h-[2px]"
@@ -1256,7 +1249,16 @@ function Inspector({
         />
       ) : (
         <>
-          <InteriorList marks={node.is} />
+          <AimBody
+            body={node.body}
+            variant="rpanel"
+            resolves={(slug) => bySlug.has(slug)}
+            onNavigate={onSelect}
+          />
+          {/* Legacy interior marks — shown only for nodes that still carry
+              them; the structured body's `is/前提` section supersedes the empty
+              "pure ought" state for new-form nodes (marks machinery untouched). */}
+          {node.is.length > 0 && <InteriorList marks={node.is} />}
           <CrossEdges node={node} />
           <div className="mt-3 flex items-center gap-2">
             <button

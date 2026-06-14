@@ -45,6 +45,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AimBody } from "@/components/producer-console/r-panel/AimBody";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -94,8 +95,8 @@ const TONE_ROW_CLASS: Record<AimTone, string> = {
   done: "done",
   dead: "dead",
   drift: "dr",
-  claimed: "cl",
-  confirmed: "cf",
+  todo: "cl",
+  progress: "cf",
   root: "rt",
   neutral: "ne",
 };
@@ -431,8 +432,8 @@ function depthOf(slug: string, bySlug: ReadonlyMap<string, AimWire>): number {
 // ── ledger strip ──────────────────────────────────────────────────────
 
 function Ledger({ counts, onOwedClick }: { counts: LedgerCounts; onOwedClick: () => void }) {
-  const owed = counts.drift + counts.claimed;
-  const total = owed + counts.confirmed || 1;
+  const owed = counts.drift + counts.todo;
+  const total = owed + counts.done || 1;
   return (
     <div className="ac-ledger" data-testid="aim-ledger">
       <button type="button" className="ac-lg dr" onClick={onOwedClick}>
@@ -441,15 +442,15 @@ function Ledger({ counts, onOwedClick }: { counts: LedgerCounts; onOwedClick: ()
       </button>
       <button type="button" className="ac-lg cl" onClick={onOwedClick}>
         <span className="sw" aria-hidden="true" />
-        <b>{counts.claimed}</b> claimed
+        <b>{counts.todo}</b> todo
       </button>
       <span className="ac-lg cf">
         <span className="sw" aria-hidden="true" />
-        <b>{counts.confirmed}</b> confirmed
+        <b>{counts.done}</b> done
       </span>
       <span className="ac-lbar" aria-hidden="true">
         <span className="o" style={{ width: `${(100 * owed) / total}%` }} />
-        <span className="c" style={{ width: `${(100 * counts.confirmed) / total}%` }} />
+        <span className="c" style={{ width: `${(100 * counts.done) / total}%` }} />
       </span>
     </div>
   );
@@ -493,10 +494,10 @@ function FrontierList({
     <>
       {sections.map(({ repo, bySlug, owed, doneDrift }) => {
         const driftN = owed.filter((n) => aimTone(n) === "drift").length;
-        const claimedN = owed.length - driftN;
+        const todoN = owed.length - driftN;
         return (
           <div key={repo.repo_root}>
-            <RepoBanner repo={repo} drift={driftN} claimed={claimedN} />
+            <RepoBanner repo={repo} drift={driftN} todo={todoN} />
             {owed.map((n) => (
               <AimRow
                 key={n.slug}
@@ -533,21 +534,13 @@ function FrontierList({
 
 // A non-collapsible repo banner used in Frontier sections (the repo is context,
 // not a toggle, here). Primary repo gets the cyan accent.
-function RepoBanner({
-  repo,
-  drift,
-  claimed,
-}: {
-  repo: RepoAimsWire;
-  drift: number;
-  claimed: number;
-}) {
+function RepoBanner({ repo, drift, todo }: { repo: RepoAimsWire; drift: number; todo: number }) {
   return (
     <div className={cn("ac-repohead", "frontier", repo.primary && "pri")}>
       <span className="ac-rh-name">{repo.repo_label}</span>
       <span className="ac-rh-stat">
         {drift > 0 && <span className="w">⚠{drift} </span>}
-        {claimed > 0 && <span className="k">◌{claimed}</span>}
+        {todo > 0 && <span className="k">◌{todo}</span>}
       </span>
     </div>
   );
@@ -673,7 +666,7 @@ function RepoHead({
         <span className="ac-rh-stat">
           {stats.count}
           {stats.drift > 0 && <span className="w"> ⚠{stats.drift}</span>}
-          {stats.claimed > 0 && <span className="k"> ◌{stats.claimed}</span>}
+          {stats.todo > 0 && <span className="k"> ◌{stats.todo}</span>}
         </span>
       </button>
       <button
@@ -825,7 +818,7 @@ function AimRow({
           <span className="ac-roll" data-testid="aim-rollup">
             {rollup.count}
             {rollup.drift > 0 && <span className="w"> ⚠{rollup.drift}</span>}
-            {rollup.claimed > 0 && <span className="k"> ◌{rollup.claimed}</span>}
+            {rollup.todo > 0 && <span className="k"> ◌{rollup.todo}</span>}
           </span>
         )}
         <InteriorDots marks={node.is} />
@@ -884,7 +877,7 @@ function ToneGlyph({ tone }: { tone: AimTone }) {
           ⚠
         </span>
       );
-    case "claimed":
+    case "todo":
       return (
         <span className="ac-gly cl" aria-hidden="true">
           ◌
@@ -978,7 +971,7 @@ function OverviewRuler({
             data-slug={t.slug}
             data-owed={t.owed}
             onClick={() => onReveal(t.slug)}
-            title={`${t.owed === "drift" ? "⚠ drift" : "◌ claimed"} · ${t.repoLabel} · ${t.slug}`}
+            title={`${t.owed === "drift" ? "⚠ drift" : "◌ todo"} · ${t.repoLabel} · ${t.slug}`}
             aria-label={`Reveal ${t.slug} (${t.owed})`}
             className={cn("ac-tick", t.owed === "drift" ? "dr" : "cl")}
             style={{ top }}
@@ -1087,12 +1080,20 @@ function Inspector({
         )}
       </div>
 
-      <div className="ac-iis">
-        <div className="ac-isec">interior — is</div>
-        {node.is.length === 0 ? (
-          <div className="ac-il dim">— 純粋な ought —</div>
-        ) : (
-          node.is.map((m) => (
+      <AimBody
+        body={node.body}
+        variant="console"
+        resolves={(slug) => bySlug.has(slug)}
+        onNavigate={onSelectAncestor}
+      />
+
+      {/* Legacy interior marks — shown only for nodes that still carry them;
+          the structured body's `is/前提` section supersedes the empty "pure
+          ought" state for new-form nodes (marks machinery untouched). */}
+      {node.is.length > 0 && (
+        <div className="ac-iis">
+          <div className="ac-isec">interior — is</div>
+          {node.is.map((m) => (
             <div
               className="ac-il"
               key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
@@ -1120,9 +1121,9 @@ function Inspector({
                 )}
               </span>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Resignation inventory (#811) — done is reversible attention-parking,
           so on an already-done node the parked objects stay visible, quietly.

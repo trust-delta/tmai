@@ -63,6 +63,15 @@ const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire =
   untracked: false,
   ...overrides,
 });
+// A body with a `# PROCESS` section carrying todo/done units — the owed-signal
+// source (the panel reads progress, not the legacy `is[]` marks).
+const procBody = ({ todo = 0, done = 0 }: { todo?: number; done?: number } = {}): string => {
+  const items = [
+    ...Array.from({ length: todo }, (_, i) => `- [todo] todo ${i}`),
+    ...Array.from({ length: done }, (_, i) => `- [done] done ${i}`),
+  ];
+  return items.length === 0 ? "" : `# PROCESS\n${items.join("\n")}`;
+};
 
 function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
   return {
@@ -92,7 +101,12 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 //   tmai
 //     inverted-ui (root, open, claimed)                       → owed (claimed)
 const CORE: AimWire[] = [
-  aimStub({ slug: "amplify-human-judgment", aim: "amplify judgment", is: [claimed("進行中")] }),
+  aimStub({
+    slug: "amplify-human-judgment",
+    aim: "amplify judgment",
+    is: [claimed("進行中")],
+    body: procBody({ todo: 1 }),
+  }),
   aimStub({
     slug: "attention-per-artifact",
     aim: "per-artifact attention",
@@ -103,6 +117,7 @@ const CORE: AimWire[] = [
       claimed("ancestor moved — re-confirm"),
       pruned("CLI-flag route", "wrong premise — judgment lives in records"),
     ],
+    body: procBody({ todo: 1, done: 1 }),
   }),
   aimStub({
     slug: "attention-backend",
@@ -110,11 +125,13 @@ const CORE: AimWire[] = [
     parent: "attention-per-artifact",
     state: "done",
     is: [confirmed("wired", "PR#500")],
+    body: procBody({ done: 1 }),
   }),
   aimStub({
     slug: "aim-system",
     aim: "records as structure",
     is: [confirmed("graduated", "PR#501")],
+    body: procBody({ done: 1 }),
   }),
   aimStub({ slug: "aim-honesty", aim: "confirmed ⊥ claimed", parent: "aim-system", state: "dead" }),
   aimStub({
@@ -126,7 +143,12 @@ const CORE: AimWire[] = [
   }),
 ];
 const UI: AimWire[] = [
-  aimStub({ slug: "inverted-ui", aim: "root to conversation", is: [claimed("frontier")] }),
+  aimStub({
+    slug: "inverted-ui",
+    aim: "root to conversation",
+    is: [claimed("frontier")],
+    body: procBody({ todo: 1 }),
+  }),
 ];
 
 function responseStub(
@@ -255,12 +277,11 @@ describe("RAimsSection — panel shell", () => {
     await openPanel();
     const ledger = screen.getByTestId("aim-ledger");
     // drift=2 (attention-per-artifact open + review-attention-budget done; dead
-    // excluded), claimed marks=3, confirmed marks=3. The pruned mark on
-    // attention-per-artifact lands in NO bucket (#814) — counts unchanged.
+    // excluded), todo units=3 (amplify + attention-per-artifact + inverted-ui),
+    // done units=3 (attention-per-artifact + attention-backend + aim-system).
     expect(ledger.textContent).toMatch(/2\s*drift/);
-    expect(ledger.textContent).toMatch(/3\s*claimed/);
-    expect(ledger.textContent).toMatch(/3\s*confirmed/);
-    expect(ledger.textContent).not.toContain("pruned");
+    expect(ledger.textContent).toMatch(/3\s*todo/);
+    expect(ledger.textContent).toMatch(/3\s*done/);
   });
 });
 
@@ -270,13 +291,13 @@ describe("RAimsSection — Frontier mode (owed worklist)", () => {
     renderPanel();
     await openPanel();
 
-    // owed in core: drift (attention-per-artifact) then claimed (amplify…).
+    // owed in core: drift (attention-per-artifact) then todo (amplify…).
     expect(rowEl("attention-per-artifact").dataset.tone).toBe("drift");
-    expect(rowEl("amplify-human-judgment").dataset.tone).toBe("claimed");
-    // A calm (confirmed-only) node is NOT in the worklist.
+    expect(rowEl("amplify-human-judgment").dataset.tone).toBe("todo");
+    // A calm (done-only) node is NOT in the worklist.
     expect(document.querySelector('[data-testid="aim-row"][data-slug="aim-system"]')).toBeNull();
     // owed in the non-primary repo too.
-    expect(rowEl("inverted-ui").dataset.tone).toBe("claimed");
+    expect(rowEl("inverted-ui").dataset.tone).toBe("todo");
   });
 
   it("breadcrumbs each owed row with its ought-ancestry", async () => {
@@ -681,7 +702,7 @@ describe("RAimsSection — working_delta presence facts (#817)", () => {
     }
     const ledger = screen.getByTestId("aim-ledger");
     expect(ledger.textContent).toMatch(/1\s*drift/);
-    expect(ledger.textContent).toMatch(/0\s*claimed/);
-    expect(ledger.textContent).toMatch(/0\s*confirmed/);
+    expect(ledger.textContent).toMatch(/0\s*todo/);
+    expect(ledger.textContent).toMatch(/0\s*done/);
   });
 });
