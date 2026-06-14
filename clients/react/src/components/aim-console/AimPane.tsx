@@ -45,6 +45,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AimBody } from "@/components/producer-console/r-panel/AimBody";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -1086,6 +1087,12 @@ function Inspector({
           </span>
         )}
       </div>
+
+      <AimBody
+        body={node.body}
+        resolves={(slug) => bySlug.has(slug)}
+        onNavigate={onSelectAncestor}
+      />
 
       <div className="ac-iis">
         <div className="ac-isec">interior — is</div>

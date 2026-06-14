@@ -46,6 +46,7 @@ import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+import { AimBody } from "./AimBody";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -1256,6 +1257,7 @@ function Inspector({
         />
       ) : (
         <>
+          <AimBody body={node.body} resolves={(slug) => bySlug.has(slug)} onNavigate={onSelect} />
           <InteriorList marks={node.is} />
           <CrossEdges node={node} />
           <div className="mt-3 flex items-center gap-2">
