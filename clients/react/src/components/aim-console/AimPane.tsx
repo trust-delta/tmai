@@ -1095,12 +1095,13 @@ function Inspector({
         onNavigate={onSelectAncestor}
       />
 
-      <div className="ac-iis">
-        <div className="ac-isec">interior — is</div>
-        {node.is.length === 0 ? (
-          <div className="ac-il dim">— 純粋な ought —</div>
-        ) : (
-          node.is.map((m) => (
+      {/* Legacy interior marks — shown only for nodes that still carry them;
+          the structured body's `is/前提` section supersedes the empty "pure
+          ought" state for new-form nodes (marks machinery untouched). */}
+      {node.is.length > 0 && (
+        <div className="ac-iis">
+          <div className="ac-isec">interior — is</div>
+          {node.is.map((m) => (
             <div
               className="ac-il"
               key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
@@ -1128,9 +1129,9 @@ function Inspector({
                 )}
               </span>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Resignation inventory (#811) — done is reversible attention-parking,
           so on an already-done node the parked objects stay visible, quietly.

@@ -1930,6 +1930,61 @@
   border-bottom: none;
   cursor: default;
 }
+/* 手段 (means) — a progress-bearing checklist. Each item carries a status
+   glyph (✓ 実装済 / ◌ 未実装 / · plain); the section header carries a done/todo
+   ratio + a thin bar. done = green (calm), todo = ochre (owed, not alarming). */
+.aim-console .ac-means-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+.aim-console .ac-means-item {
+  margin: 3px 0;
+}
+.aim-console .ac-means-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.aim-console .ac-means-g {
+  font-family: var(--mono);
+  font-size: 11px;
+  flex: none;
+  color: var(--faint);
+}
+.aim-console .ac-means-g.done {
+  color: var(--green);
+}
+.aim-console .ac-means-g.todo {
+  color: var(--ochre);
+}
+.aim-console .ac-means-detail {
+  margin: 1px 0 0 16px;
+  color: var(--faint);
+}
+.aim-console .ac-prog {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+}
+.aim-console .ac-prog-bar {
+  display: inline-block;
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ochre);
+  overflow: hidden;
+}
+.aim-console .ac-prog-bar .done {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
 
 /* ── resignation inventory (issue #811) ───────────────────────────────────
    Facts beside the done act — what this done is satisfied with vs what it

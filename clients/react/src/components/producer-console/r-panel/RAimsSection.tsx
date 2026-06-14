@@ -1263,7 +1263,10 @@ function Inspector({
             resolves={(slug) => bySlug.has(slug)}
             onNavigate={onSelect}
           />
-          <InteriorList marks={node.is} />
+          {/* Legacy interior marks — shown only for nodes that still carry
+              them; the structured body's `is/前提` section supersedes the empty
+              "pure ought" state for new-form nodes (marks machinery untouched). */}
+          {node.is.length > 0 && <InteriorList marks={node.is} />}
           <CrossEdges node={node} />
           <div className="mt-3 flex items-center gap-2">
             <button

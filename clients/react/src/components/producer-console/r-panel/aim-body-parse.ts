@@ -3,22 +3,25 @@
 // the same way both share `aim-tree.ts`. No React, fully unit-testable.
 //
 // The rebuilt aim form expresses a node's structured-knowing as `#`-headed
-// markdown sections (`doc/aims/` self-describes the form):
+// markdown. The body is the PRODUCER's domain (authored for write ergonomics);
+// this parser turns that into a shape the inspector renders for the operator:
+//   - is (前提)         — premises / assumptions implementation needs that the
+//                         aim (purpose) alone does not convey. Shown at the TOP.
 //   - 障害 (escalation) — the "Go だけで進めない理由" → Producer→operator escalation
-//   - 手段 (means)      — phase/condition-split implementation units (実装済/未実装)
+//   - 手段 (means)      — phase/condition-split implementation units, EACH
+//                         carrying progress (実装済 / 未実装) — means is
+//                         progress-bearing by construction
 //   - history (却下手段) — append-only don't-repeat ledger of rejected means
 //   - DAG (cross-edges) — `[[slug]]` dependencies on other aim nodes
 //
-// The form is STILL SETTLING (a running trial — the operator is dogfooding it),
-// so this parser is deliberately section-level + tolerant: it classifies by
-// heading keyword and never imposes a rigid grammar. Anything it does not
-// recognise falls through to `prose`, rendered verbatim — nothing is dropped.
-// (Engine-side section parsing → typed wire is the eventual home, named in the
-// corpus as a new means; left client-side for now so a settling grammar is not
-// frozen into the wire — cf. the internal-contract-principle's "leave volatile
-// seams un-contracted".)
+// The form is STILL SETTLING (a running dogfood trial), so this parser is
+// deliberately section-level + tolerant: it classifies by heading keyword and
+// never imposes a rigid grammar. Anything it does not recognise falls through
+// to `prose`, rendered verbatim — nothing is dropped. (Engine-side section
+// parsing → typed wire is the eventual home; left client-side for now so a
+// settling grammar is not frozen into the wire.)
 
-export type AimBodySectionKind = "obstacle" | "means" | "history" | "dag" | "prose";
+export type AimBodySectionKind = "is" | "obstacle" | "means" | "history" | "dag" | "prose";
 
 export interface AimBodySection {
   kind: AimBodySectionKind;
@@ -28,15 +31,14 @@ export interface AimBodySection {
   content: string;
 }
 
-// A markdown ATX heading (`#`..`###` + text). The aim form uses `#`; we accept
-// up to `###` so a deeper authoring habit still classifies rather than dropping
-// into the body of the previous section.
+// A markdown ATX heading (`#`..`###` + text).
 const HEADING = /^#{1,3}\s+(.+?)\s*$/;
 
-// Classify a heading by keyword (JP + EN variants). Order matters only in that
-// the first match wins; the buckets are disjoint in practice.
+// Classify a heading by keyword (JP + EN variants). `is` is tested first so a
+// "# is — 前提" heading reads as premises rather than falling to prose.
 function classify(heading: string): AimBodySectionKind {
   const h = heading.toLowerCase();
+  if (/前提|premise|assumption|interior|\bis\b/.test(h)) return "is";
   if (/障害|escalation|obstacle|blocker/.test(h)) return "obstacle";
   if (/手段|means/.test(h)) return "means";
   if (/history|却下|履歴|recoil/.test(h)) return "history";
@@ -76,9 +78,99 @@ export function parseAimBody(body: string): AimBodySection[] {
 
 // True when the body carries at least one RECOGNISED structured section — i.e.
 // it speaks the aim form, not just free prose. Drives whether the renderer
-// shows the canonical 障害/手段/DAG/history scaffolding (with empty slots) or
+// shows the canonical is/障害/手段/DAG/history scaffolding (with empty slots) or
 // simply renders the prose verbatim (a non-conforming body is not forced into
 // the scaffold).
 export function hasStructure(sections: readonly AimBodySection[]): boolean {
   return sections.some((s) => s.kind !== "prose");
+}
+
+// ── 手段 (means) — a progress-bearing checklist ───────────────────────────
+//
+// A means section is a (optional) lead intro + a list of implementation units,
+// each carrying an implemented / unimplemented status. The CLEAN authoring
+// convention (the Producer's, designed for easy writing) is a top-level bullet
+// prefixed with a status marker:
+//   - [実装済] existing parser already does X
+//   - [未実装] drift surfacing mechanism
+//       · sub-bullets are that item's detail
+// A bullet WITHOUT a marker is a plain (status-less) item, rendered as an
+// ordinary bullet — so a not-yet-converted body still reads correctly while
+// the section header falls back to whatever 実装済/未実装 the prose mentions.
+
+export type MeansStatus = "done" | "todo";
+
+export interface MeansItem {
+  /** done = 実装済, todo = 未実装, null = no marker (a plain bullet). */
+  status: MeansStatus | null;
+  /** The item line (markdown inline), marker stripped. */
+  text: string;
+  /** Indented continuation / sub-bullets, dedented, as markdown. */
+  detail: string;
+}
+
+export interface ParsedMeans {
+  intro: string;
+  items: MeansItem[];
+  done: number;
+  todo: number;
+}
+
+const TOP_BULLET = /^[-*]\s+(.*)$/;
+const DONE_MARK = /^\[(?:実装済|済|done|x|✓)\]\s*(.*)$/i;
+const TODO_MARK = /^\[(?:未実装|未|todo|◌)\]\s*(.*)$/i;
+
+export function parseMeans(content: string): ParsedMeans {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const introLines: string[] = [];
+  const items: MeansItem[] = [];
+  let cur: MeansItem | null = null;
+  let detailLines: string[] = [];
+
+  const closeDetail = () => {
+    if (cur) cur.detail = dedent(detailLines).trim();
+    detailLines = [];
+  };
+
+  for (const line of lines) {
+    const indented = /^(?:\s\s+|\t)/.test(line);
+    const bullet = !indented ? line.match(TOP_BULLET) : null;
+    if (bullet) {
+      closeDetail();
+      let text = bullet[1];
+      let status: MeansStatus | null = null;
+      const d = text.match(DONE_MARK);
+      const t = text.match(TODO_MARK);
+      if (d) {
+        status = "done";
+        text = d[1];
+      } else if (t) {
+        status = "todo";
+        text = t[1];
+      }
+      cur = { status, text, detail: "" };
+      items.push(cur);
+    } else if (cur && (indented || line.trim() !== "")) {
+      detailLines.push(line);
+    } else if (cur === null) {
+      introLines.push(line);
+    }
+  }
+  closeDetail();
+
+  return {
+    intro: introLines.join("\n").trim(),
+    items,
+    done: items.filter((i) => i.status === "done").length,
+    todo: items.filter((i) => i.status === "todo").length,
+  };
+}
+
+// Remove the common leading whitespace from a block so nested bullets render as
+// their own list rather than an indented code block.
+function dedent(lines: readonly string[]): string {
+  const nonEmpty = lines.filter((l) => l.trim() !== "");
+  if (nonEmpty.length === 0) return "";
+  const min = Math.min(...nonEmpty.map((l) => l.match(/^\s*/)?.[0].length ?? 0));
+  return lines.map((l) => l.slice(min)).join("\n");
 }
