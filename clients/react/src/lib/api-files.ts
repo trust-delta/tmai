@@ -67,16 +67,28 @@ async function writeText(
 ): Promise<void> {
   const fh = await dir.getFileHandle(name, { create: true });
   const writable = await fh.createWritable();
-  await writable.write(content);
-  await writable.close();
+  try {
+    await writable.write(content);
+    await writable.close();
+  } catch (e) {
+    // Release the file lock on failure — otherwise the writable stays locked
+    // and blocks subsequent writes until reload. abort() rejects if the stream
+    // is already closed, so swallow that (best-effort release).
+    await writable.abort().catch(() => {});
+    throw e;
+  }
 }
 
 async function fileExists(dir: FileSystemDirectoryHandle, name: string): Promise<boolean> {
   try {
     await dir.getFileHandle(name);
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    // Only a missing file means "does not exist"; surface permission
+    // (NotAllowedError) / name-is-a-directory (TypeMismatchError) rather than
+    // masking them as not-found.
+    if (e instanceof DOMException && e.name === "NotFoundError") return false;
+    throw e;
   }
 }
 
