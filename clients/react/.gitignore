@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-aim-offline/
 *.tsbuildinfo
 
 # Claude Code local state (per-collaborator notes, skill logs, etc.)

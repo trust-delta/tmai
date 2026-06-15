@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:aim-offline": "vite --config vite.aim-offline.config.ts",
     "build": "tsc -b && vite build",
+    "build:aim-offline": "tsc -b && vite build --config vite.aim-offline.config.ts",
     "preview": "vite preview",
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",

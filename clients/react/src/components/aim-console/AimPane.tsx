@@ -157,7 +157,7 @@ export function AimPane({ unitName }: { unitName: string | null }) {
 
 // ── AIM face orchestrator (the pre-#809 pane, behaviour unchanged) ────
 
-function AimFace({ unitName }: { unitName: string | null }) {
+export function AimFace({ unitName }: { unitName: string | null }) {
   const { data, loading, error, refresh } = useUnitAims(unitName);
   const repos = useMemo(() => repoForests(data), [data]);
   const allNodes = useMemo(() => flattenRepos(data), [data]);
