@@ -34,5 +34,9 @@ export default defineConfig({
   server: {
     port: 1421,
     strictPort: true,
+    // The dev server serves `index.html` (the engine app) at `/`; the offline
+    // tool is the `aim-offline.html` page. Auto-open it so `dev:aim-offline`
+    // lands on the file-backed entry, not the engine app's empty unit tabs.
+    open: "/aim-offline.html",
   },
 });

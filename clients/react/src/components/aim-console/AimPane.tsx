@@ -413,13 +413,18 @@ function resolveSelection(slug: string | null, repos: readonly RepoAimsWire[]): 
   return null;
 }
 
-// Default branch-expansion: every repo group + every root open (the mock's
-// default — deeper branches collapse behind a rollup).
+// Default branch-expansion: FULLY EXPANDED — every repo group + every node.
+// Tree is the opt-in structure view (the operator deliberately switches to it
+// FROM the Frontier premise to see the shape), so it opens fully; a roots-only
+// default would defeat the reason for choosing Tree. Frontier stays the
+// attention-economical default view; the data scan + the aim-tree compute are
+// identical either way, so this is purely a render-side default the operator
+// can still collapse per-branch (the rollup badges return on manual collapse).
 function seedExpanded(repos: readonly RepoAimsWire[]): Set<string> {
   const s = new Set<string>();
   for (const r of repos) {
     s.add(repoKey(r));
-    for (const root of findRoots(r.aims)) s.add(root.slug);
+    for (const node of r.aims) s.add(node.slug);
   }
   return s;
 }
