@@ -18,15 +18,30 @@ import { type AgentSnapshot, normalizeGitDir, type UnitRepoWire } from "@/lib/ap
 // `useHandover` does.
 export const PRODUCER_ID_SCHEME = "claude:";
 
+/** The parent directory of an absolute path, or `null` when it has no
+ *  proper parent (root, or a single leading-slash segment). Used to
+ *  recognize a Producer launched at the unit's WRAPPER directory — the
+ *  parent that holds the unit's member repos — under the wrapper-dir
+ *  project model (tmai-core #529/#530). */
+function parentDir(path: string): string | null {
+  const i = path.lastIndexOf("/");
+  if (i <= 0) return null;
+  return path.slice(0, i);
+}
+
 /** Find the single live Producer for this unit, if any.
  *
  *  Filter rules (DR §E + scoping pattern from `useHandover`):
  *   1. `id` starts with `claude:` (canonical scheme)
- *   2. `!is_worktree` — Producer runs at the repo root, not in a
- *      worktree clone (worktree Producers would be Worker agents)
+ *   2. `!is_worktree` — Producer runs at the repo root (or the unit
+ *      wrapper), not in a worktree clone (worktree Producers would be
+ *      Worker agents)
  *   3. cwd / `git_common_dir` resolves to the unit's **primary** repo
- *      path — per `UnitRepoWire.primary`, the one repo a unit's
- *      Producer is launched at, even when the unit spans multiple repos
+ *      path (per `UnitRepoWire.primary`) — OR to the unit's WRAPPER dir,
+ *      the parent of that repo. The wrapper-dir project model (tmai-core
+ *      #529/#530) launches the Producer at the wrapper (which is not
+ *      itself a git repo), so its resolved dir sits one level above the
+ *      primary repo path; both positions count.
  *
  *  Cross-repo signature (tmai-core #439, wire #460, public types #741):
  *  callers on the units wire pass the unit's full `UnitRepoWire[]`
@@ -63,6 +78,15 @@ export function findProducerForUnit(
     primaryPath = primary.path;
   }
   const targetPath = normalizeGitDir(primaryPath);
+  // Wrapper-dir project model (tmai-core #529/#530): a unit's Producer is
+  // launched at the unit's WRAPPER directory — the parent that holds the
+  // auto-discovered member repos — not at a repo root. That Producer's cwd
+  // is the wrapper, which is not itself a git repo (no `git_common_dir`),
+  // so its resolved `agentRepo` is one level ABOVE the primary repo path.
+  // Accept that position as well; otherwise a wrapper-launched Producer
+  // never resolves and every "talk to the Producer" surface (the aim-console
+  // session pane included) shows "no active session".
+  const wrapperPath = parentDir(targetPath);
   const candidates = agents.filter((a) => {
     if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
     if (a.is_worktree === true) return false;
@@ -70,7 +94,7 @@ export function findProducerForUnit(
     // compared against an already-normalized `targetPath` and could miss
     // (trailing slash / `.git` suffix).
     const agentRepo = normalizeGitDir(a.git_common_dir ?? a.cwd);
-    return agentRepo === targetPath;
+    return agentRepo === targetPath || (wrapperPath !== null && agentRepo === wrapperPath);
   });
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }

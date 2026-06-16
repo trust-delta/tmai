@@ -38,7 +38,9 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     git_branch: partial.git_branch ?? "main",
     git_dirty: partial.git_dirty ?? false,
     is_worktree: partial.is_worktree ?? false,
-    git_common_dir: partial.git_common_dir ?? "/repo/.git",
+    // Honour an explicit `null` (a wrapper-dir Producer's cwd has no
+    // `git_common_dir`); only a wholly-omitted key gets the repo default.
+    git_common_dir: partial.git_common_dir === undefined ? "/repo/.git" : partial.git_common_dir,
     worktree_name: partial.worktree_name ?? null,
     worktree_base_branch: partial.worktree_base_branch ?? null,
     effort_level: partial.effort_level ?? null,
@@ -210,5 +212,67 @@ describe("findProducerForUnit — cross-repo (UnitRepoWire[]) overload", () => {
       is_worktree: false,
     });
     expect(findProducerForUnit([a, b], multiRepoUnit)).toBeNull();
+  });
+});
+
+describe("findProducerForUnit — wrapper-dir project model (tmai-core #529/#530)", () => {
+  // The wrapper-dir model launches the unit's Producer at the WRAPPER
+  // directory — the parent that holds the unit's auto-discovered member
+  // repos — not at a repo root. The wrapper is not itself a git repo, so
+  // the Producer's `git_common_dir` is null and the resolver falls back to
+  // its cwd, which sits one level ABOVE the primary repo path.
+  const multiRepoUnit: Array<UnitRepoWire> = [
+    { path: "/works/u/primary", primary: true },
+    { path: "/works/u/secondary", primary: false },
+  ];
+
+  it("resolves a Producer launched at the unit wrapper dir (cross-repo overload)", () => {
+    const producer = stubAgent({
+      id: "claude:prod-1",
+      cwd: "/works/u",
+      git_common_dir: null, // wrapper is not a git repo
+      is_worktree: false,
+    });
+    expect(findProducerForUnit([producer], multiRepoUnit)).toBe(producer);
+  });
+
+  it("resolves a wrapper-dir Producer via the back-compat single-path overload", () => {
+    const producer = stubAgent({
+      id: "claude:prod-1",
+      cwd: "/works/u",
+      git_common_dir: null,
+      is_worktree: false,
+    });
+    // The single-path overload receives the unit's primary repo path; the
+    // wrapper one level up still resolves.
+    expect(findProducerForUnit([producer], "/works/u/primary")).toBe(producer);
+  });
+
+  it("does NOT mis-classify a Claude session sitting AT a member repo as the wrapper Producer", () => {
+    // A session at the secondary repo is at neither the primary repo nor the
+    // wrapper — the wrapper-position widening must not pull it in.
+    const atSecondary = stubAgent({
+      id: "claude:sibling-1",
+      cwd: "/works/u/secondary",
+      git_common_dir: "/works/u/secondary/.git",
+      is_worktree: false,
+    });
+    expect(findProducerForUnit([atSecondary], multiRepoUnit)).toBeNull();
+  });
+
+  it("preserves the single-Producer invariant — a wrapper agent and a primary-repo agent are ambiguous", () => {
+    const atWrapper = stubAgent({
+      id: "claude:prod-a",
+      cwd: "/works/u",
+      git_common_dir: null,
+      is_worktree: false,
+    });
+    const atPrimary = stubAgent({
+      id: "claude:prod-b",
+      cwd: "/works/u/primary",
+      git_common_dir: "/works/u/primary/.git",
+      is_worktree: false,
+    });
+    expect(findProducerForUnit([atWrapper, atPrimary], multiRepoUnit)).toBeNull();
   });
 });
