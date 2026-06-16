@@ -8,14 +8,16 @@ interface UseAgentSelectionFallbackArgs {
   setSelection: (next: Selection | null) => void;
 }
 
-// Sort key for "first agent in this group": orchestrator wins, then
+// Sort key for "first agent in this group": the Producer wins, then
 // insertion order. Mirrors `WorktreeSection` in ProjectGroup so the
 // fallback target matches what the sidebar renders at the top of the
-// group the user was already looking at.
-function sortByOrchestratorFirst(agents: AgentSnapshot[]): AgentSnapshot[] {
+// group the user was already looking at. Keys on `is_producer` — the
+// wire field (DR `2026-05-16-producer-identity-and-operator-addressing`
+// §B); the stale `is_orchestrator` read silently sorted nothing (#836).
+function sortByProducerFirst(agents: AgentSnapshot[]): AgentSnapshot[] {
   return [...agents].sort((a, b) => {
-    if (a.is_orchestrator && !b.is_orchestrator) return -1;
-    if (!a.is_orchestrator && b.is_orchestrator) return 1;
+    if (a.is_producer && !b.is_producer) return -1;
+    if (!a.is_producer && b.is_producer) return 1;
     return 0;
   });
 }
@@ -23,16 +25,16 @@ function sortByOrchestratorFirst(agents: AgentSnapshot[]): AgentSnapshot[] {
 function pickSibling(agents: AgentSnapshot[], prevCwd: string | null): AgentSnapshot | undefined {
   if (prevCwd) {
     const sameCwd = agents.filter((a) => a.cwd === prevCwd);
-    const pick = sortByOrchestratorFirst(sameCwd)[0];
+    const pick = sortByProducerFirst(sameCwd)[0];
     if (pick) return pick;
   }
-  return sortByOrchestratorFirst(agents)[0];
+  return sortByProducerFirst(agents)[0];
 }
 
 /**
  * Move selection to a sibling agent when the previously-resolved one
  * disappears from `agents` (kill button, CC quit, dispatch unwind, …).
- * Prefers "same cwd, orchestrator first" so the user lands in the same
+ * Prefers "same cwd, Producer first" so the user lands in the same
  * project group; falls back to any first agent; clears selection only
  * when the entity list is empty.
  *

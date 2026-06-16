@@ -58,7 +58,7 @@ function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot 
     is_virtual: partial.is_virtual ?? false,
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
-    is_orchestrator: partial.is_orchestrator,
+    is_producer: partial.is_producer,
     ctx_usage: partial.ctx_usage,
   };
 }

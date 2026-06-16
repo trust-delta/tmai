@@ -112,8 +112,8 @@ function AttentionAgentsList({ agents }: { agents: AttentionAgentBrief[] }) {
           <li key={a.target} className="flex items-baseline gap-2">
             <AttentionGlyph kind={a.attention} />
             <code className="text-foreground">{a.displayName}</code>
-            {a.isOrchestrator && (
-              <span className="rounded bg-primary/10 px-1 text-[10px] text-primary">orch</span>
+            {a.isProducer && (
+              <span className="rounded bg-primary/10 px-1 text-[10px] text-primary">prod</span>
             )}
             <span className="text-subtle-foreground">{a.cwd}</span>
           </li>

@@ -130,7 +130,7 @@ function agent(overrides: {
     send_capability: "None",
     is_virtual: false,
     team_info: null,
-    is_orchestrator: false,
+    is_producer: false,
     attention: null,
   } as AgentSnapshot;
 }

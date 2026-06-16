@@ -51,7 +51,7 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     is_virtual: partial.is_virtual ?? false,
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
-    is_orchestrator: partial.is_orchestrator,
+    is_producer: partial.is_producer,
   };
 }
 

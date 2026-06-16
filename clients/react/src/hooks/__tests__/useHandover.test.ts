@@ -52,7 +52,7 @@ function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot 
     is_virtual: partial.is_virtual ?? false,
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
-    is_orchestrator: partial.is_orchestrator,
+    is_producer: partial.is_producer,
   };
 }
 
@@ -160,6 +160,45 @@ describe("useHandover — WhereYouLeftOff scoping", () => {
     const names = result.current.whereYouLeftOff.attentionAgents.map((a) => a.displayName);
     expect(names).toContain("needs-attention");
     expect(names).not.toContain("other-needs");
+  });
+
+  it("flags the Producer attention agent via is_producer, not the same-unit worker", () => {
+    // Both agents are blocked (non-null attention) and share the scoped
+    // project, so both surface in `attentionAgents`. The brief's
+    // `isProducer` must come off the `is_producer` wire field: the
+    // Producer (`is_producer: true`) flags true, a same-unit worker
+    // (`is_producer: false`) flags false. Pre-#836 this read the stale
+    // `is_orchestrator` and every brief flagged false.
+    useAgentsMock.mockReturnValue({
+      agents: [
+        agent({
+          id: "claude:producer",
+          cwd: "/home/u/proj-a",
+          git_common_dir: "/home/u/proj-a/.git",
+          attention: "halted",
+          display_name: "producer-agent",
+          is_producer: true,
+        }),
+        agent({
+          id: "claude:worker",
+          cwd: "/home/u/proj-a",
+          git_common_dir: "/home/u/proj-a/.git",
+          attention: "halted",
+          display_name: "worker-agent",
+          is_producer: false,
+        }),
+      ],
+      attentionCount: 2,
+      loading: false,
+      refresh: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useHandover("/home/u/proj-a"));
+    const briefs = result.current.whereYouLeftOff.attentionAgents;
+    const producer = briefs.find((a) => a.displayName === "producer-agent");
+    const worker = briefs.find((a) => a.displayName === "worker-agent");
+    expect(producer?.isProducer).toBe(true);
+    expect(worker?.isProducer).toBe(false);
   });
 
   it("falls back to all attention agents when no project is scoped", () => {
