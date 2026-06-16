@@ -36,12 +36,32 @@ function parentDir(path: string): string | null {
  *   2. `!is_worktree` — Producer runs at the repo root (or the unit
  *      wrapper), not in a worktree clone (worktree Producers would be
  *      Worker agents)
- *   3. cwd / `git_common_dir` resolves to the unit's **primary** repo
- *      path (per `UnitRepoWire.primary`) — OR to the unit's WRAPPER dir,
- *      the parent of that repo. The wrapper-dir project model (tmai-core
- *      #529/#530) launches the Producer at the wrapper (which is not
- *      itself a git repo), so its resolved dir sits one level above the
- *      primary repo path; both positions count.
+ *   3. EITHER of:
+ *      a. **Adopt-resilient identity** (#834): `is_orchestrator === true`
+ *         AND `unit` equals this unit's name. Both fields are set at
+ *         PTY-server **adopt** (the Producer-identity flag is auto-restored
+ *         across restart — tmai-core #380/#527; `unit` is the #443/#533
+ *         hook-resilient wire field), so they resolve the Producer the
+ *         instant the engine comes back — BEFORE any conversation turn
+ *         re-fires the statusline hook. The cwd key below cannot: cwd /
+ *         `git_common_dir` are hook-derived and stale at restart-adopt, so
+ *         a cwd-only resolver shows "no active session" until the operator
+ *         types — a bootstrap deadlock once the aim-console is the sole
+ *         surface (there is no legacy terminal left to fire that first
+ *         hook). NB the wire field is `is_orchestrator`, not `is_producer`:
+ *         the orchestrator→producer rename landed on `ActionOrigin` only;
+ *         `AgentSnapshot` keeps `is_orchestrator` as the Producer-identity
+ *         flag.
+ *      b. cwd / `git_common_dir` resolves to the unit's **primary** repo
+ *         path (per `UnitRepoWire.primary`) — OR to the unit's WRAPPER dir,
+ *         the parent of that repo. The wrapper-dir project model (tmai-core
+ *         #529/#530) launches the Producer at the wrapper (which is not
+ *         itself a git repo), so its resolved dir sits one level above the
+ *         primary repo path; both positions count. This is the steady
+ *         state once the hook has fired, AND the back-compat path for an
+ *         engine not yet serving `is_orchestrator` / `unit`: those are
+ *         absent on the wire then, rule 3a never fires, and the resolver
+ *         degrades to exactly the prior cwd-keying.
  *
  *  Cross-repo signature (tmai-core #439, wire #460, public types #741):
  *  callers on the units wire pass the unit's full `UnitRepoWire[]`
@@ -87,12 +107,28 @@ export function findProducerForUnit(
   // never resolves and every "talk to the Producer" surface (the aim-console
   // session pane included) shows "no active session".
   const wrapperPath = parentDir(targetPath);
+  // The unit name, derived from the primary repo's basename. By tmai's
+  // project model the primary repo's basename IS the unit name — the same
+  // derivation App uses for its `unitName` and `groupByProject` for its
+  // path pick — so a Producer whose adopt-resilient `unit` field equals it
+  // is this unit's Producer. `null` when the path has no basename (we then
+  // never identity-match, falling through to the cwd key).
+  const unitName = targetPath.split("/").filter(Boolean).pop() ?? null;
   const candidates = agents.filter((a) => {
     if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
     if (a.is_worktree === true) return false;
-    // Normalize both branches: a raw `cwd` fallback would otherwise be
-    // compared against an already-normalized `targetPath` and could miss
-    // (trailing slash / `.git` suffix).
+    // Rule 3a — adopt-resilient identity. Resolves the Producer at
+    // restart-adopt, before the hook re-derives cwd. `is_orchestrator`
+    // narrows `unit` (which a worker shares) down to the single Producer,
+    // preserving the non-primary-repo guard: a same-unit worker sitting at
+    // a secondary repo is `is_orchestrator !== true`, so it never matches.
+    if (a.is_orchestrator === true && unitName !== null && a.unit === unitName) {
+      return true;
+    }
+    // Rule 3b — cwd / `git_common_dir` position. Normalize both branches:
+    // a raw `cwd` fallback would otherwise be compared against an
+    // already-normalized `targetPath` and could miss (trailing slash /
+    // `.git` suffix).
     const agentRepo = normalizeGitDir(a.git_common_dir ?? a.cwd);
     return agentRepo === targetPath || (wrapperPath !== null && agentRepo === wrapperPath);
   });
