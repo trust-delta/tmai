@@ -41,6 +41,9 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     // Honour an explicit `null` (a wrapper-dir Producer's cwd has no
     // `git_common_dir`); only a wholly-omitted key gets the repo default.
     git_common_dir: partial.git_common_dir === undefined ? "/repo/.git" : partial.git_common_dir,
+    // Adopt-resilient wire fields (#834). Optional on the snapshot; omitted
+    // here unless a test sets them, mirroring an engine not serving them.
+    unit: partial.unit,
     worktree_name: partial.worktree_name ?? null,
     worktree_base_branch: partial.worktree_base_branch ?? null,
     effort_level: partial.effort_level ?? null,
@@ -51,7 +54,7 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     is_virtual: partial.is_virtual ?? false,
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
-    is_orchestrator: partial.is_orchestrator,
+    is_producer: partial.is_producer,
   };
 }
 
@@ -274,5 +277,120 @@ describe("findProducerForUnit — wrapper-dir project model (tmai-core #529/#530
       is_worktree: false,
     });
     expect(findProducerForUnit([atWrapper, atPrimary], multiRepoUnit)).toBeNull();
+  });
+});
+
+describe("findProducerForUnit — restart-adopt (adopt-resilient is_producer + unit)", () => {
+  // After an engine restart the Producer is re-adopted by the PTY server
+  // with its `is_producer` flag (auto-restored across restart) and its
+  // `unit` field set — but its `cwd` / `git_common_dir` stay stale until
+  // the first conversation turn re-fires the statusline hook. A cwd-only
+  // resolver returns null in that window ("no active session"), which is a
+  // bootstrap deadlock once the aim-console is the sole surface (no legacy
+  // terminal left to fire that first hook — issue #834). The identity key
+  // resolves the Producer immediately, with NO cwd/git_common_dir match.
+  //
+  // The unit's primary repo basename IS the unit name by tmai's project
+  // model, so `findProducerForUnit` derives the key `unit` ("acme") from
+  // the primary path — the Producer's `unit` field must equal it.
+  const unit: Array<UnitRepoWire> = [
+    { path: "/works/acme/acme", primary: true },
+    { path: "/works/acme/lib", primary: false },
+  ];
+
+  // A Producer freshly re-adopted: identity fields set, cwd NOT yet the
+  // wrapper/primary (the hook has not re-derived it).
+  function restartAdoptProducer(id: string): AgentSnapshot {
+    return stubAgent({
+      id,
+      cwd: "/var/stale", // hook not yet re-derived → no cwd match
+      git_common_dir: null,
+      is_worktree: false,
+      is_producer: true,
+      unit: "acme",
+    });
+  }
+
+  it("resolves the Producer with NO cwd/git_common_dir match (cross-repo overload)", () => {
+    const producer = restartAdoptProducer("claude:prod-1");
+    expect(findProducerForUnit([producer], unit)).toBe(producer);
+  });
+
+  it("resolves via the back-compat single-path overload (no cwd match)", () => {
+    const producer = restartAdoptProducer("claude:prod-1");
+    expect(findProducerForUnit([producer], "/works/acme/acme")).toBe(producer);
+  });
+
+  it("does NOT classify a same-unit WORKER (unit matches but not is_producer) as the Producer", () => {
+    // The non-primary-repo guard, re-expressed for the identity key: a
+    // worker shares the unit's `unit` field but is not `is_producer`,
+    // so it must never be mistaken for the Producer even before its own
+    // cwd resolves.
+    const worker = stubAgent({
+      id: "claude:worker-1",
+      cwd: "/var/stale",
+      git_common_dir: null,
+      is_worktree: false,
+      is_producer: false,
+      unit: "acme",
+    });
+    expect(findProducerForUnit([worker], unit)).toBeNull();
+  });
+
+  it("keeps the Producer when a same-unit worker is also present (worker filtered out)", () => {
+    const producer = restartAdoptProducer("claude:prod-1");
+    const worker = stubAgent({
+      id: "claude:worker-1",
+      cwd: "/works/acme/lib",
+      git_common_dir: "/works/acme/lib/.git",
+      is_worktree: false,
+      is_producer: false,
+      unit: "acme",
+    });
+    expect(findProducerForUnit([producer, worker], unit)).toBe(producer);
+  });
+
+  it("does NOT match an is_producer agent of a DIFFERENT unit", () => {
+    const otherProducer = stubAgent({
+      id: "claude:prod-x",
+      cwd: "/var/stale",
+      git_common_dir: null,
+      is_worktree: false,
+      is_producer: true,
+      unit: "other",
+    });
+    expect(findProducerForUnit([otherProducer], unit)).toBeNull();
+  });
+
+  it("preserves the single-Producer invariant — two is_producer agents for the unit are ambiguous", () => {
+    const a = restartAdoptProducer("claude:prod-a");
+    const b = restartAdoptProducer("claude:prod-b");
+    expect(findProducerForUnit([a, b], unit)).toBeNull();
+  });
+
+  it("excludes a worktree agent even with is_producer + unit (worktrees host workers, not Producers)", () => {
+    const wt = stubAgent({
+      id: "claude:wt-1",
+      cwd: "/var/stale",
+      git_common_dir: null,
+      is_worktree: true,
+      is_producer: true,
+      unit: "acme",
+    });
+    expect(findProducerForUnit([wt], unit)).toBeNull();
+  });
+
+  it("still degrades to cwd-keying when is_producer/unit are absent (old engine)", () => {
+    // No identity fields on the wire (engine not rebuilt). The cwd key must
+    // still resolve a Producer sitting at the primary repo — proving rule
+    // 3a is additive, never a regression for the transition window.
+    const producer = stubAgent({
+      id: "claude:prod-1",
+      cwd: "/works/acme/acme",
+      git_common_dir: "/works/acme/acme/.git",
+      is_worktree: false,
+      // is_producer + unit deliberately omitted
+    });
+    expect(findProducerForUnit([producer], unit)).toBe(producer);
   });
 });

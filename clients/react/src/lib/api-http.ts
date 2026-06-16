@@ -299,6 +299,16 @@ export interface AgentSnapshot {
   connection_channels?: ConnectionChannels;
   model_id?: string | null;
   model_display_name?: string | null;
+  /** Producer-identity flag — **this is the field the engine actually
+   *  serves** (derived from the `role` spawn hint, tmai-core #527; verified
+   *  against the live `GET /api/agents` payload). It is adopt-resilient, so
+   *  it identifies the Producer at restart-adopt before any hook fires
+   *  (`findProducerForUnit` rule 3a, #834). NB the sibling `is_orchestrator`
+   *  below is a STALE hand-mirror field — left over from before the
+   *  orchestrator→producer rename and NOT served by the engine; reads of it
+   *  (AgentCard / useHandover / useAgentSelectionFallback / ProjectGroup)
+   *  are silently broken and want correcting to `is_producer` (see #834). */
+  is_producer?: boolean;
   is_orchestrator?: boolean;
   /** Attention axis introduced by Step 4 of the agent-state attention
    *  rebuild (decision tmai-core@2026-05-07). `null` / absent on the
