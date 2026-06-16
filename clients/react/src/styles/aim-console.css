@@ -645,16 +645,12 @@
   transition: background 0.18s;
 }
 .aim-console .ac-wire.input .ac-spine {
+  /* Solid accent spine. Previously a pulsing gradient (an infinite
+     `ac-wire-pulse` animation on a `::before`); a continuously-repainting
+     animation adjacent to the DOM-renderer xterm is the suspect for the
+     transient output-time garbling that only the aim-console showed, so
+     the spine is kept solid. */
   background: var(--who);
-}
-.aim-console .ac-wire.input .ac-spine::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  width: 100%;
-  height: 46%;
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.75), transparent);
-  animation: ac-wire-pulse 2.6s ease-in-out infinite;
 }
 .aim-console .ac-wire.select .ac-spine {
   background: var(--ochre);
@@ -2342,15 +2338,6 @@
   }
 }
 
-/* the live wire's slow travelling pulse (S6 mock `@keyframes pulse`) */
-@keyframes ac-wire-pulse {
-  0% {
-    top: -50%;
-  }
-  100% {
-    top: 105%;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .aim-console *,
