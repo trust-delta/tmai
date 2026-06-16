@@ -18,6 +18,7 @@
 // React buffer via `onData`, so each switch grew the next replay).
 
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -111,6 +112,23 @@ export function useTerminal({
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
+
+    // Render with WebGL, falling back to the default DOM renderer if a GL
+    // context can't be created (headless / no-GPU). The DOM renderer aligns
+    // glyphs to the cell grid with per-span `letter-spacing` corrections,
+    // which DRIFT on mixed CJK/ASCII text whose fallback-font advance widths
+    // don't match the measured cell — the conversation-panel garbling of
+    // tmai#831. WebGL paints each glyph at its exact cell origin (no
+    // letter-spacing hack), so wide-char cells stay aligned. `loadAddon` must
+    // run after `open()`. On context loss, dispose so xterm reverts to DOM.
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // WebGL unavailable — keep the default DOM renderer.
+    }
+
     fitAddon.fit();
     // Sync initial PTY winsize so the agent doesn't inherit the server's
     // hardcoded 24×80 default on first attach.
