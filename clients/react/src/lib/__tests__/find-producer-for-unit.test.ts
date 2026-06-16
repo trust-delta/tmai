@@ -54,7 +54,7 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     is_virtual: partial.is_virtual ?? false,
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
-    is_orchestrator: partial.is_orchestrator,
+    is_producer: partial.is_producer,
   };
 }
 
@@ -280,9 +280,9 @@ describe("findProducerForUnit — wrapper-dir project model (tmai-core #529/#530
   });
 });
 
-describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator + unit)", () => {
+describe("findProducerForUnit — restart-adopt (adopt-resilient is_producer + unit)", () => {
   // After an engine restart the Producer is re-adopted by the PTY server
-  // with its `is_orchestrator` flag (auto-restored across restart) and its
+  // with its `is_producer` flag (auto-restored across restart) and its
   // `unit` field set — but its `cwd` / `git_common_dir` stay stale until
   // the first conversation turn re-fires the statusline hook. A cwd-only
   // resolver returns null in that window ("no active session"), which is a
@@ -306,7 +306,7 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator
       cwd: "/var/stale", // hook not yet re-derived → no cwd match
       git_common_dir: null,
       is_worktree: false,
-      is_orchestrator: true,
+      is_producer: true,
       unit: "acme",
     });
   }
@@ -321,9 +321,9 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator
     expect(findProducerForUnit([producer], "/works/acme/acme")).toBe(producer);
   });
 
-  it("does NOT classify a same-unit WORKER (unit matches but not is_orchestrator) as the Producer", () => {
+  it("does NOT classify a same-unit WORKER (unit matches but not is_producer) as the Producer", () => {
     // The non-primary-repo guard, re-expressed for the identity key: a
-    // worker shares the unit's `unit` field but is not `is_orchestrator`,
+    // worker shares the unit's `unit` field but is not `is_producer`,
     // so it must never be mistaken for the Producer even before its own
     // cwd resolves.
     const worker = stubAgent({
@@ -331,7 +331,7 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator
       cwd: "/var/stale",
       git_common_dir: null,
       is_worktree: false,
-      is_orchestrator: false,
+      is_producer: false,
       unit: "acme",
     });
     expect(findProducerForUnit([worker], unit)).toBeNull();
@@ -344,43 +344,43 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator
       cwd: "/works/acme/lib",
       git_common_dir: "/works/acme/lib/.git",
       is_worktree: false,
-      is_orchestrator: false,
+      is_producer: false,
       unit: "acme",
     });
     expect(findProducerForUnit([producer, worker], unit)).toBe(producer);
   });
 
-  it("does NOT match an is_orchestrator agent of a DIFFERENT unit", () => {
+  it("does NOT match an is_producer agent of a DIFFERENT unit", () => {
     const otherProducer = stubAgent({
       id: "claude:prod-x",
       cwd: "/var/stale",
       git_common_dir: null,
       is_worktree: false,
-      is_orchestrator: true,
+      is_producer: true,
       unit: "other",
     });
     expect(findProducerForUnit([otherProducer], unit)).toBeNull();
   });
 
-  it("preserves the single-Producer invariant — two is_orchestrator agents for the unit are ambiguous", () => {
+  it("preserves the single-Producer invariant — two is_producer agents for the unit are ambiguous", () => {
     const a = restartAdoptProducer("claude:prod-a");
     const b = restartAdoptProducer("claude:prod-b");
     expect(findProducerForUnit([a, b], unit)).toBeNull();
   });
 
-  it("excludes a worktree agent even with is_orchestrator + unit (worktrees host workers, not Producers)", () => {
+  it("excludes a worktree agent even with is_producer + unit (worktrees host workers, not Producers)", () => {
     const wt = stubAgent({
       id: "claude:wt-1",
       cwd: "/var/stale",
       git_common_dir: null,
       is_worktree: true,
-      is_orchestrator: true,
+      is_producer: true,
       unit: "acme",
     });
     expect(findProducerForUnit([wt], unit)).toBeNull();
   });
 
-  it("still degrades to cwd-keying when is_orchestrator/unit are absent (old engine)", () => {
+  it("still degrades to cwd-keying when is_producer/unit are absent (old engine)", () => {
     // No identity fields on the wire (engine not rebuilt). The cwd key must
     // still resolve a Producer sitting at the primary repo — proving rule
     // 3a is additive, never a regression for the transition window.
@@ -389,7 +389,7 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_orchestrator
       cwd: "/works/acme/acme",
       git_common_dir: "/works/acme/acme/.git",
       is_worktree: false,
-      // is_orchestrator + unit deliberately omitted
+      // is_producer + unit deliberately omitted
     });
     expect(findProducerForUnit([producer], unit)).toBe(producer);
   });

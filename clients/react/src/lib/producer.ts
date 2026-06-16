@@ -37,10 +37,10 @@ function parentDir(path: string): string | null {
  *      wrapper), not in a worktree clone (worktree Producers would be
  *      Worker agents)
  *   3. EITHER of:
- *      a. **Adopt-resilient identity** (#834): `is_orchestrator === true`
+ *      a. **Adopt-resilient identity** (#834): `is_producer === true`
  *         AND `unit` equals this unit's name. Both fields are set at
- *         PTY-server **adopt** (the Producer-identity flag is auto-restored
- *         across restart — tmai-core #380/#527; `unit` is the #443/#533
+ *         PTY-server **adopt** (`is_producer` is derived from the `role`
+ *         spawn hint — tmai-core #527; `unit` is the #443/#533
  *         hook-resilient wire field), so they resolve the Producer the
  *         instant the engine comes back — BEFORE any conversation turn
  *         re-fires the statusline hook. The cwd key below cannot: cwd /
@@ -48,10 +48,11 @@ function parentDir(path: string): string | null {
  *         a cwd-only resolver shows "no active session" until the operator
  *         types — a bootstrap deadlock once the aim-console is the sole
  *         surface (there is no legacy terminal left to fire that first
- *         hook). NB the wire field is `is_orchestrator`, not `is_producer`:
- *         the orchestrator→producer rename landed on `ActionOrigin` only;
- *         `AgentSnapshot` keeps `is_orchestrator` as the Producer-identity
- *         flag.
+ *         hook). NB the live wire field on `AgentSnapshot` is `is_producer`
+ *         (verified against the running `GET /api/agents` payload). The
+ *         hand-written `AgentSnapshot` type ALSO declares a stale
+ *         `is_orchestrator` from before the orchestrator→producer rename,
+ *         but the engine does not serve it — keying on it is a no-op (#834).
  *      b. cwd / `git_common_dir` resolves to the unit's **primary** repo
  *         path (per `UnitRepoWire.primary`) — OR to the unit's WRAPPER dir,
  *         the parent of that repo. The wrapper-dir project model (tmai-core
@@ -59,7 +60,7 @@ function parentDir(path: string): string | null {
  *         itself a git repo), so its resolved dir sits one level above the
  *         primary repo path; both positions count. This is the steady
  *         state once the hook has fired, AND the back-compat path for an
- *         engine not yet serving `is_orchestrator` / `unit`: those are
+ *         engine not yet serving `is_producer` / `unit`: those are
  *         absent on the wire then, rule 3a never fires, and the resolver
  *         degrades to exactly the prior cwd-keying.
  *
@@ -118,11 +119,11 @@ export function findProducerForUnit(
     if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
     if (a.is_worktree === true) return false;
     // Rule 3a — adopt-resilient identity. Resolves the Producer at
-    // restart-adopt, before the hook re-derives cwd. `is_orchestrator`
+    // restart-adopt, before the hook re-derives cwd. `is_producer`
     // narrows `unit` (which a worker shares) down to the single Producer,
     // preserving the non-primary-repo guard: a same-unit worker sitting at
-    // a secondary repo is `is_orchestrator !== true`, so it never matches.
-    if (a.is_orchestrator === true && unitName !== null && a.unit === unitName) {
+    // a secondary repo is `is_producer !== true`, so it never matches.
+    if (a.is_producer === true && unitName !== null && a.unit === unitName) {
       return true;
     }
     // Rule 3b — cwd / `git_common_dir` position. Normalize both branches:
