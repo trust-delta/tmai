@@ -69,7 +69,7 @@ export interface AttentionAgentBrief {
   displayName: string;
   attention: AgentAttention;
   cwd: string;
-  isOrchestrator: boolean;
+  isProducer: boolean;
 }
 
 export interface WhereYouLeftOff {
@@ -180,7 +180,10 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
         displayName: a.display_name,
         attention: a.attention,
         cwd: a.cwd,
-        isOrchestrator: a.is_orchestrator === true,
+        // Keys on `is_producer` — the wire field (DR `2026-05-16-producer-
+        // identity-and-operator-addressing` §B). The stale `is_orchestrator`
+        // read always yielded `false`, misclassifying the Producer (#836).
+        isProducer: a.is_producer === true,
       })),
     };
   }, [currentProjectPath, projectGroups, aiAgents]);

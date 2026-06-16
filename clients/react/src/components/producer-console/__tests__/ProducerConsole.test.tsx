@@ -147,7 +147,7 @@ describe("ProducerConsole", () => {
               displayName: "halted-agent",
               attention: "halted",
               cwd: "/p/a",
-              isOrchestrator: false,
+              isProducer: false,
             },
           ],
         },

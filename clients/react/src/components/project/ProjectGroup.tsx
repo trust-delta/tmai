@@ -121,9 +121,12 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
   const hasMultipleTargets =
     spawnTargets.length > 1 || (spawnTargets.length === 1 && spawnTargets[0].isWorktree);
 
-  // Check if an orchestrator agent is already running in this project
+  // Check if a Producer agent is already running in this project. Keys on
+  // `is_producer` — the wire field (DR `2026-05-16-producer-identity-and-
+  // operator-addressing` §B); the stale `is_orchestrator` read never
+  // fired, so the spawn gate below was always open (#836).
   const hasRunningOrchestrator = project.worktrees.some((wt) =>
-    wt.agents.some((a) => a.is_orchestrator),
+    wt.agents.some((a) => a.is_producer),
   );
 
   const isEmpty = project.totalAgents === 0;

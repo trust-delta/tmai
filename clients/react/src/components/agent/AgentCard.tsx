@@ -251,7 +251,7 @@ export function AgentCard({ agent, selected, onClick, variant = "default" }: Age
       className={cn(
         "glass-card group w-full rounded-xl px-3 py-2 text-left transition-subtle",
         "hover:bg-surface hover:border-hairline-strong",
-        agent.is_orchestrator && "!border-primary/20 bg-primary/[0.04]",
+        agent.is_producer && "!border-primary/20 bg-primary/[0.04]",
         // Producer headline: accent the unit's "who am I talking to" row so
         // it reads as first-class above its subordinate worker roster.
         variant === "headline" && "!border-primary/25 bg-primary/[0.05]",
@@ -268,9 +268,9 @@ export function AgentCard({ agent, selected, onClick, variant = "default" }: Age
               Producer
             </span>
           )}
-          {agent.is_orchestrator && (
+          {agent.is_producer && (
             <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 py-px text-[9px] font-semibold text-primary">
-              ORCH
+              PROD
             </span>
           )}
           <span className="truncate text-sm font-medium text-foreground group-hover:text-foreground transition-subtle">

@@ -41,7 +41,7 @@ function agent(
     send_capability: "Unknown",
     is_virtual: false,
     team_info: null,
-    is_orchestrator: false,
+    is_producer: false,
     attention: null,
     ...rest,
   } as AgentSnapshot;
@@ -84,14 +84,17 @@ describe("useAgentSelectionFallback", () => {
     expect(setSelection).toHaveBeenCalledWith({ type: "agent", id: "b" });
   });
 
-  it("prefers orchestrator within the same cwd group", () => {
-    // Mirrors the sidebar's "orchestrator on top" sort — the killed
-    // agent's neighbour is the orchestrator if one is present, even when
-    // a non-orchestrator was inserted earlier.
+  it("prefers the Producer within the same cwd group", () => {
+    // Mirrors the sidebar's "Producer on top" sort — the killed agent's
+    // neighbour is the Producer if one is present, even when a same-unit
+    // worker (`is_producer: false`) was inserted earlier. Keys on the
+    // `is_producer` wire field; the pre-#836 `is_orchestrator` read
+    // silently sorted nothing, so the worker would have won by insertion
+    // order.
     const setSelection = vi.fn();
     const a = agent({ target: "a", cwd: "/foo" });
-    const worker = agent({ target: "worker", cwd: "/foo" });
-    const orch = agent({ target: "orch", cwd: "/foo", is_orchestrator: true });
+    const worker = agent({ target: "worker", cwd: "/foo", is_producer: false });
+    const producer = agent({ target: "producer", cwd: "/foo", is_producer: true });
     const { rerender } = renderHook(
       ({ selectedAgent, agents }: FallbackProps) =>
         useAgentSelectionFallback({
@@ -100,12 +103,12 @@ describe("useAgentSelectionFallback", () => {
           agents,
           setSelection,
         }),
-      { initialProps: { selectedAgent: a, agents: [a, worker, orch] } as FallbackProps },
+      { initialProps: { selectedAgent: a, agents: [a, worker, producer] } as FallbackProps },
     );
 
-    rerender({ selectedAgent: undefined, agents: [worker, orch] });
+    rerender({ selectedAgent: undefined, agents: [worker, producer] });
 
-    expect(setSelection).toHaveBeenCalledWith({ type: "agent", id: "orch" });
+    expect(setSelection).toHaveBeenCalledWith({ type: "agent", id: "producer" });
   });
 
   it("falls back to any agent when no same-cwd sibling exists", () => {

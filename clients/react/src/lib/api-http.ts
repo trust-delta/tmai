@@ -299,17 +299,16 @@ export interface AgentSnapshot {
   connection_channels?: ConnectionChannels;
   model_id?: string | null;
   model_display_name?: string | null;
-  /** Producer-identity flag — **this is the field the engine actually
-   *  serves** (derived from the `role` spawn hint, tmai-core #527; verified
-   *  against the live `GET /api/agents` payload). It is adopt-resilient, so
-   *  it identifies the Producer at restart-adopt before any hook fires
-   *  (`findProducerForUnit` rule 3a, #834). NB the sibling `is_orchestrator`
-   *  below is a STALE hand-mirror field — left over from before the
-   *  orchestrator→producer rename and NOT served by the engine; reads of it
-   *  (AgentCard / useHandover / useAgentSelectionFallback / ProjectGroup)
-   *  are silently broken and want correcting to `is_producer` (see #834). */
+  /** Whether this agent is the unit's Producer. Wire field name
+   *  `is_producer` (tmai-core `crates/tmai-core/src/api/types.rs`,
+   *  serde `is_producer` with `skip_serializing_if` so it is absent on
+   *  the wire — and reads as `undefined`/falsy — when not the Producer),
+   *  per DR `2026-05-16-producer-identity-and-operator-addressing` §B:
+   *  the deliberate contract-surface rename the neutral
+   *  `is_orchestrator` name (#402) was holding back. The stale
+   *  `is_orchestrator?` mirror was removed (#836) so any read of the
+   *  absent field is now a tsc error, not a silent `false`. */
   is_producer?: boolean;
-  is_orchestrator?: boolean;
   /** Attention axis introduced by Step 4 of the agent-state attention
    *  rebuild (decision tmai-core@2026-05-07). `null` / absent on the
    *  wire encodes "unknown" — the sampler bootstrap window per Δ6.
