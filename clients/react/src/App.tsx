@@ -49,6 +49,7 @@ import {
   api,
   groupByProject,
   isAiAgentLoose,
+  resolveUnitName,
   type Selection,
   setCallerCwd,
   type UnitResponse,
@@ -216,18 +217,30 @@ export function App() {
   );
   const openCalibration = useCallback(() => setMainPanel("calibration"), []);
 
-  // Unit name for the calibration view. The wire endpoint (`GET
-  // /api/units/{unit}/calibration`) takes a unit *name* (a configured
-  // `[[unit]]` table key or a cwd-synthesized basename) — the WebUI does
-  // not know which `[[unit]]` tables the operator has configured, so we
-  // pass the basename of the currently-selected project path. The
-  // backend's `resolve_unit_or_cwd` falls back to the basename when no
-  // matching `[[unit]]` exists, which matches what the CLI does for the
-  // same input.
-  const unitName = useMemo(() => {
-    if (!currentProject) return null;
-    return currentProject.split("/").filter(Boolean).pop() ?? null;
-  }, [currentProject]);
+  // Configured-unit membership (tmai-core #460 — wire half of #439). Read
+  // BEFORE `unitName` because the active unit is resolved by membership (see
+  // `resolveUnitName`), not the project-path basename. Also threaded into
+  // `findProducerForUnit` below so multi-repo units resolve their Producer
+  // against the primary repo specifically, not against whichever repo
+  // `currentProject` happens to point at. `useHandover` consumes the same wire
+  // for cross-unit reconciliation.
+  const { data: unitsData } = useUnits();
+
+  // The active unit NAME, fed to the unit-scoped wires (`GET
+  // /api/units/{unit}/…`). Anchored to the unit that OWNS `currentProject` in
+  // the configured `[[unit]]` membership — NOT the basename of the project
+  // path. A multi-repo unit's `currentProject` can resolve to a SECONDARY repo
+  // (e.g. `…/tmai-core`, basename "tmai-core") while the unit — and every
+  // agent's wire `unit` — is "tmai"; a basename derivation then mismatched the
+  // SessionPane `agent.unit === unitName` filter and hid the unit's own agents
+  // (the aim-console worker-invisibility bug). `resolveUnitName` falls back to
+  // the basename when no configured unit matches — the same cwd-synthesized-
+  // unit behaviour the backend's `resolve_unit_or_cwd` and the CLI give for an
+  // unconfigured cwd.
+  const unitName = useMemo(
+    () => resolveUnitName(currentProject, unitsData?.units ?? []),
+    [currentProject, unitsData],
+  );
   const { data: calibrationData } = useCalibration(unitName);
   const { data: producerFeedData } = useProducerFeed(unitName);
 
@@ -240,12 +253,6 @@ export function App() {
   useEffect(() => {
     clearFocusedArtifact();
   }, [unitName]);
-  // Configured-unit membership (tmai-core #460 — wire half of #439).
-  // Threaded into `findProducerForUnit` below so multi-repo units
-  // resolve their Producer against the primary repo specifically,
-  // not against whichever repo `currentProject` happens to point at.
-  // `useHandover` consumes the same wire for cross-unit reconciliation.
-  const { data: unitsData } = useUnits();
   const unitReposForCurrent = useMemo(() => {
     if (unitName === null) return null;
     return unitsData?.units.find((u) => u.name === unitName)?.repos ?? null;

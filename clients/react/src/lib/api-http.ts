@@ -420,6 +420,40 @@ export function normalizeGitDir(dir: string): string {
   return cleaned.slice(0, end);
 }
 
+// Resolve the active unit's NAME from the currently-focused project path.
+//
+// The unit identity is anchored to the Producer's launch cwd and its
+// constituent repos (the engine's `[[unit]]` model: one unit = the wrapper
+// dir the Producer runs in, its repos = the git dirs under it). It is NOT the
+// basename of whatever repo dir `currentProject` happens to point at. A
+// multi-repo unit's `currentProject` can land on a SECONDARY repo (e.g. a
+// worktree worker's `git_common_dir`, whose basename differs from the unit
+// name); deriving the active unit by basename then yields the secondary repo's
+// name, and every agent — whose wire `unit` carries the REAL unit name — fails
+// the `agent.unit === unitName` filter and drops out of its own unit's
+// SessionPane (the aim-console worker-invisibility bug).
+//
+// So match `currentProject` against the configured unit membership and return
+// the OWNING unit's name. Fall back to the path basename only when no
+// configured unit matches (a cwd-synthesized unit — the same behaviour the
+// engine/CLI give for an unconfigured cwd).
+export function resolveUnitName(
+  currentProject: string | null,
+  units: UnitResponse[],
+): string | null {
+  if (!currentProject) return null;
+  const norm = normalizeGitDir(currentProject);
+  const owning = units.find((u) =>
+    u.repos.some((r) => {
+      const repo = normalizeGitDir(r.path);
+      // `currentProject` belongs to the unit when it is AT a repo, INSIDE a
+      // repo, or IS the wrapper dir that contains the repo.
+      return norm === repo || norm.startsWith(`${repo}/`) || repo.startsWith(`${norm}/`);
+    }),
+  );
+  return owning ? owning.name : projectName(currentProject);
+}
+
 // Resolve an agent's normalized repo directory: prefer `git_common_dir`,
 // then a cwd→git_common_dir prefix match, then the cwd itself. Factored
 // out of the grouping loop so unit-grouping (for the representative repo
