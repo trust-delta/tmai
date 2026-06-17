@@ -224,7 +224,7 @@ export function App() {
   // against the primary repo specifically, not against whichever repo
   // `currentProject` happens to point at. `useHandover` consumes the same wire
   // for cross-unit reconciliation.
-  const { data: unitsData } = useUnits();
+  const { data: unitsData, loading: unitsLoading } = useUnits();
 
   // The active unit NAME, fed to the unit-scoped wires (`GET
   // /api/units/{unit}/…`). Anchored to the unit that OWNS `currentProject` in
@@ -237,10 +237,16 @@ export function App() {
   // the basename when no configured unit matches — the same cwd-synthesized-
   // unit behaviour the backend's `resolve_unit_or_cwd` and the CLI give for an
   // unconfigured cwd.
-  const unitName = useMemo(
-    () => resolveUnitName(currentProject, unitsData?.units ?? []),
-    [currentProject, unitsData],
-  );
+  const unitName = useMemo(() => {
+    // Hold while the membership wire is still loading: until it arrives we
+    // cannot tell which unit owns `currentProject`, and resolving by basename
+    // in the meantime would briefly mis-scope a multi-repo unit to its
+    // SECONDARY repo before units land. Once loading clears — even on fetch
+    // failure (`data` stays null) — we fall through to the basename, the same
+    // as an unconfigured cwd.
+    if (unitsLoading) return null;
+    return resolveUnitName(currentProject, unitsData?.units ?? []);
+  }, [currentProject, unitsData, unitsLoading]);
   const { data: calibrationData } = useCalibration(unitName);
   const { data: producerFeedData } = useProducerFeed(unitName);
 
