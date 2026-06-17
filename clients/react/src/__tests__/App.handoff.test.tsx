@@ -44,6 +44,13 @@ vi.mock("@/hooks/useWorktrees", () => ({
 vi.mock("@/hooks/useCalibration", () => ({
   useCalibration: () => ({ data: null, loading: false, error: null }),
 }));
+// Loaded-empty membership: `unitName` then resolves by basename of the
+// synthetic `/p/...` paths these tests use (no configured `[[unit]]`). Must be
+// `loading: false` so App's units-load gate releases `unitName` (otherwise it
+// holds `null` while the real hook reports its initial `loading: true`).
+vi.mock("@/hooks/useUnits", () => ({
+  useUnits: () => ({ data: { units: [] }, loading: false, error: null }),
+}));
 vi.mock("@/hooks/useNotificationConfig", () => ({ useNotificationConfig: () => ({}) }));
 vi.mock("@/hooks/useIdleNotification", () => ({
   useIdleNotification: () => ({ handleAgentStopped: vi.fn() }),
