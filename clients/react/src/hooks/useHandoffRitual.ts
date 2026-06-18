@@ -21,7 +21,12 @@
 // The hook ignores SSE events whose `ritual_id` does not match the
 // currently live `ritual_id` so concurrent rituals across units
 // (or operator retries against the same unit) never cross-talk into
-// the overlay.
+// the overlay — with ONE exception: an unsolicited supervisor
+// crash-respawn (synthetic `slot-supervisor:<unit>` id, tmai-core
+// #540 / #546) is ADOPTED from idle, so a Producer that the engine
+// auto-relaunches surfaces the same overlay without an operator
+// trigger. It is adopted only from idle, so it never clobbers a live
+// operator handoff or an open failure dialog.
 //
 // Retry budget (DR §E): the dialog refuses a third retry from the
 // hook side — "second rejection is a hard escalate (no further
@@ -29,11 +34,12 @@
 // retry; it surfaces a `retryRefused` flag the dialog can read so
 // the operator gets a clear reason for the disabled Retry button.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   api,
   type HandoffRitualEvent,
   HandoffRitualRequestError,
+  SUPERVISOR_RITUAL_PREFIX,
   type TriggerHandoffRitualRequest,
 } from "@/lib/api";
 import { useSSE } from "@/lib/sse-provider";
@@ -47,9 +53,9 @@ import { useSSE } from "@/lib/sse-provider";
 export type RitualUiState =
   | { kind: "idle" }
   | { kind: "dispatching" }
-  | { kind: "in_progress"; ritualId: string; phases: HandoffRitualEvent[] }
-  | { kind: "ready"; ritualId: string; newAgentId: string | null }
-  | { kind: "escalated"; ritualId: string; reason: string; message: string | null };
+  | { kind: "in_progress"; ritualId: string; unit: string; phases: HandoffRitualEvent[] }
+  | { kind: "ready"; ritualId: string; unit: string; newAgentId: string | null }
+  | { kind: "escalated"; ritualId: string; unit: string; reason: string; message: string | null };
 
 export interface UseHandoffRitualResult {
   state: RitualUiState;
@@ -81,19 +87,64 @@ export function useHandoffRitual(): UseHandoffRitualResult {
   const [retryCount, setRetryCount] = useState(0);
   const [retryRefused, setRetryRefused] = useState(false);
 
-  // Ref mirror so the SSE handler reads the current ritualId without
-  // needing to re-subscribe on every state transition.
-  const liveRitualIdRef = useRef<string | null>(null);
-
+  // Single state-driven event router (no ref mirror — matching reads `prev`
+  // inside the updater, so the SSE handler can register once and never go
+  // stale). Two routes:
+  //
+  //   1. An OPERATOR ritual that this hook dispatched: events whose
+  //      `ritual_id` matches the live `in_progress` ritual advance it.
+  //   2. An UNSOLICITED supervisor crash-respawn (synthetic
+  //      `slot-supervisor:<unit>` id, tmai-core #540 / #546): adopted ONLY
+  //      from `idle`, so it surfaces the same overlay without an operator
+  //      trigger but never clobbers a live operator handoff or an open
+  //      failure dialog. The supervisor stream begins at `launching` (no
+  //      prompted/validated/killed FRONT) and may also arrive as a bare
+  //      `escalate` (`crash_loop_halted`) if the hook attaches mid-loop —
+  //      adoption handles every phase from idle, not just `launching`.
   const applyEvent = useCallback((event: HandoffRitualEvent) => {
-    if (event.ritual_id !== liveRitualIdRef.current) return;
-
     setState((prev) => {
+      const isSupervisor = event.ritual_id.startsWith(SUPERVISOR_RITUAL_PREFIX);
+
+      // Adopt a supervisor respawn from idle, landing in whatever phase the
+      // first observed event carries.
+      if (prev.kind === "idle") {
+        if (!isSupervisor) return prev; // operator events require a live ritual
+        if (event.phase === "ready") {
+          return {
+            kind: "ready",
+            ritualId: event.ritual_id,
+            unit: event.unit,
+            newAgentId: event.new_agent_id ?? null,
+          };
+        }
+        if (event.phase === "escalate") {
+          return {
+            kind: "escalated",
+            ritualId: event.ritual_id,
+            unit: event.unit,
+            reason: event.reason,
+            message: event.message ?? null,
+          };
+        }
+        return {
+          kind: "in_progress",
+          ritualId: event.ritual_id,
+          unit: event.unit,
+          phases: [event],
+        };
+      }
+
+      // Otherwise only the live in-progress ritual's own events advance it;
+      // a mismatched `ritual_id` (a concurrent ritual / cross-unit respawn)
+      // never cross-talks into this overlay.
       if (prev.kind !== "in_progress") return prev;
+      if (event.ritual_id !== prev.ritualId) return prev;
+
       if (event.phase === "ready") {
         return {
           kind: "ready",
           ritualId: event.ritual_id,
+          unit: prev.unit,
           newAgentId: event.new_agent_id ?? null,
         };
       }
@@ -101,6 +152,7 @@ export function useHandoffRitual(): UseHandoffRitualResult {
         return {
           kind: "escalated",
           ritualId: event.ritual_id,
+          unit: prev.unit,
           reason: event.reason,
           message: event.message ?? null,
         };
@@ -125,22 +177,11 @@ export function useHandoffRitual(): UseHandoffRitualResult {
     },
   });
 
-  // Clear the live id ref whenever we leave `in_progress` so a stale
-  // event from a prior ritual can't reanimate the overlay.
-  useEffect(() => {
-    if (state.kind === "in_progress") {
-      liveRitualIdRef.current = state.ritualId;
-    } else if (state.kind === "idle" || state.kind === "dispatching") {
-      liveRitualIdRef.current = null;
-    }
-  }, [state]);
-
   const dispatchRitual = useCallback(async (unit: string, body: TriggerHandoffRitualRequest) => {
     setState({ kind: "dispatching" });
     try {
       const { ritual_id } = await api.triggerHandoffRitual(unit, body);
-      liveRitualIdRef.current = ritual_id;
-      setState({ kind: "in_progress", ritualId: ritual_id, phases: [] });
+      setState({ kind: "in_progress", ritualId: ritual_id, unit, phases: [] });
     } catch (err) {
       // Surface 400/404/etc. as an `escalated` terminal — the dialog
       // can render the reason verbatim. We use a synthetic ritualId
@@ -148,10 +189,10 @@ export function useHandoffRitual(): UseHandoffRitualResult {
       const isTyped = err instanceof HandoffRitualRequestError;
       const reason = isTyped ? `http_${err.status}` : "request_failed";
       const message = isTyped ? err.detail : err instanceof Error ? err.message : String(err);
-      liveRitualIdRef.current = null;
       setState({
         kind: "escalated",
         ritualId: "",
+        unit,
         reason,
         message,
       });
@@ -183,7 +224,6 @@ export function useHandoffRitual(): UseHandoffRitualResult {
   );
 
   const dismiss = useCallback(() => {
-    liveRitualIdRef.current = null;
     setState({ kind: "idle" });
     setRetryCount(0);
     setRetryRefused(false);

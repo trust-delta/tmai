@@ -247,7 +247,7 @@ describe("App — handoff ritual wiring", () => {
     });
     useHandoffRitualMock.mockReturnValue({
       ...idleRitual(),
-      state: { kind: "in_progress", ritualId: "r-1", phases: [] },
+      state: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] },
     });
 
     renderWithProviders(<App />);

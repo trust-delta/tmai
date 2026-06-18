@@ -40,6 +40,18 @@ interface HandoffRitualFailureDialogProps {
   producerAgentId: string | null;
   retryCount: number;
   retryRefused: boolean;
+  /**
+   * Which escalation this dialog is surfacing:
+   *   - `"handoff"` (default) — an operator handoff the Producer REJECTED
+   *     (tier-1 obligation). The full 4-choice surface applies.
+   *   - `"crash_loop"` — the slot supervisor's `crash_loop_halted` escalate
+   *     (tmai-core #540 / #546): the auto-respawn budget is exhausted and
+   *     the Producer is GONE. Force-kill / Retry / Resume don't apply (no
+   *     live Producer, and re-POSTing a handoff can't help) — the copy tells
+   *     the operator to relaunch manually (a health recovery resets the
+   *     budget) and the only action is Dismiss.
+   */
+  mode?: "handoff" | "crash_loop";
   onForceKill: () => void;
   onRetry: () => void;
   onDismiss: () => void;
@@ -60,6 +72,7 @@ export function HandoffRitualFailureDialog({
   producerAgentId,
   retryCount,
   retryRefused,
+  mode = "handoff",
   onForceKill,
   onRetry,
   onDismiss,
@@ -69,18 +82,23 @@ export function HandoffRitualFailureDialog({
   const [resumeRevealed, setResumeRevealed] = useState(false);
   const resumeUuid = producerAgentId ? uuidFromAgentId(producerAgentId) : null;
 
-  const retryDisabled = retryRefused || retryCount >= 2;
+  const isCrashLoop = mode === "crash_loop";
+  // Crash-loop: re-POSTing a handoff can't help (the Producer is GONE, not
+  // refusing), so the manual relaunch — which resets the supervisor budget on
+  // a clean health recovery — is the only path forward. Retry stays disabled.
+  const retryDisabled = isCrashLoop || retryRefused || retryCount >= 2;
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Handoff ritual rejected"
+      aria-label={isCrashLoop ? "Producer crash-loop halted" : "Handoff ritual rejected"}
       className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
     >
       <div className="w-full max-w-lg rounded-xl border border-destructive/30 bg-surface-strong p-5 shadow-2xl">
         <h3 className="text-sm font-semibold text-destructive">
-          Handoff ritual rejected — unit <code className="text-primary">{unitName}</code>
+          {isCrashLoop ? "Producer crash-loop halted" : "Handoff ritual rejected"} — unit{" "}
+          <code className="text-primary">{unitName}</code>
         </h3>
 
         <dl className="mt-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-[12px]">
@@ -95,8 +113,9 @@ export function HandoffRitualFailureDialog({
         </dl>
 
         <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-          Producer rejected the handoff ritual (tmai tier-1: Producer's obligation to obey
-          instructions). Decide how to proceed:
+          {isCrashLoop
+            ? "The slot supervisor relaunched this unit's Producer too many times and halted. Manual relaunch required — relaunch the Producer (Open Producer terminal); a successful health recovery resets the crash-loop budget."
+            : "Producer rejected the handoff ritual (tmai tier-1: Producer's obligation to obey instructions). Decide how to proceed:"}
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-2">
@@ -120,9 +139,11 @@ export function HandoffRitualFailureDialog({
             disabled={retryDisabled}
             className="rounded-md bg-primary/15 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
             title={
-              retryDisabled
-                ? "DR §E: second rejection is a hard escalate — no further automatic retry"
-                : "Re-POST handoff-and-restart with the same body"
+              isCrashLoop
+                ? "Manual relaunch required — re-POSTing a handoff can't recover a crash-looped Producer"
+                : retryDisabled
+                  ? "DR §E: second rejection is a hard escalate — no further automatic retry"
+                  : "Re-POST handoff-and-restart with the same body"
             }
           >
             Retry{retryCount > 0 ? ` (${retryCount}/2)` : ""}
@@ -132,9 +153,13 @@ export function HandoffRitualFailureDialog({
             type="button"
             onClick={onDismiss}
             className="rounded-md bg-surface px-3 py-2 text-xs text-foreground transition-colors hover:bg-surface"
-            title="Producer is still alive; next manual handoff or session-end will re-surface this state"
+            title={
+              isCrashLoop
+                ? "Acknowledge — relaunch the Producer manually (Open Producer terminal) when ready"
+                : "Producer is still alive; next manual handoff or session-end will re-surface this state"
+            }
           >
-            Continue with stale
+            {isCrashLoop ? "Dismiss" : "Continue with stale"}
           </button>
 
           <button

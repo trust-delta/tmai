@@ -2,11 +2,13 @@
 //
 // UnitTabs (C1) — one tab per configured unit: repo pills (primary
 // highlighted), active highlight, ⚠N attention rollup (from the existing
-// `useUnitAttention` wire), select + add affordances.
+// `useUnitAttention` wire), select + add affordances, and the #540 / #546
+// per-unit CLOSE control (confirm-gated kill of the Producer slot).
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttentionStateResponse, UnitResponse } from "@/lib/api";
+import { renderWithProviders } from "@/test/render";
 
 const unitAttentionMock = vi.fn();
 
@@ -45,12 +47,13 @@ beforeEach(() => {
 
 describe("UnitTabs", () => {
   it("renders a tab per unit with repo pills, primary highlighted", () => {
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit()]}
         activeUnitName="tmai"
         onSelectUnit={vi.fn()}
         onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
       />,
     );
     const pills = screen.getAllByTestId("repo-pill");
@@ -61,12 +64,13 @@ describe("UnitTabs", () => {
   });
 
   it("marks the active unit's tab with aria-current", () => {
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit(), unit({ name: "infra", repos: [{ path: "/p/infra", primary: true }] })]}
         activeUnitName="infra"
         onSelectUnit={vi.fn()}
         onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
       />,
     );
     const active = screen.getByRole("button", { name: /unit: infra/ });
@@ -77,12 +81,13 @@ describe("UnitTabs", () => {
 
   it("clicking a tab calls onSelectUnit with that unit", () => {
     const onSelectUnit = vi.fn();
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit()]}
         activeUnitName={null}
         onSelectUnit={onSelectUnit}
         onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /unit: tmai/ }));
@@ -92,12 +97,13 @@ describe("UnitTabs", () => {
 
   it("clicking + calls onAddUnit", () => {
     const onAddUnit = vi.fn();
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit()]}
         activeUnitName="tmai"
         onSelectUnit={vi.fn()}
         onAddUnit={onAddUnit}
+        onCloseUnit={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Add unit/ }));
@@ -112,12 +118,13 @@ describe("UnitTabs", () => {
         { repo_path: "/home/me/works/tmai", section: "pr", id: "3", level: "low" },
       ]),
     );
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit()]}
         activeUnitName="tmai"
         onSelectUnit={vi.fn()}
         onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
       />,
     );
     const tab = screen.getByRole("button", { name: /unit: tmai/ });
@@ -129,16 +136,74 @@ describe("UnitTabs", () => {
 
   it("shows no rollup badge when nothing is owed attention", async () => {
     unitAttentionMock.mockResolvedValue(attention([]));
-    render(
+    renderWithProviders(
       <UnitTabs
         units={[unit()]}
         activeUnitName="tmai"
         onSelectUnit={vi.fn()}
         onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
       />,
     );
     // Let the (empty) attention fetch resolve, then assert no badge.
     await waitFor(() => expect(unitAttentionMock).toHaveBeenCalled());
     expect(screen.queryByTestId("unit-attention-rollup")).toBeNull();
+  });
+});
+
+describe("UnitTabs — close affordance (#540 / #546)", () => {
+  it("exposes a per-unit close control that opens a confirm dialog", async () => {
+    renderWithProviders(
+      <UnitTabs
+        units={[unit()]}
+        activeUnitName="tmai"
+        onSelectUnit={vi.fn()}
+        onAddUnit={vi.fn()}
+        onCloseUnit={vi.fn()}
+      />,
+    );
+    // No confirm dialog until the close control is clicked.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /close unit tmai/i }));
+    // The always-on confirm dialog surfaces with the kill ≠ delete caveat.
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/kill, not a delete/i)).toBeTruthy();
+    expect(within(dialog).getByText(/worktrees and uncommitted work stay on disk/i)).toBeTruthy();
+  });
+
+  it("confirming the close calls onCloseUnit with the unit", async () => {
+    const onCloseUnit = vi.fn();
+    renderWithProviders(
+      <UnitTabs
+        units={[unit()]}
+        activeUnitName="tmai"
+        onSelectUnit={vi.fn()}
+        onAddUnit={vi.fn()}
+        onCloseUnit={onCloseUnit}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /close unit tmai/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close unit" }));
+    await waitFor(() => expect(onCloseUnit).toHaveBeenCalledTimes(1));
+    expect(onCloseUnit.mock.calls[0][0].name).toBe("tmai");
+  });
+
+  it("cancelling the close does nothing", async () => {
+    const onCloseUnit = vi.fn();
+    renderWithProviders(
+      <UnitTabs
+        units={[unit()]}
+        activeUnitName="tmai"
+        onSelectUnit={vi.fn()}
+        onAddUnit={vi.fn()}
+        onCloseUnit={onCloseUnit}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /close unit tmai/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    // The dialog closes …
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // … and the slot is never closed.
+    expect(onCloseUnit).not.toHaveBeenCalled();
   });
 });

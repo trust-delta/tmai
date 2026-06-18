@@ -322,4 +322,8 @@ export const api = {
   // ritual emits its own SSE phase events; no Tauri IPC equivalent).
   triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>
     httpApi.triggerHandoffRitual(unit, body),
+
+  // Producer-slot close (HTTP only — engine kills the Producer + dispatched
+  // workers and stops the respawn supervisor; no Tauri IPC equivalent).
+  closeUnit: (unit: string) => httpApi.closeUnit(unit),
 };

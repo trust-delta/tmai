@@ -8,11 +8,19 @@
 // endpoint, mirroring the existing Phase-A "Open Producer terminal"
 // pattern). Mock reference: `origin/mock/aim-ui-sample` top bar.
 //
+// Each tab also carries a per-unit CLOSE affordance (×) bound to the
+// Producer-slot terminal (tmai-core #540 / #546): it kills the unit's
+// Producer + dispatched workers (and the webui's footer bash). Because
+// close is a kill — Producer + workers gone, but worktrees / uncommitted
+// work stay on disk — it is gated behind an always-on confirm dialog
+// (`useConfirm`); only on confirm does it call `onCloseUnit`.
+//
 // Built to render N units; one configured unit today collapses to a single
 // tab. The attention rollup lives in a per-unit child (`UnitTab`) so each
 // tab can call `useUnitAttention(unit)` on its own — scaling to N without a
 // rules-of-hooks violation.
 
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -30,9 +38,18 @@ interface UnitTabsProps {
   onSelectUnit: (unit: UnitResponse) => void;
   /** "Add unit = launch Producer" affordance (placeholder/clipboard). */
   onAddUnit: () => void;
+  /** Close the unit's Producer slot (kill Producer + workers + footer bash).
+   *  Called ONLY after the per-tab confirm dialog is accepted. */
+  onCloseUnit: (unit: UnitResponse) => void;
 }
 
-export function UnitTabs({ units, activeUnitName, onSelectUnit, onAddUnit }: UnitTabsProps) {
+export function UnitTabs({
+  units,
+  activeUnitName,
+  onSelectUnit,
+  onAddUnit,
+  onCloseUnit,
+}: UnitTabsProps) {
   return (
     <div data-testid="unit-tabs" className="flex flex-wrap items-center gap-1">
       {units.map((unit) => (
@@ -41,6 +58,7 @@ export function UnitTabs({ units, activeUnitName, onSelectUnit, onAddUnit }: Uni
           unit={unit}
           active={unit.name === activeUnitName}
           onSelect={() => onSelectUnit(unit)}
+          onClose={() => onCloseUnit(unit)}
         />
       ))}
       <button
@@ -60,10 +78,12 @@ function UnitTab({
   unit,
   active,
   onSelect,
+  onClose,
 }: {
   unit: UnitResponse;
   active: boolean;
   onSelect: () => void;
+  onClose: () => void;
 }) {
   // Per-unit attention rollup: count the operator-set `high` markers across
   // this unit's artifacts (the ⚠N "owed attention" badge). Reuses the
@@ -71,35 +91,67 @@ function UnitTab({
   const { data } = useUnitAttention(unit.name);
   const highCount = data?.entries.filter((e) => e.level === "high").length ?? 0;
 
+  // Always-on confirm gate (#540 companion): close = kill, so never silent.
+  const confirm = useConfirm();
+  const handleClose = async () => {
+    const ok = await confirm({
+      title: `Close unit ${unit.name}?`,
+      message:
+        "Close kills this unit's Producer, its dispatched workers, and its footer bash. " +
+        "This is a kill, not a delete — worktrees and uncommitted work stay on disk.",
+      confirmLabel: "Close unit",
+      cancelLabel: "Cancel",
+      variant: "danger",
+    });
+    if (ok) onClose();
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={active ? "true" : undefined}
-      // Explicit label so the tab's accessible name is the unit (the
-      // content is just repo-basename pills + an icon badge).
-      aria-label={`unit: ${unit.name}`}
-      title={`unit: ${unit.name}`}
+    <div
+      data-testid={`unit-tab-${unit.name}`}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 rounded-t border-b-2 px-2 py-1 transition-colors",
-        active
-          ? "border-primary text-foreground"
-          : "border-transparent text-muted-foreground hover:bg-surface-strong hover:text-foreground",
+        "flex shrink-0 items-center rounded-t border-b-2 transition-colors",
+        active ? "border-primary" : "border-transparent hover:bg-surface-strong",
       )}
     >
-      {unit.repos.map((repo) => (
-        <RepoPill key={repo.path} label={repoBasename(repo.path)} primary={repo.primary} />
-      ))}
-      {highCount > 0 && (
-        <span
-          data-testid="unit-attention-rollup"
-          title={`${highCount} owed attention`}
-          className="rounded bg-warning/15 px-1 font-mono text-[9px] text-warning"
-        >
-          ⚠{highCount}
-        </span>
-      )}
-    </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={active ? "true" : undefined}
+        // Explicit label so the tab's accessible name is the unit (the
+        // content is just repo-basename pills + an icon badge).
+        aria-label={`unit: ${unit.name}`}
+        title={`unit: ${unit.name}`}
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1",
+          active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {unit.repos.map((repo) => (
+          <RepoPill key={repo.path} label={repoBasename(repo.path)} primary={repo.primary} />
+        ))}
+        {highCount > 0 && (
+          <span
+            data-testid="unit-attention-rollup"
+            title={`${highCount} owed attention`}
+            className="rounded bg-warning/15 px-1 font-mono text-[9px] text-warning"
+          >
+            ⚠{highCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleClose}
+        // No colon (avoid colliding with the select button's `unit: <name>`
+        // accessible name under a loose name matcher).
+        aria-label={`Close unit ${unit.name}`}
+        title={`Close unit ${unit.name} — kill Producer + workers + footer bash (worktrees stay)`}
+        className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[11px] leading-none text-subtle-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+      >
+        ×
+      </button>
+    </div>
   );
 }
 

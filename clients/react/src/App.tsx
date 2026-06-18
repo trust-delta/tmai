@@ -54,6 +54,7 @@ import {
   setCallerCwd,
   type UnitResponse,
 } from "@/lib/api";
+import { closeUnitSlot } from "@/lib/close-unit-slot";
 import { findProducerForUnit } from "@/lib/producer";
 import { useSSE } from "@/lib/sse-provider";
 import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
@@ -579,6 +580,26 @@ export function App() {
       .catch(() => toastInfo(`Add a unit by launching a Producer: ${cmd}`));
   }, [toastSuccess, toastInfo]);
 
+  // C1 close affordance (#540 / #546 companion). The per-tab confirm gate
+  // lives in UnitTabs (close = kill, so never silent); this runs only after
+  // the operator confirms. `closeUnitSlot` POSTs the core close (Producer +
+  // dispatched workers) then kills the unit's webui-owned footer bash, which
+  // the engine can't attribute server-side. `agents` is the live roster used
+  // to resolve those hint-less footer shells.
+  const handleCloseUnit = useCallback(
+    async (unit: UnitResponse) => {
+      try {
+        await closeUnitSlot(unit, agents);
+        refresh();
+        toastSuccess(`Closed unit ${unit.name} — Producer + workers + footer bash killed`);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        toastInfo(`Failed to close unit ${unit.name}: ${reason}`);
+      }
+    },
+    [agents, refresh, toastSuccess, toastInfo],
+  );
+
   // Keyboard shortcuts handlers
   useKeyboardShortcuts([
     {
@@ -666,6 +687,7 @@ export function App() {
         activeUnitName={unitName}
         onSelectUnit={handleSelectUnit}
         onAddUnit={handleAddUnit}
+        onCloseUnit={handleCloseUnit}
       />
     ) : null;
 
@@ -983,26 +1005,33 @@ export function App() {
       {/* Toast notifications */}
       <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
 
-      {/* Handoff-and-restart ritual UI — App-level single instance so it
+      {/* Producer slot-restart ritual UI — App-level single instance so it
           stays co-visible regardless of the active centre view (digest,
-          Producer conversation, Settings, …). The ordered phases, the
-          4-choice failure dialog, the retry budget (max 2, 3rd refused)
-          and the confirm text are the unchanged handoff-lifecycle DR §E
-          contract; this only RELOCATES the surface up from the digest. */}
-      {(ritualState.kind === "dispatching" || ritualState.kind === "in_progress") &&
-        unitName !== null && (
-          <HandoffRitualOverlay
-            unitName={unitName}
-            ritualId={ritualState.kind === "in_progress" ? ritualState.ritualId : null}
-            phases={ritualState.kind === "in_progress" ? ritualState.phases : []}
-          />
-        )}
+          Producer conversation, Settings, …). Hosts BOTH the operator
+          handoff (full 5-phase, the unchanged handoff-lifecycle DR §E
+          contract) and the supervisor crash-respawn (launching→ready, or a
+          `crash_loop_halted` escalate). The overlay/dialog read the ritual's
+          OWN `unit` (a supervisor respawn may target a non-focused unit) and
+          pick their copy off the `slot-supervisor:` id / reason. */}
+      {ritualState.kind === "dispatching" && unitName !== null && (
+        <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
+      )}
+      {ritualState.kind === "in_progress" && (
+        <HandoffRitualOverlay
+          unitName={ritualState.unit}
+          ritualId={ritualState.ritualId}
+          phases={ritualState.phases}
+        />
+      )}
 
-      {ritualState.kind === "escalated" && unitName !== null && (
+      {ritualState.kind === "escalated" && ritualState.unit !== "" && (
         <HandoffRitualFailureDialog
-          unitName={unitName}
+          unitName={ritualState.unit}
           reason={ritualState.reason}
           message={ritualState.message}
+          // The supervisor's `crash_loop_halted` halt is a different failure
+          // than an operator-rejected handoff — manual relaunch, not retry.
+          mode={ritualState.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
           producerAgentId={producerForUnit?.id ?? null}
           retryCount={handoffRetryCount}
           retryRefused={handoffRetryRefused}
