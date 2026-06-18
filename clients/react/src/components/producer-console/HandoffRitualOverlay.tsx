@@ -1,9 +1,19 @@
-// In-progress overlay for the Producer handoff-and-restart ritual.
+// In-progress overlay for the Producer slot-restart rituals.
 //
-// Shows a phase tracker per DR `2026-05-14-handoff-lifecycle-and-kill-ux.md`
-// §E (WebUI overlay). The five forward phases are pinned in their
-// canonical order (`prompted → validated → killed → launching →
-// ready`); each row carries one of four marks:
+// Hosts TWO ritual shapes over the same `HandoffRitualEvent` wire (the core
+// reused the wire deliberately — no new SSE variant):
+//
+//   • OPERATOR HANDOFF (`ritual_id` is a UUID) — the full forward sequence
+//     per DR `2026-05-14-handoff-lifecycle-and-kill-ux.md` §E:
+//       prompted → validated → killed → launching → ready
+//
+//   • SUPERVISOR CRASH-RESPAWN (`ritual_id` starts `slot-supervisor:`,
+//     tmai-core #540 / #546) — the absent Producer just VANISHED, so there
+//     is no prompted/validated/killed FRONT; the supervisor's auto-respawn
+//     begins at `launching`:
+//       launching → ready
+//
+// Each phase row carries one of four marks:
 //
 //   ✓ done    — the phase was observed
 //   ⟳ current — the most-recent observed phase (or "starting…" when
@@ -13,7 +23,7 @@
 // The terminal-failure path (`escalate`) is handled by a dedicated
 // dialog component — this overlay never renders it.
 
-import type { HandoffRitualEvent } from "@/lib/api";
+import { type HandoffRitualEvent, SUPERVISOR_RITUAL_PREFIX } from "@/lib/api";
 
 interface HandoffRitualOverlayProps {
   unitName: string;
@@ -23,25 +33,40 @@ interface HandoffRitualOverlayProps {
   phases: HandoffRitualEvent[];
 }
 
-const FORWARD_PHASES = [
+type ForwardPhaseKey = "prompted" | "validated" | "killed" | "launching" | "ready";
+
+interface PhaseRow {
+  key: ForwardPhaseKey;
+  label: string;
+  detail: string;
+}
+
+// Operator handoff — the canonical 5-phase forward sequence.
+const HANDOFF_PHASES: PhaseRow[] = [
   { key: "prompted", label: "Prompted", detail: "ritual prompt delivered" },
   { key: "validated", label: "Validated", detail: "HANDOFF READY observed + file valid" },
   { key: "killed", label: "Killed", detail: "old Producer terminated" },
   { key: "launching", label: "Launching", detail: "spawning fresh Producer..." },
   { key: "ready", label: "Ready", detail: "" },
-] as const;
+];
 
-type ForwardPhaseKey = (typeof FORWARD_PHASES)[number]["key"];
+// Supervisor crash-respawn — no FRONT (the Producer vanished, nothing to
+// prompt/validate/kill); the auto-respawn starts at `launching`.
+const RESPAWN_PHASES: PhaseRow[] = [
+  { key: "launching", label: "Launching", detail: "supervisor respawning the Producer..." },
+  { key: "ready", label: "Ready", detail: "" },
+];
 
 function phaseStatus(
+  rows: PhaseRow[],
   current: ForwardPhaseKey | null,
   rowKey: ForwardPhaseKey,
 ): "done" | "current" | "pending" {
   if (current === null) {
     return "pending";
   }
-  const currentIdx = FORWARD_PHASES.findIndex((p) => p.key === current);
-  const rowIdx = FORWARD_PHASES.findIndex((p) => p.key === rowKey);
+  const currentIdx = rows.findIndex((p) => p.key === current);
+  const rowIdx = rows.findIndex((p) => p.key === rowKey);
   if (rowIdx < currentIdx) return "done";
   if (rowIdx === currentIdx) return "current";
   return "pending";
@@ -60,39 +85,52 @@ const STATUS_CLASS = {
 } as const;
 
 export function HandoffRitualOverlay({ unitName, ritualId, phases }: HandoffRitualOverlayProps) {
-  // The most-recent forward phase observed (escalate is filtered upstream).
+  // A supervisor crash-respawn carries the synthetic `slot-supervisor:<unit>`
+  // id; an operator handoff carries a UUID. The id picks the phase set + copy.
+  const isRespawn = ritualId?.startsWith(SUPERVISOR_RITUAL_PREFIX) ?? false;
+  const phaseRows = isRespawn ? RESPAWN_PHASES : HANDOFF_PHASES;
+
+  // The most-recent forward phase observed that belongs to THIS ritual's phase
+  // set (escalate is filtered upstream; a respawn never sees prompted/validated/
+  // killed, but guard anyway against a stray FRONT event leaking into the
+  // respawn row list).
   const lastForwardPhase: ForwardPhaseKey | null = (() => {
     for (let i = phases.length - 1; i >= 0; i--) {
       const p = phases[i]?.phase;
-      if (
-        p === "prompted" ||
-        p === "validated" ||
-        p === "killed" ||
-        p === "launching" ||
-        p === "ready"
-      ) {
+      if (p !== undefined && p !== "escalate" && phaseRows.some((r) => r.key === p)) {
         return p;
       }
     }
-    // No event yet — show "prompted" as the current row so the operator
-    // sees motion immediately after clicking.
-    return phases.length === 0 ? "prompted" : null;
+    // No event yet — show the FIRST row of this ritual's set as current so the
+    // operator sees motion immediately (handoff: "prompted"; respawn:
+    // "launching").
+    return phases.length === 0 ? (phaseRows[0]?.key ?? null) : null;
   })();
+
+  const heading = isRespawn ? "Producer crash-respawn" : "Handoff & restart";
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Handoff and restart in progress"
+      aria-label={
+        isRespawn ? "Producer crash-respawn in progress" : "Handoff and restart in progress"
+      }
       className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
     >
       <div className="w-full max-w-lg rounded-xl border border-hairline-strong bg-surface-strong p-5 shadow-2xl">
         <h3 className="text-sm font-semibold text-foreground">
-          Handoff & restart — unit <code className="text-primary">{unitName}</code>
+          {heading} — unit <code className="text-primary">{unitName}</code>
         </h3>
+        {isRespawn && (
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            The slot supervisor detected the Producer was gone and is relaunching it automatically —
+            no operator handoff was run.
+          </p>
+        )}
         <ul className="mt-4 space-y-2">
-          {FORWARD_PHASES.map((row) => {
-            const status = phaseStatus(lastForwardPhase, row.key);
+          {phaseRows.map((row) => {
+            const status = phaseStatus(phaseRows, lastForwardPhase, row.key);
             return (
               <li
                 key={row.key}

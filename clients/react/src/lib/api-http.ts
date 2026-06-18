@@ -1798,6 +1798,17 @@ export const api = {
   // as generic API errors.
   triggerHandoffRitual: (unit: string, body: TriggerHandoffRitualRequest) =>
     handoffFetch(unit, body),
+
+  // Producer-slot terminal (tmai-core #540 / #546, `post_close_unit_slot`).
+  // Closes the unit's Producer SLOT: the engine kills the live Producer + its
+  // dispatched workers and stops the auto-respawn supervisor. This is a KILL,
+  // not a delete — worktrees / uncommitted work stay on disk. Mirrors the
+  // `handoff-and-restart` POST (same X-Tmai-Origin scope, no body); resolves
+  // on 2xx regardless of the response body (the close summary, if any, isn't
+  // codegen-pinned and the UI doesn't need it). The hint-less footer bash the
+  // webui spawned is NOT attributable to the unit server-side, so the webui
+  // kills it itself after this resolves (see `closeUnitSlot`).
+  closeUnit: (unit: string) => closeUnitFetch(unit),
 };
 
 async function handoffFetch(
@@ -1826,7 +1837,43 @@ async function handoffFetch(
   return (await res.json()) as TriggerHandoffRitualResponse;
 }
 
+// Fire the slot-close POST mirroring `handoffFetch` (X-Tmai-Origin scope, no
+// body). Deliberately does NOT parse the response body — the close summary
+// shape is not codegen-pinned and the UI treats a resolved 2xx as success;
+// reading `res.json()` on a possibly-empty body would throw spuriously.
+async function closeUnitFetch(unit: string): Promise<void> {
+  const url = `${config.baseUrl}/api/units/${encodeURIComponent(unit)}/close`;
+  const origin: { kind: "Human"; interface: string; cwd?: string } = {
+    kind: "Human",
+    interface: "webui",
+    ...(callerCwd !== null ? { cwd: callerCwd } : {}),
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.token}`,
+      "X-Tmai-Origin": JSON.stringify(origin),
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`API error ${res.status}: ${detail}`);
+  }
+}
+
 // ── Handoff-ritual request/response shapes ──
+
+/**
+ * Synthetic `ritual_id` prefix the core's slot supervisor stamps on an
+ * AUTO-respawn of an absent Producer (tmai-core #540 / #546): the id is
+ * `slot-supervisor:<unit>`, reusing the existing `HandoffRitualEvent` wire
+ * (no new SSE variant). It distinguishes a supervisor-driven crash-respawn
+ * from an operator-triggered handoff (whose `ritual_id` is a fresh UUID),
+ * so the overlay/dialog can vary their copy and phase set — a respawn has
+ * no prompted/validated/killed FRONT, it begins at `launching`.
+ */
+export const SUPERVISOR_RITUAL_PREFIX = "slot-supervisor:";
 
 /**
  * Body for `POST /api/units/{unit}/handoff-and-restart`.

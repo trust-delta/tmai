@@ -66,4 +66,72 @@ describe("HandoffRitualOverlay", () => {
     render(<HandoffRitualOverlay unitName="tmai" ritualId="r-1" phases={[]} />);
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
+
+  // Operator-handoff regression: a UUID ritual_id keeps the full 5-phase
+  // FRONT and the unchanged heading — the supervisor generalization must not
+  // bleed into the operator path.
+  it("keeps the operator-handoff heading + 5-phase set for a UUID ritual_id", () => {
+    render(
+      <HandoffRitualOverlay
+        unitName="tmai"
+        ritualId="3f1a2b4c-0000-4d5e-9f00-abcdef012345"
+        phases={[]}
+      />,
+    );
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
+      "Handoff and restart in progress",
+    );
+    expect(screen.getByText(/Handoff & restart/)).toBeTruthy();
+    expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
+    expect(screen.getByTestId("phase-row-validated")).toBeTruthy();
+    expect(screen.getByTestId("phase-row-killed")).toBeTruthy();
+    // No supervisor subcopy on the operator path.
+    expect(screen.queryByText(/slot supervisor/i)).toBeNull();
+  });
+});
+
+describe("HandoffRitualOverlay — supervisor crash-respawn", () => {
+  const SUP = "slot-supervisor:tmai";
+
+  function makeEvent(phase: HandoffRitualEvent["phase"]): HandoffRitualEvent {
+    if (phase === "escalate") {
+      return { unit: "tmai", ritual_id: SUP, phase: "escalate", reason: "crash_loop_halted" };
+    }
+    if (phase === "ready") {
+      return { unit: "tmai", ritual_id: SUP, phase: "ready" };
+    }
+    return { unit: "tmai", ritual_id: SUP, phase };
+  }
+
+  it("renders ONLY launching → ready (no prompted/validated/killed FRONT)", () => {
+    render(<HandoffRitualOverlay unitName="tmai" ritualId={SUP} phases={[]} />);
+    expect(screen.getByTestId("phase-row-launching")).toBeTruthy();
+    expect(screen.getByTestId("phase-row-ready")).toBeTruthy();
+    expect(screen.queryByTestId("phase-row-prompted")).toBeNull();
+    expect(screen.queryByTestId("phase-row-validated")).toBeNull();
+    expect(screen.queryByTestId("phase-row-killed")).toBeNull();
+  });
+
+  it("marks launching as the current row when no event has arrived yet", () => {
+    render(<HandoffRitualOverlay unitName="tmai" ritualId={SUP} phases={[]} />);
+    expect(screen.getByTestId("phase-row-launching").getAttribute("data-status")).toBe("current");
+    expect(screen.getByTestId("phase-row-ready").getAttribute("data-status")).toBe("pending");
+  });
+
+  it("advances launching → ready as the respawn progresses", () => {
+    render(
+      <HandoffRitualOverlay unitName="tmai" ritualId={SUP} phases={[makeEvent("launching")]} />,
+    );
+    expect(screen.getByTestId("phase-row-launching").getAttribute("data-status")).toBe("current");
+    expect(screen.getByTestId("phase-row-ready").getAttribute("data-status")).toBe("pending");
+  });
+
+  it("distinguishes the respawn in heading, copy, and dialog label", () => {
+    render(<HandoffRitualOverlay unitName="tmai" ritualId={SUP} phases={[]} />);
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
+      "Producer crash-respawn in progress",
+    );
+    expect(screen.getByText(/Producer crash-respawn/)).toBeTruthy();
+    expect(screen.getByText(/slot supervisor detected the Producer was gone/i)).toBeTruthy();
+  });
 });

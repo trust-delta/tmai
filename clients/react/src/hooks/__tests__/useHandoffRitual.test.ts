@@ -159,6 +159,21 @@ describe("useHandoffRitual — state machine", () => {
     }
   });
 
+  it("carries the dispatched unit in the in_progress state", async () => {
+    vi.mocked(api.triggerHandoffRitual).mockResolvedValue({ ritual_id: "r-1" });
+
+    const { result } = renderHook(() => useHandoffRitual());
+    await act(async () => {
+      await result.current.trigger("tmai", { trigger: "manual" });
+    });
+
+    if (result.current.state.kind === "in_progress") {
+      expect(result.current.state.unit).toBe("tmai");
+    } else {
+      throw new Error("expected in_progress state");
+    }
+  });
+
   it("transitions to ready on a `ready` phase with the new agent id surfaced", async () => {
     vi.mocked(api.triggerHandoffRitual).mockResolvedValue({ ritual_id: "r-1" });
 
@@ -321,6 +336,96 @@ describe("useHandoffRitual — retry budget (DR §E)", () => {
       await result.current.trigger("tmai", { trigger: "manual" });
     });
     expect(result.current.retryCount).toBe(0);
+  });
+});
+
+describe("useHandoffRitual — supervisor crash-respawn adoption (#540 / #546)", () => {
+  const SUP = "slot-supervisor:tmai";
+
+  it("adopts an unsolicited supervisor `launching` from idle", () => {
+    const { result } = renderHook(() => useHandoffRitual());
+    expect(result.current.state.kind).toBe("idle");
+
+    act(() => {
+      capturedSSEHandlers?.onEvent?.("handoff_ritual", phasedEvent(SUP, "launching"));
+    });
+
+    expect(result.current.state.kind).toBe("in_progress");
+    if (result.current.state.kind === "in_progress") {
+      expect(result.current.state.ritualId).toBe(SUP);
+      expect(result.current.state.unit).toBe("tmai");
+      expect(result.current.state.phases.map((p) => p.phase)).toEqual(["launching"]);
+    }
+  });
+
+  it("advances an adopted respawn launching → ready", () => {
+    const { result } = renderHook(() => useHandoffRitual());
+    act(() => {
+      capturedSSEHandlers?.onEvent?.("handoff_ritual", phasedEvent(SUP, "launching"));
+    });
+    act(() => {
+      capturedSSEHandlers?.onEvent?.(
+        "handoff_ritual",
+        phasedEvent(SUP, "ready", { new_agent_id: "claude:fresh" }),
+      );
+    });
+
+    expect(result.current.state.kind).toBe("ready");
+    if (result.current.state.kind === "ready") {
+      expect(result.current.state.unit).toBe("tmai");
+      expect(result.current.state.newAgentId).toBe("claude:fresh");
+    }
+  });
+
+  it("adopts a bare `crash_loop_halted` escalate straight from idle", () => {
+    const { result } = renderHook(() => useHandoffRitual());
+    act(() => {
+      capturedSSEHandlers?.onEvent?.(
+        "handoff_ritual",
+        phasedEvent(SUP, "escalate", { reason: "crash_loop_halted" }),
+      );
+    });
+
+    expect(result.current.state.kind).toBe("escalated");
+    if (result.current.state.kind === "escalated") {
+      expect(result.current.state.reason).toBe("crash_loop_halted");
+      expect(result.current.state.ritualId).toBe(SUP);
+      expect(result.current.state.unit).toBe("tmai");
+    }
+  });
+
+  it("does NOT adopt a non-supervisor (UUID) event from idle", () => {
+    const { result } = renderHook(() => useHandoffRitual());
+    act(() => {
+      capturedSSEHandlers?.onEvent?.("handoff_ritual", phasedEvent("uuid-r-9", "launching"));
+    });
+    // A stray operator-ritual event without a live ritual is ignored.
+    expect(result.current.state.kind).toBe("idle");
+  });
+
+  it("never lets a supervisor respawn clobber a live operator handoff", async () => {
+    vi.mocked(api.triggerHandoffRitual).mockResolvedValue({ ritual_id: "r-1" });
+    const { result } = renderHook(() => useHandoffRitual());
+    await act(async () => {
+      await result.current.trigger("tmai", { trigger: "manual" });
+    });
+    expect(result.current.state.kind).toBe("in_progress");
+
+    act(() => {
+      // A concurrent supervisor respawn for another unit must not hijack the
+      // operator's live overlay (different ritual_id, prev is in_progress).
+      capturedSSEHandlers?.onEvent?.(
+        "handoff_ritual",
+        phasedEvent("slot-supervisor:other", "launching", { unit: "other" }),
+      );
+    });
+
+    if (result.current.state.kind === "in_progress") {
+      expect(result.current.state.ritualId).toBe("r-1");
+      expect(result.current.state.phases).toHaveLength(0);
+    } else {
+      throw new Error("expected the operator ritual to stay in_progress");
+    }
   });
 });
 

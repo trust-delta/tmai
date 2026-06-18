@@ -94,4 +94,62 @@ describe("HandoffRitualFailureDialog", () => {
     render(<HandoffRitualFailureDialog {...makeProps({ message: null })} />);
     expect(screen.queryByText(/detail:/)).toBeNull();
   });
+
+  // Default mode is the operator handoff — the existing copy + Retry are
+  // unchanged (regression guard for the crash-loop generalization).
+  it("uses the operator-rejected copy + enabled Retry by default", () => {
+    render(<HandoffRitualFailureDialog {...makeProps()} />);
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Handoff ritual rejected");
+    expect(screen.getByText(/Producer rejected the handoff ritual/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Retry/ })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: /Continue with stale/ })).toBeTruthy();
+  });
+});
+
+describe("HandoffRitualFailureDialog — crash-loop (mode=crash_loop)", () => {
+  it("surfaces the manual-relaunch failure message", () => {
+    render(
+      <HandoffRitualFailureDialog
+        {...makeProps({
+          mode: "crash_loop",
+          reason: "crash_loop_halted",
+          message: null,
+          // No live Producer after a crash-loop halt.
+          producerAgentId: null,
+        })}
+      />,
+    );
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
+      "Producer crash-loop halted",
+    );
+    expect(screen.getByText(/Producer crash-loop halted/)).toBeTruthy();
+    expect(screen.getByText(/Manual relaunch required/i)).toBeTruthy();
+    expect(screen.getByText(/health recovery resets the crash-loop budget/i)).toBeTruthy();
+  });
+
+  it("disables Retry — re-POSTing a handoff can't recover a crash-loop", () => {
+    render(
+      <HandoffRitualFailureDialog
+        {...makeProps({ mode: "crash_loop", reason: "crash_loop_halted", producerAgentId: null })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Retry/ })).toHaveProperty("disabled", true);
+  });
+
+  it("offers Dismiss (not 'Continue with stale') since the Producer is gone", () => {
+    const onDismiss = vi.fn();
+    render(
+      <HandoffRitualFailureDialog
+        {...makeProps({
+          mode: "crash_loop",
+          reason: "crash_loop_halted",
+          producerAgentId: null,
+          onDismiss,
+        })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Continue with stale/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
 });
