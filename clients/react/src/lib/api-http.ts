@@ -454,23 +454,74 @@ export function resolveUnitName(
   return owning ? owning.name : projectName(currentProject);
 }
 
+// Number of path segments (`/`-separated). Depth, not string length, is the
+// "deepest" metric: two prefix-sharing siblings (`.../tmai`, `.../tmai-core`)
+// sit at the SAME depth even though their names differ in length, so ranking
+// by raw length would wrongly favour the longer-named sibling.
+function pathDepth(p: string): number {
+  let n = 0;
+  for (const ch of p) if (ch === "/") n++;
+  return n;
+}
+
+// Find the DEEPEST `cwd` in `cwdToGitDir` whose key satisfies `pred`, returning
+// its git dir. "Deepest" = most path segments; a depth tie breaks toward the
+// lexicographically smaller path so the result NEVER depends on Map iteration
+// order — that order-dependence is the exact bug being fixed (a loose
+// first-match could bind a wrapper-cwd agent to the wrong prefix-sharing child
+// repo). For the inside-repo case every candidate is a prefix of the same cwd,
+// so depth strictly orders them and no tie can arise; the tie-break only bites
+// for the wrapper fallback's same-depth siblings.
+function deepestMatch(
+  cwdToGitDir: Map<string, string>,
+  pred: (cwd: string) => boolean,
+): string | undefined {
+  let bestCwd: string | null = null;
+  let bestDir: string | undefined;
+  for (const [cwd, gitDir] of cwdToGitDir) {
+    if (!pred(cwd)) continue;
+    if (bestCwd === null) {
+      bestCwd = cwd;
+      bestDir = gitDir;
+      continue;
+    }
+    const depth = pathDepth(cwd);
+    const bestDepth = pathDepth(bestCwd);
+    if (depth > bestDepth || (depth === bestDepth && cwd < bestCwd)) {
+      bestCwd = cwd;
+      bestDir = gitDir;
+    }
+  }
+  return bestDir;
+}
+
 // Resolve an agent's normalized repo directory: prefer `git_common_dir`,
 // then a cwd→git_common_dir prefix match, then the cwd itself. Factored
 // out of the grouping loop so unit-grouping (for the representative repo
 // path) and the back-compat git_common_dir grouping share one resolver.
-function resolveRepoDir(agent: AgentSnapshot, cwdToGitDir: Map<string, string>): string {
+//
+// The prefix match is **deepest-wins**, not first-match (#839, companion to
+// tmai-core #538 `pick_primary_by_name`). Under a wrapper dir (`.../tmai`)
+// containing prefix-sharing repos (`.../tmai/tmai`, `.../tmai/tmai-core`), the
+// old loose first-match (`startsWith` either direction, no `/` boundary) could
+// bind the agent to the wrong child depending on Map order. Resolution order:
+//   1. an EXACT `agent.cwd === cwd` hit (the agent IS at a known repo root);
+//   2. else the DEEPEST repo the agent sits inside (`agent.cwd` under `cwd/`);
+//   3. else (wrapper fallback) the DEEPEST repo nested under the agent's cwd
+//      (`cwd` under `agent.cwd/`) — only when no inside-repo match exists.
+// The `/` boundary also stops sibling prefixes from colliding (`.../tmai` no
+// longer matches `.../tmai-core`).
+export function resolveRepoDir(agent: AgentSnapshot, cwdToGitDir: Map<string, string>): string {
   if (agent.git_common_dir) return normalizeGitDir(agent.git_common_dir);
-  // Try to match this cwd to a known git dir via prefix
-  let matched = cwdToGitDir.get(agent.cwd);
-  if (!matched) {
-    for (const [cwd, gitDir] of cwdToGitDir) {
-      if (agent.cwd.startsWith(cwd) || cwd.startsWith(agent.cwd)) {
-        matched = gitDir;
-        break;
-      }
-    }
-  }
-  return matched || agent.cwd;
+  // 1. Exact cwd hit.
+  const exact = cwdToGitDir.get(agent.cwd);
+  if (exact !== undefined) return exact;
+  // 2. Deepest repo the agent sits INSIDE wins over…
+  const inside = deepestMatch(cwdToGitDir, (cwd) => agent.cwd.startsWith(`${cwd}/`));
+  if (inside !== undefined) return inside;
+  // 3. …the deepest repo nested under the agent's cwd (wrapper fallback).
+  const wrapper = deepestMatch(cwdToGitDir, (cwd) => cwd.startsWith(`${agent.cwd}/`));
+  return wrapper ?? agent.cwd;
 }
 
 // Group agents into the left-panel unit groups and their worktree
