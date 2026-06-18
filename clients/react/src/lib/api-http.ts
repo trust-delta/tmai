@@ -1809,6 +1809,23 @@ export const api = {
   // webui spawned is NOT attributable to the unit server-side, so the webui
   // kills it itself after this resolves (see `closeUnitSlot`).
   closeUnit: (unit: string) => closeUnitFetch(unit),
+
+  // Operator review gate (tmai-core #547 / #549, DR
+  // `2026-05-14-handoff-lifecycle-and-kill-ux.md` + aim `handoff-review-gate`).
+  // At the `awaiting_review` phase the ritual PAUSES before the irreversible
+  // kill: the old Producer is still alive and the operator must decide.
+  //   - `approveHandoff` → `POST .../handoff/approve` (body `{ ritual_id }`):
+  //     proceed with kill + respawn (the SSE stream resumes killed→…→ready).
+  //   - `requestHandoffRewrite` → `POST .../handoff/request-rewrite` (body
+  //     `{ ritual_id, feedback }`): re-prompt the still-alive old Producer with
+  //     the feedback; the gate re-opens on the regenerated baton (a fresh
+  //     prompted→validated→awaiting_review round over SSE).
+  // Both resolve on 2xx; a 409 (no armed gate / stale ritual_id) surfaces as a
+  // typed `HandoffReviewError` callers render as a non-fatal error.
+  approveHandoff: (unit: string, ritualId: string) =>
+    handoffReviewFetch(unit, "approve", { ritual_id: ritualId }),
+  requestHandoffRewrite: (unit: string, ritualId: string, feedback: string) =>
+    handoffReviewFetch(unit, "request-rewrite", { ritual_id: ritualId, feedback }),
 };
 
 async function handoffFetch(
@@ -1859,6 +1876,59 @@ async function closeUnitFetch(unit: string): Promise<void> {
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(`API error ${res.status}: ${detail}`);
+  }
+}
+
+// Fire an operator review-gate decision (#547 / tmai-core #549), mirroring
+// `closeUnitFetch`'s X-Tmai-Origin scope. The decision endpoints return no
+// body the UI needs (the SSE phase stream advances the overlay), so resolve on
+// 2xx without parsing; a non-2xx becomes a typed `HandoffReviewError` so the
+// overlay can distinguish a 409 (no armed gate / stale ritual_id) from a
+// transport failure and surface it non-fatally.
+async function handoffReviewFetch(
+  unit: string,
+  decision: "approve" | "request-rewrite",
+  body: { ritual_id: string; feedback?: string },
+): Promise<void> {
+  const url = `${config.baseUrl}/api/units/${encodeURIComponent(unit)}/handoff/${decision}`;
+  const origin: { kind: "Human"; interface: string; cwd?: string } = {
+    kind: "Human",
+    interface: "webui",
+    ...(callerCwd !== null ? { cwd: callerCwd } : {}),
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.token}`,
+      "X-Tmai-Origin": JSON.stringify(origin),
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new HandoffReviewError(res.status, detail);
+  }
+}
+
+/**
+ * Typed error raised by `approveHandoff` / `requestHandoffRewrite`. Surfaces
+ * the HTTP status so the overlay can give the operator a clear, non-fatal
+ * message for the expected race:
+ *   - 409 — no review gate is armed / the `ritual_id` is stale (the ritual
+ *     already advanced past `awaiting_review`, or another operator acted)
+ *   - other — transport / server-side rejection
+ *
+ * The unwrapped raw body lives on `.detail`.
+ */
+export class HandoffReviewError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  constructor(status: number, detail: string) {
+    super(`handoff review failed: ${status} ${detail}`);
+    this.name = "HandoffReviewError";
+    this.status = status;
+    this.detail = detail;
   }
 }
 
