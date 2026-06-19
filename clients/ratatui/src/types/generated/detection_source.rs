@@ -11,7 +11,6 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DetectionSource {
     http_hook,
-    ipc_socket,
     web_socket,
-    capture_pane,
+    pty_server,
 }

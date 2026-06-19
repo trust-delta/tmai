@@ -3376,9 +3376,8 @@
         "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
         "enum": [
           "http_hook",
-          "ipc_socket",
           "web_socket",
-          "capture_pane"
+          "pty_server"
         ]
       },
       "DiffSummarySnapshot": {
