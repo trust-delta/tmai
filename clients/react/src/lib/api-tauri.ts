@@ -326,4 +326,11 @@ export const api = {
   // Producer-slot close (HTTP only — engine kills the Producer + dispatched
   // workers and stops the respawn supervisor; no Tauri IPC equivalent).
   closeUnit: (unit: string) => httpApi.closeUnit(unit),
+
+  // Operator review-gate decisions (#547 / tmai-core #549; HTTP only —
+  // server-driven ritual that emits its own SSE phase events, like
+  // triggerHandoffRitual; no Tauri IPC equivalent).
+  approveHandoff: (unit: string, ritualId: string) => httpApi.approveHandoff(unit, ritualId),
+  requestHandoffRewrite: (unit: string, ritualId: string, feedback: string) =>
+    httpApi.requestHandoffRewrite(unit, ritualId, feedback),
 };
