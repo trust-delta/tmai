@@ -24,7 +24,7 @@ message?: string,
 /**
  * Canonical AgentId of the newly spawned Producer. Set only on `Ready`.
  */
-new_agent_id?: string, } & ({ "phase": "prompted" } | { "phase": "validated" } | { "phase": "killed" } | { "phase": "launching" } | { "phase": "ready" } | { "phase": "escalate", 
+new_agent_id?: string, } & ({ "phase": "prompted" } | { "phase": "validated" } | { "phase": "awaiting_review" } | { "phase": "killed" } | { "phase": "launching" } | { "phase": "ready" } | { "phase": "escalate", 
 /**
  * Machine-readable failure reason (see variant doc).
  */
