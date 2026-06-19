@@ -1797,7 +1797,7 @@
       "description": "SSE payload emitted at each transition of the\n`POST /api/units/{unit}/handoff-and-restart` ritual.\n\nWired into [`CoreEvent::HandoffRitual`]; surfaces on `/api/events` as event\nkind `handoff_ritual`. `ritual_id` is a fresh UUID minted at ritual start\nso concurrent rituals across units (or operator retries) don't alias."
     },
     "HandoffRitualPhase": {
-      "description": "Phase of the Producer handoff-and-restart ritual (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C).\n\nPhases progress strictly in the order `Prompted → Validated → Killed →\nLaunching → Ready`; any step can short-circuit to `Escalate` with a\nmachine-readable `reason` (§D — uniform tier-1 escalation, no per-mode\npolicy). Consumers driving the WebUI overlay (`§E`) treat all `Escalate`\nvariants as the terminal failure state regardless of reason.",
+      "description": "Phase of the Producer handoff-and-restart ritual (DR\n`2026-05-14-handoff-lifecycle-and-kill-ux.md` §C; operator review gate\n`2026-06-19` aim `handoff-review-gate`, #547).\n\nPhases progress strictly in the order `Prompted → Validated →\nAwaitingReview → Killed → Launching → Ready`; any step can short-circuit to\n`Escalate` with a machine-readable `reason` (§D — uniform tier-1\nescalation, no per-mode policy). A `request-rewrite` decision at the\n`AwaitingReview` gate loops back to a fresh `Prompted → Validated →\nAwaitingReview` round (the old Producer is re-prompted, never killed until\nthe operator approves). Consumers driving the WebUI overlay (`§E`) treat all\n`Escalate` variants as the terminal failure state regardless of reason.",
       "oneOf": [
         {
           "description": "Ritual prompt was delivered to the active Producer (§C step 2).",
@@ -1820,6 +1820,21 @@
             "phase": {
               "enum": [
                 "validated"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Baton validated; the ritual is PAUSED at the operator review gate\nbefore the irreversible kill (#547 / aim `handoff-review-gate`). The\noperator either approves (→ `Killed`) or requests a rewrite (→ the old\nProducer is re-prompted and a fresh `Prompted → Validated →\nAwaitingReview` round runs; the kill is never reached until approval).\nThe baton body is fetched out-of-band by the overlay\n(`GET /api/units/{unit}/handoffs/active`), so this phase carries no\npayload beyond the shared event envelope.",
+          "properties": {
+            "phase": {
+              "enum": [
+                "awaiting_review"
               ],
               "type": "string"
             }
@@ -1875,7 +1890,7 @@
           "type": "object"
         },
         {
-          "description": "Failure path; `reason` is a machine-readable code per DR §D failure\ninventory (`no_active_producer`, `multiple_producers`,\n`prompt_send_failed`, `timeout`, `malformed_handoff`, `kill_failed`,\n`spawn_failed`). Consumers route every variant to the same operator\ndialog (§E).",
+          "description": "Failure path; `reason` is a machine-readable code per DR §D failure\ninventory (`no_active_producer`, `multiple_producers`,\n`prompt_send_failed`, `no_baton`, `malformed_handoff`, `kill_failed`,\n`spawn_failed`, `review_abandoned`). Consumers route every variant to\nthe same operator dialog (§E).",
           "properties": {
             "phase": {
               "enum": [

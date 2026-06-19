@@ -2,15 +2,19 @@
 
 /**
  * Phase of the Producer handoff-and-restart ritual (DR
- * `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C).
+ * `2026-05-14-handoff-lifecycle-and-kill-ux.md` §C; operator review gate
+ * `2026-06-19` aim `handoff-review-gate`, #547).
  *
- * Phases progress strictly in the order `Prompted → Validated → Killed →
- * Launching → Ready`; any step can short-circuit to `Escalate` with a
- * machine-readable `reason` (§D — uniform tier-1 escalation, no per-mode
- * policy). Consumers driving the WebUI overlay (`§E`) treat all `Escalate`
- * variants as the terminal failure state regardless of reason.
+ * Phases progress strictly in the order `Prompted → Validated →
+ * AwaitingReview → Killed → Launching → Ready`; any step can short-circuit to
+ * `Escalate` with a machine-readable `reason` (§D — uniform tier-1
+ * escalation, no per-mode policy). A `request-rewrite` decision at the
+ * `AwaitingReview` gate loops back to a fresh `Prompted → Validated →
+ * AwaitingReview` round (the old Producer is re-prompted, never killed until
+ * the operator approves). Consumers driving the WebUI overlay (`§E`) treat all
+ * `Escalate` variants as the terminal failure state regardless of reason.
  */
-export type HandoffRitualPhase = { "phase": "prompted" } | { "phase": "validated" } | { "phase": "killed" } | { "phase": "launching" } | { "phase": "ready" } | { "phase": "escalate", 
+export type HandoffRitualPhase = { "phase": "prompted" } | { "phase": "validated" } | { "phase": "awaiting_review" } | { "phase": "killed" } | { "phase": "launching" } | { "phase": "ready" } | { "phase": "escalate", 
 /**
  * Machine-readable failure reason (see variant doc).
  */
