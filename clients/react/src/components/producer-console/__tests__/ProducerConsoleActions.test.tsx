@@ -443,10 +443,10 @@ describe("ProducerConsoleActions — Handoff & restart button", () => {
 
 // The "Check deltas" button left ProducerConsoleActions and briefly lived
 // on the R panel's Δ stream, which itself retired in §3-2b (#772 — Δ
-// dissolved into each artifact's per-row attention marker). The operator's
-// delta-pull trigger now survives only on the top-bar ProducerFeedChip.
-// The negative assertion below pins that ProducerConsoleActions still does
-// not render the button.
+// dissolved into each artifact's per-row attention marker). The whole
+// producer-feed delta-pull surface was then ripped with the producer-feed
+// machinery (#552). The negative assertion below pins that
+// ProducerConsoleActions does not render the button.
 
 describe("ProducerConsoleActions — no Check deltas button (relocated off the digest)", () => {
   it("does not render a Check deltas button", () => {

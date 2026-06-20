@@ -73,9 +73,6 @@ vi.mock("@/hooks/useHandoffRitual", () => ({ useHandoffRitual: () => useHandoffR
 vi.mock("@/components/producer-console/r-panel/RPanel", () => ({
   RPanel: () => <div data-testid="r-panel-stub">r-panel</div>,
 }));
-vi.mock("@/hooks/useProducerFeed", () => ({
-  useProducerFeed: () => ({ data: null, loading: false, error: null }),
-}));
 vi.mock("@/components/producer-console/ProducerConsole", () => ({
   ProducerConsole: () => <div data-testid="producer-console-stub">digest</div>,
 }));
