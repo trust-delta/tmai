@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY_SIDEBAR = "tmai:sidebar-collapsed";
 const STORAGE_KEY_ACTION_PANEL = "tmai:action-panel-collapsed";
@@ -94,6 +94,35 @@ export function useResponsiveLayout(): UseResponsiveLayoutResult {
     return () => mql.removeEventListener("change", handler);
   }, []);
 
+  // A sidebar / action-panel toggle nudges resize-aware components (xterm.js,
+  // the gutter re-clamp) one frame later, once the layout has settled. The rAF
+  // id is tracked in a ref so a still-pending notification is cancelled on
+  // unmount — otherwise the deferred callback can fire AFTER its environment is
+  // gone (the jsdom test teardown, or a fast unmount) and throw
+  // `ReferenceError: window is not defined`, which Vitest surfaces as an
+  // unhandled error that fails the whole run, landing on whichever test is
+  // mid-flight. The `typeof window` guards are belt-and-suspenders for the same
+  // teardown race.
+  const resizeRaf = useRef<number | null>(null);
+  const notifyResize = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (resizeRaf.current !== null) cancelAnimationFrame(resizeRaf.current);
+    resizeRaf.current = requestAnimationFrame(() => {
+      resizeRaf.current = null;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("resize"));
+      }
+    });
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (resizeRaf.current !== null) {
+        cancelAnimationFrame(resizeRaf.current);
+        resizeRaf.current = null;
+      }
+    };
+  }, []);
+
   // Toggle sidebar with localStorage persistence
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -103,11 +132,10 @@ export function useResponsiveLayout(): UseResponsiveLayoutResult {
       } catch {
         // ignore
       }
-      // Notify xterm.js and other resize-aware components
-      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
       return next;
     });
-  }, []);
+    notifyResize();
+  }, [notifyResize]);
 
   // Toggle action panel with localStorage persistence
   const toggleActionPanel = useCallback(() => {
@@ -118,10 +146,10 @@ export function useResponsiveLayout(): UseResponsiveLayoutResult {
       } catch {
         // ignore
       }
-      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
       return next;
     });
-  }, []);
+    notifyResize();
+  }, [notifyResize]);
 
   const toggleMobileDrawer = useCallback(() => {
     setMobileDrawerOpen((prev) => !prev);
