@@ -7,10 +7,11 @@
 // node `aim-ui` (`tmai-core:doc/aims/aim-ui.md`), part of the aim-model
 // dogfood.
 //
-// COEXIST, DO NOT RIP: this is opt-in behind a StatusBar toggle; the
-// existing ProducerConsole stays the default (see `console-mode.ts`). The
-// dev-tool tokens are scoped to `.aim-console` in `styles/aim-console.css`
-// so they never bleed into the existing console.
+// COEXIST, DO NOT RIP: this is now the DEFAULT surface (see `console-mode.ts`,
+// hub #850 / #851 made it self-sufficient: open + close units); the legacy
+// ProducerConsole is the opt-OUT via this console's EXIT toggle. The dev-tool
+// tokens are scoped to `.aim-console` in `styles/aim-console.css` so they
+// never bleed into the existing console.
 //
 // SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), the
 // Session pane (S3), its docked bash footer (S4), and the PR-rail lists (S5).

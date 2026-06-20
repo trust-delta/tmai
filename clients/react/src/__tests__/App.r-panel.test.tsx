@@ -228,13 +228,13 @@ beforeEach(() => {
 
 describe("App — persistent R panel layout", () => {
   it("shows the digest in the centre AND the R panel on the right with no selection", () => {
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
     expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
     expect(screen.getByTestId("r-panel-stub")).toBeTruthy();
   });
 
   it("keeps the R panel co-visible after an agent is selected (centre swaps, R stays)", () => {
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     const agentBtn = screen.getByTitle("claude:abc");
     fireEvent.click(agentBtn);
@@ -248,7 +248,7 @@ describe("App — persistent R panel layout", () => {
     useResponsiveLayoutMock.mockReturnValue(responsive({ isNarrowScreen: true }));
     useSplitPaneMock.mockReturnValue(splitPane(true));
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     expect(screen.queryByTestId("r-panel-stub")).toBeNull();
   });
@@ -256,7 +256,7 @@ describe("App — persistent R panel layout", () => {
   it("hides the R panel on mobile", () => {
     useResponsiveLayoutMock.mockReturnValue(responsive({ isMobileScreen: true }));
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     expect(screen.queryByTestId("r-panel-stub")).toBeNull();
   });
@@ -269,7 +269,7 @@ describe("App — persistent R panel layout", () => {
       refresh: vi.fn(),
     });
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     expect(screen.getByTestId("console-current-project").textContent).toBe("/p/alpha");
 
@@ -280,7 +280,7 @@ describe("App — persistent R panel layout", () => {
   });
 
   it("focus mode: a focus renders the viewer INSIDE the single R panel column (no additive sibling)", () => {
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     // No focus yet → no viewer anywhere.
     expect(screen.queryByTestId("r-pr-viewer-stub")).toBeNull();
@@ -299,7 +299,7 @@ describe("App — persistent R panel layout", () => {
   });
 
   it("focus mode: the ‹ Inventory back affordance clears the focus (returns to inventory)", () => {
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     fireEvent.click(screen.getByText("focus-pr"));
     expect(screen.getByTestId("r-pr-viewer-stub")).toBeTruthy();

@@ -80,7 +80,11 @@ function rPanelRatioToWidth(ratio: number): number {
   return (1 - ratio) * rPanelViewportWidth();
 }
 
-export function App() {
+export function App({
+  initialConsoleMode = DEFAULT_CONSOLE_MODE,
+}: {
+  initialConsoleMode?: ConsoleMode;
+} = {}) {
   // Apply the active WebUI theme's css vars to <html> and keep them in
   // sync when the user switches themes in Settings — re-skins the whole
   // UI live, no reload.
@@ -126,15 +130,14 @@ export function App() {
     "agents",
   );
   // Coexist console-mode toggle (aim node `tmai-core:doc/aims/aim-ui.md`).
-  // A sibling of `mainPanel`: which TOP-LEVEL console is shown. `producer`
-  // (default) keeps the entire existing shell (sidebar + digest/conversation
-  // + R panel); `aim` swaps the whole window for the new full-screen
-  // <AimConsole>. Aim-ui is opt-in via the StatusBar button and stays opt-in
-  // until the aim mechanism matures — the existing console is never ripped
-  // out. Deliberately NOT persisted to ui-prefs in S1: the aim panes are
-  // stubs, so a reload should land back on the working Producer console
-  // rather than a stub-only screen.
-  const [consoleMode, setConsoleMode] = useState<ConsoleMode>(DEFAULT_CONSOLE_MODE);
+  // A sibling of `mainPanel`: which TOP-LEVEL console is shown. `aim` (now the
+  // DEFAULT — see `console-mode.ts`, hub #850/#851 made it self-sufficient)
+  // swaps the whole window for the full-screen <AimConsole>; `producer` keeps
+  // the legacy shell (sidebar + digest/conversation + R panel) and is the
+  // opt-OUT via the aim console's EXIT toggle. Not persisted to ui-prefs: the
+  // default IS the landing mode on every load (tests pin the legacy console
+  // via the `initialConsoleMode` prop).
+  const [consoleMode, setConsoleMode] = useState<ConsoleMode>(initialConsoleMode);
   const toggleConsoleMode = useCallback(
     () => setConsoleMode((m) => (m === "aim" ? "producer" : "aim")),
     [],
