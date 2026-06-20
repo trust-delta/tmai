@@ -25,7 +25,6 @@ import {
   RRecordViewer,
   selectedRecordKey,
 } from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
-import { ProducerFeedChip } from "@/components/producer-feed/ProducerFeedChip";
 import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -41,7 +40,6 @@ import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
-import { useProducerFeed } from "@/hooks/useProducerFeed";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useUnits } from "@/hooks/useUnits";
@@ -253,7 +251,6 @@ export function App({
     return resolveUnitName(currentProject, unitsData?.units ?? []);
   }, [currentProject, unitsData, unitsLoading]);
   const { data: calibrationData } = useCalibration(unitName);
-  const { data: producerFeedData } = useProducerFeed(unitName);
 
   // Close the R₂ viewer when the focused unit changes — its open artifact
   // (PR, record, or issue) belongs to the previous unit, so it must not
@@ -268,20 +265,6 @@ export function App({
     if (unitName === null) return null;
     return unitsData?.units.find((u) => u.name === unitName)?.repos ?? null;
   }, [unitsData, unitName]);
-
-  // Single operator delta-pull trigger, shared by BOTH surfaces (the
-  // top-bar ProducerFeedChip and the Producer console's "Check deltas ▸"
-  // button) — closes over `unitName` so both call it arg-free. Fires a
-  // payload-zero "pull pending" ping to the unit's live Producer; a 404
-  // just means no live Producer occupies the unit, so we swallow/log
-  // rather than crash the caller (the button also gates on a live
-  // producer — see ProducerConsoleActions).
-  const handleTriggerProducerFeed = useCallback(() => {
-    if (unitName === null) return;
-    void api.triggerProducerFeed(unitName).catch((e) => {
-      console.warn("producer-feed delta-pull trigger failed", e);
-    });
-  }, [unitName]);
 
   // ── Producer handoff-and-restart ritual (lifted to App level) ──
   //
@@ -817,12 +800,7 @@ export function App({
             }}
             consoleMode={consoleMode}
             onToggleConsoleMode={toggleConsoleMode}
-            indicatorSlot={
-              <>
-                <ProducerFeedChip data={producerFeedData} onClick={handleTriggerProducerFeed} />
-                <CalibrationChip data={calibrationData} onClick={openCalibration} />
-              </>
-            }
+            indicatorSlot={<CalibrationChip data={calibrationData} onClick={openCalibration} />}
             onReturnToConsole={
               selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
             }
