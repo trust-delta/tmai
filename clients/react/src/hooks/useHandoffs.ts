@@ -53,6 +53,8 @@ export function useHandoffContent(
   name: string | null,
 ): UseHandoffContentResult {
   // depKey is non-null exactly when both args are, which parks otherwise.
-  const depKey = unit !== null && name !== null ? `${unit}/${name}` : null;
+  // JSON-encode the pair so a `/` inside `unit`/`name` can't collide two
+  // distinct selections onto the same key.
+  const depKey = unit !== null && name !== null ? JSON.stringify([unit, name]) : null;
   return usePolledResource(depKey, () => api.unitHandoff(unit as string, name as string));
 }

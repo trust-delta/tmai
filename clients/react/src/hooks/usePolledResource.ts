@@ -76,6 +76,10 @@ export function usePolledResource<T>(
   // (anti-flicker). `gen` is captured by the caller so the response is dropped
   // once the generation has moved on (depKey change, park, or unmount).
   const runFetch = useCallback(async (gen: number) => {
+    // Skip entirely if this call is already stale (the depKey moved on, parked,
+    // or unmounted) — don't even invoke the fetcher. The post-await guard below
+    // then catches a generation that moves WHILE the fetch is in flight.
+    if (gen !== generationRef.current) return;
     try {
       const res = await fetcherRef.current();
       if (gen !== generationRef.current) return;

@@ -29,7 +29,10 @@ export function useIssueDetail(
   // One-shot shared resource (no intervalMs): keyed on (repo, issue). The
   // generation guard drops a stale selection's response AND a response that
   // resolves after unmount. depKey is non-null exactly when both args are.
-  const depKey = repoPath !== null && issueNumber !== null ? `${repoPath}#${issueNumber}` : null;
+  // JSON-encode the pair so an arbitrary char in `repoPath` can't collide two
+  // distinct (repo, issue) selections onto the same key.
+  const depKey =
+    repoPath !== null && issueNumber !== null ? JSON.stringify([repoPath, issueNumber]) : null;
   return usePolledResource(depKey, () =>
     api.getIssueDetail(repoPath as string, issueNumber as number),
   );

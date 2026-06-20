@@ -23,7 +23,9 @@ import { type PolledResource, usePolledResource } from "./usePolledResource";
 export type UsePrResourceResult<T> = Pick<PolledResource<T>, "data" | "loading" | "error">;
 
 function prKey(repoPath: string | null, prNumber: number | null): string | null {
-  return repoPath !== null && prNumber !== null ? `${repoPath}#${prNumber}` : null;
+  // JSON-encode the pair so an arbitrary char in `repoPath` can't collide two
+  // distinct (repo, pr) selections onto the same key.
+  return repoPath !== null && prNumber !== null ? JSON.stringify([repoPath, prNumber]) : null;
 }
 
 export function usePrBody(
@@ -81,6 +83,8 @@ export function usePrChecks(
   repoPath: string | null,
   branch: string | null,
 ): UsePrResourceResult<CiSummary> {
-  const key = repoPath !== null && branch !== null ? `${repoPath}@${branch}` : null;
+  // JSON-encode the pair so an `@` in `repoPath`/`branch` can't collide two
+  // distinct (repo, branch) selections onto the same key.
+  const key = repoPath !== null && branch !== null ? JSON.stringify([repoPath, branch]) : null;
   return usePolledResource(key, () => api.listChecks(repoPath as string, branch as string));
 }

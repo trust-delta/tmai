@@ -27,7 +27,7 @@ export function useCalibration(unit: string | null, days = 90): UseCalibrationRe
   // `days` is part of the request identity, so it joins the depKey — a days
   // change re-fetches just like a unit change. The generation guard drops a
   // stale response (prior unit/days) AND a response resolving after unmount.
-  const depKey = unit !== null ? `${unit}#${days}` : null;
+  const depKey = unit !== null ? JSON.stringify([unit, days]) : null;
   return usePolledResource(depKey, () => api.calibration(unit as string, days), {
     intervalMs: POLL_INTERVAL_MS,
   });
