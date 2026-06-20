@@ -1310,6 +1310,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
+  // Engine-composed direct `claude` Producer launch (#566 / (B) Phase 2).
+  // The engine resolves the unit (a configured `[[unit]]`, or a repo/worktree
+  // basename that reduces to its owning unit), runs the shared launch builder
+  // (compose + #541 readiness + boot file #373 + the exact `claude` argv), and
+  // spawns `claude` DIRECTLY into a PTY with `is_producer` + `agent_type=claude`
+  // set at the spawn act — no bash-wrap / tmai-CLI chain. Body mirrors `/spawn`.
+  launchProducer: (unit: string) =>
+    apiFetch<SpawnResponse>(`/units/${encodeURIComponent(unit)}/producer/launch`, {
+      method: "POST",
+    }),
 
   // Worktree management
   listWorktrees: () => apiFetch<WorktreeSnapshot[]>("/worktrees"),
