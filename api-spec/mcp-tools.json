@@ -824,35 +824,6 @@
     }
   },
   {
-    "description": "Pull this unit's delta feed: bare state-change facts since your cursor (or the full compose() baseline on first-pull / cursor-loss). Facts, not instructions — you judge. Pass the returned cursor back next turn.",
-    "name": "pull_producer_feed",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "cursor": {
-          "default": null,
-          "description": "Opaque cursor returned by your previous `pull_producer_feed` call.\nOMIT it on your first pull of a session and after any restart: the\nserver then returns the full `compose()` baseline plus a fresh\ncursor. Pass it back verbatim every subsequent turn to receive only\nthe bare state-change facts observed since it.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "repo": {
-          "default": null,
-          "description": "Repository path (optional, defaults to cwd or first registered\nproject). Used only to resolve the owning unit's `<unit>.producer`\nfeed address — mirrors the `repo` param of `dispatch_issue` /\n`tmai_handoff_write`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "PullProducerFeedParams",
-      "type": "object"
-    }
-  },
-  {
     "description": "Rerun failed CI checks",
     "name": "rerun_ci",
     "parameters_schema": {
