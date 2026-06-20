@@ -939,6 +939,44 @@
         }
       }
     },
+    "/api/units/{unit}/producer/launch": {
+      "post": {
+        "tags": [
+          "producer"
+        ],
+        "summary": "Documentation stub for `POST /api/units/{unit}/producer/launch`.",
+        "description": "Engine-composed direct `claude` Producer launch (#566, Phase 1). Resolves the\nunit, runs the shared launch builder (`producer_cli::build_producer_launch` —\ncompose + #541 readiness branch + boot file #373 + the exact `claude` argv,\nthe SAME builder the terminal `tmai producer <unit>` CLI uses), then spawns\n`claude` DIRECTLY into a PTY with the `role=producer`/`unit`/`vendor=claude`\nhints registered AT the spawn act. The spawned process IS `claude` — no\nbash-wrap / tmai-CLI chain, and NOT the generic `/api/spawn` `claude` path\nthat auto-injects `--model`/`--effort` (`tmai producer` takes neither).\n\nADDITIVE: the existing bash-wrap `/api/spawn` launch and the terminal CLI are\nuntouched; this is the parallel path the hub `launchProducerAt` cuts over to\nin Phase 2. Honors the same capacity (503) + cwd-exists (400) guards as\n`/api/spawn`. The body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0 — PTY-server owns the child), command (\"claude\"),\ndispatch_id }`. Real handler: `crate::web::api::launch_producer_direct`.",
+        "operationId": "launch_producer_direct_doc",
+        "parameters": [
+          {
+            "name": "unit",
+            "in": "path",
+            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Producer `claude` spawned directly into a PTY; body mirrors `/api/spawn` (`session_id` / `pid` / `command` / `dispatch_id`)"
+          },
+          "400": {
+            "description": "Unit launch dir does not exist (cwd-exists guard)"
+          },
+          "404": {
+            "description": "Unit not found"
+          },
+          "500": {
+            "description": "Compose / boot-file / spawn failed"
+          },
+          "503": {
+            "description": "Dispatch capacity exceeded, or PTY-server not connected"
+          }
+        }
+      }
+    },
     "/api/units/{unit}/prs": {
       "get": {
         "tags": [
@@ -6352,6 +6390,10 @@
     {
       "name": "producer-feed",
       "description": "Per-unit delta-gate status + operator-triggered delta-pull (notify rebuild step 2, #452; approach 2026-05-18-producer-worker-identity-and-unit-delta-feed §wire)"
+    },
+    {
+      "name": "producer",
+      "description": "Engine-composed Producer launch (#566). Direct `claude` spawn into a PTY — the engine runs the shared launch builder (compose + #541 readiness + boot file #373 + the exact `claude` argv) and spawns `claude` with role/unit/vendor hints at the spawn act, no bash-wrap / tmai-CLI chain. The terminal `tmai producer <unit>` CLI shares the same builder. Additive parallel to the bash-wrap `/api/spawn` launch (hub cuts over in Phase 2)."
     },
     {
       "name": "handoffs",
