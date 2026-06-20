@@ -132,7 +132,7 @@ target: string,
 /**
  * The prompt text to send
  */
-prompt: string, } | { "type": "UsageUpdated" } | { "type": "ToolCallDeferred", 
+prompt: string, } | { "type": "ToolCallDeferred", 
 /**
  * Unique deferred call ID
  */

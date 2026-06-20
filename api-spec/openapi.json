@@ -2244,21 +2244,6 @@
           },
           {
             "type": "object",
-            "description": "Usage data was updated (after a fetch cycle)",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UsageUpdated"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "A tool call was deferred for external resolution",
             "required": [
               "defer_id",

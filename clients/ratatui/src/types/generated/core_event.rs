@@ -62,7 +62,6 @@ pub enum CoreEvent {
         prompt: String,
         target: String,
     },
-    UsageUpdated,
     ToolCallDeferred {
         defer_id: i64,
         target: String,
