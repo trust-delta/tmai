@@ -133,6 +133,15 @@ export function useUnitAttention(unit: string | null): UseUnitAttentionResult {
     }, POLL_INTERVAL_MS);
 
     return () => {
+      // Bump the generation so this effect's in-flight GET *and* any in-flight
+      // setAttention POST (both gate on `generationRef`) are dropped after
+      // unmount. Without it a response resolving post-unmount calls setState on
+      // a gone component, and React 19's resolveUpdatePriority reads `window` —
+      // which the jsdom test teardown has removed (`ReferenceError: window is
+      // not defined`, failing the whole suite). This hook keeps its bespoke
+      // shape (POST write-back + writeSeq) rather than usePolledResource, so it
+      // carries the same guard inline.
+      ++generationRef.current;
       window.clearInterval(id);
     };
   }, [unit]);

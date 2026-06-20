@@ -4,19 +4,17 @@
 // `parent` / `state` / `depends_on` / `serves` / `related` / `body`).
 //
 // The aim-tree twin of `useUnitObservations` / `useApproaches` — same shape,
-// same cadence. Aims change on the timescale an operator edits an anchor or a
-// Producer files a node — rare, human-paced. A 60-second poll (same cadence as
-// the siblings) is ample for an operator-scan surface; no SSE here yet. Mirrors
-// the siblings' shape exactly: keeps the previous response visible while a
-// re-fetch is in flight so the tree does not flicker; `loading` reflects only
-// the initial fetch.
+// same cadence. Aims change on the timescale an operator edits an anchor or
+// a Producer files a node — rare, human-paced. A 60-second poll is ample for
+// an operator-scan surface; no SSE here yet. Keeps the previous response
+// visible while a re-fetch is in flight so the tree does not flicker;
+// `loading` reflects only the initial fetch. `refresh` reflects an operator
+// write (create / edit) immediately instead of waiting on the next tick.
 //
-// `unit = null` parks the hook (no fetch, no interval) — used when no project
-// is selected so the section can render a placeholder rather than poll a
-// non-existent unit.
+// `unit = null` parks the hook (no fetch, no interval).
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { type AimsResponse, api } from "@/lib/api";
+import { usePolledResource } from "./usePolledResource";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -35,70 +33,9 @@ export interface UseUnitAimsResult {
 }
 
 export function useUnitAims(unit: string | null): UseUnitAimsResult {
-  const [data, setData] = useState<AimsResponse | null>(null);
-  const [loading, setLoading] = useState(unit !== null);
-  const [error, setError] = useState<Error | null>(null);
-  // An in-flight response from a previous unit must not stamp over a
-  // newer unit's data (same guard as useUnitObservations / useApproaches).
-  const generationRef = useRef(0);
-  // The live unit, so the stable `refresh` callback re-fetches the *current*
-  // unit without being re-created on every unit change.
-  const unitRef = useRef(unit);
-  unitRef.current = unit;
-
-  // One gen-guarded fetch against `targetUnit`, keeping the previous response
-  // visible (anti-flicker). Shared by the initial fetch, the 60s poll, and
-  // `refresh`. Stable identity (no deps) so it doesn't re-trigger the effect.
-  const fetchFor = useCallback(async (targetUnit: string, gen: number) => {
-    try {
-      const res = await api.aims(targetUnit);
-      if (gen !== generationRef.current) return;
-      setData(res);
-      setError(null);
-    } catch (e) {
-      if (gen !== generationRef.current) return;
-      setError(e instanceof Error ? e : new Error(String(e)));
-    } finally {
-      if (gen === generationRef.current) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  const refresh = useCallback(() => {
-    const u = unitRef.current;
-    if (!u) return;
-    // Re-fetch under the CURRENT generation, no data clear — the poll path's
-    // anti-flicker behaviour, triggered on demand after an operator write.
-    void fetchFor(u, generationRef.current);
-  }, [fetchFor]);
-
-  useEffect(() => {
-    if (!unit) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const myGen = ++generationRef.current;
-    // Clear on unit *change* (this effect's only re-trigger — deps are
-    // [unit]) so the previous unit's aims are never shown under the new
-    // unit's header. The 60s same-unit re-poll and `refresh` go through
-    // fetchFor, which intentionally keeps the last response visible
-    // (anti-flicker); those paths are untouched. Mirrors useUnitObservations.
-    setData(null);
-    setError(null);
-    setLoading(true);
-
-    void fetchFor(unit, myGen);
-    const id = window.setInterval(() => {
-      void fetchFor(unit, myGen);
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [unit, fetchFor]);
-
-  return { data, loading, error, refresh };
+  // Shared poll resource (exposes `refresh`): the generation guard drops a
+  // stale-unit response AND a response that resolves after unmount.
+  return usePolledResource(unit, () => api.aims(unit as string), {
+    intervalMs: POLL_INTERVAL_MS,
+  });
 }
