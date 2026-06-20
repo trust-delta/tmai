@@ -3,7 +3,7 @@
 // StatusBar — focused on the dashboard-return affordance added in
 // response to dogfood feedback 2026-05-14 ("Producer 会話中に dashboard
 // に戻る経路がない"). The other StatusBar slots (agent count,
-// attention pill, indicator slot, security / settings buttons) are
+// attention pill, indicator slot, settings button) are
 // covered by integration tests via App.tsx; here we only assert the
 // new return-to-console button's presence / absence across the
 // desktop, collapsed-sidebar, and mobile variants.
@@ -15,14 +15,7 @@ import { StatusBar } from "../StatusBar";
 describe("StatusBar — return-to-console button", () => {
   describe("desktop variant", () => {
     it("omits the button when onReturnToConsole is undefined", () => {
-      render(
-        <StatusBar
-          agentCount={0}
-          attentionCount={0}
-          onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
-        />,
-      );
+      render(<StatusBar agentCount={0} attentionCount={0} onSettingsClick={vi.fn()} />);
 
       expect(screen.queryByRole("button", { name: /Return to Producer console/ })).toBeNull();
     });
@@ -34,7 +27,6 @@ describe("StatusBar — return-to-console button", () => {
           agentCount={1}
           attentionCount={0}
           onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
           onReturnToConsole={onReturn}
         />,
       );
@@ -54,7 +46,6 @@ describe("StatusBar — return-to-console button", () => {
           collapsed
           onToggleCollapse={vi.fn()}
           onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
         />,
       );
 
@@ -70,7 +61,6 @@ describe("StatusBar — return-to-console button", () => {
           collapsed
           onToggleCollapse={vi.fn()}
           onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
           onReturnToConsole={onReturn}
         />,
       );
@@ -90,7 +80,6 @@ describe("StatusBar — return-to-console button", () => {
           isMobile
           onMobileMenuClick={vi.fn()}
           onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
         />,
       );
 
@@ -106,7 +95,6 @@ describe("StatusBar — return-to-console button", () => {
           isMobile
           onMobileMenuClick={vi.fn()}
           onSettingsClick={vi.fn()}
-          onSecurityClick={vi.fn()}
           onReturnToConsole={onReturn}
         />,
       );

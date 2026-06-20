@@ -25,9 +25,6 @@ vi.mock("../HandoffThresholdSection", () => ({
 vi.mock("../NotificationSection", () => ({
   NotificationSection: () => <div data-testid="section-notification">Notification</div>,
 }));
-vi.mock("../UsageSection", () => ({
-  UsageSection: () => <div data-testid="section-usage">Usage</div>,
-}));
 vi.mock("../SpawnSection", () => ({
   SpawnSection: () => <div data-testid="section-spawn">Spawn</div>,
 }));
@@ -69,7 +66,6 @@ describe("SettingsPanel — Phase B layout", () => {
     expect(screen.getByTestId("section-general")).toBeTruthy();
     expect(screen.getByTestId("section-handoff-threshold")).toBeTruthy();
     expect(screen.getByTestId("section-notification")).toBeTruthy();
-    expect(screen.getByTestId("section-usage")).toBeTruthy();
   });
 
   it("renders the WebUI-group sections directly", () => {

@@ -147,9 +147,7 @@ vi.mock("@/components/terminal/TerminalPanel", () => ({
 }));
 vi.mock("@/components/agent/AgentList", () => ({ AgentList: () => null }));
 vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null }));
-vi.mock("@/components/usage/UsagePanel", () => ({ UsagePanel: () => null }));
 vi.mock("@/components/settings/SettingsPanel", () => ({ SettingsPanel: () => null }));
-vi.mock("@/components/settings/SecurityPanel", () => ({ SecurityPanel: () => null }));
 vi.mock("@/components/calibration/CalibrationPanel", () => ({ CalibrationPanel: () => null }));
 
 import { App } from "@/App";
