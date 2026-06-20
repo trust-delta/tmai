@@ -199,7 +199,7 @@ describe("App — handoff ritual wiring", () => {
       refresh: vi.fn(),
     });
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     // No selection yet → digest, no conversation header.
     expect(screen.queryByTestId("conversation-header-stub")).toBeNull();
@@ -228,7 +228,7 @@ describe("App — handoff ritual wiring", () => {
       refresh: vi.fn(),
     });
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     fireEvent.click(screen.getByTitle("claude:work"));
 
@@ -250,7 +250,7 @@ describe("App — handoff ritual wiring", () => {
       state: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] },
     });
 
-    renderWithProviders(<App />);
+    renderWithProviders(<App initialConsoleMode="producer" />);
 
     // Overlay is present in the digest view …
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();

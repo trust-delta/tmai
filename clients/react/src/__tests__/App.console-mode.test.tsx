@@ -4,10 +4,10 @@
 // `tmai-core:doc/aims/aim-ui.md`, S1). The StatusBar hosts a console-mode
 // toggle; App holds the `consoleMode` sibling state. The contract:
 //
-//   1. DEFAULT is the existing ProducerConsole — aim-ui is opt-in;
-//   2. the StatusBar toggle switches the WHOLE shell to the full-window
-//      <AimConsole> (the sidebar / digest / R panel are replaced);
-//   3. the aim console's own EXIT toggle returns to the Producer console.
+//   1. DEFAULT is the full-window <AimConsole> — it is now the primary surface;
+//   2. the aim console's own EXIT toggle returns to the legacy ProducerConsole
+//      (the sidebar / digest / R panel reappear);
+//   3. in producer mode the StatusBar toggle switches back to the aim console.
 //
 // The real <AimConsole> is covered by its own test; here it's stubbed so we
 // observe WHICH top-level view App renders, plus the exit seam.
@@ -179,25 +179,29 @@ beforeEach(() => {
 });
 
 describe("App — console-mode coexist toggle", () => {
-  it("defaults to the Producer console (aim-ui is opt-in)", () => {
+  it("defaults to the aim console (now the primary surface)", () => {
     renderWithProviders(<App />);
-    expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
-    expect(screen.queryByTestId("aim-console-stub")).toBeNull();
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
+    expect(screen.queryByTestId("producer-console-stub")).toBeNull();
   });
 
-  it("switches the whole shell to the aim console and back", () => {
+  it("exits the aim console to the Producer console and back", () => {
     renderWithProviders(<App />);
 
-    // Enter aim-ui via the StatusBar toggle.
-    fireEvent.click(screen.getByLabelText("Switch to the aim console (preview)"));
+    // Default is the full-window aim console — the existing shell (digest +
+    // R panel) is replaced.
     expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
-    // The existing shell is replaced — digest AND R panel are gone.
     expect(screen.queryByTestId("producer-console-stub")).toBeNull();
     expect(screen.queryByTestId("r-panel-stub")).toBeNull();
 
-    // Exit via the aim console's own toggle → back to the Producer console.
+    // Exit via the aim console's own toggle → the legacy Producer console.
     fireEvent.click(screen.getByText("exit-aim"));
     expect(screen.getByTestId("producer-console-stub")).toBeTruthy();
     expect(screen.queryByTestId("aim-console-stub")).toBeNull();
+
+    // Re-enter via the StatusBar toggle → back to the aim console.
+    fireEvent.click(screen.getByLabelText("Switch to the aim console (preview)"));
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
+    expect(screen.queryByTestId("producer-console-stub")).toBeNull();
   });
 });
