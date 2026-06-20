@@ -10,4 +10,4 @@
  * previously-persisted `MonitoredAgent.detection_source` payloads continue
  * to round-trip.
  */
-export type DetectionSource = "http_hook" | "ipc_socket" | "web_socket" | "capture_pane";
+export type DetectionSource = "http_hook" | "web_socket" | "pty_server";
