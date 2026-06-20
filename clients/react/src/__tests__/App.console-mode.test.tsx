@@ -57,9 +57,6 @@ vi.mock("@/hooks/useAgentSelectionFallback", () => ({
   useAgentSelectionFallback: () => undefined,
 }));
 vi.mock("@/hooks/useKeyboardShortcuts", () => ({ useKeyboardShortcuts: () => undefined }));
-vi.mock("@/hooks/useProducerFeed", () => ({
-  useProducerFeed: () => ({ data: null, loading: false, error: null }),
-}));
 
 // ── component stubs (everything heavy / networked) ──
 vi.mock("@/components/producer-console/r-panel/RPanel", () => ({
