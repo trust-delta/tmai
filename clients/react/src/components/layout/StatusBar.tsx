@@ -7,7 +7,6 @@ interface StatusBarProps {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   onSettingsClick: () => void;
-  onSecurityClick: () => void;
   /** Coexist toggle (aim node `tmai-core:doc/aims/aim-ui.md`): which
    *  top-level console is shown. `producer` (default) = the existing
    *  hand-over digest console; `aim` = the new full-window 3-pane aim
@@ -19,7 +18,7 @@ interface StatusBarProps {
   onToggleConsoleMode?: () => void;
   /** Optional pre-rendered indicator slot — currently used for the
    *  calibration / tier-1 tripwire chip (DR §B.3/§B.4). Sits between
-   *  the attention count and the settings / security buttons. */
+   *  the attention count and the settings button. */
   indicatorSlot?: ReactNode;
   /** Producer-console return affordance.
    *  When defined, render a 🏠 button that clears the main-pane selection
@@ -47,7 +46,6 @@ export function StatusBar({
   collapsed,
   onToggleCollapse,
   onSettingsClick,
-  onSecurityClick,
   consoleMode = "producer",
   onToggleConsoleMode,
   indicatorSlot,
@@ -56,7 +54,7 @@ export function StatusBar({
   onMobileMenuClick,
   unitTabs,
 }: StatusBarProps) {
-  // Coexist console-mode toggle. Rendered next to the Settings/Security
+  // Coexist console-mode toggle. Rendered next to the Settings
   // cluster (the desktop-expanded + mobile chrome where those buttons live).
   // In practice this StatusBar only renders while `producer` is active — the
   // aim console takes over the whole shell once entered — so the label is
@@ -129,14 +127,6 @@ export function StatusBar({
               </button>
             )}
             {consoleModeButton}
-            <button
-              type="button"
-              onClick={onSecurityClick}
-              className="touch-target flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-              title="Config Audit"
-            >
-              🛡
-            </button>
             <button
               type="button"
               onClick={onSettingsClick}
@@ -244,14 +234,6 @@ export function StatusBar({
             </button>
           )}
           {consoleModeButton}
-          <button
-            type="button"
-            onClick={onSecurityClick}
-            className="rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-strong hover:text-primary"
-            title="Config Audit"
-          >
-            🛡
-          </button>
           <button
             type="button"
             onClick={onSettingsClick}

@@ -18,7 +18,6 @@ export interface AppEventHandlers {
   onContextCompacting?: (target: string, count?: number) => void;
   onWorktreeSetupCompleted?: (name: string) => void;
   onWorktreeSetupFailed?: (name: string, error?: string) => void;
-  onUsageUpdated?: () => void;
 }
 
 // Dispatch a CoreEvent to the appropriate handler via ref (stable identity)
@@ -94,9 +93,6 @@ function dispatchEvent(handlers: AppEventHandlers, event: CoreEvent) {
         const data = event.data as { name?: string; error?: string };
         handlers.onWorktreeSetupFailed?.(data.name || "", data.error);
       }
-      break;
-    case "usage-updated":
-      handlers.onUsageUpdated?.();
       break;
   }
 }

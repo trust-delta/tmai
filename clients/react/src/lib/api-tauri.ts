@@ -19,7 +19,6 @@ import type {
   SpawnRequest,
   SpawnRuntime,
   TriggerHandoffRitualRequest,
-  UsageSettings,
   WorkerDispatchMap,
   WorkflowSettings,
   WorktreeSettings,
@@ -186,16 +185,6 @@ export const api = {
   getGeneralSettings: () => httpApi.getGeneralSettings(),
   updateGeneralSettings: (params: { default_project_root?: string | null }) =>
     httpApi.updateGeneralSettings(params),
-
-  // Config audit
-  runConfigAudit: () => httpApi.runConfigAudit(),
-  lastConfigAudit: () => httpApi.lastConfigAudit(),
-
-  // Usage
-  getUsage: () => httpApi.getUsage(),
-  fetchUsage: () => httpApi.fetchUsage(),
-  getUsageSettings: () => httpApi.getUsageSettings(),
-  updateUsageSettings: (params: Partial<UsageSettings>) => httpApi.updateUsageSettings(params),
 
   // Files
   readFile: (path: string) => httpApi.readFile(path),

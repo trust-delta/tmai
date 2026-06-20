@@ -26,11 +26,9 @@ import {
   selectedRecordKey,
 } from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
 import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker";
-import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
-import { UsagePanel } from "@/components/usage/UsagePanel";
 import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
@@ -119,14 +117,12 @@ export function App({
   });
   const [selection, setSelection] = useState<Selection | null>(null);
   const [currentProject, setCurrentProject] = useState<string | null>(null);
-  // Main panel takes one of `"agents"` (default), `"settings"`, or `"security"`.
-  // Settings and Security replace the main panel content (not modal overlays),
+  // Main panel takes one of `"agents"` (default), `"settings"`, or
+  // `"calibration"`. They replace the main panel content (not modal overlays),
   // so they're mutually exclusive — opening one always closes the other.
   // The previous two-booleans-cleared-in-tandem pattern was equivalent but
   // more error-prone; this enum makes the constraint explicit.
-  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "security" | "calibration">(
-    "agents",
-  );
+  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "calibration">("agents");
   // Coexist console-mode toggle (aim node `tmai-core:doc/aims/aim-ui.md`).
   // A sibling of `mainPanel`: which TOP-LEVEL console is shown. `aim` (now the
   // DEFAULT — see `console-mode.ts`, hub #850/#851 made it self-sufficient)
@@ -179,7 +175,6 @@ export function App({
     clearAll: clearFocusedArtifact,
   } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
-  const showSecurity = mainPanel === "security";
   const showCalibration = mainPanel === "calibration";
   // Phase B of the Producer-console rebuild
   // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
@@ -214,10 +209,6 @@ export function App({
     setSettingsOpenedFromOverride(true);
     setMainPanel("settings");
   }, []);
-  const toggleSecurity = useCallback(
-    () => setMainPanel((mp) => (mp === "security" ? "agents" : "security")),
-    [],
-  );
   const openCalibration = useCallback(() => setMainPanel("calibration"), []);
 
   // Configured-unit membership (tmai-core #460 — wire half of #439). Read
@@ -664,7 +655,6 @@ export function App({
         selectedTarget={selectedTarget}
         onSelect={handleSelectAgent}
       />
-      <UsagePanel />
     </>
   );
 
@@ -795,9 +785,6 @@ export function App({
             onSettingsClick={() => {
               toggleSettings();
             }}
-            onSecurityClick={() => {
-              toggleSecurity();
-            }}
             consoleMode={consoleMode}
             onToggleConsoleMode={toggleConsoleMode}
             indicatorSlot={<CalibrationChip data={calibrationData} onClick={openCalibration} />}
@@ -851,9 +838,6 @@ export function App({
             onSettingsClick={() => {
               toggleSettings();
             }}
-            onSecurityClick={() => {
-              toggleSecurity();
-            }}
             consoleMode={consoleMode}
             onToggleConsoleMode={toggleConsoleMode}
             onReturnToConsole={
@@ -872,10 +856,6 @@ export function App({
         {showCalibration && unitName ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
             <CalibrationPanel unit={unitName} onClose={closeMainPanelOverlay} />
-          </div>
-        ) : showSecurity ? (
-          <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <SecurityPanel onClose={closeMainPanelOverlay} />
           </div>
         ) : showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">

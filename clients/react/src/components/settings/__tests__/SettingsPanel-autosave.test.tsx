@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   OrchestratorSettings,
   SpawnSettings,
-  UsageSettings,
   WorkflowSettings,
   WorktreeSettings,
 } from "@/lib/api";
@@ -20,8 +19,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
       updateGeneralSettings: vi.fn(),
       getSpawnSettings: vi.fn(),
       updateSpawnSettings: vi.fn(),
-      getUsageSettings: vi.fn(),
-      updateUsageSettings: vi.fn(),
       getOrchestratorSettings: vi.fn(),
       updateOrchestratorSettings: vi.fn(),
       getNotificationSettings: vi.fn(),
@@ -43,11 +40,6 @@ const SPAWN: SpawnSettings = {
   runtime: "tmux",
   tmux_available: true,
   tmux_window_name: "tmai",
-};
-
-const USAGE: UsageSettings = {
-  enabled: false,
-  auto_refresh_min: 30,
 };
 
 const WORKFLOW: WorkflowSettings = { auto_rebase_on_merge: false };
@@ -78,7 +70,6 @@ function setupDefaults() {
   vi.mocked(api.listAgents).mockResolvedValue([]);
   vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
   vi.mocked(api.getSpawnSettings).mockResolvedValue(SPAWN);
-  vi.mocked(api.getUsageSettings).mockResolvedValue(USAGE);
   vi.mocked(api.getOrchestratorSettings).mockResolvedValue(makeOrchestrator());
   vi.mocked(api.getNotificationSettings).mockResolvedValue({
     notify_on_idle: true,

@@ -85,9 +85,7 @@ vi.mock("@/components/agent/AgentActions", () => ({ AgentActions: () => null }))
 vi.mock("@/components/terminal/TerminalPanel", () => ({ TerminalPanel: () => null }));
 vi.mock("@/components/agent/AgentList", () => ({ AgentList: () => null }));
 vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null }));
-vi.mock("@/components/usage/UsagePanel", () => ({ UsagePanel: () => null }));
 vi.mock("@/components/settings/SettingsPanel", () => ({ SettingsPanel: () => null }));
-vi.mock("@/components/settings/SecurityPanel", () => ({ SecurityPanel: () => null }));
 vi.mock("@/components/calibration/CalibrationPanel", () => ({ CalibrationPanel: () => null }));
 
 // The aim console is stubbed to a marker + an exit button wired to `onExit`,

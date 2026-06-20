@@ -8,7 +8,6 @@ import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
 import { SpawnSection } from "./SpawnSection";
 import { ThemeSection } from "./ThemeSection";
-import { UsageSection } from "./UsageSection";
 import { WorkflowSection } from "./WorkflowSection";
 import { WorktreeSection } from "./WorktreeSection";
 
@@ -85,7 +84,6 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
         <GeneralSection />
         <HandoffThresholdSection />
         <NotificationSection />
-        <UsageSection />
 
         {/* Advanced — Phase B: orchestrator-era controls live here, off
             the main flow but reachable. `<details>` is native /

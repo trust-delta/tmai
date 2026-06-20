@@ -1019,26 +1019,6 @@ export interface SpawnRequest {
   force_pty?: boolean;
 }
 
-// ── Usage ──
-
-export interface UsageMeter {
-  label: string;
-  percent: number;
-  reset_info: string | null;
-  spending: string | null;
-}
-
-export interface UsageSnapshot {
-  meters: UsageMeter[];
-  fetched_at: string | null;
-  error: string | null;
-}
-
-export interface UsageSettings {
-  enabled: boolean;
-  auto_refresh_min: number;
-}
-
 export interface GeneralSettings {
   /** Starting directory for the WebUI's directory browser. `null` falls
    *  back to the backend default (typically `$HOME`). */
@@ -1053,35 +1033,6 @@ export interface WorktreeSettings {
   setup_commands: string[];
   setup_timeout_secs: number;
   branch_depth_warning: number;
-}
-
-// ── Security scan ──
-
-export type SecuritySeverity = "Low" | "Medium" | "High" | "Critical";
-export type SecurityCategory =
-  | "Permissions"
-  | "McpServer"
-  | "Environment"
-  | "Hooks"
-  | "FilePermissions"
-  | "CustomCommand"
-  | "InstructionFile";
-
-export interface SecurityRisk {
-  rule_id: string;
-  severity: SecuritySeverity;
-  category: SecurityCategory;
-  summary: string;
-  detail: string;
-  source: string;
-  matched_value: string | null;
-}
-
-export interface ScanResult {
-  risks: SecurityRisk[];
-  scanned_at: string;
-  scanned_projects: string[];
-  files_scanned: number;
 }
 
 // ── Directory browser ──
@@ -1508,20 +1459,6 @@ export const api = {
   //   {}                                → no-op
   updateGeneralSettings: (params: { default_project_root?: string | null }) =>
     apiFetch("/settings/general", {
-      method: "PUT",
-      body: JSON.stringify(params),
-    }),
-
-  // Config audit
-  runConfigAudit: () => apiFetch<ScanResult>("/config-audit/run", { method: "POST" }),
-  lastConfigAudit: () => apiFetch<ScanResult | null>("/config-audit/last"),
-
-  // Usage
-  getUsage: () => apiFetch<UsageSnapshot>("/usage"),
-  fetchUsage: () => apiFetch("/usage/fetch", { method: "POST" }),
-  getUsageSettings: () => apiFetch<UsageSettings>("/settings/usage"),
-  updateUsageSettings: (params: Partial<UsageSettings>) =>
-    apiFetch("/settings/usage", {
       method: "PUT",
       body: JSON.stringify(params),
     }),
@@ -2077,7 +2014,6 @@ export function subscribeSSE(
       "teammate_idle",
       "task_completed",
       "context_compacting",
-      "usage",
       "worktree_created",
       "worktree_removed",
       "agent_stopped",
