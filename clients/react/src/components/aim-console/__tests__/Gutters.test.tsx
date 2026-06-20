@@ -13,6 +13,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
 import type {
   AgentSnapshot,
   AimsResponse,
@@ -62,17 +63,20 @@ const UNITS: UnitResponse[] = [
 function renderConsole() {
   render(
     <UIPrefsProvider>
-      <AimConsole
-        units={UNITS}
-        activeUnitName="tmai"
-        onSelectUnit={vi.fn()}
-        onAddUnit={vi.fn()}
-        onExit={vi.fn()}
-        agents={[] as AgentSnapshot[]}
-        currentProjectPath="/home/u/tmai"
-        trigger={vi.fn()}
-        onOpenSettings={vi.fn()}
-      />
+      <ConfirmProvider>
+        <AimConsole
+          units={UNITS}
+          activeUnitName="tmai"
+          onSelectUnit={vi.fn()}
+          onAddUnit={vi.fn()}
+          onCloseUnit={vi.fn()}
+          onExit={vi.fn()}
+          agents={[] as AgentSnapshot[]}
+          currentProjectPath="/home/u/tmai"
+          trigger={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />
+      </ConfirmProvider>
     </UIPrefsProvider>,
   );
 }

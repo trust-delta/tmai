@@ -189,6 +189,32 @@
 .aim-console .ac-uadd:hover {
   color: var(--cyan);
 }
+/* per-tab close (×) — the producer-kill teardown affordance, a sibling to the
+   tab button (a nested <button> is invalid). Mirrors the legacy UnitTabs ×:
+   quiet by default, danger on hover. */
+.aim-console .ac-utab-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+.aim-console .ac-uclose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 -2px;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.aim-console .ac-uclose:hover {
+  color: var(--danger);
+  background: #221111;
+}
 .aim-console .ac-sp {
   flex: 1;
 }

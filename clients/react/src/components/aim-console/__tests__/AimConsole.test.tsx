@@ -15,8 +15,9 @@
 // network, no act-warning churn) — the shell assertions don't depend on the
 // data.
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
 import type { AimsResponse, UnitIssuesResponse, UnitPrsResponse, UnitResponse } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
@@ -56,6 +57,7 @@ function renderConsole(overrides: Partial<Parameters<typeof AimConsole>[0]> = {}
     activeUnitName: "tmai" as string | null,
     onSelectUnit: vi.fn(),
     onAddUnit: vi.fn(),
+    onCloseUnit: vi.fn(),
     onExit: vi.fn(),
     // S3 Session-pane wiring — empty here so the shell tests stay
     // data-agnostic (no live sessions → the pane parks in its empty state,
@@ -69,7 +71,9 @@ function renderConsole(overrides: Partial<Parameters<typeof AimConsole>[0]> = {}
   };
   render(
     <UIPrefsProvider>
-      <AimConsole {...props} />
+      <ConfirmProvider>
+        <AimConsole {...props} />
+      </ConfirmProvider>
     </UIPrefsProvider>,
   );
   return props;
@@ -141,6 +145,14 @@ describe("AimConsole — S1 shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Return to the Producer console" }));
     expect(props.onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes a unit only after the confirm gate (× → confirm → onCloseUnit)", async () => {
+    const props = renderConsole();
+    // The per-tab × opens an always-on confirm; onCloseUnit fires only on accept.
+    fireEvent.click(screen.getByRole("button", { name: "Close unit tmai" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close unit" }));
+    await waitFor(() => expect(props.onCloseUnit).toHaveBeenCalledWith(UNITS[0]));
   });
 
   it("falls back the meta readout to the first unit when none is focused", () => {

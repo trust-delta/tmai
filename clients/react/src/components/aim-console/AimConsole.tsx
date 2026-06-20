@@ -30,6 +30,7 @@
 // writes it back.
 
 import { type CSSProperties, useCallback, useState } from "react";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
 import {
@@ -74,8 +75,14 @@ interface AimConsoleProps {
   activeUnitName: string | null;
   /** Re-scope the focused unit to the clicked tab. */
   onSelectUnit: (unit: UnitResponse) => void;
-  /** "Add unit = launch Producer" affordance (App's clipboard placeholder). */
+  /** "Add unit = launch Producer" affordance — opens App's repo-root launch
+   *  picker (the launch cwd defines the unit; aim `producer-cwd`). */
   onAddUnit: () => void;
+  /** Close the unit's Producer slot — kill Producer + dispatched workers +
+   *  footer bash (the `producer-kill` teardown, the sole `producer-slot-
+   *  invariant` carve-out: close does NOT respawn). Gated behind an always-on
+   *  confirm in the tab; called ONLY after that confirm is accepted. */
+  onCloseUnit: (unit: UnitResponse) => void;
   /** Switch back to the existing ProducerConsole (the default view). The
    *  ENTER toggle lives in StatusBar; this is its EXIT pair, since the
    *  full-window aim console replaces the existing chrome incl. StatusBar. */
@@ -100,6 +107,7 @@ export function AimConsole({
   activeUnitName,
   onSelectUnit,
   onAddUnit,
+  onCloseUnit,
   onExit,
   agents,
   currentProjectPath,
@@ -186,6 +194,7 @@ export function AimConsole({
             unit={unit}
             active={unit.name === activeUnitName}
             onSelect={() => onSelectUnit(unit)}
+            onClose={() => onCloseUnit(unit)}
           />
         ))}
         <button
@@ -270,39 +279,70 @@ function AimUnitTab({
   unit,
   active,
   onSelect,
+  onClose,
 }: {
   unit: UnitResponse;
   active: boolean;
   onSelect: () => void;
+  onClose: () => void;
 }) {
   const { data } = useUnitAttention(unit.name);
   const highCount = data?.entries.filter((e) => e.level === "high").length ?? 0;
 
+  // Always-on confirm gate (mirrors the legacy UnitTabs, same copy): close =
+  // kill (Producer + workers + footer bash), so it is never silent. Nesting a
+  // <button> inside the tab <button> is invalid, so the close × is a sibling
+  // under a wrapper, exactly as UnitTabs does it.
+  const confirm = useConfirm();
+  const handleClose = async () => {
+    const ok = await confirm({
+      title: `Close unit ${unit.name}?`,
+      message:
+        "Close kills this unit's Producer, its dispatched workers, and its footer bash. " +
+        "This is a kill, not a delete — worktrees and uncommitted work stay on disk.",
+      confirmLabel: "Close unit",
+      cancelLabel: "Cancel",
+      variant: "danger",
+    });
+    if (ok) onClose();
+  };
+
   return (
-    <button
-      type="button"
-      className={cn("ac-utab", active && "on")}
-      onClick={onSelect}
-      aria-current={active ? "true" : undefined}
-      aria-label={`unit: ${unit.name}`}
-      title={`unit: ${unit.name}`}
-    >
-      <span className="ac-d" />
-      {unit.repos.map((repo) => (
-        <span
-          key={repo.path}
-          className={cn("ac-rp", repo.primary && "pri")}
-          data-testid="aim-repo-pill"
-          data-primary={repo.primary ? "true" : "false"}
-        >
-          {repoBasename(repo.path)}
-        </span>
-      ))}
-      {highCount > 0 && (
-        <span className="ac-um" title={`${highCount} owed attention`}>
-          ⚠{highCount}
-        </span>
-      )}
-    </button>
+    <div className="ac-utab-wrap">
+      <button
+        type="button"
+        className={cn("ac-utab", active && "on")}
+        onClick={onSelect}
+        aria-current={active ? "true" : undefined}
+        aria-label={`unit: ${unit.name}`}
+        title={`unit: ${unit.name}`}
+      >
+        <span className="ac-d" />
+        {unit.repos.map((repo) => (
+          <span
+            key={repo.path}
+            className={cn("ac-rp", repo.primary && "pri")}
+            data-testid="aim-repo-pill"
+            data-primary={repo.primary ? "true" : "false"}
+          >
+            {repoBasename(repo.path)}
+          </span>
+        ))}
+        {highCount > 0 && (
+          <span className="ac-um" title={`${highCount} owed attention`}>
+            ⚠{highCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="ac-uclose"
+        onClick={handleClose}
+        aria-label={`Close unit ${unit.name}`}
+        title={`Close unit ${unit.name} — kill Producer + workers + footer bash (worktrees stay)`}
+      >
+        ×
+      </button>
+    </div>
   );
 }

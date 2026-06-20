@@ -738,6 +738,7 @@ export function App() {
           activeUnitName={unitName}
           onSelectUnit={handleSelectUnit}
           onAddUnit={openLaunchPicker}
+          onCloseUnit={handleCloseUnit}
           onExit={toggleConsoleMode}
           agents={agents}
           currentProjectPath={currentProject}
