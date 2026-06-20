@@ -26,6 +26,7 @@ import {
   selectedRecordKey,
 } from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
 import { ProducerFeedChip } from "@/components/producer-feed/ProducerFeedChip";
+import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -580,6 +581,18 @@ export function App() {
       .catch(() => toastInfo(`Add a unit by launching a Producer: ${cmd}`));
   }, [toastSuccess, toastInfo]);
 
+  // Aim-console "+" = the REAL "add unit = launch a Producer" path (the
+  // bootstrap the `producer-slot-invariant` safety-net presupposes — it only
+  // re-spawns slots that already hold a live Producer, so the FIRST occupant
+  // must come from an explicit launch act). Opens a repo-root picker and
+  // launches a Producer there via the existing `/api/spawn` path
+  // (`launchProducerAt` → derives the unit from the basename); the launch cwd
+  // DEFINES the unit (aim `producer-cwd`). No new endpoint (#788). The legacy
+  // UnitTabs "+" keeps the clipboard placeholder above; only the aim console
+  // gets the live launcher.
+  const [launchPickerOpen, setLaunchPickerOpen] = useState(false);
+  const openLaunchPicker = useCallback(() => setLaunchPickerOpen(true), []);
+
   // C1 close affordance (#540 / #546 companion). The per-tab confirm gate
   // lives in UnitTabs (close = kill, so never silent); this runs only after
   // the operator confirms. `closeUnitSlot` POSTs the core close (Producer +
@@ -719,17 +732,24 @@ export function App() {
   // is not rendered in this mode).
   if (consoleMode === "aim") {
     return (
-      <AimConsole
-        units={unitsData?.units ?? []}
-        activeUnitName={unitName}
-        onSelectUnit={handleSelectUnit}
-        onAddUnit={handleAddUnit}
-        onExit={toggleConsoleMode}
-        agents={agents}
-        currentProjectPath={currentProject}
-        trigger={triggerHandoff}
-        onOpenSettings={openSettingsFromOverride}
-      />
+      <>
+        <AimConsole
+          units={unitsData?.units ?? []}
+          activeUnitName={unitName}
+          onSelectUnit={handleSelectUnit}
+          onAddUnit={openLaunchPicker}
+          onExit={toggleConsoleMode}
+          agents={agents}
+          currentProjectPath={currentProject}
+          trigger={triggerHandoff}
+          onOpenSettings={openSettingsFromOverride}
+        />
+        <ProducerLaunchPicker
+          open={launchPickerOpen}
+          onClose={() => setLaunchPickerOpen(false)}
+          onLaunchProducerAt={launchProducerAt}
+        />
+      </>
     );
   }
 
