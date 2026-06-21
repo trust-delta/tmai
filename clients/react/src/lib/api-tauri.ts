@@ -3,7 +3,6 @@
 
 // Re-export everything from the HTTP API for types
 export * from "./api-http";
-export * from "./teams";
 
 import type {
   AgentSnapshot,
@@ -25,7 +24,6 @@ import type {
 import { api as httpApi } from "./api-http";
 // Import for implementation
 import { tauri } from "./tauri";
-import type { TeamSummary, TeamTaskInfo } from "./teams";
 
 // Detect if running in Tauri environment
 async function isTauriEnvironment(): Promise<boolean> {
@@ -102,8 +100,6 @@ export const api = {
   },
 
   // Proxy all other HTTP-based operations
-  selectChoice: (target: string, choice: number) => httpApi.selectChoice(target, choice),
-  submitSelection: (target: string, choices: number[]) => httpApi.submitSelection(target, choices),
   killAgent: (target: string) => httpApi.killAgent(target),
   subscribeTerminal: (target: string) => httpApi.subscribeTerminal(target),
   resizeAgentTerminal: (target: string, rows: number, cols: number) =>
@@ -232,10 +228,6 @@ export const api = {
   getWorktreeSettings: () => httpApi.getWorktreeSettings(),
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     httpApi.updateWorktreeSettings(params),
-
-  // Teams (HTTP only for now)
-  listTeams: (): Promise<TeamSummary[]> => httpApi.listTeams(),
-  getTeamTasks: (teamName: string): Promise<TeamTaskInfo[]> => httpApi.getTeamTasks(teamName),
 
   // Calibration view (HTTP only — read-only window into the file-backed
   // calibration store; no Tauri-specific path needed)

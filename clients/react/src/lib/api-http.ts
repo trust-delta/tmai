@@ -44,7 +44,6 @@ import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest"
 import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
-import type { TeamSnapshot } from "@/types/generated/TeamSnapshot";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { TriageVerdict } from "@/types/generated/TriageVerdict";
 import type { UnitInventoryResponse } from "@/types/generated/UnitInventoryResponse";
@@ -320,7 +319,6 @@ export interface AgentSnapshot {
 export interface BootstrapSnapshots {
   agents: AgentSnapshot[];
   worktrees: WorktreeSnapshot[];
-  teams: TeamSnapshot[];
   queue: QueueSnapshot;
   dispatches: DispatchSnapshot[];
   workflow: WorkflowSnapshot;
@@ -1164,16 +1162,6 @@ export const api = {
   // Agent actions
   approve: (target: string) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/approve`, { method: "POST" }),
-  selectChoice: (target: string, choice: number) =>
-    apiFetch(`/agents/${encodeURIComponent(target)}/select`, {
-      method: "POST",
-      body: JSON.stringify({ choice }),
-    }),
-  submitSelection: (target: string, choices: number[]) =>
-    apiFetch(`/agents/${encodeURIComponent(target)}/submit`, {
-      method: "POST",
-      body: JSON.stringify({ choices }),
-    }),
   sendText: (target: string, text: string) =>
     apiFetch(`/agents/${encodeURIComponent(target)}/input`, {
       method: "POST",
@@ -1526,11 +1514,6 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // Teams
-  listTeams: () => apiFetch<import("./teams").TeamSummary[]>("/teams"),
-  getTeamTasks: (teamName: string) =>
-    apiFetch<import("./teams").TeamTaskInfo[]>(`/teams/${encodeURIComponent(teamName)}/tasks`),
-
   // Calibration view — read-only window into Producer hit-rate per
   // `2026-05-13-synthesis-processing-and-calibration-schema.md` §B.3.
   // `days = 0` means "whole store, no time filter"; default 90 mirrors
@@ -1867,7 +1850,6 @@ const ENTITY_UPDATE_EVENTS = [
   "AgentUpdate",
   "WorktreeUpdate",
   "QueueUpdate",
-  "TeamUpdate",
   "DispatchUpdate",
   "WorkflowUpdate",
   "RuntimeUpdate",
@@ -1957,9 +1939,6 @@ export function subscribeSSE(
 
     // Other named events — forward to generic handler
     const namedEvents = [
-      "teams",
-      "teammate_idle",
-      "task_completed",
       "context_compacting",
       "worktree_created",
       "worktree_removed",
