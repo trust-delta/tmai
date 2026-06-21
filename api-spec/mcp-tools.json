@@ -985,24 +985,6 @@
     }
   },
   {
-    "description": "Mark an existing agent as orchestrator (e.g. after /resume recovery)",
-    "name": "set_orchestrator",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "id": {
-          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "title": "SetOrchestratorParams",
-      "type": "object"
-    }
-  },
-  {
     "description": "Spawn a new AI agent in a directory",
     "name": "spawn_agent",
     "parameters_schema": {
@@ -1041,49 +1023,6 @@
         "directory"
       ],
       "title": "SpawnAgentParams",
-      "type": "object"
-    }
-  },
-  {
-    "description": "Spawn an orchestrator agent with workflow settings from config",
-    "name": "spawn_orchestrator",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "additional_instructions": {
-          "default": null,
-          "description": "Additional instructions appended to the composed orchestrator prompt",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "cwd": {
-          "default": null,
-          "description": "Working directory (optional, defaults to first registered project or cwd)",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "effort": {
-          "default": null,
-          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "default": null,
-          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "SpawnOrchestratorParams",
       "type": "object"
     }
   },
