@@ -11,7 +11,7 @@
 // selects it and this viewer renders that PR's full content — diff,
 // body, comments (incl. CodeRabbit), labels, mergeable / review / check
 // status, CI status + failure-log drill-down — entirely in-tmai, with
-// ZERO github.com round-trip, plus the action layer (merge soft-valve /
+// ZERO github.com round-trip, plus the action layer (merge confirm /
 // billing-dead override / CI rerun). It serves
 // `2026-05-16-dev-loop-completes-in-tmai` and makes R the SINGLE PR
 // surface (§C: no two coexisting merge paths — the C-column
@@ -31,15 +31,15 @@
 //     success accents.
 //
 // The status-fact plainness rule does NOT extend to the action layer:
-// action buttons are affordances, not status facts, so the merge
-// soft-valve's success / warning / destructive accents ARE load-bearing
-// (delivered → frictionless / not-delivered → friction / Confirm /
-// override) — see `ViewerActions`. The other allowed convention is the
+// action buttons are affordances, not status facts, so the merge confirm's
+// and billing-dead override's destructive / warning accents ARE
+// load-bearing (Confirm / override) — see `ViewerActions`. The other
+// allowed convention is the
 // standard unified-diff `+`/`-` red/green colouring inside the reused
 // `DiffViewer` — that IS the diff fact's conventional representation, not
 // an appraisal layered on top, so `DiffViewer` is used as-is.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DiffViewer } from "@/components/worktree/DiffViewer";
@@ -121,18 +121,19 @@ export function RPrViewer({ selected, onClose }: RPrViewerProps) {
   );
 }
 
-// ── Actions — merge soft-valve + billing-dead override ──
+// ── Actions — merge confirm + billing-dead override ──
 //
-// Ported 1:1 from the now-retired C-column `UnitPrsSection` `PrRow`. R₂
-// is the single PR surface, so the action layer sits beside the content
-// the operator just reviewed.
+// R₂ is the single PR surface, so the action layer sits beside the content
+// the operator just reviewed. The merge is a direct operator action guarded
+// by an arm → dismissible confirm (dev-loop Stage-1
+// `2026-05-16-dev-loop-in-tmai-stage-1`); the producer-review soft-valve
+// (`2026-05-17-producer-review-gated-in-tmai-merge`) was retired with its
+// `mark_pr_reviewed` delivered-marker.
 //
 // Negative-space boundary: the viewer's STATUS facts (header /
 // merge-status / CI) stay plain. These are ACTION affordances, not
-// status facts — the soft-valve's success / warning / destructive
-// accents are LOAD-BEARING (success = Δ-brief delivered → frictionless;
-// warning = not delivered → friction; destructive = Confirm / override)
-// and are preserved exactly as the C surface had them.
+// status facts — the confirm's destructive accent and the override's
+// warning / destructive accents are LOAD-BEARING (Confirm / override).
 
 interface MergeState {
   busy: boolean;
@@ -163,46 +164,19 @@ function ViewerActions({
   const [merge, setMerge] = useState<MergeState>(IDLE_MERGE);
 
   // Phase B billing-dead CI-safe override (approach
-  // `2026-05-20-billing-dead-ci-safe-override`). Distinct from the
-  // producer_reviewed valve below — that valve governs only the *normal*
-  // merge button's friction; this is a separate button + panel for the
-  // narrow case where GitHub CI is red *only because* the repo's private
-  // Actions billing lapsed. The UI just collects + sends the attestation;
-  // the backend re-validates the per-repo `billing_dead` flag and is the
-  // real gate.
+  // `2026-05-20-billing-dead-ci-safe-override`). A separate button + panel,
+  // distinct from the normal merge button above, for the narrow case where
+  // GitHub CI is red *only because* the repo's private Actions billing
+  // lapsed. The UI just collects + sends the attestation; the backend
+  // re-validates the per-repo `billing_dead` flag and is the real gate.
   const [overrideOpen, setOverrideOpen] = useState(false);
-  // Pre-fill the override textarea from the Producer's stored ci-local
-  // attestation (`PrSummaryWire.ci_local_attestation`, approach
-  // `2026-05-26-producer-supplied-override-attestation`) so the operator
-  // need not hand-paste. The field stays editable — what's sent is the
-  // textarea content, pre-filled or typed. `?? ""` because the wire field
-  // is optional/nullable; absent ⇒ "" keeps the manual-paste fallback.
-  const prefill = pr.ci_local_attestation ?? "";
-  const hasPrefill = prefill !== "";
-  const [attestation, setAttestation] = useState(prefill);
-  // Whether the operator has touched the textarea since it was (re)armed.
-  // A later poll (a re-selection of the same PR) can bring a changed
-  // `prefill`; we adopt it ONLY while the field is still clean, never
-  // clobbering an operator's edit (the load-bearing line). Cancel re-arms
-  // it so a reopen re-syncs.
-  const [attestationEdited, setAttestationEdited] = useState(false);
-  useEffect(() => {
-    if (!attestationEdited) {
-      setAttestation(prefill);
-    }
-  }, [prefill, attestationEdited]);
+  // The operator pastes the ci-local attestation by hand (approach
+  // `2026-05-20-billing-dead-ci-safe-override`, O2-a). What's sent is the
+  // textarea content; the backend re-validates the per-repo `billing_dead`
+  // flag + the attestation and is the real gate.
+  const [attestation, setAttestation] = useState("");
 
   const showOverride = billingDead && pr.check_status === "FAILURE";
-
-  // Stage-2 asymmetric-friction valve (approach
-  // `2026-05-17-producer-review-gated-in-tmai-merge`). The unlock
-  // predicate is a *delivered-state fact* — the Producer's Δ-brief
-  // reached the operator — NOT a Producer approval / merge-worthiness
-  // judgment (§E boundary). `undefined` and `false` are identical "not
-  // delivered"; `=== true` keeps the client lockstep-free and crash-free
-  // if the field is omitted on the wire. Transient: reflects the current
-  // poll only, never persisted (it resets on engine restart).
-  const reviewed = pr.producer_reviewed === true;
 
   // `override` is threaded straight through to `api.mergePr` and sent
   // only when present — the normal merge call is byte-for-byte
@@ -229,39 +203,24 @@ function ViewerActions({
         Actions
       </h3>
       <div className="flex flex-wrap items-center gap-1.5">
-        {reviewed ? (
-          // Δ-brief delivered → frictionless: one click merges, no
-          // arm/confirm step. Affirmative styling. The delivered marker
-          // is NOT an approval — the merge call is still wholly the
-          // operator's; core never blocks on the bit (§E boundary).
-          <button
-            type="button"
-            onClick={() => void doMerge()}
-            disabled={merge.busy}
-            className="rounded bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success transition-colors hover:bg-success/25 disabled:opacity-50"
-          >
-            {merge.busy ? "Merging…" : `Merge #${prNumber}`}
-          </button>
-        ) : !merge.confirming ? (
-          // No Δ-brief delivered → friction + visibility, never a
-          // gate/block. Cautionary styling; arm → dismissible confirm.
+        {!merge.confirming ? (
+          // Direct operator merge (dev-loop Stage-1
+          // `2026-05-16-dev-loop-in-tmai-stage-1`), guarded by an
+          // arm → dismissible confirm so a stray click can't merge.
           <button
             type="button"
             onClick={() => setMerge((m) => ({ ...m, confirming: true }))}
             disabled={merge.busy}
-            className="rounded bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning transition-colors hover:bg-warning/25 disabled:opacity-50"
+            className="rounded bg-surface px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
           >
             Merge #{prNumber}
           </button>
         ) : (
           // Dismissible by construction: Confirm is always enabled (the
-          // busy-disable is only a double-submit guard, not a gate) and
-          // Cancel always exists. The operator can ALWAYS merge
-          // regardless of review state — friction, not a block.
+          // busy-disable is only a double-submit guard) and Cancel always
+          // exists. The merge decision is wholly the operator's.
           <span className="inline-flex items-center gap-1">
-            <span className="text-[11px] text-warning">
-              Producer review not delivered for this PR — merge anyway?
-            </span>
+            <span className="text-[11px] text-muted-foreground">Merge #{prNumber}?</span>
             <button
               type="button"
               onClick={() => void doMerge()}
@@ -300,28 +259,15 @@ function ViewerActions({
 
       {showOverride && overrideOpen && (
         <div className="mt-2 rounded border border-warning/40 bg-warning/[0.05] px-2 py-1.5">
-          {hasPrefill ? (
-            <p className="text-[10.5px] leading-relaxed text-warning">
-              CI is red only because this repo's private Actions billing is dead. The Producer's{" "}
-              <code className="text-foreground">ci-local</code> summary is pre-filled below —
-              review/edit it, then confirm. The backend re-checks the per-repo{" "}
-              <code className="text-foreground">billing_dead</code> flag + attestation before
-              running <code className="text-foreground">gh pr merge --admin</code>.
-            </p>
-          ) : (
-            <p className="text-[10.5px] leading-relaxed text-warning">
-              CI is red only because this repo's private Actions billing is dead. Paste the{" "}
-              <code className="text-foreground">ci-local</code> run summary; the backend re-checks
-              the per-repo <code className="text-foreground">billing_dead</code> flag + attestation
-              before running <code className="text-foreground">gh pr merge --admin</code>.
-            </p>
-          )}
+          <p className="text-[10.5px] leading-relaxed text-warning">
+            CI is red only because this repo's private Actions billing is dead. Paste the{" "}
+            <code className="text-foreground">ci-local</code> run summary; the backend re-checks the
+            per-repo <code className="text-foreground">billing_dead</code> flag + attestation before
+            running <code className="text-foreground">gh pr merge --admin</code>.
+          </p>
           <textarea
             value={attestation}
-            onChange={(e) => {
-              setAttestation(e.target.value);
-              setAttestationEdited(true);
-            }}
+            onChange={(e) => setAttestation(e.target.value)}
             rows={4}
             aria-label="CI-local attestation for billing-dead override"
             placeholder="Paste the ci-local attestation (e.g. the `bash scripts/ci-local.sh` summary)…"
@@ -346,12 +292,9 @@ function ViewerActions({
             <button
               type="button"
               onClick={() => {
-                // Discard edits and re-arm the prop sync: reopening shows
-                // the latest Producer prefill (or "" when absent), never a
-                // stale paste.
+                // Discard the paste and close.
                 setOverrideOpen(false);
-                setAttestation(prefill);
-                setAttestationEdited(false);
+                setAttestation("");
               }}
               disabled={merge.busy}
               className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-surface-strong disabled:opacity-50"
