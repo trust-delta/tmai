@@ -115,14 +115,7 @@ describe("RPanel — accordion shell", () => {
 
     renderWithProviders(<RPanel {...makeProps()} />);
 
-    const ids = [
-      "prs-section",
-      "issues-section",
-      "decisions-section",
-      "approaches-section",
-      "aims-section",
-      "files-section",
-    ];
+    const ids = ["prs-section", "issues-section", "aims-section", "files-section"];
     for (const id of ids) {
       const el = screen.getByTestId(id);
       expect(el.getAttribute("data-expanded")).toBe("false");
@@ -134,12 +127,12 @@ describe("RPanel — accordion shell", () => {
 
     renderWithProviders(<RPanel {...makeProps()} />);
 
-    fireEvent.click(screen.getByTestId("decisions-section"));
-    expect(screen.getByTestId("decisions-section").getAttribute("data-expanded")).toBe("true");
+    fireEvent.click(screen.getByTestId("aims-section"));
+    expect(screen.getByTestId("aims-section").getAttribute("data-expanded")).toBe("true");
 
     const raw = localStorage.getItem("tmai:ui:prefs") ?? "{}";
     const parsed = JSON.parse(raw) as { rPanelExpandedSections: string[] };
-    expect(parsed.rPanelExpandedSections).toContain("decisions");
+    expect(parsed.rPanelExpandedSections).toContain("aims");
   });
 
   it("restores expanded sections from persisted prefs on mount", () => {
@@ -152,7 +145,7 @@ describe("RPanel — accordion shell", () => {
 
     expect(screen.getByTestId("prs-section").getAttribute("data-expanded")).toBe("true");
     expect(screen.getByTestId("files-section").getAttribute("data-expanded")).toBe("true");
-    expect(screen.getByTestId("decisions-section").getAttribute("data-expanded")).toBe("false");
+    expect(screen.getByTestId("aims-section").getAttribute("data-expanded")).toBe("false");
   });
 
   it("collapses to a rail that hides the sections and exposes an expand control", () => {
@@ -292,10 +285,10 @@ describe("RPanel — remote-Δ close-act cursor (#822)", () => {
   });
 
   it("collapsing a non-PR/Issue section advances NO cursor", () => {
-    freshPrefs({ rPanelExpandedSections: ["decisions"] });
+    freshPrefs({ rPanelExpandedSections: ["aims"] });
     renderWithProviders(<RPanel {...makeProps()} />);
 
-    fireEvent.click(screen.getByTestId("decisions-section"));
+    fireEvent.click(screen.getByTestId("aims-section"));
     expect(readStoredCursors()).toEqual({});
   });
 

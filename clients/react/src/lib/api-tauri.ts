@@ -229,18 +229,6 @@ export const api = {
   updateWorktreeSettings: (params: Partial<WorktreeSettings>) =>
     httpApi.updateWorktreeSettings(params),
 
-  // Calibration view (HTTP only — read-only window into the file-backed
-  // calibration store; no Tauri-specific path needed)
-  calibration: (unit: string, days?: number) => httpApi.calibration(unit, days),
-
-  // Decisions view (HTTP only — on-demand JSON projection of compose()'s
-  // Settled section; no Tauri-specific path needed)
-  decisions: (unit: string) => httpApi.decisions(unit),
-
-  // Active approaches view (HTTP only — on-demand JSON projection of
-  // compose()'s ▣ section; no Tauri-specific path needed)
-  approaches: (unit: string) => httpApi.approaches(unit),
-
   // Aims view (HTTP only — on-demand JSON projection of the unit's
   // doc/aims/ records; no Tauri-specific path needed)
   aims: (unit: string) => httpApi.aims(unit),
@@ -263,19 +251,10 @@ export const api = {
   unitSlack: (unit: string) => httpApi.unitSlack(unit),
   captureSlack: (unit: string, body: SlackCaptureRequest) => httpApi.captureSlack(unit, body),
 
-  // Unit-scoped cross-record in-play inventory (HTTP only — on-demand JSON
-  // projection of the unit's decisions + serving approaches; no
-  // Tauri-specific path needed)
-  unitInventory: (unit: string) => httpApi.unitInventory(unit),
-
   // Configured-unit membership view (HTTP only — membership-only,
   // no live agent state joined server-side; no Tauri-specific path needed)
   units: () => httpApi.units(),
   unit: (name: string) => httpApi.unit(name),
-
-  // Working-with-human view (HTTP only — on-demand JSON projection of
-  // compose()'s ◐ section; no Tauri-specific path needed)
-  workingWithHuman: (unit: string) => httpApi.workingWithHuman(unit),
 
   // Hand-over batons (HTTP only — read-only file-backed baton store, the
   // operator-side half of tmai-core #473; no Tauri-specific path needed)

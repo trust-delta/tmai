@@ -86,10 +86,8 @@ function makeProps(
   return {
     currentProjectPath: null,
     unitName: null,
-    calibrationData: null,
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
-    onOpenCalibration: vi.fn(),
     trigger: vi.fn(),
     onSelectProjectByPath: vi.fn(),
     onOverrideSpawned: vi.fn(),
@@ -105,7 +103,7 @@ beforeEach(() => {
 });
 
 describe("ProducerConsole", () => {
-  it("renders the four hand-over section headers", () => {
+  it("renders the hand-over section headers", () => {
     useHandoverMock.mockReturnValue(digest());
 
     render(<ProducerConsole {...makeProps()} />);
@@ -113,8 +111,8 @@ describe("ProducerConsole", () => {
     expect(screen.getByRole("heading", { name: /Welcome to tmai/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Where you left off/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Cross-unit status/ })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /Settled decisions/ })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /Working with this human/ })).toBeTruthy();
+    // The Settled-decisions + Working-with-human sections retired with the
+    // decision/approach régime (rip ① / #554).
   });
 
   it("shows the no-project hint when nothing is scoped", () => {
@@ -158,21 +156,6 @@ describe("ProducerConsole", () => {
 
     expect(screen.getByText("halted-agent")).toBeTruthy();
     expect(screen.getByText("main")).toBeTruthy();
-  });
-
-  it("renders the no-unit-yet copy in both wired sections (Settled + Working-with-human)", () => {
-    useHandoverMock.mockReturnValue(digest());
-
-    render(<ProducerConsole {...makeProps()} />);
-
-    // ⬡ Settled decisions + ◐ Working with this human both poll their
-    // own endpoint; with `unitName=null` each surfaces an honest
-    // "pick a project" notice rather than fabricating content.
-    // Distinguish the two by the section-specific tail of the copy.
-    expect(screen.getByText(/to see its settled decisions/i)).toBeTruthy();
-    expect(
-      screen.getByText(/this unit's memory index and working-with-human context/i),
-    ).toBeTruthy();
   });
 
   it("renders cross-unit rows and routes click to onSelectProjectByPath", () => {

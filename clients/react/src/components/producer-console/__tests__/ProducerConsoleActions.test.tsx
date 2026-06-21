@@ -9,7 +9,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot, CalibrationResponse } from "@/lib/api";
+import type { AgentSnapshot } from "@/lib/api";
 import { ProducerConsoleActions } from "../ProducerConsoleActions";
 
 vi.mock("@/components/project/NewAgentLauncher", () => ({
@@ -59,10 +59,8 @@ function makeProps(
     unitName: "u",
     currentProjectPath: null,
     agents: [],
-    calibrationData: null,
     onOpenProducerTerminal: vi.fn(),
     onLaunchProducerAt: vi.fn(),
-    onOpenCalibration: vi.fn(),
     trigger: vi.fn(),
     onOverrideSpawned: vi.fn(),
     onOpenSidebar: vi.fn(),
@@ -102,20 +100,6 @@ function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot 
   };
 }
 
-function calibrationFixture(overrides: Partial<CalibrationResponse> = {}): CalibrationResponse {
-  return {
-    unit: overrides.unit ?? "test-unit",
-    days: overrides.days ?? 90,
-    total_in_store: overrides.total_in_store ?? 5,
-    total_in_window: overrides.total_in_window ?? 5,
-    bootstrap_threshold: overrides.bootstrap_threshold ?? 10,
-    cells: overrides.cells ?? [],
-    tier1_routed: overrides.tier1_routed ?? 0,
-    tier1_violations: overrides.tier1_violations ?? [],
-    recent_false_negatives: overrides.recent_false_negatives ?? [],
-  };
-}
-
 describe("ProducerConsoleActions — top row", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,14 +108,11 @@ describe("ProducerConsoleActions — top row", () => {
   it("keeps Open-Producer-terminal enabled even when unitName is null", () => {
     // Phase B polish v3 fix: when no project is selected yet, the
     // button should still be clickable and route to the DirBrowser
-    // path (not disabled). Calibration stays disabled because it
-    // needs an explicit unit.
+    // path (not disabled).
     render(<ProducerConsoleActions {...makeProps({ unitName: null })} />);
 
     const openTerm = screen.getByRole("button", { name: /Open Producer terminal/ });
-    const openCal = screen.getByRole("button", { name: /Calibration/ });
     expect(openTerm).toHaveProperty("disabled", false);
-    expect(openCal).toHaveProperty("disabled", true);
   });
 
   it("invokes onOpenProducerTerminal when unitName is resolved and the button is clicked", () => {
@@ -182,60 +163,6 @@ describe("ProducerConsoleActions — top row", () => {
     expect(onLaunchAt).toHaveBeenCalledWith("/picked/path");
     // Modal should close after the pick.
     expect(screen.queryByTestId("mock-dirbrowser")).toBeNull();
-  });
-
-  it("invokes onOpenCalibration when the calibration button is clicked", () => {
-    const onOpenCal = vi.fn();
-    render(
-      <ProducerConsoleActions
-        {...makeProps({ unitName: "my-unit", onOpenCalibration: onOpenCal })}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Calibration/ }));
-    expect(onOpenCal).toHaveBeenCalledTimes(1);
-  });
-
-  it("badges the calibration button with the tripwire count when non-empty", () => {
-    render(
-      <ProducerConsoleActions
-        {...makeProps({
-          unitName: "my-unit",
-          calibrationData: calibrationFixture({
-            tier1_violations: [
-              {
-                verdict: "absorb",
-                note_source: "x",
-                confidence: "high",
-                synthesis_pass_id: "p1",
-                tier_routed: 1,
-                rationale: "r",
-                recorded_at: "2026-05-13",
-                outcome: null,
-              },
-            ],
-          }),
-        })}
-      />,
-    );
-
-    expect(screen.getByText(/⚡ 1/)).toBeTruthy();
-  });
-
-  it("shows the cal count when tripwire is empty but store has entries", () => {
-    render(
-      <ProducerConsoleActions
-        {...makeProps({
-          unitName: "my-unit",
-          calibrationData: calibrationFixture({
-            total_in_window: 7,
-            tier1_violations: [],
-          }),
-        })}
-      />,
-    );
-
-    expect(screen.getByText("7")).toBeTruthy();
   });
 });
 

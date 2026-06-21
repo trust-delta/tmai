@@ -4,9 +4,6 @@ import { AgentList } from "@/components/agent/AgentList";
 import { PreviewPanel } from "@/components/agent/PreviewPanel";
 import { AimConsole } from "@/components/aim-console/AimConsole";
 import { type ConsoleMode, DEFAULT_CONSOLE_MODE } from "@/components/aim-console/console-mode";
-import { CalibrationChip } from "@/components/calibration/CalibrationChip";
-import { CalibrationPanel } from "@/components/calibration/CalibrationPanel";
-import { TripwireBanner } from "@/components/calibration/TripwireBanner";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
@@ -21,10 +18,6 @@ import {
   selectedIssueKey,
 } from "@/components/producer-console/r-panel/r-viewer/RIssueViewer";
 import { RPrViewer, selectedPrKey } from "@/components/producer-console/r-panel/r-viewer/RPrViewer";
-import {
-  RRecordViewer,
-  selectedRecordKey,
-} from "@/components/producer-console/r-panel/r-viewer/RRecordViewer";
 import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { TerminalList } from "@/components/terminal/TerminalList";
@@ -32,7 +25,6 @@ import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgentSelectionFallback } from "@/hooks/useAgentSelectionFallback";
 import { useAgents } from "@/hooks/useAgents";
-import { useCalibration } from "@/hooks/useCalibration";
 import { useFocusedArtifact } from "@/hooks/useFocusedArtifact";
 import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
@@ -122,7 +114,7 @@ export function App({
   // so they're mutually exclusive — opening one always closes the other.
   // The previous two-booleans-cleared-in-tandem pattern was equivalent but
   // more error-prone; this enum makes the constraint explicit.
-  const [mainPanel, setMainPanel] = useState<"agents" | "settings" | "calibration">("agents");
+  const [mainPanel, setMainPanel] = useState<"agents" | "settings">("agents");
   // Coexist console-mode toggle (aim node `tmai-core:doc/aims/aim-ui.md`).
   // A sibling of `mainPanel`: which TOP-LEVEL console is shown. `aim` (now the
   // DEFAULT — see `console-mode.ts`, hub #850/#851 made it self-sufficient)
@@ -164,18 +156,14 @@ export function App({
   // fourth column that would steal width from the centre conversation.
   const {
     selectedPr,
-    selectedRecord,
     selectedIssue,
     selectPr,
-    selectRecord,
     selectIssue,
     clearPr,
-    clearRecord,
     clearIssue,
     clearAll: clearFocusedArtifact,
   } = useFocusedArtifact();
   const showSettings = mainPanel === "settings";
-  const showCalibration = mainPanel === "calibration";
   // Phase B of the Producer-console rebuild
   // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
   // routes orchestrator-era controls behind a `<details>` section
@@ -209,7 +197,6 @@ export function App({
     setSettingsOpenedFromOverride(true);
     setMainPanel("settings");
   }, []);
-  const openCalibration = useCallback(() => setMainPanel("calibration"), []);
 
   // Configured-unit membership (tmai-core #460 — wire half of #439). Read
   // BEFORE `unitName` because the active unit is resolved by membership (see
@@ -241,10 +228,9 @@ export function App({
     if (unitsLoading) return null;
     return resolveUnitName(currentProject, unitsData?.units ?? []);
   }, [currentProject, unitsData, unitsLoading]);
-  const { data: calibrationData } = useCalibration(unitName);
 
   // Close the R₂ viewer when the focused unit changes — its open artifact
-  // (PR, record, or issue) belongs to the previous unit, so it must not
+  // (PR or issue) belongs to the previous unit, so it must not
   // linger under a new unit's inventory (mirrors useUnitPrs clearing its
   // list on unit change). unitName is the intended trigger even though the
   // body only clears state.
@@ -682,13 +668,6 @@ export function App({
   // (‹ Inventory) clears the focus and reveals the inventory again.
   const rViewer = selectedPr ? (
     <RPrViewer selected={selectedPr} onClose={clearPr} />
-  ) : selectedRecord ? (
-    <RRecordViewer
-      selected={selectedRecord}
-      unitName={unitName}
-      onSelectRecord={selectRecord}
-      onClose={clearRecord}
-    />
   ) : selectedIssue ? (
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
   ) : null;
@@ -787,7 +766,6 @@ export function App({
             }}
             consoleMode={consoleMode}
             onToggleConsoleMode={toggleConsoleMode}
-            indicatorSlot={<CalibrationChip data={calibrationData} onClick={openCalibration} />}
             onReturnToConsole={
               selection !== null || mainPanel !== "agents" ? returnToConsole : undefined
             }
@@ -847,17 +825,7 @@ export function App({
           />
         )}
 
-        {/* DR §B.4: zero-tolerance tier-1 tripwire banner, hoisted
-            ABOVE every main-panel switch so an operator who never
-            opens the calibration panel still cannot miss it. Empty
-            violation list = silent (the component renders null). */}
-        <TripwireBanner data={calibrationData} onDetailsClick={openCalibration} />
-
-        {showCalibration && unitName ? (
-          <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
-            <CalibrationPanel unit={unitName} onClose={closeMainPanelOverlay} />
-          </div>
-        ) : showSettings ? (
+        {showSettings ? (
           <div className="flex flex-1 flex-col overflow-hidden animate-scale-in">
             <SettingsPanel
               onClose={closeMainPanelOverlay}
@@ -911,9 +879,7 @@ export function App({
               <ProducerConsole
                 currentProjectPath={currentProject}
                 unitName={unitName}
-                calibrationData={calibrationData}
                 onOpenProducerTerminal={openProducerTerminal}
-                onOpenCalibration={openCalibration}
                 trigger={triggerHandoff}
                 onSelectProjectByPath={handleSelectProject}
                 onLaunchProducerAt={launchProducerAt}
@@ -957,12 +923,6 @@ export function App({
           onSelectPr={selectPr}
           selectedPrKey={
             selectedPr ? selectedPrKey(selectedPr.repoPath, selectedPr.pr.number) : null
-          }
-          onSelectRecord={selectRecord}
-          selectedRecordKey={
-            selectedRecord
-              ? selectedRecordKey(selectedRecord.repoPath, selectedRecord.record.slug)
-              : null
           }
           onSelectIssue={selectIssue}
           selectedIssueKey={

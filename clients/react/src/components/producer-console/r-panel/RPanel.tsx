@@ -30,15 +30,11 @@ import { useUnitPrs } from "@/hooks/useUnitPrs";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { RAimsSection } from "./RAimsSection";
-import { RApproachesSection } from "./RApproachesSection";
-import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
-import { RInventorySection } from "./RInventorySection";
 import { RIssuesSection } from "./RIssuesSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
-import type { SelectedRecord } from "./r-viewer/RRecordViewer";
 import {
   advanceCursor,
   effectiveCursor,
@@ -68,13 +64,6 @@ interface RPanelProps {
   /** `selectedPrKey(...)` of the PR currently open in R₂, so the R₁ row
    *  marks itself as the one being viewed. */
   selectedPrKey?: string | null;
-  /** Open a decision/approach in the R₂ record viewer column. Threaded to
-   *  the R₁ Decisions + Approaches inventories so a row click selects the
-   *  record for in-tmai viewing. */
-  onSelectRecord?: (sel: SelectedRecord) => void;
-  /** `selectedRecordKey(...)` of the record currently open in R₂, so the
-   *  focused R₁ Decisions/Approaches row marks itself. */
-  selectedRecordKey?: string | null;
   /** Open an issue in the R₂ issue viewer column. Threaded to the R₁
    *  Issues inventory so a row click selects the issue for in-tmai
    *  viewing. */
@@ -94,15 +83,7 @@ interface RPanelProps {
   viewer?: React.ReactNode;
 }
 
-const SECTION_IDS = [
-  "prs",
-  "issues",
-  "decisions",
-  "approaches",
-  "aims",
-  "inventory",
-  "files",
-] as const;
+const SECTION_IDS = ["prs", "issues", "aims", "files"] as const;
 
 export function RPanel({
   currentProjectPath,
@@ -112,8 +93,6 @@ export function RPanel({
   resize,
   onSelectPr,
   selectedPrKey,
-  onSelectRecord,
-  selectedRecordKey,
   onSelectIssue,
   selectedIssueKey,
   viewer,
@@ -280,32 +259,11 @@ export function RPanel({
               selectedKey={selectedIssueKey}
               deltaCursor={issuesCursor}
             />
-            <RDecisionsSection
-              unitName={unitName}
-              expanded={isExpanded("decisions")}
-              onToggle={() => toggle("decisions")}
-              onSelect={onSelectRecord}
-              selectedKey={selectedRecordKey}
-            />
-            <RApproachesSection
-              unitName={unitName}
-              expanded={isExpanded("approaches")}
-              onToggle={() => toggle("approaches")}
-              onSelect={onSelectRecord}
-              selectedKey={selectedRecordKey}
-            />
             {/* Aims — the aim-tree read view (#780). */}
             <RAimsSection
               unitName={unitName}
               expanded={isExpanded("aims")}
               onToggle={() => toggle("aims")}
-            />
-            <RInventorySection
-              unitName={unitName}
-              expanded={isExpanded("inventory")}
-              onToggle={() => toggle("inventory")}
-              onSelect={onSelectRecord}
-              selectedKey={selectedRecordKey}
             />
             <RFilesSection
               currentProjectPath={currentProjectPath}

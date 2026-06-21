@@ -24,13 +24,11 @@
 
 import { useAgents } from "@/hooks/useAgents";
 import { useHandover } from "@/hooks/useHandover";
-import type { CalibrationResponse, TriggerHandoffRitualRequest } from "@/lib/api";
+import type { TriggerHandoffRitualRequest } from "@/lib/api";
 import { ProducerConsoleActions } from "./ProducerConsoleActions";
 import { ProducerCtxHeader } from "./ProducerCtxHeader";
 import { CrossUnitStatusSection } from "./sections/CrossUnitStatusSection";
-import { SettledDecisionsSection } from "./sections/SettledDecisionsSection";
 import { WhereYouLeftOffSection } from "./sections/WhereYouLeftOffSection";
-import { WorkingWithThisHumanSection } from "./sections/WorkingWithThisHumanSection";
 
 interface ProducerConsoleProps {
   /** Currently focused project (from App.tsx's `currentProject` state).
@@ -41,16 +39,12 @@ interface ProducerConsoleProps {
    *  `resolve_unit_or_cwd` accepts this and falls back to the cwd
    *  if no matching `[[unit]]` is configured. */
   unitName: string | null;
-  /** Calibration response from the parent (App.tsx already polls);
-   *  reused here for the footer's calibration-jump badge. */
-  calibrationData: CalibrationResponse | null;
   onOpenProducerTerminal: () => void;
   /** Phase B polish v3: invoked from the DirBrowser path when the
    *  operator hasn't selected a project yet. `path` is a repo root;
    *  App.tsx derives the unit name from its basename and spawns
    *  `tmai producer` there. */
   onLaunchProducerAt: (path: string) => void;
-  onOpenCalibration: () => void;
   /** The App-level lifted handoff-ritual trigger, forwarded to the
    *  digest's `Handoff & restart ▸` button. The ritual hook itself
    *  lives in App (single instance); the overlay / failure dialog /
@@ -75,10 +69,8 @@ interface ProducerConsoleProps {
 export function ProducerConsole({
   currentProjectPath,
   unitName,
-  calibrationData,
   onOpenProducerTerminal,
   onLaunchProducerAt,
-  onOpenCalibration,
   trigger,
   onSelectProjectByPath,
   onOverrideSpawned,
@@ -127,18 +119,14 @@ export function ProducerConsole({
           onSelectUnit={onSelectProjectByPath}
           preconditions={missingPreconditions}
         />
-        <SettledDecisionsSection unitName={unitName} />
-        <WorkingWithThisHumanSection unitName={unitName} />
       </div>
 
       <ProducerConsoleActions
         unitName={unitName}
         currentProjectPath={currentProjectPath}
         agents={agents}
-        calibrationData={calibrationData}
         onOpenProducerTerminal={onOpenProducerTerminal}
         onLaunchProducerAt={onLaunchProducerAt}
-        onOpenCalibration={onOpenCalibration}
         trigger={trigger}
         onOverrideSpawned={onOverrideSpawned}
         onOpenSidebar={onOpenSidebar}
