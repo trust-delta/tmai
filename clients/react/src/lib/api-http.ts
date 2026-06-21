@@ -7,16 +7,7 @@ import type { AimEditRequest } from "@/types/generated/AimEditRequest";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimsResponse } from "@/types/generated/AimsResponse";
 import type { AimWire } from "@/types/generated/AimWire";
-import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
-import type { ApproachInventoryWire } from "@/types/generated/ApproachInventoryWire";
-import type { ApproachStatus } from "@/types/generated/ApproachStatus";
-import type { ApproachWire } from "@/types/generated/ApproachWire";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
-import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
-import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
-import type { CalibrationResponse } from "@/types/generated/CalibrationResponse";
-import type { Confidence } from "@/types/generated/Confidence";
-import type { DecisionInventoryWire } from "@/types/generated/DecisionInventoryWire";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
@@ -26,27 +17,21 @@ import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
 import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
 import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
-import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
-import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { RepoSlackWire } from "@/types/generated/RepoSlackWire";
-import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
-import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest";
 import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
-import type { TriageVerdict } from "@/types/generated/TriageVerdict";
-import type { UnitInventoryResponse } from "@/types/generated/UnitInventoryResponse";
 import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
@@ -64,16 +49,7 @@ export type {
   AimState,
   AimsResponse,
   AimWire,
-  ApproachesResponse,
-  ApproachInventoryWire,
-  ApproachStatus,
-  ApproachWire,
   BootstrapRequiredEvent,
-  CalibrationCellWire,
-  CalibrationEntry,
-  CalibrationResponse,
-  Confidence,
-  DecisionInventoryWire,
   DispatchBundle,
   EntityUpdateEnvelope,
   HandoffContentResponse,
@@ -82,26 +58,20 @@ export type {
   HandoffsResponse,
   IssueLabelWire,
   IssueSummaryWire,
-  Outcome,
   PermissionMode,
   PrDiffResponse,
   PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
   RepoAimsWire,
-  RepoApproachesWire,
   RepoIssuesWire,
   RepoPrsWire,
   RepoSlackWire,
-  ReviewExtensionWire,
-  ReviewTriggerWire,
   SlackCaptureRequest,
   SlackOreWire,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
-  TriageVerdict,
-  UnitInventoryResponse,
   UnitIssuesResponse,
   UnitPrsResponse,
   UnitRepoWire,
@@ -1514,33 +1484,12 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // Calibration view — read-only window into Producer hit-rate per
-  // `2026-05-13-synthesis-processing-and-calibration-schema.md` §B.3.
-  // `days = 0` means "whole store, no time filter"; default 90 mirrors
-  // the CLI's default.
-  calibration: (unit: string, days = 90) =>
-    apiFetch<CalibrationResponse>(`/units/${encodeURIComponent(unit)}/calibration?days=${days}`),
-
-  // Decisions view — bucketed projection of `compose()`'s Settled section
-  // per `2026-05-11-producer-conversation-workbench.md` §1. Returns
-  // per-repo groups (single-element list for a single-repo unit; multi-
-  // repo unit follows once `UnitConfig.also[]` lands in tmai-core#340).
-  decisions: (unit: string) =>
-    apiFetch<DecisionsResponse>(`/units/${encodeURIComponent(unit)}/decisions`),
-
-  // Approaches view — every approach record (all statuses) per repo,
-  // sorted most-recent-first by slug. The R panel renders all statuses
-  // grouped (no filter chips, no gauge). Multi-repo follows
-  // tmai-core#340, same as decisions.
-  approaches: (unit: string) =>
-    apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
-
   // Aims view (tmai-core #500) — every aim record per repo, the full node
   // (slug / aim / parent / state / depends_on / serves / related / body).
   // The R panel reconstructs the purpose=means tree client-side (by
   // parent/slug) and renders the aim-tree read view. Aims currently live
   // only in the `tmai-core` repo, but the wire is already multi-repo
-  // (`AimsResponse.repos[]`), same as decisions / approaches / observations.
+  // (`AimsResponse.repos[]`).
   aims: (unit: string) => apiFetch<AimsResponse>(`/units/${encodeURIComponent(unit)}/aims`),
 
   // Aim-tree write surface (tmai-core #501, graduation Stage 2-A). Operator-only,
@@ -1606,15 +1555,6 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  // Unit-scoped cross-record in-play inventory (tmai-core #485/#486) — the
-  // nested projection behind the R panel's in-play section: every decision
-  // (serving approaches nested) followed by the unanchored approaches, with
-  // each approach's fact-projected status, work-residual, and liveness. A
-  // pure projection (mechanical facts, no appraisal); the React side renders
-  // it light and plain.
-  unitInventory: (unit: string) =>
-    apiFetch<UnitInventoryResponse>(`/units/${encodeURIComponent(unit)}/inventory`),
-
   // Configured-unit membership (tmai-core #460, public mirror tmai#741).
   // Membership-only — no live agent state is joined server-side; the
   // WebUI reconciles configured units against the live agent list
@@ -1622,14 +1562,6 @@ export const api = {
   // client-derived state pill.
   units: () => apiFetch<UnitsResponse>("/units"),
   unit: (name: string) => apiFetch<UnitResponse>(`/units/${encodeURIComponent(name)}`),
-
-  // Working-with-human view — memory dir + MEMORY.md projection of
-  // `compose()`'s ◐ section per the same DR. Surfaces the same content
-  // the Producer reads on session-start (process rules, cross-conversation
-  // memory index) so the WebUI can render the digest's fourth section
-  // without a Producer being attached.
-  workingWithHuman: (unit: string) =>
-    apiFetch<WorkingWithHumanResponse>(`/units/${encodeURIComponent(unit)}/working-with-human`),
 
   // Hand-over batons (read-only) — the operator-side half of tmai-core PR
   // #473's handoffs endpoint. `unitHandoffs` lists the unit's batons

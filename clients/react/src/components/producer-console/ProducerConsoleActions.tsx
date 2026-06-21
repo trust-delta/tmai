@@ -19,11 +19,7 @@
 //    agents*' projects — chicken-and-egg on a clean start. This
 //    revision unblocks it.
 //
-// 2. **Calibration ▸** — jumps into the existing `<CalibrationPanel>`
-//    (PR #671). Disabled when `unitName === null` because the
-//    calibration endpoint needs an explicit unit.
-//
-// 3. **Operator override ▾** — expandable panel hosting the legacy
+// 2. **Operator override ▾** — expandable panel hosting the legacy
 //    spawn path (`NewAgentLauncher`), a Show-sidebar affordance when
 //    the sidebar is collapsed, and an Open-Settings deep-link into
 //    the Advanced section. Per `feedback_pty_emergency_terminal_
@@ -32,12 +28,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
 import { NewAgentLauncher } from "@/components/project/NewAgentLauncher";
-import {
-  type AgentSnapshot,
-  api,
-  type CalibrationResponse,
-  type TriggerHandoffRitualRequest,
-} from "@/lib/api";
+import { type AgentSnapshot, api, type TriggerHandoffRitualRequest } from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
 
 interface ProducerConsoleActionsProps {
@@ -51,13 +42,11 @@ interface ProducerConsoleActionsProps {
    *  Handoff & restart button to gate enablement on whether a single
    *  live Producer exists for this unit. */
   agents: AgentSnapshot[];
-  calibrationData: CalibrationResponse | null;
   /** Spawn the Producer using the already-selected project. */
   onOpenProducerTerminal: () => void;
   /** Spawn the Producer at an explicit repo root — used after the
    *  DirBrowser picks a path. */
   onLaunchProducerAt: (path: string) => void;
-  onOpenCalibration: () => void;
   /** The App-level lifted handoff-ritual trigger. The button does the
    *  `window.confirm` then calls this; the overlay / failure dialog /
    *  ready-toast all render at App level off the single `useHandoffRitual`
@@ -74,10 +63,8 @@ export function ProducerConsoleActions({
   unitName,
   currentProjectPath,
   agents,
-  calibrationData,
   onOpenProducerTerminal,
   onLaunchProducerAt,
-  onOpenCalibration,
   trigger,
   onOverrideSpawned,
   onOpenSidebar,
@@ -87,8 +74,6 @@ export function ProducerConsoleActions({
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
-  const tripwireCount = calibrationData?.tier1_violations.length ?? 0;
-  const calCount = calibrationData?.total_in_window ?? 0;
 
   const producer = useMemo(
     () => findProducerForUnit(agents, currentProjectPath),
@@ -166,28 +151,6 @@ export function ProducerConsoleActions({
           }
         >
           Handoff &amp; restart ▸
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenCalibration}
-          disabled={unitName === null}
-          className="rounded-md bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
-          title={
-            unitName === null
-              ? "No unit resolvable yet — launch the Producer (or pick a project) first"
-              : "Open the calibration drill-down"
-          }
-        >
-          Calibration ▸
-          {tripwireCount > 0 && (
-            <span className="ml-1.5 rounded-full bg-destructive/30 px-1.5 py-0.5 text-[10px] text-destructive">
-              ⚡ {tripwireCount}
-            </span>
-          )}
-          {tripwireCount === 0 && calCount > 0 && (
-            <span className="ml-1.5 text-[10px] text-muted-foreground">{calCount}</span>
-          )}
         </button>
 
         <button
