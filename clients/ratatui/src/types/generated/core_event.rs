@@ -11,21 +11,6 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CoreEvent {
-    TeammateIdle {
-        member_name: String,
-        target: String,
-        team_name: String,
-    },
-    TaskCreated {
-        task_id: String,
-        task_subject: String,
-        team_name: String,
-    },
-    TaskCompleted {
-        task_id: String,
-        task_subject: String,
-        team_name: String,
-    },
     ConfigChanged {
         file_path: String,
         source: String,
@@ -171,14 +156,6 @@ pub enum CoreEvent {
     DispatchUpdate {
         change: EntityChange,
         id: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        origin: Option<ActionOrigin>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        snapshot: Option<Value>,
-    },
-    TeamUpdate {
-        change: EntityChange,
-        name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         origin: Option<ActionOrigin>,
         #[serde(skip_serializing_if = "Option::is_none")]
