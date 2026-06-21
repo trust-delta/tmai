@@ -16,8 +16,6 @@ pub struct AimWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drift: Option<AimDriftWire>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub is: Option<Vec<AimInteriorWire>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<Value>,
     pub related: Vec<String>,
     pub serves: Vec<String>,
