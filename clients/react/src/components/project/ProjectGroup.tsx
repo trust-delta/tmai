@@ -24,16 +24,7 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
   const [collapsed, setCollapsed] = useState(false);
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawning, setSpawning] = useState(false);
-  const [orchEnabled, setOrchEnabled] = useState(false);
   const spawnRef = useRef<HTMLDivElement>(null);
-
-  // Check orchestrator enablement for this project
-  useEffect(() => {
-    api
-      .getOrchestratorSettings(project.path)
-      .then((s) => setOrchEnabled(s.enabled))
-      .catch(() => setOrchEnabled(false));
-  }, [project.path]);
 
   // Close spawn dropdown on outside click
   useEffect(() => {
@@ -93,20 +84,6 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
     [spawning, confirm, onSpawned],
   );
 
-  // Spawn orchestrator agent for this project
-  const spawnOrchestrator = useCallback(async () => {
-    if (spawning) return;
-    setSpawning(true);
-    setShowSpawn(false);
-    try {
-      const res = await api.spawnOrchestrator({ project: project.path });
-      onSpawned(res.session_id);
-    } catch (_e) {
-    } finally {
-      setSpawning(false);
-    }
-  }, [spawning, project.path, onSpawned]);
-
   // All spawn targets: main + worktrees. Fallback ensures at least one target.
   const defaultTarget: WorktreeGroup = {
     name: "main",
@@ -120,14 +97,6 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
     project.worktrees.length > 0 ? project.worktrees : [defaultTarget];
   const hasMultipleTargets =
     spawnTargets.length > 1 || (spawnTargets.length === 1 && spawnTargets[0].isWorktree);
-
-  // Check if a Producer agent is already running in this project. Keys on
-  // `is_producer` — the wire field (DR `2026-05-16-producer-identity-and-
-  // operator-addressing` §B); the stale `is_orchestrator` read never
-  // fired, so the spawn gate below was always open (#836).
-  const hasRunningOrchestrator = project.worktrees.some((wt) =>
-    wt.agents.some((a) => a.is_producer),
-  );
 
   const isEmpty = project.totalAgents === 0;
 
@@ -197,33 +166,6 @@ export function ProjectGroup({ project, selection, onSelectAgent, onSpawned }: P
             </button>
             {showSpawn && (
               <div className="absolute right-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-lg border border-hairline-strong bg-surface-strong p-1 shadow-lg min-w-[140px]">
-                {/* Orchestrator option (shown when enabled for this project) */}
-                {orchEnabled && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={spawnOrchestrator}
-                      disabled={hasRunningOrchestrator}
-                      className={cn(
-                        "whitespace-nowrap rounded px-3 py-1 text-left text-xs transition-colors",
-                        hasRunningOrchestrator
-                          ? "text-subtle-foreground cursor-not-allowed"
-                          : "text-primary hover:bg-surface-strong hover:text-primary",
-                      )}
-                      title={
-                        hasRunningOrchestrator
-                          ? "Orchestrator is already running"
-                          : "Spawn orchestrator agent"
-                      }
-                    >
-                      Orchestrator
-                      {hasRunningOrchestrator && (
-                        <span className="ml-1 text-[10px] text-subtle-foreground">(active)</span>
-                      )}
-                    </button>
-                    <div className="mx-1 border-t border-hairline" />
-                  </>
-                )}
                 {hasMultipleTargets
                   ? // Show worktree-grouped spawn options
                     spawnTargets.map((target) => {

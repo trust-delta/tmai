@@ -216,8 +216,6 @@ export const api = {
     },
     project?: string,
   ) => httpApi.updateOrchestratorSettings(params, project),
-  spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
-    httpApi.spawnOrchestrator(params),
 
   // Notification settings
   getNotificationSettings: () => httpApi.getNotificationSettings(),

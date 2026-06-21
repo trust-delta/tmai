@@ -1514,12 +1514,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(params),
     }),
-  spawnOrchestrator: (params: { project: string; additional_instructions?: string }) =>
-    apiFetch<SpawnResponse>("/orchestrator/spawn", {
-      method: "POST",
-      body: JSON.stringify(params),
-    }),
-
   // Notification settings
   getNotificationSettings: () =>
     apiFetch<{ notify_on_idle: boolean; notify_idle_threshold_secs: number }>(
