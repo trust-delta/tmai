@@ -196,51 +196,36 @@ describe("RPrViewer", () => {
   });
 
   // ── Action layer (spine `2026-05-29-c-and-r-as-the-development-
-  // substrate` "🔀 PRs (iii)") — merge soft-valve + billing-dead override
-  // + CI rerun, ported 1:1 from the retired C-column `UnitPrsSection`. ──
+  // substrate` "🔀 PRs (iii)") — merge confirm + billing-dead override
+  // + CI rerun. ──
 
-  // Stage-2 asymmetric-friction valve: the unlock is a *delivered-state
-  // fact* (`producer_reviewed === true` — the Δ-brief reached the
-  // operator), NOT a Producer approval. Not-delivered is friction +
-  // visibility, never a block (§E boundary).
+  // The merge is a direct operator action guarded by an arm → dismissible
+  // confirm (dev-loop Stage-1 `2026-05-16-dev-loop-in-tmai-stage-1`); the
+  // producer-review soft-valve was retired with its `mark_pr_reviewed`
+  // delivered-marker.
 
-  it("merges a Δ-brief-delivered PR in one click (no confirm) and closes the viewer", async () => {
+  it("merges via an arm → dismissible confirm and closes the viewer", async () => {
     const onClose = vi.fn();
-    render(<RPrViewer selected={selected({ producer_reviewed: true })} onClose={onClose} />);
+    render(<RPrViewer selected={selected()} onClose={onClose} />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^Merge #100$/ }));
-    // One click → merges directly; no arm/confirm step is ever shown.
+    // Arms the confirm; does not merge yet.
+    expect(screen.getByText(/^Merge #100\?$/)).toBeTruthy();
+    expect(mergePr).not.toHaveBeenCalled();
+
+    // Always dismissible.
+    fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
+    await waitFor(() => expect(screen.queryByText(/^Merge #100\?$/)).toBeNull());
+
+    // Re-arm → Confirm merges and closes the viewer.
+    fireEvent.click(await screen.findByRole("button", { name: /^Merge #100$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Confirm/ }));
     await waitFor(() =>
       expect(mergePr).toHaveBeenCalledWith("/p/u", 100, {
         method: "squash",
         deleteBranch: true,
       }),
     );
-    expect(screen.queryByRole("button", { name: /Confirm/ })).toBeNull();
-    // Merge-success closes R₂ so the now-merged PR isn't left stale.
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-  });
-
-  it("keeps an un-briefed merge a dismissible 'not delivered' confirm, never a block", async () => {
-    const onClose = vi.fn();
-    render(<RPrViewer selected={selected()} onClose={onClose} />);
-
-    const mergeBtn = await screen.findByRole("button", { name: /^Merge #100$/ });
-    fireEvent.click(mergeBtn);
-    // Arms friction (delivered/not-delivered wording), does not merge.
-    expect(screen.getByText(/Producer review not delivered for this PR/)).toBeTruthy();
-    expect(mergePr).not.toHaveBeenCalled();
-
-    // Always dismissible.
-    fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
-    await waitFor(() =>
-      expect(screen.queryByText(/Producer review not delivered for this PR/)).toBeNull(),
-    );
-
-    // And the operator can ALWAYS go through (friction, not a gate).
-    fireEvent.click(await screen.findByRole("button", { name: /^Merge #100$/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Confirm/ }));
-    await waitFor(() => expect(mergePr).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
@@ -286,52 +271,20 @@ describe("RPrViewer", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it("pre-fills the override textarea from the Producer's ci-local attestation and disables Confirm when empty", async () => {
-    // Prefilled → non-empty → Confirm enabled without typing.
-    const { unmount } = render(
-      <RPrViewer
-        selected={selected(
-          { check_status: "FAILURE", ci_local_attestation: "ci-local — PASS" },
-          true,
-        )}
-        onClose={vi.fn()}
-      />,
-    );
-    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
-    expect((screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement).value).toBe(
-      "ci-local — PASS",
-    );
-    expect(
-      (screen.getByRole("button", { name: /Override-merge #100/ }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-    unmount();
-
-    // Absent → empty manual-paste fallback → Confirm disabled.
+  it("starts the override textarea empty and disables Override-merge until pasted", async () => {
     render(<RPrViewer selected={selected({ check_status: "FAILURE" }, true)} onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
-    expect((screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement).value).toBe("");
+    const textarea = screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
+    // Manual-paste only — no pre-fill.
+    expect(textarea.value).toBe("");
     expect(
       (screen.getByRole("button", { name: /Override-merge #100/ }) as HTMLButtonElement).disabled,
     ).toBe(true);
-  });
-
-  it("adopts a newer prefill while the textarea is clean but never clobbers an operator's edit", async () => {
-    const sel = (att: string): SelectedPr =>
-      selected({ check_status: "FAILURE", ci_local_attestation: att }, true);
-    const { rerender } = render(<RPrViewer selected={sel("ci-local v1")} onClose={vi.fn()} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: OVERRIDE_BTN }));
-    const ta = () => screen.getByLabelText(/CI-local attestation/i) as HTMLTextAreaElement;
-    expect(ta().value).toBe("ci-local v1");
-
-    // Clean (un-edited) → a re-selection with a newer attestation adopts it.
-    rerender(<RPrViewer selected={sel("ci-local v2 (newer)")} onClose={vi.fn()} />);
-    expect(ta().value).toBe("ci-local v2 (newer)");
-
-    // Operator edits → a later prefill change must NOT clobber the edit.
-    fireEvent.change(ta(), { target: { value: "operator hand-edit" } });
-    rerender(<RPrViewer selected={sel("ci-local v3")} onClose={vi.fn()} />);
-    expect(ta().value).toBe("operator hand-edit");
+    // Pasting enables it.
+    fireEvent.change(textarea, { target: { value: "ci-local — PASS" } });
+    expect(
+      (screen.getByRole("button", { name: /Override-merge #100/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   // CI rerun — light/direct action keyed by a failed check's `run_id`
