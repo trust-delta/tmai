@@ -19,8 +19,7 @@
 //
 // COEXIST: display-only. The aim-console has no R₂ viewer and the mock rows
 // have no detail target, so rows are inert (no click-to-viewer, no
-// github.com link-out — the dev-loop stays in-tmai). Attention is a separate
-// axis (`useUnitAttention`), deliberately NOT wired here (S5 scope).
+// github.com link-out — the dev-loop stays in-tmai).
 //
 // The expand/collapse MECHANISM is the S1 shell's (the root's `.pr-open`
 // modifier + the grid transition + the `prOpen` state in `AimConsole`); this
@@ -101,9 +100,8 @@ export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse 
         aria-label="Expand PR / Issue rail"
         aria-expanded={open}
       >
-        {/* `.ac-v.w` keeps the amber dev-tool accent as a STATIC accent — it
-            is NOT an attention signal (attention is a separate axis, out of
-            S5 scope); it just shows the live open PR count. */}
+        {/* `.ac-v.w` keeps the amber dev-tool accent as a STATIC accent —
+            it just shows the live open PR count. */}
         <span className="ac-v w">PR {openPrCount}</span>
         <span className="ac-v">Issue {openIssueCount}</span>
         <span className="ac-g">‹ EXTERNAL</span>

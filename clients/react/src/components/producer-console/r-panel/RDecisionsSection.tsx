@@ -7,9 +7,7 @@
 // appraisal. See the approach's R section table.
 
 import { useDecisions } from "@/hooks/useDecisions";
-import type { AttentionControls } from "@/hooks/useUnitAttention";
 import type { DecisionWire, RepoDecisionsWire } from "@/lib/api";
-import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedRecord, selectedRecordKey } from "./r-viewer/RRecordViewer";
 import { Section } from "./Section";
 
@@ -25,10 +23,6 @@ interface RDecisionsSectionProps {
    *  R₂, so the row marks itself as the one being viewed (a mechanical
    *  "open here" fact, not appraisal). */
   selectedKey?: string | null;
-  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
-   *  When present each decision row shows its attention marker; absent (e.g.
-   *  in isolation tests) the rows render marker-free. */
-  attention?: AttentionControls;
 }
 
 export function RDecisionsSection({
@@ -37,7 +31,6 @@ export function RDecisionsSection({
   onToggle,
   onSelect,
   selectedKey,
-  attention,
 }: RDecisionsSectionProps) {
   const { data, loading, error } = useDecisions(unitName);
   const total = data === null ? 0 : data.repos.reduce((n, r) => n + flattenAll(r).length, 0);
@@ -58,7 +51,6 @@ export function RDecisionsSection({
         error={error}
         onSelect={onSelect}
         selectedKey={selectedKey ?? null}
-        attention={attention}
       />
     </Section>
   );
@@ -75,10 +67,9 @@ interface BodyProps {
   error: Error | null;
   onSelect?: (sel: SelectedRecord) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
 }
 
-function Body({ unitName, repos, loading, error, onSelect, selectedKey, attention }: BodyProps) {
+function Body({ unitName, repos, loading, error, onSelect, selectedKey }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see decisions.</p>;
   }
@@ -115,7 +106,6 @@ function Body({ unitName, repos, loading, error, onSelect, selectedKey, attentio
                   repoLabel={repo.repo_label}
                   onSelect={onSelect}
                   selected={selectedKey === selectedRecordKey(repo.repo_root, d.slug)}
-                  attention={attention}
                 />
               ))}
             </ul>
@@ -136,27 +126,15 @@ function DecisionRow({
   repoLabel,
   onSelect,
   selected,
-  attention,
 }: {
   decision: DecisionWire;
   repoPath: string;
   repoLabel: string;
   onSelect?: (sel: SelectedRecord) => void;
   selected: boolean;
-  attention?: AttentionControls;
 }) {
   return (
     <li className="flex items-start gap-1.5 leading-snug">
-      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
-      <span className="pt-0.5">
-        <RowAttentionMarker
-          attention={attention}
-          repoPath={repoPath}
-          section="decision"
-          id={decision.slug}
-          label={decision.slug}
-        />
-      </span>
       <button
         type="button"
         onClick={() => onSelect?.({ kind: "decision", repoPath, repoLabel, record: decision })}

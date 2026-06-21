@@ -11,9 +11,6 @@ import type { ApproachesResponse } from "@/types/generated/ApproachesResponse";
 import type { ApproachInventoryWire } from "@/types/generated/ApproachInventoryWire";
 import type { ApproachStatus } from "@/types/generated/ApproachStatus";
 import type { ApproachWire } from "@/types/generated/ApproachWire";
-import type { AttentionEntryWire } from "@/types/generated/AttentionEntryWire";
-import type { AttentionSetRequest } from "@/types/generated/AttentionSetRequest";
-import type { AttentionStateResponse } from "@/types/generated/AttentionStateResponse";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
 import type { CalibrationCellWire } from "@/types/generated/CalibrationCellWire";
 import type { CalibrationEntry } from "@/types/generated/CalibrationEntry";
@@ -29,10 +26,6 @@ import type { HandoffRitualEvent } from "@/types/generated/HandoffRitualEvent";
 import type { HandoffsResponse } from "@/types/generated/HandoffsResponse";
 import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
 import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
-import type { Level } from "@/types/generated/Level";
-import type { ObservationStatus } from "@/types/generated/ObservationStatus";
-import type { ObservationsResponse } from "@/types/generated/ObservationsResponse";
-import type { ObservationWire } from "@/types/generated/ObservationWire";
 import type { Outcome } from "@/types/generated/Outcome";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
@@ -42,13 +35,11 @@ import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 import type { RepoApproachesWire } from "@/types/generated/RepoApproachesWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
-import type { RepoObservationsWire } from "@/types/generated/RepoObservationsWire";
 import type { RepoPrsWire } from "@/types/generated/RepoPrsWire";
 import type { RepoSlackWire } from "@/types/generated/RepoSlackWire";
 import type { ReviewExtensionWire } from "@/types/generated/ReviewExtensionWire";
 import type { ReviewTriggerWire } from "@/types/generated/ReviewTriggerWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
-import type { Section } from "@/types/generated/Section";
 import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest";
 import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
@@ -78,9 +69,6 @@ export type {
   ApproachInventoryWire,
   ApproachStatus,
   ApproachWire,
-  AttentionEntryWire,
-  AttentionSetRequest,
-  AttentionStateResponse,
   BootstrapRequiredEvent,
   CalibrationCellWire,
   CalibrationEntry,
@@ -95,10 +83,6 @@ export type {
   HandoffsResponse,
   IssueLabelWire,
   IssueSummaryWire,
-  Level,
-  ObservationStatus,
-  ObservationsResponse,
-  ObservationWire,
   Outcome,
   PermissionMode,
   PrDiffResponse,
@@ -108,12 +92,10 @@ export type {
   RepoAimsWire,
   RepoApproachesWire,
   RepoIssuesWire,
-  RepoObservationsWire,
   RepoPrsWire,
   RepoSlackWire,
   ReviewExtensionWire,
   ReviewTriggerWire,
-  Section,
   SlackCaptureRequest,
   SlackOreWire,
   SpawnRole,
@@ -1570,14 +1552,6 @@ export const api = {
   approaches: (unit: string) =>
     apiFetch<ApproachesResponse>(`/units/${encodeURIComponent(unit)}/approaches`),
 
-  // Observations view (tmai-core #498) — every observation record per repo,
-  // sorted most-recent-first by slug. The R panel renders one row per
-  // observation (summary + status badge); there is no record viewer —
-  // `ObservationWire` carries only `slug` / `summary` / `status`, nothing
-  // rich to open in R₂. Multi-repo follows tmai-core#340, same as approaches.
-  observations: (unit: string) =>
-    apiFetch<ObservationsResponse>(`/units/${encodeURIComponent(unit)}/observations`),
-
   // Aims view (tmai-core #500) — every aim record per repo, the full node
   // (slug / aim / parent / state / depends_on / serves / related / body).
   // The R panel reconstructs the purpose=means tree client-side (by
@@ -1657,27 +1631,6 @@ export const api = {
   // it light and plain.
   unitInventory: (unit: string) =>
     apiFetch<UnitInventoryResponse>(`/units/${encodeURIComponent(unit)}/inventory`),
-
-  // Per-artifact attention map (contract
-  // `tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md`).
-  // The (section,id)→level map for the unit. Only `low`/`high` entries are
-  // emitted — `null` is absence (the R panel infers `null` for any listed
-  // artifact missing from the map). File is unrepresentable (`Section` has no
-  // File variant): File is attention-exempt.
-  unitAttention: (unit: string) =>
-    apiFetch<AttentionStateResponse>(`/units/${encodeURIComponent(unit)}/attention`),
-
-  // Operator attention write — sets `low`/`high` on one artifact and returns
-  // the updated map. `AttentionSetRequest.level` has no `null` variant, so the
-  // operator can never write `null` (non-repudiation by type); only the
-  // machine writes `null` (by absence). The backend enforces the monotonic
-  // `null`→not-null transition and the `high`≤1/dimension cardinality, and may
-  // demote a prior `high` to `low` — callers re-render from the returned map.
-  setUnitAttention: (unit: string, body: AttentionSetRequest) =>
-    apiFetch<AttentionStateResponse>(`/units/${encodeURIComponent(unit)}/attention`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
 
   // Configured-unit membership (tmai-core #460, public mirror tmai#741).
   // Membership-only — no live agent state is joined server-side; the
