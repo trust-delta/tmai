@@ -508,77 +508,6 @@
       ],
       "type": "object"
     },
-    "AttentionEntryWire": {
-      "description": "One operator-set attention marker in the [`AttentionStateResponse`] map.\n`null` artifacts are **not** emitted — absence = `null` (the R panel already\nholds the artifact inventory; it infers `null` for any listed artifact that\nis absent here).",
-      "properties": {
-        "id": {
-          "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug.",
-          "type": "string"
-        },
-        "level": {
-          "$ref": "#/$defs/Level"
-        },
-        "repo_path": {
-          "description": "The artifact's owning repo (a unit spans multiple repos, so this\ndiscriminates `tmai` PR#5 from `tmai-core` PR#5 — #493). Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through.",
-          "type": "string"
-        },
-        "section": {
-          "$ref": "#/$defs/Section"
-        }
-      },
-      "required": [
-        "repo_path",
-        "section",
-        "id",
-        "level"
-      ],
-      "type": "object"
-    },
-    "AttentionSetRequest": {
-      "description": "`POST /api/units/{unit}/attention` request — the operator's attention write.\n`level` is `low`/`high` only ([`Level`] has no `null` variant), so the\noperator can never write `null`: the complementary write-pole and\nnon-repudiation invariants are enforced by the type itself, before the\nhandler runs.",
-      "properties": {
-        "id": {
-          "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug.",
-          "type": "string"
-        },
-        "level": {
-          "$ref": "#/$defs/Level"
-        },
-        "repo_path": {
-          "description": "The artifact's owning repo (#493). Carried in the request **body**, not\nthe URL path, because repo paths contain slashes. Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through.",
-          "type": "string"
-        },
-        "section": {
-          "$ref": "#/$defs/Section"
-        }
-      },
-      "required": [
-        "repo_path",
-        "section",
-        "id",
-        "level"
-      ],
-      "type": "object"
-    },
-    "AttentionStateResponse": {
-      "description": "`GET /api/units/{unit}/attention` response — the full per-unit attention map\n(only `low`/`high` entries; the rest is `null` by absence), in deterministic\nkey order.",
-      "properties": {
-        "entries": {
-          "items": {
-            "$ref": "#/$defs/AttentionEntryWire"
-          },
-          "type": "array"
-        },
-        "unit": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "unit",
-        "entries"
-      ],
-      "type": "object"
-    },
     "BundleId": {
       "description": "Stable identifier for a dispatch bundle (a logical grouping of\nsub-dispatches — e.g. \"apply the same change across 4 repos\").\n\nSerialized transparently as a plain string so that existing log and\nevent consumers can treat the field as an opaque identifier without\nneeding to know the wrapper type.",
       "type": "string"
@@ -1999,14 +1928,6 @@
       ],
       "type": "object"
     },
-    "Level": {
-      "description": "Operator-set attention level. Two poles; `null` is **not** a variant — it is\nrepresented as absence (no entry / no level) and only the machine may write\nit. So this type structurally enforces the operator's write-pole: an\noperator request can never express `null` (non-repudiation by type).",
-      "enum": [
-        "low",
-        "high"
-      ],
-      "type": "string"
-    },
     "LivenessWire": {
       "description": "Liveness of an approach's latest fact, mirroring [`Liveness`]. `last_fact`\nis an ISO `YYYY-MM-DD` date (or `null` when the record has no facts); both\n`last_fact` and `days_since` are `null` together in that no-facts case.",
       "properties": {
@@ -2051,62 +1972,6 @@
       "required": [
         "at",
         "event"
-      ],
-      "type": "object"
-    },
-    "ObservationStatus": {
-      "description": "How much the author cares about an observation — its *appraisal*.\n\nDistinct from [`super::approach::ApproachStatus`] and\n[`super::decision::DecisionStatus`]: an observation has no lifecycle, only\nan attention weight. Per `doc/observations/README.md` this is a **human\ngate** — the machine never projects it\n(`doc/decisions/2026-05-26-tmai-states-facts-not-appraisals.md`).",
-      "enum": [
-        "high",
-        "medium",
-        "low"
-      ],
-      "type": "string"
-    },
-    "ObservationWire": {
-      "description": "One observation projected to the wire — the human-side complement of the\ninternal [`crate::workbench::observation::ObservationRecord`]. Carries only\nthe R-panel row + attention-marker fields; the body is not surfaced.",
-      "properties": {
-        "slug": {
-          "description": "Filename stem — the attention key's `id` (section = `observation`).",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/ObservationStatus",
-          "description": "Frontmatter `status` — the appraisal `high | medium | low`."
-        },
-        "summary": {
-          "description": "Frontmatter `summary` — the scan index.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "slug",
-        "summary",
-        "status"
-      ],
-      "type": "object"
-    },
-    "ObservationsResponse": {
-      "description": "`GET /api/units/{unit}/observations` response — the unit's observations\nsurface, per repo, JSON-projected. Composed on demand (no cache). Carries\nevery observation record regardless of `status`; the R panel filters /\nsorts client-side, mirroring the approaches / decisions dashboards.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
-      "properties": {
-        "composed_at": {
-          "description": "RFC3339 compose timestamp.",
-          "type": "string"
-        },
-        "repos": {
-          "items": {
-            "$ref": "#/$defs/RepoObservationsWire"
-          },
-          "type": "array"
-        },
-        "unit": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "unit",
-        "composed_at",
-        "repos"
       ],
       "type": "object"
     },
@@ -2481,7 +2346,7 @@
       "type": "object"
     },
     "RepoAimsWire": {
-      "description": "One repo's projected aim-tree slice. Mirrors\n[`super::observations_view::RepoObservationsWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches / observations, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
+      "description": "One repo's projected aim-tree slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
       "properties": {
         "aims": {
           "description": "Every aim record in this repo, sorted ascending by slug. The tree shape\nlives in the per-node `parent:` links; the client reconstructs it.",
@@ -2682,40 +2547,6 @@
         "repo_label",
         "primary",
         "issues"
-      ],
-      "type": "object"
-    },
-    "RepoObservationsWire": {
-      "description": "One repo's projected observations slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the React\nsection passes `repo_root` as the marker `repoPath` (same as decisions /\napproaches, #493). The list carries **every** observation record in\n`<repo>/doc/observations/`, sorted most-recent-first by slug.",
-      "properties": {
-        "observations": {
-          "description": "Every observation record in this repo, sorted most-recent-first by slug.",
-          "items": {
-            "$ref": "#/$defs/ObservationWire"
-          },
-          "type": "array"
-        },
-        "primary": {
-          "type": "boolean"
-        },
-        "repo_head": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "repo_label": {
-          "type": "string"
-        },
-        "repo_root": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo_label",
-        "repo_root",
-        "primary",
-        "observations"
       ],
       "type": "object"
     },
@@ -3031,17 +2862,6 @@
         "vendors"
       ],
       "type": "object"
-    },
-    "Section": {
-      "description": "The attention-bearing artifact sections (contract §1). Five kinds;\n**File is intentionally absent** — File is attention-exempt (it does not\ngate progression), so by construction it is unrepresentable here.",
-      "enum": [
-        "pr",
-        "issue",
-        "decision",
-        "approach",
-        "observation"
-      ],
-      "type": "string"
     },
     "ServingHealthWire": {
       "description": "The per-decision running-means verdict over its serving approaches,\nmirroring [`ServingHealth`].\n\nkebab-case on the wire (`orphaned` / `no-running-means` / `healthy` /\n`overflow`). A mechanical classification of `(serving, running)` counts —\nNOT a severity (the UI decides how to render each verdict).",

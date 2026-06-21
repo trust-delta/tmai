@@ -3,9 +3,9 @@ import type { AimWire } from "./AimWire";
 
 /**
  * One repo's projected aim-tree slice. Mirrors
- * [`super::observations_view::RepoObservationsWire`]'s wrapper shape — the
+ * [`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the
  * React section passes `repo_root` as the marker `repoPath` (same as
- * decisions / approaches / observations, #493). The list carries **every**
+ * decisions / approaches, #493). The list carries **every**
  * aim record in `<repo>/doc/aims/`, sorted ascending by slug.
  */
 export type RepoAimsWire = { repo_label: string, repo_root: string, primary: boolean, repo_head: string | null, 
