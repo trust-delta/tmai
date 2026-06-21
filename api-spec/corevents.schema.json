@@ -676,81 +676,6 @@
       ],
       "type": "object"
     },
-    "CapacityCauseSummary": {
-      "description": "What caused a [`CoreEvent::CapacityChanged`] emission.\n\nSubscribers use this to attribute the capacity delta without needing\na separate query. `delta == 0` is valid (e.g. `LimitChanged` when a\nconfig reload moved the ceiling but no slots moved).",
-      "oneOf": [
-        {
-          "description": "An agent was spawned; consumed a slot.",
-          "properties": {
-            "kind": {
-              "enum": [
-                "agent_spawned"
-              ],
-              "type": "string"
-            },
-            "target": {
-              "description": "Target of the newly spawned agent.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "target",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "An agent reached a terminal state (exit/kill); freed a slot.",
-          "properties": {
-            "kind": {
-              "enum": [
-                "agent_terminated"
-              ],
-              "type": "string"
-            },
-            "target": {
-              "description": "Target of the agent that ended.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "target",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "The configured capacity limit changed (reload / admin action).",
-          "properties": {
-            "kind": {
-              "enum": [
-                "limit_changed"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Capacity snapshot was reconciled against live state (drift fix).",
-          "properties": {
-            "kind": {
-              "enum": [
-                "reconciled"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        }
-      ]
-    },
     "CapacityInfo": {
       "description": "Current agent capacity counters.",
       "properties": {
@@ -1034,7 +959,7 @@
       "type": "object"
     },
     "DetectionSource": {
-      "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
+      "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
       "enum": [
         "http_hook",
         "web_socket",
@@ -1071,60 +996,6 @@
     "DispatchId": {
       "description": "Globally unique identifier for a dispatched unit of work.\n\nBacked by UUID v7 so that records sort lexicographically by creation\ntime without needing a separate timestamp index. Serialized as a plain\nstring (`#[serde(transparent)]`) so external consumers can treat the\nfield as an opaque token without learning the wrapper type.",
       "type": "string"
-    },
-    "DispatchIntentSummary": {
-      "description": "Redacted summary of a dispatch intent attached to\n[`CoreEvent::DispatchRejected`] and other contract-layer events.\n\nThe full prompt and any credentials **must never** appear here — callers\nthat need the raw intent go through an out-of-band audit channel\n(issue #463, open question 2). Consumers seeing `prompt_hash` can\ncorrelate back to the original dispatch request without learning its\ncontents.",
-      "properties": {
-        "bundle_id": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/BundleId",
-              "description": "Bundle id when this dispatch is part of a multi-project bundle."
-            }
-          ]
-        },
-        "issue_number": {
-          "description": "Associated GitHub issue number, if any.",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "pr_number": {
-          "description": "Associated pull request number, if any.",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "project_path": {
-          "description": "Absolute path to the target project / worktree root.",
-          "type": "string"
-        },
-        "prompt_hash": {
-          "description": "Hex digest (implementation-chosen hash, e.g. SHA-256) of the\ndispatched prompt. Lets auditors correlate this event with the\nrecorded intent without exposing the prompt text.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "role": {
-          "description": "Agent role requested (e.g. \"implementer\", \"reviewer\").",
-          "type": "string"
-        }
-      },
-      "required": [
-        "project_path",
-        "role"
-      ],
-      "type": "object"
     },
     "DispatchKind": {
       "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (e.g. an\nimplementer worktree and a review worktree both reference the same PR\nnumber — `kind` separates them).",
@@ -2117,13 +1988,6 @@
             "null"
           ]
         },
-        "ci_local_attestation": {
-          "description": "The ci-local attestation the Producer stored alongside the delivered\nmarker, if any (approach `2026-05-26-producer-supplied-override-\nattestation.md`, O2-d). `Some` only when `producer_reviewed` is true\nAND the Producer supplied an attestation via `mark_pr_reviewed`.\n\nNeutral evidence-of-verification, **not** an approval — same §E\nboundary as `producer_reviewed`. The react half (Phase B) reads it to\npre-fill the billing-dead override textarea so the operator need not\nhand-paste the ci-local summary; absence simply means the operator\nfalls back to the manual paste (the O2-a path). The backend consumes\nthe *stored* copy directly — this wire field is for the UI, not the\nauthoritative override input.\n\nOptional / serde-default with the same lockstep-free discipline as\n`producer_reviewed`: absent on the wire when `None`, and a payload\nomitting it deserializes to `None`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "closed_at": {
           "description": "Close time (ISO-8601) — `null` while open; set for merged PRs too.\nState-transition vocab event (#524).",
           "type": [
@@ -2175,10 +2039,6 @@
           "format": "int64",
           "minimum": 0,
           "type": "integer"
-        },
-        "producer_reviewed": {
-          "description": "`true` when the Producer has **delivered** its contract-anchored\nΔ-brief for this PR — the soft-valve unlock condition of dev-loop\nDR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`).\n\n**Delivered, NOT approved.** A neutral delivered-marker: it states\nonly that the brief reached the operator, never that the Producer\napproves/blocks the merge or judges it merge-worthy (§E load-bearing\nboundary — the Producer's opinion is *content of the brief*, never\nthis bit; the merge decision stays wholly the operator's). The react\nhalf consumes this to make the reviewed merge path frictionless\n(dialog / colour / dismissible override) — that button state machine\nis a separate dispatch; core only exposes the bit, it never blocks a\nmerge on it. Not a `PrInfo` field: it is overlaid from the transient\n[`AppState::producer_reviewed_prs`](crate::state::AppState) in\n[`build_unit_prs_response`], so it resets on engine restart (the\nProducer re-briefs).\n\n`default` + `skip_serializing_if` keep it optional with the exact\n#404 `is_producer` discipline: the field is absent on the wire when\n`false`, and a payload omitting it deserializes to `false` — a\nclient omitting it stays lockstep-free.",
-          "type": "boolean"
         },
         "review_decision": {
           "description": "Raw `gh` review-decision string (`\"APPROVED\"` / `\"CHANGES_REQUESTED\"`\n/ `\"REVIEW_REQUIRED\"`), or `null` when GitHub reports none.",
@@ -3518,7 +3378,7 @@
   },
   "$id": "https://trust-delta.github.io/tmai-api-spec/corevents.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Push-based state-change events emitted by tmai-core and streamed to UI clients over SSE at `/api/events` (and fanned out to MCP and audit consumers). Every variant is discriminated by the `type` field (internally tagged) and carries event-specific fields at the top level.\n\n## Forward-compatibility rules\n\nUI clients MUST ignore unknown `type` values — new variants will be added as non-breaking changes. New optional fields SHOULD be tolerated silently. Required field changes, field-type changes, or variant removals trigger a major version bump of this spec.\n\n## Taxonomy cross-reference\n\nContract-layer events (`DispatchRejected`, `ContractViolation`) embed a `TmaiError` / `ErrorCode` whose shape is defined in `openapi.json` → `components.schemas.TmaiError`. The shapes are kept in sync — see `docs/errors.md` for authoritative documentation.",
+  "description": "Push-based state-change events emitted by tmai-core and streamed to UI clients over SSE at `/api/events` (and fanned out to MCP and audit consumers). Every variant is discriminated by the `type` field (internally tagged) and carries event-specific fields at the top level.\n\n## Forward-compatibility rules\n\nUI clients MUST ignore unknown `type` values — new variants will be added as non-breaking changes. New optional fields SHOULD be tolerated silently. Required field changes, field-type changes, or variant removals trigger a major version bump of this spec.",
   "oneOf": [
     {
       "description": "Claude Code configuration file was changed",
@@ -3740,38 +3600,6 @@
       "type": "object"
     },
     {
-      "description": "A tool call was deferred for external resolution",
-      "properties": {
-        "defer_id": {
-          "description": "Unique deferred call ID",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "target": {
-          "description": "Agent target/pane ID",
-          "type": "string"
-        },
-        "tool_name": {
-          "description": "Tool name",
-          "type": "string"
-        },
-        "type": {
-          "enum": [
-            "ToolCallDeferred"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "defer_id",
-        "target",
-        "tool_name",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
       "description": "A worktree branch was successfully rebased onto the default branch",
       "properties": {
         "branch": {
@@ -3822,43 +3650,6 @@
         "branch",
         "worktree_path",
         "error",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "A deferred tool call was resolved (approved/denied)",
-      "properties": {
-        "decision": {
-          "description": "Resolution: \"allow\" or \"deny\"",
-          "type": "string"
-        },
-        "defer_id": {
-          "description": "Unique deferred call ID",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "resolved_by": {
-          "description": "Who resolved it (e.g., \"human\", \"ai:haiku\", \"timeout\")",
-          "type": "string"
-        },
-        "target": {
-          "description": "Agent target/pane ID",
-          "type": "string"
-        },
-        "type": {
-          "enum": [
-            "ToolCallResolved"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "defer_id",
-        "target",
-        "decision",
-        "resolved_by",
         "type"
       ],
       "type": "object"
@@ -4150,178 +3941,6 @@
         "origin",
         "action",
         "summary",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "A dispatch request was rejected by the contract-layer gatekeeper\nbefore an agent was spawned. Subscribers never saw this intent as an\n`AgentAppeared` / `AgentStatusChanged` — they learn about it only via\nthis event. Payload is redacted: see [`DispatchIntentSummary`].",
-      "properties": {
-        "error": {
-          "$ref": "#/$defs/TmaiError",
-          "description": "Structured reason for the rejection."
-        },
-        "intent_summary": {
-          "$ref": "#/$defs/DispatchIntentSummary",
-          "description": "Redacted description of what was dispatched."
-        },
-        "origin": {
-          "$ref": "#/$defs/ActionOrigin",
-          "description": "Who issued the rejected dispatch."
-        },
-        "type": {
-          "enum": [
-            "DispatchRejected"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "intent_summary",
-        "origin",
-        "error",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "Vendor availability transitioned (rate-limit hit or cleared, outage\nstarted or resolved). Subscribers can refresh capacity badges or\nresume queued dispatches without polling the vendor directly.",
-      "properties": {
-        "account": {
-          "description": "Account label, if the deployment distinguishes accounts.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "detected_via": {
-          "$ref": "#/$defs/DetectionSource",
-          "description": "How the transition was detected (hook, polling, explicit signal)."
-        },
-        "new": {
-          "$ref": "#/$defs/VendorAvailabilityState",
-          "description": "New availability state."
-        },
-        "old": {
-          "$ref": "#/$defs/VendorAvailabilityState",
-          "description": "Previous availability state."
-        },
-        "type": {
-          "enum": [
-            "VendorAvailabilityChanged"
-          ],
-          "type": "string"
-        },
-        "vendor": {
-          "description": "Vendor identifier (e.g. \"anthropic\", \"openai\", \"google\").",
-          "type": "string"
-        }
-      },
-      "required": [
-        "vendor",
-        "old",
-        "new",
-        "detected_via",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "The global capacity counter moved (a slot was consumed or freed)\nor the configured limit was adjusted. `delta` is the change applied\nto `current`; `cause` attributes the change without requiring a\nfollow-up query.",
-      "properties": {
-        "cause": {
-          "$ref": "#/$defs/CapacityCauseSummary",
-          "description": "What triggered the change."
-        },
-        "current": {
-          "description": "New value of the in-use slot counter.",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "delta": {
-          "description": "Signed change applied to `current` by this event\n(+1 on spawn, -1 on terminal, 0 on `LimitChanged`/`Reconciled`).",
-          "format": "int32",
-          "type": "integer"
-        },
-        "limit": {
-          "description": "Configured ceiling at the time of emission.",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "type": {
-          "enum": [
-            "CapacityChanged"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "current",
-        "limit",
-        "delta",
-        "cause",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "A contract-layer invariant was violated (auth failure, schema\nmismatch, unauthorized operation, etc.). Distinct from\n`DispatchRejected` which is gatekeeper-specific (#463, open q. 4).",
-      "properties": {
-        "code": {
-          "$ref": "#/$defs/ErrorCode",
-          "description": "Machine-readable classification of the violation."
-        },
-        "context": {
-          "description": "Code-specific structured context (never includes secrets or\nraw prompts). Defaults to `null` when the emitter has nothing\nto attach.",
-          "type": "object"
-        },
-        "origin": {
-          "$ref": "#/$defs/ActionOrigin",
-          "description": "Origin of the violating call."
-        },
-        "type": {
-          "enum": [
-            "ContractViolation"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "origin",
-        "code",
-        "type"
-      ],
-      "type": "object"
-    },
-    {
-      "description": "A bypass flag was used for a dispatch (skipped one or more\ncontract-layer checks). Always audit-logged; subscribers can\nuse this to surface a banner or alert.",
-      "properties": {
-        "bypassed": {
-          "description": "Names of the bypassed checks / stages (e.g.\n\"capacity_check\", \"vendor_availability\").",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "origin": {
-          "$ref": "#/$defs/ActionOrigin",
-          "description": "Origin of the bypassing call."
-        },
-        "reason": {
-          "description": "Free-text justification supplied by the caller.",
-          "type": "string"
-        },
-        "type": {
-          "enum": [
-            "DispatchBypassUsed"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "origin",
-        "bypassed",
-        "reason",
         "type"
       ],
       "type": "object"
