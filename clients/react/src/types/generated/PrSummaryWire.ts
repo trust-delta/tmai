@@ -59,48 +59,4 @@ closed_at: string | null,
  * conclusion" vocab event (#524). Deliberately NOT a raw `updated_at`:
  * comment/label churn must not look like a vocab event.
  */
-ci_completed_at: string | null, 
-/**
- * `true` when the Producer has **delivered** its contract-anchored
- * Δ-brief for this PR — the soft-valve unlock condition of dev-loop
- * DR `2026-05-16-dev-loop-completes-in-tmai` §E (approach
- * `2026-05-17-producer-review-gated-in-tmai-merge`).
- *
- * **Delivered, NOT approved.** A neutral delivered-marker: it states
- * only that the brief reached the operator, never that the Producer
- * approves/blocks the merge or judges it merge-worthy (§E load-bearing
- * boundary — the Producer's opinion is *content of the brief*, never
- * this bit; the merge decision stays wholly the operator's). The react
- * half consumes this to make the reviewed merge path frictionless
- * (dialog / colour / dismissible override) — that button state machine
- * is a separate dispatch; core only exposes the bit, it never blocks a
- * merge on it. Not a `PrInfo` field: it is overlaid from the transient
- * [`AppState::producer_reviewed_prs`](crate::state::AppState) in
- * [`build_unit_prs_response`], so it resets on engine restart (the
- * Producer re-briefs).
- *
- * `default` + `skip_serializing_if` keep it optional with the exact
- * #404 `is_producer` discipline: the field is absent on the wire when
- * `false`, and a payload omitting it deserializes to `false` — a
- * client omitting it stays lockstep-free.
- */
-producer_reviewed?: boolean, 
-/**
- * The ci-local attestation the Producer stored alongside the delivered
- * marker, if any (approach `2026-05-26-producer-supplied-override-
- * attestation.md`, O2-d). `Some` only when `producer_reviewed` is true
- * AND the Producer supplied an attestation via `mark_pr_reviewed`.
- *
- * Neutral evidence-of-verification, **not** an approval — same §E
- * boundary as `producer_reviewed`. The react half (Phase B) reads it to
- * pre-fill the billing-dead override textarea so the operator need not
- * hand-paste the ci-local summary; absence simply means the operator
- * falls back to the manual paste (the O2-a path). The backend consumes
- * the *stored* copy directly — this wire field is for the UI, not the
- * authoritative override input.
- *
- * Optional / serde-default with the same lockstep-free discipline as
- * `producer_reviewed`: absent on the wire when `None`, and a payload
- * omitting it deserializes to `None`.
- */
-ci_local_attestation?: string | null, };
+ci_completed_at: string | null, };

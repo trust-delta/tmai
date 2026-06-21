@@ -47,11 +47,6 @@ pub enum CoreEvent {
         prompt: String,
         target: String,
     },
-    ToolCallDeferred {
-        defer_id: i64,
-        target: String,
-        tool_name: String,
-    },
     RebaseSucceeded {
         branch: String,
         worktree_path: String,
@@ -60,12 +55,6 @@ pub enum CoreEvent {
         branch: String,
         error: String,
         worktree_path: String,
-    },
-    ToolCallResolved {
-        decision: String,
-        defer_id: i64,
-        resolved_by: String,
-        target: String,
     },
     PrCreated {
         branch: String,
@@ -114,36 +103,6 @@ pub enum CoreEvent {
         action: String,
         origin: ActionOrigin,
         summary: String,
-    },
-    DispatchRejected {
-        error: TmaiError,
-        intent_summary: DispatchIntentSummary,
-        origin: ActionOrigin,
-    },
-    VendorAvailabilityChanged {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        account: Option<Value>,
-        detected_via: DetectionSource,
-        new: VendorAvailabilityState,
-        old: VendorAvailabilityState,
-        vendor: String,
-    },
-    CapacityChanged {
-        cause: CapacityCauseSummary,
-        current: i64,
-        delta: i32,
-        limit: i64,
-    },
-    ContractViolation {
-        code: ErrorCode,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        context: Option<Value>,
-        origin: ActionOrigin,
-    },
-    DispatchBypassUsed {
-        bypassed: Vec<String>,
-        origin: ActionOrigin,
-        reason: String,
     },
     AgentUpdate {
         change: EntityChange,

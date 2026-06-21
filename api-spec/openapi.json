@@ -102,27 +102,6 @@
         }
       }
     },
-    "/api/github/pr/producer-reviewed": {
-      "post": {
-        "tags": [
-          "prs"
-        ],
-        "summary": "Documentation stub for `POST /api/github/pr/producer-reviewed`.",
-        "description": "dev-loop DR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`): mark the Producer's\ncontract-anchored Δ-brief as *delivered* for a PR. Idempotent. Sets a\ntransient, in-memory delivered-marker only — a **neutral bit, NOT a\nmerge approval** (the Producer's opinion is *content of the brief*,\nnever this flag). Core never blocks a merge on it; the soft-valve\ndialog / colour / dismissible override are the react half's, a separate\ndispatch. Vendor-neutral. The marker surfaces on\n`GET /api/units/{unit}/prs` as `PrSummaryWire.producer_reviewed`.",
-        "operationId": "mark_pr_producer_reviewed_doc",
-        "responses": {
-          "200": {
-            "description": "Δ-brief marked delivered for the PR (idempotent)"
-          },
-          "400": {
-            "description": "`ci_local_attestation` present but malformed — empty after trim, or missing the `ci-local summary` marker (store-time validation, #476). Body: `{\"error\", \"required\"}`. Absent attestation is never rejected here."
-          },
-          "404": {
-            "description": "Repository not found"
-          }
-        }
-      }
-    },
     "/api/units": {
       "get": {
         "tags": [
@@ -1595,81 +1574,6 @@
           }
         }
       },
-      "CapacityCauseSummary": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "An agent was spawned; consumed a slot.",
-            "required": [
-              "target",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "agent_spawned"
-                ]
-              },
-              "target": {
-                "type": "string",
-                "description": "Target of the newly spawned agent."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "An agent reached a terminal state (exit/kill); freed a slot.",
-            "required": [
-              "target",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "agent_terminated"
-                ]
-              },
-              "target": {
-                "type": "string",
-                "description": "Target of the agent that ended."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The configured capacity limit changed (reload / admin action).",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "limit_changed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Capacity snapshot was reconciled against live state (drift fix).",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "reconciled"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "What caused a [`CoreEvent::CapacityChanged`] emission.\n\nSubscribers use this to attribute the capacity delta without needing\na separate query. `delta == 0` is valid (e.g. `LimitChanged` when a\nconfig reload moved the ceiling but no slots moved)."
-      },
       "CapacityInfo": {
         "type": "object",
         "description": "Current agent capacity counters.",
@@ -1930,38 +1834,6 @@
           },
           {
             "type": "object",
-            "description": "A tool call was deferred for external resolution",
-            "required": [
-              "defer_id",
-              "target",
-              "tool_name",
-              "type"
-            ],
-            "properties": {
-              "defer_id": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Unique deferred call ID",
-                "minimum": 0
-              },
-              "target": {
-                "type": "string",
-                "description": "Agent target/pane ID"
-              },
-              "tool_name": {
-                "type": "string",
-                "description": "Tool name"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "ToolCallDeferred"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "A worktree branch was successfully rebased onto the default branch",
             "required": [
               "branch",
@@ -2012,43 +1884,6 @@
               "worktree_path": {
                 "type": "string",
                 "description": "Worktree path"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A deferred tool call was resolved (approved/denied)",
-            "required": [
-              "defer_id",
-              "target",
-              "decision",
-              "resolved_by",
-              "type"
-            ],
-            "properties": {
-              "decision": {
-                "type": "string",
-                "description": "Resolution: \"allow\" or \"deny\""
-              },
-              "defer_id": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Unique deferred call ID",
-                "minimum": 0
-              },
-              "resolved_by": {
-                "type": "string",
-                "description": "Who resolved it (e.g., \"human\", \"ai:haiku\", \"timeout\")"
-              },
-              "target": {
-                "type": "string",
-                "description": "Agent target/pane ID"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "ToolCallResolved"
-                ]
               }
             }
           },
@@ -2339,178 +2174,6 @@
                 "type": "string",
                 "enum": [
                   "ActionPerformed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A dispatch request was rejected by the contract-layer gatekeeper\nbefore an agent was spawned. Subscribers never saw this intent as an\n`AgentAppeared` / `AgentStatusChanged` — they learn about it only via\nthis event. Payload is redacted: see [`DispatchIntentSummary`].",
-            "required": [
-              "intent_summary",
-              "origin",
-              "error",
-              "type"
-            ],
-            "properties": {
-              "error": {
-                "$ref": "#/components/schemas/TmaiError",
-                "description": "Structured reason for the rejection."
-              },
-              "intent_summary": {
-                "$ref": "#/components/schemas/DispatchIntentSummary",
-                "description": "Redacted description of what was dispatched."
-              },
-              "origin": {
-                "$ref": "#/components/schemas/ActionOrigin",
-                "description": "Who issued the rejected dispatch."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "DispatchRejected"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Vendor availability transitioned (rate-limit hit or cleared, outage\nstarted or resolved). Subscribers can refresh capacity badges or\nresume queued dispatches without polling the vendor directly.",
-            "required": [
-              "vendor",
-              "old",
-              "new",
-              "detected_via",
-              "type"
-            ],
-            "properties": {
-              "account": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Account label, if the deployment distinguishes accounts."
-              },
-              "detected_via": {
-                "$ref": "#/components/schemas/DetectionSource",
-                "description": "How the transition was detected (hook, polling, explicit signal)."
-              },
-              "new": {
-                "$ref": "#/components/schemas/VendorAvailabilityState",
-                "description": "New availability state."
-              },
-              "old": {
-                "$ref": "#/components/schemas/VendorAvailabilityState",
-                "description": "Previous availability state."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "VendorAvailabilityChanged"
-                ]
-              },
-              "vendor": {
-                "type": "string",
-                "description": "Vendor identifier (e.g. \"anthropic\", \"openai\", \"google\")."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The global capacity counter moved (a slot was consumed or freed)\nor the configured limit was adjusted. `delta` is the change applied\nto `current`; `cause` attributes the change without requiring a\nfollow-up query.",
-            "required": [
-              "current",
-              "limit",
-              "delta",
-              "cause",
-              "type"
-            ],
-            "properties": {
-              "cause": {
-                "$ref": "#/components/schemas/CapacityCauseSummary",
-                "description": "What triggered the change."
-              },
-              "current": {
-                "type": "integer",
-                "description": "New value of the in-use slot counter.",
-                "minimum": 0
-              },
-              "delta": {
-                "type": "integer",
-                "format": "int32",
-                "description": "Signed change applied to `current` by this event\n(+1 on spawn, -1 on terminal, 0 on `LimitChanged`/`Reconciled`)."
-              },
-              "limit": {
-                "type": "integer",
-                "description": "Configured ceiling at the time of emission.",
-                "minimum": 0
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "CapacityChanged"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A contract-layer invariant was violated (auth failure, schema\nmismatch, unauthorized operation, etc.). Distinct from\n`DispatchRejected` which is gatekeeper-specific (#463, open q. 4).",
-            "required": [
-              "origin",
-              "code",
-              "type"
-            ],
-            "properties": {
-              "code": {
-                "$ref": "#/components/schemas/ErrorCode",
-                "description": "Machine-readable classification of the violation."
-              },
-              "context": {
-                "type": "object",
-                "description": "Code-specific structured context (never includes secrets or\nraw prompts). Defaults to `null` when the emitter has nothing\nto attach."
-              },
-              "origin": {
-                "$ref": "#/components/schemas/ActionOrigin",
-                "description": "Origin of the violating call."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "ContractViolation"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A bypass flag was used for a dispatch (skipped one or more\ncontract-layer checks). Always audit-logged; subscribers can\nuse this to surface a banner or alert.",
-            "required": [
-              "origin",
-              "bypassed",
-              "reason",
-              "type"
-            ],
-            "properties": {
-              "bypassed": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Names of the bypassed checks / stages (e.g.\n\"capacity_check\", \"vendor_availability\")."
-              },
-              "origin": {
-                "$ref": "#/components/schemas/ActionOrigin",
-                "description": "Origin of the bypassing call."
-              },
-              "reason": {
-                "type": "string",
-                "description": "Free-text justification supplied by the caller."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "DispatchBypassUsed"
                 ]
               }
             }
@@ -2970,7 +2633,7 @@
       },
       "DetectionSource": {
         "type": "string",
-        "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `CapacityCauseSummary`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
+        "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
         "enum": [
           "http_hook",
           "web_socket",
@@ -3006,60 +2669,6 @@
       "DispatchId": {
         "type": "string",
         "description": "Globally unique identifier for a dispatched unit of work.\n\nBacked by UUID v7 so that records sort lexicographically by creation\ntime without needing a separate timestamp index. Serialized as a plain\nstring (`#[serde(transparent)]`) so external consumers can treat the\nfield as an opaque token without learning the wrapper type."
-      },
-      "DispatchIntentSummary": {
-        "type": "object",
-        "description": "Redacted summary of a dispatch intent attached to\n[`CoreEvent::DispatchRejected`] and other contract-layer events.\n\nThe full prompt and any credentials **must never** appear here — callers\nthat need the raw intent go through an out-of-band audit channel\n(issue #463, open question 2). Consumers seeing `prompt_hash` can\ncorrelate back to the original dispatch request without learning its\ncontents.",
-        "required": [
-          "project_path",
-          "role"
-        ],
-        "properties": {
-          "bundle_id": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BundleId",
-                "description": "Bundle id when this dispatch is part of a multi-project bundle."
-              }
-            ]
-          },
-          "issue_number": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Associated GitHub issue number, if any.",
-            "minimum": 0
-          },
-          "pr_number": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Associated pull request number, if any.",
-            "minimum": 0
-          },
-          "project_path": {
-            "type": "string",
-            "description": "Absolute path to the target project / worktree root."
-          },
-          "prompt_hash": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Hex digest (implementation-chosen hash, e.g. SHA-256) of the\ndispatched prompt. Lets auditors correlate this event with the\nrecorded intent without exposing the prompt text."
-          },
-          "role": {
-            "type": "string",
-            "description": "Agent role requested (e.g. \"implementer\", \"reviewer\")."
-          }
-        }
       },
       "DispatchKind": {
         "oneOf": [
@@ -4068,13 +3677,6 @@
             ],
             "description": "Max `completedAt` across the status-check rollup once it is terminal\n(SUCCESS / FAILURE); `null` while pending or without checks. The \"CI\nconclusion\" vocab event (#524). Deliberately NOT a raw `updated_at`:\ncomment/label churn must not look like a vocab event."
           },
-          "ci_local_attestation": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The ci-local attestation the Producer stored alongside the delivered\nmarker, if any (approach `2026-05-26-producer-supplied-override-\nattestation.md`, O2-d). `Some` only when `producer_reviewed` is true\nAND the Producer supplied an attestation via `mark_pr_reviewed`.\n\nNeutral evidence-of-verification, **not** an approval — same §E\nboundary as `producer_reviewed`. The react half (Phase B) reads it to\npre-fill the billing-dead override textarea so the operator need not\nhand-paste the ci-local summary; absence simply means the operator\nfalls back to the manual paste (the O2-a path). The backend consumes\nthe *stored* copy directly — this wire field is for the UI, not the\nauthoritative override input.\n\nOptional / serde-default with the same lockstep-free discipline as\n`producer_reviewed`: absent on the wire when `None`, and a payload\nomitting it deserializes to `None`."
-          },
           "closed_at": {
             "type": [
               "string",
@@ -4126,10 +3728,6 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
-          },
-          "producer_reviewed": {
-            "type": "boolean",
-            "description": "`true` when the Producer has **delivered** its contract-anchored\nΔ-brief for this PR — the soft-valve unlock condition of dev-loop\nDR `2026-05-16-dev-loop-completes-in-tmai` §E (approach\n`2026-05-17-producer-review-gated-in-tmai-merge`).\n\n**Delivered, NOT approved.** A neutral delivered-marker: it states\nonly that the brief reached the operator, never that the Producer\napproves/blocks the merge or judges it merge-worthy (§E load-bearing\nboundary — the Producer's opinion is *content of the brief*, never\nthis bit; the merge decision stays wholly the operator's). The react\nhalf consumes this to make the reviewed merge path frictionless\n(dialog / colour / dismissible override) — that button state machine\nis a separate dispatch; core only exposes the bit, it never blocks a\nmerge on it. Not a `PrInfo` field: it is overlaid from the transient\n[`AppState::producer_reviewed_prs`](crate::state::AppState) in\n[`build_unit_prs_response`], so it resets on engine restart (the\nProducer re-briefs).\n\n`default` + `skip_serializing_if` keep it optional with the exact\n#404 `is_producer` discipline: the field is absent on the wire when\n`false`, and a payload omitting it deserializes to `false` — a\nclient omitting it stays lockstep-free."
           },
           "review_decision": {
             "type": [
