@@ -123,31 +123,6 @@
         }
       }
     },
-    "/api/task-meta": {
-      "get": {
-        "tags": [
-          "task-meta"
-        ],
-        "summary": "Documentation stub for `GET /api/task-meta`.",
-        "description": "utoipa's path macro only needs a function *signature* to attach metadata;\nthe real handler is `crate::web::api::get_task_meta` in the binary crate.\nA follow-up will adopt `utoipa-axum` so handler and doc share one source.",
-        "operationId": "get_task_meta_doc",
-        "responses": {
-          "200": {
-            "description": "Task metadata entries for the active project",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TaskMetaSnapshot"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/units": {
       "get": {
         "tags": [
@@ -1736,96 +1711,6 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "A team member became idle (waiting for next task)",
-            "required": [
-              "target",
-              "team_name",
-              "member_name",
-              "type"
-            ],
-            "properties": {
-              "member_name": {
-                "type": "string",
-                "description": "Member name"
-              },
-              "target": {
-                "type": "string",
-                "description": "Agent target ID"
-              },
-              "team_name": {
-                "type": "string",
-                "description": "Team name"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "TeammateIdle"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A new task was created",
-            "required": [
-              "team_name",
-              "task_id",
-              "task_subject",
-              "type"
-            ],
-            "properties": {
-              "task_id": {
-                "type": "string",
-                "description": "Task ID"
-              },
-              "task_subject": {
-                "type": "string",
-                "description": "Task subject"
-              },
-              "team_name": {
-                "type": "string",
-                "description": "Team name"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "TaskCreated"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A task was completed",
-            "required": [
-              "team_name",
-              "task_id",
-              "task_subject",
-              "type"
-            ],
-            "properties": {
-              "task_id": {
-                "type": "string",
-                "description": "Task ID"
-              },
-              "task_subject": {
-                "type": "string",
-                "description": "Task subject"
-              },
-              "team_name": {
-                "type": "string",
-                "description": "Team name"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "TaskCompleted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "Claude Code configuration file was changed",
             "required": [
               "target",
@@ -2706,46 +2591,6 @@
                 "type": "string",
                 "enum": [
                   "DispatchUpdate"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A team snapshot was upserted or removed.\n\nEmitted alongside `TeamsUpdated` during Phase 1.",
-            "required": [
-              "change",
-              "name",
-              "type"
-            ],
-            "properties": {
-              "change": {
-                "$ref": "#/components/schemas/EntityChange",
-                "description": "Whether the team was upserted or removed."
-              },
-              "name": {
-                "type": "string",
-                "description": "Team name (primary key)."
-              },
-              "origin": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ActionOrigin",
-                    "description": "Who or what triggered this update."
-                  }
-                ]
-              },
-              "snapshot": {
-                "type": "object",
-                "description": "Serialized [`super::types::TeamSnapshot`]; `None` when removed."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "TeamUpdate"
                 ]
               }
             }
@@ -4046,25 +3891,6 @@
           }
         }
       },
-      "Milestone": {
-        "type": "object",
-        "description": "A single milestone event in the task lifecycle.\n\nPart of the type-sharing PoC (#446): generated TypeScript lives in\n`crates/tmai-app/web/src/types/generated/Milestone.ts`.",
-        "required": [
-          "at",
-          "event"
-        ],
-        "properties": {
-          "at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the milestone occurred"
-          },
-          "event": {
-            "type": "string",
-            "description": "Human-readable event description"
-          }
-        }
-      },
       "Outcome": {
         "oneOf": [
           {
@@ -5090,250 +4916,6 @@
           }
         }
       },
-      "TaskMetaSnapshot": {
-        "type": "object",
-        "description": "A single task entry merging git worktree info with .task-meta/ metadata.\n\nPreviously named `TaskMetaEntry`. The TypeScript definition is generated\nby ts-rs — do not edit the generated file directly.",
-        "required": [
-          "branch",
-          "display_label"
-        ],
-        "properties": {
-          "agent_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Agent ID working on this task"
-          },
-          "branch": {
-            "type": "string",
-            "description": "Branch name (the join key)"
-          },
-          "display_label": {
-            "type": "string",
-            "description": "Human-readable label: \"issue:42 (branch) [role]\" or \"branch [role]\""
-          },
-          "is_dirty": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "Whether the worktree has uncommitted changes"
-          },
-          "issue": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Associated GitHub issue number",
-            "minimum": 0
-          },
-          "milestones": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Milestone"
-            },
-            "description": "Milestone history"
-          },
-          "pr": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Associated pull request number",
-            "minimum": 0
-          },
-          "review_agent_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Review agent ID"
-          },
-          "worktree_path": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Worktree path (from git)"
-          }
-        }
-      },
-      "TaskStatus": {
-        "type": "string",
-        "description": "Status of a team task",
-        "enum": [
-          "pending",
-          "in_progress",
-          "completed"
-        ]
-      },
-      "TeamMemberInfo": {
-        "type": "object",
-        "description": "Individual member within a team snapshot",
-        "required": [
-          "name",
-          "agent_id",
-          "is_lead"
-        ],
-        "properties": {
-          "agent_id": {
-            "type": "string",
-            "description": "Unique agent identifier (UUID)"
-          },
-          "agent_target": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Current tmux pane target for this member"
-          },
-          "cwd": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Working directory of the member"
-          },
-          "is_lead": {
-            "type": "boolean",
-            "description": "Whether this member is the team lead (first member in config)"
-          },
-          "name": {
-            "type": "string",
-            "description": "Human-readable member name"
-          },
-          "role": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Role/type of the agent (from agentType in config)"
-          }
-        }
-      },
-      "TeamSnapshot": {
-        "type": "object",
-        "description": "Unified public snapshot of a team's state\n\nMerges the former `TeamSummary` (counts + names) with full member info\nand task list. Use this type for all new consumers.",
-        "required": [
-          "name",
-          "members",
-          "tasks",
-          "last_scan",
-          "task_done",
-          "task_total",
-          "task_in_progress",
-          "task_pending",
-          "worktree_names"
-        ],
-        "properties": {
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Team description"
-          },
-          "last_scan": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When this snapshot was last scanned"
-          },
-          "members": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TeamMemberInfo"
-            },
-            "description": "Full member list with agent targets and roles"
-          },
-          "name": {
-            "type": "string",
-            "description": "Team name"
-          },
-          "task_done": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Completed task count",
-            "minimum": 0
-          },
-          "task_in_progress": {
-            "type": "integer",
-            "format": "int32",
-            "description": "In-progress task count",
-            "minimum": 0
-          },
-          "task_pending": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Pending task count",
-            "minimum": 0
-          },
-          "task_total": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Total task count",
-            "minimum": 0
-          },
-          "tasks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TeamTaskInfo"
-            },
-            "description": "Current task list"
-          },
-          "worktree_names": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Worktree names used by this team's members"
-          }
-        }
-      },
-      "TeamTaskInfo": {
-        "type": "object",
-        "description": "Summary of team tasks (includes full task data)",
-        "required": [
-          "id",
-          "subject",
-          "status",
-          "description"
-        ],
-        "properties": {
-          "active_form": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Active form (present continuous verb)"
-          },
-          "description": {
-            "type": "string",
-            "description": "Task description"
-          },
-          "id": {
-            "type": "string",
-            "description": "Task ID"
-          },
-          "owner": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Task owner"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskStatus",
-            "description": "Task status"
-          },
-          "subject": {
-            "type": "string",
-            "description": "Task subject"
-          }
-        }
-      },
       "TerminalSubscription": {
         "type": "object",
         "description": "Owned response for `POST /api/agents/{id}/subscribe-terminal`.\n\nMirrors `tmai_pty_server::proto::TerminalTicket` augmented with an\noptional `stream_endpoint` describing where the UI should connect.",
@@ -5850,13 +5432,6 @@
               }
             ]
           },
-          "linked_task_meta_branch": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Branch of the TaskMeta entry tied to this worktree (None for main worktrees)"
-          },
           "name": {
             "type": "string",
             "description": "Worktree name"
@@ -5878,10 +5453,6 @@
     }
   },
   "tags": [
-    {
-      "name": "task-meta",
-      "description": "Project task metadata — merges git worktree info with `.task-meta/` JSON"
-    },
     {
       "name": "terminal",
       "description": "Terminal-plane subscription tickets (#174 — UI ↔ PTY-server direct ANSI)"

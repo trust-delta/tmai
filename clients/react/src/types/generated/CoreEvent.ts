@@ -20,43 +20,7 @@ import type { VendorAvailabilityState } from "./VendorAvailabilityState";
  * `crates/tmai-app/web/src/types/generated/CoreEvent.ts` is generated
  * from this definition by ts-rs (#446). Do not edit that file by hand.
  */
-export type CoreEvent = { "type": "TeammateIdle", 
-/**
- * Agent target ID
- */
-target: string, 
-/**
- * Team name
- */
-team_name: string, 
-/**
- * Member name
- */
-member_name: string, } | { "type": "TaskCreated", 
-/**
- * Team name
- */
-team_name: string, 
-/**
- * Task ID
- */
-task_id: string, 
-/**
- * Task subject
- */
-task_subject: string, } | { "type": "TaskCompleted", 
-/**
- * Team name
- */
-team_name: string, 
-/**
- * Task ID
- */
-task_id: string, 
-/**
- * Task subject
- */
-task_subject: string, } | { "type": "ConfigChanged", 
+export type CoreEvent = { "type": "ConfigChanged", 
 /**
  * Agent target ID
  */
@@ -405,22 +369,6 @@ change: EntityChange,
 id: string, 
 /**
  * Serialized [`super::snapshot::DispatchSnapshot`]; `None` when removed.
- */
-snapshot?: unknown, 
-/**
- * Who or what triggered this update.
- */
-origin: ActionOrigin | null, } | { "type": "TeamUpdate", 
-/**
- * Whether the team was upserted or removed.
- */
-change: EntityChange, 
-/**
- * Team name (primary key).
- */
-name: string, 
-/**
- * Serialized [`super::types::TeamSnapshot`]; `None` when removed.
  */
 snapshot?: unknown, 
 /**

@@ -109,58 +109,6 @@
     }
   },
   {
-    "description": "Dispatch a PR review: spawn agent to review a pull request and post comments",
-    "name": "dispatch_review",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "additional_instructions": {
-          "default": null,
-          "description": "Extra review instructions (e.g., \"focus on security\", \"check error handling\")",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "effort": {
-          "default": null,
-          "description": "Per-dispatch effort override. See `SpawnAgentParams::effort`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "default": null,
-          "description": "Per-dispatch model override. See `SpawnAgentParams::model`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "pr_number": {
-          "description": "Pull request number to review",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "repo": {
-          "default": null,
-          "description": "Repository path (optional, defaults to cwd or first registered project)",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "pr_number"
-      ],
-      "title": "DispatchReviewParams",
-      "type": "object"
-    }
-  },
-  {
     "description": "Get detailed info about a specific agent",
     "name": "get_agent",
     "parameters_schema": {
@@ -473,15 +421,6 @@
     }
   },
   {
-    "description": "Get task metadata (issue/PR associations, milestones) for all active branches",
-    "name": "get_task_meta",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "title": "EmptyParams",
-      "type": "object"
-    }
-  },
-  {
     "description": "Get the conversation transcript of an agent",
     "name": "get_transcript",
     "parameters_schema": {
@@ -677,15 +616,6 @@
         }
       },
       "title": "RepoParams",
-      "type": "object"
-    }
-  },
-  {
-    "description": "List all agent teams",
-    "name": "list_teams",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "title": "EmptyParams",
       "type": "object"
     }
   },
@@ -887,31 +817,6 @@
         "action"
       ],
       "title": "ReviewPrParams",
-      "type": "object"
-    }
-  },
-  {
-    "description": "Select a choice for an agent's question",
-    "name": "select_choice",
-    "parameters_schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "id": {
-          "description": "Agent ID — accepts stable ID, pane target, PTY session UUID, \"issue:N\", or \"pr:N\"",
-          "type": "string"
-        },
-        "index": {
-          "description": "Choice index (1-based)",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "index"
-      ],
-      "title": "SelectChoiceParams",
       "type": "object"
     }
   },

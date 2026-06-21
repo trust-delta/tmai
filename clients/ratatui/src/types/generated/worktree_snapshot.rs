@@ -23,8 +23,6 @@ pub struct WorktreeSnapshot {
     pub is_main: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_dispatch_id: Option<DispatchId>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub linked_task_meta_branch: Option<Value>,
     pub name: String,
     pub path: String,
     pub repo_name: String,

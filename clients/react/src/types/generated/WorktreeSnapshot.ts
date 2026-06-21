@@ -49,8 +49,4 @@ agent_pending: boolean,
 /**
  * Active non-terminal dispatch working in this worktree
  */
-linked_dispatch_id?: DispatchId, 
-/**
- * Branch of the TaskMeta entry tied to this worktree (None for main worktrees)
- */
-linked_task_meta_branch?: string, };
+linked_dispatch_id?: DispatchId, };
