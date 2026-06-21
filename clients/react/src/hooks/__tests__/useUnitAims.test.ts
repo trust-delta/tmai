@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // useUnitAims — the aim-tree poller behind the R panel's ◎ Aims section (the
-// aim-tree twin of useUnitObservations / useUnitInventory). We mock
+// aim-tree twin of useUnitInventory). We mock
 // `api.aims` so each test drives a deterministic response and asserts the
 // sibling-shaped contract: `unit = null` parks (no fetch), the initial fetch
 // flips `loading`, errors surface without clearing into a fake success, a unit

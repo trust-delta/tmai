@@ -15,23 +15,16 @@
 //   - all sections collapsed by default (operator-driven expand
 //     persisted via `rPanelExpandedSections`).
 //
-// Attention model §3 (contract
-// `tmai-core:doc/approaches/2026-06-04-attention-as-per-artifact-field.md`):
-// attention is a per-artifact field surfaced as a per-row marker
-// (§3-core, #769). §3-2b removed the three agent-operation surfaces
-// that were NOT project artifacts and have no live referent here —
-// the Δ-stream (Δ dissolved into each artifact's `null`-state marker),
-// the Calibration section (a stranded Phase-1 detector), and the
-// Hand-over section (a session-boundary baton, agent-operation
-// runtime). They live on the data-dir side, off this Artifact panel
-// (cut: `tmai-core:doc/observations/2026-06-03-artifact-panel-vs-producer-panel-cut.md`).
+// The per-artifact attention ledger + the observations section were retired
+// in #556 (rip ③); the R panel is now a plain artifact inventory (PRs /
+// issues / decisions / approaches / aims / inventory / files), no per-row
+// attention markers.
 //
 // The collapsed rail behaviour and drag-resize wiring mirror the
 // retired strip 1:1 so App.tsx layout stays unchanged.
 
 import { useCallback } from "react";
 import { makeSplitKeyHandler, RATIO_STEP } from "@/hooks/useSplitPane";
-import { useUnitAttention } from "@/hooks/useUnitAttention";
 import { useUnitIssues } from "@/hooks/useUnitIssues";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import { ATTENTION_STRIP_WIDTH_MAX, ATTENTION_STRIP_WIDTH_MIN } from "@/lib/ui-prefs";
@@ -42,7 +35,6 @@ import { RDecisionsSection } from "./RDecisionsSection";
 import { RFilesSection } from "./RFilesSection";
 import { RInventorySection } from "./RInventorySection";
 import { RIssuesSection } from "./RIssuesSection";
-import { RObservationsSection } from "./RObservationsSection";
 import { RPrsSection } from "./RPrsSection";
 import type { SelectedIssue } from "./r-viewer/RIssueViewer";
 import type { SelectedPr } from "./r-viewer/RPrViewer";
@@ -107,7 +99,6 @@ const SECTION_IDS = [
   "issues",
   "decisions",
   "approaches",
-  "observations",
   "aims",
   "inventory",
   "files",
@@ -128,14 +119,6 @@ export function RPanel({
   viewer,
 }: RPanelProps) {
   const [expanded, setExpanded] = useUIPref("rPanelExpandedSections");
-
-  // One attention hook for the whole panel (not one per section): the POST
-  // returns the full updated map, so a server-side demotion (a prior `high`
-  // knocked to `low` to keep `high`≤1/dimension) lands on the PR + Issue
-  // sections at once. Threaded down to the five attention-artifact sections
-  // (pr / issue / decision / approach / observation); File is attention-exempt
-  // and is NOT given the controls.
-  const attention = useUnitAttention(unitName);
 
   // Remote-Δ freshness cursors (#822) — client state only (ui-prefs), never
   // sent to core; the Producer never reads it. Exactly TWO acts advance a
@@ -287,7 +270,6 @@ export function RPanel({
               onToggle={() => toggle("prs")}
               onSelectPr={onSelectPr}
               selectedKey={selectedPrKey}
-              attention={attention}
               deltaCursor={prsCursor}
             />
             <RIssuesSection
@@ -296,7 +278,6 @@ export function RPanel({
               onToggle={() => toggle("issues")}
               onSelectIssue={onSelectIssue}
               selectedKey={selectedIssueKey}
-              attention={attention}
               deltaCursor={issuesCursor}
             />
             <RDecisionsSection
@@ -305,7 +286,6 @@ export function RPanel({
               onToggle={() => toggle("decisions")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
-              attention={attention}
             />
             <RApproachesSection
               unitName={unitName}
@@ -313,17 +293,8 @@ export function RPanel({
               onToggle={() => toggle("approaches")}
               onSelect={onSelectRecord}
               selectedKey={selectedRecordKey}
-              attention={attention}
             />
-            <RObservationsSection
-              unitName={unitName}
-              expanded={isExpanded("observations")}
-              onToggle={() => toggle("observations")}
-              attention={attention}
-            />
-            {/* Aims — the aim-tree read view (#780). Not an attention-artifact
-                section (the 5 are pr / issue / decision / approach /
-                observation), so it is NOT given the attention controls. */}
+            {/* Aims — the aim-tree read view (#780). */}
             <RAimsSection
               unitName={unitName}
               expanded={isExpanded("aims")}

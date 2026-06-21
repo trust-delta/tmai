@@ -338,7 +338,7 @@ function AimPanelOverlay({
   const [expanded, setExpanded] = useState<Set<string>>(() => seedExpanded(repos));
 
   // Esc dismisses the whole panel. Document-level so it fires regardless of
-  // focus (mirrors the prior overlay / AttentionMarker popover).
+  // focus.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();

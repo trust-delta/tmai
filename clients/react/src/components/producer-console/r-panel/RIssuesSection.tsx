@@ -14,10 +14,8 @@
 // the issue number is gone; the issue's full content is reviewed in-tmai
 // with no round-trip.
 
-import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitIssues } from "@/hooks/useUnitIssues";
 import type { IssueInfo, IssueSummaryWire, RepoIssuesWire } from "@/lib/api";
-import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedIssue, selectedIssueKey } from "./r-viewer/RIssueViewer";
 import { issueVocabTimestamp, isUnobserved, unobservedIssueCount } from "./remote-delta";
 import { Section } from "./Section";
@@ -35,10 +33,6 @@ interface RIssuesSectionProps {
    *  R₂, so the row marks itself as the one being viewed (a mechanical
    *  "open here" fact, not appraisal). */
   selectedKey?: string | null;
-  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
-   *  When present each issue row shows its attention marker; absent (e.g. in
-   *  isolation tests) the rows render marker-free. */
-  attention?: AttentionControls;
   /** Remote-Δ effective cursor for this section (#822) — MAX(panel close,
    *  Issues-section close), threaded from `RPanel`. `null` = no close act
    *  recorded yet (first run → every row unobserved); `undefined` = no
@@ -53,7 +47,6 @@ export function RIssuesSection({
   onToggle,
   onSelectIssue,
   selectedKey,
-  attention,
   deltaCursor,
 }: RIssuesSectionProps) {
   const { data, loading, error } = useUnitIssues(unitName);
@@ -79,7 +72,6 @@ export function RIssuesSection({
         error={error}
         onSelectIssue={onSelectIssue}
         selectedKey={selectedKey ?? null}
-        attention={attention}
         deltaCursor={deltaCursor}
       />
     </Section>
@@ -93,7 +85,6 @@ interface BodyProps {
   error: Error | null;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
   deltaCursor?: string | null;
 }
 
@@ -104,7 +95,6 @@ function Body({
   error,
   onSelectIssue,
   selectedKey,
-  attention,
   deltaCursor,
 }: BodyProps) {
   if (unitName === null) {
@@ -129,7 +119,6 @@ function Body({
           multiRepo={multiRepo}
           onSelectIssue={onSelectIssue}
           selectedKey={selectedKey}
-          attention={attention}
           deltaCursor={deltaCursor}
         />
       ))}
@@ -142,14 +131,12 @@ function RepoBlock({
   multiRepo,
   onSelectIssue,
   selectedKey,
-  attention,
   deltaCursor,
 }: {
   repo: RepoIssuesWire;
   multiRepo: boolean;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
   deltaCursor?: string | null;
 }) {
   if (repo.issues.length === 0) return null;
@@ -169,7 +156,6 @@ function RepoBlock({
             repoLabel={repo.repo_label}
             onSelectIssue={onSelectIssue}
             selected={selectedKey === selectedIssueKey(repo.repo_path, Number(issue.number))}
-            attention={attention}
             unobserved={
               deltaCursor !== undefined && isUnobserved(issueVocabTimestamp(issue), deltaCursor)
             }
@@ -186,7 +172,6 @@ function IssueRow({
   repoLabel,
   onSelectIssue,
   selected,
-  attention,
   unobserved,
 }: {
   issue: IssueSummaryWire;
@@ -194,7 +179,6 @@ function IssueRow({
   repoLabel: string;
   onSelectIssue?: (sel: SelectedIssue) => void;
   selected: boolean;
-  attention?: AttentionControls;
   unobserved?: boolean;
 }) {
   // The whole row is a button that opens the issue in the R₂ viewer —
@@ -210,16 +194,6 @@ function IssueRow({
   const selectedIssue: IssueInfo = { ...issue, number: Number(issue.number) };
   return (
     <li className="flex items-start gap-1.5 leading-snug">
-      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
-      <span className="pt-0.5">
-        <RowAttentionMarker
-          attention={attention}
-          repoPath={repoPath}
-          section="issue"
-          id={String(issue.number)}
-          label={`#${Number(issue.number)}`}
-        />
-      </span>
       <button
         type="button"
         onClick={() => onSelectIssue?.({ repoPath, repoLabel, issue: selectedIssue })}

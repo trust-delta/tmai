@@ -14,8 +14,7 @@
 // priority / relevance* tinting; Stage C's destination mock deliberately
 // renders lifecycle state in categorical colour, so the operator can scan
 // the inventory's shape without opening each R₂ viewer (where these facts
-// used to live only). The operator-authored attention heat (the
-// `RowAttentionMarker`) stays a separate, orthogonal axis.
+// used to live only).
 
 import type { IssueSummaryWire, PrSummaryWire } from "@/lib/api";
 import { cn } from "@/lib/utils";

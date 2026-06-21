@@ -3,7 +3,7 @@
 // in each repo's `doc/aims/`, carrying the full node (`slug` / `aim` /
 // `parent` / `state` / `depends_on` / `serves` / `related` / `body`).
 //
-// The aim-tree twin of `useUnitObservations` / `useApproaches` — same shape,
+// The aim-tree twin of `useApproaches` — same shape,
 // same cadence. Aims change on the timescale an operator edits an anchor or
 // a Producer files a node — rare, human-paced. A 60-second poll is ample for
 // an operator-scan surface; no SSE here yet. Keeps the previous response

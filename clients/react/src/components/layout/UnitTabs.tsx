@@ -1,8 +1,8 @@
 // Unit-tab strip for the top bar (C1, Stage C aim-console convergence).
 //
 // One tab per configured `[[unit]]` (from `useUnits` → `UnitsResponse`),
-// each showing the unit's repos as pills (primary highlighted vs secondary)
-// plus an attention rollup badge (⚠N). The active unit is highlighted;
+// each showing the unit's repos as pills (primary highlighted vs secondary).
+// The active unit is highlighted;
 // clicking a tab re-scopes the focused unit. A trailing `+` conveys "add
 // unit = launch Producer" (a clipboard/toast placeholder — no new launch
 // endpoint, mirroring the existing Phase-A "Open Producer terminal"
@@ -16,12 +16,9 @@
 // (`useConfirm`); only on confirm does it call `onCloseUnit`.
 //
 // Built to render N units; one configured unit today collapses to a single
-// tab. The attention rollup lives in a per-unit child (`UnitTab`) so each
-// tab can call `useUnitAttention(unit)` on its own — scaling to N without a
-// rules-of-hooks violation.
+// tab.
 
 import { useConfirm } from "@/components/layout/ConfirmDialog";
-import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { UnitResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -85,12 +82,6 @@ function UnitTab({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  // Per-unit attention rollup: count the operator-set `high` markers across
-  // this unit's artifacts (the ⚠N "owed attention" badge). Reuses the
-  // existing `useUnitAttention` wire — no new endpoint (issue #788 C1).
-  const { data } = useUnitAttention(unit.name);
-  const highCount = data?.entries.filter((e) => e.level === "high").length ?? 0;
-
   // Always-on confirm gate (#540 companion): close = kill, so never silent.
   const confirm = useConfirm();
   const handleClose = async () => {
@@ -130,15 +121,6 @@ function UnitTab({
         {unit.repos.map((repo) => (
           <RepoPill key={repo.path} label={repoBasename(repo.path)} primary={repo.primary} />
         ))}
-        {highCount > 0 && (
-          <span
-            data-testid="unit-attention-rollup"
-            title={`${highCount} owed attention`}
-            className="rounded bg-warning/15 px-1 font-mono text-[9px] text-warning"
-          >
-            ⚠{highCount}
-          </span>
-        )}
       </button>
       <button
         type="button"

@@ -1,27 +1,13 @@
 // @vitest-environment jsdom
 //
 // UnitTabs (C1) — one tab per configured unit: repo pills (primary
-// highlighted), active highlight, ⚠N attention rollup (from the existing
-// `useUnitAttention` wire), select + add affordances, and the #540 / #546
-// per-unit CLOSE control (confirm-gated kill of the Producer slot).
+// highlighted), active highlight, select + add affordances, and the
+// #540 / #546 per-unit CLOSE control (confirm-gated kill of the Producer slot).
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AttentionStateResponse, UnitResponse } from "@/lib/api";
+import type { UnitResponse } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
-
-const unitAttentionMock = vi.fn();
-
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      unitAttention: (...args: unknown[]) => unitAttentionMock(...args),
-    },
-  };
-});
 
 import { UnitTabs } from "../UnitTabs";
 
@@ -36,13 +22,8 @@ function unit(overrides: Partial<UnitResponse> = {}): UnitResponse {
   };
 }
 
-function attention(entries: AttentionStateResponse["entries"] = []): AttentionStateResponse {
-  return { unit: "tmai", entries };
-}
-
 beforeEach(() => {
-  unitAttentionMock.mockReset();
-  unitAttentionMock.mockResolvedValue(attention());
+  vi.clearAllMocks();
 });
 
 describe("UnitTabs", () => {
@@ -108,46 +89,6 @@ describe("UnitTabs", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Add unit/ }));
     expect(onAddUnit).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders a ⚠N rollup of the unit's high-attention markers", async () => {
-    unitAttentionMock.mockResolvedValue(
-      attention([
-        { repo_path: "/home/me/works/tmai", section: "pr", id: "1", level: "high" },
-        { repo_path: "/home/me/works/tmai", section: "issue", id: "2", level: "high" },
-        { repo_path: "/home/me/works/tmai", section: "pr", id: "3", level: "low" },
-      ]),
-    );
-    renderWithProviders(
-      <UnitTabs
-        units={[unit()]}
-        activeUnitName="tmai"
-        onSelectUnit={vi.fn()}
-        onAddUnit={vi.fn()}
-        onCloseUnit={vi.fn()}
-      />,
-    );
-    const tab = screen.getByRole("button", { name: /unit: tmai/ });
-    await waitFor(() => {
-      // Only the two `high` markers count toward the owed-attention rollup.
-      expect(within(tab).getByTestId("unit-attention-rollup").textContent).toBe("⚠2");
-    });
-  });
-
-  it("shows no rollup badge when nothing is owed attention", async () => {
-    unitAttentionMock.mockResolvedValue(attention([]));
-    renderWithProviders(
-      <UnitTabs
-        units={[unit()]}
-        activeUnitName="tmai"
-        onSelectUnit={vi.fn()}
-        onAddUnit={vi.fn()}
-        onCloseUnit={vi.fn()}
-      />,
-    );
-    // Let the (empty) attention fetch resolve, then assert no badge.
-    await waitFor(() => expect(unitAttentionMock).toHaveBeenCalled());
-    expect(screen.queryByTestId("unit-attention-rollup")).toBeNull();
   });
 });
 
