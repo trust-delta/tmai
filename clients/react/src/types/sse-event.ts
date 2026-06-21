@@ -27,7 +27,6 @@ type CoreEventTag = CoreEvent extends { type: infer T } ? T : never;
 const ENTITY_UPDATE_TAGS = [
   "AgentUpdate",
   "DispatchUpdate",
-  "TeamUpdate",
   "WorktreeUpdate",
   "QueueUpdate",
   "RuntimeUpdate",

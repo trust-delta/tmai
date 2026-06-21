@@ -7,9 +7,6 @@ export interface AppEventHandlers {
   onAgentStatusChanged?: (target: string) => void;
   onAgentAppeared?: (target: string) => void;
   onAgentDisappeared?: (target: string) => void;
-  onTeamsUpdated?: () => void;
-  onTeammateIdle?: (teamName: string, memberName: string) => void;
-  onTaskCompleted?: (taskId: string) => void;
   onConfigChanged?: () => void;
   onWorktreeCreated?: (name: string) => void;
   onWorktreeRemoved?: (name: string) => void;
@@ -39,20 +36,6 @@ function dispatchEvent(handlers: AppEventHandlers, event: CoreEvent) {
     case "agent-disappeared":
       if (event.data && typeof event.data === "object" && "target" in event.data) {
         handlers.onAgentDisappeared?.((event.data as { target: string }).target);
-      }
-      break;
-    case "teams-updated":
-      handlers.onTeamsUpdated?.();
-      break;
-    case "teammate-idle":
-      if (event.data && typeof event.data === "object") {
-        const data = event.data as { team_name?: string; member_name?: string };
-        handlers.onTeammateIdle?.(data.team_name || "", data.member_name || "");
-      }
-      break;
-    case "task-completed":
-      if (event.data && typeof event.data === "object" && "task_id" in event.data) {
-        handlers.onTaskCompleted?.((event.data as { task_id: string }).task_id);
       }
       break;
     case "config-changed":
