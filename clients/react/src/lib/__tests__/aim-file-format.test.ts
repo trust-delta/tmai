@@ -78,7 +78,6 @@ describe("fileToAimWire", () => {
     expect(w.body).toBe("\n# IS\n\nx\n");
     expect(w.drift).toBeNull();
     expect(w.working_delta).toBeNull();
-    expect(w.is).toEqual([]);
   });
 
   it("parses a child node with a quoted anchor and a parent", () => {

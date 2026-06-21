@@ -65,7 +65,6 @@ function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     body: "",
     drift: null,
     working_delta: null,
-    is: [],
     ...overrides,
   };
 }

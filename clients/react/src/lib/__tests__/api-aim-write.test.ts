@@ -32,7 +32,6 @@ const NODE: AimWire = {
   body: "",
   drift: null,
   working_delta: null,
-  is: [],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {

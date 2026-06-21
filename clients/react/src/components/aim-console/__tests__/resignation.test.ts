@@ -1,27 +1,18 @@
 // resignation.ts — the pure inventory computation behind the done-set view
-// (issue #811). Covers: confirmed/claimed bucketing from the interior marks
-// (mark-only — authored order kept), open-descendant collection across
-// multi-level subtrees via parent edges (done/dead descendants NOT counted,
-// open under a done intermediate still counted), a drifted open descendant
-// carrying its wire drift through, and the constant frontier line.
+// (issue #811). Covers: 実装済/未実装 bucketing from the node's PROCESS (手段)
+// checklist parsed out of the body (authored order kept; unmarked items drop),
+// open-descendant collection across multi-level subtrees via parent edges
+// (done/dead descendants NOT counted, open under a done intermediate still
+// counted), a drifted open descendant carrying its wire drift through, and the
+// constant frontier line.
 
 import { describe, expect, it } from "vitest";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
-import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimWire } from "@/types/generated/AimWire";
 import { RESIGNATION_FRONTIER, resignationInventory } from "../resignation";
 
-const claimed = (text: string): AimInteriorWire => ({ kind: "claimed", text, ref: null });
-const confirmed = (text: string, ref: string): AimInteriorWire => ({
-  kind: "confirmed",
-  text,
-  ref,
-});
-const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
-  kind: "pruned",
-  text,
-  ref,
-});
+// A 手段 (means/PROCESS) body section with the given checklist lines.
+const means = (...lines: string[]): string => `# 手段\n\n${lines.join("\n")}\n`;
 
 function driftFrom(slug: string): AimDriftWire {
   return {
@@ -43,7 +34,6 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     body: "",
     drift: null,
     working_delta: null,
-    is: [],
     ...overrides,
   };
 }
@@ -57,19 +47,19 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 const FOREST: AimWire[] = [
   aimStub({
     slug: "node",
-    is: [
-      claimed("unverified tail"),
-      confirmed("core path", "PR#1"),
-      claimed("second debt"),
-      pruned("flag route", "wrong premise"),
-    ],
+    body: means(
+      "- [実装済] core path",
+      "- [未実装] unverified tail",
+      "- [未実装] second debt",
+      "- flag route", // unmarked → neither bucket
+    ),
   }),
   aimStub({ slug: "open-child", parent: "node", drift: driftFrom("node") }),
   aimStub({ slug: "open-grandchild", parent: "open-child" }),
   aimStub({ slug: "done-child", parent: "node", state: "done" }),
   aimStub({ slug: "open-under-done", parent: "done-child" }),
   aimStub({ slug: "dead-child", parent: "node", state: "dead" }),
-  aimStub({ slug: "outside", is: [claimed("other tree")] }),
+  aimStub({ slug: "outside", body: means("- [未実装] other tree") }),
 ];
 
 const byslug = (s: string): AimWire => {
@@ -78,25 +68,25 @@ const byslug = (s: string): AimWire => {
   return n;
 };
 
-describe("resignationInventory — interior-mark bucketing (mark-only)", () => {
-  it("buckets confirmed → satisfied and claimed → parked, keeping authored order", () => {
+describe("resignationInventory — PROCESS done/todo bucketing", () => {
+  it("buckets [実装済] → satisfied and [未実装] → parkedTodos, keeping authored order", () => {
     const inv = resignationInventory(byslug("node"), FOREST);
     expect(inv.satisfied.map((m) => m.text)).toEqual(["core path"]);
-    expect(inv.satisfied[0].ref).toBe("PR#1");
-    // The two claimed marks keep the order the author wrote them in.
-    expect(inv.parkedClaims.map((m) => m.text)).toEqual(["unverified tail", "second debt"]);
+    expect(inv.satisfied[0].status).toBe("done");
+    // The two todo items keep the order the author wrote them in.
+    expect(inv.parkedTodos.map((m) => m.text)).toEqual(["unverified tail", "second debt"]);
   });
 
-  it("a pruned mark lands in NEITHER bucket — adjudicated ≠ satisfied ≠ parked (#814)", () => {
+  it("an unmarked PROCESS item lands in NEITHER bucket — no status, no judgment", () => {
     const inv = resignationInventory(byslug("node"), FOREST);
     expect(inv.satisfied.map((m) => m.text)).not.toContain("flag route");
-    expect(inv.parkedClaims.map((m) => m.text)).not.toContain("flag route");
+    expect(inv.parkedTodos.map((m) => m.text)).not.toContain("flag route");
   });
 
-  it("a markless node yields empty buckets (the inventory is still renderable)", () => {
+  it("a node with no 手段 section yields empty buckets (the inventory is still renderable)", () => {
     const inv = resignationInventory(byslug("done-child"), FOREST);
     expect(inv.satisfied).toEqual([]);
-    expect(inv.parkedClaims).toEqual([]);
+    expect(inv.parkedTodos).toEqual([]);
   });
 });
 
