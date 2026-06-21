@@ -44,30 +44,6 @@ vi.mock("../RIssuesSection", () => ({
     </button>
   ),
 }));
-vi.mock("../RDecisionsSection", () => ({
-  RDecisionsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      data-testid="decisions-section"
-      data-expanded={expanded}
-      onClick={onToggle}
-    >
-      Decisions
-    </button>
-  ),
-}));
-vi.mock("../RApproachesSection", () => ({
-  RApproachesSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      data-testid="approaches-section"
-      data-expanded={expanded}
-      onClick={onToggle}
-    >
-      Approaches
-    </button>
-  ),
-}));
 vi.mock("../RAimsSection", () => ({
   RAimsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="aims-section" data-expanded={expanded} onClick={onToggle}>
@@ -175,7 +151,6 @@ describe("RPanel — accordion shell", () => {
     expect(within(panel).getByTestId("r2-viewer-stub")).toBeTruthy();
     // …and the inventory sections are NOT additionally rendered (swap, not stack).
     expect(screen.queryByTestId("prs-section")).toBeNull();
-    expect(screen.queryByTestId("decisions-section")).toBeNull();
     expect(screen.queryByTestId("files-section")).toBeNull();
     // Drag-resize machinery is preserved on the focused column.
     expect(within(panel).getByRole("separator", { name: /Resize R panel/ })).toBeTruthy();
