@@ -11,20 +11,6 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/render";
 
-// The panel owns one `useUnitAttention` instance (threaded to the four
-// attention-artifact sections). The section bodies are stubbed below, so this
-// container test only needs an inert hook — mock it to avoid a real fetch.
-vi.mock("@/hooks/useUnitAttention", () => ({
-  useUnitAttention: () => ({
-    data: null,
-    loading: false,
-    error: null,
-    levelFor: () => null,
-    setAttention: vi.fn(),
-    settingKey: null,
-  }),
-}));
-
 // The panel itself polls the PR / issue lists for the collapsed rail's
 // remote-Δ count (#822) — mocked so no real fetch fires; individual tests
 // override the implementation to feed rail data.
@@ -82,18 +68,6 @@ vi.mock("../RApproachesSection", () => ({
     </button>
   ),
 }));
-vi.mock("../RObservationsSection", () => ({
-  RObservationsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      data-testid="observations-section"
-      data-expanded={expanded}
-      onClick={onToggle}
-    >
-      Observations
-    </button>
-  ),
-}));
 vi.mock("../RAimsSection", () => ({
   RAimsSection: ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="aims-section" data-expanded={expanded} onClick={onToggle}>
@@ -146,7 +120,6 @@ describe("RPanel — accordion shell", () => {
       "issues-section",
       "decisions-section",
       "approaches-section",
-      "observations-section",
       "aims-section",
       "files-section",
     ];

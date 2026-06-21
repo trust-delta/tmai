@@ -9,8 +9,7 @@
 // `status-pills.tsx`'s header for why this is consistent with the R₁
 // "tmai states facts, not appraisals" posture
 // (`2026-05-26-tmai-states-facts-not-appraisals`): the colour names a
-// lifecycle state, it never ranks urgency/importance. The operator's own
-// attention heat stays a separate axis (the `RowAttentionMarker`).
+// lifecycle state, it never ranks urgency/importance.
 //
 // The C-column `UnitPrsSection` that once mirrored this inventory (and held
 // the merge action) is retired; R is now the single PR surface. The merge /
@@ -18,10 +17,8 @@
 // hands R₂ the PR plus the repo-level `billing_dead` flag (which lives on
 // `RepoPrsWire`, not on the PR) so R₂ can offer the billing-dead override.
 
-import type { AttentionControls } from "@/hooks/useUnitAttention";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import type { PrSummaryWire, RepoPrsWire } from "@/lib/api";
-import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedPr, selectedPrKey } from "./r-viewer/RPrViewer";
 import { isUnobserved, prVocabTimestamp, unobservedPrCount } from "./remote-delta";
 import { Section } from "./Section";
@@ -41,10 +38,6 @@ interface RPrsSectionProps {
    *  so the row marks itself as the one being viewed (a mechanical
    *  "open here" fact, not appraisal). */
   selectedKey?: string | null;
-  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
-   *  When present each PR row shows its attention marker; absent (e.g. in
-   *  isolation tests) the rows render marker-free. */
-  attention?: AttentionControls;
   /** Remote-Δ effective cursor for this section (#822) — MAX(panel close,
    *  PRs-section close), threaded from `RPanel`. `null` = no close act
    *  recorded yet (first run → every row unobserved); `undefined` = no
@@ -59,7 +52,6 @@ export function RPrsSection({
   onToggle,
   onSelectPr,
   selectedKey,
-  attention,
   deltaCursor,
 }: RPrsSectionProps) {
   const { data, loading, error } = useUnitPrs(unitName);
@@ -85,7 +77,6 @@ export function RPrsSection({
         error={error}
         onSelectPr={onSelectPr}
         selectedKey={selectedKey ?? null}
-        attention={attention}
         deltaCursor={deltaCursor}
       />
     </Section>
@@ -99,7 +90,6 @@ interface BodyProps {
   error: Error | null;
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
   deltaCursor?: string | null;
 }
 
@@ -110,7 +100,6 @@ function Body({
   error,
   onSelectPr,
   selectedKey,
-  attention,
   deltaCursor,
 }: BodyProps) {
   if (unitName === null) {
@@ -135,7 +124,6 @@ function Body({
           multiRepo={multiRepo}
           onSelectPr={onSelectPr}
           selectedKey={selectedKey}
-          attention={attention}
           deltaCursor={deltaCursor}
         />
       ))}
@@ -148,14 +136,12 @@ function RepoBlock({
   multiRepo,
   onSelectPr,
   selectedKey,
-  attention,
   deltaCursor,
 }: {
   repo: RepoPrsWire;
   multiRepo: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
   deltaCursor?: string | null;
 }) {
   if (repo.prs.length === 0) return null;
@@ -180,7 +166,6 @@ function RepoBlock({
             billingDead={billingDead}
             onSelectPr={onSelectPr}
             selected={selectedKey === selectedPrKey(repo.repo_path, pr.number)}
-            attention={attention}
             unobserved={
               deltaCursor !== undefined && isUnobserved(prVocabTimestamp(pr), deltaCursor)
             }
@@ -198,7 +183,6 @@ function PrRow({
   billingDead,
   onSelectPr,
   selected,
-  attention,
   unobserved,
 }: {
   pr: PrSummaryWire;
@@ -207,7 +191,6 @@ function PrRow({
   billingDead: boolean;
   onSelectPr?: (sel: SelectedPr) => void;
   selected: boolean;
-  attention?: AttentionControls;
   unobserved?: boolean;
 }) {
   // Colour-coded status pills (C2) — categorical lifecycle / review / CI
@@ -218,16 +201,6 @@ function PrRow({
   // in R₂ (a mechanical "open here" fact).
   return (
     <li className="flex items-start gap-1.5 leading-snug">
-      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
-      <span className="pt-0.5">
-        <RowAttentionMarker
-          attention={attention}
-          repoPath={repoPath}
-          section="pr"
-          id={String(pr.number)}
-          label={`#${Number(pr.number)}`}
-        />
-      </span>
       <button
         type="button"
         onClick={() => onSelectPr?.({ repoPath, repoLabel, pr, billingDead })}

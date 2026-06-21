@@ -31,10 +31,6 @@ import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
 import { BashFooter } from "../BashFooter";
 
-vi.mock("@/hooks/useUnitAttention", () => ({
-  useUnitAttention: () => ({ data: null, loading: false, error: null }),
-}));
-
 // Park every fetch/spawn in flight — the layout tests are data-agnostic.
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");

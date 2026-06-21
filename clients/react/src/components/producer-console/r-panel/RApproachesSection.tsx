@@ -13,9 +13,7 @@
 // the header carries zero severity meaning.
 
 import { useApproaches } from "@/hooks/useApproaches";
-import type { AttentionControls } from "@/hooks/useUnitAttention";
 import type { ApproachStatus, ApproachWire, RepoApproachesWire } from "@/lib/api";
-import { RowAttentionMarker } from "./AttentionMarker";
 import { type SelectedRecord, selectedRecordKey } from "./r-viewer/RRecordViewer";
 import { isReviewTriggerReady } from "./r-viewer/review-trigger";
 import { Section } from "./Section";
@@ -31,10 +29,6 @@ interface RApproachesSectionProps {
   /** `selectedRecordKey(repoPath, slug)` of the record currently open in
    *  R₂, so the row marks itself as the one being viewed. */
   selectedKey?: string | null;
-  /** Per-artifact attention controls (threaded from `RPanel`'s single hook).
-   *  When present each approach row shows its attention marker; absent (e.g.
-   *  in isolation tests) the rows render marker-free. */
-  attention?: AttentionControls;
 }
 
 const STATUS_ORDER: readonly ApproachStatus[] = [
@@ -53,7 +47,6 @@ export function RApproachesSection({
   onToggle,
   onSelect,
   selectedKey,
-  attention,
 }: RApproachesSectionProps) {
   const { data, loading, error } = useApproaches(unitName);
   const running =
@@ -80,7 +73,6 @@ export function RApproachesSection({
         error={error}
         onSelect={onSelect}
         selectedKey={selectedKey ?? null}
-        attention={attention}
       />
     </Section>
   );
@@ -93,10 +85,9 @@ interface BodyProps {
   error: Error | null;
   onSelect?: (sel: SelectedRecord) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
 }
 
-function Body({ unitName, repos, loading, error, onSelect, selectedKey, attention }: BodyProps) {
+function Body({ unitName, repos, loading, error, onSelect, selectedKey }: BodyProps) {
   if (unitName === null) {
     return <p className="text-subtle-foreground">Pick a project to see approaches.</p>;
   }
@@ -119,7 +110,6 @@ function Body({ unitName, repos, loading, error, onSelect, selectedKey, attentio
           multiRepo={multiRepo}
           onSelect={onSelect}
           selectedKey={selectedKey}
-          attention={attention}
         />
       ))}
     </div>
@@ -131,13 +121,11 @@ function RepoBlock({
   multiRepo,
   onSelect,
   selectedKey,
-  attention,
 }: {
   repo: RepoApproachesWire;
   multiRepo: boolean;
   onSelect?: (sel: SelectedRecord) => void;
   selectedKey: string | null;
-  attention?: AttentionControls;
 }) {
   // Group by status then sort by date desc within each group. No
   // filter chips — every status is shown, every item is rendered.
@@ -174,7 +162,6 @@ function RepoBlock({
                   repoLabel={repo.repo_label}
                   onSelect={onSelect}
                   selected={selectedKey === selectedRecordKey(repo.repo_root, a.slug)}
-                  attention={attention}
                 />
               ))}
             </ul>
@@ -195,27 +182,15 @@ function ApproachRow({
   repoLabel,
   onSelect,
   selected,
-  attention,
 }: {
   approach: ApproachWire;
   repoPath: string;
   repoLabel: string;
   onSelect?: (sel: SelectedRecord) => void;
   selected: boolean;
-  attention?: AttentionControls;
 }) {
   return (
     <li className="flex items-start gap-1.5 leading-snug">
-      {/* Attention marker sits to the LEFT of the row (contract §3 core). */}
-      <span className="pt-0.5">
-        <RowAttentionMarker
-          attention={attention}
-          repoPath={repoPath}
-          section="approach"
-          id={approach.slug}
-          label={approach.slug}
-        />
-      </span>
       <button
         type="button"
         onClick={() => onSelect?.({ kind: "approach", repoPath, repoLabel, record: approach })}

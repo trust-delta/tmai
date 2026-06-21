@@ -32,7 +32,6 @@
 
 import { type CSSProperties, useCallback, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
-import { useUnitAttention } from "@/hooks/useUnitAttention";
 import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
@@ -271,11 +270,8 @@ export function AimConsole({
   );
 }
 
-// Top-bar unit tab — repo pills (primary highlighted) + an attention rollup
-// badge (⚠N). Mirrors the existing `UnitTabs`/`UnitTab` data wiring (reuses
-// `useUnitAttention`, no new wire) but styled with the aim-console tokens.
-// Per-unit so each tab calls the hook on its own without a rules-of-hooks
-// violation as the tab list grows.
+// Top-bar unit tab — repo pills (primary highlighted), styled with the
+// aim-console tokens.
 function AimUnitTab({
   unit,
   active,
@@ -287,9 +283,6 @@ function AimUnitTab({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const { data } = useUnitAttention(unit.name);
-  const highCount = data?.entries.filter((e) => e.level === "high").length ?? 0;
-
   // Always-on confirm gate (mirrors the legacy UnitTabs, same copy): close =
   // kill (Producer + workers + footer bash), so it is never silent. Nesting a
   // <button> inside the tab <button> is invalid, so the close × is a sibling
@@ -329,11 +322,6 @@ function AimUnitTab({
             {repoBasename(repo.path)}
           </span>
         ))}
-        {highCount > 0 && (
-          <span className="ac-um" title={`${highCount} owed attention`}>
-            ⚠{highCount}
-          </span>
-        )}
       </button>
       <button
         type="button"

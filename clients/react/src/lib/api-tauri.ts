@@ -9,7 +9,6 @@ import type {
   AgentSnapshot,
   AimCreateRequest,
   AimEditRequest,
-  AttentionSetRequest,
   DispatchBundle,
   OrchestratorRules,
   PrMergeMethod,
@@ -250,10 +249,6 @@ export const api = {
   // compose()'s ▣ section; no Tauri-specific path needed)
   approaches: (unit: string) => httpApi.approaches(unit),
 
-  // Observations view (HTTP only — on-demand JSON projection of the unit's
-  // doc/observations/ records; no Tauri-specific path needed)
-  observations: (unit: string) => httpApi.observations(unit),
-
   // Aims view (HTTP only — on-demand JSON projection of the unit's
   // doc/aims/ records; no Tauri-specific path needed)
   aims: (unit: string) => httpApi.aims(unit),
@@ -280,12 +275,6 @@ export const api = {
   // projection of the unit's decisions + serving approaches; no
   // Tauri-specific path needed)
   unitInventory: (unit: string) => httpApi.unitInventory(unit),
-
-  // Per-artifact attention map + operator write (HTTP only — file-backed
-  // attention store served over the web API; no Tauri-specific path needed)
-  unitAttention: (unit: string) => httpApi.unitAttention(unit),
-  setUnitAttention: (unit: string, body: AttentionSetRequest) =>
-    httpApi.setUnitAttention(unit, body),
 
   // Configured-unit membership view (HTTP only — membership-only,
   // no live agent state joined server-side; no Tauri-specific path needed)

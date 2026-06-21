@@ -9,8 +9,7 @@
 // the docked S4 bash footer); the PR-rail is now the real S5 PR/Issue rail
 // (its behaviour is covered in PrRail.test.tsx).
 //
-// `useUnitAttention` is mocked so the per-tab attention rollup never hits the
-// network; `api.aims` / `api.unitPrs` / `api.unitIssues` are mocked to pending
+// `api.aims` / `api.unitPrs` / `api.unitIssues` are mocked to pending
 // promises so the embedded AimPane + PrRail park in their loading states (no
 // network, no act-warning churn) — the shell assertions don't depend on the
 // data.
@@ -21,10 +20,6 @@ import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
 import type { AimsResponse, UnitIssuesResponse, UnitPrsResponse, UnitResponse } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
-
-vi.mock("@/hooks/useUnitAttention", () => ({
-  useUnitAttention: () => ({ data: null, loading: false, error: null }),
-}));
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
