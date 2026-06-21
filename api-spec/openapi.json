@@ -395,95 +395,6 @@
         }
       }
     },
-    "/api/units/{unit}/attention": {
-      "get": {
-        "tags": [
-          "attention"
-        ],
-        "summary": "Documentation stub for `GET /api/units/{unit}/attention`.",
-        "description": "The full per-unit `(repo, section, id)→level` attention map for the R panel\n(issue #489; approach `2026-06-04-attention-as-per-artifact-field` §2; repo\ndiscriminator added in #493). Only `low`/`high` entries are listed —\neverything else is `null` by absence (the machine pole / unset). Served from\n`<data_dir>/attention/<unit>.json`\n(crash-resilient atomic file). Real handler:\n`crate::web::api::get_unit_attention`.",
-        "operationId": "get_unit_attention_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Per-unit attention map (low/high entries; null by absence)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AttentionStateResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unit not found"
-          },
-          "500": {
-            "description": "Attention store load failed (corrupt ledger)"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "attention"
-        ],
-        "summary": "Documentation stub for `POST /api/units/{unit}/attention`.",
-        "description": "The operator's attention write (issue #489 §2). The artifact is identified\nby `(repo_path, section, id)` in the request **body** — `repo_path`\ndiscriminates artifacts across the unit's repos (#493); it rides the body\n(not the URL path) because repo paths contain slashes. `level` is `low`/`high`\nonly — `null` is the machine pole and is not expressible on the request, so\nthe **monotonic / non-repudiation** invariant (\"the operator can't un-see\")\nis enforced by the type. The handler additionally enforces **`high` ≤ 1 per\ndimension** across sections AND across repos (`remote` = {PR, Issue} ⊥\n`local` = {Decision, Approach, Observation}; one remote + one local high per\n*unit*): a new `high` demotes the dimension's prior `high` to `low` (never to\n`null`). Returns the updated map. Real handler:\n`crate::web::api::post_unit_attention`.",
-        "operationId": "post_unit_attention_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AttentionSetRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated per-unit attention map after the write (incl. any high≤1 demotion)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AttentionStateResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Empty artifact id"
-          },
-          "404": {
-            "description": "Unit not found"
-          },
-          "500": {
-            "description": "Attention store load/save failed"
-          }
-        }
-      }
-    },
     "/api/units/{unit}/calibration": {
       "get": {
         "tags": [
@@ -824,45 +735,6 @@
           },
           "500": {
             "description": "Issue listing failed for a repo (is gh authenticated?)"
-          }
-        }
-      }
-    },
-    "/api/units/{unit}/observations": {
-      "get": {
-        "tags": [
-          "observations"
-        ],
-        "summary": "Documentation stub for `GET /api/units/{unit}/observations`.",
-        "description": "JSON projection of the unit's observation records (`doc/observations/`) —\nthe 5th attention-artifact per approach\n`doc/approaches/2026-06-04-attention-as-per-artifact-field.md` §key. Every\n`doc/observations/*.md` record, grouped per repo, surfacing only the\nR-panel-row + attention-marker fields: `slug` (the marker `id`), `summary`,\nand `status` (`high | medium | low`, a human-gated appraisal distinct from\napproach `status`). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). No lifecycle / currency — observations are a shared\nknowledge store, not a verification debt.",
-        "operationId": "get_observations_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Observations projection — every record, grouped per repo",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObservationsResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unit not found"
-          },
-          "500": {
-            "description": "Observation parse failed"
           }
         }
       }
@@ -1573,77 +1445,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RepoApproachesWire"
-            }
-          },
-          "unit": {
-            "type": "string"
-          }
-        }
-      },
-      "AttentionEntryWire": {
-        "type": "object",
-        "description": "One operator-set attention marker in the [`AttentionStateResponse`] map.\n`null` artifacts are **not** emitted — absence = `null` (the R panel already\nholds the artifact inventory; it infers `null` for any listed artifact that\nis absent here).",
-        "required": [
-          "repo_path",
-          "section",
-          "id",
-          "level"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug."
-          },
-          "level": {
-            "$ref": "#/components/schemas/Level"
-          },
-          "repo_path": {
-            "type": "string",
-            "description": "The artifact's owning repo (a unit spans multiple repos, so this\ndiscriminates `tmai` PR#5 from `tmai-core` PR#5 — #493). Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through."
-          },
-          "section": {
-            "$ref": "#/components/schemas/Section"
-          }
-        }
-      },
-      "AttentionSetRequest": {
-        "type": "object",
-        "description": "`POST /api/units/{unit}/attention` request — the operator's attention write.\n`level` is `low`/`high` only ([`Level`] has no `null` variant), so the\noperator can never write `null`: the complementary write-pole and\nnon-repudiation invariants are enforced by the type itself, before the\nhandler runs.",
-        "required": [
-          "repo_path",
-          "section",
-          "id",
-          "level"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "PR/Issue number rendered as a string, or Decision/Approach/Observation\nslug."
-          },
-          "level": {
-            "$ref": "#/components/schemas/Level"
-          },
-          "repo_path": {
-            "type": "string",
-            "description": "The artifact's owning repo (#493). Carried in the request **body**, not\nthe URL path, because repo paths contain slashes. Name matches\n[`crate::api::RepoPrsWire::repo_path`] so the UI's `repoPath` threads\nstraight through."
-          },
-          "section": {
-            "$ref": "#/components/schemas/Section"
-          }
-        }
-      },
-      "AttentionStateResponse": {
-        "type": "object",
-        "description": "`GET /api/units/{unit}/attention` response — the full per-unit attention map\n(only `low`/`high` entries; the rest is `null` by absence), in deterministic\nkey order.",
-        "required": [
-          "unit",
-          "entries"
-        ],
-        "properties": {
-          "entries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttentionEntryWire"
             }
           },
           "unit": {
@@ -4217,14 +4018,6 @@
           }
         }
       },
-      "Level": {
-        "type": "string",
-        "description": "Operator-set attention level. Two poles; `null` is **not** a variant — it is\nrepresented as absence (no entry / no level) and only the machine may write\nit. So this type structurally enforces the operator's write-pole: an\noperator request can never express `null` (non-repudiation by type).",
-        "enum": [
-          "low",
-          "high"
-        ]
-      },
       "LivenessWire": {
         "type": "object",
         "description": "Liveness of an approach's latest fact, mirroring [`Liveness`]. `last_fact`\nis an ISO `YYYY-MM-DD` date (or `null` when the record has no facts); both\n`last_fact` and `days_since` are `null` together in that no-facts case.",
@@ -4269,62 +4062,6 @@
           "event": {
             "type": "string",
             "description": "Human-readable event description"
-          }
-        }
-      },
-      "ObservationStatus": {
-        "type": "string",
-        "description": "How much the author cares about an observation — its *appraisal*.\n\nDistinct from [`super::approach::ApproachStatus`] and\n[`super::decision::DecisionStatus`]: an observation has no lifecycle, only\nan attention weight. Per `doc/observations/README.md` this is a **human\ngate** — the machine never projects it\n(`doc/decisions/2026-05-26-tmai-states-facts-not-appraisals.md`).",
-        "enum": [
-          "high",
-          "medium",
-          "low"
-        ]
-      },
-      "ObservationWire": {
-        "type": "object",
-        "description": "One observation projected to the wire — the human-side complement of the\ninternal [`crate::workbench::observation::ObservationRecord`]. Carries only\nthe R-panel row + attention-marker fields; the body is not surfaced.",
-        "required": [
-          "slug",
-          "summary",
-          "status"
-        ],
-        "properties": {
-          "slug": {
-            "type": "string",
-            "description": "Filename stem — the attention key's `id` (section = `observation`)."
-          },
-          "status": {
-            "$ref": "#/components/schemas/ObservationStatus",
-            "description": "Frontmatter `status` — the appraisal `high | medium | low`."
-          },
-          "summary": {
-            "type": "string",
-            "description": "Frontmatter `summary` — the scan index."
-          }
-        }
-      },
-      "ObservationsResponse": {
-        "type": "object",
-        "description": "`GET /api/units/{unit}/observations` response — the unit's observations\nsurface, per repo, JSON-projected. Composed on demand (no cache). Carries\nevery observation record regardless of `status`; the R panel filters /\nsorts client-side, mirroring the approaches / decisions dashboards.\n\nFor a single-repo unit this collapses to `repos.len() == 1`.",
-        "required": [
-          "unit",
-          "composed_at",
-          "repos"
-        ],
-        "properties": {
-          "composed_at": {
-            "type": "string",
-            "description": "RFC3339 compose timestamp."
-          },
-          "repos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RepoObservationsWire"
-            }
-          },
-          "unit": {
-            "type": "string"
           }
         }
       },
@@ -4700,7 +4437,7 @@
       },
       "RepoAimsWire": {
         "type": "object",
-        "description": "One repo's projected aim-tree slice. Mirrors\n[`super::observations_view::RepoObservationsWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches / observations, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
+        "description": "One repo's projected aim-tree slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
         "required": [
           "repo_label",
           "repo_root",
@@ -4899,40 +4636,6 @@
             "type": "string"
           },
           "repo_path": {
-            "type": "string"
-          }
-        }
-      },
-      "RepoObservationsWire": {
-        "type": "object",
-        "description": "One repo's projected observations slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the React\nsection passes `repo_root` as the marker `repoPath` (same as decisions /\napproaches, #493). The list carries **every** observation record in\n`<repo>/doc/observations/`, sorted most-recent-first by slug.",
-        "required": [
-          "repo_label",
-          "repo_root",
-          "primary",
-          "observations"
-        ],
-        "properties": {
-          "observations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ObservationWire"
-            },
-            "description": "Every observation record in this repo, sorted most-recent-first by slug."
-          },
-          "primary": {
-            "type": "boolean"
-          },
-          "repo_head": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "repo_label": {
-            "type": "string"
-          },
-          "repo_root": {
             "type": "string"
           }
         }
@@ -5249,17 +4952,6 @@
             "description": "Availability state of each tracked AI vendor."
           }
         }
-      },
-      "Section": {
-        "type": "string",
-        "description": "The attention-bearing artifact sections (contract §1). Five kinds;\n**File is intentionally absent** — File is attention-exempt (it does not\ngate progression), so by construction it is unrepresentable here.",
-        "enum": [
-          "pr",
-          "issue",
-          "decision",
-          "approach",
-          "observation"
-        ]
       },
       "ServingHealthWire": {
         "type": "string",
@@ -6211,10 +5903,6 @@
       "description": "Approaches view — peer of decisions per DR 2026-05-15-records-architecture-two-axes; surfaces every approach record (all statuses) with its serves / signal / review-trigger fields. Dashboard filters / sorts client-side by status per #462 Amendment 2026-05-28's dashboard 全件可視化 direction."
     },
     {
-      "name": "observations",
-      "description": "Observations view — the 5th attention-artifact per approach 2026-06-04-attention-as-per-artifact-field §key (observation, a local-dimension peer of decision / approach). Surfaces every doc/observations/*.md record (slug / summary / status: high|medium|low) grouped per repo, carrying repo_root as the marker repoPath."
-    },
-    {
       "name": "aims",
       "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (doc/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
     },
@@ -6249,10 +5937,6 @@
     {
       "name": "files",
       "description": "Operator-side unit-scoped repo files — per-repo tree listing + scoped file content (issue #472, read-only)"
-    },
-    {
-      "name": "attention",
-      "description": "Per-artifact attention model (issue #489; approach 2026-06-04-attention-as-per-artifact-field §2). GET serves the per-unit (repo,section,id)→level map for the R panel (only low/high; null = absence; repo_path discriminates artifacts across the unit's repos, #493). POST is the operator write (low/high only), enforcing monotonic (no write-back to null) + high≤1/dimension (remote {PR,Issue} ⊥ local {Decision,Approach,Observation}) unit-wide across repos, server-side. File is attention-exempt."
     }
   ]
 }
