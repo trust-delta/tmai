@@ -256,6 +256,10 @@ export const api = {
   units: () => httpApi.units(),
   unit: (name: string) => httpApi.unit(name),
 
+  // Live Producer-slot set (HTTP only — the agent-primacy aim-console tab
+  // source, tmai-core #580; no Tauri-specific path needed)
+  slots: () => httpApi.slots(),
+
   // Hand-over batons (HTTP only — read-only file-backed baton store, the
   // operator-side half of tmai-core #473; no Tauri-specific path needed)
   unitHandoffs: (unit: string) => httpApi.unitHandoffs(unit),

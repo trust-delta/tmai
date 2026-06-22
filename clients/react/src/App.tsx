@@ -31,6 +31,7 @@ import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useSlots } from "@/hooks/useSlots";
 import { useSplitPane } from "@/hooks/useSplitPane";
 import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
@@ -206,6 +207,14 @@ export function App({
   // `currentProject` happens to point at. `useHandover` consumes the same wire
   // for cross-unit reconciliation.
   const { data: unitsData, loading: unitsLoading } = useUnits();
+
+  // Live Producer-slot set (tmai-core #580 — aim `producer-cwd`): the
+  // agent-primacy tab source for the aim console. Distinct from `useUnits`
+  // (configured `[[unit]]` membership, kept above for agent→unit resolution
+  // + the legacy unit-tab strip): `slotsData` reflects only units with a live
+  // Producer, so the aim-console tabs become "where a Producer stood" rather
+  // than the static config enumeration.
+  const { data: slotsData } = useSlots();
 
   // The active unit NAME, fed to the unit-scoped wires (`GET
   // /api/units/{unit}/…`). Anchored to the unit that OWNS `currentProject` in
@@ -682,7 +691,7 @@ export function App({
     return (
       <>
         <AimConsole
-          units={unitsData?.units ?? []}
+          units={slotsData?.slots ?? []}
           activeUnitName={unitName}
           onSelectUnit={handleSelectUnit}
           onAddUnit={openLaunchPicker}

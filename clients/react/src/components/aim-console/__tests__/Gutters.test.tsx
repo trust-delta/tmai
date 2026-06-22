@@ -17,9 +17,9 @@ import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
 import type {
   AgentSnapshot,
   AimsResponse,
+  SlotResponse,
   UnitIssuesResponse,
   UnitPrsResponse,
-  UnitResponse,
 } from "@/lib/api";
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
@@ -46,13 +46,14 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
-const UNITS: UnitResponse[] = [
+const UNITS: SlotResponse[] = [
   {
     name: "tmai",
     repos: [
       { path: "/home/u/tmai", primary: true },
       { path: "/home/u/tmai-core", primary: false },
     ],
+    state: "occupied",
   },
 ];
 

@@ -17,7 +17,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
-import type { AimsResponse, UnitIssuesResponse, UnitPrsResponse, UnitResponse } from "@/lib/api";
+import type { AimsResponse, SlotResponse, UnitIssuesResponse, UnitPrsResponse } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
 
@@ -36,13 +36,14 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
-const UNITS: UnitResponse[] = [
+const UNITS: SlotResponse[] = [
   {
     name: "tmai",
     repos: [
       { path: "/home/u/tmai", primary: true },
       { path: "/home/u/tmai-core", primary: false },
     ],
+    state: "occupied",
   },
 ];
 
