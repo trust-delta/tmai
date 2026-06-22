@@ -16,8 +16,6 @@
 // dev-tool tokens.
 //
 // Design pins honoured (same as RAimsSection):
-//   #1 mark-only — the `is[]` marks render exactly as authored; only the wire's
-//      `kind` drives styling, never a re-judgement.
 //   #2 done+drift distinct — a `done` node that is ALSO drifted gets the
 //      `done-drift` tone (a ✓ glyph AND a ⚠ badge), surfaced in its own
 //      Frontier cluster, never folded into plain owed.
@@ -1121,8 +1119,10 @@ function ResignationInventoryView({
       {inv.satisfied.length === 0 ? (
         <div className="ac-il dim">— 実装済 PROCESS なし —</div>
       ) : (
+        // PROCESS items have no id; key off content (text + detail), the
+        // composite the legacy mark list used — distinct lines stay distinct.
         inv.satisfied.map((m) => (
-          <div className="ac-il" key={`done:${m.text}`} data-testid="resig-satisfied">
+          <div className="ac-il" key={`done:${m.text}:${m.detail}`} data-testid="resig-satisfied">
             <span className="ac-tg c">✓ 実装済</span>
             <span>{m.text}</span>
           </div>
@@ -1135,7 +1135,11 @@ function ResignationInventoryView({
       ) : (
         <>
           {inv.parkedTodos.map((m) => (
-            <div className="ac-il" key={`todo:${m.text}`} data-testid="resig-parked-todo">
+            <div
+              className="ac-il"
+              key={`todo:${m.text}:${m.detail}`}
+              data-testid="resig-parked-todo"
+            >
               <span className="ac-tg k">◌ 未実装</span>
               <span>{m.text}（未実装のまま駐車）</span>
             </div>

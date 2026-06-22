@@ -12,9 +12,6 @@
 // (the approach's named failure-signal). Pure model in `./aim-tree`.
 //
 // Design pins honoured:
-//   #1 mark-only — the `is[]` marks (confirmed / claimed / pruned) render as
-//      the author wrote them; we never re-judge / re-order / appraise (only the
-//      wire's `kind` drives styling).
 //   #2 done+drift distinct — a `state: done` node that is ALSO drifted gets the
 //      `done-drift` tone (a done ✓ AND a drift ⚠ badge), surfaced in its own
 //      Frontier cluster + the Tree, never suppressed or folded into plain owed.
