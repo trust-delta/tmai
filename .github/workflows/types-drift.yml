@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.pull_request.user.login, '[bot]') && !startsWith(github.event.pull_request.head.ref, 'bot/')"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -63,7 +63,7 @@ jobs:
     if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -88,7 +88,7 @@ jobs:
     if: always() && needs.no-hand-edits.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
