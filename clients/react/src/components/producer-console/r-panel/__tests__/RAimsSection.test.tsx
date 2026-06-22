@@ -6,17 +6,15 @@
 // wire-backed entry states, and inside the panel: the Frontier owed worklist
 // (drift-first, breadcrumbed, calm-empty), the Tree per-repo navigator
 // (grouping + rollups + collapse), the ledger counts, the inspector (drift
-// pill + the interior `is[]` list), the overview ruler reveal, search, and the
-// carried-over create / edit write flows. Pins exercised: #1 mark-only render,
-// #2 done+drift distinct (not suppressed), #3 drift mirrors the engine (edit →
-// refetch, no client cascade).
+// pill), the overview ruler reveal, search, and the carried-over create / edit
+// write flows. Pins exercised: #2 done+drift distinct (not suppressed), #3
+// drift mirrors the engine (edit → refetch, no client cascade).
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AimsResponse, AimWire } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
-import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 
 const aimsMock = vi.fn();
@@ -46,17 +44,6 @@ function driftFrom(slug: string): AimDriftWire {
     aim_change_date: "2026-05-01",
   };
 }
-const claimed = (text: string): AimInteriorWire => ({ kind: "claimed", text, ref: null });
-const confirmed = (text: string, ref: string): AimInteriorWire => ({
-  kind: "confirmed",
-  text,
-  ref,
-});
-const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
-  kind: "pruned",
-  text,
-  ref,
-});
 const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire => ({
   uncommitted: false,
   uncommitted_anchor_change: false,
@@ -64,7 +51,7 @@ const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire =
   ...overrides,
 });
 // A body with a `# PROCESS` section carrying todo/done units — the owed-signal
-// source (the panel reads progress, not the legacy `is[]` marks).
+// source (the panel reads progress off the body's PROCESS checklist).
 const procBody = ({ todo = 0, done = 0 }: { todo?: number; done?: number } = {}): string => {
   const items = [
     ...Array.from({ length: todo }, (_, i) => `- [todo] todo ${i}`),
@@ -84,27 +71,25 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     body: "",
     drift: null,
     working_delta: null,
-    is: [],
     ...overrides,
   };
 }
 
 // Two repos:
 //   tmai-core (primary)
-//     amplify-human-judgment (root, open, claimed)            → owed (claimed)
+//     amplify-human-judgment (root, open, 1 todo)             → owed (todo)
 //       attention-per-artifact (open, drift←amplify,
-//                               conf+claim+pruned)             → owed (drift)
-//         attention-backend (done, confirmed)                 → plain done
-//     aim-system (root, open, confirmed)                      → calm
+//                               1 todo+done)                   → owed (drift)
+//         attention-backend (done, 1 done)                    → plain done
+//     aim-system (root, open, 1 done)                         → calm
 //       aim-honesty (dead)                                    → abandoned
 //       review-attention-budget (done, drift←aim-system)      → PIN #2 done+drift
 //   tmai
-//     inverted-ui (root, open, claimed)                       → owed (claimed)
+//     inverted-ui (root, open, 1 todo)                        → owed (todo)
 const CORE: AimWire[] = [
   aimStub({
     slug: "amplify-human-judgment",
     aim: "amplify judgment",
-    is: [claimed("進行中")],
     body: procBody({ todo: 1 }),
   }),
   aimStub({
@@ -112,11 +97,6 @@ const CORE: AimWire[] = [
     aim: "per-artifact attention",
     parent: "amplify-human-judgment",
     drift: driftFrom("amplify-human-judgment"),
-    is: [
-      confirmed("storage + wire", "PR#490"),
-      claimed("ancestor moved — re-confirm"),
-      pruned("CLI-flag route", "wrong premise — judgment lives in records"),
-    ],
     body: procBody({ todo: 1, done: 1 }),
   }),
   aimStub({
@@ -124,13 +104,11 @@ const CORE: AimWire[] = [
     aim: "backend compute",
     parent: "attention-per-artifact",
     state: "done",
-    is: [confirmed("wired", "PR#500")],
     body: procBody({ done: 1 }),
   }),
   aimStub({
     slug: "aim-system",
     aim: "records as structure",
-    is: [confirmed("graduated", "PR#501")],
     body: procBody({ done: 1 }),
   }),
   aimStub({ slug: "aim-honesty", aim: "confirmed ⊥ claimed", parent: "aim-system", state: "dead" }),
@@ -146,7 +124,6 @@ const UI: AimWire[] = [
   aimStub({
     slug: "inverted-ui",
     aim: "root to conversation",
-    is: [claimed("frontier")],
     body: procBody({ todo: 1 }),
   }),
 ];
@@ -271,7 +248,7 @@ describe("RAimsSection — panel shell", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Aim panel" })).toBeNull());
   });
 
-  it("ledger counts drift / claimed / confirmed off the forest", async () => {
+  it("ledger counts drift / todo / done off the forest", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPanel();
     await openPanel();
@@ -328,7 +305,7 @@ describe("RAimsSection — Frontier mode (owed worklist)", () => {
         {
           label: "tmai-core",
           primary: true,
-          aims: [aimStub({ slug: "calm", is: [confirmed("ok", "PR#1")] })],
+          aims: [aimStub({ slug: "calm", body: procBody({ done: 1 }) })],
         },
       ]),
     );
@@ -373,7 +350,7 @@ describe("RAimsSection — Tree mode (per-repo navigator + rollups)", () => {
 });
 
 describe("RAimsSection — inspector", () => {
-  it("shows the drift←ancestor pill and the interior is[] list (mark-only, ref for confirmed/pruned)", async () => {
+  it("shows the drift←ancestor pill in the inspector", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPanel();
     await openPanel();
@@ -384,28 +361,6 @@ describe("RAimsSection — inspector", () => {
     expect(within(insp).getByTestId("aim-drift-pill").textContent).toContain(
       "drift ← amplify-human-judgment",
     );
-    // is[] list: a confirmed (with ref) + a claimed + a pruned, exactly as authored.
-    const marks = within(insp).getAllByTestId("aim-mark");
-    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed", "pruned"]);
-    expect(marks[0].textContent).toContain("PR#490"); // ref shown for confirmed
-    expect(marks[1].textContent).toContain("ancestor moved");
-    // pruned (#814): its own neutral tag — never the warning or success tone —
-    // with the rejection reason riding `ref`, same layout as the confirmed ref.
-    expect(marks[2].textContent).toContain("⊘ pruned");
-    expect(marks[2].textContent).toContain("[wrong premise — judgment lives in records]");
-    expect(marks[2].querySelector(".text-warning")).toBeNull();
-    expect(marks[2].querySelector(".text-success")).toBeNull();
-  });
-
-  it("interior dots are three-way — the pruned dot is neutral, not warning/success (#814)", async () => {
-    aimsMock.mockResolvedValue(responseStub());
-    renderPanel();
-    await openPanel();
-    const dots = rowEl("attention-per-artifact").querySelectorAll("span[aria-hidden].h-1.w-1");
-    expect(dots).toHaveLength(3);
-    expect(dots[0].className).toContain("bg-success");
-    expect(dots[1].className).toContain("bg-warning");
-    expect(dots[2].className).toContain("bg-subtle-foreground/40");
   });
 
   it("breadcrumb in the inspector lets you climb to an ancestor", async () => {
@@ -464,7 +419,7 @@ describe("RAimsSection — search", () => {
 
 describe("RAimsSection — create (carried Stage 2-B, integrated)", () => {
   it("creates from the + aim form and reflects it after the refetch", async () => {
-    const created = aimStub({ slug: "new-node", aim: "the new bearing", is: [] });
+    const created = aimStub({ slug: "new-node", aim: "the new bearing" });
     aimsMock.mockResolvedValueOnce(responseStub());
     aimsMock.mockResolvedValue(
       responseStub([{ label: "tmai-core", primary: true, aims: [...CORE, created] }]),

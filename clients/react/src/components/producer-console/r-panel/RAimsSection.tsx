@@ -12,9 +12,6 @@
 // (the approach's named failure-signal). Pure model in `./aim-tree`.
 //
 // Design pins honoured:
-//   #1 mark-only — the `is[]` marks (confirmed / claimed / pruned) render as
-//      the author wrote them; we never re-judge / re-order / appraise (only the
-//      wire's `kind` drives styling).
 //   #2 done+drift distinct — a `state: done` node that is ALSO drifted gets the
 //      `done-drift` tone (a done ✓ AND a drift ⚠ badge), surfaced in its own
 //      Frontier cluster + the Tree, never suppressed or folded into plain owed.
@@ -41,8 +38,6 @@ import { useUnitAims } from "@/hooks/useUnitAims";
 import { type AimsResponse, api } from "@/lib/api";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
-import type { AimInteriorKind } from "@/types/generated/AimInteriorKind";
-import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
@@ -1065,7 +1060,6 @@ function AimRow({
             {rollup.todo > 0 && <span className="text-warning/80"> ◌{rollup.todo}</span>}
           </span>
         )}
-        <InteriorDots marks={node.is} />
         <span className="shrink-0 font-mono text-[9px] text-subtle-foreground">{node.slug}</span>
       </button>
       {onAddChild && (
@@ -1080,32 +1074,6 @@ function AimRow({
         </button>
       )}
     </div>
-  );
-}
-
-// Tiny per-mark dots beside a row — confirmed = filled success, claimed =
-// filled warning, pruned = neutral (adjudicated rejection: attention-zero,
-// never owed). Mark-only: order + kind are exactly the wire's.
-function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
-  if (marks.length === 0) return null;
-  return (
-    <span className="flex shrink-0 items-center gap-0.5">
-      {marks.map((m) => (
-        // Interior lines have no id; key off the prose (mark-only — we never
-        // re-order, so position is the wire's).
-        <span
-          key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-          aria-hidden="true"
-          className={`h-1 w-1 rounded-[1px] ${
-            m.kind === "confirmed"
-              ? "bg-success"
-              : m.kind === "claimed"
-                ? "bg-warning"
-                : "bg-subtle-foreground/40"
-          }`}
-        />
-      ))}
-    </span>
   );
 }
 
@@ -1255,10 +1223,6 @@ function Inspector({
             resolves={(slug) => bySlug.has(slug)}
             onNavigate={onSelect}
           />
-          {/* Legacy interior marks — shown only for nodes that still carry
-              them; the structured body's `is/前提` section supersedes the empty
-              "pure ought" state for new-form nodes (marks machinery untouched). */}
-          {node.is.length > 0 && <InteriorList marks={node.is} />}
           <CrossEdges node={node} />
           <div className="mt-3 flex items-center gap-2">
             <button
@@ -1331,69 +1295,6 @@ function DriftPill({ drift, done }: { drift: AimDriftWire; done: boolean }) {
       className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 font-mono text-[9px] text-warning"
     >
       ⚠ {done ? "done · " : ""}drift ← {drift.stale_from_ancestor_slug}
-    </span>
-  );
-}
-
-// The interior `is[]` list — mark-only: confirmed / claimed / pruned exactly as
-// authored (order + kind off the wire), `ref` shown for confirmed (evidence)
-// and pruned (rejection reason) marks.
-function InteriorList({ marks }: { marks: readonly AimInteriorWire[] }) {
-  return (
-    <section className="mt-3">
-      <h4 className="font-mono text-[9px] uppercase tracking-wide text-subtle-foreground">
-        interior — is
-      </h4>
-      {marks.length === 0 ? (
-        <p className="mt-1 text-[11px] italic text-subtle-foreground">— a pure ought —</p>
-      ) : (
-        <ul className="mt-1 space-y-1">
-          {marks.map((m) => (
-            // Interior lines have no id; key off the prose (mark-only — order is
-            // the wire's, never re-sorted).
-            <li
-              key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-              data-testid="aim-mark"
-              data-kind={m.kind}
-              className="flex items-baseline gap-2 text-[12px]"
-            >
-              <MarkTag kind={m.kind} />
-              <span className="text-muted-foreground">
-                {m.text}
-                {/* `ref` carries the confirm evidence OR the pruned rejection
-                    reason — same slot on the wire, same layout here. */}
-                {m.kind !== "claimed" && m.ref !== null && (
-                  <span className="ml-1 font-mono text-[9px] text-info">[{m.ref}]</span>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function MarkTag({ kind }: { kind: AimInteriorKind }) {
-  if (kind === "confirmed") {
-    return (
-      <span className="shrink-0 rounded border border-success/40 px-1 py-px font-mono text-[9px] text-success">
-        ✓ confirmed
-      </span>
-    );
-  }
-  if (kind === "claimed") {
-    return (
-      <span className="shrink-0 rounded border border-dashed border-warning/50 px-1 py-px font-mono text-[9px] text-warning">
-        ◌ claimed
-      </span>
-    );
-  }
-  // pruned — negative-calm: neutral tone, never the owed warning or the
-  // success green (an adjudicated rejection is settled, not owed).
-  return (
-    <span className="shrink-0 rounded border border-hairline px-1 py-px font-mono text-[9px] text-subtle-foreground">
-      ⊘ pruned
     </span>
   );
 }

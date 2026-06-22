@@ -144,9 +144,9 @@ function parseState(token: string | null): AimState {
 }
 
 // Parse one `doc/aims/<slug>.md` file's raw text into an `AimWire`. The
-// git-derived fields (`drift` / `working_delta`) are `null` (no engine /
-// git analysis offline) and `is` is empty (progress is read from the body's
-// `# PROCESS` downstream, not the wire `is[]`). Throws on a malformed record.
+// git-derived fields (`drift` / `working_delta`) are `null` (no engine / git
+// analysis offline); progress is read from the body's `# PROCESS` section
+// downstream. Throws on a malformed record.
 export function fileToAimWire(slug: string, raw: string): AimWire {
   const split = splitFrontmatter(raw);
   if (split === null) {
@@ -171,7 +171,6 @@ export function fileToAimWire(slug: string, raw: string): AimWire {
     body: split.body,
     drift: null,
     working_delta: null,
-    is: [],
   };
 }
 

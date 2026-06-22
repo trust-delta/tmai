@@ -177,37 +177,6 @@
       ],
       "type": "object"
     },
-    "AimInteriorKind": {
-      "description": "The kind of an interior mark — mirrors the `doc/aims/README.md` convention:\n`confirmed` = external ground-truth checked (test / PR / git ref), real,\nattention-zero; `claimed` = unverified, an operator confirm is owed;\n`pruned` = a rejected branch kept in the tree with its rejection reason\n(the recoil-ledger convention, `doc/aims/aim-recoil-ledger.md`). The\nprojection records which kind the author wrote — it never re-judges it.\nIn particular, `pruned` is valid on any node: pairing it with\n`state: dead` is authoring convention, not a parser rule.",
-      "enum": [
-        "confirmed",
-        "claimed",
-        "pruned"
-      ],
-      "type": "string"
-    },
-    "AimInteriorWire": {
-      "description": "One interior mark projected to the wire — a single `[claimed]` /\n`[confirmed: <ref>]` / `[pruned: <reason>]` line from the node body. `text`\nis the line's prose with the marker (and any leading list bullet) stripped;\n`reference` carries the colon payload — the confirmed ref (the test / PR /\ngit ref) or the pruned rejection reason — and is `null` for a bare\n`[claimed]` / `[pruned]` (or a `[claimed — note]`, whose note is\ncommentary, not a ref). Wire key for `reference` is `ref` (mirroring\n[`super::approaches_view::ReviewTriggerWire`]).",
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/AimInteriorKind"
-        },
-        "ref": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "text"
-      ],
-      "type": "object"
-    },
     "AimState": {
       "description": "Lifecycle state of an aim node.\n\nPer `doc/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =\nself-death (the means failed; the lineage stays, the parent is untouched).\nUnlike a decision's `status`, this is a node-local fact, not an authority\ngate — the machine marks, it never appraises.",
       "enum": [
@@ -225,7 +194,7 @@
           "type": "string"
         },
         "body": {
-          "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim\n— [`Self::interior`] is an ADDITIVE projection over it, not a replacement.",
+          "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim.",
           "type": "string"
         },
         "depends_on": {
@@ -245,13 +214,6 @@
               "description": "Stale-from-ancestor drift, if this node drifted (some ancestor's `aim:`\nanchor moved after the node last changed). `null` / absent when current.\nComputed on read by reusing [`crate::workbench::compose::aim_drift`] — the\nsame parent-only (v1) verdict the Producer hand-over's `tmai-aim-drift`\nfence carries (one source of truth). Populated **only** by the read\nendpoint; [`Self::from_record`] leaves it `None`, because the single-record\nwrite endpoints have no corpus context to walk the ancestor chain."
             }
           ]
-        },
-        "is": {
-          "description": "Interior `is[]` — the marked claims parsed from [`Self::body`]: each\n`[claimed]` / `[confirmed: <ref>]` / `[pruned: <reason>]` line in the\ninterior prose projected to one entry. **Mark-only** (design pin #1 /\n`doc/aims/README.md`): the projection surfaces what the author wrote\n(confirmed / claimed / pruned) and never re-judges, re-orders, or\nde-drifts it. Empty when the interior carries no markers. Wire key is\n`is` (the corpus spelling).",
-          "items": {
-            "$ref": "#/$defs/AimInteriorWire"
-          },
-          "type": "array"
         },
         "parent": {
           "description": "Parent node slug (tree skeleton); `null` for a root node.",

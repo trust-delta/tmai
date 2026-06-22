@@ -16,8 +16,6 @@
 // dev-tool tokens.
 //
 // Design pins honoured (same as RAimsSection):
-//   #1 mark-only — the `is[]` marks render exactly as authored; only the wire's
-//      `kind` drives styling, never a re-judgement.
 //   #2 done+drift distinct — a `done` node that is ALSO drifted gets the
 //      `done-drift` tone (a ✓ glyph AND a ⚠ badge), surfaced in its own
 //      Frontier cluster, never folded into plain owed.
@@ -76,7 +74,6 @@ import { useUnitAims } from "@/hooks/useUnitAims";
 import { api } from "@/lib/api";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
-import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
@@ -826,7 +823,6 @@ function AimRow({
             {rollup.todo > 0 && <span className="k"> ◌{rollup.todo}</span>}
           </span>
         )}
-        <InteriorDots marks={node.is} />
         <span className="ac-slug">{node.slug}</span>
       </button>
       {onAddChild && (
@@ -915,25 +911,6 @@ function WorkingDeltaGlyph({ kind }: { kind: WorkingDeltaKind }) {
       aria-hidden="true"
     >
       {WORKING_DELTA_GLYPH}
-    </span>
-  );
-}
-
-// Tiny per-mark dots beside a row — confirmed = green, claimed = ochre,
-// pruned = neutral (adjudicated rejection: attention-zero, never owed).
-// Mark-only: order + kind are exactly the wire's.
-function InteriorDots({ marks }: { marks: readonly AimInteriorWire[] }) {
-  if (marks.length === 0) return null;
-  return (
-    <span className="ac-ism">
-      {marks.map((m) => (
-        // Interior lines have no id; key off the prose (mark-only — never re-ordered).
-        <i
-          key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-          className={m.kind === "confirmed" ? "c" : m.kind === "claimed" ? "k" : "p"}
-          aria-hidden="true"
-        />
-      ))}
     </span>
   );
 }
@@ -1092,44 +1069,6 @@ function Inspector({
         onNavigate={onSelectAncestor}
       />
 
-      {/* Legacy interior marks — shown only for nodes that still carry them;
-          the structured body's `is/前提` section supersedes the empty "pure
-          ought" state for new-form nodes (marks machinery untouched). */}
-      {node.is.length > 0 && (
-        <div className="ac-iis">
-          <div className="ac-isec">interior — is</div>
-          {node.is.map((m) => (
-            <div
-              className="ac-il"
-              key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-              data-testid="aim-mark"
-              data-kind={m.kind}
-            >
-              <span
-                className={cn(
-                  "ac-tg",
-                  m.kind === "confirmed" ? "c" : m.kind === "claimed" ? "k" : "p",
-                )}
-              >
-                {m.kind === "confirmed"
-                  ? "✓ confirmed"
-                  : m.kind === "claimed"
-                    ? "◌ claimed"
-                    : "⊘ pruned"}
-              </span>
-              <span>
-                {m.text}
-                {/* `ref` carries the confirm evidence OR the pruned rejection
-                    reason — same slot on the wire, same layout here. */}
-                {m.kind !== "claimed" && m.ref !== null && (
-                  <span className="ac-ref"> [{m.ref}]</span>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Resignation inventory (#811) — done is reversible attention-parking,
           so on an already-done node the parked objects stay visible, quietly.
           Read-only context for the (reversible) state edit — never a gate. */}
@@ -1156,12 +1095,12 @@ function Inspector({
 // ── resignation inventory (#811) ──────────────────────────────────────
 //
 // Renders the `resignationInventory` facts beside the done act: 満足 = the
-// node's own confirmed marks; 諦め = its claimed marks (confirm owed, parked
-// not settled) + descendants still open. Categorical tones only — the
-// existing confirmed/claimed tag tokens and the open/drift glyph conventions;
-// no severity ramp, no warning framing, no gate. The frontier line is
-// CONSTANT and unconditional — the unwritten remainder exists whether the
-// enumerable buckets are full or empty.
+// node's own `[done]` (実装済) PROCESS items; 諦め = its `[todo]` (未実装)
+// PROCESS items (named but not reached, parked not settled) + descendants
+// still open. Categorical tones only — the existing done/todo tag tokens and
+// the open/drift glyph conventions; no severity ramp, no warning framing, no
+// gate. The frontier line is CONSTANT and unconditional — the unwritten
+// remainder exists whether the enumerable buckets are full or empty.
 function ResignationInventoryView({
   title,
   node,
@@ -1176,38 +1115,33 @@ function ResignationInventoryView({
     <div className="ac-resig" data-testid="resignation-inventory">
       <div className="ac-isec">{title}</div>
 
-      <div className="ac-resig-cap">満足 — confirmed</div>
+      <div className="ac-resig-cap">満足 — 実装済</div>
       {inv.satisfied.length === 0 ? (
-        <div className="ac-il dim">— confirmed mark なし —</div>
+        <div className="ac-il dim">— 実装済 PROCESS なし —</div>
       ) : (
+        // PROCESS items have no id; key off content (text + detail), the
+        // composite the legacy mark list used — distinct lines stay distinct.
         inv.satisfied.map((m) => (
-          <div
-            className="ac-il"
-            key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-            data-testid="resig-satisfied"
-          >
-            <span className="ac-tg c">✓ confirmed</span>
-            <span>
-              {m.text}
-              {m.ref !== null && <span className="ac-ref"> [{m.ref}]</span>}
-            </span>
+          <div className="ac-il" key={`done:${m.text}:${m.detail}`} data-testid="resig-satisfied">
+            <span className="ac-tg c">✓ 実装済</span>
+            <span>{m.text}</span>
           </div>
         ))
       )}
 
       <div className="ac-resig-cap">諦め — 駐車されるもの</div>
-      {inv.parkedClaims.length === 0 && inv.parkedOpenDescendants.length === 0 ? (
+      {inv.parkedTodos.length === 0 && inv.parkedOpenDescendants.length === 0 ? (
         <div className="ac-il dim">— 列挙できる駐車対象なし —</div>
       ) : (
         <>
-          {inv.parkedClaims.map((m) => (
+          {inv.parkedTodos.map((m) => (
             <div
               className="ac-il"
-              key={`${m.kind}:${m.text}:${m.ref ?? ""}`}
-              data-testid="resig-claimed"
+              key={`todo:${m.text}:${m.detail}`}
+              data-testid="resig-parked-todo"
             >
-              <span className="ac-tg k">◌ claimed</span>
-              <span>{m.text}（未 confirm のまま駐車）</span>
+              <span className="ac-tg k">◌ 未実装</span>
+              <span>{m.text}（未実装のまま駐車）</span>
             </div>
           ))}
           {inv.parkedOpenDescendants.map((d) => (

@@ -47,7 +47,6 @@ function response(unit: string, count: number): AimsResponse {
           body: "",
           drift: null,
           working_delta: null,
-          is: [],
         })),
       },
     ],

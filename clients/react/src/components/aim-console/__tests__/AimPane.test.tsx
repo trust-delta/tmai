@@ -7,7 +7,7 @@
 // presentation port against the real wire shape: the ledger, the Frontier owed
 // worklist (drift-first, breadcrumbed, done-drift distinct — pin #2), the Tree
 // navigator (grouping + rollups + collapse), the overview ruler reveal, the
-// inspector (drift pill + interior is[] — pin #1 mark-only), the search filter,
+// inspector (drift pill), the search filter,
 // and the create / edit modal (kebab validation + refetch — pin #3).
 //
 // Mirrors RAimsSection.test.tsx's fixtures (same forest) so the two surfaces
@@ -18,7 +18,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AimsResponse, AimWire } from "@/lib/api";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import type { AimDriftWire } from "@/types/generated/AimDriftWire";
-import type { AimInteriorWire } from "@/types/generated/AimInteriorWire";
 import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire";
 
 const aimsMock = vi.fn();
@@ -50,17 +49,6 @@ function driftFrom(slug: string): AimDriftWire {
     aim_change_date: "2026-05-01",
   };
 }
-const claimed = (text: string): AimInteriorWire => ({ kind: "claimed", text, ref: null });
-const confirmed = (text: string, ref: string): AimInteriorWire => ({
-  kind: "confirmed",
-  text,
-  ref,
-});
-const pruned = (text: string, ref: string | null = null): AimInteriorWire => ({
-  kind: "pruned",
-  text,
-  ref,
-});
 const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire => ({
   uncommitted: false,
   uncommitted_anchor_change: false,
@@ -68,7 +56,7 @@ const wd = (overrides: Partial<AimWorkingDeltaWire> = {}): AimWorkingDeltaWire =
   ...overrides,
 });
 // A body with a `# PROCESS` section carrying todo/done units — the owed-signal
-// source (the panel reads progress, not the legacy `is[]` marks).
+// source (the panel reads progress off the body's PROCESS checklist).
 const procBody = ({ todo = 0, done = 0 }: { todo?: number; done?: number } = {}): string => {
   const items = [
     ...Array.from({ length: todo }, (_, i) => `- [todo] todo ${i}`),
@@ -88,27 +76,24 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     body: "",
     drift: null,
     working_delta: null,
-    is: [],
     ...overrides,
   };
 }
 
 // Two repos (same shape as RAimsSection's fixture):
 //   tmai-core (primary)
-//     amplify-human-judgment (root, open, claimed)               → owed (claimed)
-//       attention-per-artifact (open, drift←amplify,
-//                               conf+claim+pruned)                 → owed (drift)
-//         attention-backend (done, confirmed)                     → plain done
-//     aim-system (root, open, confirmed)                          → calm
+//     amplify-human-judgment (root, open, 1 todo)                → owed (todo)
+//       attention-per-artifact (open, drift←amplify, 1 todo+done) → owed (drift)
+//         attention-backend (done, 1 done)                        → plain done
+//     aim-system (root, open, 1 done)                            → calm
 //       aim-honesty (dead)                                        → abandoned
 //       review-attention-budget (done, drift←aim-system)          → PIN #2
 //   tmai
-//     inverted-ui (root, open, claimed)                           → owed (claimed)
+//     inverted-ui (root, open, 1 todo)                           → owed (todo)
 const CORE: AimWire[] = [
   aimStub({
     slug: "amplify-human-judgment",
     aim: "amplify judgment",
-    is: [claimed("進行中")],
     body: procBody({ todo: 1 }),
   }),
   aimStub({
@@ -116,11 +101,6 @@ const CORE: AimWire[] = [
     aim: "per-artifact attention",
     parent: "amplify-human-judgment",
     drift: driftFrom("amplify-human-judgment"),
-    is: [
-      confirmed("storage + wire", "PR#490"),
-      claimed("ancestor moved — re-confirm"),
-      pruned("CLI-flag route", "wrong premise — judgment lives in records"),
-    ],
     body: procBody({ todo: 1, done: 1 }),
   }),
   aimStub({
@@ -128,13 +108,11 @@ const CORE: AimWire[] = [
     aim: "backend compute",
     parent: "attention-per-artifact",
     state: "done",
-    is: [confirmed("wired", "PR#500")],
     body: procBody({ done: 1 }),
   }),
   aimStub({
     slug: "aim-system",
     aim: "records as structure",
-    is: [confirmed("graduated", "PR#501")],
     body: procBody({ done: 1 }),
   }),
   aimStub({ slug: "aim-honesty", aim: "confirmed ⊥ claimed", parent: "aim-system", state: "dead" }),
@@ -150,7 +128,6 @@ const UI: AimWire[] = [
   aimStub({
     slug: "inverted-ui",
     aim: "root to conversation",
-    is: [claimed("frontier")],
     body: procBody({ todo: 1 }),
   }),
 ];
@@ -251,7 +228,7 @@ describe("AimPane — load + ledger", () => {
     await waitFor(() => expect(screen.getByText(/読み込みに失敗: boom/)).toBeTruthy());
   });
 
-  it("ledger counts drift / claimed / confirmed off the forest", async () => {
+  it("ledger counts drift / todo / done off the forest", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
     const ledger = await screen.findByTestId("aim-ledger");
@@ -296,7 +273,7 @@ describe("AimPane — Frontier mode (owed worklist)", () => {
         {
           label: "tmai-core",
           primary: true,
-          aims: [aimStub({ slug: "calm", is: [confirmed("ok", "PR#1")] })],
+          aims: [aimStub({ slug: "calm", body: procBody({ done: 1 }) })],
         },
       ]),
     );
@@ -366,7 +343,7 @@ describe("AimPane — overview ruler", () => {
 });
 
 describe("AimPane — inspector", () => {
-  it("shows the drift←ancestor pill and the interior is[] (mark-only, ref for confirmed/pruned)", async () => {
+  it("shows the drift←ancestor pill in the inspector", async () => {
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
     await awaitLoaded();
@@ -376,26 +353,6 @@ describe("AimPane — inspector", () => {
     expect(within(insp).getByTestId("aim-drift-pill").textContent).toContain(
       "drift ← 祖先 amplify-human-judgment",
     );
-    const marks = within(insp).getAllByTestId("aim-mark");
-    expect(marks.map((m) => m.dataset.kind)).toEqual(["confirmed", "claimed", "pruned"]);
-    expect(marks[0].textContent).toContain("PR#490");
-    expect(marks[1].textContent).toContain("ancestor moved");
-    // pruned (#814): its own tag (neutral `p` class — not ochre `k`, not green
-    // `c`) and the rejection reason riding `ref`, same layout as confirmed.
-    expect(marks[2].textContent).toContain("⊘ pruned");
-    expect(marks[2].textContent).toContain("[wrong premise — judgment lives in records]");
-    const prunedTag = marks[2].querySelector(".ac-tg");
-    expect(prunedTag?.classList.contains("p")).toBe(true);
-    expect(prunedTag?.classList.contains("k")).toBe(false);
-    expect(prunedTag?.classList.contains("c")).toBe(false);
-  });
-
-  it("interior dots are three-way: confirmed=c, claimed=k, pruned=p (#814)", async () => {
-    aimsMock.mockResolvedValue(responseStub());
-    renderPane();
-    await awaitLoaded();
-    const dots = rowEl("attention-per-artifact").querySelectorAll(".ac-ism i");
-    expect([...dots].map((d) => d.className)).toEqual(["c", "k", "p"]);
   });
 
   it("breadcrumb climbs to an ancestor", async () => {
@@ -666,9 +623,10 @@ describe("AimPane — unit change", () => {
 });
 
 describe("AimPane — resignation inventory (#811)", () => {
-  // A dedicated forest: a done node carrying both mark kinds, with a
-  // multi-level subtree mixing open (one drifted), open-under-open, and a
-  // done sibling — the buckets the inventory must (and must not) collect.
+  // A dedicated forest: a done node whose PROCESS carries a 実装済 + a 未実装
+  // (plus an unmarked item), with a multi-level subtree mixing open (one
+  // drifted), open-under-open, and a done sibling — the buckets the inventory
+  // must (and must not) collect.
   const RESIG: AimWire[] = [
     aimStub({ slug: "resig-root", aim: "root bearing" }),
     aimStub({
@@ -676,9 +634,9 @@ describe("AimPane — resignation inventory (#811)", () => {
       aim: "the parked bearing",
       parent: "resig-root",
       state: "done",
-      // The pruned mark belongs to NEITHER bucket (#814): adjudicated ≠
-      // satisfied ≠ parked.
-      is: [confirmed("landed", "PR#9"), claimed("tail debt"), pruned("dead-end route")],
+      // An unmarked PROCESS item belongs to NEITHER bucket: no status, no
+      // judgment (the done/todo analog of the old "adjudicated" drop).
+      body: "# PROCESS\n- [done] landed\n- [todo] tail debt\n- dead-end route\n",
     }),
     aimStub({
       slug: "resig-open-child",
@@ -701,14 +659,14 @@ describe("AimPane — resignation inventory (#811)", () => {
     const insp = await screen.findByTestId("aim-inspector");
     const inv = within(insp).getByTestId("resignation-inventory");
 
-    // 満足 — the node's own confirmed marks, ref shown. The pruned mark is
-    // NOT here (adjudicated ≠ satisfied).
+    // 満足 — the node's own 実装済 PROCESS items. The unmarked item is NOT
+    // here (no status ≠ satisfied).
     const sat = within(inv).getAllByTestId("resig-satisfied");
-    expect(sat.map((s) => s.textContent)).toEqual(["✓ confirmedlanded [PR#9]"]);
+    expect(sat.map((s) => s.textContent)).toEqual(["✓ 実装済landed"]);
 
-    // 諦め (a) — the node's own claimed marks, parked not settled. The pruned
-    // mark is NOT here either (adjudicated ≠ parked, #814).
-    const cl = within(inv).getAllByTestId("resig-claimed");
+    // 諦め (a) — the node's own 未実装 PROCESS items, parked not settled. The
+    // unmarked item is NOT here either (no status ≠ parked).
+    const cl = within(inv).getAllByTestId("resig-parked-todo");
     expect(cl).toHaveLength(1);
     expect(cl[0].textContent).toContain("tail debt");
     expect(inv.textContent).not.toContain("dead-end route");
@@ -740,7 +698,7 @@ describe("AimPane — resignation inventory (#811)", () => {
   });
 
   it("frontier line is constant and unconditional — empty buckets, done-drift tone untouched (pin #2)", async () => {
-    // review-attention-budget: done+drift, no marks, no children — both
+    // review-attention-budget: done+drift, no PROCESS, no children — both
     // enumerable buckets are empty, the frontier still renders.
     aimsMock.mockResolvedValue(responseStub());
     renderPane();
@@ -754,7 +712,7 @@ describe("AimPane — resignation inventory (#811)", () => {
     const insp = await screen.findByTestId("aim-inspector");
     const inv = within(insp).getByTestId("resignation-inventory");
     expect(within(inv).queryAllByTestId("resig-satisfied")).toHaveLength(0);
-    expect(within(inv).queryAllByTestId("resig-claimed")).toHaveLength(0);
+    expect(within(inv).queryAllByTestId("resig-parked-todo")).toHaveLength(0);
     expect(within(inv).queryAllByTestId("resig-open-desc")).toHaveLength(0);
     expect(within(inv).getByTestId("resig-frontier").textContent).toBe(
       "この先は書かれていない残余 — 諦めはそこにも届く",
