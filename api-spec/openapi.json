@@ -102,6 +102,28 @@
         }
       }
     },
+    "/api/slots": {
+      "get": {
+        "tags": [
+          "slots"
+        ],
+        "summary": "Documentation stub for `GET /api/slots`.",
+        "description": "The live Producer-slot set — the agent-primacy tab source. Reflects only\nlive Producers (`Occupied`) plus the supervisor's transient `Vacant` /\n`Halted` states (`Closed` never surfaces), each carrying the same\n`name + repos` membership as `GET /api/units`. Real handler:\n`crate::web::api::get_slots`.",
+        "operationId": "get_slots_doc",
+        "responses": {
+          "200": {
+            "description": "Every live Producer slot's membership + lifecycle state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/units": {
       "get": {
         "tags": [
@@ -3175,6 +3197,53 @@
           }
         }
       },
+      "SlotResponse": {
+        "type": "object",
+        "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically) plus the slot's lifecycle `state`.",
+        "required": [
+          "name",
+          "repos",
+          "state"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnitRepoWire"
+            }
+          },
+          "state": {
+            "$ref": "#/components/schemas/SlotStateWire"
+          }
+        }
+      },
+      "SlotStateWire": {
+        "type": "string",
+        "description": "Lifecycle state of a live Producer slot, as surfaced to the tab UI.\n\nThe terminal `Closed` state of [`SlotState`] is intentionally absent — a\nclosed slot is not a tab, so it never projects to the wire (see\n[`SlotStateWire::from_slot_state`]).",
+        "enum": [
+          "occupied",
+          "vacant",
+          "halted"
+        ]
+      },
+      "SlotsResponse": {
+        "type": "object",
+        "description": "`GET /api/slots` response — every live Producer slot (config-dormant units\nexcluded).",
+        "required": [
+          "slots"
+        ],
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotResponse"
+            }
+          }
+        }
+      },
       "SpawnRole": {
         "type": "string",
         "description": "Role of a spawned agent.",
@@ -3675,6 +3744,10 @@
     {
       "name": "units",
       "description": "Unit→repo membership — configured units with their resolved repo list (issue #439, the Phase C wire deferred by #340). Membership only; the client joins with live agents to render one Producer-rooted tree per unit"
+    },
+    {
+      "name": "slots",
+      "description": "Live Producer-slot set (aim producer-cwd / producer-slot-invariant) — the agent-primacy tab source: a project is where a Producer stood, not a configured [[unit]] enumeration. GET /api/slots reflects only live Producers (Occupied) plus the supervisor's transient Vacant / Halted states (Closed never surfaces), each carrying the same name+repos membership as the units surface. The aim-console reads this instead of /units, so a dormant configured unit appears as a tab only once it launches a Producer."
     },
     {
       "name": "aims",

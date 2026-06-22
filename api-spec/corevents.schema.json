@@ -1705,6 +1705,53 @@
       ],
       "type": "object"
     },
+    "SlotResponse": {
+      "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically) plus the slot's lifecycle `state`.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/UnitRepoWire"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/SlotStateWire"
+        }
+      },
+      "required": [
+        "name",
+        "repos",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SlotStateWire": {
+      "description": "Lifecycle state of a live Producer slot, as surfaced to the tab UI.\n\nThe terminal `Closed` state of [`SlotState`] is intentionally absent — a\nclosed slot is not a tab, so it never projects to the wire (see\n[`SlotStateWire::from_slot_state`]).",
+      "enum": [
+        "occupied",
+        "vacant",
+        "halted"
+      ],
+      "type": "string"
+    },
+    "SlotsResponse": {
+      "description": "`GET /api/slots` response — every live Producer slot (config-dormant units\nexcluded).",
+      "properties": {
+        "slots": {
+          "items": {
+            "$ref": "#/$defs/SlotResponse"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "slots"
+      ],
+      "type": "object"
+    },
     "SpawnRole": {
       "description": "Role of a spawned agent.",
       "enum": [
