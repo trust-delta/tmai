@@ -29,6 +29,9 @@ import type { RepoSlackWire } from "@/types/generated/RepoSlackWire";
 import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest";
 import type { SlackOreWire } from "@/types/generated/SlackOreWire";
+import type { SlotResponse } from "@/types/generated/SlotResponse";
+import type { SlotStateWire } from "@/types/generated/SlotStateWire";
+import type { SlotsResponse } from "@/types/generated/SlotsResponse";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
@@ -69,6 +72,9 @@ export type {
   RepoSlackWire,
   SlackCaptureRequest,
   SlackOreWire,
+  SlotResponse,
+  SlotStateWire,
+  SlotsResponse,
   SpawnRole,
   SpawnRuntime,
   TerminalSubscription,
@@ -1441,6 +1447,15 @@ export const api = {
   // client-derived state pill.
   units: () => apiFetch<UnitsResponse>("/units"),
   unit: (name: string) => apiFetch<UnitResponse>(`/units/${encodeURIComponent(name)}`),
+
+  // Live Producer-slot set (tmai-core #580 — aim producer-cwd) — the
+  // agent-primacy tab source: a project is *where a Producer stood*, not a
+  // configured `[[unit]]` enumeration. Unlike `/units` (dormant-aware
+  // membership), `/slots` reflects only live Producers (Occupied) plus the
+  // supervisor's transient Vacant / Halted states (Closed never surfaces),
+  // each carrying the same `name + repos` membership. The aim-console tab
+  // source reads this instead of `/units`.
+  slots: () => apiFetch<SlotsResponse>("/slots"),
 
   // Hand-over batons (read-only) — the operator-side half of tmai-core PR
   // #473's handoffs endpoint. `unitHandoffs` lists the unit's batons

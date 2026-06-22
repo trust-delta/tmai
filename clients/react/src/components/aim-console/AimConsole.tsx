@@ -32,7 +32,7 @@
 
 import { type CSSProperties, useCallback, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
-import type { AgentSnapshot, TriggerHandoffRitualRequest, UnitResponse } from "@/lib/api";
+import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
   type AimConsoleLayout,
@@ -67,14 +67,17 @@ function repoBasename(path: string): string {
 }
 
 interface AimConsoleProps {
-  /** Configured `[[unit]]` membership (App's `useUnits`), rendered as the
-   *  top-bar unit tabs. Empty = no tabs (cwd-synthesized units aren't
-   *  enumerated; same convention as the existing UnitTabs). */
-  units: UnitResponse[];
+  /** Live Producer-slot set (App's `useSlots`, tmai-core #580 — aim
+   *  `producer-cwd`), rendered as the top-bar unit tabs: a project is *where a
+   *  Producer stood*, so a dormant `[[unit]]` with no live Producer is not a
+   *  tab until its "+" Add-unit launch stands one. Empty = no live slots. Each
+   *  slot carries `name + repos` (same membership the tabs + per-repo footer
+   *  use) plus a lifecycle `state` (occupied / vacant / halted). */
+  units: SlotResponse[];
   /** Name of the currently focused unit, so the matching tab highlights. */
   activeUnitName: string | null;
   /** Re-scope the focused unit to the clicked tab. */
-  onSelectUnit: (unit: UnitResponse) => void;
+  onSelectUnit: (unit: SlotResponse) => void;
   /** "Add unit = launch Producer" affordance — opens App's repo-root launch
    *  picker (the launch cwd defines the unit; aim `producer-cwd`). */
   onAddUnit: () => void;
@@ -82,7 +85,7 @@ interface AimConsoleProps {
    *  footer bash (the `producer-kill` teardown, the sole `producer-slot-
    *  invariant` carve-out: close does NOT respawn). Gated behind an always-on
    *  confirm in the tab; called ONLY after that confirm is accepted. */
-  onCloseUnit: (unit: UnitResponse) => void;
+  onCloseUnit: (unit: SlotResponse) => void;
   /** Switch back to the existing ProducerConsole (the default view). The
    *  ENTER toggle lives in StatusBar; this is its EXIT pair, since the
    *  full-window aim console replaces the existing chrome incl. StatusBar. */
@@ -278,7 +281,7 @@ function AimUnitTab({
   onSelect,
   onClose,
 }: {
-  unit: UnitResponse;
+  unit: SlotResponse;
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
