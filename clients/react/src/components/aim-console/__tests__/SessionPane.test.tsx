@@ -15,9 +15,10 @@
 // list, the LOCAL session selection, the shead split, and the addressee
 // threading. `api` is mocked so Shead's settings fetch never hits the network.
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
+import { renderWithProviders } from "@/test/render";
 import { SessionPane } from "../SessionPane";
 
 vi.mock("@/components/terminal/TerminalPanel", () => ({
@@ -140,7 +141,7 @@ function renderPane(overrides: Partial<Parameters<typeof SessionPane>[0]> = {}) 
     ],
     ...overrides,
   };
-  render(<SessionPane {...props} />);
+  renderWithProviders(<SessionPane {...props} />);
   return props;
 }
 

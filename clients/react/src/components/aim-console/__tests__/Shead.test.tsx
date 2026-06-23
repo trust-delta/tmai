@@ -5,15 +5,19 @@
 //
 //   Producer variant: status dot · name · model · ctx bar with the
 //   auto-handoff threshold marker ┊ · pct · ⤺ handoff & restart (the
-//   App-lifted ritual `trigger`, confirm flow preserved) · ⚙ · ✕ kill.
+//   App-lifted ritual `trigger`, confirm flow preserved) · ⚙ · ⟳ re-spawn
+//   (kill → slot-supervisor auto-respawn, behind a danger confirm).
 //   Worker variant: dot · name · model · repo/cwd · ✕ kill — violet accent.
 //
 // `getOrchestratorSettings` (the threshold fetch) and `killAgent` are
-// mocked; the rest of the api stays real.
+// mocked; the rest of the api stays real. The Producer re-spawn confirm uses
+// `useConfirm`, so the Producer variant renders under `renderWithProviders`
+// (which mounts the ConfirmProvider).
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AgentSnapshot, api, type OrchestratorSettings } from "@/lib/api";
+import { renderWithProviders } from "@/test/render";
 import { Shead } from "../Shead";
 
 vi.mock("@/lib/api", async () => {
@@ -90,7 +94,7 @@ function renderShead(overrides: Partial<Parameters<typeof Shead>[0]> = {}) {
     onOpenSettings: vi.fn(),
     ...overrides,
   };
-  render(<Shead {...props} />);
+  renderWithProviders(<Shead {...props} />);
   return props;
 }
 
@@ -109,7 +113,7 @@ afterEach(() => {
 
 describe("Shead — Producer variant", () => {
   it("renders dot · name · model · ctx bar (with ┊ threshold marker) · pct", async () => {
-    const { container } = render(
+    const { container } = renderWithProviders(
       <Shead
         agent={PRODUCER}
         isProducer
@@ -147,19 +151,43 @@ describe("Shead — Producer variant", () => {
     expect(props.trigger).not.toHaveBeenCalled();
   });
 
-  it("opens settings via ⚙ and kills via ✕", () => {
+  it("opens settings via ⚙", () => {
     const props = renderShead();
     fireEvent.click(screen.getByRole("button", { name: "Open settings — auto-handoff threshold" }));
     expect(props.onOpenSettings).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Kill agent" }));
-    expect(killAgent).toHaveBeenCalledWith("claude:prod");
+  });
+
+  it("re-spawns (kill → supervisor respawn) only after the danger confirm is accepted", async () => {
+    renderShead();
+    // The Producer header carries a ⟳ re-spawn, NOT a bare ✕ kill.
+    expect(screen.queryByRole("button", { name: "Kill agent" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+      }),
+    );
+    // Nothing fires until the confirm is accepted.
+    expect(killAgent).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Re-spawn" }));
+    await waitFor(() => expect(killAgent).toHaveBeenCalledWith("claude:prod"));
+  });
+
+  it("does NOT re-spawn when the confirm is declined", async () => {
+    renderShead();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(killAgent).not.toHaveBeenCalled();
   });
 
   it("renders 'auto off' and no ┊ marker when the threshold is 0 (disabled)", async () => {
     getOrchestratorSettings.mockResolvedValue({
       auto_handoff_threshold_pct: 0,
     } as OrchestratorSettings);
-    const { container } = render(
+    const { container } = renderWithProviders(
       <Shead
         agent={PRODUCER}
         isProducer
@@ -183,9 +211,16 @@ describe("Shead — worker variant", () => {
     expect(screen.getByText("sonnet-4.6")).toBeTruthy();
     expect(screen.getByText(/repo tmai · main · \.\.\/tmai-wt-attn-ui/)).toBeTruthy();
     // No handoff ritual, no settings — the worker bar carries kill only.
+    // And no re-spawn: a worker is bounded (no slot supervisor respawns it),
+    // so killing it is a legitimate terminal, kept as a plain ✕ kill.
     expect(screen.queryByRole("button", { name: /handoff & restart/i })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Open settings — auto-handoff threshold" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+      }),
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Kill agent" }));
     expect(killAgent).toHaveBeenCalledWith("claude:w1");

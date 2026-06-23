@@ -7,7 +7,7 @@
 //
 //   Producer: dot · name · model · ctx bar (with the auto-handoff threshold
 //             marker ┊) · pct · auto N% · unit/cwd · ⤺ handoff & restart ·
-//             ⚙ settings · ✕ kill
+//             ⚙ settings · ⟳ re-spawn
 //   Worker:   dot · name · model · ctx bar (violet accent) · pct ·
 //             repo/cwd · ✕ kill
 //
@@ -21,6 +21,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
   formatThousands,
   renderBar,
@@ -111,6 +112,9 @@ function StatusDot({ attention }: { attention: AgentSnapshot["attention"] }) {
   );
 }
 
+// Plain kill — the WORKER header's terminal. Killing a worker is legitimate
+// and bounded (no slot supervisor respawns it), so it stays a bare ✕ kill,
+// no confirm. (The Producer header uses `RespawnButton` instead — see below.)
 function KillButton({ target }: { target: string }) {
   return (
     <button
@@ -121,6 +125,41 @@ function KillButton({ target }: { target: string }) {
       aria-label="Kill agent"
     >
       ✕
+    </button>
+  );
+}
+
+// The PRODUCER header's affordance. A Producer sits in a supervised slot
+// (`producer-slot-invariant`): `api.killAgent` does NOT close the slot, so the
+// engine's slot-supervisor auto-respawns a fresh Producer. So this "kill" is
+// really a RE-SPAWN, not a terminal — the only terminal is the tab close `×`
+// (`closeUnitSlot`). We relabel/re-icon it as a ⟳ re-spawn and gate it behind
+// a confirm (it had none): a no-baton re-spawn discards the current session's
+// conversation context, so it must never be silent. Same `POST /api/agents/
+// {target}/kill` call (no wire/spec change); the supervisor does the respawn.
+function RespawnButton({ target }: { target: string }) {
+  const confirm = useConfirm();
+  const handleRespawn = async () => {
+    const ok = await confirm({
+      title: "Re-spawn this Producer?",
+      message:
+        "The current session is killed and a fresh Producer starts with NO hand-off — " +
+        "its conversation context is lost. Use Handoff & Restart (⤺) instead to preserve context.",
+      confirmLabel: "Re-spawn",
+      cancelLabel: "Cancel",
+      variant: "danger",
+    });
+    if (ok) killAgent(target);
+  };
+  return (
+    <button
+      type="button"
+      className="ic respawn"
+      onClick={handleRespawn}
+      title="Re-spawn Producer (kill + auto-respawn; no hand-off)"
+      aria-label="Re-spawn Producer (kill + auto-respawn; no hand-off)"
+    >
+      ⟳
     </button>
   );
 }
@@ -238,7 +277,7 @@ function ProducerShead({
         >
           ⚙
         </button>
-        <KillButton target={agent.target} />
+        <RespawnButton target={agent.target} />
       </span>
     </div>
   );
