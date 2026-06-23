@@ -70,6 +70,8 @@ pub mod pr_diff_response;
 pub use pr_diff_response::*;
 pub mod pr_summary_wire;
 pub use pr_summary_wire::*;
+pub mod producer_launch_request;
+pub use producer_launch_request::*;
 pub mod queue_agent_entry;
 pub use queue_agent_entry::*;
 pub mod queue_snapshot;
