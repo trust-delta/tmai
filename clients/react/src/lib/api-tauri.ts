@@ -118,7 +118,7 @@ export const api = {
     rows?: number;
     cols?: number;
   }) => httpApi.spawnWorktree(req),
-  launchProducer: (unit: string) => httpApi.launchProducer(unit),
+  launchProducer: (path: string) => httpApi.launchProducer(path),
 
   // Worktree management
   listWorktrees: () => httpApi.listWorktrees(),
