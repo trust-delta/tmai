@@ -45,6 +45,7 @@ import {
   type UnitResponse,
 } from "@/lib/api";
 import { closeUnitSlot } from "@/lib/close-unit-slot";
+import { currentProjectBelongsToLiveProject } from "@/lib/current-project";
 import { findProducerForUnit } from "@/lib/producer";
 import { useSSE } from "@/lib/sse-provider";
 import { ATTENTION_STRIP_WIDTH_DEFAULT, clampAttentionStripWidth } from "@/lib/ui-prefs";
@@ -445,13 +446,20 @@ export function App({
   // X-Tmai-Origin has a sensible scope before the user touches the sidebar.
   // Also reset the scope when the previously selected project disappears
   // (e.g. its last agent stopped) so we never keep sending a stale cwd —
-  // CodeRabbit caught this on PR #615 review.
+  // CodeRabbit caught this on PR #615 review. The membership is tree-tolerant
+  // (`currentProjectBelongsToLiveProject`): a multi-repo unit's tab selects its
+  // PRIMARY repo while the Producer's wrapper cwd is the derived projectPath, so
+  // a literal `includes` reset bounced an explicit tab selection to the wrong
+  // unit once a second unit was live (#581 dogfood).
   useEffect(() => {
     if (projectPaths.length === 0) {
       if (currentProject !== null) setCurrentProject(null);
       return;
     }
-    if (currentProject === null || !projectPaths.includes(currentProject)) {
+    if (
+      currentProject === null ||
+      !currentProjectBelongsToLiveProject(currentProject, projectPaths)
+    ) {
       setCurrentProject(projectPaths[0]);
     }
   }, [currentProject, projectPaths]);
