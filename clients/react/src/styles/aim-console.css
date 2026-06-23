@@ -625,6 +625,11 @@
 .aim-console .ac-shead .ic.kill:hover {
   color: var(--danger);
 }
+/* Producer re-spawn ⟳ — a restart (not a terminal), so it hovers amber like
+   the ⤺ handoff & restart, not danger-red like a worker kill. */
+.aim-console .ac-shead .ic.respawn:hover {
+  color: var(--amber);
+}
 
 /* ── term (mock `.term`) — the conversation surface. TerminalPanel /
    PreviewPanel fill it; this is just the flex container. ────────────────── */
