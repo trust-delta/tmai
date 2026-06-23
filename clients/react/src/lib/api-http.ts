@@ -19,6 +19,7 @@ import type { IssueLabelWire } from "@/types/generated/IssueLabelWire";
 import type { IssueSummaryWire } from "@/types/generated/IssueSummaryWire";
 import type { PermissionMode } from "@/types/generated/PermissionMode";
 import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
+import type { ProducerLaunchRequest } from "@/types/generated/ProducerLaunchRequest";
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
@@ -63,6 +64,7 @@ export type {
   IssueSummaryWire,
   PermissionMode,
   PrDiffResponse,
+  ProducerLaunchRequest,
   PrSummaryWire,
   QueueAgentEntry,
   QueueSnapshot,
@@ -1082,15 +1084,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
-  // Engine-composed direct `claude` Producer launch (#566 / (B) Phase 2).
-  // The engine resolves the unit (a configured `[[unit]]`, or a repo/worktree
-  // basename that reduces to its owning unit), runs the shared launch builder
-  // (compose + #541 readiness + boot file #373 + the exact `claude` argv), and
-  // spawns `claude` DIRECTLY into a PTY with `is_producer` + `agent_type=claude`
-  // set at the spawn act — no bash-wrap / tmai-CLI chain. Body mirrors `/spawn`.
-  launchProducer: (unit: string) =>
-    apiFetch<SpawnResponse>(`/units/${encodeURIComponent(unit)}/producer/launch`, {
+  // Engine-composed direct `claude` Producer launch, BY PATH (#581 — the rip's
+  // `+` Add-unit bootstrap fix). Sends the picked absolute path; the engine
+  // derives the unit from it (`unit_for_path` — the owning `[[unit]]`, else a
+  // `from_dir` synthesis, so a brand-new project root launches where the old
+  // by-name basename 404'd), runs the shared launch builder (compose + #541
+  // readiness + boot file #373 + the exact `claude` argv), and spawns `claude`
+  // DIRECTLY into a PTY with `is_producer` + `agent_type=claude` at the spawn
+  // act — no bash-wrap / tmai-CLI chain. Body mirrors `/spawn`'s response.
+  launchProducer: (path: string) =>
+    apiFetch<SpawnResponse>("/producer/launch", {
       method: "POST",
+      body: JSON.stringify({ path } satisfies ProducerLaunchRequest),
     }),
 
   // Worktree management

@@ -357,30 +357,27 @@ export function App({
   //     instead and calls `launchProducerAt` with the picked path.
   const launchProducerAt = useCallback(
     async (path: string) => {
-      const derivedUnit = path.split("/").filter(Boolean).pop();
-      if (!derivedUnit) {
-        toastInfo("Could not derive a unit name from the chosen path.");
+      if (!path) {
+        toastInfo("No path chosen.");
         return;
       }
+      // Display label only — the engine derives the REAL unit from the path.
+      const label = path.split("/").filter(Boolean).pop() ?? path;
       try {
-        // (B) Phase 2 — the engine composes + spawns the Producer directly via
-        // `POST /api/units/{unit}/producer/launch` (#566), so the launched
-        // process IS `claude` (`agent_type=claude` + `is_producer` set at the
-        // spawn act), with no bash / tmai shim on the process tree. The engine
-        // resolves the unit from the derived basename — a configured `[[unit]]`,
-        // or a repo/worktree basename that reduces to its owning unit
-        // (`resolve_unit_or_cwd`). An unresolvable name returns 404 and surfaces
-        // as the failure toast below.
-        //
-        // The bash-wrap `/api/spawn` path (`exec tmai producer "$0"`) stays as a
-        // live fallback in tmai-core until this engine-direct launch is proven
-        // in dogfood; it is retired separately, not in this cut-over.
-        const res = await api.launchProducer(derivedUnit);
+        // By-PATH launch (#581 — the `+` Add-unit bootstrap fix): send the
+        // picked ABSOLUTE PATH, not its basename. The engine derives the unit
+        // from it (`unit_for_path` — the owning `[[unit]]`, else a `from_dir`
+        // synthesis), so a brand-new project root launches where the old
+        // by-name basename 404'd (`no [[unit]] named '<basename>'`). The
+        // launched process IS `claude` (`agent_type=claude` + `is_producer` at
+        // the spawn act), no bash / tmai shim. A missing dir returns 400 → the
+        // failure toast below.
+        const res = await api.launchProducer(path);
         setSelection({ type: "agent", id: res.session_id });
         setCurrentProject(path);
         closeMainPanelOverlay();
         refresh();
-        toastSuccess(`Producer launched for ${derivedUnit}`);
+        toastSuccess(`Producer launched for ${label}`);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
         toastInfo(`Failed to launch Producer: ${reason}`);

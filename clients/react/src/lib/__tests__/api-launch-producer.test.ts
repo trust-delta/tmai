@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
-// api.launchProducer — (B) Phase 2 engine-composed Producer launch (#566).
-// Asserts the wire contract: POST /units/{unit}/producer/launch (unit
-// URL-encoded), no request body (the unit in the path is the only input),
-// returns the SpawnResponse, and a backend rejection (404 unresolvable unit)
+// api.launchProducer — by-PATH engine-composed Producer launch (#581; the rip's
+// `+` Add-unit bootstrap fix, superseding the #566 by-name route). Asserts the
+// wire contract: POST /producer/launch with a `{ path }` body carrying the
+// picked ABSOLUTE PATH (not its basename — the engine derives the unit from the
+// path via `unit_for_path`), returns the SpawnResponse, and a backend rejection
 // propagates as an Error. Mirrors the fetch-mock shape of api-aim-write.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,25 +37,32 @@ describe("api.launchProducer", () => {
     vi.clearAllMocks();
   });
 
-  it("POSTs to /units/{unit}/producer/launch and returns the spawn response", async () => {
-    const result = await api.launchProducer("tmai");
+  it("POSTs to /producer/launch with the picked path body and returns the spawn response", async () => {
+    const result = await api.launchProducer("/home/u/works/new-project");
     expect(result).toEqual(SPAWN);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toMatch(/\/api\/units\/tmai\/producer\/launch$/);
+    expect(url).toMatch(/\/api\/producer\/launch$/);
     expect((init as RequestInit).method).toBe("POST");
-    // No request body — the unit (in the path) is the only input.
-    expect((init as RequestInit).body).toBeUndefined();
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      path: "/home/u/works/new-project",
+    });
   });
 
-  it("URL-encodes the unit name", async () => {
-    await api.launchProducer("a/b");
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toMatch(/\/units\/a%2Fb\/producer\/launch$/);
+  it("sends the FULL path, not its basename (the #581 by-path bootstrap)", async () => {
+    await api.launchProducer("/home/u/works/conversation-handoff-mcp");
+    const [, init] = mockFetch.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    // The engine derives the unit from the full path; sending only the basename
+    // is exactly the bug #581 fixes (an unconfigured basename 404'd).
+    expect(body.path).toBe("/home/u/works/conversation-handoff-mcp");
+    expect(body.path).not.toBe("conversation-handoff-mcp");
   });
 
-  it("propagates an unresolvable unit (404) as Error", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("no [[unit]] named 'ghost'", { status: 404 }));
-    await expect(api.launchProducer("ghost")).rejects.toThrow(/API error 404/);
+  it("propagates a backend rejection (400 missing dir) as Error", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response("Directory does not exist: /nope", { status: 400 }),
+    );
+    await expect(api.launchProducer("/nope")).rejects.toThrow(/API error 400/);
   });
 });
