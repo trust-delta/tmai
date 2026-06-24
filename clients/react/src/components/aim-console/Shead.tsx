@@ -7,7 +7,7 @@
 //
 //   Producer: dot · name · model · ctx bar (with the auto-handoff threshold
 //             marker ┊) · pct · auto N% · unit/cwd · ⤺ handoff & restart ·
-//             ⚙ settings · ⟳ re-spawn
+//             ⚙ settings · ⟳ restart
 //   Worker:   dot · name · model · ctx bar (violet accent) · pct ·
 //             repo/cwd · ✕ kill
 //
@@ -113,8 +113,8 @@ function StatusDot({ attention }: { attention: AgentSnapshot["attention"] }) {
 }
 
 // Plain kill — the WORKER header's terminal. Killing a worker is legitimate
-// and bounded (no slot supervisor respawns it), so it stays a bare ✕ kill,
-// no confirm. (The Producer header uses `RespawnButton` instead — see below.)
+// and bounded (nothing respawns it), so it stays a bare ✕ kill, no confirm.
+// (The Producer header uses `RestartButton` instead — see below.)
 function KillButton({ target }: { target: string }) {
   return (
     <button
@@ -129,35 +129,44 @@ function KillButton({ target }: { target: string }) {
   );
 }
 
-// The PRODUCER header's affordance. A Producer sits in a supervised slot
-// (`producer-slot-invariant`): `api.killAgent` does NOT close the slot, so the
-// engine's slot-supervisor auto-respawns a fresh Producer. So this "kill" is
-// really a RE-SPAWN, not a terminal — the only terminal is the tab close `×`
-// (`closeUnitSlot`). We relabel/re-icon it as a ⟳ re-spawn and gate it behind
-// a confirm (it had none): a no-baton re-spawn discards the current session's
-// conversation context, so it must never be silent. Same `POST /api/agents/
-// {target}/kill` call (no wire/spec change); the supervisor does the respawn.
-function RespawnButton({ target }: { target: string }) {
+// The PRODUCER header's RESTART affordance. With `unit ≡ live Producer` (aim
+// `producer-slot-invariant` is `dead`) there is no slot-supervisor auto-respawn:
+// killing the Producer just ends it. So restart is an explicit two-step — kill
+// the current Producer, then relaunch a fresh one at the SAME locus (`agent.cwd`,
+// the launch dir the unit derives from) via `POST /api/producer/launch`. The
+// peer of ⤺ handoff: handoff carries a baton (context preserved), restart does
+// NOT (context discarded), so it stays behind a danger confirm. The brief
+// Producer-absent gap between kill and relaunch keeps the unit's tab focused —
+// App's grace-window auto-default holds the selection (aim
+// `handoff-producer-unit-focus`). The terminal (unit gone for good) remains the
+// tab close `×` (`closeUnitSlot`), not this.
+function RestartButton({ target, launchPath }: { target: string; launchPath: string }) {
   const confirm = useConfirm();
-  const handleRespawn = async () => {
+  const handleRestart = async () => {
     const ok = await confirm({
-      title: "Re-spawn this Producer?",
+      title: "Restart this Producer?",
       message:
-        "The current session is killed and a fresh Producer starts with NO hand-off — " +
-        "its conversation context is lost. Use Handoff & Restart (⤺) instead to preserve context.",
-      confirmLabel: "Re-spawn",
+        "The current session is killed and a fresh Producer is launched at the same " +
+        "location with NO hand-off — its conversation context is lost. Use Handoff & " +
+        "restart (⤺) instead to preserve context.",
+      confirmLabel: "Restart",
       cancelLabel: "Cancel",
       variant: "danger",
     });
-    if (ok) killAgent(target);
+    if (!ok) return;
+    // Kill then relaunch at the same locus. Best-effort on both (an
+    // already-gone agent / a transient launch hiccup shouldn't throw to the
+    // operator); the tab is held across the gap by the focus grace window.
+    await api.killAgent(target).catch(() => {});
+    await api.launchProducer(launchPath).catch(() => {});
   };
   return (
     <button
       type="button"
       className="ic respawn"
-      onClick={handleRespawn}
-      title="Re-spawn Producer (kill + auto-respawn; no hand-off)"
-      aria-label="Re-spawn Producer (kill + auto-respawn; no hand-off)"
+      onClick={handleRestart}
+      title="Restart Producer (kill + relaunch fresh; no hand-off)"
+      aria-label="Restart Producer (kill + relaunch fresh; no hand-off)"
     >
       ⟳
     </button>
@@ -277,7 +286,7 @@ function ProducerShead({
         >
           ⚙
         </button>
-        <RespawnButton target={agent.target} />
+        <RestartButton target={agent.target} launchPath={agent.cwd} />
       </span>
     </div>
   );
