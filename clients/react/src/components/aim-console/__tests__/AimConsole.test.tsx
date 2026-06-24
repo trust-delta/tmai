@@ -43,7 +43,6 @@ const UNITS: SlotResponse[] = [
       { path: "/home/u/tmai", primary: true },
       { path: "/home/u/tmai-core", primary: false },
     ],
-    state: "occupied",
   },
 ];
 

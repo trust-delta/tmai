@@ -142,11 +142,11 @@
           "slots"
         ],
         "summary": "Documentation stub for `GET /api/slots`.",
-        "description": "The live Producer-slot set — the agent-primacy tab source. Reflects only\nlive Producers (`Occupied`) plus the supervisor's transient `Vacant` /\n`Halted` states (`Closed` never surfaces), each carrying the same\n`name + repos` membership as `GET /api/units`. Real handler:\n`crate::web::api::get_slots`.",
+        "description": "The live Producer-slot set — the agent-primacy tab source. `unit ≡ live\nProducer`: reflects the live Producers, each carrying the same\n`name + repos` membership as `GET /api/units` (no lifecycle state — a slot\nis just presence). Real handler: `crate::web::api::get_slots`.",
         "operationId": "get_slots_doc",
         "responses": {
           "200": {
-            "description": "Every live Producer slot's membership + lifecycle state",
+            "description": "Every live Producer slot's membership",
             "content": {
               "application/json": {
                 "schema": {
@@ -3208,11 +3208,10 @@
       },
       "SlotResponse": {
         "type": "object",
-        "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically) plus the slot's lifecycle `state`.",
+        "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically). A slot exists iff a live Producer occupies\nthe locus — there is no separate lifecycle `state` (unit ≡ live Producer).",
         "required": [
           "name",
-          "repos",
-          "state"
+          "repos"
         ],
         "properties": {
           "name": {
@@ -3223,20 +3222,8 @@
             "items": {
               "$ref": "#/components/schemas/UnitRepoWire"
             }
-          },
-          "state": {
-            "$ref": "#/components/schemas/SlotStateWire"
           }
         }
-      },
-      "SlotStateWire": {
-        "type": "string",
-        "description": "Lifecycle state of a live Producer slot, as surfaced to the tab UI.\n\nThe terminal `Closed` state of [`SlotState`] is intentionally absent — a\nclosed slot is not a tab, so it never projects to the wire (see\n[`SlotStateWire::from_slot_state`]).",
-        "enum": [
-          "occupied",
-          "vacant",
-          "halted"
-        ]
       },
       "SlotsResponse": {
         "type": "object",
@@ -3756,7 +3743,7 @@
     },
     {
       "name": "slots",
-      "description": "Live Producer-slot set (aim producer-cwd / producer-slot-invariant) — the agent-primacy tab source: a project is where a Producer stood, not a configured [[unit]] enumeration. GET /api/slots reflects only live Producers (Occupied) plus the supervisor's transient Vacant / Halted states (Closed never surfaces), each carrying the same name+repos membership as the units surface. The aim-console reads this instead of /units, so a dormant configured unit appears as a tab only once it launches a Producer."
+      "description": "Live Producer-slot set (aim producer-cwd) — the agent-primacy tab source: a project is where a Producer stood, not a configured [[unit]] enumeration. unit ≡ live Producer: GET /api/slots reflects the live Producers, each carrying the same name+repos membership as the units surface (no lifecycle state — a slot is just presence). The aim-console reads this instead of /units, so a dormant configured unit appears as a tab only once it launches a Producer."
     },
     {
       "name": "aims",

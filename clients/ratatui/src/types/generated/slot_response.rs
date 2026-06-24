@@ -12,5 +12,4 @@ use std::collections::HashMap;
 pub struct SlotResponse {
     pub name: String,
     pub repos: Vec<UnitRepoWire>,
-    pub state: SlotStateWire,
 }

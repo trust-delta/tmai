@@ -3,9 +3,9 @@
 //
 // `GET /api/slots` reflects only LIVE Producer slots — a project is *where a
 // Producer stood*, not a configured `[[unit]]` enumeration. Each slot carries
-// the same `name + repos` membership as `GET /api/units` plus a lifecycle
-// `state` (`occupied` healthy / `vacant` mid-respawn / `halted` crash-loop;
-// `closed` never surfaces). Where `useUnits` is the dormant-aware CONFIGURED
+// the same `name + repos` membership as `GET /api/units` (unit ≡ live Producer:
+// a slot is just presence — there is no lifecycle state, the homeostatic slot
+// invariant was retired). Where `useUnits` is the dormant-aware CONFIGURED
 // membership (and stays the source for agent→unit resolution + the legacy
 // unit-tab strip), this is the LIVE set the aim-console tabs read: a dormant
 // `[[unit]]` that has never launched a Producer is not a tab until its "+"
