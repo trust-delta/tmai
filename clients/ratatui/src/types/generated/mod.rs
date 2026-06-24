@@ -98,8 +98,6 @@ pub mod slack_ore_wire;
 pub use slack_ore_wire::*;
 pub mod slot_response;
 pub use slot_response::*;
-pub mod slot_state_wire;
-pub use slot_state_wire::*;
 pub mod slots_response;
 pub use slots_response::*;
 pub mod spawn_role;

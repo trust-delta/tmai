@@ -31,7 +31,6 @@ import type { RuntimeSnapshot } from "@/types/generated/RuntimeSnapshot";
 import type { SlackCaptureRequest } from "@/types/generated/SlackCaptureRequest";
 import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SlotResponse } from "@/types/generated/SlotResponse";
-import type { SlotStateWire } from "@/types/generated/SlotStateWire";
 import type { SlotsResponse } from "@/types/generated/SlotsResponse";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
 import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
@@ -75,7 +74,6 @@ export type {
   SlackCaptureRequest,
   SlackOreWire,
   SlotResponse,
-  SlotStateWire,
   SlotsResponse,
   SpawnRole,
   SpawnRuntime,
