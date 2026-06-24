@@ -60,6 +60,12 @@ import { useUIPref } from "@/lib/ui-prefs-provider";
 // committed px, so the two guards compose. The pref key is kept as
 // `attentionStripWidth` post-rename for back-compat (storage migration is
 // churn for no benefit — the field's meaning is unchanged).
+// Grace window before the focus auto-default bounces a unit whose Producer
+// briefly left the live set (handoff respawn / restart kill→relaunch) to
+// another live unit. Comfortably covers the respawn launch window; a genuine
+// stop still resets after it (aim `handoff-producer-unit-focus`).
+const FOCUS_GRACE_MS = 12_000;
+
 function rPanelViewportWidth(): number {
   return typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1440;
 }
@@ -451,17 +457,34 @@ export function App({
   // PRIMARY repo while the Producer's wrapper cwd is the derived projectPath, so
   // a literal `includes` reset bounced an explicit tab selection to the wrong
   // unit once a second unit was live (#581 dogfood).
+  //
+  // Grace window (aim `handoff-producer-unit-focus`): a unit's Producer briefly
+  // leaves the live set during a handoff respawn or a restart (kill→relaunch).
+  // When OTHER units remain live, don't bounce focus to one of them for that
+  // transient gap — hold the selection and only reset if the unit stays gone
+  // past the window (a genuine stop). If the unit re-enters `projectPaths`
+  // first, this effect re-runs, the membership check passes, and the pending
+  // timer is cleared — focus is preserved across the blink.
   useEffect(() => {
     if (projectPaths.length === 0) {
+      // No live unit at all (e.g. engine restart) — nothing to focus.
       if (currentProject !== null) setCurrentProject(null);
       return;
     }
-    if (
-      currentProject === null ||
-      !currentProjectBelongsToLiveProject(currentProject, projectPaths)
-    ) {
+    if (currentProject === null) {
       setCurrentProject(projectPaths[0]);
+      return;
     }
+    if (currentProjectBelongsToLiveProject(currentProject, projectPaths)) {
+      return; // still live — keep focus
+    }
+    // Left the live set while other units remain: a respawn/restart gap or a
+    // genuine stop. Hold focus for the grace window, then reset only if it has
+    // not come back.
+    const id = window.setTimeout(() => {
+      setCurrentProject(projectPaths[0]);
+    }, FOCUS_GRACE_MS);
+    return () => window.clearTimeout(id);
   }, [currentProject, projectPaths]);
 
   // Derive selected agent from selection.

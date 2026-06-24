@@ -5,18 +5,18 @@
 //
 //   Producer variant: status dot · name · model · ctx bar with the
 //   auto-handoff threshold marker ┊ · pct · ⤺ handoff & restart (the
-//   App-lifted ritual `trigger`, confirm flow preserved) · ⚙ · ⟳ re-spawn
-//   (kill → slot-supervisor auto-respawn, behind a danger confirm).
+//   App-lifted ritual `trigger`, confirm flow preserved) · ⚙ · ⟳ restart
+//   (kill → relaunch fresh at the same locus, behind a danger confirm).
 //   Worker variant: dot · name · model · repo/cwd · ✕ kill — violet accent.
 //
-// `getOrchestratorSettings` (the threshold fetch) and `killAgent` are
-// mocked; the rest of the api stays real. The Producer re-spawn confirm uses
-// `useConfirm`, so the Producer variant renders under `renderWithProviders`
-// (which mounts the ConfirmProvider).
+// `getOrchestratorSettings` (the threshold fetch), `killAgent`, and
+// `launchProducer` are mocked; the rest of the api stays real. The Producer
+// restart confirm uses `useConfirm`, so the Producer variant renders under
+// `renderWithProviders` (which mounts the ConfirmProvider).
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AgentSnapshot, api, type OrchestratorSettings } from "@/lib/api";
+import { type AgentSnapshot, api, type OrchestratorSettings, type SpawnResponse } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 import { Shead } from "../Shead";
 
@@ -28,12 +28,14 @@ vi.mock("@/lib/api", async () => {
       ...actual.api,
       getOrchestratorSettings: vi.fn(),
       killAgent: vi.fn(),
+      launchProducer: vi.fn(),
     },
   };
 });
 
 const getOrchestratorSettings = vi.mocked(api.getOrchestratorSettings);
 const killAgent = vi.mocked(api.killAgent);
+const launchProducer = vi.mocked(api.launchProducer);
 
 function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot {
   return {
@@ -101,10 +103,12 @@ function renderShead(overrides: Partial<Parameters<typeof Shead>[0]> = {}) {
 beforeEach(() => {
   getOrchestratorSettings.mockReset();
   killAgent.mockReset();
+  launchProducer.mockReset();
   getOrchestratorSettings.mockResolvedValue({
     auto_handoff_threshold_pct: 75,
   } as OrchestratorSettings);
   killAgent.mockResolvedValue(undefined);
+  launchProducer.mockResolvedValue({} as SpawnResponse);
 });
 
 afterEach(() => {
@@ -157,30 +161,34 @@ describe("Shead — Producer variant", () => {
     expect(props.onOpenSettings).toHaveBeenCalled();
   });
 
-  it("re-spawns (kill → supervisor respawn) only after the danger confirm is accepted", async () => {
+  it("restarts (kill → relaunch at the same locus) only after the danger confirm is accepted", async () => {
     renderShead();
-    // The Producer header carries a ⟳ re-spawn, NOT a bare ✕ kill.
+    // The Producer header carries a ⟳ restart, NOT a bare ✕ kill.
     expect(screen.queryByRole("button", { name: "Kill agent" })).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+        name: "Restart Producer (kill + relaunch fresh; no hand-off)",
       }),
     );
     // Nothing fires until the confirm is accepted.
     expect(killAgent).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole("button", { name: "Re-spawn" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+    // No supervisor auto-respawns now (unit ≡ live Producer): kill THEN relaunch
+    // at the Producer's launch cwd.
     await waitFor(() => expect(killAgent).toHaveBeenCalledWith("claude:prod"));
+    await waitFor(() => expect(launchProducer).toHaveBeenCalledWith("/home/u/tmai"));
   });
 
-  it("does NOT re-spawn when the confirm is declined", async () => {
+  it("does NOT restart when the confirm is declined", async () => {
     renderShead();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+        name: "Restart Producer (kill + relaunch fresh; no hand-off)",
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(killAgent).not.toHaveBeenCalled();
+    expect(launchProducer).not.toHaveBeenCalled();
   });
 
   it("renders 'auto off' and no ┊ marker when the threshold is 0 (disabled)", async () => {
@@ -211,15 +219,15 @@ describe("Shead — worker variant", () => {
     expect(screen.getByText("sonnet-4.6")).toBeTruthy();
     expect(screen.getByText(/repo tmai · main · \.\.\/tmai-wt-attn-ui/)).toBeTruthy();
     // No handoff ritual, no settings — the worker bar carries kill only.
-    // And no re-spawn: a worker is bounded (no slot supervisor respawns it),
-    // so killing it is a legitimate terminal, kept as a plain ✕ kill.
+    // And no restart: a worker is bounded (nothing respawns it), so killing it
+    // is a legitimate terminal, kept as a plain ✕ kill.
     expect(screen.queryByRole("button", { name: /handoff & restart/i })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Open settings — auto-handoff threshold" }),
     ).toBeNull();
     expect(
       screen.queryByRole("button", {
-        name: "Re-spawn Producer (kill + auto-respawn; no hand-off)",
+        name: "Restart Producer (kill + relaunch fresh; no hand-off)",
       }),
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Kill agent" }));
