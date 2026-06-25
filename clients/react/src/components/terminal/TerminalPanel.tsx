@@ -24,7 +24,7 @@ interface TerminalPanelProps {
   chromeless?: boolean;
   /** Controlled Input/Select mode (#803). When provided, the host owns the
    *  mode value (e.g. the aim-console status strip); the internal semantics
-   *  (mousedown→select, Enter-in-select→input, xterm keyboard attach) stay
+   *  (Enter-in-select→input, xterm keyboard attach) stay
    *  this one implementation and report transitions via `onInputModeChange`.
    *  When absent, the original internal `useState` behavior is unchanged. */
   inputMode?: boolean;
