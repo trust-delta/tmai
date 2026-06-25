@@ -22,7 +22,9 @@ function subscribe(listener: () => void): () => void {
 
 /**
  * `useState`-shaped wrapper that persists the chosen value into a per-agent
- * map keyed by `agentId`. New agents default to `true` (auto-scroll on).
+ * map keyed by `agentId`. New agents default to `false` (auto-scroll off) so
+ * the panel is opt-in (#889) and does not fight Claude Code's fullscreen
+ * renderer; the footer toggle remains the way to turn it on.
  *
  * The setter accepts both a value and an updater function, mirroring the
  * `useState` setter shape so callers can drop it in without changing
@@ -33,11 +35,11 @@ function subscribe(listener: () => void): () => void {
 export function useAutoScrollPerAgent(
   agentId: string,
 ): [boolean, (next: boolean | ((prev: boolean) => boolean)) => void] {
-  const autoScroll = useSyncExternalStore(subscribe, () => autoScrollByAgent.get(agentId) ?? true);
+  const autoScroll = useSyncExternalStore(subscribe, () => autoScrollByAgent.get(agentId) ?? false);
 
   const setAutoScroll = useCallback(
     (next: boolean | ((prev: boolean) => boolean)) => {
-      const prev = autoScrollByAgent.get(agentId) ?? true;
+      const prev = autoScrollByAgent.get(agentId) ?? false;
       const value = typeof next === "function" ? next(prev) : next;
       autoScrollByAgent.set(agentId, value);
       for (const listener of listeners) {
