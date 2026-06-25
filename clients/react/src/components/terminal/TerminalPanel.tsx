@@ -14,11 +14,17 @@ interface TerminalPanelProps {
   /** Suppress this panel's own chrome — no `TerminalSessionHeader`, no
    *  footer bar, no focus shadow — for hosts that draw their own (the
    *  aim-console's spine + status strip, #803). Default `false` keeps the
-   *  existing rendering unchanged. */
+   *  existing rendering unchanged.
+   *
+   *  Invariant (since #889): the footer's `ModeToggleButton` is the ONLY
+   *  built-in entry to Select mode — a pointer/touch press no longer
+   *  auto-enters it. A chromeless host renders no footer, so it MUST drive
+   *  the controlled `inputMode` prop (e.g. the aim-console status strip)
+   *  to offer Select mode; otherwise the panel is stuck in Input mode. */
   chromeless?: boolean;
   /** Controlled Input/Select mode (#803). When provided, the host owns the
    *  mode value (e.g. the aim-console status strip); the internal semantics
-   *  (mousedown→select, Enter-in-select→input, xterm keyboard attach) stay
+   *  (Enter-in-select→input, xterm keyboard attach) stay
    *  this one implementation and report transitions via `onInputModeChange`.
    *  When absent, the original internal `useState` behavior is unchanged. */
   inputMode?: boolean;
