@@ -134,9 +134,12 @@ export function TerminalPanel({
         <div
           ref={containerRef}
           className="h-full w-full bg-[var(--color-terminal-background)] p-1"
-          onMouseDown={() => {
-            if (inputMode) enterSelectMode();
-          }}
+          // Select mode is opt-in (#889): it is entered ONLY via the explicit
+          // footer ModeToggleButton, never automatically on pointer/touch
+          // press. This keeps the embedded xterm in Input mode by default so it
+          // coexists with Claude Code's fullscreen renderer. The onMouseUp
+          // handler only fires while ALREADY in select mode (entered via the
+          // toggle), so it stays as a harmless return-to-input affordance.
           onMouseUp={() => {
             if (!inputMode) {
               const sel = window.getSelection();
@@ -144,10 +147,6 @@ export function TerminalPanel({
                 enterInputMode();
               }
             }
-          }}
-          onTouchStart={() => {
-            // On touch, switch to select mode so text is selectable/copyable
-            if (inputMode) enterSelectMode();
           }}
         />
         {/* key: remount on agent switch so the previous session's detected

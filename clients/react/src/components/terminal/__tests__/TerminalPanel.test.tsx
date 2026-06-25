@@ -47,11 +47,12 @@ beforeEach(() => {
 });
 
 describe("TerminalPanel — default chrome (must stay unchanged)", () => {
-  it("renders the session header AND the Input/Auto footer by default", () => {
+  it("renders the session header AND the Input/auto-scroll footer by default", () => {
     render(<TerminalPanel agentId="claude:a1" />);
     expect(screen.getByTestId("terminal-session-header")).toBeTruthy();
     expect(screen.getByRole("button", { name: /⌨ Input/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /⇩ Auto/ })).toBeTruthy();
+    // Auto-scroll defaults OFF (opt-in, #889), so the toggle reads "⇩ Off".
+    expect(screen.getByRole("button", { name: /⇩ Off/ })).toBeTruthy();
   });
 
   it("keeps the internal (uncontrolled) mode toggle working", () => {
@@ -59,7 +60,7 @@ describe("TerminalPanel — default chrome (must stay unchanged)", () => {
     fireEvent.click(screen.getByRole("button", { name: /⌨ Input/ }));
     expect(screen.getByRole("button", { name: /📋 Select/ })).toBeTruthy();
     expect(setAttachable).toHaveBeenLastCalledWith(false);
-    // mousedown in select mode + empty selection on mouseup → back to input.
+    // empty selection on mouseup while in select mode → back to input.
     fireEvent.mouseUp(termContainer(container));
     expect(screen.getByRole("button", { name: /⌨ Input/ })).toBeTruthy();
     expect(setAttachable).toHaveBeenLastCalledWith(true);
@@ -76,7 +77,7 @@ describe("TerminalPanel — chromeless (#803 aim-console)", () => {
     expect(section?.className).not.toContain("shadow");
   });
 
-  it("reports internal mode transitions through onInputModeChange (controlled)", () => {
+  it("does NOT auto-enter select mode on pointer press — select is opt-in (#889)", () => {
     const onChange = vi.fn();
     const { container } = render(
       <TerminalPanel
@@ -86,11 +87,11 @@ describe("TerminalPanel — chromeless (#803 aim-console)", () => {
         onInputModeChange={onChange}
       />,
     );
-    // mousedown on the terminal → the panel's own select-mode semantics fire
-    // and surface to the host instead of (only) internal state.
+    // A pointer press on the terminal must NOT flip to select mode; only the
+    // explicit footer ModeToggleButton (or a host-driven inputMode prop) may.
+    // The Enter-to-exit path (covered below) is the only other transition.
     fireEvent.mouseDown(termContainer(container));
-    expect(onChange).toHaveBeenCalledWith(false);
-    expect(setAttachable).toHaveBeenLastCalledWith(false);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("follows a host-driven inputMode prop flip (keyboard attach in lock-step)", () => {

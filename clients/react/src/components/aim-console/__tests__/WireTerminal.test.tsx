@@ -64,7 +64,8 @@ describe("WireTerminal — hot/cold-wire surface (S6)", () => {
 
   it("the panel's internal mode transitions surface back to the wire + strip", () => {
     render(<WireTerminal agentId="claude:p3" who="producer" addressee="producer" />);
-    // e.g. mousedown-in-terminal → select, reported via onInputModeChange.
+    // Drive a panel-reported select-mode transition straight through
+    // onInputModeChange — the wire + strip must reflect it.
     act(() => panelProps?.onInputModeChange?.(false));
     expect(screen.getByTestId("ac-wire").className).toContain("select");
     expect(screen.getByRole("button", { name: /SELECT/ }).getAttribute("aria-pressed")).toBe(
@@ -80,13 +81,14 @@ describe("WireTerminal — hot/cold-wire surface (S6)", () => {
       </>,
     );
     const follow = screen.getByRole("button", { name: "follow" });
-    expect(follow.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("follow-probe").textContent).toBe("true");
-    fireEvent.click(follow);
+    // Auto-scroll / follow defaults OFF (opt-in, #889).
     expect(follow.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("follow-probe").textContent).toBe("false");
+    fireEvent.click(follow);
+    expect(follow.getAttribute("aria-pressed")).toBe("true");
     // The OTHER mounted consumer (the stand-in for TerminalPanel's internal
     // auto-scroll hook) re-rendered with the new value — no remount needed.
-    expect(screen.getByTestId("follow-probe").textContent).toBe("false");
+    expect(screen.getByTestId("follow-probe").textContent).toBe("true");
   });
 
   it("worker and shell addressees pick the violet / green accents", () => {
