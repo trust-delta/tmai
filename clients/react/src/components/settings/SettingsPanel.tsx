@@ -6,7 +6,6 @@ import { HandoffThresholdSection } from "./HandoffThresholdSection";
 import { NotificationSection } from "./NotificationSection";
 import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
 import { OrchestrationSection } from "./OrchestrationSection";
-import { SpawnSection } from "./SpawnSection";
 import { ThemeSection } from "./ThemeSection";
 import { WorkflowSection } from "./WorkflowSection";
 import { WorktreeSection } from "./WorktreeSection";
@@ -106,7 +105,6 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
             </p>
           </summary>
           <div className="space-y-6 border-t border-hairline px-4 py-4">
-            <SpawnSection />
             <OrchestrationSection projects={projects} />
             <OrchestrationDispatchSection />
             <WorkflowSection />

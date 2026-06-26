@@ -1,12 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  OrchestratorSettings,
-  SpawnSettings,
-  WorkflowSettings,
-  WorktreeSettings,
-} from "@/lib/api";
+import type { OrchestratorSettings, WorkflowSettings, WorktreeSettings } from "@/lib/api";
 import { renderWithProviders as render } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -17,8 +12,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
       listAgents: vi.fn(),
       getGeneralSettings: vi.fn(),
       updateGeneralSettings: vi.fn(),
-      getSpawnSettings: vi.fn(),
-      updateSpawnSettings: vi.fn(),
       getOrchestratorSettings: vi.fn(),
       updateOrchestratorSettings: vi.fn(),
       getNotificationSettings: vi.fn(),
@@ -35,12 +28,6 @@ const { api } = await import("@/lib/api");
 const { SettingsPanel } = await import("../SettingsPanel");
 
 // ── Fixtures ──────────────────────────────────────────────────────────
-
-const SPAWN: SpawnSettings = {
-  runtime: "tmux",
-  tmux_available: true,
-  tmux_window_name: "tmai",
-};
 
 const WORKFLOW: WorkflowSettings = { auto_rebase_on_merge: false };
 const WORKTREE: WorktreeSettings = {
@@ -69,7 +56,6 @@ function makeOrchestrator(): OrchestratorSettings {
 function setupDefaults() {
   vi.mocked(api.listAgents).mockResolvedValue([]);
   vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
-  vi.mocked(api.getSpawnSettings).mockResolvedValue(SPAWN);
   vi.mocked(api.getOrchestratorSettings).mockResolvedValue(makeOrchestrator());
   vi.mocked(api.getNotificationSettings).mockResolvedValue({
     notify_on_idle: true,
@@ -85,49 +71,6 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupDefaults();
-  });
-
-  it("typing in the tmux window-name text field does NOT trigger PUT mid-stream", async () => {
-    vi.mocked(api.updateSpawnSettings).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} />);
-
-    // Window name input only renders when runtime === "tmux" (our fixture).
-    const input = await waitFor(() => {
-      const candidate = screen
-        .getAllByRole("textbox")
-        .find((el) => (el as HTMLInputElement).value === "tmai");
-      if (!candidate) throw new Error("tmux window-name input not found yet");
-      return candidate as HTMLInputElement;
-    });
-
-    fireEvent.change(input, { target: { value: "tma" } });
-    fireEvent.change(input, { target: { value: "tmai-renamed" } });
-
-    expect(vi.mocked(api.updateSpawnSettings)).not.toHaveBeenCalled();
-  });
-
-  it("blurring the tmux window-name text field commits with a PUT", async () => {
-    vi.mocked(api.updateSpawnSettings).mockResolvedValue(undefined as never);
-    render(<SettingsPanel onClose={() => {}} />);
-
-    const input = await waitFor(() => {
-      const candidate = screen
-        .getAllByRole("textbox")
-        .find((el) => (el as HTMLInputElement).value === "tmai");
-      if (!candidate) throw new Error("tmux window-name input not found yet");
-      return candidate as HTMLInputElement;
-    });
-
-    fireEvent.change(input, { target: { value: "renamed" } });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(vi.mocked(api.updateSpawnSettings)).toHaveBeenCalledTimes(1);
-    });
-    expect(vi.mocked(api.updateSpawnSettings)).toHaveBeenCalledWith({
-      runtime: "tmux",
-      tmux_window_name: "renamed",
-    });
   });
 
   it("backend 400 on an atomic toggle surfaces inline under the section and rolls back", async () => {
@@ -152,30 +95,5 @@ describe("SettingsPanel — auto-save acceptance (#578)", () => {
     });
     // The PUT was attempted exactly once.
     expect(vi.mocked(api.updateWorkflowSettings)).toHaveBeenCalledTimes(1);
-  });
-
-  it("backend 400 on a text-field commit keeps the user's input intact", async () => {
-    vi.mocked(api.updateSpawnSettings).mockRejectedValue(
-      new Error("API error 400: window name `bad name` contains invalid character"),
-    );
-    render(<SettingsPanel onClose={() => {}} />);
-
-    const input = await waitFor(() => {
-      const candidate = screen
-        .getAllByRole("textbox")
-        .find((el) => (el as HTMLInputElement).value === "tmai");
-      if (!candidate) throw new Error("tmux window-name input not found yet");
-      return candidate as HTMLInputElement;
-    });
-
-    fireEvent.change(input, { target: { value: "bad name" } });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(screen.getByText(/window name `bad name` contains invalid character/i)).toBeTruthy();
-    });
-
-    // Local draft preserved so the user can edit and retry.
-    expect(input.value).toBe("bad name");
   });
 });

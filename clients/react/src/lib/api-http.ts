@@ -33,7 +33,6 @@ import type { SlackOreWire } from "@/types/generated/SlackOreWire";
 import type { SlotResponse } from "@/types/generated/SlotResponse";
 import type { SlotsResponse } from "@/types/generated/SlotsResponse";
 import type { SpawnRole } from "@/types/generated/SpawnRole";
-import type { SpawnRuntime } from "@/types/generated/SpawnRuntime";
 import type { TerminalSubscription } from "@/types/generated/TerminalSubscription";
 import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
@@ -76,7 +75,6 @@ export type {
   SlotResponse,
   SlotsResponse,
   SpawnRole,
-  SpawnRuntime,
   TerminalSubscription,
   UnitIssuesResponse,
   UnitPrsResponse,
@@ -887,12 +885,6 @@ export interface SpawnResponse {
   command: string;
 }
 
-export interface SpawnSettings {
-  runtime: SpawnRuntime;
-  tmux_available: boolean;
-  tmux_window_name: string;
-}
-
 export interface OrchestratorRules {
   branch: string;
   merge: string;
@@ -972,7 +964,6 @@ export interface SpawnRequest {
   cwd?: string;
   rows?: number;
   cols?: number;
-  force_pty?: boolean;
 }
 
 export interface GeneralSettings {
@@ -1303,14 +1294,6 @@ export const api = {
     }),
   mdTree: (root: string) =>
     apiFetch<MdTreeEntry[]>(`/files/md-tree?root=${encodeURIComponent(root)}`),
-
-  // Spawn settings
-  getSpawnSettings: () => apiFetch<SpawnSettings>("/settings/spawn"),
-  updateSpawnSettings: (params: { runtime: SpawnRuntime; tmux_window_name?: string }) =>
-    apiFetch("/settings/spawn", {
-      method: "PUT",
-      body: JSON.stringify(params),
-    }),
 
   // Orchestrator settings (accepts optional project path for per-project scope)
   getOrchestratorSettings: (project?: string) =>
