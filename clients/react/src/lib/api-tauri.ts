@@ -15,7 +15,6 @@ import type {
   PrMonitorScope,
   SlackCaptureRequest,
   SpawnRequest,
-  SpawnRuntime,
   TriggerHandoffRitualRequest,
   WorkerDispatchMap,
   WorkflowSettings,
@@ -185,11 +184,6 @@ export const api = {
   readFile: (path: string) => httpApi.readFile(path),
   writeFile: (path: string, content: string) => httpApi.writeFile(path, content),
   mdTree: (root: string) => httpApi.mdTree(root),
-
-  // Spawn settings
-  getSpawnSettings: () => httpApi.getSpawnSettings(),
-  updateSpawnSettings: (params: { runtime: SpawnRuntime; tmux_window_name?: string }) =>
-    httpApi.updateSpawnSettings(params),
 
   // Orchestrator settings (per-project scope via optional project param)
   getOrchestratorSettings: (project?: string) => httpApi.getOrchestratorSettings(project),

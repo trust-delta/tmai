@@ -25,9 +25,6 @@ vi.mock("../HandoffThresholdSection", () => ({
 vi.mock("../NotificationSection", () => ({
   NotificationSection: () => <div data-testid="section-notification">Notification</div>,
 }));
-vi.mock("../SpawnSection", () => ({
-  SpawnSection: () => <div data-testid="section-spawn">Spawn</div>,
-}));
 vi.mock("../OrchestrationSection", () => ({
   OrchestrationSection: () => <div data-testid="section-orchestration">Orchestration</div>,
 }));
@@ -48,7 +45,6 @@ vi.mock("../ThemeSection", () => ({
 }));
 
 const ADVANCED_TESTIDS = [
-  "section-spawn",
   "section-orchestration",
   "section-dispatch",
   "section-workflow",
