@@ -69,10 +69,6 @@ export const tauri = {
     return convertTauriAgent(info);
   },
 
-  attentionCount: async (): Promise<number> => {
-    return await invoke<number>("attention_count");
-  },
-
   approveAgent: async (target: string): Promise<void> => {
     return await invoke<void>("approve_agent", { target });
   },

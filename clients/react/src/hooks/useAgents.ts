@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { AgentSnapshot } from "@/lib/api";
+import { type AgentSnapshot, hasAttention } from "@/lib/api";
 import { useSSEContext } from "@/lib/sse-provider";
 import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
@@ -11,10 +11,9 @@ import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 export function useAgents() {
   const { cache, refreshCache } = useSSEContext();
   const { agents, loading } = cache;
-  // Decision tmai-core@2026-05-09 Phase 4: any non-null `attention`
-  // value (`"started" | "halted" | "completed"`) means the agent is
-  // waiting on the user. `null` is "running normally — no UI signal".
-  const attentionCount = agents.filter((a) => a.attention != null).length;
+  // Shared `hasAttention` predicate (see `@/lib/api`): count of agents on
+  // the user-blocked axis, fed to the StatusBar badge.
+  const attentionCount = agents.filter(hasAttention).length;
 
   // refreshCache triggers a full re-bootstrap; used by the Tauri event path
   // to pull a fresh snapshot when the desktop app signals an agent change.

@@ -36,6 +36,7 @@ import { useEffect, useState } from "react";
 import { type AgentSnapshot, api, type TriggerHandoffRitualRequest } from "@/lib/api";
 import { findProducerForUnit } from "@/lib/producer";
 import { cn } from "@/lib/utils";
+import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
 import { formatThousands, renderBar, thresholdColorClass } from "./ProducerCtxHeader";
 
 interface ProducerConversationHeaderProps {
@@ -43,6 +44,13 @@ interface ProducerConversationHeaderProps {
   /** Repo root for the currently focused unit — drives the ctx readout
    *  and the single-Producer resolution. */
   currentProjectPath: string | null;
+  /** The focused unit's MEMBERSHIP wire (primary-first per
+   *  `UnitRepoWire.primary`), threaded from App's `unitReposForCurrent`.
+   *  When present the resolver pins the Producer to the unit's PRIMARY repo
+   *  even if `currentProjectPath` points at a secondary repo — the same
+   *  wire-read App's own `producerForUnit` uses (#583 §軸A). `null` (wire not
+   *  yet loaded, or a cwd-synthesized unit) falls back to `currentProjectPath`. */
+  unitRepos?: UnitRepoWire[] | null;
   /** Unit name (basename of `currentProjectPath`) — the handoff ritual
    *  endpoint keys on it. */
   unitName: string | null;
@@ -58,12 +66,14 @@ export function ProducerConversationHeader({
   agents,
   currentProjectPath,
   unitName,
+  unitRepos,
   trigger,
   onOpenSettings,
 }: ProducerConversationHeaderProps) {
   // Resolve the single live Producer via the shared resolver — the same
   // one the digest button and the ctx readout use, so all surfaces agree.
-  const producer = findProducerForUnit(agents, currentProjectPath);
+  // Prefer the membership wire (primary-pinned) over the single cwd path.
+  const producer = findProducerForUnit(agents, unitRepos ?? currentProjectPath);
   const ctx = producer?.ctx_usage ?? null;
   const disabled = producer === null || unitName === null;
 

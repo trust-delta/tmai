@@ -59,15 +59,6 @@ export const api = {
     return await httpApi.listAgents();
   },
 
-  attentionCount: async (): Promise<number> => {
-    try {
-      if (await isInTauri()) {
-        return await tauri.attentionCount();
-      }
-    } catch (_e) {}
-    return await httpApi.attentionCount();
-  },
-
   // Agent actions - use Tauri IPC if available
   approve: async (target: string) => {
     try {

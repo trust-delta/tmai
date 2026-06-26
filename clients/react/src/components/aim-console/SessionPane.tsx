@@ -93,7 +93,14 @@ export function SessionPane({
   // the existing console exactly (same `findProducerForUnit`), so both
   // surfaces agree on who the Producer is.
   const { producer, sessionAgents } = useMemo(() => {
-    const prod = findProducerForUnit(agents, currentProjectPath);
+    // Resolve against the unit's MEMBERSHIP wire when AimConsole threaded it
+    // (`repos`, primary-first per `UnitRepoWire.primary`) so a multi-repo
+    // unit pins its Producer to the PRIMARY repo even when `currentProjectPath`
+    // points at a secondary repo — the same wire-read App already does (#583
+    // §軸A). Empty `repos` is a cwd-synthesized unit not in the configured
+    // membership; fall back to the single-path string so that case still
+    // resolves by cwd (back-compat overload).
+    const prod = findProducerForUnit(agents, repos.length > 0 ? repos : currentProjectPath);
     const unitAgents = agents
       .filter(isAiAgentLoose)
       .filter((a) => agentInUnit(a, unitName, currentProjectPath));
@@ -101,7 +108,7 @@ export function SessionPane({
       .filter((a) => a.target !== prod?.target)
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
     return { producer: prod, sessionAgents: prod ? [prod, ...workers] : workers };
-  }, [agents, unitName, currentProjectPath]);
+  }, [agents, unitName, currentProjectPath, repos]);
 
   // Local selected SESSION — independent of App's main-pane selection, since
   // the aim console is a full-screen takeover. `null` falls through to the

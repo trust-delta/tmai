@@ -164,6 +164,23 @@ export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 // - `"completed"` — turn finished; user must decide what to do next
 export type AgentAttention = "started" | "halted" | "completed";
 
+// The single "is this agent waiting on the user?" predicate (decision
+// tmai-core@2026-05-09 Phase 4). Any non-null `attention` value
+// (`"started" | "halted" | "completed"`) means the agent is on the
+// user-blocked axis; `null` / absent means "running normally — no UI
+// signal needed". Centralized here (#583 §軸A) so the ≥5 surfaces that
+// used to recompute `a.attention != null` inline — the StatusBar count
+// (`useAgents`), the per-group count (`groupByProject`), the hand-over
+// digest's attention list (`useHandover`), and the AgentCard glow — all
+// read ONE definition and can never drift apart. A type guard so the
+// digest's `attentionAgents` map narrows `attention` to the non-null
+// `AgentAttention` without an inline non-null assertion.
+export function hasAttention(
+  agent: AgentSnapshot,
+): agent is AgentSnapshot & { attention: AgentAttention } {
+  return agent.attention != null;
+}
+
 /// Which communication channels are currently available for this agent
 export interface ConnectionChannels {
   has_tmux: boolean;
@@ -612,9 +629,9 @@ export function groupByProject(
       });
     }
 
-    // Decision 2026-05-09 Phase 4: any non-null attention value means
-    // the agent is on the user-blocked axis.
-    const attentionCount = groupAgents.filter((a) => a.attention != null).length;
+    // Shared `hasAttention` predicate — the user-blocked-axis count for
+    // this group's badge (see the helper for the wire contract).
+    const attentionCount = groupAgents.filter(hasAttention).length;
 
     projects.push({
       // Display the unit name when grouped by unit; else the repo basename.
@@ -998,12 +1015,6 @@ export const api = {
 
   // Agent queries
   listAgents: () => apiFetch<AgentSnapshot[]>("/agents"),
-  attentionCount: async () => {
-    const agents = await apiFetch<AgentSnapshot[]>("/agents");
-    // Decision 2026-05-09 Phase 4: any non-null attention value flags
-    // the user-blocked axis.
-    return agents.filter((a) => a.attention != null).length;
-  },
 
   // Agent actions
   approve: (target: string) =>
