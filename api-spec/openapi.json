@@ -1949,28 +1949,6 @@
           },
           {
             "type": "object",
-            "description": "A reviewer dispatched against an existing PR.",
-            "required": [
-              "pr",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "review"
-                ]
-              },
-              "pr": {
-                "type": "integer",
-                "format": "int64",
-                "description": "PR being reviewed.",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "An orchestrator dispatch.",
             "required": [
               "kind"
@@ -1985,7 +1963,7 @@
             }
           }
         ],
-        "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (e.g. an\nimplementer worktree and a review worktree both reference the same PR\nnumber — `kind` separates them)."
+        "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (multiple dispatches\nmay reference the same PR number; the resolver reports them as ambiguous)."
       },
       "DispatchRefs": {
         "type": "object",
@@ -3246,7 +3224,6 @@
         "enum": [
           "orchestrator",
           "implementer",
-          "reviewer",
           "manual"
         ]
       },

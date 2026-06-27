@@ -39,7 +39,7 @@ function orchestrator(threshold: number): OrchestratorSettings {
     auto_handoff_threshold_pct: threshold,
     is_project_override: false,
     orchestrator: null,
-    dispatch: { implementer: null, reviewer: null },
+    dispatch: { implementer: null },
   };
 }
 

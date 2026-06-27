@@ -12,6 +12,5 @@ use std::collections::HashMap;
 pub enum SpawnRole {
     orchestrator,
     implementer,
-    reviewer,
     manual,
 }

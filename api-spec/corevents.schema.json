@@ -399,7 +399,7 @@
       "type": "string"
     },
     "DispatchKind": {
-      "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (e.g. an\nimplementer worktree and a review worktree both reference the same PR\nnumber — `kind` separates them).",
+      "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (multiple dispatches\nmay reference the same PR number; the resolver reports them as ambiguous).",
       "oneOf": [
         {
           "description": "Work attached to a GitHub issue (no PR yet).",
@@ -456,28 +456,6 @@
             }
           },
           "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "A reviewer dispatched against an existing PR.",
-          "properties": {
-            "kind": {
-              "enum": [
-                "review"
-              ],
-              "type": "string"
-            },
-            "pr": {
-              "description": "PR being reviewed.",
-              "format": "int64",
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "required": [
-            "pr",
             "kind"
           ],
           "type": "object"
@@ -1757,7 +1735,6 @@
       "enum": [
         "orchestrator",
         "implementer",
-        "reviewer",
         "manual"
       ],
       "type": "string"

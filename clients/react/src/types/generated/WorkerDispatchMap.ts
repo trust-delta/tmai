@@ -2,9 +2,9 @@
 import type { DispatchBundle } from "./DispatchBundle";
 
 /**
- * Per-role dispatch bundles for worker roles (implementer, reviewer).
+ * Per-role dispatch bundles for worker roles (implementer).
  *
  * The orchestrator's own bundle lives at `OrchestrationSettings.orchestrator`,
  * not here.
  */
-export type WorkerDispatchMap = { implementer?: DispatchBundle | null, reviewer?: DispatchBundle | null, };
+export type WorkerDispatchMap = { implementer?: DispatchBundle | null, };

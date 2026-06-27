@@ -13,9 +13,9 @@ interface DispatchState {
 
 /**
  * A "role" describes one editable bundle: how to read it from state and how to
- * write a new bundle back. Keeping orchestrator / implementer / reviewer as
- * data here rather than three near-identical handler triplets lets the render
- * loop stay declarative.
+ * write a new bundle back. Keeping orchestrator / implementer as data here
+ * rather than near-identical handler triplets lets the render loop stay
+ * declarative.
  */
 interface DispatchRole {
   title: string;
@@ -37,17 +37,11 @@ const ROLES: DispatchRole[] = [
     read: (s) => s.dispatch.implementer ?? null,
     write: (s, bundle) => ({ ...s, dispatch: { ...s.dispatch, implementer: bundle } }),
   },
-  {
-    title: "Reviewer",
-    subtitle: "dispatch_review",
-    read: (s) => s.dispatch.reviewer ?? null,
-    write: (s, bundle) => ({ ...s, dispatch: { ...s.dispatch, reviewer: bundle } }),
-  },
 ];
 
 /**
  * Settings section that exposes per-role dispatch bundle editing for
- * orchestrator / implementer / reviewer (#578 — auto-save).
+ * orchestrator / implementer (#578 — auto-save).
  *
  * Atomic fields (vendor / permission_mode / effort dropdowns and the "Use
  * vendor CLI default" checkbox) persist on change; the model text field
