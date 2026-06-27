@@ -8,8 +8,6 @@ import type {
   AgentSnapshot,
   AimCreateRequest,
   AimEditRequest,
-  DispatchBundle,
-  OrchestratorRules,
   PrMergeMethod,
   PrMergeOverride,
   PrMonitorScope,
@@ -181,16 +179,12 @@ export const api = {
   updateOrchestratorSettings: (
     params: {
       enabled?: boolean;
-      role?: string;
-      rules?: Partial<OrchestratorRules>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
       auto_handoff_threshold_pct?: number;
-      /** Tri-state: omit → unchanged. `null` → clear. Object → replace. */
-      orchestrator?: DispatchBundle | null;
       /** Replaces the entire `[orchestration.dispatch]` table. */
       dispatch?: WorkerDispatchMap;
     },

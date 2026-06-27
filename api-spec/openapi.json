@@ -1946,21 +1946,6 @@
                 ]
               }
             }
-          },
-          {
-            "type": "object",
-            "description": "An orchestrator dispatch.",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "orchestrator"
-                ]
-              }
-            }
           }
         ],
         "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (multiple dispatches\nmay reference the same PR number; the resolver reports them as ambiguous)."
@@ -3222,7 +3207,6 @@
         "type": "string",
         "description": "Role of a spawned agent.",
         "enum": [
-          "orchestrator",
           "implementer",
           "manual"
         ]

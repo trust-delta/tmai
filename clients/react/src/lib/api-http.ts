@@ -902,19 +902,10 @@ export interface SpawnResponse {
   command: string;
 }
 
-export interface OrchestratorRules {
-  branch: string;
-  merge: string;
-  review: string;
-  custom: string;
-}
-
 export type PrMonitorScope = "current_project" | "all";
 
 export interface OrchestratorSettings {
   enabled: boolean;
-  role: string;
-  rules: OrchestratorRules;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
   pr_monitor_exclude_authors: string[];
@@ -929,50 +920,10 @@ export interface OrchestratorSettings {
   /** Whether this is a per-project override (true) or global fallback (false) */
   is_project_override: boolean;
   /**
-   * Orchestrator's own dispatch bundle (`[orchestration.orchestrator]`).
-   * `null` / omitted when unset — the orchestrator launches with the vendor
-   * CLI's user-global default.
-   */
-  orchestrator?: DispatchBundle | null;
-  /**
-   * Per-role dispatch bundles for orchestration workers
+   * Per-role dispatch bundles for worker dispatches
    * (`[orchestration.dispatch.<role>]`).
    */
   dispatch: WorkerDispatchMap;
-}
-
-/** Engine defaults for the `[orchestration]` rule textareas (empty = unset). */
-export const DEFAULT_ORCHESTRATOR_RULES: OrchestratorRules = {
-  branch: "",
-  merge: "",
-  review: "",
-  custom: "",
-};
-
-/**
- * The orchestrator-settings wire shape as actually served. A tmai-core binary
- * omits the `[orchestration.*]` object sub-tables (`rules`) when they are
- * absent from config.toml, even though the contract types them as required.
- * Reading e.g. `settings.rules[field]` on such a response throws `Cannot read
- * properties of undefined` and — with no error boundary around SettingsPanel —
- * blacks out the whole panel. Normalize with `withOrchestratorDefaults` at the
- * fetch boundary.
- */
-export type WireOrchestratorSettings = Omit<OrchestratorSettings, "rules"> &
-  Partial<Pick<OrchestratorSettings, "rules">>;
-
-/**
- * Coalesce a wire orchestrator-settings response into a fully-populated
- * `OrchestratorSettings` so every downstream consumer (the rule textareas)
- * reads a defined sub-object rather than crashing on a deref of an omitted
- * sub-table. Apply once at the fetch boundary — mirrors the `?? default`
- * defense PR #684 added for `auto_handoff_threshold_pct`.
- */
-export function withOrchestratorDefaults(s: WireOrchestratorSettings): OrchestratorSettings {
-  return {
-    ...s,
-    rules: s.rules ?? DEFAULT_ORCHESTRATOR_RULES,
-  };
 }
 
 export interface SpawnRequest {
@@ -1314,19 +1265,12 @@ export const api = {
   updateOrchestratorSettings: (
     params: {
       enabled?: boolean;
-      role?: string;
-      rules?: Partial<OrchestratorRules>;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];
       pr_monitor_scope?: PrMonitorScope;
       inject_state_snapshot?: boolean;
       auto_handoff_threshold_pct?: number;
-      /**
-       * Tri-state: omit → leave unchanged. `null` → clear the bundle. Object →
-       * replace. Persists to `[orchestration.orchestrator]` in config.toml.
-       */
-      orchestrator?: DispatchBundle | null;
       /** Replaces the entire `[orchestration.dispatch]` table. */
       dispatch?: WorkerDispatchMap;
     },

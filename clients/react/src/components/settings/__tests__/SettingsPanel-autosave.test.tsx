@@ -39,8 +39,6 @@ const WORKTREE: WorktreeSettings = {
 function makeOrchestrator(): OrchestratorSettings {
   return {
     enabled: true,
-    role: "",
-    rules: { branch: "", merge: "", review: "", custom: "" },
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 60,
     pr_monitor_exclude_authors: [],
@@ -48,7 +46,6 @@ function makeOrchestrator(): OrchestratorSettings {
     inject_state_snapshot: false,
     auto_handoff_threshold_pct: 75,
     is_project_override: false,
-    orchestrator: null,
     dispatch: { implementer: null },
   };
 }
