@@ -37,7 +37,7 @@ function makeSettings(overrides: Partial<OrchestratorSettings> = {}): Orchestrat
     auto_handoff_threshold_pct: 75,
     is_project_override: false,
     orchestrator: null,
-    dispatch: { implementer: null, reviewer: null },
+    dispatch: { implementer: null },
     ...overrides,
   };
 }

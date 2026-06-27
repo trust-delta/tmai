@@ -2,9 +2,8 @@
 
 /**
  * Classification of what was dispatched. Drives notification phrasing,
- * gatekeeper rules (#11), and selector disambiguation (e.g. an
- * implementer worktree and a review worktree both reference the same PR
- * number — `kind` separates them).
+ * gatekeeper rules (#11), and selector disambiguation (multiple dispatches
+ * may reference the same PR number; the resolver reports them as ambiguous).
  */
 export type DispatchKind = { "kind": "issue", 
 /**
@@ -14,8 +13,4 @@ number: bigint, } | { "kind": "pr",
 /**
  * PR number.
  */
-number: bigint, } | { "kind": "standalone" } | { "kind": "review", 
-/**
- * PR being reviewed.
- */
-pr: bigint, } | { "kind": "orchestrator" };
+number: bigint, } | { "kind": "standalone" } | { "kind": "orchestrator" };

@@ -36,7 +36,7 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
     auto_handoff_threshold_pct: 75,
     is_project_override: false,
     orchestrator: null,
-    dispatch: { implementer: null, reviewer: null },
+    dispatch: { implementer: null },
     ...overrides,
   };
 }
@@ -57,7 +57,6 @@ const EXPLICIT_SETTINGS = makeSettings({
       permission_mode: "auto",
       effort: "high",
     },
-    reviewer: { vendor: "codex", model: "codex-1", permission_mode: null, effort: null },
   },
 });
 
@@ -66,13 +65,12 @@ describe("OrchestrationDispatchSection", () => {
     vi.clearAllMocks();
   });
 
-  it("renders all three bundle sections after load", async () => {
+  it("renders both bundle sections after load", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(BASE_SETTINGS);
     render(<OrchestrationDispatchSection />);
     await waitFor(() => {
       expect(screen.getByText("Orchestrator")).toBeTruthy();
       expect(screen.getByText("Implementer")).toBeTruthy();
-      expect(screen.getByText("Reviewer")).toBeTruthy();
     });
   });
 
@@ -81,7 +79,7 @@ describe("OrchestrationDispatchSection", () => {
     render(<OrchestrationDispatchSection />);
     await waitFor(() => {
       const checkboxes = screen.getAllByRole("checkbox");
-      // All three bundles null → all three "Use vendor CLI default" checkboxes
+      // Both bundles null → both "Use vendor CLI default" checkboxes
       // should be checked.
       for (const cb of checkboxes) {
         expect((cb as HTMLInputElement).checked).toBe(true);
@@ -162,18 +160,17 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
       makeSettings({
         dispatch: {
-          implementer: null,
-          reviewer: { vendor: "codex", model: "codex-1" },
+          implementer: { vendor: "codex", model: "codex-1" },
         },
       }),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Reviewer"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
-    const reviewerPerm = permissionSelects[2];
+    const implementerPerm = permissionSelects[1];
 
-    const autoOption = Array.from(reviewerPerm.querySelectorAll("option")).find(
+    const autoOption = Array.from(implementerPerm.querySelectorAll("option")).find(
       (o) => o.value === "auto",
     );
     expect(autoOption).toBeTruthy();
@@ -184,13 +181,12 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
       makeSettings({
         dispatch: {
-          implementer: null,
-          reviewer: { vendor: "codex", model: "codex-1" },
+          implementer: { vendor: "codex", model: "codex-1" },
         },
       }),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Reviewer"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     expect(screen.getByText("(n/a — codex)")).toBeTruthy();
   });
