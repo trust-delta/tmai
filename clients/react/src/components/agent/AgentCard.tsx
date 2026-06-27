@@ -4,6 +4,7 @@ import {
   type AgentType,
   type ConnectionChannels,
   type DetectionSource,
+  hasAttention,
   isAiAgent,
   type SendCapability,
 } from "@/lib/api";
@@ -177,7 +178,6 @@ export function AgentCard({ agent, selected, onClick, variant = "default" }: Age
   // with its own pill); `null`/absent renders a muted "Running" chip
   // (dogfood feedback 2026-05-10 — ambient state still wants a marker).
   const attention = agent.attention ?? null;
-  const hasAttention = attention !== null;
   const typeInfo = agentTypeLabel(agent.agent_type);
   const isAi = isAiAgent(agent.agent_type);
 
@@ -256,7 +256,7 @@ export function AgentCard({ agent, selected, onClick, variant = "default" }: Age
         // it reads as first-class above its subordinate worker roster.
         variant === "headline" && "!border-primary/25 bg-primary/[0.05]",
         selected && "!border-primary/30 !bg-primary/10",
-        hasAttention && "!border-warning/30 animate-glow-pulse",
+        hasAttention(agent) && "!border-warning/30 animate-glow-pulse",
         glow && selected && glow,
       )}
     >

@@ -895,6 +895,7 @@ export function App({
                   agents={agents}
                   currentProjectPath={currentProject}
                   unitName={unitName}
+                  unitRepos={unitReposForCurrent}
                   trigger={triggerHandoff}
                   onOpenSettings={openSettingsFromOverride}
                 />

@@ -40,8 +40,8 @@ import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import {
   type AgentAttention,
-  type AgentSnapshot,
   groupByProject,
+  hasAttention,
   isAiAgentLoose,
   type ProjectGroup,
 } from "@/lib/api";
@@ -123,13 +123,6 @@ export interface HandoverDigest {
   missingPreconditions: MissingPreconditions;
 }
 
-// Narrowing predicate — keeps the AttentionAgentBrief map free of the
-// `attention!` non-null-assertion (would survive `noUncheckedIndexedAccess`
-// but reads as a code smell against the project's `any`-banned rule).
-function isAttentionAgent(a: AgentSnapshot): a is AgentSnapshot & { attention: AgentAttention } {
-  return a.attention != null;
-}
-
 function deriveUnitState(group: ProjectGroup): UnitState {
   if (group.attentionAgents > 0) return "needs-you";
   if (group.totalAgents > 0) return "in-progress";
@@ -175,7 +168,7 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
             agentCount: wt.agents.length,
           }))
         : [],
-      attentionAgents: activeAgents.filter(isAttentionAgent).map((a) => ({
+      attentionAgents: activeAgents.filter(hasAttention).map((a) => ({
         target: a.target,
         displayName: a.display_name,
         attention: a.attention,
