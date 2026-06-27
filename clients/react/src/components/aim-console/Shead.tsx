@@ -14,7 +14,7 @@
 // REUSE, DON'T REBUILD (issue #803): the ctx readout reuses
 // `ProducerCtxHeader`'s exported helpers (`formatThousands` / `renderBar` /
 // `thresholdColorClass`, import-only) and the same one-shot
-// `getOrchestratorSettings` threshold fetch; the handoff button fires the
+// `getProducerSettings` threshold fetch; the handoff button fires the
 // SAME App-lifted ritual `trigger` with the SAME confirm flow as
 // `ProducerConversationHeader` (which itself is untouched — the existing
 // console keeps using it).
@@ -210,7 +210,7 @@ function ProducerShead({
   useEffect(() => {
     let cancelled = false;
     api
-      .getOrchestratorSettings(currentProjectPath ?? undefined)
+      .getProducerSettings(currentProjectPath ?? undefined)
       .then((s) => {
         if (!cancelled) setThreshold(s.auto_handoff_threshold_pct);
       })

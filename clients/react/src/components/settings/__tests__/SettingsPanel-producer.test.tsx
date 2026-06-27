@@ -1,29 +1,29 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrchestratorSettings } from "@/lib/api";
+import type { ProducerSettings } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...actual,
     api: {
-      getOrchestratorSettings: vi.fn(),
-      updateOrchestratorSettings: vi.fn(),
+      getProducerSettings: vi.fn(),
+      updateProducerSettings: vi.fn(),
     },
   };
 });
 
 const { api } = await import("@/lib/api");
-const { OrchestrationDispatchSection } = await import("../OrchestrationDispatchSection");
+const { ProducerDispatchSection } = await import("../ProducerDispatchSection");
 
 /**
- * Build a minimal OrchestratorSettings for the dispatch-section tests. The
+ * Build a minimal ProducerSettings for the dispatch-section tests. The
  * section under test only reads `dispatch`; the other fields are default-ish
  * placeholders. (The orchestrator config rip retired the role/rules and the
  * orchestrator dispatch bundle — only the implementer role remains.)
  */
-function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSettings {
+function makeSettings(overrides: Partial<ProducerSettings>): ProducerSettings {
   return {
     enabled: true,
     pr_monitor_enabled: false,
@@ -51,14 +51,14 @@ const EXPLICIT_SETTINGS = makeSettings({
   },
 });
 
-describe("OrchestrationDispatchSection", () => {
+describe("ProducerDispatchSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("renders the implementer bundle section after load (no orchestrator row)", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(BASE_SETTINGS);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(BASE_SETTINGS);
+    render(<ProducerDispatchSection />);
     await waitFor(() => {
       expect(screen.getByText("Implementer")).toBeTruthy();
     });
@@ -66,8 +66,8 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("shows default checkbox checked when the bundle is null", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(BASE_SETTINGS);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(BASE_SETTINGS);
+    render(<ProducerDispatchSection />);
     await waitFor(() => {
       const checkboxes = screen.getAllByRole("checkbox");
       // Implementer bundle null → its "Use vendor CLI default" checkbox checked.
@@ -78,8 +78,8 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("shows default checkbox unchecked when the bundle is explicit", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    render(<ProducerDispatchSection />);
     await waitFor(() => {
       const checkboxes = screen.getAllByRole("checkbox");
       for (const cb of checkboxes) {
@@ -89,9 +89,9 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("switching vendor resets the model input to empty", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
 
     await waitFor(() => screen.getByText("Implementer"));
 
@@ -109,12 +109,12 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("auto permission option is disabled for non-opus claude model", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(
       makeSettings({
         dispatch: { implementer: { vendor: "claude", model: "claude-sonnet-4-6" } },
       }),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
@@ -128,12 +128,12 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("auto permission option is enabled for opus model", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(
       makeSettings({
         dispatch: { implementer: { vendor: "claude", model: "claude-opus-4-6" } },
       }),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
@@ -147,14 +147,14 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("auto permission option is disabled for non-claude vendor", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(
       makeSettings({
         dispatch: {
           implementer: { vendor: "codex", model: "codex-1" },
         },
       }),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
@@ -168,26 +168,26 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("effort dropdown is hidden for codex vendor", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(
       makeSettings({
         dispatch: {
           implementer: { vendor: "codex", model: "codex-1" },
         },
       }),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     expect(screen.getByText("(n/a — codex)")).toBeTruthy();
   });
 
   it("effort dropdown is shown for claude vendor", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(
       makeSettings({
         dispatch: { implementer: { vendor: "claude", model: "claude-opus-4-6" } },
       }),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
@@ -197,33 +197,33 @@ describe("OrchestrationDispatchSection", () => {
   // ── #578 auto-save behaviour ──────────────────────────────────────
 
   it("no Save button is rendered (auto-save replaces explicit Save)", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
     expect(screen.queryByRole("button", { name: /^save/i })).toBeNull();
   });
 
   it("changing an atomic field (effort) triggers a single PUT immediately", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
     fireEvent.change(effortSelects[0], { target: { value: "low" } });
 
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.updateProducerSettings)).toHaveBeenCalledTimes(1);
     });
-    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(api.updateProducerSettings).mock.calls[0][0]).toMatchObject({
       dispatch: { implementer: expect.objectContaining({ effort: "low" }) },
     });
   });
 
   it("typing in the model field does NOT trigger a PUT mid-stream", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
@@ -231,14 +231,14 @@ describe("OrchestrationDispatchSection", () => {
     fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7-extra" } });
 
     // No await — the PUT should never be called from typing alone.
-    expect(vi.mocked(api.updateOrchestratorSettings)).not.toHaveBeenCalled();
+    expect(vi.mocked(api.updateProducerSettings)).not.toHaveBeenCalled();
     expect((modelInputs[0] as HTMLInputElement).value).toBe("claude-opus-4-7-extra");
   });
 
   it("blurring the model field commits the draft as a PUT", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
@@ -246,17 +246,17 @@ describe("OrchestrationDispatchSection", () => {
     fireEvent.blur(modelInputs[0]);
 
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.updateProducerSettings)).toHaveBeenCalledTimes(1);
     });
-    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(api.updateProducerSettings).mock.calls[0][0]).toMatchObject({
       dispatch: { implementer: expect.objectContaining({ model: "claude-opus-4-7" }) },
     });
   });
 
   it("Enter on the model field commits the draft as a PUT", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
@@ -264,18 +264,18 @@ describe("OrchestrationDispatchSection", () => {
     fireEvent.keyDown(modelInputs[0], { key: "Enter" });
 
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.updateProducerSettings)).toHaveBeenCalledTimes(1);
     });
   });
 
   it("backend 400 on atomic change rolls back local state and surfaces inline error", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockRejectedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockRejectedValue(
       new Error(
         "API error 400: [orchestration.dispatch.implementer] permission_mode `auto` is not allowed",
       ),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
@@ -290,11 +290,11 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("backend 400 on text-field commit keeps the user's draft so they can correct", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockRejectedValue(
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockRejectedValue(
       new Error("API error 400: model `not-a-model` is unknown"),
     );
-    render(<OrchestrationDispatchSection />);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
@@ -310,18 +310,18 @@ describe("OrchestrationDispatchSection", () => {
   });
 
   it("toggling 'Use vendor CLI default' sends null and persists immediately", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
-    vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
-    render(<OrchestrationDispatchSection />);
+    vi.mocked(api.getProducerSettings).mockResolvedValue(EXPLICIT_SETTINGS);
+    vi.mocked(api.updateProducerSettings).mockResolvedValue(undefined as never);
+    render(<ProducerDispatchSection />);
     await waitFor(() => screen.getByText("Implementer"));
 
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]); // implementer's "Use vendor CLI default"
 
     await waitFor(() => {
-      expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.updateProducerSettings)).toHaveBeenCalledTimes(1);
     });
-    expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(api.updateProducerSettings).mock.calls[0][0]).toMatchObject({
       dispatch: { implementer: null },
     });
   });

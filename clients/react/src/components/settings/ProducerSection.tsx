@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DirBrowser } from "@/components/project/DirBrowser";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
-import { api, type OrchestratorSettings } from "@/lib/api";
+import { api, type ProducerSettings } from "@/lib/api";
 import { PrMonitorSection } from "./PrMonitorSection";
 import { SaveStatus } from "./SaveStatus";
 
-interface OrchestrationSectionProps {
+interface ProducerSectionProps {
   /** Project paths derived from currently active agents — used to seed the
    *  scope dropdown so the common case (override the project I'm working
    *  on) is one click. Arbitrary paths can still be picked via the Browse
@@ -15,7 +15,7 @@ interface OrchestrationSectionProps {
 }
 
 /**
- * Settings section that hosts the orchestrator agent's configuration:
+ * Settings section that hosts the Producer agent's configuration:
  * scope (global vs per-project override), enabled toggle, and the composed
  * PR Monitor sub-section.
  *
@@ -23,8 +23,8 @@ interface OrchestrationSectionProps {
  * load — the parent SettingsPanel does not need to refresh this section.
  * Switching `orchScope` re-fetches the merged settings for that scope.
  */
-export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
-  const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
+export function ProducerSection({ projects }: ProducerSectionProps) {
+  const [orchestrator, setOrchestrator] = useState<ProducerSettings | null>(null);
   const [orchScope, setOrchScope] = useState<string>("global");
   const [browsing, setBrowsing] = useState(false);
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
 
   const orchProject = orchScope === "global" ? undefined : orchScope;
   const refreshOrchestrator = useCallback(() => {
-    api.getOrchestratorSettings(orchProject).then(setOrchestrator).catch(console.error);
+    api.getProducerSettings(orchProject).then(setOrchestrator).catch(console.error);
   }, [orchProject]);
 
   useEffect(() => {
@@ -69,12 +69,11 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-foreground">Orchestration</h3>
+        <h3 className="text-sm font-medium text-foreground">Producer</h3>
         <SaveStatus status={save.status} error={save.error} variant="section" />
       </div>
       <p className="mt-1 text-xs text-subtle-foreground">
-        Configure the orchestrator agent that coordinates sub-agents for parallel development
-        workflows.
+        Configure the Producer agent that coordinates sub-agents for parallel development workflows.
       </p>
 
       <div className="mt-3 rounded-lg border border-hairline-strong bg-surface p-3 space-y-4">
@@ -86,7 +85,7 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
               value={orchScope}
               onChange={(e) => setOrchScope(e.target.value)}
               className="flex-1 min-w-0 rounded-md border border-hairline-strong bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/30"
-              aria-label="Orchestration scope"
+              aria-label="Producer scope"
             >
               <option value="global">Global (default)</option>
               {scopeOptions.map((p) => (
@@ -141,7 +140,7 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
           <div className="flex-1">
             <span className="text-sm text-foreground">Enabled</span>
             <p className="text-[11px] text-subtle-foreground mt-0.5">
-              Enable orchestrator workflow features.
+              Enable Producer workflow features.
             </p>
           </div>
           <button
@@ -151,7 +150,7 @@ export function OrchestrationSection({ projects }: OrchestrationSectionProps) {
               setOrchestrator({ ...orchestrator, enabled: next });
               void save.track(
                 async () => {
-                  await api.updateOrchestratorSettings({ enabled: next }, orchProject);
+                  await api.updateProducerSettings({ enabled: next }, orchProject);
                   refreshOrchestrator();
                 },
                 { onError: () => setOrchestrator({ ...orchestrator, enabled: !next }) },

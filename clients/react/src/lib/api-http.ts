@@ -904,7 +904,7 @@ export interface SpawnResponse {
 
 export type PrMonitorScope = "current_project" | "all";
 
-export interface OrchestratorSettings {
+export interface ProducerSettings {
   enabled: boolean;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
@@ -1258,11 +1258,11 @@ export const api = {
     apiFetch<MdTreeEntry[]>(`/files/md-tree?root=${encodeURIComponent(root)}`),
 
   // Orchestrator settings (accepts optional project path for per-project scope)
-  getOrchestratorSettings: (project?: string) =>
-    apiFetch<OrchestratorSettings>(
-      `/settings/orchestrator${project ? `?project=${encodeURIComponent(project)}` : ""}`,
+  getProducerSettings: (project?: string) =>
+    apiFetch<ProducerSettings>(
+      `/settings/producer${project ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
-  updateOrchestratorSettings: (
+  updateProducerSettings: (
     params: {
       enabled?: boolean;
       pr_monitor_enabled?: boolean;
@@ -1276,7 +1276,7 @@ export const api = {
     },
     project?: string,
   ) =>
-    apiFetch(`/settings/orchestrator${project ? `?project=${encodeURIComponent(project)}` : ""}`, {
+    apiFetch(`/settings/producer${project ? `?project=${encodeURIComponent(project)}` : ""}`, {
       method: "PUT",
       body: JSON.stringify(params),
     }),

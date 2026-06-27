@@ -442,7 +442,7 @@ export function App({
 
   // Project list derived from active agents (replaces the pre-registered list).
   // Used by the keyboard shortcuts to cycle the X-Tmai-Origin scope and by
-  // OrchestrationSection's per-project override selector.
+  // ProducerSection's per-project override selector.
   const projectPaths = useMemo(
     () => groupByProject(aiAgents, worktrees).map((p) => p.path),
     [aiAgents, worktrees],

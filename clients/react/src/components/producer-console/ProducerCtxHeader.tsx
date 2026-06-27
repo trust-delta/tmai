@@ -6,7 +6,7 @@
 //   ctx: 142k / 200k (71%) ▮▮▮▮▮▮▮░░░ │ auto-handoff at 75% ⚙
 //
 // Surfaces the same wire data the auto-handoff trigger fires on
-// (`AgentSnapshot.ctx_usage.pct` vs `OrchestratorSettings
+// (`AgentSnapshot.ctx_usage.pct` vs `ProducerSettings
 // .auto_handoff_threshold_pct`), so the operator can predict
 // the trigger instead of being surprised by it.
 //
@@ -92,7 +92,7 @@ export function ProducerCtxHeader({
   useEffect(() => {
     let cancelled = false;
     api
-      .getOrchestratorSettings(currentProjectPath ?? undefined)
+      .getProducerSettings(currentProjectPath ?? undefined)
       .then((s) => {
         if (!cancelled) setThreshold(s.auto_handoff_threshold_pct);
       })

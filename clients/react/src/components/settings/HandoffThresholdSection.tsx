@@ -2,17 +2,17 @@
 //
 // Operators routinely tune this (handoff-lifecycle DR §E says "primary,
 // not Advanced"), so the control sits in the top Producer group rather
-// than inside `OrchestrationSection` which is collapsed behind the
+// than inside `ProducerSection` which is collapsed behind the
 // Advanced expandable.
 //
-// Persists `auto_handoff_threshold_pct` on the (global) OrchestratorSettings
+// Persists `auto_handoff_threshold_pct` on the (global) ProducerSettings
 // object via the same PUT helper calibration / orchestration rules use.
 // `0` is a sentinel that disables the auto-trigger entirely; the manual
 // `Handoff & restart` button still works.
 
 import { useEffect, useState } from "react";
 import { useSaveTracker } from "@/hooks/useSaveTracker";
-import { api, type OrchestratorSettings } from "@/lib/api";
+import { api, type ProducerSettings } from "@/lib/api";
 import { SaveStatus } from "./SaveStatus";
 
 const INPUT_CLS =
@@ -35,14 +35,14 @@ function validate(value: string): { ok: true; pct: number } | { ok: false; error
 }
 
 export function HandoffThresholdSection() {
-  const [orchestrator, setOrchestrator] = useState<OrchestratorSettings | null>(null);
+  const [orchestrator, setOrchestrator] = useState<ProducerSettings | null>(null);
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const save = useSaveTracker();
 
   useEffect(() => {
     api
-      .getOrchestratorSettings()
+      .getProducerSettings()
       .then((s) => {
         setOrchestrator(s);
         setDraft(String(s.auto_handoff_threshold_pct ?? 0));
@@ -64,7 +64,7 @@ export function HandoffThresholdSection() {
     const prev = orchestrator;
     setOrchestrator({ ...orchestrator, auto_handoff_threshold_pct: next });
     setDraft(String(next));
-    void save.track(() => api.updateOrchestratorSettings({ auto_handoff_threshold_pct: next }), {
+    void save.track(() => api.updateProducerSettings({ auto_handoff_threshold_pct: next }), {
       onError: () => {
         setOrchestrator(prev);
         setDraft(String(prev.auto_handoff_threshold_pct));

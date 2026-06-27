@@ -1,28 +1,28 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrchestratorSettings } from "@/lib/api";
+import type { ProducerSettings } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...actual,
     api: {
-      getOrchestratorSettings: vi.fn(),
-      updateOrchestratorSettings: vi.fn(),
+      getProducerSettings: vi.fn(),
+      updateProducerSettings: vi.fn(),
       getGeneralSettings: vi.fn(),
     },
   };
 });
 
 const { api } = await import("@/lib/api");
-const { OrchestrationSection } = await import("../OrchestrationSection");
+const { ProducerSection } = await import("../ProducerSection");
 
 /**
- * A fully-populated OrchestratorSettings with the orchestrator enabled so the
+ * A fully-populated ProducerSettings with the orchestrator enabled so the
  * PR-monitor sub-section actually renders.
  */
-function makeSettings(overrides: Partial<OrchestratorSettings> = {}): OrchestratorSettings {
+function makeSettings(overrides: Partial<ProducerSettings> = {}): ProducerSettings {
   return {
     enabled: true,
     pr_monitor_enabled: false,
@@ -37,7 +37,7 @@ function makeSettings(overrides: Partial<OrchestratorSettings> = {}): Orchestrat
   };
 }
 
-describe("OrchestrationSection", () => {
+describe("ProducerSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
@@ -47,9 +47,9 @@ describe("OrchestrationSection", () => {
   // textareas. The section now hosts only scope, the enabled toggle, and the
   // composed PR Monitor sub-section — guard that the dead fields stay gone.
   it("renders the PR Monitor sub-section without the retired role/rules textareas", async () => {
-    vi.mocked(api.getOrchestratorSettings).mockResolvedValue(makeSettings());
+    vi.mocked(api.getProducerSettings).mockResolvedValue(makeSettings());
 
-    render(<OrchestrationSection projects={[]} />);
+    render(<ProducerSection projects={[]} />);
 
     expect(await screen.findByText("PR Monitor")).toBeTruthy();
     expect(screen.queryByLabelText("Role")).toBeNull();

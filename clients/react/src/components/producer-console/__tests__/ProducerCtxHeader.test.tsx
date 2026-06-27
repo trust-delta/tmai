@@ -16,7 +16,7 @@ import {
   thresholdColorClass,
 } from "../ProducerCtxHeader";
 
-const getOrchestratorSettingsMock = vi.fn();
+const getProducerSettingsMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -24,7 +24,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      getOrchestratorSettings: (project?: string) => getOrchestratorSettingsMock(project),
+      getProducerSettings: (project?: string) => getProducerSettingsMock(project),
     },
   };
 });
@@ -107,11 +107,11 @@ describe("ProducerCtxHeader — pure helpers", () => {
 
 describe("ProducerCtxHeader — rendering", () => {
   beforeEach(() => {
-    getOrchestratorSettingsMock.mockReset();
+    getProducerSettingsMock.mockReset();
   });
 
   it("renders ctx Nk / Nk (pct%) from fixture ctx_usage", async () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     const producer = agent({
       id: "claude:abc",
       cwd: "/home/u/proj",
@@ -140,7 +140,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("renders the 10-segment bar matching the pct", () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     const producer = agent({
       id: "claude:abc",
       ctx_usage: {
@@ -162,7 +162,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("shows placeholder when no Producer matches the unit", async () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     render(
       <ProducerCtxHeader agents={[]} currentProjectPath="/home/u/proj" onOpenSettings={vi.fn()} />,
     );
@@ -174,7 +174,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("shows placeholder when Producer exists but ctx_usage is absent", async () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     const producer = agent({ id: "claude:abc", ctx_usage: null });
     render(
       <ProducerCtxHeader
@@ -187,7 +187,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("labels the threshold as 'disabled' when set to 0", async () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(0));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(0));
     render(
       <ProducerCtxHeader agents={[]} currentProjectPath="/home/u/proj" onOpenSettings={vi.fn()} />,
     );
@@ -197,7 +197,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("⚙ click invokes onOpenSettings", async () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     const onOpenSettings = vi.fn();
     render(
       <ProducerCtxHeader
@@ -211,7 +211,7 @@ describe("ProducerCtxHeader — rendering", () => {
   });
 
   it("does not pick a worktree-Producer (is_worktree gate)", () => {
-    getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+    getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
     const worktreeProducer = agent({
       id: "claude:wt",
       is_worktree: true,

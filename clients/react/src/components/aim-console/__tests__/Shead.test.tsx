@@ -9,14 +9,14 @@
 //   (kill → relaunch fresh at the same locus, behind a danger confirm).
 //   Worker variant: dot · name · model · repo/cwd · ✕ kill — violet accent.
 //
-// `getOrchestratorSettings` (the threshold fetch), `killAgent`, and
+// `getProducerSettings` (the threshold fetch), `killAgent`, and
 // `launchProducer` are mocked; the rest of the api stays real. The Producer
 // restart confirm uses `useConfirm`, so the Producer variant renders under
 // `renderWithProviders` (which mounts the ConfirmProvider).
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AgentSnapshot, api, type OrchestratorSettings, type SpawnResponse } from "@/lib/api";
+import { type AgentSnapshot, api, type ProducerSettings, type SpawnResponse } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 import { Shead } from "../Shead";
 
@@ -26,14 +26,14 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      getOrchestratorSettings: vi.fn(),
+      getProducerSettings: vi.fn(),
       killAgent: vi.fn(),
       launchProducer: vi.fn(),
     },
   };
 });
 
-const getOrchestratorSettings = vi.mocked(api.getOrchestratorSettings);
+const getProducerSettings = vi.mocked(api.getProducerSettings);
 const killAgent = vi.mocked(api.killAgent);
 const launchProducer = vi.mocked(api.launchProducer);
 
@@ -101,12 +101,12 @@ function renderShead(overrides: Partial<Parameters<typeof Shead>[0]> = {}) {
 }
 
 beforeEach(() => {
-  getOrchestratorSettings.mockReset();
+  getProducerSettings.mockReset();
   killAgent.mockReset();
   launchProducer.mockReset();
-  getOrchestratorSettings.mockResolvedValue({
+  getProducerSettings.mockResolvedValue({
     auto_handoff_threshold_pct: 75,
-  } as OrchestratorSettings);
+  } as ProducerSettings);
   killAgent.mockResolvedValue(undefined);
   launchProducer.mockResolvedValue({} as SpawnResponse);
 });
@@ -192,9 +192,9 @@ describe("Shead — Producer variant", () => {
   });
 
   it("renders 'auto off' and no ┊ marker when the threshold is 0 (disabled)", async () => {
-    getOrchestratorSettings.mockResolvedValue({
+    getProducerSettings.mockResolvedValue({
       auto_handoff_threshold_pct: 0,
-    } as OrchestratorSettings);
+    } as ProducerSettings);
     const { container } = renderWithProviders(
       <Shead
         agent={PRODUCER}
@@ -233,6 +233,6 @@ describe("Shead — worker variant", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kill agent" }));
     expect(killAgent).toHaveBeenCalledWith("claude:w1");
     // The worker variant never fetches the (Producer-only) threshold.
-    expect(getOrchestratorSettings).not.toHaveBeenCalled();
+    expect(getProducerSettings).not.toHaveBeenCalled();
   });
 });

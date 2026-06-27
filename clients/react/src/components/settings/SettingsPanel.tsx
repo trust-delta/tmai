@@ -4,8 +4,8 @@ import { DisplayLayoutSection } from "./DisplayLayoutSection";
 import { GeneralSection } from "./GeneralSection";
 import { HandoffThresholdSection } from "./HandoffThresholdSection";
 import { NotificationSection } from "./NotificationSection";
-import { OrchestrationDispatchSection } from "./OrchestrationDispatchSection";
-import { OrchestrationSection } from "./OrchestrationSection";
+import { ProducerDispatchSection } from "./ProducerDispatchSection";
+import { ProducerSection } from "./ProducerSection";
 import { ThemeSection } from "./ThemeSection";
 import { WorkflowSection } from "./WorkflowSection";
 import { WorktreeSection } from "./WorktreeSection";
@@ -40,7 +40,7 @@ function GroupHeader({ label, description }: { label: string; description: strin
 /**
  * Settings panel layout shell. Each section component owns its own state,
  * save tracker, and load. The shell only sources the project list — derived
- * from currently active agents — used by `OrchestrationSection`'s per-project
+ * from currently active agents — used by `ProducerSection`'s per-project
  * override scope selector.
  *
  * Phase B layout: Producer-relevant sections sit at the top of the Core
@@ -105,8 +105,8 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
             </p>
           </summary>
           <div className="space-y-6 border-t border-hairline px-4 py-4">
-            <OrchestrationSection projects={projects} />
-            <OrchestrationDispatchSection />
+            <ProducerSection projects={projects} />
+            <ProducerDispatchSection />
             <WorkflowSection />
             <WorktreeSection />
           </div>

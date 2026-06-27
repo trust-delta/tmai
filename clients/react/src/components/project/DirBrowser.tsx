@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 interface DirBrowserProps {
   /** Default confirm-and-close handler bound to "Select this" + entry
    *  double-click. Required for the picker mode (GeneralSection /
-   *  OrchestrationSection); ignored when `actionSlot` is provided. */
+   *  ProducerSection); ignored when `actionSlot` is provided. */
   onSelect?: (path: string) => void;
   onCancel: () => void;
   /** Initial directory to load. When unset, the backend picks a default
