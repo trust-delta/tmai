@@ -13,4 +13,4 @@ number: bigint, } | { "kind": "pr",
 /**
  * PR number.
  */
-number: bigint, } | { "kind": "standalone" } | { "kind": "orchestrator" };
+number: bigint, } | { "kind": "standalone" };

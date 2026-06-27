@@ -459,21 +459,6 @@
             "kind"
           ],
           "type": "object"
-        },
-        {
-          "description": "An orchestrator dispatch.",
-          "properties": {
-            "kind": {
-              "enum": [
-                "orchestrator"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
         }
       ]
     },
@@ -1733,7 +1718,6 @@
     "SpawnRole": {
       "description": "Role of a spawned agent.",
       "enum": [
-        "orchestrator",
         "implementer",
         "manual"
       ],

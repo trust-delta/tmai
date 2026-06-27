@@ -18,16 +18,14 @@ const { api } = await import("@/lib/api");
 const { OrchestrationDispatchSection } = await import("../OrchestrationDispatchSection");
 
 /**
- * Build a minimal OrchestratorSettings for the dispatch-section tests.
- * Other fields (role, rules, ...) are filled with default-ish
- * placeholders since the section under test only reads `orchestrator` /
- * `dispatch`.
+ * Build a minimal OrchestratorSettings for the dispatch-section tests. The
+ * section under test only reads `dispatch`; the other fields are default-ish
+ * placeholders. (The orchestrator config rip retired the role/rules and the
+ * orchestrator dispatch bundle — only the implementer role remains.)
  */
 function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSettings {
   return {
     enabled: true,
-    role: "",
-    rules: { branch: "", merge: "", review: "", custom: "" },
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 0,
     pr_monitor_exclude_authors: [],
@@ -35,7 +33,6 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
     inject_state_snapshot: false,
     auto_handoff_threshold_pct: 75,
     is_project_override: false,
-    orchestrator: null,
     dispatch: { implementer: null },
     ...overrides,
   };
@@ -44,12 +41,6 @@ function makeSettings(overrides: Partial<OrchestratorSettings>): OrchestratorSet
 const BASE_SETTINGS = makeSettings({});
 
 const EXPLICIT_SETTINGS = makeSettings({
-  orchestrator: {
-    vendor: "claude",
-    model: "claude-opus-4-6",
-    permission_mode: "auto",
-    effort: "high",
-  },
   dispatch: {
     implementer: {
       vendor: "claude",
@@ -65,29 +56,28 @@ describe("OrchestrationDispatchSection", () => {
     vi.clearAllMocks();
   });
 
-  it("renders both bundle sections after load", async () => {
+  it("renders the implementer bundle section after load (no orchestrator row)", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(BASE_SETTINGS);
     render(<OrchestrationDispatchSection />);
     await waitFor(() => {
-      expect(screen.getByText("Orchestrator")).toBeTruthy();
       expect(screen.getByText("Implementer")).toBeTruthy();
     });
+    expect(screen.queryByText("Orchestrator")).toBeNull();
   });
 
-  it("shows default checkbox checked when bundles are null", async () => {
+  it("shows default checkbox checked when the bundle is null", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(BASE_SETTINGS);
     render(<OrchestrationDispatchSection />);
     await waitFor(() => {
       const checkboxes = screen.getAllByRole("checkbox");
-      // Both bundles null → both "Use vendor CLI default" checkboxes
-      // should be checked.
+      // Implementer bundle null → its "Use vendor CLI default" checkbox checked.
       for (const cb of checkboxes) {
         expect((cb as HTMLInputElement).checked).toBe(true);
       }
     });
   });
 
-  it("shows default checkbox unchecked when bundles are explicit", async () => {
+  it("shows default checkbox unchecked when the bundle is explicit", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     render(<OrchestrationDispatchSection />);
     await waitFor(() => {
@@ -103,15 +93,15 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
 
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const vendorSelects = screen.getAllByRole("combobox", { name: /vendor for/i });
-    const orchestratorVendor = vendorSelects[0];
+    const implementerVendor = vendorSelects[0];
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
     expect((modelInputs[0] as HTMLInputElement).value).toBe("claude-opus-4-6");
 
-    fireEvent.change(orchestratorVendor, { target: { value: "codex" } });
+    fireEvent.change(implementerVendor, { target: { value: "codex" } });
 
     await waitFor(() => {
       expect((modelInputs[0] as HTMLInputElement).value).toBe("");
@@ -121,16 +111,16 @@ describe("OrchestrationDispatchSection", () => {
   it("auto permission option is disabled for non-opus claude model", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
       makeSettings({
-        orchestrator: { vendor: "claude", model: "claude-sonnet-4-6" },
+        dispatch: { implementer: { vendor: "claude", model: "claude-sonnet-4-6" } },
       }),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
-    const orchestratorPerm = permissionSelects[0];
+    const implementerPerm = permissionSelects[0];
 
-    const autoOption = Array.from(orchestratorPerm.querySelectorAll("option")).find(
+    const autoOption = Array.from(implementerPerm.querySelectorAll("option")).find(
       (o) => o.value === "auto",
     );
     expect(autoOption).toBeTruthy();
@@ -140,16 +130,16 @@ describe("OrchestrationDispatchSection", () => {
   it("auto permission option is enabled for opus model", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
       makeSettings({
-        orchestrator: { vendor: "claude", model: "claude-opus-4-6" },
+        dispatch: { implementer: { vendor: "claude", model: "claude-opus-4-6" } },
       }),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
-    const orchestratorPerm = permissionSelects[0];
+    const implementerPerm = permissionSelects[0];
 
-    const autoOption = Array.from(orchestratorPerm.querySelectorAll("option")).find(
+    const autoOption = Array.from(implementerPerm.querySelectorAll("option")).find(
       (o) => o.value === "auto",
     );
     expect(autoOption).toBeTruthy();
@@ -168,7 +158,7 @@ describe("OrchestrationDispatchSection", () => {
     await waitFor(() => screen.getByText("Implementer"));
 
     const permissionSelects = screen.getAllByRole("combobox", { name: /permission mode for/i });
-    const implementerPerm = permissionSelects[1];
+    const implementerPerm = permissionSelects[0];
 
     const autoOption = Array.from(implementerPerm.querySelectorAll("option")).find(
       (o) => o.value === "auto",
@@ -194,11 +184,11 @@ describe("OrchestrationDispatchSection", () => {
   it("effort dropdown is shown for claude vendor", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(
       makeSettings({
-        orchestrator: { vendor: "claude", model: "claude-opus-4-6" },
+        dispatch: { implementer: { vendor: "claude", model: "claude-opus-4-6" } },
       }),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
     expect(effortSelects.length).toBeGreaterThan(0);
@@ -209,7 +199,7 @@ describe("OrchestrationDispatchSection", () => {
   it("no Save button is rendered (auto-save replaces explicit Save)", async () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
     expect(screen.queryByRole("button", { name: /^save/i })).toBeNull();
   });
 
@@ -217,7 +207,7 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
     fireEvent.change(effortSelects[0], { target: { value: "low" } });
@@ -226,7 +216,7 @@ describe("OrchestrationDispatchSection", () => {
       expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
     });
     expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
-      orchestrator: expect.objectContaining({ effort: "low" }),
+      dispatch: { implementer: expect.objectContaining({ effort: "low" }) },
     });
   });
 
@@ -234,7 +224,7 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
     fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
@@ -249,7 +239,7 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
     fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
@@ -259,7 +249,7 @@ describe("OrchestrationDispatchSection", () => {
       expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
     });
     expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
-      orchestrator: expect.objectContaining({ model: "claude-opus-4-7" }),
+      dispatch: { implementer: expect.objectContaining({ model: "claude-opus-4-7" }) },
     });
   });
 
@@ -267,7 +257,7 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
     fireEvent.change(modelInputs[0], { target: { value: "claude-opus-4-7" } });
@@ -286,7 +276,7 @@ describe("OrchestrationDispatchSection", () => {
       ),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const effortSelects = screen.getAllByRole("combobox", { name: /effort for/i });
     fireEvent.change(effortSelects[0], { target: { value: "low" } });
@@ -305,7 +295,7 @@ describe("OrchestrationDispatchSection", () => {
       new Error("API error 400: model `not-a-model` is unknown"),
     );
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const modelInputs = screen.getAllByRole("textbox", { name: /model for/i });
     fireEvent.change(modelInputs[0], { target: { value: "not-a-model" } });
@@ -323,16 +313,16 @@ describe("OrchestrationDispatchSection", () => {
     vi.mocked(api.getOrchestratorSettings).mockResolvedValue(EXPLICIT_SETTINGS);
     vi.mocked(api.updateOrchestratorSettings).mockResolvedValue(undefined as never);
     render(<OrchestrationDispatchSection />);
-    await waitFor(() => screen.getByText("Orchestrator"));
+    await waitFor(() => screen.getByText("Implementer"));
 
     const checkboxes = screen.getAllByRole("checkbox");
-    fireEvent.click(checkboxes[0]); // orchestrator's "Use vendor CLI default"
+    fireEvent.click(checkboxes[0]); // implementer's "Use vendor CLI default"
 
     await waitFor(() => {
       expect(vi.mocked(api.updateOrchestratorSettings)).toHaveBeenCalledTimes(1);
     });
     expect(vi.mocked(api.updateOrchestratorSettings).mock.calls[0][0]).toMatchObject({
-      orchestrator: null,
+      dispatch: { implementer: null },
     });
   });
 });
