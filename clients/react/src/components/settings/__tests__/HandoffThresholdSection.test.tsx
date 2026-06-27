@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 //
 // HandoffThresholdSection — auto-handoff threshold control. Verifies:
-//   - reads current value from `api.getOrchestratorSettings()`
-//   - PUT round-trip via `api.updateOrchestratorSettings`
+//   - reads current value from `api.getProducerSettings()`
+//   - PUT round-trip via `api.updateProducerSettings`
 //   - 0 ⇒ "Disabled" label
 //   - out-of-range values surface inline validation error and skip PUT
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrchestratorSettings } from "@/lib/api";
+import type { ProducerSettings } from "@/lib/api";
 import { HandoffThresholdSection } from "../HandoffThresholdSection";
 
 const getMock = vi.fn();
@@ -20,13 +20,13 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      getOrchestratorSettings: () => getMock(),
-      updateOrchestratorSettings: (params: unknown) => updateMock(params),
+      getProducerSettings: () => getMock(),
+      updateProducerSettings: (params: unknown) => updateMock(params),
     },
   };
 });
 
-function orchestrator(threshold: number): OrchestratorSettings {
+function orchestrator(threshold: number): ProducerSettings {
   return {
     enabled: true,
     pr_monitor_enabled: false,
@@ -70,7 +70,7 @@ describe("HandoffThresholdSection", () => {
   // "Disabled" (truthful) rather than fabricate "Triggers at undefined%".
   it("missing wire field renders as Disabled (not 'Triggers at undefined%')", async () => {
     const stale = orchestrator(0);
-    delete (stale as Partial<OrchestratorSettings>).auto_handoff_threshold_pct;
+    delete (stale as Partial<ProducerSettings>).auto_handoff_threshold_pct;
     getMock.mockResolvedValue(stale);
     render(<HandoffThresholdSection />);
     await waitFor(() => {

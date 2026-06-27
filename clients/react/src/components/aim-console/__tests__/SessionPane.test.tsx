@@ -45,7 +45,7 @@ vi.mock("@/lib/api", async () => {
       ...actual.api,
       // Park the threshold fetch in flight — the pane tests don't assert on
       // the ctx readout, and this keeps the network out of jsdom.
-      getOrchestratorSettings: () => new Promise<never>(() => {}),
+      getProducerSettings: () => new Promise<never>(() => {}),
     },
   };
 });

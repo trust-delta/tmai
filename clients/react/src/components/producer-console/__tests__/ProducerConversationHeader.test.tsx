@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
 import { ProducerConversationHeader } from "../ProducerConversationHeader";
 
-const getOrchestratorSettingsMock = vi.fn();
+const getProducerSettingsMock = vi.fn();
 const killAgentMock = vi.fn();
 
 // Preserve the actual module (the shared `findProducerForUnit` resolver
@@ -28,7 +28,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       ...actual.api,
-      getOrchestratorSettings: (project?: string) => getOrchestratorSettingsMock(project),
+      getProducerSettings: (project?: string) => getProducerSettingsMock(project),
       killAgent: (target: string) => killAgentMock(target),
     },
   };
@@ -80,8 +80,8 @@ function orchestratorFixture(threshold: number) {
 }
 
 beforeEach(() => {
-  getOrchestratorSettingsMock.mockReset();
-  getOrchestratorSettingsMock.mockResolvedValue(orchestratorFixture(75));
+  getProducerSettingsMock.mockReset();
+  getProducerSettingsMock.mockResolvedValue(orchestratorFixture(75));
   killAgentMock.mockReset();
   killAgentMock.mockResolvedValue(undefined);
 });

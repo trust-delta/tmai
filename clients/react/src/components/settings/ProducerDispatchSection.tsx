@@ -39,16 +39,16 @@ const ROLES: DispatchRole[] = [
  * vendor CLI default" checkbox) persist on change; the model text field
  * persists on blur or Enter so we do not flicker validation errors mid-typing.
  *
- * Reads the bundles from `GET /settings/orchestrator` (the global settings
+ * Reads the bundles from `GET /settings/producer` (the global settings
  * endpoint that carries the dispatch fields) and saves them via the same
- * endpoint's PUT — server-side `OrchestrationSettings` is the single source
+ * endpoint's PUT — server-side `ProducerSettings` is the single source
  * of truth, so this component only roundtrips the dispatch subset of fields.
  *
  * Backend 400s surface as inline error text. For atomic changes we roll back
  * to the last-saved bundle; for text-commit errors we leave the user's draft
  * in place so they can correct it.
  */
-export function OrchestrationDispatchSection() {
+export function ProducerDispatchSection() {
   const [state, setState] = useState<DispatchState | null>(null);
   const [status, setStatus] = useState<AutoSaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function OrchestrationDispatchSection() {
 
   useEffect(() => {
     api
-      .getOrchestratorSettings()
+      .getProducerSettings()
       .then((s) => {
         const initial = {
           dispatch: s.dispatch,
@@ -77,7 +77,7 @@ export function OrchestrationDispatchSection() {
       setStatus("saving");
       setError(null);
       try {
-        await api.updateOrchestratorSettings({
+        await api.updateProducerSettings({
           dispatch: next.dispatch,
         });
         lastSavedRef.current = next;
@@ -127,7 +127,7 @@ export function OrchestrationDispatchSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-foreground">Orchestration dispatch</h3>
+        <h3 className="text-sm font-medium text-foreground">Producer dispatch</h3>
         <SaveStatus status={status} error={error} variant="section" />
       </div>
       <p className="mt-1 text-xs text-subtle-foreground">

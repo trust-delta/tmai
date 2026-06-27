@@ -26,7 +26,7 @@
 //
 // The ctx readout reuses `ProducerCtxHeader`'s exported helpers
 // (`formatThousands` / `renderBar` / `thresholdColorClass`) and the same
-// threshold fetch (`getOrchestratorSettings`); the digest keeps the
+// threshold fetch (`getProducerSettings`); the digest keeps the
 // full-form `ProducerCtxHeader`. The status dot reuses AgentActions'
 // `attention`→colour/label mapping. The Handoff button fires the
 // App-level lifted ritual via `trigger` — there is exactly one
@@ -106,7 +106,7 @@ export function ProducerConversationHeader({
   useEffect(() => {
     let cancelled = false;
     api
-      .getOrchestratorSettings(currentProjectPath ?? undefined)
+      .getProducerSettings(currentProjectPath ?? undefined)
       .then((s) => {
         if (!cancelled) setThreshold(s.auto_handoff_threshold_pct);
       })

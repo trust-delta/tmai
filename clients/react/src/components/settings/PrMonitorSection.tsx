@@ -1,5 +1,5 @@
 import type { useSaveTracker } from "@/hooks/useSaveTracker";
-import { api, type OrchestratorSettings } from "@/lib/api";
+import { api, type ProducerSettings } from "@/lib/api";
 
 /** PR Monitor settings — automatic PR/CI status monitoring */
 export function PrMonitorSection({
@@ -8,8 +8,8 @@ export function PrMonitorSection({
   orchProject,
   save,
 }: {
-  orchestrator: OrchestratorSettings;
-  setOrchestrator: (v: OrchestratorSettings) => void;
+  orchestrator: ProducerSettings;
+  setOrchestrator: (v: ProducerSettings) => void;
   orchProject: string | undefined;
   save: ReturnType<typeof useSaveTracker>;
 }) {
@@ -17,7 +17,7 @@ export function PrMonitorSection({
     const clamped = Math.max(10, Math.min(3600, value));
     setOrchestrator({ ...orchestrator, pr_monitor_interval_secs: clamped });
     void save.track(() =>
-      api.updateOrchestratorSettings({ pr_monitor_interval_secs: clamped }, orchProject),
+      api.updateProducerSettings({ pr_monitor_interval_secs: clamped }, orchProject),
     );
   };
 
@@ -40,7 +40,7 @@ export function PrMonitorSection({
               const next = !orchestrator.pr_monitor_enabled;
               setOrchestrator({ ...orchestrator, pr_monitor_enabled: next });
               void save.track(
-                () => api.updateOrchestratorSettings({ pr_monitor_enabled: next }, orchProject),
+                () => api.updateProducerSettings({ pr_monitor_enabled: next }, orchProject),
                 {
                   onError: () => setOrchestrator({ ...orchestrator, pr_monitor_enabled: !next }),
                 },

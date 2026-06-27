@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrchestratorSettings, WorkflowSettings, WorktreeSettings } from "@/lib/api";
+import type { ProducerSettings, WorkflowSettings, WorktreeSettings } from "@/lib/api";
 import { renderWithProviders as render } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -12,8 +12,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       listAgents: vi.fn(),
       getGeneralSettings: vi.fn(),
       updateGeneralSettings: vi.fn(),
-      getOrchestratorSettings: vi.fn(),
-      updateOrchestratorSettings: vi.fn(),
+      getProducerSettings: vi.fn(),
+      updateProducerSettings: vi.fn(),
       getNotificationSettings: vi.fn(),
       updateNotificationSettings: vi.fn(),
       getWorkflowSettings: vi.fn(),
@@ -36,7 +36,7 @@ const WORKTREE: WorktreeSettings = {
   branch_depth_warning: 5,
 };
 
-function makeOrchestrator(): OrchestratorSettings {
+function makeOrchestrator(): ProducerSettings {
   return {
     enabled: true,
     pr_monitor_enabled: false,
@@ -53,7 +53,7 @@ function makeOrchestrator(): OrchestratorSettings {
 function setupDefaults() {
   vi.mocked(api.listAgents).mockResolvedValue([]);
   vi.mocked(api.getGeneralSettings).mockResolvedValue({ default_project_root: null });
-  vi.mocked(api.getOrchestratorSettings).mockResolvedValue(makeOrchestrator());
+  vi.mocked(api.getProducerSettings).mockResolvedValue(makeOrchestrator());
   vi.mocked(api.getNotificationSettings).mockResolvedValue({
     notify_on_idle: true,
     notify_idle_threshold_secs: 10,

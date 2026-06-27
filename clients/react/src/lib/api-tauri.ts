@@ -175,8 +175,8 @@ export const api = {
   mdTree: (root: string) => httpApi.mdTree(root),
 
   // Orchestrator settings (per-project scope via optional project param)
-  getOrchestratorSettings: (project?: string) => httpApi.getOrchestratorSettings(project),
-  updateOrchestratorSettings: (
+  getProducerSettings: (project?: string) => httpApi.getProducerSettings(project),
+  updateProducerSettings: (
     params: {
       enabled?: boolean;
       pr_monitor_enabled?: boolean;
@@ -189,7 +189,7 @@ export const api = {
       dispatch?: WorkerDispatchMap;
     },
     project?: string,
-  ) => httpApi.updateOrchestratorSettings(params, project),
+  ) => httpApi.updateProducerSettings(params, project),
 
   // Notification settings
   getNotificationSettings: () => httpApi.getNotificationSettings(),

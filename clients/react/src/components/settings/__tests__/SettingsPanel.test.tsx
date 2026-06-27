@@ -25,11 +25,11 @@ vi.mock("../HandoffThresholdSection", () => ({
 vi.mock("../NotificationSection", () => ({
   NotificationSection: () => <div data-testid="section-notification">Notification</div>,
 }));
-vi.mock("../OrchestrationSection", () => ({
-  OrchestrationSection: () => <div data-testid="section-orchestration">Orchestration</div>,
+vi.mock("../ProducerSection", () => ({
+  ProducerSection: () => <div data-testid="section-orchestration">Orchestration</div>,
 }));
-vi.mock("../OrchestrationDispatchSection", () => ({
-  OrchestrationDispatchSection: () => <div data-testid="section-dispatch">Dispatch</div>,
+vi.mock("../ProducerDispatchSection", () => ({
+  ProducerDispatchSection: () => <div data-testid="section-dispatch">Dispatch</div>,
 }));
 vi.mock("../WorkflowSection", () => ({
   WorkflowSection: () => <div data-testid="section-workflow">Workflow</div>,
