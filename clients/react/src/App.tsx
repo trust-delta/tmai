@@ -709,6 +709,59 @@ export function App({
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
   ) : null;
 
+  // App-level GLOBAL overlays — mode-INDEPENDENT. The handoff ritual UI
+  // (in-progress overlay / failure dialog / ready toast), the toast container,
+  // and the help overlay must stay co-visible whether the centre is the legacy
+  // producer shell OR the full-screen aim console (now the DEFAULT). These used
+  // to be inlined in the producer-mode return ONLY, so the aim-console default
+  // stranded the whole handoff ritual (phases + escalated/crash failures) and
+  // the toasts/help below the aim-mode early return — invisible in the default
+  // surface (hub #897, surfaced by tmai-core #589 ④). They are `fixed`-
+  // positioned, so the DOM parent doesn't affect layout, and only one mode
+  // branch renders at a time (no double-mount). The single `useHandoffRitual`
+  // instance still lives at App level (above) — two would mean two overlays.
+  const globalOverlays = (
+    <>
+      <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
+      {ritualState.kind === "dispatching" && unitName !== null && (
+        <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
+      )}
+      {ritualState.kind === "in_progress" && (
+        <HandoffRitualOverlay
+          unitName={ritualState.unit}
+          ritualId={ritualState.ritualId}
+          phases={ritualState.phases}
+        />
+      )}
+      {ritualState.kind === "escalated" && ritualState.unit !== "" && (
+        <HandoffRitualFailureDialog
+          unitName={ritualState.unit}
+          reason={ritualState.reason}
+          message={ritualState.message}
+          // The supervisor's `crash_loop_halted` halt is a different failure
+          // than an operator-rejected handoff — manual relaunch, not retry.
+          mode={ritualState.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
+          producerAgentId={producerForUnit?.id ?? null}
+          retryCount={handoffRetryCount}
+          retryRefused={handoffRetryRefused}
+          onForceKill={() => void handleHandoffForceKill()}
+          onRetry={handleHandoffRetry}
+          onDismiss={dismissHandoff}
+        />
+      )}
+      {handoffReadyToastVisible && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-40 rounded-md border border-success/30 bg-surface-strong px-4 py-2 text-xs text-success shadow-lg"
+        >
+          Handoff complete — fresh Producer is ready.
+        </div>
+      )}
+    </>
+  );
+
   // Coexist: when the operator opts into aim-ui, the new full-window aim
   // console takes over the whole shell (its own top bar + 3-pane grid),
   // replacing the existing sidebar / digest / R panel. Returned AFTER every
@@ -735,6 +788,7 @@ export function App({
           onClose={() => setLaunchPickerOpen(false)}
           onLaunchProducerAt={launchProducerAt}
         />
+        {globalOverlays}
       </>
     );
   }
@@ -972,57 +1026,10 @@ export function App({
         />
       )}
 
-      {/* Help overlay */}
-      <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
-
-      {/* Toast notifications */}
-      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
-
-      {/* Producer slot-restart ritual UI — App-level single instance so it
-          stays co-visible regardless of the active centre view (digest,
-          Producer conversation, Settings, …). Hosts BOTH the operator
-          handoff (full 5-phase, the unchanged handoff-lifecycle DR §E
-          contract) and the supervisor crash-respawn (launching→ready, or a
-          `crash_loop_halted` escalate). The overlay/dialog read the ritual's
-          OWN `unit` (a supervisor respawn may target a non-focused unit) and
-          pick their copy off the `slot-supervisor:` id / reason. */}
-      {ritualState.kind === "dispatching" && unitName !== null && (
-        <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
-      )}
-      {ritualState.kind === "in_progress" && (
-        <HandoffRitualOverlay
-          unitName={ritualState.unit}
-          ritualId={ritualState.ritualId}
-          phases={ritualState.phases}
-        />
-      )}
-
-      {ritualState.kind === "escalated" && ritualState.unit !== "" && (
-        <HandoffRitualFailureDialog
-          unitName={ritualState.unit}
-          reason={ritualState.reason}
-          message={ritualState.message}
-          // The supervisor's `crash_loop_halted` halt is a different failure
-          // than an operator-rejected handoff — manual relaunch, not retry.
-          mode={ritualState.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
-          producerAgentId={producerForUnit?.id ?? null}
-          retryCount={handoffRetryCount}
-          retryRefused={handoffRetryRefused}
-          onForceKill={() => void handleHandoffForceKill()}
-          onRetry={handleHandoffRetry}
-          onDismiss={dismissHandoff}
-        />
-      )}
-
-      {handoffReadyToastVisible && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 right-4 z-40 rounded-md border border-success/30 bg-surface-strong px-4 py-2 text-xs text-success shadow-lg"
-        >
-          Handoff complete — fresh Producer is ready.
-        </div>
-      )}
+      {/* App-level global overlays (handoff ritual / toasts / help) — defined
+          once above and ALSO rendered in the aim-mode early return, so they
+          stay co-visible across both console modes (hub #897). */}
+      {globalOverlays}
     </div>
   );
 }
