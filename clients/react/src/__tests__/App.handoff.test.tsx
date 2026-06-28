@@ -99,6 +99,15 @@ vi.mock("@/components/agent/AgentList", () => ({ AgentList: () => null }));
 vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null }));
 vi.mock("@/components/settings/SettingsPanel", () => ({ SettingsPanel: () => null }));
 vi.mock("@/components/calibration/CalibrationPanel", () => ({ CalibrationPanel: () => null }));
+// The aim console is the DEFAULT surface. Stub it so the aim-mode test below
+// observes whether the GLOBAL handoff overlay mounts alongside it, without
+// rendering the real 3-pane console (its own tests cover that).
+vi.mock("@/components/aim-console/AimConsole", () => ({
+  AimConsole: () => <div data-testid="aim-console-stub">aim-console</div>,
+}));
+vi.mock("@/components/project/ProducerLaunchPicker", () => ({
+  ProducerLaunchPicker: () => null,
+}));
 
 import { App } from "@/App";
 
@@ -254,6 +263,30 @@ describe("App — handoff ritual wiring", () => {
     // the trap that forced manual-kill (overlay only in the digest) is gone.
     fireEvent.click(screen.getByTitle("claude:prod"));
     expect(screen.getByTestId("preview-stub")).toBeTruthy();
+    expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
+  });
+
+  it("renders the handoff overlay in the DEFAULT aim-console mode (regression #897)", () => {
+    // aim is DEFAULT_CONSOLE_MODE. Before the fix, App's aim-mode early return
+    // rendered only <AimConsole> and stranded the global handoff overlay in the
+    // producer-mode return below it, so a handoff triggered from the default
+    // surface showed nothing. The overlay must now mount in BOTH modes.
+    useAgentsMock.mockReturnValue({
+      agents: [agent({ id: "claude:prod" })],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+    useHandoffRitualMock.mockReturnValue({
+      ...idleRitual(),
+      state: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] },
+    });
+
+    renderWithProviders(<App initialConsoleMode="aim" />);
+
+    // The aim console is the active surface …
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
+    // … and the global handoff overlay is co-visible with it.
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
   });
 });
