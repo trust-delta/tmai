@@ -282,9 +282,13 @@ describe("App — handoff ritual wiring", () => {
       state: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] },
     });
 
-    renderWithProviders(<App initialConsoleMode="aim" />);
+    // Render WITHOUT initialConsoleMode so the test exercises the real
+    // DEFAULT_CONSOLE_MODE (= "aim") — the regression was specifically that
+    // the handoff overlay was invisible on the DEFAULT surface, so pinning the
+    // prop here would let a future default flip slip past (CodeRabbit #898).
+    renderWithProviders(<App />);
 
-    // The aim console is the active surface …
+    // The aim console is the default surface …
     expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
     // … and the global handoff overlay is co-visible with it.
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
