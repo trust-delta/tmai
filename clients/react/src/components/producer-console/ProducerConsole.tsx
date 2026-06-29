@@ -57,7 +57,7 @@ interface ProducerConsoleProps {
   /** Phase B: operator-override callbacks. The override expandable
    *  in the footer needs to spawn agents (re-using `NewAgentLauncher`),
    *  re-expand the (now default-collapsed) sidebar, and deep-link
-   *  into the Settings page where orchestration / dispatch-bundle
+   *  into the Settings page where producer / dispatch-bundle
    *  config still lives. All three are pass-through to App.tsx
    *  handlers — the console is purely a routing surface. */
   onOverrideSpawned: (sessionId: string) => void;
