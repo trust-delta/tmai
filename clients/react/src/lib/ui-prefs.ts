@@ -90,6 +90,10 @@ export interface UIPrefs {
   // honest "一度も見ていない"; self-clears on the first collapse). See
   // RemoteDeltaCursor for the load-bearing exclusions.
   remoteDeltaCursors: Record<string, RemoteDeltaCursor>;
+  // Drag-resized aim-inspector (detail panel) height in px; `null` until the
+  // operator drags the inspector's top grip. Capped live at 70vh by CSS
+  // (min(var, 70vh)); the floor (AIM_INSPECTOR_HEIGHT_MIN) is enforced here.
+  aimInspectorHeight: number | null;
 }
 
 // Attention-strip width bounds (px). Floor keeps the section content
@@ -110,6 +114,12 @@ export const AIM_CONSOLE_PR_WIDTH_MIN = 240;
 export const AIM_CONSOLE_PR_WIDTH_MAX = 520;
 export const AIM_CONSOLE_FOOTER_MIN = 110;
 
+// aim-inspector (detail panel) drag-resize bounds (px). Floor-only: the
+// ceiling is a live 70vh cap applied in CSS (min(var, 70vh)), so storage only
+// enforces the floor (keep the close ✕ + breadcrumb + a few body lines).
+export const AIM_INSPECTOR_HEIGHT_MIN = 140;
+export const AIM_INSPECTOR_HEIGHT_DEFAULT = 400;
+
 export const AIM_CONSOLE_LAYOUT_DEFAULTS: AimConsoleLayout = {
   aim: 1.18,
   sess: 1,
@@ -126,6 +136,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
   aimMode: "frontier",
   aimConsoleLayout: null,
   remoteDeltaCursors: {},
+  aimInspectorHeight: null,
 };
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
@@ -173,6 +184,13 @@ export function clampAimConsolePrWidth(value: number): number {
 export function clampAimConsoleFooterHeight(value: number): number {
   if (!Number.isFinite(value)) return AIM_CONSOLE_LAYOUT_DEFAULTS.footer;
   return Math.max(AIM_CONSOLE_FOOTER_MIN, Math.round(value));
+}
+
+// Floor-only (matches the footer): the inspector's ceiling is the live 70vh
+// CSS cap, not a storage-time bound.
+export function clampAimInspectorHeight(value: number): number {
+  if (!Number.isFinite(value)) return AIM_INSPECTOR_HEIGHT_DEFAULT;
+  return Math.max(AIM_INSPECTOR_HEIGHT_MIN, Math.round(value));
 }
 
 // Collapse an all-defaults layout back to `null` so a double-click reset
@@ -265,6 +283,10 @@ function coercePrefs(raw: unknown): UIPrefs {
       : DEFAULT_UI_PREFS.aimMode,
     aimConsoleLayout: coerceAimConsoleLayout(r.aimConsoleLayout),
     remoteDeltaCursors: coerceRemoteDeltaCursors(r.remoteDeltaCursors),
+    aimInspectorHeight:
+      typeof r.aimInspectorHeight === "number"
+        ? clampAimInspectorHeight(r.aimInspectorHeight)
+        : DEFAULT_UI_PREFS.aimInspectorHeight,
   };
 }
 
