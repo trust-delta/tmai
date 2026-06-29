@@ -197,11 +197,11 @@ export function ProducerConsoleActions({
               type="button"
               onClick={onOpenSettings}
               className="block w-full rounded-md border border-hairline bg-surface px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface"
-              title="Open Settings — orchestration / dispatch bundles still live here"
+              title="Open Settings — producer settings / dispatch bundles still live here"
             >
               Open Settings ▸{" "}
               <span className="text-muted-foreground">
-                (orchestration rules, dispatch bundles, …)
+                (producer settings, dispatch bundles, …)
               </span>
             </button>
           </div>
