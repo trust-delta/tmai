@@ -1006,87 +1006,91 @@ function Inspector({
         ✕
       </button>
 
-      {/* Ought-ancestry breadcrumb — every ancestor selectable; the node itself
+      {/* Sticky close ✕ above; everything below scrolls so a long body never
+          scrolls the close affordance out of reach. */}
+      <div className="ac-insp-scroll" data-testid="aim-inspector-scroll">
+        {/* Ought-ancestry breadcrumb — every ancestor selectable; the node itself
           is the cyan tail. */}
-      <nav className="ac-icrumb">
-        {chain.map((a, i) =>
-          i < chain.length - 1 ? (
-            <span key={a.slug} className="ac-icrumb-item">
-              <button
-                type="button"
-                className="ac-icrumb-link"
-                onClick={() => onSelectAncestor(a.slug)}
-                title={a.aim}
-              >
-                {a.aim.slice(0, 18)}…
-              </button>
-              <span className="s" aria-hidden="true">
-                ›
+        <nav className="ac-icrumb">
+          {chain.map((a, i) =>
+            i < chain.length - 1 ? (
+              <span key={a.slug} className="ac-icrumb-item">
+                <button
+                  type="button"
+                  className="ac-icrumb-link"
+                  onClick={() => onSelectAncestor(a.slug)}
+                  title={a.aim}
+                >
+                  {a.aim.slice(0, 18)}…
+                </button>
+                <span className="s" aria-hidden="true">
+                  ›
+                </span>
               </span>
-            </span>
-          ) : (
-            <span key={a.slug} className="ac-icrumb-cur">
-              {a.slug}
-            </span>
-          ),
-        )}
-      </nav>
+            ) : (
+              <span key={a.slug} className="ac-icrumb-cur">
+                {a.slug}
+              </span>
+            ),
+          )}
+        </nav>
 
-      <div className="ac-iought">
-        <b>aim:</b> {node.aim}
-      </div>
+        <div className="ac-iought">
+          <b>aim:</b> {node.aim}
+        </div>
 
-      <div className="ac-imeta">
-        <span className={cn("ac-pill", repo.primary && "op")}>repo: {repo.repo_label}</span>
-        <span className="ac-pill op">
-          state: {AIM_STATE_LABEL[node.state]}
-          {node.parent === null ? " · root" : ""}
-        </span>
-        {node.drift !== null && (
-          <span
-            className="ac-pill dr"
-            data-testid="aim-drift-pill"
-            title={`ancestor anchor moved ${node.drift.ancestor_change_date} (${node.drift.ancestor_change_sha}); this node last changed ${node.drift.aim_change_date}`}
-          >
-            ⚠ {node.state === "done" ? "done · " : ""}drift ← 祖先{" "}
-            {node.drift.stale_from_ancestor_slug}
+        <div className="ac-imeta">
+          <span className={cn("ac-pill", repo.primary && "op")}>repo: {repo.repo_label}</span>
+          <span className="ac-pill op">
+            state: {AIM_STATE_LABEL[node.state]}
+            {node.parent === null ? " · root" : ""}
           </span>
-        )}
-        {/* Working-delta fact line (#817) — presence only, beside (never inside)
+          {node.drift !== null && (
+            <span
+              className="ac-pill dr"
+              data-testid="aim-drift-pill"
+              title={`ancestor anchor moved ${node.drift.ancestor_change_date} (${node.drift.ancestor_change_sha}); this node last changed ${node.drift.aim_change_date}`}
+            >
+              ⚠ {node.state === "done" ? "done · " : ""}drift ← 祖先{" "}
+              {node.drift.stale_from_ancestor_slug}
+            </span>
+          )}
+          {/* Working-delta fact line (#817) — presence only, beside (never inside)
             the drift pill: a node can be both drifted at HEAD and dirty in the
             working tree, and the two facts stay separately stated. */}
-        {wd !== null && (
-          <span className="ac-pill wd" data-testid="aim-wd-pill" data-wd={wd}>
-            {WORKING_DELTA_GLYPH} {WORKING_DELTA_FACT[wd]}
-          </span>
-        )}
-      </div>
+          {wd !== null && (
+            <span className="ac-pill wd" data-testid="aim-wd-pill" data-wd={wd}>
+              {WORKING_DELTA_GLYPH} {WORKING_DELTA_FACT[wd]}
+            </span>
+          )}
+        </div>
 
-      <AimBody
-        body={node.body}
-        variant="console"
-        resolves={(slug) => bySlug.has(slug)}
-        onNavigate={onSelectAncestor}
-      />
+        <AimBody
+          body={node.body}
+          variant="console"
+          resolves={(slug) => bySlug.has(slug)}
+          onNavigate={onSelectAncestor}
+        />
 
-      {/* Resignation inventory (#811) — done is reversible attention-parking,
+        {/* Resignation inventory (#811) — done is reversible attention-parking,
           so on an already-done node the parked objects stay visible, quietly.
           Read-only context for the (reversible) state edit — never a gate. */}
-      {node.state === "done" && (
-        <ResignationInventoryView
-          title="resignation inventory — この done が駐車したもの"
-          node={node}
-          nodes={repo.aims}
-        />
-      )}
+        {node.state === "done" && (
+          <ResignationInventoryView
+            title="resignation inventory — この done が駐車したもの"
+            node={node}
+            nodes={repo.aims}
+          />
+        )}
 
-      <div className="ac-insp-actions">
-        <button type="button" className="ac-btn small" onClick={onEdit}>
-          ✎ 編集
-        </button>{" "}
-        <button type="button" className="ac-btn small" onClick={() => onAddChild(node.slug)}>
-          ＋ 子 aim を作成
-        </button>
+        <div className="ac-insp-actions">
+          <button type="button" className="ac-btn small" onClick={onEdit}>
+            ✎ 編集
+          </button>{" "}
+          <button type="button" className="ac-btn small" onClick={() => onAddChild(node.slug)}>
+            ＋ 子 aim を作成
+          </button>
+        </div>
       </div>
     </div>
   );
