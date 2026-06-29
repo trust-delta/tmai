@@ -1,5 +1,5 @@
 // Remote-Δ freshness — pure helpers (#822; design: tmai-core
-// `doc/slack/2026-06-12-161334.md` §3, aim `aim-remote-delta-freshness`,
+// `doc/slack/2026-06-12-161334.md` §3, aim `pr-issue-ci`,
 // anchor 「リモートに変化があった場合、未観測の事実として表示する」).
 //
 // A row is UNOBSERVED when its newest vocab event timestamp is newer than
