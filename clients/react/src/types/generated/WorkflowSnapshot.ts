@@ -7,10 +7,10 @@
  * removed with the legacy observe-based auto-wake host (2026-05-26 amendment
  * to the producer-worker-identity approach, §rip): the
  * `orchestrator_notify`-derived echo taxonomy and busy-notify buffer that
- * fed them are gone. What survives is the orchestrator-identity projection.
+ * fed them are gone. What survives is the producer-identity projection.
  */
 export type WorkflowSnapshot = { 
 /**
- * Stable agent id of the active orchestrator, if one is running.
+ * Stable agent id of the active producer, if one is running.
  */
-orchestrator_agent_id?: string, };
+producer_agent_id?: string, };

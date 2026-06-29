@@ -11,5 +11,5 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkflowSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub orchestrator_agent_id: Option<Value>,
+    pub producer_agent_id: Option<Value>,
 }

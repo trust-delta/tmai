@@ -13,7 +13,6 @@
       "required": [
         "id"
       ],
-      "title": "AgentIdParams",
       "type": "object"
     }
   },
@@ -44,7 +43,6 @@
       "required": [
         "worktree_name"
       ],
-      "title": "WorktreeDeleteParams",
       "type": "object"
     }
   },
@@ -104,7 +102,6 @@
       "required": [
         "issue_number"
       ],
-      "title": "DispatchIssueParams",
       "type": "object"
     }
   },
@@ -122,7 +119,6 @@
       "required": [
         "id"
       ],
-      "title": "AgentIdParams",
       "type": "object"
     }
   },
@@ -140,7 +136,6 @@
       "required": [
         "id"
       ],
-      "title": "AgentIdParams",
       "type": "object"
     }
   },
@@ -149,7 +144,6 @@
     "name": "get_aims",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
       "properties": {
         "unit": {
           "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
@@ -159,7 +153,6 @@
       "required": [
         "unit"
       ],
-      "title": "UnitParams",
       "type": "object"
     }
   },
@@ -185,7 +178,6 @@
       "required": [
         "branch"
       ],
-      "title": "BranchParams",
       "type": "object"
     }
   },
@@ -211,7 +203,6 @@
       "required": [
         "branch"
       ],
-      "title": "BranchParams",
       "type": "object"
     }
   },
@@ -239,7 +230,6 @@
       "required": [
         "issue_number"
       ],
-      "title": "IssueNumberParams",
       "type": "object"
     }
   },
@@ -267,7 +257,6 @@
       "required": [
         "issue_number"
       ],
-      "title": "IssueNumberParams",
       "type": "object"
     }
   },
@@ -295,7 +284,6 @@
       "required": [
         "issue_number"
       ],
-      "title": "IssueNumberParams",
       "type": "object"
     }
   },
@@ -323,7 +311,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "PrNumberParams",
       "type": "object"
     }
   },
@@ -351,7 +338,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "PrNumberParams",
       "type": "object"
     }
   },
@@ -379,7 +365,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "PrNumberParams",
       "type": "object"
     }
   },
@@ -407,7 +392,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "PrNumberParams",
       "type": "object"
     }
   },
@@ -435,7 +419,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "PrNumberParams",
       "type": "object"
     }
   },
@@ -453,7 +436,6 @@
       "required": [
         "id"
       ],
-      "title": "AgentIdParams",
       "type": "object"
     }
   },
@@ -462,7 +444,6 @@
     "name": "get_unit_file",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "Params for the unit-scoped file content tool (issue #472).",
       "properties": {
         "path": {
           "description": "File path — must resolve within `repo`.",
@@ -482,7 +463,6 @@
         "repo",
         "path"
       ],
-      "title": "UnitFileContentParams",
       "type": "object"
     }
   },
@@ -491,7 +471,6 @@
     "name": "get_unit_handoff",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "Params for the hand-off content tool (issue #472).",
       "properties": {
         "name": {
           "description": "`active` for the live baton, or an archive filename as returned by\n`list_unit_handoffs`.",
@@ -506,7 +485,6 @@
         "unit",
         "name"
       ],
-      "title": "UnitHandoffContentParams",
       "type": "object"
     }
   },
@@ -532,7 +510,6 @@
       "required": [
         "branch"
       ],
-      "title": "BranchParams",
       "type": "object"
     }
   },
@@ -550,7 +527,6 @@
       "required": [
         "id"
       ],
-      "title": "AgentIdParams",
       "type": "object"
     }
   },
@@ -577,7 +553,6 @@
           ]
         }
       },
-      "title": "ListAgentsParams",
       "type": "object"
     }
   },
@@ -596,7 +571,6 @@
           ]
         }
       },
-      "title": "RepoParams",
       "type": "object"
     }
   },
@@ -615,7 +589,6 @@
           ]
         }
       },
-      "title": "RepoParams",
       "type": "object"
     }
   },
@@ -634,7 +607,6 @@
           ]
         }
       },
-      "title": "RepoParams",
       "type": "object"
     }
   },
@@ -643,7 +615,6 @@
     "name": "list_unit_files",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
       "properties": {
         "unit": {
           "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
@@ -653,7 +624,6 @@
       "required": [
         "unit"
       ],
-      "title": "UnitParams",
       "type": "object"
     }
   },
@@ -662,7 +632,6 @@
     "name": "list_unit_handoffs",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
       "properties": {
         "unit": {
           "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
@@ -672,7 +641,6 @@
       "required": [
         "unit"
       ],
-      "title": "UnitParams",
       "type": "object"
     }
   },
@@ -681,7 +649,6 @@
     "name": "list_worktrees",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "title": "EmptyParams",
       "type": "object"
     }
   },
@@ -732,7 +699,6 @@
       "required": [
         "pr_number"
       ],
-      "title": "MergePrParams",
       "type": "object"
     }
   },
@@ -758,7 +724,6 @@
       "required": [
         "branch"
       ],
-      "title": "BranchParams",
       "type": "object"
     }
   },
@@ -799,7 +764,6 @@
         "pr_number",
         "action"
       ],
-      "title": "ReviewPrParams",
       "type": "object"
     }
   },
@@ -822,7 +786,6 @@
         "id",
         "key"
       ],
-      "title": "SendKeyParams",
       "type": "object"
     }
   },
@@ -845,7 +808,6 @@
         "id",
         "prompt"
       ],
-      "title": "SendPromptParams",
       "type": "object"
     }
   },
@@ -868,7 +830,6 @@
         "id",
         "text"
       ],
-      "title": "SendTextParams",
       "type": "object"
     }
   },
@@ -910,7 +871,6 @@
       "required": [
         "directory"
       ],
-      "title": "SpawnAgentParams",
       "type": "object"
     }
   },
@@ -979,7 +939,6 @@
           ]
         }
       },
-      "title": "SpawnWorktreeParams",
       "type": "object"
     }
   },
@@ -1005,7 +964,6 @@
       "required": [
         "content"
       ],
-      "title": "HandoffWriteParams",
       "type": "object"
     }
   }

@@ -24,8 +24,6 @@ pub mod bundle_id;
 pub use bundle_id::*;
 pub mod bundle_status;
 pub use bundle_status::*;
-pub mod capacity_info;
-pub use capacity_info::*;
 pub mod core_event;
 pub use core_event::*;
 pub mod detection_source;
