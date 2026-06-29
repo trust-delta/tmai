@@ -34,7 +34,7 @@ export interface AimConsoleLayout {
 }
 
 // Remote-Δ freshness cursors (#822; design: tmai-core
-// `doc/slack/2026-06-12-161334.md` §3, aim `aim-remote-delta-freshness`).
+// `doc/slack/2026-06-12-161334.md` §3, aim `pr-issue-ci`).
 // Per unit, the ISO timestamps of the operator's last CLOSE acts: `panel` =
 // the R panel collapse, `prs`/`issues` = that section's collapse. The
 // effective cursor for a section is the MAX of `panel` and the section's own
