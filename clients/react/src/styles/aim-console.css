@@ -1742,14 +1742,31 @@
   transition: max-height 0.22s ease;
 }
 .aim-console .ac-insp.on {
-  max-height: 400px;
+  max-height: min(var(--ac-insp-h, 400px), 70vh);
+}
+/* No height animation while the top grip is being dragged — the panel must
+   track the pointer 1:1, not ease toward each intermediate value. */
+.aim-console .ac-insp.dragging {
+  transition: none;
+}
+/* Top drag grip — drag to resize the inspector height (persisted as the
+   aimInspectorHeight ui-pref; floor AIM_INSPECTOR_HEIGHT_MIN, live 70vh cap). */
+.aim-console .ac-insp-grip {
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+  touch-action: none;
+}
+.aim-console .ac-insp-grip:hover,
+.aim-console .ac-insp-grip.active {
+  background: var(--line);
 }
 .aim-console .ac-insp-in {
   padding: 12px 14px 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 400px;
+  max-height: min(var(--ac-insp-h, 400px), 70vh);
   position: relative;
 }
 /* Only the body scrolls; the ✕ (absolute on the non-scrolling .ac-insp-in)

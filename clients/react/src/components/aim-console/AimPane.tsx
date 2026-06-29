@@ -35,8 +35,10 @@
 // NO counters, NO badges, ever.
 
 import {
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -72,6 +74,11 @@ import {
 } from "@/components/producer-console/r-panel/aim-tree";
 import { useUnitAims } from "@/hooks/useUnitAims";
 import { api } from "@/lib/api";
+import {
+  AIM_INSPECTOR_HEIGHT_DEFAULT,
+  AIM_INSPECTOR_HEIGHT_MIN,
+  clampAimInspectorHeight,
+} from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
 import type { AimState } from "@/types/generated/AimState";
@@ -167,6 +174,45 @@ export function AimFace({ unitName }: { unitName: string | null }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => seedExpanded(repos));
   const [modal, setModal] = useState<ModalDescriptor | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Drag-resizable inspector (detail panel) height. `storedInspH` is the
+  // persisted ui-pref; `dragInspH` is the live value while the top grip is
+  // dragged (it overrides the stored one until pointerup commits). Mirrors the
+  // footer/PR-rail drag idiom: track the pointer 1:1, commit once on release.
+  const [storedInspH, setStoredInspH] = useUIPref("aimInspectorHeight");
+  const [dragInspH, setDragInspH] = useState<number | null>(null);
+  const inspDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const inspHeight = dragInspH ?? storedInspH ?? AIM_INSPECTOR_HEIGHT_DEFAULT;
+  const onInspGripDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      inspDragRef.current = {
+        startY: e.clientY,
+        startH: storedInspH ?? AIM_INSPECTOR_HEIGHT_DEFAULT,
+      };
+      setDragInspH(inspDragRef.current.startH);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [storedInspH],
+  );
+  const onInspGripMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = inspDragRef.current;
+    if (d === null) return;
+    // Drag UP (clientY decreases) grows the inspector upward into the worklist.
+    setDragInspH(clampAimInspectorHeight(d.startH + (d.startY - e.clientY)));
+  }, []);
+  const onInspGripUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const d = inspDragRef.current;
+      if (d === null) return;
+      inspDragRef.current = null;
+      setStoredInspH(clampAimInspectorHeight(d.startH + (d.startY - e.clientY)));
+      setDragInspH(null);
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    },
+    [setStoredInspH],
+  );
+
   const seededRef = useRef(false);
   const prevUnitRef = useRef(unitName);
 
@@ -357,7 +403,26 @@ export function AimFace({ unitName }: { unitName: string | null }) {
         <OverviewRuler ticks={ticks} onReveal={reveal} />
       </div>
 
-      <div className={cn("ac-insp", sel !== null && "on")}>
+      <div
+        className={cn("ac-insp", sel !== null && "on", dragInspH !== null && "dragging")}
+        style={{ "--ac-insp-h": `${inspHeight}px` } as CSSProperties}
+      >
+        {sel !== null && (
+          // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (Gutters precedent)
+          <div
+            className={cn("ac-insp-grip", dragInspH !== null && "active")}
+            role="separator"
+            tabIndex={0}
+            aria-orientation="horizontal"
+            aria-label="詳細パネルの高さを調整"
+            aria-valuenow={Math.round(inspHeight)}
+            aria-valuemin={AIM_INSPECTOR_HEIGHT_MIN}
+            title="ドラッグで詳細パネルの高さを調整"
+            onPointerDown={onInspGripDown}
+            onPointerMove={onInspGripMove}
+            onPointerUp={onInspGripUp}
+          />
+        )}
         {sel !== null && (
           <Inspector
             key={sel.node.slug}
