@@ -145,6 +145,25 @@
     }
   },
   {
+    "description": "Get the unit's aim-tree navigation (per repo: tree / DAG edges / drift / working_delta + per-node progress flag: some-todo|all-done|no-process|unknown). Body-less, read-only — pull current aim state before touching an aim or when code lands.",
+    "name": "get_aims",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Params for the unit-scoped hand-off / file list tools (issue #472).",
+      "properties": {
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "UnitParams",
+      "type": "object"
+    }
+  },
+  {
     "description": "Get CI failure log for a branch",
     "name": "get_ci_failure_log",
     "parameters_schema": {

@@ -1520,7 +1520,7 @@
           },
           {
             "type": "object",
-            "description": "A PR has been open without any CI run starting for longer than\n`OrchestrationSettings::pr_monitor_ci_start_timeout_secs`. Typically\nindicates GitHub Actions silently skipped (merge conflicts blocking\nCI, Actions disabled at the repo, etc.) — see #334. Counted from the\nfirst time the monitor observed the PR; warm-up baseline PRs are\nexempt so a tmai restart does not retro-fire the alarm. Emitted at\nmost once per PR.",
+            "description": "A PR has been open without any CI run starting for longer than\n`ProducerSettings::pr_monitor_ci_start_timeout_secs`. Typically\nindicates GitHub Actions silently skipped (merge conflicts blocking\nCI, Actions disabled at the repo, etc.) — see #334. Counted from the\nfirst time the monitor observed the PR; warm-up baseline PRs are\nexempt so a tmai restart does not retro-fire the alarm. Emitted at\nmost once per PR.",
             "required": [
               "pr_number",
               "title",

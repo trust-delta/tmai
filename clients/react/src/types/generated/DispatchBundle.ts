@@ -5,7 +5,7 @@ import type { Vendor } from "./Vendor";
 /**
  * Per-role dispatch bundle — vendor + optional model/permission_mode/effort.
  *
- * Stored under `[orchestration.dispatch.<role>]` or `[orchestration.orchestrator]`.
+ * Stored under `[producer.dispatch.<role>]`.
  * `validate(&role_path)` must be called before use to enforce the
  * `vendor_compat` matrix.
  */
