@@ -330,35 +330,6 @@
       ],
       "type": "string"
     },
-    "CapacityInfo": {
-      "description": "Current agent capacity counters.",
-      "properties": {
-        "current": {
-          "description": "Number of agent slots currently in use.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "limit": {
-          "description": "Configured maximum concurrent agents.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "remaining": {
-          "description": "Remaining available slots (`limit - current`, saturating).",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "current",
-        "limit",
-        "remaining"
-      ],
-      "type": "object"
-    },
     "DetectionSource": {
       "description": "Source of agent state detection\n\nWire format is `snake_case` to match the contract-layer enums\n(`VendorAvailabilityState`, `BundleStatus`). The\nPascalCase names (e.g. `\"HttpHook\"`) shipped prior to #7 are still\naccepted on deserialization via `#[serde(alias = ...)]` so that\npreviously-persisted `MonitoredAgent.detection_source` payloads continue\nto round-trip.",
       "enum": [
@@ -756,7 +727,6 @@
     "ErrorCode": {
       "description": "Machine-readable error code — stable across releases.\n\nAdded codes **never** get removed: deprecations are handled with serde\naliases so old payloads still deserialize. Callers switch on this value\ninstead of `message` text.",
       "enum": [
-        "CapacityExceeded",
         "VendorUnavailable",
         "QueueFull",
         "AgentNotFound",
@@ -1615,10 +1585,6 @@
     "RuntimeSnapshot": {
       "description": "UI-facing snapshot of runtime infrastructure state.",
       "properties": {
-        "capacity": {
-          "$ref": "#/$defs/CapacityInfo",
-          "description": "Current and configured agent capacity."
-        },
         "vendors": {
           "description": "Availability state of each tracked AI vendor.",
           "items": {
@@ -1628,7 +1594,6 @@
         }
       },
       "required": [
-        "capacity",
         "vendors"
       ],
       "type": "object"
@@ -2077,10 +2042,10 @@
       "type": "object"
     },
     "WorkflowSnapshot": {
-      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the orchestrator-identity projection.",
+      "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the producer-identity projection.",
       "properties": {
-        "orchestrator_agent_id": {
-          "description": "Stable agent id of the active orchestrator, if one is running.",
+        "producer_agent_id": {
+          "description": "Stable agent id of the active producer, if one is running.",
           "type": [
             "string",
             "null"

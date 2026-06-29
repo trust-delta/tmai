@@ -10,7 +10,6 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ErrorCode {
-    CapacityExceeded,
     VendorUnavailable,
     QueueFull,
     AgentNotFound,

@@ -10,6 +10,5 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RuntimeSnapshot {
-    pub capacity: CapacityInfo,
     pub vendors: Vec<VendorInfo>,
 }

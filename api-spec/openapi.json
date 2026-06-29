@@ -1043,35 +1043,6 @@
           "cancelled"
         ]
       },
-      "CapacityInfo": {
-        "type": "object",
-        "description": "Current agent capacity counters.",
-        "required": [
-          "current",
-          "limit",
-          "remaining"
-        ],
-        "properties": {
-          "current": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of agent slots currently in use.",
-            "minimum": 0
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Configured maximum concurrent agents.",
-            "minimum": 0
-          },
-          "remaining": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Remaining available slots (`limit - current`, saturating).",
-            "minimum": 0
-          }
-        }
-      },
       "CoreEvent": {
         "oneOf": [
           {
@@ -2245,7 +2216,6 @@
         "type": "string",
         "description": "Machine-readable error code — stable across releases.\n\nAdded codes **never** get removed: deprecations are handled with serde\naliases so old payloads still deserialize. Callers switch on this value\ninstead of `message` text.",
         "enum": [
-          "CapacityExceeded",
           "VendorUnavailable",
           "QueueFull",
           "AgentNotFound",
@@ -3104,14 +3074,9 @@
         "type": "object",
         "description": "UI-facing snapshot of runtime infrastructure state.",
         "required": [
-          "capacity",
           "vendors"
         ],
         "properties": {
-          "capacity": {
-            "$ref": "#/components/schemas/CapacityInfo",
-            "description": "Current and configured agent capacity."
-          },
           "vendors": {
             "type": "array",
             "items": {
@@ -3566,14 +3531,14 @@
       },
       "WorkflowSnapshot": {
         "type": "object",
-        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the orchestrator-identity projection.",
+        "description": "UI-facing snapshot of workflow-level orchestration state.\n\nThe per-event `notify_mode_summary` / `orchestrator_notify_backlog` were\nremoved with the legacy observe-based auto-wake host (2026-05-26 amendment\nto the producer-worker-identity approach, §rip): the\n`orchestrator_notify`-derived echo taxonomy and busy-notify buffer that\nfed them are gone. What survives is the producer-identity projection.",
         "properties": {
-          "orchestrator_agent_id": {
+          "producer_agent_id": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Stable agent id of the active orchestrator, if one is running."
+            "description": "Stable agent id of the active producer, if one is running."
           }
         }
       },
